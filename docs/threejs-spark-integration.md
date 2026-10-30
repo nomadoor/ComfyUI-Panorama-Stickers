@@ -4,7 +4,7 @@
 
 この文書が持たない規則：視点の操作・`world` の Sticker と Camera の編集・ギズモ・Panorama Studio のエディタ・上流の Scene の表示と編集・`port` の Sticker の同期と Pose handoff の表示・インスペクタ（`docs/editor-interaction.md`）、タイムラインと Keyframe の記録の規則（`docs/timeline-ui.md`）、状態 v2 と評価関数（`docs/scene-state-v2.md`）、ノードの出力と実行結果の `ui`（`docs/studio-node.md`）、描画関数（`docs/render-contract.md`）、ノード上の表示の規則（`docs/studio-node-surface.md`）。
 
-新しい UI の層（ADR 0044）に切り替えるとき、空間の表示の地面のグリッドと原点の印（何をどの高さに描き、どこで薄れるか）は `docs/space-and-view.md` の「地面のグリッドと原点の印」に移る。描く仕組みと、視点のカメラの near と far はこの文書が持ち続け、新しい UI では far を `docs/space-and-view.md` の世界の境界の半径から決める（その差分はこの文書で行う）。切り替えるまでは古い UI がこの文書の規則で動くので、ここの記述は消さずに残す。
+新しい UI の層（ADR 0044）に切り替えるとき、空間の表示の地面のグリッドと原点の印（何をどの高さに描き、どこで薄れるか）は `docs/space-and-view.md` の「地面のグリッドと原点の印」に移る。描く仕組みと、視点のカメラの near と far はこの文書が持ち続け、新しい UI では far を `docs/space-and-view.md` の世界の境界の半径から決める（下の「新しい UI のステージの描画」）。切り替えるまでは古い UI がこの文書の規則で動くので、ここの記述は消さずに残す。
 
 ## この文書が owner である規則
 
@@ -26,6 +26,7 @@
 | World の組み立て | — | `pano_three_view.js` `buildWorld`・`setChildren`・`cachedLines` | `tests/pano_pick.test.mjs` |
 | エディタの描画を直接表示する（スケジュール、キャンバス、解像度、コンテキストの喪失） | — | `web_src/pano_frame_scheduler.js` `createFrameScheduler`、`pano_editor_view.js` `screenRenderSize`、`pano_three_view.js` `fitRenderSize`、`web_src/components/PanoModal.vue` | `tests/pano_frame_scheduler.test.mjs`、`tests/pano_editor_direct_view.test.mjs`、`tests/pano_preview_view.test.mjs` |
 | WebGL の unpack 状態 | — | `pano_three_view.js` `settleUnpack` | `tests/pano_editor_view.test.mjs`、`tests/test_three_spark_core_pin.py`、`tests/browser/three_view.spec.js` |
+| 新しい UI のステージの描画（視点のカメラの far、地面のグリッドと原点の印を描く部品、すぐ読み込む側の箱の当たり） | — | `web_src/studio/stage_view.js` `stageCamera`・`stageRenderInput`、`pano_space.js` `spaceCamera`、`web_src/pano_ground_grid.js` `createGroundGrid`（`pano_three_view.js` が `space.ground` のときだけ描く）、`web_src/pano_ray_box.js` `rayBoxDepth`（`pano_pick.js` `rayBoxDepth` の写し） | `tests/studio_stage_view.test.mjs`、`tests/pano_ray_box.test.mjs`、`tests/browser/studio_editor.spec.js` |
 | Panorama モードの ERP の表示（新しい UI の Output の小窓と Camera タブ。6 方向を描いて ERP に貼り直す、描き直す条件、解像度） | — | （新しい UI、未実装）`web_src/studio/erp_preview.js` | （未作成）`tests/studio_erp_preview.test.mjs`、（未作成）`tests/browser/` の場面 |
 
 ## 版と同梱
@@ -45,7 +46,7 @@ ComfyUI の `get_extensions` は `glob.glob(os.path.join(dir, "**/*.js"), recurs
 - `vite.lib.config.js` の `chunkFileNames` で、動的 import したモジュールを `web/.lazy/<名前>-<ハッシュ>.js` に出力する。ハッシュを付けるのは、更新後にブラウザが古いチャンクを使わないようにするためである。エディタを開いたときに `pano_editor_view.js` がこれを読み込む。
 - `npm run build:web` は古いチャンクを消さない。ハッシュが変わったら古いファイルを消す（`check:web` が報告する）。
 - チャンクの読み込みか WebGL の初期化に失敗したときは、コンソールにエラーを出し、画面にもそのことを表示する。
-- `pano_three_view.js` が import するのは、three.js（`TransformControls` を含む）と、チャンクの中だけで使うモジュール（`pano_pick.js`・`pano_scene_items.js`・`pano_scene_loaders.js`・`pano_spark_views.js`・`pano_depth_grid.js`・`pano_lens_glsl.js`）だけである。GLTFLoader と Spark は `pano_scene_loaders.js` が読み込む（Spark は動的 import の `loadSpark`）。計算は即時に読み込まれる側（`pano_editor_view.js`）で行い、チャンクが `panorama_suite.js` から import し返さないようにしている。
+- `pano_three_view.js` が import するのは、three.js（`TransformControls` を含む）と、チャンクの中だけで使うモジュール（`pano_pick.js`・`pano_scene_items.js`・`pano_scene_loaders.js`・`pano_spark_views.js`・`pano_depth_grid.js`・`pano_lens_glsl.js`・`pano_ground_grid.js`）だけである。GLTFLoader と Spark は `pano_scene_loaders.js` が読み込む（Spark は動的 import の `loadSpark`）。計算は即時に読み込まれる側（`pano_editor_view.js`）で行い、チャンクが `panorama_suite.js` から import し返さないようにしている。
 - `npm run check:web` は `panorama_suite.js` と `web/.lazy/` の全チャンクを再ビルドした結果と比べ、ビルドが出力しない古いチャンクも報告する。
 - three.js の GLTFLoader は同じチャンクに静的に入れる（チャンクは約 1.0MB、gzip で約 0.22MB）。Spark は別のチャンク（`web/.lazy/spark.module-<ハッシュ>.js`、約 5.2MB、gzip で約 1.8MB）で、SPLAT の `scene` を初めて読み込むときだけ `import()` する（`pano_scene_loaders.js` の `loadSpark`）。3D を使わないエディタとノード上の表示は Spark を読まない。Spark のチャンクは three.js を最初のチャンクから import する。
 
@@ -270,6 +271,22 @@ three のアップロードは render の中でしか起きないので、Spark 
 この場面（再生中の VIDEO の背景、3DGS の Sticker、視点の回転）は `tests/browser/three_view.spec.js` が headless Chromium で描き、
 タブが落ちないことを確かめる。`settleUnpack` を外すと、このテストはクラッシュで落ちる（SwiftShader で確認）。
 
+## 新しい UI のステージの描画
+
+新しい UI のステージ（`web_src/studio/stage.js`）は、上の「空間の表示」と同じ `createEditorView` で描く。古い UI との違いは次だけで、
+古い UI はこの節の規則で動かない。
+
+- far：視点の three.js のカメラは `stageCamera`（`web_src/studio/stage_view.js`）が `spaceCamera` で作り、外接球の代わりに、原点を
+  中心とする世界の境界の半径 `R`（`docs/space-and-view.md` の「世界の境界」）の球を渡す。far は境界の中の物と、グリッドが消える
+  距離の先まで届く。near は上の「空間の表示」の式のまま。
+- 地面のグリッドと原点の印：描く部品は `web_src/pano_ground_grid.js` の `createGroundGrid`（`y = ground` の一枚の板を断片の
+  シェーダで線にし、深度を書かないので World の物がその上に描かれる）。`pano_three_view.js` の `buildWorld` は、描画の入力の
+  `space.ground`（`web_src/studio/grid.js` の `groundGrid` の値。何をどの高さに描き、どこで薄れるかは `docs/space-and-view.md`）が
+  あるときだけ描く。古い UI は `space.ground` を渡さないので、古いグリッド（`space.grid`）のままである。
+- 箱の当たりの写し：新しい UI の初めの `T` は CPU で箱の当たりを求める（`web_src/studio/view_camera.js`）。three.js のチャンクは
+  すぐ読み込む側と module を共有できない（上の「遅延読み込み」）ので、`pano_pick.js` の `rayBoxDepth` を静的に import できない。
+  そのため `web_src/pano_ray_box.js` に写しを置き、`tests/pano_ray_box.test.mjs` が二つの答えの一致を確かめる。
+
 ## Panorama モードの ERP の表示（新しい UI、未実装）
 
 新しい UI の Output の小窓と、Panorama モードの Camera タブ（`docs/studio-ui.md`）は、撮る Camera の位置から描いた ERP をその場で見せる
@@ -282,6 +299,15 @@ three のアップロードは render の中でしか起きないので、Spark 
   フレームごとに描き直す。
 - 解像度：Output の小窓（または Camera タブのフレーム）の画素の大きさに合わせた低い解像度で描く。
 - 向きと範囲の一致を守る test：ERP の画素と方向の対応は、出力と同じ `pano_camera_math.js` の写し方（`docs/scene-state-v2.md` の「パノラマの角度規約」の持ち主）を使い、既存の parity（`tests/test_camera_orientation.py`、`tests/test_studio_run_erp_orientation.py`）に、この表示で描いた ERP の向きの case を足す（未作成）。
-- 3D Gaussian Splatting：Spark の並べ替えは方向ごとに要る（上の表の「Spark の描画はビューごとに 1 つ」）。
-- 重さ：最初に試作で 1 回の描き直しの時間とメモリを測り、持ち主の GPU でも確かめる（AGENTS.md の Working principles 7）。重すぎるときは
-  止めて持ち主に相談する（描き直す条件と解像度のほかに、黙って質を下げることはしない。`docs/agents/ux-principles.md`）。
+- 立方体の向き：6 方向は世界の軸にそろえた立方体で描き、Camera の回転は ERP に貼り直すときに掛ける。Camera が回るだけのとき
+  （位置・状態・再生位置・読み込んだ要素が変わらない）は、6 面を描き直さず、貼り直しのパスだけを描く。
+- 3D Gaussian Splatting：Spark の並べ替えは、Camera の位置からの距離で並べる radial の並べ替えを 1 回だけ行い、6 面すべてに使う
+  （位置からの距離の順は向きによらないため。面ごとに並べ替えない）。6 面は一つの `SparkRenderer` で描く（上の表の「Spark の描画はビューごとに 1 つ」）。
+  並べ替えはワーカーで非同期に終わるので、終わったときにも描き直す。
+- 重さ：重すぎるときは止めて持ち主に相談する（描き直す条件と解像度のほかに、黙って質を下げることはしない。`docs/agents/ux-principles.md`）。
+  試作（2026-10-30、持ち主の RTX 4070 Ti・D3D11、100 万粒の 3DGS）で測った 1 回の描き直し：
+  - 面の一辺 512 で約 44 ms、1024 で約 35 ms（radial の並べ替えがワーカーで約 25〜30 ms、6 面の描画が約 9〜13 ms、貼り直しのパスが
+    1 ms 以下、回るだけのときは 1 ms 未満）。目安の 50 ms 以下に収まる。
+  - 面ごとに並べ替える描き方は 50〜56 ms で、Spark の GPU のメモリが約 6 倍（217 MB と 36 MB）になるので採らない。
+  - 向きの誤差は最大 0.87 px で、面の継ぎ目は数値に出ない。
+  - headless の SwiftShader（GPU なし）の時間は CPU の描画なので目安にしない。

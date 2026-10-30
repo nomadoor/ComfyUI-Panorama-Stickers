@@ -2,10 +2,13 @@
 
 エディタのモーダルとノード上の表示（node surface）の見た目の値を定める：色と役割、文字、余白、角丸、
 コントロールの高さ、影、動き、フォーカスと無効の見た目、重なり順、スクリム、共有の部品の class（`pano-*`）、
-アイコン。ここに書く値はすべて今の `web/pano_editor.css` と `web_src/` にある値で、見た目はダークのみ（ライトの表示は無い）。
+アイコン。「新しい UI の見た目」より前の節に書く値はすべて今の `web/pano_editor.css` と `web_src/` にある値で、見た目はダークのみ（ライトの表示は無い）。
+新しい UI の値は下の「新しい UI の見た目」が持つ。
 
-スタイルは一つの手書きの stylesheet `web/pano_editor.css` にあり、`web_src/pano_styles.js` の
-`installPanoSuiteStylesheet` が `<link id="pano-suite-style-link">` として一度だけ読み込む。
+古い UI とノード上の表示のスタイルは一つの手書きの stylesheet `web/pano_editor.css` にあり、`web_src/pano_styles.js` の
+`installPanoSuiteStylesheet` が `<link id="pano-suite-style-link">` として一度だけ読み込む。新しい UI のスタイルは別の手書きの
+stylesheet `web/pano_studio.css` にあり、`web_src/studio/stylesheet.js` の `installStudioStylesheet` が
+`<link id="pano-studio-style-link">` として、新しい UI のエディタを初めて開くときに一度だけ読み込む（どちらも `pano_styles.js` の `installStylesheet` を使う）。
 Vue のコンポーネント（`web_src/components/*.vue`）は `<style>` を持たず、class と、位置・大きさ・色を渡す
 inline の `style` と custom property（`--pano-segment-count`・`--pano-timeline-rows`・`--pano-video-shell-max`・`--v`・`--swatch` など）だけを使う。
 
@@ -20,7 +23,7 @@ inline の `style` と custom property（`--pano-segment-count`・`--pano-timeli
 |---|---|---|---|
 | デザインの値の custom property（`--pano-*`。ノード上の表示だけの値の `--pano-node-*` を含む）とその値。一つの名前は一つの値を持ち、どこでも定義し直さない | — | `web/pano_editor.css` の `:root` | — |
 | ノード上の表示の枠（`.pano-node-frame`） | — | `web/pano_editor.css` の `.pano-node-frame`、`web_src/pano_preview_runtime.js` の `attachPanoramaPreviewImpl` と `web_src/pano_preview_previewnode.js` の `attachDom`（class を付ける） | — |
-| stylesheet の読み込み | — | `web_src/pano_styles.js` `installStylesheet`・`installPanoSuiteStylesheet` | — |
+| stylesheet の読み込み | — | `web_src/pano_styles.js` `installStylesheet`・`installPanoSuiteStylesheet`、新しい UI は `web_src/studio/stylesheet.js` `installStudioStylesheet` | — |
 | 共有のボタン（`.pano-btn` 系）の大きさと状態の見た目 | — | `web/pano_editor.css` の `.pano-btn`・`.pano-btn-icon`・`.pano-btn-texticon`・`.pano-btn-primary`・`.pano-btn.subtle`、`web_src/components/shared/PanoIconButton.vue` | — |
 | 共有の部品（モーダル、HUD、切り替え、サイドパネル、値の行、選択肢、ツールチップ、確認のダイアログ、ペイント）の値と、部品の中だけの custom property（`.pano-segments` の `--pano-segment-pad: 3px`、`.pano-modal` の `--pano-side-w: 300px`） | — | `web/pano_editor.css` | — |
 | 状態の class に ComfyUI の Tailwind の utility 名を使わない | — | `web_src/components/*.vue` | `tests/pano_css_class_safety.test.mjs` |
@@ -391,7 +394,8 @@ Tailwind の utility（`.hidden { display: none }` など）を持つので、Vu
 新しい UI の層（ADR 0044。Panorama Studio のエディタと新しい Preview のウィンドウ、画面の規則は `docs/studio-ui.md`）の見た目の値を定める。
 旧ノード（`PanoramaStickers`・`PanoramaCutout`・`PanoramaPreview`（legacy））のエディタとノード上の表示は、この文書の上の節の値のまま
 変えない（ADR 0044 の「旧ノードの UI」）。新しい UI の値は、上の節の `--pano-*` を書き換えず、新しい UI の部品の中だけで使う名前で持つ
-（置き場所は `web/pano_studio.css` の `.pano-studio` が持つ `--studio-*`。新しい UI の部品はすべて `.pano-studio` の中に置く）。値はどれも、`design-drafts` の見本でオーナーが選んだものである。
+（置き場所は新しい UI の stylesheet `web/pano_studio.css` の `.pano-studio` が持つ `--studio-*`。新しい UI の部品はすべて `.pano-studio` の中に置く。
+stylesheet の読み込みは上の「この文書が owner である規則」の表）。値はどれも、`design-drafts` の見本でオーナーが選んだものである。
 
 ### 色
 
