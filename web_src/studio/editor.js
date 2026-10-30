@@ -67,6 +67,14 @@ function linked(node, names) {
 
 // The inputs whose VIDEO sets the Timeline fps (pano_video_fps.js timelineFpsLocked).
 const VIDEO_FPS_INPUTS = [...BACKGROUND_INPUTS, "sticker"];
+// The Keyframes' copy, cut and paste with Ctrl / Cmd: "c", "x" or "v" by the key's letter, by its place on the keyboard
+// for a layout whose letters are not Latin; else null.
+const CLIPBOARD_CODES = Object.freeze({ KeyC: "c", KeyX: "x", KeyV: "v" });
+function clipboardLetter(event) {
+  const key = String(event.key || "").toLowerCase();
+  if (key === "c" || key === "x" || key === "v") return key;
+  return /^[a-z]$/.test(key) ? null : CLIPBOARD_CODES[event.code] ?? null;
+}
 
 // The node's state v2 (a state that cannot be read opens as the empty state, as the old editor does), rebased to the
 // fps a VIDEO set in the node's current result (docs/timeline-ui.md "タイムラインの表示"). `media` reads the result.
@@ -445,6 +453,17 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
 
   // Delete: the selected Keyframes first (<StudioTimeline> handleDelete), else the selected object.
   let timeline = null;
+  // The copied Keyframes (docs/timeline-ui.md "Keyframe のコピーと貼り付け"): the editor's own, kept while it is open.
+  let keyClipboard = null;
+  // Ctrl / Cmd + C, X or V (`letter`): returns whether the editor took the key.
+  function keyClipboardKey(letter) {
+    if (letter === "v") return !!keyClipboard && !!timeline?.pasteKeys(keyClipboard);
+    const copied = timeline?.copyKeys() ?? null;
+    if (!copied) return false;
+    keyClipboard = copied;
+    if (letter === "x") timeline.handleDelete();
+    return true;
+  }
   function deleteSelection() {
     if (timeline?.handleDelete()) return;
     const outcome = session.deleteSelectedObject();
@@ -544,7 +563,8 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     return true;
   }
 
-  // --- Keys while the editor is open: Undo / Redo, Delete, Space. The stage takes the movement keys and Escape.
+  // --- Keys while the editor is open: Undo / Redo, Delete, Space, the Keyframes' copy, cut and paste. The stage takes
+  // the movement keys and Escape.
   let rootElement = null;
   let releaseKeyGuard = () => {};
   function onKeyDown(event) {
@@ -555,6 +575,12 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
       event.preventDefault();
       event.stopPropagation();
       historyStep(event.shiftKey ? 1 : -1);
+    } else if (mod && !event.altKey && !event.shiftKey && clipboardLetter(event)) {
+      // Not taken, C and X keep the browser's copy of selected text; V never pastes (nothing outside a field takes it).
+      const letter = clipboardLetter(event);
+      if (!keyClipboardKey(letter) && letter !== "v") return;
+      event.preventDefault();
+      event.stopPropagation();
     } else if (!mod && (event.key === "Delete" || event.key === "Backspace")) {
       event.preventDefault();
       event.stopPropagation();

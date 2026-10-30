@@ -5,11 +5,13 @@ import { timelineTicks } from "../../pano_timeline.js";
 import {
   applyClipDrag,
   clipDragChanged,
+  copyKeys,
   deleteKeys,
   deleteTarget,
   enteredFps,
   jumpTarget,
   keyRow,
+  pasteKeys,
   lengthEdit,
   moveKeys,
   selectKeys,
@@ -47,6 +49,9 @@ import StudioTimelineHead from "./StudioTimelineHead.vue";
 //   collapse-change(folded)  the collapse button
 // handleDelete() (exposed): deletes the selected Keyframes and returns true, or returns false when the Delete key is
 // the selected object's (docs/timeline-ui.md "記録の規則"). The Timeline calls it itself for Delete inside it.
+// copyKeys() (exposed): the selected Keyframes as the editor's clipboard, or null when none is selected; pasteKeys(
+// clipboard) (exposed): pastes them at the playhead as one Undo step and returns whether anything pasted
+// (docs/timeline-ui.md "Keyframe のコピーと貼り付け"). The editor keeps the clipboard and takes the keys.
 const props = defineProps({
   state: { type: Object, required: true },
   selection: { type: Object, default: () => ({ row: null, keys: [] }) },
@@ -428,7 +433,17 @@ function onKeydown(event) {
   }
 }
 
-defineExpose({ handleDelete });
+function copySelectedKeys() {
+  return copyKeys(ctx.value, props.selection);
+}
+
+function pasteCopiedKeys(clipboard) {
+  const result = pasteKeys(ctx.value, clipboard, props.selection, props.playhead);
+  if (result) emit("edit", { kind: "state", ...result.edit, selection: result.selection, phase: "commit", stopsPlayback: true });
+  return !!result;
+}
+
+defineExpose({ handleDelete, copyKeys: copySelectedKeys, pasteKeys: pasteCopiedKeys });
 </script>
 
 <template>

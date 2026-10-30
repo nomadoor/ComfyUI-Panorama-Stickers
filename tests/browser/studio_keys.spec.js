@@ -95,3 +95,34 @@ test("the Easing panel's text field still copies and pastes its text, and ComfyU
   expect(await heard(page)).toEqual([]);
   expect(problems).toEqual([]);
 });
+
+test("a Keyframe copied, the playhead moved and Ctrl+V: the value pastes at the new frame as one Undo step, and the graph gets nothing", async ({ page }, testInfo) => {
+  const problems = await open(page, testInfo);
+  const directionFrames = async () => (await studio(page, "state")).stickers[0].direction.keyframes.map((key) => key.frame);
+  const first = await seekTo(page, 0.25);
+  await rowDot(page, "sticker_1").click();
+  await keyAt(page, "sticker_1", first).click();
+  await page.keyboard.press("Control+c");
+  const second = await seekTo(page, 0.75);
+  expect(second).toBeGreaterThan(first);
+  await page.keyboard.press("Control+v");
+  await expect.poll(directionFrames).toEqual([first, second]);
+  const state = await studio(page, "state");
+  expect(state.stickers[0].direction.keyframes[1].value).toEqual(state.stickers[0].direction.keyframes[0].value);
+  // The pasted Keyframe is the selection.
+  await expect(keyAt(page, "sticker_1", second)).toHaveClass(/is-selected/);
+  await expect(keyAt(page, "sticker_1", first)).not.toHaveClass(/is-selected/);
+  // One Undo step takes the paste back.
+  await page.keyboard.press("Control+z");
+  await expect.poll(directionFrames).toEqual([first]);
+  // Cut: the copied Keyframe goes (one step), and pastes again where the playhead is.
+  await keyAt(page, "sticker_1", first).click();
+  await page.keyboard.press("Control+x");
+  await expect.poll(directionFrames).toEqual([]);
+  const third = await seekTo(page, 0.5);
+  await page.keyboard.press("Control+v");
+  await expect.poll(directionFrames).toEqual([third]);
+  expect(await heard(page)).toEqual([]);
+  expect((await studio(page, "state")).stickers.length).toBe(2);
+  expect(problems).toEqual([]);
+});

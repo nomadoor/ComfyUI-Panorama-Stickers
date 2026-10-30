@@ -35,8 +35,8 @@ import StudioViewButtons from "./StudioViewButtons.vue";
 // The editor's state lives in studio/editor.js: `view` is its view model (the working state, the selection, the
 // playhead, playback, Undo), `ui` what the stage reports (stage.js stageUi(), with `background` and `empty`), and
 // `controller` what this shell calls: onStage({ canvas, root }) makes the stage once the elements are in the page and
-// returns its controls; onTimeline({ handleDelete }) hands over the Timeline's Delete; the inspector's and the
-// Timeline's events go to its handlers.
+// returns its controls; onTimeline({ handleDelete, copyKeys, pasteKeys }) hands over the Timeline's Delete and its
+// Keyframes' copy and paste; the inspector's and the Timeline's events go to its handlers.
 const props = defineProps({
   nodeTitle: { type: String, default: "" },
   ui: { type: Object, required: true },
@@ -60,7 +60,11 @@ const selected = computed(() => inspectorSelection(props.view.selection));
 onMounted(() => {
   stopInputMode = trackInputMode(root.value);
   stage = props.controller.onStage({ canvas: canvas.value, overlay: overlay.value, root: root.value }) ?? null;
-  props.controller.onTimeline({ handleDelete: () => timeline.value?.handleDelete() ?? false });
+  props.controller.onTimeline({
+    handleDelete: () => timeline.value?.handleDelete() ?? false,
+    copyKeys: () => timeline.value?.copyKeys() ?? null,
+    pasteKeys: (clipboard) => timeline.value?.pasteKeys(clipboard) ?? false,
+  });
   // The editor takes the focus from the graph behind it, so the stage has the keys at once (pano_key_focus.js).
   root.value?.focus({ preventScroll: true });
   fitTimeline();
