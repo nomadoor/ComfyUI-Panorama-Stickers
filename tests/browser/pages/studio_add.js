@@ -155,10 +155,19 @@ try {
   // The view looks a little down from the origin: the sky in the upper half, the ground in the lower.
   studio.pose = { position: [0, 0, 0], yaw_deg: 0, pitch_deg: -8, target: [0, -1.12, -7.92] };
   editorSession(node).view = rememberView(studio.pose, "panorama");
-  const editor = await openStudioEditor(node, { app, api, storage: memoryStorage });
+  let editor = await openStudioEditor(node, { app, api, storage: memoryStorage });
   studio.session = editor.session;
   studio.node = node;
   studio.close = () => editor.close();
+  // Closes the editor and opens it again on the same node (with `text` in state_json first, when given).
+  studio.reopen = async (text) => {
+    editor.close();
+    if (text !== undefined) node.widgets[0].value = text;
+    editor = await openStudioEditor(node, { app, api, storage: memoryStorage });
+    studio.session = editor.session;
+    return true;
+  };
+
   studio.rendererOf = () => {
     const canvas = document.querySelector("[data-stage-canvas]");
     const gl = canvas.getContext("webgl2");

@@ -316,6 +316,13 @@ test("a placed object goes in at once and is selected, with no Undo step until i
   assert.equal(session.state.stickers[1].source.filename, "box.glb");
 });
 
+test("a session opened on a state_json that cannot be read writes nothing over it unedited", () => {
+  for (const current of ["{not json", '{"version":3,"stickers":[]}']) {
+    const session = createStudioSession({ state: loadSceneState(null) });
+    assert.equal(session.stateText(node, current), null, current);
+  }
+});
+
 test("a placed object that fails goes with no step; one gone already is not settled", () => {
   const session = createStudioSession({ state: load({ stickers: [] }) });
   const id = session.addPlaced((newId) => placed(newId));

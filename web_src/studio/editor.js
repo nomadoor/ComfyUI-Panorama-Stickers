@@ -6,7 +6,8 @@
 // keys, and the Vue shell (StudioEditor.vue with <StudioInspector> and <StudioTimeline>).
 //
 // Closing (✕, or Escape with nothing left to take back: docs/studio-ui.md "閉じ方") always saves: the state goes to
-// state_json the way the old editor writes it (session.stateText: nothing when the text already means it). The view
+// state_json the way the old editor writes it (session.stateText: nothing when the text already means it). A node
+// whose state_json cannot be read opens read-only and says so, so nothing writes over that text. The view
 // it was closed with is kept for the page (pano_node_bridge.js editorSession(node).view) and the next opening starts
 // there.
 import { createApp, markRaw, reactive, shallowReactive } from "vue";
@@ -14,7 +15,7 @@ import StudioEditor from "../components/studio/StudioEditor.vue";
 import { createComfyMediaAdapter } from "../pano_comfy_media.js";
 import { createPanoCanvas, createPanoVideo, releasePanoCanvas } from "../pano_diagnostics.js";
 import { queuePendingStickerOperation } from "../pano_editor_extension.js";
-import { cameraShot, normalizeCoverageValue, setCameraShot } from "../pano_editor_state.js";
+import { cameraShot, normalizeCoverageValue, readableStateText, setCameraShot } from "../pano_editor_state.js";
 import { preloadEditorView } from "../pano_editor_view.js";
 import { DRAW_REASON } from "../pano_frame_scheduler.js";
 import { stageOwnsKey } from "../pano_key_focus.js";
@@ -68,8 +69,8 @@ function linked(node, names) {
 // The inputs whose VIDEO sets the Timeline fps (pano_video_fps.js timelineFpsLocked).
 const VIDEO_FPS_INPUTS = [...BACKGROUND_INPUTS, "sticker"];
 
-// The node's state v2 (a state that cannot be read opens as the empty state, as the old editor does), rebased to the
-// fps a VIDEO set in the node's current result (docs/timeline-ui.md "タイムラインの表示"). `media` reads the result.
+// The node's state v2 (a state that cannot be read opens as the empty state, read-only: openStudioEditor), rebased to
+// the fps a VIDEO set in the node's current result (docs/timeline-ui.md "タイムラインの表示"). `media` reads the result.
 function nodeState(node, media) {
   let scene;
   try {
@@ -125,6 +126,9 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     throw error;
   }
   const media = createComfyMediaAdapter({ app, api });
+  // A state_json that cannot be read is kept as it is: the editor opens read-only (docs/studio-ui.md "閉じ方").
+  const stateUnreadable = !readableStateText(String(widgetOf(node, "state_json")?.value ?? ""));
+  if (stateUnreadable) readOnly = true;
   const session = createStudioSession({ state: nodeState(node, media), readOnly });
   const nodeSession = editorSession(node);
   const stateWidget = widgetOf(node, "state_json");
@@ -370,6 +374,8 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     drop: null,
     adding: false,
     addWarning: null,
+    // The node's state_json cannot be read: the editor is read-only (notice_line.js).
+    stateUnreadable,
   });
   const background = nodeBackground(node, media, () => {
     syncBackground();

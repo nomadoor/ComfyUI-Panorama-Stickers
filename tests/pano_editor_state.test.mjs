@@ -19,6 +19,7 @@ import {
   parsePanoEditorState,
   paintingLayerNeedsSync,
   parseSceneEditorState,
+  readableStateText,
   restoredHistoryState,
   retainActiveCutoutShot,
   sameEditorStateText,
@@ -455,6 +456,26 @@ test("opening and closing the editor leaves an unedited state_json text alone", 
     const text = editorStateText(node, parseSceneEditorState(current, options));
     assert.equal(sameEditorStateText(node, text, current), true, JSON.stringify(current.slice(0, 20)));
   }
+});
+
+// docs/timeline-ui.md: a state_json that cannot be read opens as the empty state in the old editor and the node
+// surface; writing it back would replace the user's text with the empty state.
+test("a state_json that cannot be read is not replaced by the empty state; an edited state is written over it", () => {
+  const node = { __panoSceneStateV2: true };
+  const options = { coverage: 360, backgroundColor: "#00ff00", active: {} };
+  for (const current of ["{not json", '{"version":3,"stickers":[]}', "[]"]) {
+    assert.equal(readableStateText(current), false, current);
+    for (const fps of [undefined, 30]) {
+      const state = parseSceneEditorState(current, { ...options, fps });
+      assert.equal(editorStateWrite(node, state, current), null, current);
+      assert.equal(editorStateWrite(node, state, current, { rebased: true }), null, current);
+    }
+    const edited = parseSceneEditorState(current, options);
+    edited.stickers.push(newWorldSceneSticker("sticker_1", { kind: "file", filename: "a.glb" }, { position: [0, 0, -3], rotation: { yaw_deg: 0, pitch_deg: 0, roll_deg: 0 }, scale: 1 }));
+    assert.equal(JSON.parse(editorStateWrite(node, edited, current)).stickers.length, 1);
+  }
+  assert.equal(readableStateText(""), true);
+  assert.equal(readableStateText(JSON.stringify(loadSceneState(null))), true);
 });
 
 // ADR 0030: Panorama Studio's state gets its Scene id when it is written, and keeps it after.

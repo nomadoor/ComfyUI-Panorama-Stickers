@@ -347,3 +347,19 @@ test("Move's XZ square drags the object on the level plane only; its Y stays", a
   expect((await stickers(page))[0].position).toEqual(before);
   expect(problems).toEqual([]);
 });
+
+// docs/studio-ui.md "閉じ方": a state_json that cannot be read opens read-only with a warning, and closing leaves it.
+test("a node whose state_json cannot be read opens read-only with a warning; closing leaves the text byte for byte", async ({ page }, testInfo) => {
+  const { problems } = await open(page, testInfo);
+  for (const text of ["{not json", '{"version":3,"stickers":[]}']) {
+    await page.evaluate((value) => window.__studio.reopen(value), text);
+    await expect(page.locator(".pano-studio-notice")).toHaveText("This node's saved state can't be read, so changes won't be saved");
+    await expect(page.locator(".pano-studio-notice")).toHaveAttribute("data-notice", "warning");
+    await expect(page.locator('[data-tool="add"]')).toBeDisabled();
+    expect(await page.evaluate(() => window.__studio.session.readOnly)).toBe(true);
+    await page.keyboard.press("Escape");
+    await expect(page.locator("[data-stage-canvas]")).toHaveCount(0);
+    expect(await page.evaluate(() => window.__studio.node.widgets[0].value)).toBe(text);
+  }
+  expect(problems).toEqual([]);
+});
