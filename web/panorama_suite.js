@@ -32704,7 +32704,7 @@ const r6 = ["tabindex", "aria-label", "aria-valuenow", "aria-valuetext", "aria-v
             "data-action": "shortcuts",
             icon: qe(Oe).help,
             label: "Shortcuts",
-            tip: "Shortcuts (?)",
+            tip: "Shortcuts",
             lit: e.helpOpen,
             "aria-expanded": e.helpOpen ? "true" : "false",
             "aria-controls": "pano-studio-shortcuts",
