@@ -18,7 +18,6 @@ import { cameraShot, normalizeCoverageValue, setCameraShot } from "../pano_edito
 import { preloadEditorView } from "../pano_editor_view.js";
 import { DRAW_REASON } from "../pano_frame_scheduler.js";
 import { stageOwnsKey } from "../pano_key_focus.js";
-import { guardEditorKeys } from "./key_guard.js";
 import { editorSession, noteStudioEditorOpen, peekNodeSurface } from "../pano_node_bridge.js";
 import {
   backgroundLengthMedia,
@@ -39,6 +38,7 @@ import { createAddFiles } from "./add_files.js";
 import { createLoadReveal } from "./load_reveal.js";
 import { cameraOf, defaultCamera, groundOf } from "./defaults.js";
 import { createDropInput } from "./drop_input.js";
+import { guardEditorKeys } from "./key_guard.js";
 import { gizmoModeOfKey, selectedKind } from "./selection_bar.js";
 import { createStudioSession } from "./session.js";
 import { editorKeyAction } from "./shortcuts.js";
@@ -68,15 +68,6 @@ function linked(node, names) {
 
 // The inputs whose VIDEO sets the Timeline fps (pano_video_fps.js timelineFpsLocked).
 const VIDEO_FPS_INPUTS = [...BACKGROUND_INPUTS, "sticker"];
-// The Keyframes' copy, cut and paste with Ctrl / Cmd: "c", "x" or "v" by the key's letter, by its place on the keyboard
-// for a layout whose letters are not Latin; else null.
-const CLIPBOARD_CODES = Object.freeze({ KeyC: "c", KeyX: "x", KeyV: "v" });
-const ctrlOrMeta = (event) => !!(event.ctrlKey || event.metaKey);
-function clipboardLetter(event) {
-  const key = String(event.key || "").toLowerCase();
-  if (key === "c" || key === "x" || key === "v") return key;
-  return /^[a-z]$/.test(key) ? null : CLIPBOARD_CODES[event.code] ?? null;
-}
 
 // The node's state v2 (a state that cannot be read opens as the empty state, as the old editor does), rebased to the
 // fps a VIDEO set in the node's current result (docs/timeline-ui.md "タイムラインの表示"). `media` reads the result.
@@ -459,13 +450,13 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
   let timeline = null;
   // The copied Keyframes (docs/timeline-ui.md "Keyframe のコピーと貼り付け"): the editor's own, kept while it is open.
   let keyClipboard = null;
-  // Ctrl / Cmd + C, X or V (`letter`): returns whether the editor took the key.
-  function keyClipboardKey(letter) {
-    if (letter === "v") return !!keyClipboard && !!timeline?.pasteKeys(keyClipboard);
+  // The keys "copy-keys", "cut-keys" and "paste-keys" (shortcuts.js): returns whether the editor took the key.
+  function keyClipboardKey(action) {
+    if (action === "paste-keys") return !!keyClipboard && !!timeline?.pasteKeys(keyClipboard);
     const copied = timeline?.copyKeys() ?? null;
     if (!copied) return false;
     keyClipboard = copied;
-    if (letter === "x") timeline.handleDelete();
+    if (action === "cut-keys") timeline.handleDelete();
     return true;
   }
   function deleteSelection() {
@@ -573,16 +564,15 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
   let releaseKeyGuard = () => {};
   function onKeyDown(event) {
     if (!rootElement || !stageOwnsKey(event, rootElement)) return;
-    if (ctrlOrMeta(event) && !event.altKey && !event.shiftKey && clipboardLetter(event)) {
+    const action = editorKeyAction(event);
+    if (!action || action === "escape") return;
+    if (action === "copy-keys" || action === "cut-keys" || action === "paste-keys") {
       // Not taken, C and X keep the browser's copy of selected text; V never pastes (nothing outside a field takes it).
-      const letter = clipboardLetter(event);
-      if (!keyClipboardKey(letter) && letter !== "v") return;
+      if (!keyClipboardKey(action) && action !== "paste-keys") return;
       event.preventDefault();
       event.stopPropagation();
       return;
     }
-    const action = editorKeyAction(event);
-    if (!action || action === "escape") return;
     if (action.startsWith("gizmo:")) {
       // The gizmo's Move, Rotate, Scale for the selected object that has them.
       const mode = action.slice("gizmo:".length);

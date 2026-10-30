@@ -10,6 +10,20 @@ import { ROTATE_SNAP_DEG } from "./view_scale.js";
 const ctrlOrMeta = (event) => !!(event.ctrlKey || event.metaKey);
 const keyOf = (event) => String(event.key || "");
 
+// The letter of Ctrl / Cmd + C, X or V: the key's letter, or its place on the keyboard for a layout whose letters are
+// not Latin; else null.
+const CLIPBOARD_CODES = Object.freeze({ KeyC: "c", KeyX: "x", KeyV: "v" });
+function clipboardLetter(event) {
+  const key = keyOf(event).toLowerCase();
+  if (key === "c" || key === "x" || key === "v") return key;
+  return /^[a-z]$/.test(key) ? null : CLIPBOARD_CODES[event.code] ?? null;
+}
+const clipboardKey = (action, letter) => Object.freeze({
+  action,
+  keys: [["Mod", letter.toUpperCase()]],
+  match: (event) => ctrlOrMeta(event) && !event.altKey && !event.shiftKey && clipboardLetter(event) === letter,
+});
+
 // { action, keys, match(event) }. keys: the key combinations that do it, each a list of key caps as the list shows
 // them ("Mod" is Ctrl, or ⌘ on macOS). The entries are disjoint: one key event matches one entry at most.
 export const EDITOR_KEYS = Object.freeze([
@@ -40,6 +54,10 @@ export const EDITOR_KEYS = Object.freeze([
     keys: [[entry.key]],
     match: (event) => !ctrlOrMeta(event) && !event.altKey && event.key === entry.key,
   })),
+  // The Keyframes' copy, cut and paste at the playhead (docs/timeline-ui.md "Keyframe のコピーと貼り付け").
+  clipboardKey("copy-keys", "c"),
+  clipboardKey("cut-keys", "x"),
+  clipboardKey("paste-keys", "v"),
   // "?" opens and closes the list (Shift types it on most layouts, so Shift is allowed).
   Object.freeze({
     action: "shortcuts",
@@ -131,6 +149,7 @@ export function shortcutGroups({ tab = "3d", panorama = false, readOnly = false,
   const timeline = [
     keyRow("Play / pause", "play"),
     gestureRow("Add to selection", [["Shift", "Click"], ["Shift", "Drag"]], "add-keyframes"),
+    ...(edits ? [keyRow("Copy keyframes", "copy-keys"), keyRow("Cut keyframes", "cut-keys"), keyRow("Paste at the playhead", "paste-keys")] : []),
   ];
   const editor = [
     ...(edits ? [keyRow("Undo", "undo"), keyRow("Redo", "redo"), gestureRow(`Fine steps (×${FINE_FACTOR})`, [["Shift", "Drag"]], "fine")] : []),

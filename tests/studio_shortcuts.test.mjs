@@ -56,6 +56,9 @@ test("the list shows each key as the table has it, Ctrl as ⌘ on macOS", () => 
   assert.deepEqual(rowOf(full, "Orbit").keys, [["Alt", "Drag"], ["Alt", "Right-drag"]]);
   assert.deepEqual(rowOf(full, "Show shortcuts").keys, [["?"]]);
   assert.deepEqual(rowOf(full, "Step back / close").keys, [["Esc"]]);
+  assert.deepEqual(rowOf(full, "Copy keyframes").keys, [["Ctrl", "C"]]);
+  assert.deepEqual(rowOf(full, "Cut keyframes").keys, [["Ctrl", "X"]]);
+  assert.deepEqual(rowOf(mac, "Paste at the playhead").keys, [["⌘", "V"]]);
 });
 
 test("the groups come in their order, and the numbers in the rows are their owners'", () => {
@@ -78,7 +81,7 @@ test("the list shows only what works on the screen: the tab, Panorama mode, a re
   assert.deepEqual(erp[0].rows, []);
   assert.ok(!labels(erp).includes("Select"), "nothing selects in Panorama mode's frame");
   const readOnly = shortcutGroups({ tab: "3d", panorama: false, readOnly: true, mac: false });
-  for (const label of ["Undo", "Redo", "Delete", "Move / Rotate / Scale", `Fine steps (×${FINE_FACTOR})`]) {
+  for (const label of ["Undo", "Redo", "Delete", "Move / Rotate / Scale", `Fine steps (×${FINE_FACTOR})`, "Copy keyframes", "Cut keyframes", "Paste at the playhead"]) {
     assert.ok(!labels(readOnly).includes(label), `${label} is not shown read-only`);
   }
   assert.ok(labels(readOnly).includes("Show shortcuts") && labels(readOnly).includes("Play / pause"));
@@ -100,4 +103,15 @@ test("editorKeyAction: one action per key event, as the handlers had them", () =
   assert.equal(editorKeyAction(key({ key: "?", ctrlKey: true, shiftKey: true })), null);
   assert.equal(editorKeyAction(key({ key: "?", altKey: true, shiftKey: true })), null);
   assert.equal(editorKeyAction(key({ key: "w", code: "KeyW" })), null, "the movement keys are the stage's");
+  // The Keyframes' copy, cut and paste (docs/timeline-ui.md "Keyframe のコピーと貼り付け"): by the key's letter, by its
+  // place for a layout whose letters are not Latin.
+  assert.equal(editorKeyAction(key({ key: "c", code: "KeyC", ctrlKey: true })), "copy-keys");
+  assert.equal(editorKeyAction(key({ key: "x", code: "KeyX", metaKey: true })), "cut-keys");
+  assert.equal(editorKeyAction(key({ key: "v", code: "KeyV", ctrlKey: true })), "paste-keys");
+  assert.equal(editorKeyAction(key({ key: "м", code: "KeyV", ctrlKey: true })), "paste-keys");
+  assert.equal(editorKeyAction(key({ key: "c", code: "KeyI", ctrlKey: true })), "copy-keys");
+  assert.equal(editorKeyAction(key({ key: "j", code: "KeyC", ctrlKey: true })), null);
+  assert.equal(editorKeyAction(key({ key: "v", code: "KeyV", ctrlKey: true, shiftKey: true })), null);
+  assert.equal(editorKeyAction(key({ key: "v", code: "KeyV", ctrlKey: true, altKey: true })), null);
+  assert.equal(editorKeyAction(key({ key: "v", code: "KeyV" })), null);
 });
