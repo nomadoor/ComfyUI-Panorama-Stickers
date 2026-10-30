@@ -912,12 +912,13 @@ export function createStage({
     // [add-drop] What Add and the drop need of the view (studio/add_files.js): the three.js camera, the stage's CSS
     // size, the pose (its T), the world bound, and the GPU pick of the World content under a point (null while the
     // view is not ready).
+    // They are the 3D tab's (the editor takes no file in the Camera tab).
     landing: {
-      camera: () => cameraNow(),
+      camera: () => stageCamera(camera.pose(), size.width, size.height, camera.bound()),
       size: () => size,
       pose: () => camera.pose(),
       bound: () => camera.bound(),
-      pick: ({ x, y }) => (editorView.ready ? editorView.pick(cameraNow(), x, y, size.width, size.height) : null),
+      pick: ({ x, y }) => (editorView.ready ? editorView.pick(stageCamera(camera.pose(), size.width, size.height, camera.bound()), x, y, size.width, size.height) : null),
     },
     // The pose to remember on close: where an eased move goes.
     destination: () => camera.destination(),

@@ -160,3 +160,16 @@ test("a dragged 3D file shows its box on the ground and drops into the World", a
   expect(Math.hypot(placed.position[0], placed.position[2])).toBeGreaterThan(40);
   expect(problems).toEqual([]);
 });
+
+test("the Camera tab takes no file: no mark while dragging, nothing placed on the drop, Add disabled", async ({ page }, testInfo) => {
+  const { problems, ground } = await open(page, testInfo);
+  await page.locator('.pano-studio-tabs [data-value="camera"]').click();
+  await page.evaluate(({ x, y }) => window.__studio.drag("dragover", "photo", x, y), ground);
+  await page.waitForTimeout(200);
+  await expect(page.locator("[data-drop-label]")).toHaveCount(0);
+  await page.evaluate(({ x, y }) => window.__studio.drag("drop", "photo", x, y), ground);
+  await page.waitForTimeout(500);
+  expect(await stickers(page)).toEqual([]);
+  await expect(page.locator('[data-tool="add"]')).toHaveAttribute("aria-disabled", "true");
+  expect(problems).toEqual([]);
+});
