@@ -1,5 +1,5 @@
 <script setup>
-import { VIEW_UNAVAILABLE_MESSAGE } from "../pano_preview_view.js";
+import { VIEW_UNAVAILABLE_MESSAGE } from "../../pano_preview_view.js";
 </script>
 
 <template>

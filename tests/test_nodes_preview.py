@@ -298,10 +298,11 @@ class TestNodesPreview(unittest.TestCase):
 
     def test_editor_lifecycle_is_delegated_to_the_extension_boundary(self):
         editor_js = editor_source()
+        main_js = self._web_source_path("main.js").read_text(encoding="utf-8")
         assert 'from "./pano_editor_extension.js";' in editor_js
-        assert "createPanoEditorExtension" in editor_js
         assert "queuePendingStickerOperation" in editor_js
-        assert "app.registerExtension(createPanoEditorExtension({" in editor_js
+        assert "createPanoEditorExtension({" in main_js
+        assert "app.registerExtension(extension);" in main_js
         assert "function installEditorButton" not in editor_js
         assert "function installStandalonePreviewInstance" not in editor_js
 

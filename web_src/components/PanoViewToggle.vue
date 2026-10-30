@@ -1,5 +1,5 @@
 <script setup>
-import SvgIcon from "./SvgIcon.vue";
+import SvgIcon from "./shared/SvgIcon.vue";
 
 // A disabled tab is aria-disabled rather than disabled, so its tooltip can still say why (Panorama
 // Studio's Frame tab, pano_editor_ui_state.js frameViewButton); the editor ignores its clicks.

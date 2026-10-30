@@ -4,7 +4,7 @@ import { ICON } from "../icons.js";
 import { TIMELINE_FPS_MAX, TIMELINE_FPS_MIN, TIMELINE_LENGTH_MAX } from "../pano_scene_state.js";
 import { clusterFrames, keyedAt, timelineTicks, timelineTimeLabel } from "../pano_timeline.js";
 import PanoTimelineGroup from "./PanoTimelineGroup.vue";
-import SvgIcon from "./SvgIcon.vue";
+import SvgIcon from "./shared/SvgIcon.vue";
 
 // The Timeline of Panorama Studio's editor. It draws buildTimelineModel() and reports what the
 // pointer does as Timeline frames; the editor owns every state change. playhead is { frame, playing },

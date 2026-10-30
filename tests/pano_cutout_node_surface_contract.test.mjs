@@ -14,7 +14,7 @@ test("node surface reuses the shared aspect picker and existing icon components"
 
   assert.ok(nodeSurface.includes('import PanoCutoutAspectPicker from "./PanoCutoutAspectPicker.vue"'));
   assert.ok(frameRail.includes('import PanoCutoutAspectPicker from "./PanoCutoutAspectPicker.vue"'));
-  assert.ok(nodeSurface.includes('import PanoIconButton from "./PanoIconButton.vue"'));
+  assert.ok(nodeSurface.includes('import PanoIconButton from "./shared/PanoIconButton.vue"'));
   assert.ok(nodeSurface.includes("Full Editor"));
   assert.ok(nodeSurface.includes("model.rollLabel"));
   assert.ok(nodeSurface.includes('aria-label="Current roll"'));

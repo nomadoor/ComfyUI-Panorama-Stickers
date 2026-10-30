@@ -3,7 +3,7 @@ import { computed } from "vue";
 import { ICON } from "../icons.js";
 import PanoEasingGraph from "./PanoEasingGraph.vue";
 import PanoUpstreamOrigin from "./PanoUpstreamOrigin.vue";
-import SvgIcon from "./SvgIcon.vue";
+import SvgIcon from "./shared/SvgIcon.vue";
 
 const props = defineProps({
   nodeTitle: { type: String, default: "Panorama Stickers" },

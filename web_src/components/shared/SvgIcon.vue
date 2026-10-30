@@ -1,6 +1,6 @@
 <script setup>
 import { computed } from "vue";
-import { ICON_PATHS } from "../icons.js";
+import { ICON_PATHS } from "../../icons.js";
 
 const props = defineProps({
   icon: { type: String, default: "" },

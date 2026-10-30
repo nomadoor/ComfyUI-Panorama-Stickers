@@ -1,0 +1,67 @@
+/* The new UI's stylesheet (ADR 0044; values: docs/design.md "新しい UI の見た目"). Loaded by
+   web_src/studio/stylesheet.js. The old UI's web/pano_editor.css is not changed for the new UI. */
+
+.pano-studio-editor {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  display: flex;
+  flex-direction: column;
+  background: var(--base-background, #1b1c1e);
+  color: var(--base-foreground, #dcdce0);
+  font-family: "Plus Jakarta Sans", "Geist", system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.pano-studio-editor-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 8px 8px 16px;
+  border-bottom: 1px solid var(--interface-stroke, #2a2b2d);
+}
+
+.pano-studio-editor-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.pano-studio-editor-body {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted-foreground, #8e8f93);
+  font-size: 13px;
+}
+
+.pano-studio-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.pano-studio-icon-btn:hover {
+  background: var(--secondary-background, #2c2c2e);
+}
+
+.pano-studio-icon-btn:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 1px;
+}
+
+.pano-studio-icon-btn svg {
+  width: 18px;
+  height: 18px;
+  stroke-width: 2;
+}

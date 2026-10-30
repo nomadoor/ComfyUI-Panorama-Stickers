@@ -1,6 +1,6 @@
 <script setup>
-import PanoIconButton from "./PanoIconButton.vue";
-import SvgIcon from "./SvgIcon.vue";
+import PanoIconButton from "./shared/PanoIconButton.vue";
+import SvgIcon from "./shared/SvgIcon.vue";
 
 defineProps({
   buttons: { type: Array, default: () => [] },

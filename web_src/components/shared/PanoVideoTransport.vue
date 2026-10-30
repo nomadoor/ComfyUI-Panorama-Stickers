@@ -1,6 +1,6 @@
 <script setup>
 import { computed, ref, watch } from "vue";
-import { ICON } from "../icons.js";
+import { ICON } from "../../icons.js";
 import PanoIconButton from "./PanoIconButton.vue";
 
 const props = defineProps({

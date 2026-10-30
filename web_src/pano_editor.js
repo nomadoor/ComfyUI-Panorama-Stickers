@@ -38,7 +38,7 @@ import {
   markImageReady,
 } from "./pano_image_state.js";
 import { createComfyMediaAdapter } from "./pano_comfy_media.js";
-import { createPanoEditorExtension, flushPanoStateProducers } from "./pano_editor_extension.js";
+import { flushPanoStateProducers } from "./pano_editor_extension.js";
 import { isNodeOutputMediaCurrent } from "./pano_preview_video.js";
 import { isStickerImageFile } from "./pano_sticker_file_import.js";
 import {
@@ -1003,8 +1003,9 @@ const sceneViewerMedia = {
 };
 const openSceneViewer = (node) => openSceneViewerWindow(node, sceneViewerMedia);
 
-app.registerExtension(createPanoEditorExtension({
-  app,
+// What the old UI gives the node registration (createPanoEditorExtension). web_src/main.js registers it and
+// decides which editor opens (ADR 0044).
+export const oldEditorHooks = Object.freeze({
   openEditor: showEditor,
   attachStickers: attachStickersNodePreview,
   attachCutout: attachCutoutPreview,
@@ -1013,6 +1014,5 @@ app.registerExtension(createPanoEditorExtension({
   openSceneViewer,
   onSceneViewerExecuted: touchSceneViewer,
   restoreOutput: restoreNodeOutput,
-  requestFrame: requestAnimationFrame,
   enableStickersPreview: ENABLE_STICKERS_NODE_PREVIEW,
-}));
+});
