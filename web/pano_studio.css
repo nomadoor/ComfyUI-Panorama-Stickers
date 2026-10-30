@@ -1446,7 +1446,7 @@
 }
 .pano-studio-at-buttons { position: absolute; right: var(--studio-float-inset); bottom: var(--studio-float-inset); }
 
-/* The view knobs' column and "?" below it. */
+/* The view knobs' column and "?" below it, one float with a line between them. */
 .pano-studio-nav {
   display: flex;
   flex-direction: column;
