@@ -73,8 +73,8 @@ export function selectionBar({ state, row, mode = "translate", readOnly = false 
   const edits = readOnly || locked;
   const first = kind === "sky"
     ? [
-      button("front", ICON.bring_front, "Bring to front", { disabled: edits }),
-      button("back", ICON.send_back, "Send to back", { disabled: edits }),
+      button("front", ICON.order_front, "Bring to front", { disabled: edits }),
+      button("back", ICON.order_back, "Send to back", { disabled: edits }),
     ]
     : gizmo;
   const copy = [

@@ -4,7 +4,8 @@ import StudioFloatGroup from "./StudioFloatGroup.vue";
 import StudioIconButton from "./StudioIconButton.vue";
 
 // The bar at the bottom center of the stage (docs/studio-ui.md "下の中央のバー"): the selected object's icon and name
-// at the left, then its buttons in groups. Presentational: `model` (studio/selection_bar.js selectionBar()) in, `press`
+// at the left (one width for every name, a long one cut with an ellipsis and whole in the tooltip), then its buttons
+// in groups. Presentational: `model` (studio/selection_bar.js selectionBar()) in, `press`
 // out with the button's key.
 defineProps({
   model: { type: Object, required: true },
@@ -14,7 +15,7 @@ const emit = defineEmits(["press"]);
 
 <template>
   <StudioFloatGroup layout="bar" label="Selection" :data-kind="model.kind">
-    <span class="pano-studio-float-label" data-bar-name>
+    <span class="pano-studio-float-label" data-bar-name :title="model.name">
       <SvgIcon :icon="model.icon" />
       <span class="pano-studio-bar-name">{{ model.name }}</span>
     </span>
