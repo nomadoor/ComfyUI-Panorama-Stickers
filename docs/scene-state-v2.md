@@ -28,6 +28,7 @@ Panorama Studio の `state_json`（状態 v2）、Camera を持つ Panorama Stud
 | `port` の Sticker の vFOV | `core/render.py` の `StickerSource`（`derive_vfov`）、式は `core/math.py` `vfov_from_hfov` | `pano_editor_state.js` `skyStickerVfov` | `tests/test_sky_sticker_vfov_parity.py` |
 | ペイントの `version` と group の `z_index` の読み方 | `core/paint_state.py` `normalize_painting_state`・`_js_round` | `web_src/pano_paint_types.js` `normalizePaintingState` | フィクスチャ `tests/fixtures/painting_normalize.json` を読む `tests/test_paint_state_parity.py`・`tests/pano_paint_state_parity.test.mjs` |
 | ペイントのストロークの筆の値（`hardness`・`flow`・`spacing` の `null`、筆の形の項目の既定値と範囲） | `core/paint_state.py` `_normalize_brush` | `web_src/pano_paint_types.js` `normalizeBrush` | フィクスチャ `tests/fixtures/paint_stroke_brush.json` を読む `tests/test_paint_state_parity.py`・`tests/pano_paint_state_parity.test.mjs` |
+| ペイントの数値の読み方（ストローク・点・ラスタの数値と、不正なときの扱い） | `core/paint_state.py` `_finite_float` | `web_src/pano_paint_types.js` `finiteNumber` | フィクスチャ `tests/fixtures/painting_numbers.json` を読む `tests/test_paint_state_parity.py`・`tests/pano_paint_state_parity.test.mjs` |
 | Sky の重なり順 | `core/display_list.py` `build_display_entries` | ペイントの並びは `web_src/pano_paint_layers.js` `skyPaintLayers` | `tests/test_display_list_core.py`、`tests/test_paint_layers_parity.py` |
 | `file` の Source が 3D ファイルか | `scene_state.py` `is_3d_file_source`・`FILE_3D_EXTENSIONS` | `pano_scene_state.js` `is3dFileSource`・`FILE_3D_EXTENSIONS` | フィクスチャ `file_3d_formats` を専用に読む `test_scene_state_parity.py`・`pano_scene_state.test.mjs` |
 
@@ -40,6 +41,7 @@ Python と JS の両方の test が同じファイルを読む。Python と JS �
 - 整数のフィールド（`frame`、Clip range、`length`、Sticker の `z_index`）は、数値を `floor(x + 0.5)` で整数に丸めて保存する。fps の再基準化で Timeline frame を整数に丸めるときも、同じ `floor(x + 0.5)` を使う。Keyframe の `frame` と Clip range の `start`・`in`・`duration` は、丸めたあと ±10,000,000（`TIMELINE_FRAME_MAX`）の内に寄せる。
 - JSON の `NaN`・`Infinity`・`-Infinity` のリテラルは受け付けない（JS の `JSON.parse` と同じく、JSON として読めないものとして扱う）。
 - 不正な値は、そのフィールドの既定値に戻す。範囲外の値は範囲の端に寄せる。状態全体を捨てることはしない。
+- 旧ノードの `merge_state`・`parse_sticker_state`（`core/state.py`）も、同じ JSON の読み方（`scene_state.py` の `parse_json`。`NaN`・`Infinity` のリテラルは JSON として読めず、float にできない整数は非有限値）で読み、一つの値のために状態全体を捨てない。
 - 正規化は冪等である。`load_scene_state` の結果をもう一度読むと同じ結果になる。
 - 未知のフィールドは読み込み時に捨てる。状態 v2 には、どのコードも読まない予約項目を置かない。Clip range 外の保持やループなどは、実装するときに項目を追加する。
 - 出力のキーの順序は、この文書の表の順とする（Python と JS で同じ）。
@@ -111,7 +113,7 @@ Python と JS の両方の test が同じファイルを読む。Python と JS �
 | `scene.animation` | オブジェクト または欠け | 欠け | `scene` 入力の 3D ファイルの glTF のアニメーション（ADR 0043）。形は下の Sticker の `animation` と同じ |
 | `stickers` | 配列 | `[]` | `sky` の層は `z_index`（ペイントと共通の軸）で並べ、同じ値ならリストの順（先頭が奥）。`world` の Sticker は奥行きで重なる |
 | `next_sticker_id` | 整数 | 下記 | 次に加える Sticker の番号 `n`（`sticker_<n>`）。下記「Sticker の id の採番」 |
-| `painting` | オブジェクト | 空のペイント | 既存の `normalize_painting_state` / `normalizePaintingState` で正規化する。`sky` の静的な層。`version` は保存された値によらず常に `1`。group とラスタ（`raster_objects`）の `z_index` は、`z_index`、次に `zIndex` のうち最初の有限の JSON の数値（真偽値と文字列は数えない。double にできない大きな整数は有限でない）で、どちらにも無いときは groups（raster_objects）の中の順番にする。エディタは数値を書くので、文字列はテキストを手で書いた状態にだけ現れる。group の値は `Math.round` と同じ丸め（半分は +∞ の向き。−2.5 は −2）、ラスタの値は丸めず、どちらも 0 以上に寄せる。group の `locked` はエディタだけが使う（ノードは描画に使わない）ので、Python の読み込みは持たない |
+| `painting` | オブジェクト | 空のペイント | 既存の `normalize_painting_state` / `normalizePaintingState` で正規化する。`sky` の静的な層。`version` は保存された値によらず常に `1`。group とラスタ（`raster_objects`）の `z_index` は、`z_index`、次に `zIndex` のうち最初の有限の JSON の数値（真偽値と文字列は数えない。double にできない大きな整数は有限でない）で、どちらにも無いときは groups（raster_objects）の中の順番にする。エディタは数値を書くので、文字列はテキストを手で書いた状態にだけ現れる。group の値は `Math.round` と同じ丸め（半分は +∞ の向き。−2.5 は −2）、ラスタの値は丸めず、どちらも 0 以上に寄せる。group の `locked` はエディタだけが使う（ノードは描画に使わない）ので、Python の読み込みは持たない。ほかの数値は下記「ペイントの数値」 |
 | `painting_layer` | オブジェクト または `null` | `null` | ペイントのラスタ画像の参照。中身はそのまま保つ |
 | `painting_visible` | 真偽値 | `true` | 真偽値でなければ既定値。`false` ならペイント（ストローク・ラスタ・マスク）を描かず、MASK にも出さない |
 | `ground` | 数値 または欠け | 欠け | 地面の高さ（World の y。ADR 0046）。数でない値・有限でない値は欠けとして読む。欠けているときは、上流の Scene があれば上流の層の `ground`（最も下流で `ground` を持つ層のもの）、無ければ `GROUND_DEFAULT`（-1.6）として読む。正規化の結果には欠けのまま残し、読む側（評価関数と、下の読む場所）が既定の規則で値を求める。使う人が「ここを地面にする」で変えたときだけ値が入る（`docs/studio-ui.md` の Scene のカード、`docs/space-and-view.md` の目の高さ `E`）。読む場所：エディタのグリッドと置く物の位置（JS）、ノードが置く 3D の `port` の Sticker の位置（Python `nodes.py` の `_world_port_sticker`。ADR 0046 の「ノードが置く 3D の `port` の Sticker も地面の上に置く」）、`PANO_SCENE` の下流での上流の層の `ground`（Python・JS） |
@@ -313,12 +315,22 @@ Sticker の `id` は、一度使った値を別の Sticker に使い直さない
 - 3D ファイルの Source を持つ Sticker は `world` の Sticker である（上の「`world` の 2D の素材」の段落）。状態の読み込みは `placement` を書き換えない。`sky` の Sticker が 3D ファイルの Source を持つ状態は、ノードが描かずに警告する（`docs/studio-node.md` の「3D ファイルの `file` の Source」）。
 - 読み方は、ノードが `docs/studio-node.md` の「3D ファイルの `file` の Source」、エディタが `docs/threejs-spark-integration.md` の「空間の表示」で決める。画像の `file` の Source は、ノードが `core/stickers.py` の `load_source_rgba` で読む。
 
+### ペイントの数値
+
+ストロークの `size`・`opacity`・`createdAt`・`radiusValue`、点の `u`・`v`・`t`・`widthScale`・`pressureLike`、`color` の成分、
+ラスタの `bbox`・`transform` も、共通の規則どおり有限の JSON の数値だけを受け付ける（文字列・真偽値・配列は不正）。
+
+- 不正な `size`・`opacity`・`u`・`v`・`bbox` の値は、そのストローク（ラスタ）を捨てる。
+- 不正な `createdAt` は 0、`radiusValue` は `null` にし、`widthScale`・`pressureLike` は持たない。`transform` の `du`・`dv`・`rot_deg` は 0、`scale` は 1 にする。
+- 不正な点の `t` は 0 にする。`color` の成分は、不正な `r`・`g`・`b` を 0、`a` を 1 にする（`color` がオブジェクトでないときの扱いは変えない）。
+
 ### ペイントのストロークの筆の値
 
 ペイントのストローク（`painting.paint.strokes[]`・`painting.mask.strokes[]`）は、描いたときの筆の値を自分で持つ（`pano_brush_presets.js` の
 `applyPresetToStroke` が書く）。読み込み（`normalize_painting_state` / `normalizePaintingState`）はそれを保ち、開き直しても同じ筆で描き直す。
 Python のラスタ化（`core/painting.py`。`painting_layer` が無いときだけ使う）も、正規化したストロークの筆の形を読み、
 描く側と同じく `null`・欠けだけを既定値として読む（`0` の `hardness`・`flow` と `aspect` を既定値に読み替えない）。
+ストロークの `opacity` も、無いときだけ 1 として描き、`0` は描かない（エディタの `stroke.opacity ?? 1` と同じ）。
 
 `hardness`・`flow`・`spacing` は、ストロークが常に持つ。JSON の数値（有限）ならその値をそのまま保ち、欠け・`null`・数値でない値は `null` にする。
 `null` は「描く側の既定値」を意味し、`0` に読み替えない（`0` は柔らかさ 0、流量 0 という別の値である）。描く側の既定値は、`hardness` 0.9、
