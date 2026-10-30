@@ -485,7 +485,8 @@ Camera タブでは、Undo・Redo のほかは同じ席に出したまま無効�
   Camera タブでは同じ操作が Camera を動かすことを一行で添える。
 - 物（`docs/editor-interaction.md`、切り替えの後はこの文書の「下の中央のバー」）：クリック（選ぶ）、1・2・3（Move・Rotate・Scale）、
   Delete、Ctrl / Cmd＋Z・Shift＋Ctrl / Cmd＋Z。
-- 時間（`docs/timeline-ui.md`）：Space（再生と一時停止）、Shift＋クリック（Keyframe を選び足す）。
+- 時間（`docs/timeline-ui.md`）：Space（再生と一時停止）、Shift＋クリック（Keyframe を選び足す）、Ctrl / Cmd＋C・X・V（Keyframe の
+  コピー・切り取り・再生ヘッドへの貼り付け。`docs/timeline-ui.md` の「Keyframe のコピーと貼り付け」）。
 - 閉じる：Escape（内側のものから一つずつ）。
 
 ## 消すもの（新しい UI に作らないもの）
