@@ -35,6 +35,7 @@ import { loadSceneState } from "../pano_scene_state.js";
 import { sceneFilesOf, stateAnimationClips } from "../pano_space.js";
 import { sceneAtVideoFps, timelineFpsLocked, videoTimelineFps } from "../pano_video_fps.js";
 import { createAddFiles } from "./add_files.js";
+import { createLoadReveal } from "./load_reveal.js";
 import { cameraOf, defaultCamera, groundOf } from "./defaults.js";
 import { createDropInput } from "./drop_input.js";
 import { gizmoModeOfKey, selectedKind } from "./selection_bar.js";
@@ -322,13 +323,26 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
   const sceneBox = (url) => stage?.sceneBox(url) ?? null;
   // [add-drop] A placed image draws from its decoded file until its uploaded file has loaded (add_files.js).
   const mediaOf = (sticker) => stageMedia.media(sticker) ?? addFiles.media(sticker);
+  // [add-drop] A placed 3D file's wait and reveal (load_reveal.js): its guide's band while it loads, then it fades in.
+  const reducedMotion = typeof window !== "undefined" && window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;
+  const reveal = createLoadReveal({ now: () => performance.now(), reducedMotion: () => !!reducedMotion?.matches });
+  // The item of a placed 3D file shows as far as its reveal has gone (0 until it has drawn).
+  function revealed(value) {
+    const requests = value.space.fileStickers.map((request) => {
+      reveal.observe(request.id, !!sceneBox(request.url));
+      const factor = reveal.opacity(request.id);
+      return factor < 1 ? { ...request, opacity: request.opacity * factor } : request;
+    });
+    return { ...value, space: { ...value.space, fileStickers: requests } };
+  }
   let contentCache = null;
   function content() {
+    reveal.retain(new Set(session.state.stickers.map((sticker) => sticker.id)));
     const files = sceneFiles();
     // The `scene` result can arrive while the editor is open (the node ran): its files are part of the key.
     const key = [session.state, view.playhead, view.imageSizes, view.animations, files ? files.urls.join("\n") : ""];
     if (contentCache && !contentCache.pending && contentCache.key.every((item, index) => item === key[index])) return contentCache.value;
-    const value = stageContent(session.state, view.playhead, { media: mediaOf, editorFile: stageMedia.editorFile, sceneFiles: files, sceneBox });
+    const value = revealed(stageContent(session.state, view.playhead, { media: mediaOf, editorFile: stageMedia.editorFile, sceneFiles: files, sceneBox }));
     // A World item may still be loading (no box yet): the content is made again on the next frame.
     const pending = value.space.fileStickers.length > 0 || !!value.space.scene;
     contentCache = { key, value, pending };
@@ -399,6 +413,7 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     late: () => {
       if (!openNodes.has(node)) save();
     },
+    reveal,
   });
   let dropInput = () => {};
 
@@ -587,6 +602,7 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
           mode: () => view.gizmoMode,
           tab: () => view.tab,
           readOnly: () => readOnly,
+          loading: reveal,
         },
         cameraTab,
         root,
@@ -598,6 +614,7 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
         selected: () => selectionOf(session.selection.row),
         ui,
         onEscape,
+        motion: reveal,
       });
       // [add-drop] Files dragged over the stage's window.
       dropInput = createDropInput({ element: canvas.parentElement, canvas, root, add: addFiles, takes: () => !readOnly && view.tab === "3d" });

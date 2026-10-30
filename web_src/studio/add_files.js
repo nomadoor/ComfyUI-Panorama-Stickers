@@ -61,7 +61,8 @@ export function dragKind(items) {
 // { image, width, height }. queue(id, operation): runs the upload so a queued prompt waits for it
 // (pano_editor_extension.js queuePendingStickerOperation). changed(): the state or `ui` changed (the editor syncs).
 // stopPlayback(), notice(text): the playback stops; a stopped notice shows. late(): a placement was settled after the
-// editor closed (the editor writes it).
+// editor closed (the editor writes it). reveal: load_reveal.js createLoadReveal()'s, told what is placed and its box.
+// The shell may leave it out; then nothing is told.
 export function createAddFiles({
   session,
   ui,
@@ -80,6 +81,7 @@ export function createAddFiles({
   stopPlayback = () => {},
   notice = () => {},
   late = () => {},
+  reveal = null,
   timers = { set: (fn, ms) => setTimeout(fn, ms), clear: (id) => clearTimeout(id) },
 }) {
   let closed = false;
@@ -165,6 +167,7 @@ export function createAddFiles({
     const transform = file3dTransform(point, { eye: v.camera.position, viewYaw: v.pose.yaw_deg });
     const id = session.addPlaced((newId) => newWorldSceneSticker(newId, blank(), transform));
     if (!id) return null;
+    reveal?.start(id);
     loading.add(id);
     syncLoading();
     update();
@@ -173,6 +176,7 @@ export function createAddFiles({
         const source = await upload3d(file);
         const answer = await route(source);
         if (answer?.state !== "ready") throw new Error(answer?.error || `Could not read the 3D file ${file.name}.`);
+        reveal?.box(id, answer.box);
         const settled = session.settlePlaced(id, (sticker) => {
           sticker.source = source;
           // The place follows the box unless it was moved or keyed while it uploaded.
@@ -187,6 +191,7 @@ export function createAddFiles({
         update();
       } catch (error) {
         loading.delete(id);
+        reveal?.drop(id);
         syncLoading();
         session.dropPlaced(id);
         warn(String(error?.message || error));

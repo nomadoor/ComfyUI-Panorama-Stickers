@@ -75,7 +75,8 @@ function skyUnder(items, projection, point) {
 // state(), content() (stage_content.js stageContent()), playhead(): the working state, what is drawn of it and the
 // Timeline frame. camera() and size(): the stage's three.js camera (stage_view.js stageCamera()) and its CSS size.
 // selection(): the selected row ("camera", a Sticker id, or null); select(row) selects (null lets go). mode(): the
-// gizmo's mode. tab(): "3d" or "camera". ground(): the ground height. readOnly(): no edits.
+// gizmo's mode. tab(): "3d" or "camera". ground(): the ground height. readOnly(): no edits. loading: load_reveal.js
+// createLoadReveal()'s for the guides of 3D files just placed (their stand-in box and band), or null.
 export function createStageObjects({
   editorView,
   camera,
@@ -90,6 +91,7 @@ export function createStageObjects({
   tab = () => "3d",
   ground = () => -1.6,
   readOnly = () => false,
+  loading = null,
 }) {
   let hovered = null;
   // The gizmo's handle under the pointer, and the one being dragged (gizmo_overlay.js gizmoHit's names).
@@ -147,7 +149,7 @@ export function createStageObjects({
   }
 
   function guides() {
-    return worldGuideItems(state(), content(), (url) => editorView.sceneBox(url));
+    return worldGuideItems(state(), content(), (url) => editorView.sceneBox(url), (id) => loading?.pendingBox(id) ?? null);
   }
 
   // The Camera's mark on screen (camera_marker.js cameraMarkerScreen), or null: in the 3D tab only, and not while it
@@ -325,10 +327,17 @@ export function createStageObjects({
   function overlay({ altHeld = false, gridHidden = false } = {}) {
     const row = selection();
     const shownTab = tab();
-    const items = guides().map((item) => ({
-      segments: item.segments,
-      look: guideLook({ selected: item.id === row, hovered: item.id === hovered, locked: item.locked, altHeld, gridHidden, tab: shownTab }),
-    })).filter((item) => item.look);
+    // A 3D file just placed: its guide's band of light while it loads and fades in (load_reveal.js).
+    const phase = loading ? loading.phase() : 0;
+    const items = guides().map((item) => {
+      const shimmer = loading && item.kind === "box" ? loading.shimmer(item.id) : 0;
+      return {
+        segments: item.segments,
+        corners: item.corners,
+        look: guideLook({ selected: item.id === row, hovered: item.id === hovered, locked: item.locked, altHeld, gridHidden, tab: shownTab }),
+        ...(shimmer > 0 ? { shimmer, phase } : {}),
+      };
+    }).filter((item) => item.look);
     const marker = cameraMarker();
     const sky = selectedSky();
     const shownHandles = handles();
@@ -336,6 +345,8 @@ export function createStageObjects({
     const guideLine = shownHandles && dragGuide ? screenSegment(camera(), gizmoGuideSegment(dragGuide, camera()), width, height) : null;
     return {
       guides: items,
+      // A guide's band runs now (StudioEditor.vue marks the overlay: data-loading-guide).
+      loading: items.some((item) => item.shimmer > 0),
       camera: marker ? { screen: marker, look: row === "camera" ? "selected" : "normal" } : null,
       // The handle dragged, else the one under the pointer (none while Alt is held), is white.
       // While an axis handle is dragged, its guide line ({ name, a, b } in CSS px) runs across the stage.
