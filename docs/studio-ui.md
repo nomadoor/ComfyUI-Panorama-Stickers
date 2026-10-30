@@ -31,7 +31,7 @@ Python はこの文書の規則を持たない（列は `—`）。「（新し�
 |---|---|---|---|
 | 画面の区画（ステージ、タブ、左の列、右の中央の列、右下、右上、上端の中央、インスペクタ、タイムラインの領域と境界） | — | `web_src/components/studio/StudioEditor.vue`、大きさの規則は `web_src/studio/layout.js`（タイムラインの高さ、Output の小窓の大きさとその記憶）、開くのは `web_src/studio/editor.js` | `tests/studio_stage_view.test.mjs`（`layout.js`）、`tests/browser/studio_editor.spec.js` |
 | 左の列の中身と並び、タブごとの無効 | — | `web_src/components/studio/StudioToolRail.vue`（今は Cursor と Undo・Redo だけが働き、ほかは席に置いて無効。Undo・Redo は `web_src/studio/session.js` の履歴）。タブごとの無効は（未実装） | `tests/browser/studio_editor.spec.js`、（未作成）タブごとの無効の test |
-| インスペクタの組み立て（タブと選択で何を出すか）、行の格子、欄、スライダー、リセット、Keyframe のポチの置き場所、Easing のパネル、種類ごとの中身 | — | データは `web_src/studio/inspector_model.js` `buildInspectorModel`、編集を状態に当てるのは `web_src/studio/inspector_actions.js` `applyInspectorEdit`、画面は `web_src/components/studio/StudioInspector.vue`・`StudioInspectorCard.vue`・`StudioInspectorRow.vue`・`StudioEasingPanel.vue`（欄とスライダーの部品は `StudioNumberField.vue`・`StudioSlider.vue`・`StudioAspectSlider.vue`・`StudioResetButton.vue`・`StudioKeyDot.vue`）。Sky の画像の FOV の行のリセット先は `inspector_model.js` `skyPlacedSize`。エディタの中でインスペクタとタイムラインが共有する選択は `web_src/studio/session.js` `inspectorSelection` | `tests/studio_inspector_model.test.mjs`、`tests/studio_inspector_actions.test.mjs`、`tests/browser/studio_inspector.spec.js`、`tests/browser/studio_ui.spec.js`、`tests/studio_session.test.mjs`、`tests/browser/studio_session.spec.js` |
+| インスペクタの組み立て（タブと選択で何を出すか）、行の格子、欄、スライダー、リセット、Keyframe のポチの置き場所、Easing のパネル、種類ごとの中身 | — | データは `web_src/studio/inspector_model.js` `buildInspectorModel`、編集を状態に当てるのは `web_src/studio/inspector_actions.js` `applyInspectorEdit`、画面は `web_src/components/studio/StudioInspector.vue`・`StudioInspectorCard.vue`・`StudioInspectorRow.vue`・`StudioEasingPanel.vue`（欄とスライダーの部品は `StudioNumberField.vue`・`StudioSlider.vue`・`StudioAspectSlider.vue`・`StudioResetButton.vue`・`StudioKeyDot.vue`、Camera のカードの撮り方の札は `StudioModeTiles.vue`）。Aspect のスライダーが止まる既定の比は `web_src/studio/ui_aspect.js` `ASPECT_PRESETS`・`snapAspectPos`、矢印キーの移り先は `stepAspect`。Sky の画像の FOV の行のリセット先は `inspector_model.js` `skyPlacedSize`。エディタの中でインスペクタとタイムラインが共有する選択は `web_src/studio/session.js` `inspectorSelection` | `tests/studio_inspector_model.test.mjs`、`tests/studio_inspector_actions.test.mjs`、`tests/studio_ui_helpers.test.mjs`（Aspect のスライダーの止まる所）、`tests/browser/studio_inspector.spec.js`、`tests/browser/studio_ui.spec.js`、`tests/studio_session.test.mjs`、`tests/browser/studio_session.spec.js` |
 | 右の中央の列（視点の操作のつまみ）と右下のボタン群（Frame Selected、Reset View、グリッドのボタン）の並び | — | `web_src/components/studio/StudioNavWidget.vue`、`StudioViewButtons.vue`（つまみの働きは `docs/space-and-view.md`） | `tests/browser/studio_editor.spec.js` |
 | 下の中央のバーの中身 | — | `web_src/studio/selection_bar.js` `selectionBar`・`gizmoModeOfKey`、`web_src/components/studio/StudioSelectionBar.vue`、ボタンの働きは `web_src/studio/session.js`（`toggleLock`・`duplicateSelected`・`orderSelected`・`revertSelected`・`deleteSelectedObject`）、ステージの選択とギズモと Sky の画像のハンドルは `web_src/studio/stage_objects.js`。未実装：Replace（古い UI の下にファイルを選ぶ部品が無い）、Camera の Lock（`camera.locked` を読み込みがまだ読まない、`docs/scene-state-v2.md`）、ペイントのまとまりと複数選択のバー | `tests/studio_selection_bar.test.mjs`、`tests/studio_session.test.mjs`、`tests/studio_stage_objects.test.mjs`、`tests/browser/studio_select.spec.js` |
 | エディタの中の Camera の見せ方（Camera のボタン、Camera のカード、3D の見た目） | — | （新しい UI、未実装）`web_src/studio/camera_ui.js`、描く部品は `pano_three_view.js`（`docs/threejs-spark-integration.md`） | （未作成）`tests/studio_camera_ui.test.mjs`、`tests/browser/` の場面 |
@@ -143,9 +143,13 @@ Camera タブでは、Undo・Redo のほかは同じ席に出したまま無効�
 - 値が一つの行（Scale・Opacity・H FOV・Lens など）：名前を左、スライダーを 1〜2 列目、値の箱を 3 列目に置く（DaVinci Resolve と同じ
   並び）。上限と下限のある値に付ける。
 - Aspect の行：スライダーは横 16:9 から縦 9:16 までで、中央が 1:1。位置は log₂(比) で等間隔にとり（1:1 が中央、横と縦が対称）、
-  3:2・4:3・1:1・3:4・2:3 に目盛りを引いてスナップする。スライダーの外の比は箱に打ち込んで決める。箱に入る比は 0.25〜4
-  （`CAMERA_ASPECT_MIN`・`CAMERA_ASPECT_MAX`。持ち主は `docs/scene-state-v2.md` の `camera.aspect`）。
-- 選ぶ値（撮り方のモード、範囲など）：segmented control を 1〜3 列目に置く。
+  3:2・4:3・1:1・3:4・2:3 に目盛りを引く。スライダーは既定の比（両端の 16:9・9:16 と目盛りの 5 つ、合わせて 7 つ）を選ぶためのもので、
+  押しても引いても一番近い既定の比にだけ止まり、その間の値を取らない。矢印キーは隣の既定の比へ一つずつ移る。既定の比の間の値や
+  スライダーの外の比は、隣の箱に打ち込んで（または箱をドラッグして）決める。箱に入る比は 0.25〜4（`CAMERA_ASPECT_MIN`・
+  `CAMERA_ASPECT_MAX`。持ち主は `docs/scene-state-v2.md` の `camera.aspect`）。今の比が既定の比でないときは、つまみをその比の位置に
+  出し（スライダーの外の比は端に出す）、次にスライダーを動かすと既定の比に止まる。
+- 選ぶ値（範囲など）：segmented control を 1〜3 列目に置く。撮り方のモードだけは格子に乗せず、Camera のカードの見出しのすぐ下に
+  絵の付いた 2 枚の札で置く（下の「Camera のカード」）。
 - 使わない行（撮り方のモードで効かない行など）は、隠さずに灰色にして触れないようにする。行の位置は動かさない。
 
 ### 欄
@@ -157,6 +161,8 @@ Camera タブでは、Undo・Redo のほかは同じ席に出したまま無効�
     （画面の端で止まる）。
   - ドラッグ中の Escape は、ドラッグを取り消して値を押す前に戻す（エディタは閉じない）。ブラウザが Escape でポインタロックを解いたときも
     同じに扱う。
+- 箱の中は左にそろえる：軸の文字（X・Y・Z など）、値、単位（°・% など）の順に左から並べる。右にそろえると単位の幅のぶん値の位置が
+  行ごとにずれるため、単位があってもなくても値の左端が縦にそろうようにする（持ち主の決定、2026-10-30）。
 - 文字は大文字の高さで上下の中央にそろえる（`docs/design.md`）。
 
 ### リセットと Keyframe のポチ
@@ -195,9 +201,13 @@ Camera タブでは、Undo・Redo のほかは同じ席に出したまま無効�
 3D タブで Camera を選んだとき、と Camera タブで出す。Camera はいつも一台あるので、無いときの表示は無い（撮る Camera の規則は
 `docs/studio-node.md`）。行の並びはどちらの撮り方でも同じで、効かない行は灰色にして触れないようにする（上の「行の格子」）。
 
+撮り方のモード（Mode）は、カードの見出しのすぐ下に、横に並べた 2 枚の札で選ぶ（見本 `design-drafts/mode-3.html` の M1）。札には
+出来上がる絵の形の小さな絵（Panorama は 2:1 の展開図の格子、Frame は枠で切り取った 1 枚と中央の小さな十字）と、その下に名前を出す。
+説明の文は付けない。押すと撮り方が変わる。行の名前（Mode）、リセット、Keyframe のポチは持たない。見た目の値は `docs/design.md` の
+「新しい UI の見た目」。
+
 | 行 | Panorama モード | Frame モード |
 |---|---|---|
-| Mode | `Panorama` / `Frame` の segmented control（押すと撮り方が変わる） | 同じ |
 | Range | 360° / 180° | 灰色・触れない |
 | Aspect | 灰色・触れない | スライダー（上の「行の格子」） |
 | H FOV | 灰色・触れない | スライダー |
