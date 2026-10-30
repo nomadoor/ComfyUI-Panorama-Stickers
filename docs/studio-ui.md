@@ -2,7 +2,7 @@
 
 新しい UI の層（ADR 0044）の、Panorama Studio のエディタと新しい Preview ノード（`PanoramaPreviewNode`）の大きなウィンドウについて、
 画面に何がどこにあり、どう見えるかの規則を定める：目指すもの、画面の区画、インスペクタ、下の中央のバー、エディタの中の Camera の見せ方、
-Camera タブ、Add とドロップの見せ方、読み込み中と空の画面、タイムラインのバー、ショートカットの一覧、閉じ方、Preview のウィンドウ。
+Camera タブ、Add とドロップの見せ方、読み込み中と空の画面、タイムラインのバー、ツールチップ、ショートカットの一覧、閉じ方、Preview のウィンドウ。
 画面に出す言葉は `CONTEXT.md` の「画面の言葉」に従う。決めた理由は ADR 0045（目的と視点）、ADR 0047（視点の操作と置き方）、
 ADR 0048（撮る Camera・入口の役割・画面の組み直し）にある。
 
@@ -40,6 +40,7 @@ Python はこの文書の規則を持たない（列は `—`）。「（新し�
 | 読み込み中と空の画面、一行の知らせとその種類 | — | どれを出すかと種類は `web_src/studio/notice_line.js` `topLine`（シェルの `StudioEditor.vue` が呼ぶ）、画面は `web_src/components/studio/StudioNotice.vue`。開く前に three.js のチャンクと stylesheet を読んでおくのは `web_src/pano_editor_view.js` `preloadEditorView`・`web_src/studio/editor.js` `preloadStudioEditor`、いつ始めるかは `web_src/editor_choice.js` `createStudioPreloader`（組み立ては `web_src/main.js`）。Add とドロップの失敗と 3D ファイルの読み込み中は `web_src/studio/add_files.js` が `ui` に書く。上流の警告と、経路が答えた後に three.js が 3D ファイルを読めないときの知らせは、出す元がまだ無い（未実装） | `tests/studio_notice_line.test.mjs`、`tests/editor_choice.test.mjs`、`tests/browser/studio_editor.spec.js` |
 | タイムラインのバーの並びと、行の頭の並び | — | `web_src/components/studio/StudioTimelineBar.vue`・`StudioTimelineHead.vue`（組み立ては `StudioTimeline.vue`、データは `web_src/studio/timeline_model.js`） | `tests/browser/studio_timeline.spec.js` |
 | ショートカットの一覧（中身、エディタのキーの表、出し方と閉じ方） | — | キーの表と一覧の中身は `web_src/studio/shortcuts.js`（`EDITOR_KEYS`・`editorKeyAction`・`shortcutGroups`）、画面は `web_src/components/studio/StudioShortcuts.vue`、「?」のボタンは `StudioNavWidget.vue`、開く・閉じるの状態（`view.shortcuts`）と「?」のキーは `web_src/studio/editor.js`、置き場所は `StudioEditor.vue` | `tests/studio_shortcuts.test.mjs`、`tests/browser/studio_session.spec.js` |
+| ツールチップ（出す部品、出るまでの時間と消え方、置く側と反転、ショートカットの印、ドラッグ中とキーボードのフォーカス） | — | 置き場所の計算・置く側の表・ショートカットの切り出し・時間の値は `web_src/studio/tooltip.js`（`placeTip`・`tipSide`・`splitTipKeys`・`TIP_SIDES`・`TIP_DELAY`・`TIP_SKIP`・`TIP_GAP`・`TIP_EDGE`）、出し入れと描くのは `web_src/components/studio/StudioTooltip.vue`（`StudioEditor.vue` が一つ置く）。部品は説明を `data-tip` に書く | `tests/studio_tooltip.test.mjs`、`tests/studio_ui_components.test.mjs`（`title` を使わない）、`tests/browser/studio_tooltip.spec.js` |
 | 閉じ方 | — | `web_src/components/studio/StudioEditor.vue`、Escape を受けるのは `web_src/studio/stage.js`（ドキュメントの捕捉で受け、欄のドラッグの Escape は先に欄が取る）、枠の外のクリックは `web_src/studio/backdrop.js` `createBackdropClose`、閉じるのと保存は `web_src/studio/editor.js`（書く文字は `web_src/studio/session.js` `stateText`、下の部品 `pano_editor_state.js` `editorStateWrite`）、Escape の順の 3 段は `web_src/studio/add_files.js` `escape`、4 段は `web_src/studio/editor.js` `onEscape`（`view.shortcuts`）、5・6 段は `session.js` `escape`、下の部品 `pano_node_bridge.js`。Escape の順の表の 2 段（地面を拾う待ち）は、その部品がまだ無い（未実装） | `tests/studio_backdrop.test.mjs`、`tests/browser/studio_editor.spec.js`、`tests/browser/studio_ui.spec.js`（欄のドラッグの Escape）、`tests/studio_session.test.mjs`、`tests/browser/studio_session.spec.js` |
 | Preview のウィンドウの画面 | — | （新しい UI、未実装）`web_src/components/studio/StudioPreviewWindow.vue` | （未作成）`tests/browser/` の場面 |
 | Output の小窓（折りたたみとその動き、大きさ、記憶） | — | `web_src/components/studio/StudioOutputPreview.vue`、大きさと記憶は `web_src/studio/layout.js` `outputWindowSize`・`loadOutputWindow`・`saveOutputWindow`、Camera タブで畳んで触れなくするのは `outputWindowView`。中の絵の canvas は `StudioEditor.vue` が小窓の slot に置き、描くのは `web_src/studio/stage.js`（Frame モードはステージの canvas の隅に描いて `createImageBitmap`、Panorama モードは `pano_three_view.js` `renderLiveErp`。描き方は `docs/threejs-spark-integration.md`） | `tests/studio_stage_view.test.mjs`、`tests/browser/studio_editor.spec.js`、`tests/browser/studio_camera_wired.spec.js`、`tests/browser/studio_camera_fixes.spec.js` |
@@ -463,6 +464,45 @@ Camera タブでは、Undo・Redo のほかは同じ席に出したまま無効�
 - 行の頭の並び（左から）：目のアイコン、▶（開閉）、アイコン（Sky / World の印、Camera、Paint、Background）、名前、行のポチ。目を持たない
   行も同じ幅を空ける（`docs/timeline-ui.md` の「表示（目のアイコン）」）。
 - 上流の層の見出しは「From ＜元のノードの名前＞」（`docs/timeline-ui.md` の「上流の層の行」）。
+
+## ツールチップ
+
+部品の説明（アイコンのボタンの名前、無効の理由、行の名前の説明など）は、ブラウザの `title` ではなく、エディタの中のツールチップで
+部品の横に出す（`title` はカーソルの位置に出て、置き場所を選べないため。持ち主の決定、2026-10-30）。見た目の値は `docs/design.md` の
+「新しい UI の見た目」。
+
+- 出す部品：説明を持つ新しい UI の部品すべて。部品は説明を `data-tip` に書き、`title` 属性は付けない（ブラウザの説明が重ならない
+  ように）。アイコンだけのボタンは、読み上げの名前を `aria-label` に持ち続ける。
+- 無効の部品（`aria-disabled`）も、理由の説明を出す（例「Not available in the Camera view」）。
+- 一つのエディタにツールチップの層は一つで、エディタの枠の中の一番上に描く（浮かせる部品より上、モーダルの外には出ない）。
+  ツールチップはポインタを受けない。
+- 出るまで：ポインタが部品に入ってから `TIP_DELAY`（400ms）止まると出る。ツールチップが消えてから `TIP_SKIP`（300ms）の間に次の部品に
+  入ったときは、待たずに出す（左の列をなぞるときに一つずつ待たせない）。
+- 消えるのは、すぐ：ポインタが部品を出たとき、エディタのどこかでポインタを押したとき、ホイール、キーを押したとき、部品がページから
+  消えたとき、説明が空になったとき。押してから離すまでの間は出さない（ドラッグの最中に出ない）。押して離した後、同じ部品の上では、
+  一度出て入り直すまで出さない。
+- キーボードのフォーカス：キーボードの操作中（`docs/design.md` の「フォーカス」の `input_modality.js`）に部品へフォーカスが移ったら、
+  待たずに出し、フォーカスが離れたら消す。ポインタで押してフォーカスが移ったときは出さない。
+- 置く側：部品の矩形から `TIP_GAP`（8px）離して、上下左右のどれか一つの側に置く（カーソルの位置には置かない）。どの側が先かは部品の
+  群で決める：
+
+  | 群 | 先の側 |
+  |---|---|
+  | 左の列、Camera タブの左の辺の目盛り | 右 |
+  | 右の中央の列（視点の操作のつまみと「?」）、Camera タブの右の辺の目盛り | 左 |
+  | 下の中央のバー、右下のボタンの群、Camera タブの下の辺の目盛り | 上 |
+  | 左上のタブ、Output の小窓、上端の中央の一行 | 下 |
+  | ほか（インスペクタ、タイムラインなど） | 上 |
+
+  部品が `data-tip-side` を持つときは、それを先の側にする。
+- 反転と寄せ：先の側に置くとエディタの枠（の内側 `TIP_EDGE` = 8px）からはみ出すときは、反対の側に置く。反対の側でもはみ出すときは、
+  はみ出しの少ない側に置く。置いた側に沿う向き（上下に置くなら左右、左右に置くなら上下）は、部品の真ん中にそろえ、枠からはみ出すときは
+  枠の内側に寄せる。部品に重ならない。
+- ショートカット：説明の文の終わりの「（キー）」の形（例「Move (1)」「Undo (Ctrl+Z)」「Play (Space)」）は、括弧を外し、キーを文の後ろに
+  薄い印として出す（「Move　1」）。キーと読むのは、`+` でつないだ一つ一つが一文字か、決まったキーの名前（Ctrl・Shift・Alt・Cmd・Space・
+  Del・Esc・Enter・Tab など）のものだけで、それ以外の括弧は文のまま出す。説明の文の書き方（「名前 (キー)」）は今のままで、ツールチップが
+  印に変える（`tooltip.js` `splitTipKeys`）。
+- ツールチップを出している間に部品が動いたり説明が変わったりしたら、それに合わせて置き直し、書き直す。
 
 ## ショートカットの一覧
 

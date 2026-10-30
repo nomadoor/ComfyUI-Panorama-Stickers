@@ -15,7 +15,7 @@ const emit = defineEmits(["press"]);
 
 <template>
   <StudioFloatGroup layout="bar" label="Selection" :data-kind="model.kind">
-    <span class="pano-studio-float-label" data-bar-name :title="model.name">
+    <span class="pano-studio-float-label" data-bar-name :data-tip="model.name">
       <SvgIcon :icon="model.icon" />
       <span class="pano-studio-bar-name">{{ model.name }}</span>
     </span>

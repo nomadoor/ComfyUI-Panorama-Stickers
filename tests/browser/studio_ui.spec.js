@@ -355,7 +355,7 @@ test("the bar at the bottom center: the name never changes its width, a long nam
       nameWidth: name.getBoundingClientRect().width,
       cut: name.scrollWidth > name.clientWidth,
       ellipsis: style.textOverflow,
-      tip: bar.querySelector("[data-bar-name]").title,
+      tip: bar.querySelector("[data-bar-name]").dataset.tip,
       text: name.textContent,
     }];
   })));

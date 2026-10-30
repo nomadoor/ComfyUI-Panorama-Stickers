@@ -91,7 +91,7 @@ test("Panorama mode shows the live ERP in a 2 : 1 frame, FOV and Lens gray, Roll
   expect(colors).toBeGreaterThan(5);
   for (const name of ["FOV", "Lens"]) {
     await expect(page.locator(`[data-ruler="${name}"] [role="slider"]`)).toHaveAttribute("aria-disabled", "true");
-    await expect(page.locator(`[data-ruler="${name}"]`)).toHaveAttribute("title", "Used in Frame mode");
+    await expect(page.locator(`[data-ruler="${name}"]`)).toHaveAttribute("data-tip", "Used in Frame mode");
   }
   await expect(page.locator('[data-ruler="Roll"] [role="slider"]')).not.toHaveAttribute("aria-disabled", "true");
   // A drag on a gray ruler sends nothing.

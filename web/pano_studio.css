@@ -2254,4 +2254,38 @@
   font-size: var(--studio-text-xs);
   font-weight: var(--studio-weight-head);
   line-height: 1;
+
+/* --- The tooltip (docs/studio-ui.md "ツールチップ", values docs/design.md "大きさ" and "動き"): one bubble per editor,
+   beside the control (StudioTooltip.vue places it), over the floats and inside the frame. The strong fill with its
+   text, as specimen-11's `.tip`; a shortcut shows as a dimmed hint after the text. It appears with a short fade and
+   goes at once (the shared reduced-motion rule above drops the fade). */
+.pano-studio-tip {
+  position: absolute;
+  z-index: 20;
+  box-sizing: border-box;
+  width: max-content;
+  max-width: 280px;
+  padding: 4px 8px;
+  border-radius: var(--studio-r-field);
+  background: var(--studio-strong);
+  color: var(--studio-on-strong);
+  font-size: var(--studio-text-sm);
+  font-weight: var(--studio-weight);
+  line-height: 16px;
+  white-space: normal;
+  pointer-events: none;
+  visibility: hidden;
+  opacity: 0;
+}
+
+.pano-studio-tip.is-shown {
+  visibility: visible;
+  opacity: 1;
+  transition: opacity 120ms ease-out;
+}
+
+.pano-studio-tip-keys {
+  margin-left: 6px;
+  font: var(--studio-weight-head) var(--studio-text-xs) / 16px var(--studio-font);
+  opacity: 0.6;
 }

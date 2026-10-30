@@ -113,7 +113,7 @@ test("a click selects the World image (GPU pick), the bar shows its buttons, the
   const bar = page.locator('.pano-studio-at-bar [data-kind="world-image"]');
   await expect(bar).toHaveCount(1);
   await expect(bar.locator("[data-bar]")).toHaveCount(7);
-  await expect(bar.locator('[data-bar="gizmo:translate"]')).toHaveAttribute("title", "Move (1)");
+  await expect(bar.locator('[data-bar="gizmo:translate"]')).toHaveAttribute("data-tip", "Move (1)");
   await expect(bar.locator('[data-bar="gizmo:translate"]')).toHaveClass(/is-active/);
   await expect(bar.locator('[data-bar="replace"]')).toHaveAttribute("aria-disabled", "true");
   // The inspector shows the selected object's card (the shared selection).

@@ -38,7 +38,7 @@ function onExpand() {
       type="button"
       class="pano-studio-tl-head-btn"
       :aria-label="row.eye.label"
-      :title="row.eye.tip"
+      :data-tip="row.eye.tip"
       :aria-disabled="row.eye.disabled ? 'true' : null"
       data-part="eye"
       @click="onEye"
@@ -63,7 +63,7 @@ function onExpand() {
     <SvgIcon class-name="pano-studio-tl-head-icon" :icon="row.icon" />
     <span
       class="pano-studio-tl-head-name"
-      :title="row.nameTip"
+      :data-tip="row.nameTip"
       data-part="name"
       @click="emit('select')"
       @dblclick="emit('frame')"
@@ -72,7 +72,7 @@ function onExpand() {
       v-if="row.upstream"
       class="pano-studio-tl-override"
       :class="{ 'is-on': row.overridden }"
-      :title="row.overridden ? 'Overridden in this node' : null"
+      :data-tip="row.overridden ? 'Overridden in this node' : null"
     />
     <StudioKeyDot
       v-if="row.dot"
