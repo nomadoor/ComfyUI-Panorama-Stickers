@@ -91,31 +91,6 @@ export function formatParamValue(v) {
   return Number(n.toFixed(3)).toString();
 }
 
-export function paintingStrokeCount(painting) {
-  const paintCount = Array.isArray(painting?.paint?.strokes) ? painting.paint.strokes.length : 0;
-  const maskCount = Array.isArray(painting?.mask?.strokes) ? painting.mask.strokes.length : 0;
-  return { paintCount, maskCount };
-}
-
-export function paintingCompositeCount(painting) {
-  const { paintCount, maskCount } = paintingStrokeCount(painting);
-  const rasterObjects = Array.isArray(painting?.raster_objects) ? painting.raster_objects : [];
-  let paintRasterCount = 0;
-  let maskRasterCount = 0;
-  rasterObjects.forEach((item) => {
-    if (String(item?.layerKind || "paint") === "mask") maskRasterCount += 1;
-    else paintRasterCount += 1;
-  });
-  return {
-    paintCount,
-    maskCount,
-    paintRasterCount,
-    maskRasterCount,
-    totalPaintCount: paintCount + paintRasterCount,
-    totalMaskCount: maskCount + maskRasterCount,
-  };
-}
-
 // Draws a raster object's image `img` where it lies on a width x height ERP (its bbox moved by its transform),
 // wrapped around the seam, on the 2D context ctx.
 // A raster object on an ERP canvas belongs to the lower paint layers (pano_paint_layers.js).

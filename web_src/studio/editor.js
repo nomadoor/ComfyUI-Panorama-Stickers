@@ -9,7 +9,7 @@
 // state_json the way the old editor writes it (session.stateText: nothing when the text already means it). A node
 // whose state_json cannot be read opens read-only and says so, so nothing writes over that text. The view
 // it was closed with is kept for the page (pano_node_bridge.js editorSession(node).view) and the next opening starts
-// there.
+// there. Closing also uploads the paint layer the node draws, as the old editor does (paint_upload.js).
 import { createApp, markRaw, reactive, shallowReactive } from "vue";
 import StudioEditor from "../components/studio/StudioEditor.vue";
 import { createComfyMediaAdapter } from "../pano_comfy_media.js";
@@ -37,6 +37,7 @@ import { loadSceneState } from "../pano_scene_state.js";
 import { sceneFilesOf, stateAnimationClips } from "../pano_space.js";
 import { sceneAtVideoFps, timelineFpsLocked, videoTimelineFps } from "../pano_video_fps.js";
 import { createAddFiles } from "./add_files.js";
+import { needsPaintLayer, textWithPaintLayer, uploadPaintLayer } from "./paint_upload.js";
 import { createLoadReveal } from "./load_reveal.js";
 import { cameraOf, defaultCamera, groundOf } from "./defaults.js";
 import { createDropInput } from "./drop_input.js";
@@ -783,6 +784,27 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     return true;
   }
 
+  // The paint layer (docs/studio-ui.md "ペイントの道具"): on closing, the pixels the editor draws of its paint go to
+  // ComfyUI's input as the old editor sends them, and `painting_layer` to state_json while its painting is still the one
+  // closed with. A prompt queued meanwhile waits for it (pano_editor_extension.js queuePendingStickerOperation). Not
+  // while a stroke is under way (closing gives it up first).
+  function uploadPaintLayerOnClose() {
+    const nodeId = String(node.id ?? "0");
+    if (readOnly || !stateWidget || !api?.fetchApi || !needsPaintLayer(session.state, nodeId)) return;
+    const painting = loadSceneState(String(stateWidget.value ?? "")).painting;
+    const sources = paint.nodeLayer();
+    queuePendingStickerOperation(node, `paint-layer:${nodeId}`, async () => {
+      const layer = await uploadPaintLayer(api, { nodeId, painting, sources });
+      const text = textWithPaintLayer(String(stateWidget.value ?? ""), painting, layer);
+      if (text === null) return;
+      stateWidget.value = text;
+      stateWidget.callback?.(text);
+      node.setDirtyCanvas?.(true, true);
+    }).catch((error) => {
+      console.error("[PanoramaPaintingLayerSync] close upload failed", error);
+    });
+  }
+
   // --- Keys while the editor is open: Undo / Redo, Delete, Space, 1 / 2 / 3, the table of shortcuts.js, the Keyframes'
   // copy, cut and paste. The stage takes the movement keys and Escape.
   let rootElement = null;
@@ -962,6 +984,7 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     backgroundVideoElement.remove();
     releasePanoCanvas(backgroundStill);
     paint.cancel();
+    uploadPaintLayerOnClose();
     stage?.dispose();
     paint.dispose();
     stageMedia.dispose();

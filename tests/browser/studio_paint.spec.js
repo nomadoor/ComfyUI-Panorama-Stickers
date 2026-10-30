@@ -210,3 +210,46 @@ test("Paint: Escape during a stroke gives it up; the Camera tab goes back to Cur
   await expect(page.locator('[data-tool="paint"]')).not.toHaveClass(/is-active/);
   expect(problems).toEqual([]);
 });
+
+test("Closing uploads the paint layer the editor draws, as the old editor does, and writes painting_layer to state_json", async ({ page }) => {
+  const problems = await open(page);
+  await page.locator('[data-tool="paint"]').click();
+  await page.locator('[data-paint-swatch="red"]').click();
+  await drag(page, line(0.4, 0.3, 0.6, 0.3));
+  await page.locator('[data-tool="mask"]').click();
+  await drag(page, line(0.4, 0.7, 0.6, 0.7));
+  const drawn = await painting(page);
+  expect(await page.evaluate(() => window.__studio.session.state.painting_layer)).toBeNull();
+  await page.evaluate(() => window.__studio.close());
+  await page.waitForFunction(() => JSON.parse(window.__studio.node.widgets[0].value).painting_layer, null, { timeout: 15_000 });
+  const saved = await page.evaluate(() => JSON.parse(window.__studio.node.widgets[0].value));
+  const gid = drawn.paint.strokes[0].actionGroupId;
+  const uploads = await page.evaluate(() => window.__studio.uploads);
+  expect(uploads.map((item) => [item.path, item.name, item.type, item.subfolder, item.overwrite])).toEqual([
+    ["/upload/image", "pano_paint_21.png", "input", "panorama_stickers", "1"],
+    ["/upload/image", `pano_group_21_${gid}.png`, "input", "panorama_stickers", "1"],
+    ["/upload/image", "pano_mask_21.png", "input", "panorama_stickers", "1"],
+  ]);
+  const ref = (filename) => ({ type: "comfy_image", filename, subfolder: "panorama_stickers", storage: "input" });
+  expect(saved.painting_layer.paint).toEqual(ref("pano_paint_21.png"));
+  expect(saved.painting_layer.mask).toEqual(ref("pano_mask_21.png"));
+  expect(saved.painting_layer.groups).toEqual([{ id: gid, actionGroupId: gid, image: ref(`pano_group_21_${gid}.png`) }]);
+  expect(saved.painting_layer.revision).toMatch(/:2048x1024$/);
+  // The painting is the one drawn (as state_json keeps it); the PNGs are 2048x1024 and have the stroke where it lies on
+  // the ERP.
+  expect(saved.painting.paint.strokes.map((item) => item.id)).toEqual(drawn.paint.strokes.map((item) => item.id));
+  expect(saved.painting.mask.strokes.map((item) => item.id)).toEqual(drawn.mask.strokes.map((item) => item.id));
+  const at = (stroke) => {
+    const points = stroke.geometry.processedPoints;
+    const mid = points[Math.floor(points.length / 2)];
+    return [Math.floor(mid.u * 2048), Math.floor(mid.v * 1024)];
+  };
+  const paintPixel = await page.evaluate(([url, [x, y]]) => window.__studio.pngAt(url, x, y), [uploads[0].url, at(drawn.paint.strokes[0])]);
+  expect([paintPixel.width, paintPixel.height]).toEqual([2048, 1024]);
+  expect(paintPixel.pixel[0]).toBeGreaterThan(200);
+  expect(paintPixel.pixel[1]).toBeLessThan(60);
+  expect(paintPixel.pixel[3]).toBeGreaterThan(200);
+  const maskPixel = await page.evaluate(([url, [x, y]]) => window.__studio.pngAt(url, x, y), [uploads[2].url, at(drawn.mask.strokes[0])]);
+  expect(maskPixel.pixel[3]).toBeGreaterThan(200);
+  expect(problems).toEqual([]);
+});
