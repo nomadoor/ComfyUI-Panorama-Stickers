@@ -39,6 +39,7 @@ import { createAddFiles } from "./add_files.js";
 import { createLoadReveal } from "./load_reveal.js";
 import { cameraOf, defaultCamera, groundOf } from "./defaults.js";
 import { createDropInput } from "./drop_input.js";
+import { guardEditorKeys } from "./key_guard.js";
 import { createPortMedia } from "./port_media.js";
 import { createStudioUpstream, upstreamBackground, upstreamNodeName } from "./upstream.js";
 import { gizmoModeOfKey, selectedKind } from "./selection_bar.js";
@@ -539,6 +540,17 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
 
   // Delete: the selected Keyframes first (<StudioTimeline> handleDelete), else the selected object.
   let timeline = null;
+  // The copied Keyframes (docs/timeline-ui.md "Keyframe のコピーと貼り付け"): the editor's own, kept while it is open.
+  let keyClipboard = null;
+  // The keys "copy-keys", "cut-keys" and "paste-keys" (shortcuts.js): returns whether the editor took the key.
+  function keyClipboardKey(action) {
+    if (action === "paste-keys") return !!keyClipboard && !!timeline?.pasteKeys(keyClipboard);
+    const copied = timeline?.copyKeys() ?? null;
+    if (!copied) return false;
+    keyClipboard = copied;
+    if (action === "cut-keys") timeline.handleDelete();
+    return true;
+  }
   function deleteSelection() {
     if (timeline?.handleDelete()) return;
     const outcome = session.deleteSelectedObject();
@@ -639,13 +651,21 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     return true;
   }
 
-  // --- Keys while the editor is open: Undo / Redo, Delete, Space, 1 / 2 / 3, the table of shortcuts.js. The stage
-  // takes the movement keys and Escape.
+  // --- Keys while the editor is open: Undo / Redo, Delete, Space, 1 / 2 / 3, the table of shortcuts.js, the Keyframes'
+  // copy, cut and paste. The stage takes the movement keys and Escape.
   let rootElement = null;
+  let releaseKeyGuard = () => {};
   function onKeyDown(event) {
     if (!rootElement || !stageOwnsKey(event, rootElement)) return;
     const action = editorKeyAction(event);
     if (!action || action === "escape") return;
+    if (action === "copy-keys" || action === "cut-keys" || action === "paste-keys") {
+      // Not taken, C and X keep the browser's copy of selected text; V never pastes (nothing outside a field takes it).
+      if (!keyClipboardKey(action) && action !== "paste-keys") return;
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
     if (action.startsWith("gizmo:")) {
       // The gizmo's Move, Rotate, Scale for the selected object that has them.
       const mode = action.slice("gizmo:".length);
@@ -682,6 +702,10 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
   const controller = markRaw({
     onStage: ({ canvas, overlay = null, root }) => {
       rootElement = root;
+      // No key or clipboard event of the editor reaches ComfyUI behind it (docs/studio-ui.md "キーとクリップボードを
+      // ComfyUI に渡さない").
+      releaseKeyGuard();
+      releaseKeyGuard = guardEditorKeys(root);
       const output = outputView(session.state, 0);
       const opening = openingView({ memory: nodeSession.view, output, world: { ...world, boxes: [], content: null }, frameAvailable: false });
       stage = createStage({
@@ -777,6 +801,7 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     addFiles.close();
     dropInput();
     window.removeEventListener("keydown", onKeyDown, true);
+    releaseKeyGuard();
     backgroundVideo.close();
     backgroundVideoElement.remove();
     releasePanoCanvas(backgroundStill);
