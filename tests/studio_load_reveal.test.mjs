@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { loadSceneState } from "../web_src/pano_scene_state.js";
-import { LOAD_REVEAL_MS, LOAD_SHIMMER_MS, createLoadReveal, easeOut } from "../web_src/studio/load_reveal.js";
+import { LOAD_REVEAL_MS, LOAD_REVEAL_STEP_MS, LOAD_SHIMMER_MS, createLoadReveal, easeOut } from "../web_src/studio/load_reveal.js";
 import { DROP_PREVIEW_BOX } from "../web_src/studio/view_scale.js";
 import { worldGuideItems } from "../web_src/studio/world_guides.js";
 
@@ -45,13 +45,18 @@ test("once drawn: the item fades in and the band out over LOAD_REVEAL_MS, ease-o
   assert.equal(reveal.opacity("a"), 0);
   assert.equal(reveal.shimmer("a"), 1);
   assert.equal(reveal.revealing(), true);
-  time.now += LOAD_REVEAL_MS / 2;
-  reveal.observe("a", true);
+  // Frame by frame (25 ms each) up to half of it.
+  for (let gone = 0; gone < LOAD_REVEAL_MS / 2; gone += 25) {
+    time.now += 25;
+    reveal.observe("a", true);
+  }
   assert.ok(Math.abs(reveal.opacity("a") - easeOut(0.5)) < 1e-9);
   assert.ok(reveal.opacity("a") > 0.5, "ease-out: past half at half the time");
   assert.ok(Math.abs(reveal.shimmer("a") - (1 - easeOut(0.5))) < 1e-9);
-  time.now += LOAD_REVEAL_MS;
-  reveal.observe("a", true);
+  for (let step = 0; step < 10; step += 1) {
+    time.now += 25;
+    reveal.observe("a", true);
+  }
   assert.equal(reveal.opacity("a"), 1);
   assert.equal(reveal.shimmer("a"), 0);
   assert.equal(reveal.animating(), false);
@@ -94,4 +99,15 @@ test("a placed 3D file still loading has a guide of its stand-in box at its valu
   assert.deepEqual(item.center, [2, -1.1, -6], "the stand-in box's middle: half its height above its bottom");
   // Hidden (not active): no guide.
   assert.deepEqual(worldGuideItems(state, { ...content, evaluated: { stickers: [{ ...value, active: false }] } }, () => null, () => DROP_PREVIEW_BOX), []);
+});
+
+test("a frame held up moves the reveal on by LOAD_REVEAL_STEP_MS at most, so the fade still shows", () => {
+  const { time, now } = clock();
+  const reveal = createLoadReveal({ now });
+  reveal.start("a");
+  reveal.observe("a", true);
+  time.now += 500;
+  reveal.observe("a", true);
+  assert.ok(Math.abs(reveal.opacity("a") - easeOut(LOAD_REVEAL_STEP_MS / LOAD_REVEAL_MS)) < 1e-9);
+  assert.ok(reveal.opacity("a") < 0.5);
 });

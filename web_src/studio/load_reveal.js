@@ -9,28 +9,32 @@ import { DROP_PREVIEW_BOX } from "./view_scale.js";
 // How long the band takes to cross the guide once (it repeats), and how long the reveal takes (ms).
 export const LOAD_SHIMMER_MS = 1400;
 export const LOAD_REVEAL_MS = 250;
+// The most of the reveal one frame moves on (ms): a frame held up (the item's first draws compile shaders) does not
+// skip the fade.
+export const LOAD_REVEAL_STEP_MS = 40;
 // The band (docs/design.md "大きさ" "読み込み中のガイドの光の帯"): its width as a share of the diagonal of the guide's screen
 // rectangle, its white at the middle on the lines and on the faces, and how much wider its line is than the guide's.
 export const LOAD_LOOK = Object.freeze({ band: 0.35, lineAlpha: 0.9, fillAlpha: 0.18, extraWidth: 1 });
 
-// The ease-out of the reveal (cubic): t in 0..1.
+// The ease-out of the reveal (quadratic: a cubic one is past half within a fifth of the time, and the item blends in
+// linear light, so it looked as if it popped in): t in 0..1.
 export function easeOut(t) {
   const clamped = Math.max(0, Math.min(1, t));
-  return 1 - (1 - clamped) ** 3;
+  return 1 - (1 - clamped) ** 2;
 }
 
 // now(): the clock (ms). reducedMotion(): the OS asks for less motion.
 export function createLoadReveal({ now = () => performance.now(), reducedMotion = () => false } = {}) {
-  // By Sticker id: { box (the route's, in its own frame, or null before it answers), revealAt (ms, null before its
-  // item has drawn) }.
+  // By Sticker id: { box (the route's, in its own frame, or null before it answers), revealAt (ms of the last look,
+  // null before its item has drawn), elapsed (ms of the reveal gone, each look adding at most LOAD_REVEAL_STEP_MS) }.
   const entries = new Map();
 
-  const progress = (entry) => (now() - entry.revealAt) / LOAD_REVEAL_MS;
+  const progress = (entry) => entry.elapsed / LOAD_REVEAL_MS;
 
   return {
     // A 3D file was placed as `id`: it loads from now.
     start(id) {
-      entries.set(id, { box: null, revealAt: null });
+      entries.set(id, { box: null, revealAt: null, elapsed: 0 });
     },
     // The route answered with its box (in its own frame).
     box(id, box) {
@@ -49,7 +53,9 @@ export function createLoadReveal({ now = () => performance.now(), reducedMotion 
     observe(id, drawn) {
       const entry = entries.get(id);
       if (!entry || !drawn) return;
-      if (entry.revealAt === null) entry.revealAt = now();
+      const time = now();
+      if (entry.revealAt !== null) entry.elapsed += Math.min(Math.max(0, time - entry.revealAt), LOAD_REVEAL_STEP_MS);
+      entry.revealAt = time;
       if (reducedMotion() || progress(entry) >= 1) entries.delete(id);
     },
     // The stand-in box of its guide while its item has not drawn, else null.
