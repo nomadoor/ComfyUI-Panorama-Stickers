@@ -3,8 +3,18 @@
 import { ICON } from "../icons.js";
 import { getCutoutAspectLabel } from "../pano_cutout_view_math.js";
 import { CAMERA_SHOT_ID } from "../pano_editor_state.js";
+import { numberSkyOrder, restackSkyOrder } from "../pano_paint_objects.js";
 import { isUpstreamSticker, upstreamStickerEditable } from "../pano_upstream.js";
 import { EXTERNAL_STICKER_ID, EXTERNAL_STICKER_PREVIEW_KEY } from "./constants.js";
+
+// The key of an entry of the Sky's display list (items.js getDisplayListObjects) that z ordering compares.
+function displayKey(entry) {
+  return entry.type === "sticker"
+    ? `sticker:${String(entry.item?.id || "")}`
+    : (entry.type === "rasterObject"
+      ? `rasterObject:${String(entry.item?.id || entry.id || "")}`
+      : `strokeGroup:${String(entry.actionGroupId || "")}`);
+}
 
 export function createSelection(deps) {
   const {
@@ -382,24 +392,9 @@ export function createSelection(deps) {
       if (isRasterObjectItem(item)) return `rasterObject:${parseRasterObjectSelectionId(item.rasterObjectId || item.id || "")}`;
       return `strokeGroup:${String(item.actionGroupId || item.id || "")}`;
     }));
-    const moving = [];
-    const staying = [];
-    ordered.forEach((entry) => {
-      const key = entry.type === "sticker"
-        ? `sticker:${String(entry.item?.id || "")}`
-        : (entry.type === "rasterObject"
-          ? `rasterObject:${String(entry.item?.id || entry.id || "")}`
-          : `strokeGroup:${String(entry.actionGroupId || "")}`);
-      if (selectedKeys.has(key)) moving.push(entry);
-      else staying.push(entry);
-    });
-    if (!moving.length || moving[moving.length - 1] === ordered[ordered.length - 1]) return;
-    const nextOrdered = [...staying, ...moving];
-    nextOrdered.forEach((item, index) => {
-      if (item.type === "sticker" && item.item) item.item.z_index = index;
-      if (item.type === "strokeGroup" && item.item) item.item.z_index = index;
-      if (item.type === "rasterObject" && item.item) item.item.z_index = index;
-    });
+    const nextOrdered = restackSkyOrder(ordered, (entry) => selectedKeys.has(displayKey(entry)), "front");
+    if (!nextOrdered) return;
+    numberSkyOrder(nextOrdered);
     markObjectVisualsDirty();
     pushHistory();
     commitAndRefreshNode();
@@ -422,24 +417,9 @@ export function createSelection(deps) {
       if (isRasterObjectItem(item)) return `rasterObject:${parseRasterObjectSelectionId(item.rasterObjectId || item.id || "")}`;
       return `strokeGroup:${String(item.actionGroupId || item.id || "")}`;
     }));
-    const moving = [];
-    const staying = [];
-    ordered.forEach((entry) => {
-      const key = entry.type === "sticker"
-        ? `sticker:${String(entry.item?.id || "")}`
-        : (entry.type === "rasterObject"
-          ? `rasterObject:${String(entry.item?.id || entry.id || "")}`
-          : `strokeGroup:${String(entry.actionGroupId || "")}`);
-      if (selectedKeys.has(key)) moving.push(entry);
-      else staying.push(entry);
-    });
-    if (!moving.length || moving[0] === ordered[0]) return;
-    const nextOrdered = [...moving, ...staying];
-    nextOrdered.forEach((item, index) => {
-      if (item.type === "sticker" && item.item) item.item.z_index = index;
-      if (item.type === "strokeGroup" && item.item) item.item.z_index = index;
-      if (item.type === "rasterObject" && item.item) item.item.z_index = index;
-    });
+    const nextOrdered = restackSkyOrder(ordered, (entry) => selectedKeys.has(displayKey(entry)), "back");
+    if (!nextOrdered) return;
+    numberSkyOrder(nextOrdered);
     markObjectVisualsDirty();
     pushHistory();
     commitAndRefreshNode();

@@ -1,8 +1,9 @@
 // What is under the pointer: the canvas items and their handles, the selection rects, and the cursor that
 // shows it. The upstream Scene's sky Stickers (ADR 0030) lie under the node's own Sky, so they are hit after it.
 import { hitFrameAffordance, hitStickerSelectionAffordance } from "../pano_sticker_affordance.js";
+import { paintCornerHandle, strokePathsHit } from "../pano_paint_objects.js";
 import { FRAME_ROLL_CURSOR } from "./constants.js";
-import { dist2, distToSegment2, pointInPoly } from "./helpers.js";
+import { distToSegment2, pointInPoly } from "./helpers.js";
 
 export function createHitTest(deps) {
   const {
@@ -50,17 +51,7 @@ export function createHitTest(deps) {
           if (!item) continue;
           const geom = objectGeom(item);
           if (!geom?.visible) continue;
-          const paths = Array.isArray(geom.strokePaths) ? geom.strokePaths : [];
-          for (const path of paths) {
-            const pts = Array.isArray(path?.points) ? path.points : [];
-            if (!pts.length) continue;
-            if (path.closed && pts.length >= 3 && pointInPoly(p, pts)) return { item, geom };
-            const threshold = Math.max(8, Number(path?.lineWidth || 0) * 0.5 + 6);
-            for (let i = 0; i < pts.length - 1; i += 1) {
-              if (distToSegment2(p, pts[i], pts[i + 1]) <= threshold * threshold) return { item, geom };
-            }
-            if (pts.length === 1 && dist2(p, pts[0]) <= threshold * threshold) return { item, geom };
-          }
+          if (strokePathsHit(p, geom.strokePaths)) return { item, geom };
           continue;
         }
         if (entry.type === "rasterObject") {
@@ -110,17 +101,7 @@ export function createHitTest(deps) {
       if (isStrokeGroupItem(item)) {
         const geom = objectGeom(item);
         if (!geom?.visible) continue;
-        const paths = Array.isArray(geom.strokePaths) ? geom.strokePaths : [];
-        for (const path of paths) {
-          const pts = Array.isArray(path?.points) ? path.points : [];
-          if (!pts.length) continue;
-          if (path.closed && pts.length >= 3 && pointInPoly(p, pts)) return { item, geom };
-          const threshold = Math.max(8, Number(path?.lineWidth || 0) * 0.5 + 6);
-          for (let i = 0; i < pts.length - 1; i += 1) {
-            if (distToSegment2(p, pts[i], pts[i + 1]) <= threshold * threshold) return { item, geom };
-          }
-          if (pts.length === 1 && dist2(p, pts[0]) <= threshold * threshold) return { item, geom };
-        }
+        if (strokePathsHit(p, geom.strokePaths)) return { item, geom };
         continue;
       }
       if (isRasterObjectItem(item)) {
@@ -140,14 +121,8 @@ export function createHitTest(deps) {
     if (!geom || !geom.visible) return { kind: "none", cursor: editor.mode === "pano" ? "grab" : "default" };
     if (isStickerItem(item)) return hitStickerSelectionAffordance(geom, p);
     if (geom.kind === "strokeGroup") {
-      const cornerIdx = geom.corners.findIndex((c) => dist2(c, p) <= 11 * 11);
-      if (cornerIdx >= 0) {
-        const c = geom.corners[cornerIdx];
-        const vx = c.x - geom.center.x;
-        const vy = c.y - geom.center.y;
-        const cursor = (vx * vy) >= 0 ? "nwse-resize" : "nesw-resize";
-        return { kind: "scale", cornerIdx, cursor };
-      }
+      const corner = paintCornerHandle(geom, p);
+      if (corner) return corner;
       const paths = Array.isArray(geom.strokePaths) ? geom.strokePaths : [];
       for (const path of paths) {
         const pts = Array.isArray(path?.points) ? path.points : [];
@@ -161,14 +136,8 @@ export function createHitTest(deps) {
       return { kind: "none", cursor: editor.mode === "pano" ? "grab" : "default" };
     }
     if (geom.kind === "rasterObject") {
-      const cornerIdx = geom.corners.findIndex((c) => dist2(c, p) <= 11 * 11);
-      if (cornerIdx >= 0) {
-        const c = geom.corners[cornerIdx];
-        const vx = c.x - geom.center.x;
-        const vy = c.y - geom.center.y;
-        const cursor = (vx * vy) >= 0 ? "nwse-resize" : "nesw-resize";
-        return { kind: "scale", cornerIdx, cursor };
-      }
+      const corner = paintCornerHandle(geom, p);
+      if (corner) return corner;
       if (pointInPoly(p, geom.corners)) return { kind: "move", cursor: "default" };
       return { kind: "none", cursor: editor.mode === "pano" ? "grab" : "default" };
     }
