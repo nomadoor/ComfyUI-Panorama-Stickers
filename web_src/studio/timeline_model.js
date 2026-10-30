@@ -200,6 +200,12 @@ export function xToFrame(x, span, width, pad) {
   return Math.min(span - 1, Math.max(0, frame));
 }
 
+// The fractional Timeline frame at x on that track, not rounded nor held (a box drawn on the tracks).
+export function xToFrameExact(x, span, width, pad) {
+  if (span <= 1) return 0;
+  return ((x - pad) / (width - 2 * pad)) * (span - 1);
+}
+
 // The Keyframes of lines `from`..`to` (model.lines indexes, either order) between Timeline frames f0 and f1 (either
 // order), as selection keys.
 export function keysInRange(lines, from, to, f0, f1) {

@@ -10,6 +10,7 @@ import {
   timecode,
   timelineCamera,
   xToFrame,
+  xToFrameExact,
 } from "../web_src/studio/timeline_model.js";
 import { ctxOf, studioState, upstreamLayer } from "./studio_timeline_fixtures.mjs";
 
@@ -221,6 +222,9 @@ test("frames and x positions map both ways across the track with its padding", (
   assert.equal(xToFrame(5000, 101, 1016, 8), 100);
   assert.equal(frameToX(0, 1, 1016, 8), 8);
   assert.equal(xToFrame(700, 1, 1016, 8), 0);
+  // A box's edge is not rounded nor held, so it takes in exactly the Keyframes it covers.
+  assert.equal(xToFrameExact(513, 101, 1016, 8), 50.5);
+  assert.equal(xToFrameExact(-2, 101, 1016, 8), -1);
 });
 
 test("keysInRange finds the pins and Lane Keyframes of the lines and frames a box covers", () => {

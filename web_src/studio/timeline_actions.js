@@ -234,6 +234,14 @@ export function applyClipDrag(ctx, drag, mode, delta) {
   return draft.result();
 }
 
+// Whether a Clip range drag's edit (applyClipDrag) leaves the Clip range other than where the drag began: a drag that
+// comes back, or a click, changes nothing and records nothing.
+export function clipDragChanged(ctx, drag, edit) {
+  if (!edit) return false;
+  const clip = findEntry(applyEdit(ctx, edit), drag.id)?.owner?.clip;
+  return !!clip && ["start", "in", "duration"].some((field) => clip[field] !== drag.base[field]);
+}
+
 // The frame prev (direction -1) or next (+1) moves the playhead to (docs/timeline-ui.md "前後の Keyframe へ飛ぶ"),
 // or null at the end.
 export function jumpTarget(ctx, selection, playhead, direction) {

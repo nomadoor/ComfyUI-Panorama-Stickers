@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   applyClipDrag,
   applyEdit,
+  clipDragChanged,
   deleteKeys,
   deleteTarget,
   enteredFps,
@@ -262,4 +263,16 @@ test("an edit keeps the Easing a moved Keyframe had", () => {
   const ctx = ctxOf(studioState());
   const moved = moveKeys(ctx, { row: null, keys: [{ row: "camera", lane: "position", frame: 0 }] }, 2, 100);
   assert.deepEqual(moved.edit.state.camera.position.keyframes[0].easing, EASE);
+});
+
+test("a Clip range drag that comes back to where it began changes nothing", () => {
+  const ctx = ctxOf(studioState(), { upstream: [upstreamLayer()] });
+  const drag = startClipDrag(ctx, "sticker_1");
+  assert.equal(clipDragChanged(ctx, drag, applyClipDrag(ctx, drag, "move", 0)), false);
+  assert.equal(clipDragChanged(ctx, drag, applyClipDrag(ctx, drag, "move", 3)), true);
+  const up = startClipDrag(ctx, "upstream:scene_up:sticker_1");
+  const edit = applyClipDrag(ctx, up, "start", 4);
+  assert.equal(edit.state, ctx.state);
+  assert.deepEqual(edit.upstream.scene_up.stickers[0].clip, { start: 4, in: 4, duration: null });
+  assert.equal(clipDragChanged(ctx, up, edit), true);
 });
