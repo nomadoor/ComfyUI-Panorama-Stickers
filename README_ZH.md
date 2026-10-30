@@ -58,6 +58,10 @@ https://github.com/user-attachments/assets/bf74e953-8ceb-4c7f-afa2-1c805f12c7af
 - 全景静态图 workflow
   - [flux-2-klein-4B-360-erp-outpaint.json](./example_workflows/flux-2-klein-4B-360-erp-outpaint.json)
   - [flux-2-klein-9B-360-erp-outpaint.json](./example_workflows/flux-2-klein-9B-360-erp-outpaint.json)
+  - [qwen-image-2.1-360-erp-outpaint.json](./example_workflows/qwen-image-2.1-360-erp-outpaint.json)（Qwen-Image 2.1，使用 Panorama Studio）
+- Panorama Studio：将图像提升为 3D 并从其他角度拍摄的 workflow
+  - 使用 MoGe 3 估计图像的几何形状，放入 Panorama Studio，用 Camera 从新的角度拍摄，再用 Qwen-Image 2.1 进行修饰。
+  - [qwen-image-2.1-moge3-anyangle.json](./example_workflows/qwen-image-2.1-moge3-anyangle.json)
 - 360° 全景视频 workflow
   - 使用该模型作者制作的 [LTX2.3_360vr](https://civitai.com/models/2327337/360-degree-panoramic-shot-ltx-23) LoRA，可以通过文本生成 360° 全景视频。
   - [LTX-2.3_360vr_distilled_3stage.json](./example_workflows/LTX-2.3_360vr_distilled_3stage.json)

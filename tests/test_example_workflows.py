@@ -106,7 +106,14 @@ def test_saved_custom_nodes_match_current_v3_schemas(workflow_path):
         for saved_input in saved_node.get("inputs", []):
             assert saved_input["name"] in inputs_by_name
             current_input = inputs_by_name[saved_input["name"]]
-            assert saved_input["type"] == current_input.io_type
+            # A MultiType input is saved by the frontend as its accepted types joined with commas.
+            accepted = getattr(current_input, "io_types", None) or getattr(current_input, "types", None)
+            saved_types = set(str(saved_input["type"]).split(","))
+            if accepted and saved_input["type"] != current_input.io_type:
+                # The saved list starts with the input's own type, then the extra accepted types.
+                assert {getattr(t, "io_type", t) for t in accepted} <= saved_types
+            else:
+                assert saved_input["type"] == current_input.io_type
             saved_input_positions.append(schema_input_positions[current_input.id])
         assert saved_input_positions == sorted(saved_input_positions)
 
