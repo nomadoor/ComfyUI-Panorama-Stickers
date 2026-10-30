@@ -25,7 +25,7 @@ import {
   stickerContentRequest,
   stickerContentUrls,
 } from "../pano_space.js";
-import { depthGridNotice } from "../pano_depth_color.js";
+import { depthGridNotice, withDepthColor } from "../pano_depth_color.js";
 import { isUpstreamSticker } from "../pano_upstream.js";
 import { refreshGoneUpstreamFiles } from "../pano_upstream_layers.js";
 import { CUTOUT_FRAME_ACCENT, CUTOUT_FRUSTUM_COLOR, CUTOUT_TRAJECTORY_COLOR } from "./constants.js";
@@ -145,13 +145,7 @@ export function createViewInput(deps) {
     const files = sceneFiles();
     // A depth grid (DA3_GEOMETRY mono) draws with the colors of its input's proxy video, by the input's name.
     const depthNames = [];
-    const withColors = (name, request) => {
-      if (request?.kind !== "depth_grid") return request;
-      depthNames.push(name);
-      const color = depthColor(name, request.video);
-      // The input's name keys its one color texture (pano_three_view.js createDepthColorTextures).
-      return { ...request, color: color && { ...color, slot: name } };
-    };
+    const withColors = (name, request) => withDepthColor(request, name, depthColor, depthNames);
     const scene = withColors("scene", sceneRequest(files, evaluated.scene, sceneState.scene.animation, sceneState.timeline.fps));
     const sceneBox = scene?.url ? sceneContentBox(scene, editorView.sceneBox(scene.url)) : null;
     const portFiles = stickerFiles();

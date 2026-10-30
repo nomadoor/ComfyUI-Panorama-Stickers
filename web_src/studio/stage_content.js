@@ -17,7 +17,7 @@
 // "DA3_GEOMETRY mono の深度のグリッド") draws with the colors of its input's proxy video, which the caller plays
 // (`depthColor`, pano_depth_color.js createDepthColors picture()). Without `depthColor` (the node's surface, ADR
 // 0049) depth grids are left out.
-import { depthGridNotice } from "../pano_depth_color.js";
+import { depthGridNotice, withDepthColor } from "../pano_depth_color.js";
 import { skyLayers, worldStickerLayers } from "../pano_editor_view.js";
 import { skyStickerVfov, sourceAsset } from "../pano_editor_state.js";
 import { createFile3dEditorFiles, file3dEditorFileOf } from "../pano_file_3d.js";
@@ -143,13 +143,7 @@ export function stageContent(state, frame, { media, editorFile = () => null, sce
   const stickers = worldStickerLayers(state, frame, state.stickers, { media: mediaOnce, evaluated });
   const drawn = (files) => (files && (files.kind !== "depth_grid" || depthColor) ? files : null);
   const depthSlots = [];
-  // The input's slot keys its one color texture (pano_three_view.js createDepthColorTextures).
-  const withColors = (slot, request) => {
-    if (request?.kind !== "depth_grid") return request;
-    depthSlots.push(slot);
-    const color = depthColor(slot, request.video);
-    return { ...request, color: color && { ...color, slot } };
-  };
+  const withColors = (slot, request) => withDepthColor(request, slot, depthColor, depthSlots);
   const files = drawn(sceneFiles);
   const scene = withColors("scene", sceneRequest(files, evaluated.scene, state.scene.animation, state.timeline.fps));
   const box = scene?.url ? sceneContentBox(scene, sceneBox(scene.url)) : null;
