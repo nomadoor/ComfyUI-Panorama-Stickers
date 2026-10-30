@@ -88,10 +88,15 @@ try {
   };
   const app = { getNodeImageUrls: (target) => (target === origin ? [url] : []), nodeOutputs: {} };
   editorSession(node).view = rememberView({ position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0, target: [0, 0, -2] }, "panorama");
-  const editor = await openStudioEditor(node, { app, api, storage: memoryStorage });
-  studio.session = editor.session;
+  // Opens the editor on the node (again after a close: it reads the state_json the close wrote).
+  const openEditor = async () => {
+    const editor = await openStudioEditor(node, { app, api, storage: memoryStorage });
+    studio.session = editor.session;
+    studio.close = () => editor.close();
+  };
+  await openEditor();
   studio.node = node;
-  studio.close = () => editor.close();
+  studio.reopen = openEditor;
   // The pixel at (x, y) of an uploaded PNG (data URL): [r, g, b, a], and its size.
   studio.pngAt = async (url, x, y) => {
     const image = new Image();
@@ -113,6 +118,17 @@ try {
     copy.height = 1;
     copy.getContext("2d").drawImage(canvas, Math.round(x * ratio), Math.round(y * ratio), 1, 1, 0, 0, 1, 1);
     return Array.from(copy.getContext("2d").getImageData(0, 0, 1, 1).data);
+  };
+  // The stage's pixels in the rectangle (x, y, width, height) CSS px of the stage: a flat [r, g, b, a, ...] array.
+  studio.stageRegion = (x, y, width, height) => {
+    const canvas = document.querySelector("[data-stage-canvas]");
+    const ratio = canvas.width / canvas.getBoundingClientRect().width;
+    const [w, h] = [Math.round(width * ratio), Math.round(height * ratio)];
+    const copy = document.createElement("canvas");
+    copy.width = w;
+    copy.height = h;
+    copy.getContext("2d").drawImage(canvas, Math.round(x * ratio), Math.round(y * ratio), w, h, 0, 0, w, h);
+    return Array.from(copy.getContext("2d").getImageData(0, 0, w, h).data);
   };
   // The old editor's freehand and lasso records with the same brush (editor/paint_input.js), for the format check.
   studio.oldRecords = () => {

@@ -124,6 +124,52 @@ function normalizeGeometry(raw, targetSpace, toolKind, allowLasso) {
   };
 }
 
+// A finite JSON number (not a boolean, not text), or null.
+function jsonNumber(value) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+const clamp = (value, lo, hi) => Math.max(lo, Math.min(hi, value));
+
+const STAMP_KINDS = new Set(["round", "chisel", "crayon"]);
+
+// The brush-shape values a stroke keeps (docs/scene-state-v2.md 「ペイントのストロークの筆の値」), each only when it
+// differs from its default, the value the paint engine (buildStampContext) uses when it is missing. Hardness, flow
+// and spacing are always kept, null (the engine's default) unless a JSON number: null is never read as 0.
+function normalizeBrush(raw) {
+  const out = {
+    hardness: jsonNumber(raw.hardness),
+    flow: jsonNumber(raw.flow),
+    spacing: jsonNumber(raw.spacing),
+  };
+  const stampKind = STAMP_KINDS.has(raw.stampKind) ? raw.stampKind : "round";
+  if (stampKind !== "round") out.stampKind = stampKind;
+  const aspect = jsonNumber(raw.aspect);
+  if (aspect !== null && clamp(aspect, 0.1, 10) !== 1) out.aspect = clamp(aspect, 0.1, 10);
+  const angle = raw.angle && typeof raw.angle === "object" && !Array.isArray(raw.angle) ? raw.angle : null;
+  if (angle?.kind === "stroke_dir") out.angle = { kind: "stroke_dir" };
+  else if (jsonNumber(angle?.value) !== null && angle.value !== 0) out.angle = { kind: "fixed", value: angle.value };
+  const keep = (key, fallback, lo, hi) => {
+    const value = jsonNumber(raw[key]);
+    if (value !== null && clamp(value, lo, hi) !== fallback) out[key] = clamp(value, lo, hi);
+  };
+  if (stampKind === "chisel") {
+    keep("chiselEdgeLift", 0.4, 0, Infinity);
+    keep("chiselCenterDip", 0.3, 0, Infinity);
+    keep("chiselFiber", 0, 0, 1);
+  }
+  if (stampKind === "crayon") keep("crayonGrain", 0.65, 0, 1);
+  const scatter = raw.scatter;
+  if (scatter && typeof scatter === "object" && !Array.isArray(scatter)) {
+    const count = jsonNumber(scatter.count);
+    out.scatter = {
+      radius: Math.max(0, jsonNumber(scatter.radius) ?? 1.5),
+      count: clamp(Math.round(count ?? 6), 1, 64),
+    };
+  }
+  return out;
+}
+
 function normalizeStroke(raw, layerKind) {
   if (!raw || typeof raw !== "object" || String(raw.layerKind || "") !== layerKind) return null;
   const targetSpace = normalizeTargetSpace(raw.targetSpace);
@@ -159,9 +205,7 @@ function normalizeStroke(raw, layerKind) {
     brushPresetId: String(raw.brushPresetId || "").trim() || null,
     size: Math.max(0, size),
     opacity: Math.max(0, Math.min(1, opacity)),
-    hardness: finiteNumber(raw.hardness, null),
-    flow: finiteNumber(raw.flow, null),
-    spacing: finiteNumber(raw.spacing, null),
+    ...normalizeBrush(raw),
     createdAt: Math.trunc(finiteNumber(raw.createdAt, 0)),
     color,
     radiusModel,
