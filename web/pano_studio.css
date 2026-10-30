@@ -1449,7 +1449,7 @@
   content: "";
   position: absolute;
   inset: -150%;
-  background: linear-gradient(to bottom right, transparent 46.25%, rgb(232 207 116 / 0.25) 50%, transparent 53.75%);
+  background: linear-gradient(to bottom right, transparent 46.25%, rgb(232 207 116 / 0.5) 49.6%, rgb(250 238 190 / 0.85) 50%, rgb(232 207 116 / 0.5) 50.4%, transparent 53.75%);
   animation: pano-studio-sweep 450ms ease-out forwards;
 }
 @keyframes pano-studio-sweep {
