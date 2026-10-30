@@ -29217,7 +29217,7 @@ const Kx = Object.freeze({ left: 150, right: 150, top: 88, bottom: 84 }), zc = O
   roll: Object.freeze({ unitPx: 8, minor: 1, major: 10, precision: 0, length: 320, valueChars: 5 })
 }), G4 = Object.freeze({
   label: Object.freeze({ height: 30, gap: 8 }),
-  acts: Object.freeze({ height: 42, gap: 4 })
+  acts: Object.freeze({ height: 44, gap: 12 })
 }), U4 = Math.max(...Object.values(G4).map((e) => e.height + e.gap));
 function W4(e, t, n, r = Kx) {
   const i = e - r.left - r.right, o = t - r.top - r.bottom, a = n > 0 && Number.isFinite(n) ? n : 1;
