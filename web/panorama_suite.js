@@ -4,10 +4,10 @@ import { api as rn } from "../../scripts/api.js";
 const nv = "PanoramaSuite.Editor.NewUI", nM = {
   id: nv,
   category: ["Panorama Suite", "Editor", "New editor"],
-  name: "Panorama Studio: new editor (in development)",
-  tooltip: "Opens Panorama Studio in the new editor while it is being built. Closing it saves the edits; adding, painting and the Camera view are not there yet.",
+  name: "Panorama Studio: new editor",
+  tooltip: "Opens Panorama Studio in the new editor. Turn it off to use the previous editor, which still has painting and masks.",
   type: "boolean",
-  defaultValue: !1
+  defaultValue: !0
 };
 function rM({ newUiOn: e, preload: t, whenIdle: n }) {
   let r = !1;
