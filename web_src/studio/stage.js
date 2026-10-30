@@ -520,6 +520,16 @@ export function createStage({
     },
     // The box of a loaded World item (the lower view's), null while it loads.
     sceneBox: (url) => editorView.sceneBox(url),
+    // [add-drop] What Add and the drop need of the view (studio/add_files.js): the three.js camera, the stage's CSS
+    // size, the pose (its T), the world bound, and the GPU pick of the World content under a point (null while the
+    // view is not ready).
+    landing: {
+      camera: () => cameraNow(),
+      size: () => size,
+      pose: () => camera.pose(),
+      bound: () => camera.bound(),
+      pick: ({ x, y }) => (editorView.ready ? editorView.pick(cameraNow(), x, y, size.width, size.height) : null),
+    },
     // The pose to remember on close: where an eased move goes.
     destination: () => camera.destination(),
     pose: () => camera.pose(),

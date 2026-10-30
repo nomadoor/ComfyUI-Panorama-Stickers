@@ -13,6 +13,7 @@ import { createApp, markRaw, reactive, shallowReactive } from "vue";
 import StudioEditor from "../components/studio/StudioEditor.vue";
 import { createComfyMediaAdapter } from "../pano_comfy_media.js";
 import { createPanoCanvas, createPanoVideo, releasePanoCanvas } from "../pano_diagnostics.js";
+import { queuePendingStickerOperation } from "../pano_editor_extension.js";
 import { normalizeCoverageValue } from "../pano_editor_state.js";
 import { preloadEditorView } from "../pano_editor_view.js";
 import { DRAW_REASON } from "../pano_frame_scheduler.js";
@@ -33,7 +34,9 @@ import { evaluateCamera } from "../pano_scene_eval.js";
 import { loadSceneState } from "../pano_scene_state.js";
 import { sceneFilesOf, stateAnimationClips } from "../pano_space.js";
 import { sceneAtVideoFps, timelineFpsLocked, videoTimelineFps } from "../pano_video_fps.js";
+import { createAddFiles } from "./add_files.js";
 import { groundOf } from "./defaults.js";
+import { createDropInput } from "./drop_input.js";
 import { gizmoModeOfKey, selectedKind } from "./selection_bar.js";
 import { createStudioSession } from "./session.js";
 import { createStage, stageUi } from "./stage.js";
@@ -179,7 +182,8 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     view.background = backgroundLinked ? { end: backgroundBarEnd(state.background.clip, state.timeline.fps, view.media.bg) } : null;
     view.fpsLocked = timelineFpsLocked(videoTimelineFps(node, media), node, VIDEO_FPS_INPUTS);
     view.animations = animations.stickers ?? {};
-    view.imageSizes = stageMedia.imageSizes(state);
+    // [add-drop] A placed image's size is its decoded file's until its uploaded file has loaded.
+    view.imageSizes = { ...addFiles.sizes(state), ...stageMedia.imageSizes(state) };
   }
 
   // The stage's world: the ground height and the Camera's position at the playhead.
@@ -307,13 +311,15 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
 
   // --- The content at the playhead and what is selected, for the stage.
   const sceneBox = (url) => stage?.sceneBox(url) ?? null;
+  // [add-drop] A placed image draws from its decoded file until its uploaded file has loaded (add_files.js).
+  const mediaOf = (sticker) => stageMedia.media(sticker) ?? addFiles.media(sticker);
   let contentCache = null;
   function content() {
     const files = sceneFiles();
     // The `scene` result can arrive while the editor is open (the node ran): its files are part of the key.
     const key = [session.state, view.playhead, view.imageSizes, view.animations, files ? files.urls.join("\n") : ""];
     if (contentCache && !contentCache.pending && contentCache.key.every((item, index) => item === key[index])) return contentCache.value;
-    const value = stageContent(session.state, view.playhead, { media: stageMedia.media, editorFile: stageMedia.editorFile, sceneFiles: files, sceneBox });
+    const value = stageContent(session.state, view.playhead, { media: mediaOf, editorFile: stageMedia.editorFile, sceneFiles: files, sceneBox });
     // A World item may still be loading (no box yet): the content is made again on the next frame.
     const pending = value.space.fileStickers.length > 0 || !!value.space.scene;
     contentCache = { key, value, pending };
@@ -326,7 +332,7 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
       const camera = session.state.camera;
       return { kind: "camera", position: camera ? [...evaluateCamera(camera, view.playhead).position] : [0, 0, 0] };
     }
-    const sphere = stickerFrameSphere(session.state, content(), row, { media: stageMedia.media, editorFile: stageMedia.editorFile, sceneBox });
+    const sphere = stickerFrameSphere(session.state, content(), row, { media: mediaOf, editorFile: stageMedia.editorFile, sceneBox });
     return { kind: "object", sphere };
   }
 
@@ -336,6 +342,12 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     // What the top-center line says while nothing else does (docs/studio-ui.md "読み込み中と空の画面").
     background: "none",
     empty: false,
+    // [add-drop] Add and the drop (add_files.js): the Sky / World choice, the drag's mark, a placed 3D file loading,
+    // and why the last file could not be placed.
+    choice: null,
+    drop: null,
+    adding: false,
+    addWarning: null,
   });
   const background = nodeBackground(node, media, () => {
     syncBackground();
@@ -357,6 +369,29 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
       if (ui.notice === text) ui.notice = null;
     }, BOUND_NOTICE_SECONDS * 1000);
   }
+
+  // [add-drop] Add and the drop (docs/studio-ui.md "Add とドロップの見せ方"): files become Stickers where they land.
+  // Uploads to ComfyUI's input go through its API; a queued prompt waits for them. One settled after the editor closed
+  // is written then, unless the editor was opened again.
+  const addFiles = createAddFiles({
+    session,
+    ui,
+    view: () => stage?.landing ?? null,
+    ground: () => groundOf(session.state),
+    content: () => content(),
+    sceneBox,
+    playhead: () => view.playhead,
+    fetchApi: api?.fetchApi ? (path, options) => api.fetchApi(path, options) : null,
+    route: (source) => stageMedia.request(source),
+    queue: (id, operation) => queuePendingStickerOperation(node, id, operation),
+    changed: () => sync(),
+    stopPlayback: () => playback.stop(),
+    notice,
+    late: () => {
+      if (!openNodes.has(node)) save();
+    },
+  });
+  let dropInput = () => {};
 
   // --- Edits.
 
@@ -472,6 +507,8 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
   // Escape with no view drag to let go (docs/studio-ui.md "閉じ方"): the Keyframe selection, then the object's, then
   // the editor closes.
   function onEscape() {
+    // [add-drop] Step 3: the Sky / World choice closes, placing nothing.
+    if (addFiles.escape()) return;
     if (session.escape()) sync();
     else close();
   }
@@ -505,6 +542,8 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
         ui,
         onEscape,
       });
+      // [add-drop] Files dragged over the stage's window.
+      dropInput = createDropInput({ element: canvas.parentElement, canvas, root, add: addFiles, readOnly });
       return stage;
     },
     onTimeline: (api) => {
@@ -529,6 +568,10 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
       if (key === "undo") historyStep(-1);
       else if (key === "redo") historyStep(1);
     },
+    // [add-drop] The files picked with Add, and the Sky / World choice (StudioPlaceChoice.vue).
+    addFiles: (files) => addFiles.pick(files),
+    place: (placement) => addFiles.choose(placement),
+    cancelPlace: () => addFiles.cancelChoice(),
   });
 
   const mountHost = document.createElement("div");
@@ -544,6 +587,8 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     save();
     if (stage) nodeSession.view = rememberView(stage.destination(), "panorama");
     clearTimeout(noticeTimer);
+    addFiles.close();
+    dropInput();
     window.removeEventListener("keydown", onKeyDown, true);
     backgroundVideo.close();
     backgroundVideoElement.remove();

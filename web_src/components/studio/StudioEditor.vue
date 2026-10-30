@@ -5,10 +5,13 @@ import { TIMELINE_BAR_HEIGHT, loadTimelineHeight, saveTimelineHeight, timelineHe
 import { topLine } from "../../studio/notice_line.js";
 import { selectionBar } from "../../studio/selection_bar.js";
 import { inspectorSelection } from "../../studio/session.js";
+import { WORLD_FILE_ACCEPT } from "../../pano_sticker_file_import.js";
+import StudioDropMarker from "./StudioDropMarker.vue";
 import StudioInspector from "./StudioInspector.vue";
 import StudioNavWidget from "./StudioNavWidget.vue";
 import StudioNotice from "./StudioNotice.vue";
 import StudioOutputPreview from "./StudioOutputPreview.vue";
+import StudioPlaceChoice from "./StudioPlaceChoice.vue";
 import StudioSelectionBar from "./StudioSelectionBar.vue";
 import StudioTabs from "./StudioTabs.vue";
 import StudioTimeline from "./StudioTimeline.vue";
@@ -68,6 +71,24 @@ function onBackdropUp(event) {
 // --- The bar at the bottom center: the selected object's (none while nothing is selected).
 const bar = computed(() => selectionBar({ state: props.view.state, row: props.view.selection?.row ?? null, mode: props.view.gizmoMode, readOnly: props.view.readOnly }));
 
+// --- [add-drop] Add: the left column's button opens the file picker; the picked file goes to the editor
+// (studio/add_files.js). The other buttons of the column are the editor's.
+const filePicker = ref(null);
+function onRail(key) {
+  if (key !== "add") {
+    props.controller.rail(key);
+    return;
+  }
+  if (props.view.readOnly || !filePicker.value) return;
+  filePicker.value.value = "";
+  filePicker.value.click();
+}
+function onFilesPicked(event) {
+  const files = Array.from(event.target.files ?? []);
+  event.target.value = "";
+  if (files.length) props.controller.addFiles(files);
+}
+
 // --- The stage's buttons.
 function setGrid(shown) {
   props.ui.gridHidden = !shown;
@@ -124,14 +145,20 @@ function setCollapsed(value) {
         <div class="pano-studio-stage" data-region="stage">
           <canvas ref="canvas" class="pano-studio-stage-canvas" data-stage-canvas :style="{ cursor: ui.cursor || null }" />
           <canvas ref="overlay" class="pano-studio-stage-overlay" data-stage-overlay aria-hidden="true" />
+          <StudioDropMarker v-if="ui.drop" :mark="ui.drop" />
 
           <StudioTabs class="pano-studio-at-tabs" value="3d" camera-disabled camera-tip="Camera view · in development" />
           <StudioToolRail
             class="pano-studio-at-rail"
             :can-undo="view.canUndo"
             :can-redo="view.canRedo"
-            @press="(key) => controller.rail(key)"
+            :can-add="!view.readOnly"
+            @press="onRail"
           />
+          <input ref="filePicker" type="file" :accept="WORLD_FILE_ACCEPT" hidden data-add-picker @change="onFilesPicked">
+          <div v-if="ui.choice" class="pano-studio-at-center">
+            <StudioPlaceChoice @choose="(side) => controller.place(side)" @cancel="controller.cancelPlace()" />
+          </div>
           <div class="pano-studio-at-notice">
             <StudioNotice :text="line.text" :kind="line.kind" />
           </div>

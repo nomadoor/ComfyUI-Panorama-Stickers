@@ -1,17 +1,20 @@
 <script setup>
+import { computed } from "vue";
 import { ICON } from "../../icons.js";
 import StudioAddIcon from "./StudioAddIcon.vue";
 import StudioFloatGroup from "./StudioFloatGroup.vue";
 import StudioIconButton from "./StudioIconButton.vue";
 
 // The left column of the stage (docs/studio-ui.md "左の列"): the tools (Cursor, Paint, Mask), adding (Add, Camera),
-// and Undo / Redo at the bottom, in three groups. While the editor is being built, only Cursor is chosen and the
-// others stay in their places, disabled, with a tooltip saying so. Presentational: `tools` and `history` in, `press`
-// out with the button's key.
+// and Undo / Redo at the bottom, in three groups. While the editor is being built, only Cursor is chosen; Add opens the
+// file picker (the shell's); the others stay in their places, disabled, with a tooltip saying so. Presentational:
+// props in, `press` out with the button's key.
 const props = defineProps({
   // Undo and Redo can be pressed (there is something to take back or to do again).
   canUndo: { type: Boolean, default: false },
   canRedo: { type: Boolean, default: false },
+  // Add can be pressed (not in a read-only editor: docs/studio-ui.md "Add とドロップの見せ方").
+  canAdd: { type: Boolean, default: false },
   // The Camera tab: every button but Undo and Redo stays in its place, disabled, saying why (docs/studio-ui.md
   // "左の列").
   cameraTab: { type: Boolean, default: false },
@@ -20,17 +23,17 @@ const emit = defineEmits(["press"]);
 
 const LATER = "in development";
 const CAMERA_TAB_TIP = "Not available in the Camera view";
-const groups = [
+const groups = computed(() => [
   [
     { key: "cursor", icon: ICON.cursor_tool, label: "Cursor", active: true },
     { key: "paint", icon: ICON.palette_tool, label: "Paint", disabled: true, tip: `Paint · ${LATER}` },
     { key: "mask", icon: ICON.circle_dashed_tool, label: "Mask", disabled: true, tip: `Mask · ${LATER}` },
   ],
   [
-    { key: "add", icon: "", drawn: "add", label: "Add", disabled: true, tip: `Add · ${LATER}` },
+    { key: "add", icon: "", drawn: "add", label: "Add", disabled: !props.canAdd, tip: "Add an image or a 3D file" },
     { key: "camera", icon: ICON.camera_plus, label: "Camera", disabled: true, tip: `Camera · ${LATER}` },
   ],
-];
+]);
 </script>
 
 <template>
