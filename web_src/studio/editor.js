@@ -32,7 +32,7 @@ import {
 import { backgroundBarEnd, backgroundPlace, backgroundShownAt, bgColorBackground } from "../pano_port_media.js";
 import { STUDIO_BACKGROUND_INPUT_NAMES, isNodeOutputMediaCurrent, linkedInputType, videoLinked } from "../pano_preview_video.js";
 import { evaluateCamera } from "../pano_scene_eval.js";
-import { PANO_SCENE_TYPE } from "../pano_upstream.js";
+import { PANO_SCENE_TYPE, ownSceneLinked } from "../pano_upstream.js";
 import { loadSceneState } from "../pano_scene_state.js";
 import { sceneFilesOf, stateAnimationClips } from "../pano_space.js";
 import { sceneAtVideoFps, timelineFpsLocked, videoTimelineFps } from "../pano_video_fps.js";
@@ -150,8 +150,6 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
   const session = createStudioSession({ state: nodeState(node, media), readOnly });
   const nodeSession = editorSession(node);
   const stateWidget = widgetOf(node, "state_json");
-  // The state's own 3D comes on `world` (docs/studio-node.md); before that rename, a 3D on `scene`.
-  const sceneLinked = linked(node, ["world"]) || linked(node, ["scene"]);
   const backgroundLinked = linked(node, BACKGROUND_INPUTS);
 
   let stage = null;
@@ -238,8 +236,8 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     // once its length is known, else a single image), the `scene` items, the animated 3D files' clips.
     media: {},
     background: backgroundLinked ? { end: null, video: false } : null,
-    // [inputs] An upstream Scene on `scene` has its groups of rows instead.
-    sceneRow: sceneLinked && !upstreamLinked(),
+    // [inputs] The own `world` content, shown with an upstream Scene's groups of rows too.
+    sceneRow: ownSceneLinked({ world: linked(node, ["world"]), scene: linked(node, ["scene"]), upstream: upstreamLinked() }),
     // A VIDEO sets the Timeline fps (pano_video_fps.js).
     fpsLocked: false,
     imageSizes: {},
