@@ -1347,6 +1347,24 @@
 .pano-studio-at-output { position: absolute; right: var(--studio-float-inset); top: var(--studio-float-inset); }
 .pano-studio-at-nav { position: absolute; right: var(--studio-float-inset); top: 50%; transform: translateY(-50%); }
 .pano-studio-at-bar { position: absolute; left: 50%; bottom: var(--studio-float-inset); transform: translateX(-50%); }
+
+/* The overlay over the stage's canvas (the guides, the Camera's mark, the sky image's handles): drawn only, the
+   pointer goes through to the stage. */
+.pano-studio-stage-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+/* The selected object's name on the bar at the bottom center: one line, cut with an ellipsis. */
+.pano-studio-bar-name {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .pano-studio-at-buttons { position: absolute; right: var(--studio-float-inset); bottom: var(--studio-float-inset); }
 
 /* The view knobs' column and "?" below it. */

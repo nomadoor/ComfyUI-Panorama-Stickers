@@ -2,11 +2,13 @@
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { VIEW_UNAVAILABLE_MESSAGE } from "../../pano_preview_view.js";
 import { TIMELINE_BAR_HEIGHT, loadTimelineHeight, saveTimelineHeight, timelineHeight } from "../../studio/layout.js";
+import { selectionBar } from "../../studio/selection_bar.js";
 import { inspectorSelection } from "../../studio/session.js";
 import StudioInspector from "./StudioInspector.vue";
 import StudioNavWidget from "./StudioNavWidget.vue";
 import StudioNotice from "./StudioNotice.vue";
 import StudioOutputPreview from "./StudioOutputPreview.vue";
+import StudioSelectionBar from "./StudioSelectionBar.vue";
 import StudioTabs from "./StudioTabs.vue";
 import StudioTimeline from "./StudioTimeline.vue";
 import StudioToolRail from "./StudioToolRail.vue";
@@ -15,7 +17,8 @@ import StudioViewButtons from "./StudioViewButtons.vue";
 // Panorama Studio's editor in the new UI: the regions of docs/studio-ui.md "画面の区画". No header. A modal frame over a
 // dimmed page holds three windows: the stage (the parts floating over it in fixed places), the timeline
 // (<StudioTimeline>) below it, behind the gap dragged for its height (kept per browser), and the inspector
-// (<StudioInspector>, its top row the node's name and ✕) down the right column. The bar at the bottom center is a seat (slot `bar`).
+// (<StudioInspector>, its top row the node's name and ✕) down the right column. The bar at the bottom center
+// (<StudioSelectionBar>) shows the selected object's buttons; an overlay canvas over the stage's draws the guides.
 //
 // The editor's state lives in studio/editor.js: `view` is its view model (the working state, the selection, the
 // playhead, playback, Undo), `ui` what the stage reports (stage.js stageUi(), with `background` and `empty`), and
@@ -33,6 +36,7 @@ const props = defineProps({
 const root = ref(null);
 const main = ref(null);
 const canvas = ref(null);
+const overlay = ref(null);
 const timeline = ref(null);
 let stage = null;
 
@@ -40,7 +44,7 @@ let stage = null;
 const selected = computed(() => inspectorSelection(props.view.selection));
 
 onMounted(() => {
-  stage = props.controller.onStage({ canvas: canvas.value, root: root.value }) ?? null;
+  stage = props.controller.onStage({ canvas: canvas.value, overlay: overlay.value, root: root.value }) ?? null;
   props.controller.onTimeline({ handleDelete: () => timeline.value?.handleDelete() ?? false });
   // The editor takes the focus from the graph behind it, so the stage has the keys at once (pano_key_focus.js).
   root.value?.focus({ preventScroll: true });
@@ -60,6 +64,9 @@ const line = computed(() => {
   if (props.ui.empty) return { kind: "hint", text: "Drop an image or a 3D file, or press Add" };
   return { kind: "notice", text: "" };
 });
+
+// --- The bar at the bottom center: the selected object's (none while nothing is selected).
+const bar = computed(() => selectionBar({ state: props.view.state, row: props.view.selection?.row ?? null, mode: props.view.gizmoMode, readOnly: props.view.readOnly }));
 
 // --- The stage's buttons.
 function setGrid(shown) {
@@ -116,6 +123,7 @@ function setCollapsed(value) {
       <div ref="main" class="pano-studio-main">
         <div class="pano-studio-stage" :class="{ 'is-loading': ui.background === 'loading' || ui.view === 'loading' }" data-region="stage">
           <canvas ref="canvas" class="pano-studio-stage-canvas" data-stage-canvas :style="{ cursor: ui.cursor || null }" />
+          <canvas ref="overlay" class="pano-studio-stage-overlay" data-stage-overlay aria-hidden="true" />
           <div v-if="ui.view === 'failed'" class="pano-studio-stage-failed pano-studio-cap">{{ VIEW_UNAVAILABLE_MESSAGE }}</div>
 
           <StudioTabs class="pano-studio-at-tabs" value="3d" camera-disabled camera-tip="Camera view · in development" />
@@ -134,7 +142,9 @@ function setCollapsed(value) {
           <div class="pano-studio-at-nav">
             <StudioNavWidget :lit="ui.lit" @knob="(knob, event) => stage?.knobDown(knob, event)" />
           </div>
-          <div class="pano-studio-at-bar" data-region="bar"><slot name="bar" /></div>
+          <div class="pano-studio-at-bar" data-region="bar">
+            <StudioSelectionBar v-if="bar" :model="bar" @press="(key) => controller.bar(key)" />
+          </div>
           <StudioViewButtons
             class="pano-studio-at-buttons"
             :grid-shown="!ui.gridHidden"

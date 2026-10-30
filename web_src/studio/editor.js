@@ -21,6 +21,7 @@ import { loadSceneState } from "../pano_scene_state.js";
 import { sceneFilesOf, stateAnimationClips } from "../pano_space.js";
 import { createVideoPlayback } from "../pano_video_playback.js";
 import { groundOf } from "./defaults.js";
+import { gizmoModeOfKey, selectedKind } from "./selection_bar.js";
 import { createStudioSession } from "./session.js";
 import { createStage, stageUi } from "./stage.js";
 import { createStageMedia, stageContent, stickerFrameSphere } from "./stage_content.js";
@@ -129,6 +130,8 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     canUndo: false,
     canRedo: false,
     readOnly,
+    // The gizmo's mode ("translate", "rotate", "scale"): Move each time the editor opens, never saved.
+    gizmoMode: "translate",
     // What the Timeline knows of the inputs (timeline_model.js ctx `media`): the background as a single image, the
     // `scene` items, the animated 3D files' clips.
     media: {},
@@ -269,6 +272,40 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     }
   }
 
+  // --- The stage's edits of the selected object and the bar at the bottom center (docs/studio-ui.md "下の中央のバー").
+
+  // An outcome of the session's object edits: playback stops on a drag's first change, and the views follow.
+  function objectOutcome(outcome) {
+    if (!outcome.changed) return;
+    if (outcome.stopPlayback || outcome.history) playback.stop();
+    sync();
+  }
+
+  const objectEdits = {
+    live: (apply) => objectOutcome(session.gesture(apply)),
+    commit: () => objectOutcome(session.commitGesture()),
+    cancel: () => objectOutcome(session.cancelGesture()),
+  };
+
+  function selectObject(row) {
+    if (session.selectObject(row)) sync();
+  }
+
+  function setGizmoMode(mode) {
+    if (!mode || view.gizmoMode === mode) return;
+    view.gizmoMode = mode;
+    redraw();
+  }
+
+  function barPress(key) {
+    if (key.startsWith("gizmo:")) setGizmoMode(key.slice("gizmo:".length));
+    else if (key === "lock") objectOutcome(session.toggleLock());
+    else if (key === "duplicate") objectOutcome(session.duplicateSelected());
+    else if (key === "front" || key === "back") objectOutcome(session.orderSelected(key));
+    else if (key === "revert") objectOutcome(session.revertSelected({ playhead: view.playhead, imageSizes: view.imageSizes, animations: view.animations }));
+    else if (key === "delete") deleteSelection();
+  }
+
   // --- Writing to the node.
 
   function save() {
@@ -299,6 +336,13 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
       event.preventDefault();
       event.stopPropagation();
       playback.toggle();
+    } else if (!mod && !event.altKey) {
+      // 1, 2, 3: the gizmo's Move, Rotate, Scale for the selected object that has them.
+      const mode = gizmoModeOfKey(selectedKind(session.state, session.selection.row), event.key);
+      if (!mode) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setGizmoMode(mode);
     }
   }
 
@@ -311,12 +355,23 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
 
   // --- What StudioEditor.vue calls.
   const controller = markRaw({
-    onStage: ({ canvas, root }) => {
+    onStage: ({ canvas, overlay = null, root }) => {
       rootElement = root;
       const output = outputView(session.state, 0);
       const opening = openingView({ memory: nodeSession.view, output, world: { ...world, boxes: [], content: null }, frameAvailable: false });
       stage = createStage({
         canvas,
+        overlay,
+        objects: {
+          state: () => session.state,
+          playhead: () => view.playhead,
+          selection: () => session.selection.row,
+          select: selectObject,
+          edits: objectEdits,
+          mode: () => view.gizmoMode,
+          tab: () => "3d",
+          readOnly: () => readOnly,
+        },
         root,
         opening,
         output,
@@ -346,6 +401,7 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
       writeLoopSetting(storage, view.loop);
     },
     frameSelected: (row) => stage?.frameSelected(selectionOf(row)),
+    bar: barPress,
     rail: (key) => {
       if (key === "undo") historyStep(-1);
       else if (key === "redo") historyStep(1);

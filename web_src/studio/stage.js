@@ -7,6 +7,8 @@ import { createEditorView } from "../pano_editor_view.js";
 import { DRAW_REASON, createFrameScheduler } from "../pano_frame_scheduler.js";
 import { stageOwnsKey } from "../pano_key_focus.js";
 import { isMoveKey } from "../pano_view_keys.js";
+import { createStageObjects } from "./stage_objects.js";
+import { drawStageOverlay } from "./stage_overlay.js";
 import { STAGE_CLEAR_COLOR, stageCamera, stageRenderInput, stageRenderSize, surfaceHit } from "./stage_view.js";
 import { createNotice, createViewCamera, frameSelectedSphere, orbitCenter } from "./view_camera.js";
 import { KNOB_CURSOR, createViewInput, createWheelSteps, knobAction, litKnobs, navigationAction, stageCursor } from "./view_input.js";
@@ -38,8 +40,13 @@ export function stageUi() {
 // stageContent()) or null. selected(): what is selected for the orbit's center and Frame Selected (view_camera.js
 // orbitCenter: null, { kind: "object", sphere } or { kind: "camera", position }). ui: stageUi()'s fields, reactive.
 // onEscape(): Escape with no view drag to let go; the editor takes back one thing or closes (docs/studio-ui.md "閉じ方").
+// overlay: the 2D canvas over the stage's (the guides, the Camera's mark, the sky image's handles; null draws none).
+// objects: what selecting and editing the objects needs (stage_objects.js createStageObjects: state, playhead,
+// selection, select, edits, mode, tab, readOnly); without it the stage does not touch objects.
 export function createStage({
   canvas,
+  overlay = null,
+  objects: objectDeps = null,
   root,
   opening,
   output,
@@ -60,8 +67,14 @@ export function createStage({
   const notice = createNotice();
   let size = { width: 1, height: 1 };
   let disposed = false;
-  // The drag under way: { action, pointerId, last: { x, y }, start: { x, y }, offset, knob }.
+  // The drag under way: { action, pointerId, last: { x, y }, start: { x, y }, offset, knob, handler, moved }; `action`
+  // "object" is a press on an object (stage_objects.js), whose `handler` takes the moves.
   let drag = null;
+  // Where the pointer is over the stage (CSS px), null off it; and the cursor of what it is over.
+  let pointer = null;
+  let objectCursor = null;
+  // How far (CSS px) a left press may move and still be a click that lets the selection go.
+  const CLICK_SLOP = 3;
   let lastFrame = 0;
   let noticeTimer = 0;
   // Movement keys moved the view in the last frame, or one went down since (input.keyMotion() counts the time it
@@ -92,6 +105,15 @@ export function createStage({
     draw,
     animating: () => camera.animating() || drag?.action === "joystick" || keysMoving,
   });
+
+  const objects = objectDeps ? createStageObjects({
+    ...objectDeps,
+    editorView,
+    camera: () => cameraNow(),
+    size: () => size,
+    content: () => content(),
+    ground: () => world.ground,
+  }) : null;
 
   // --- Drawing.
 
@@ -132,8 +154,31 @@ export function createStage({
       gridHidden: ui.gridHidden,
       clearColor: ui.background === "loading" ? null : STAGE_CLEAR_COLOR,
       content: shown,
+      gizmo: objects ? objects.gizmo() : null,
     }));
+    drawOverlay();
     syncUi();
+  }
+
+  // The 2D overlay, at the canvas's CSS size times the device pixel ratio.
+  function drawOverlay() {
+    if (!overlay) return;
+    const ratio = win.devicePixelRatio || 1;
+    const width = Math.max(1, Math.round(size.width * ratio));
+    const height = Math.max(1, Math.round(size.height * ratio));
+    if (overlay.width !== width || overlay.height !== height) {
+      overlay.width = width;
+      overlay.height = height;
+    }
+    const ctx = overlay.getContext("2d");
+    if (!ctx) return;
+    drawStageOverlay(ctx, {
+      camera: cameraNow(),
+      width: size.width,
+      height: size.height,
+      ratio,
+      scene: objects ? objects.overlay({ altHeld: input.altHeld(), gridHidden: ui.gridHidden }) : null,
+    });
   }
 
   function requestDraw(reason = DRAW_REASON.VIEW) {
@@ -156,7 +201,8 @@ export function createStage({
     const gesture = input.gesture();
     ui.lit = litKnobs({ gesture, keysMoving, altHeld: input.altHeld() });
     ui.knobDrag = !!drag?.knob;
-    ui.cursor = drag?.knob ? KNOB_CURSOR.drag : stageCursor({ gesture, altHeld: input.altHeld() });
+    const dragged = drag?.action === "object" ? objectCursor : null;
+    ui.cursor = drag?.knob ? KNOB_CURSOR.drag : (dragged ?? stageCursor({ gesture, altHeld: input.altHeld(), objectCursor: drag ? null : objectCursor }));
   }
 
   // --- Hits.
@@ -175,6 +221,20 @@ export function createStage({
     const view = cameraNow();
     const picked = editorView.pick(view, x, y, size.width, size.height);
     return surfaceHit(view, x, y, size.width, size.height, { ground: world.ground, picked });
+  }
+
+  // What the pointer is over (stage_objects.js hover, the CPU test): the cursor, and a redraw when a guide or the
+  // gizmo's handle lights up or goes out.
+  function hoverAt(point) {
+    pointer = point;
+    if (!objects || !editorView.ready) return;
+    const { cursor, changed } = point ? objects.hover(point, { altHeld: input.altHeld() }) : { cursor: null, changed: objects.leave() };
+    objectCursor = cursor;
+    if (changed) requestDraw();
+  }
+
+  function insideStage(point) {
+    return point.x >= 0 && point.y >= 0 && point.x <= size.width && point.y <= size.height;
   }
 
   // --- Gestures.
@@ -199,7 +259,14 @@ export function createStage({
     requestDraw();
   }
 
-  function move(point) {
+  function move(point, event = {}) {
+    if (Math.hypot(point.x - drag.start.x, point.y - drag.start.y) > CLICK_SLOP) drag.moved = true;
+    if (drag.action === "object") {
+      drag.last = point;
+      if (drag.moved) drag.handler.move(point, event);
+      requestDraw();
+      return;
+    }
     const dx = point.x - drag.last.x;
     const dy = point.y - drag.last.y;
     drag.last = point;
@@ -215,9 +282,21 @@ export function createStage({
     requestDraw();
   }
 
-  function end() {
+  // A drag ends: let go (`cancel` false) or given up (Escape, the focus lost). A left click on nothing that did not
+  // move lets the selection go.
+  function end(cancel = false) {
     if (!drag) return;
+    const ended = drag;
     drag = null;
+    if (ended.action === "object") {
+      if (cancel) ended.handler.cancel();
+      else ended.handler.end();
+      if (pointer) hoverAt(pointer);
+      syncUi();
+      requestDraw();
+      return;
+    }
+    if (!cancel && ended.click && !ended.moved) objectDeps?.select(null);
     input.endGesture();
     if (!keysMoving) camera.endGesture();
     syncUi();
@@ -229,11 +308,24 @@ export function createStage({
   function onPointerDown(event) {
     if (drag) return;
     input.modifiers(event);
+    const point = pointOf(event);
+    const plainLeft = event.button === 0 && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey;
+    const handler = plainLeft && objects && editorView.ready ? objects.press(point) : null;
+    if (handler) {
+      event.preventDefault();
+      canvas.setPointerCapture?.(event.pointerId);
+      objects.leave();
+      drag = { action: "object", pointerId: event.pointerId, last: point, start: point, offset: 0, knob: null, handler, moved: false };
+      syncUi();
+      requestDraw();
+      return;
+    }
     const action = navigationAction(event);
     if (!action || action === "object") return;
     event.preventDefault();
     canvas.setPointerCapture?.(event.pointerId);
-    begin(action, pointOf(event), event.pointerId);
+    begin(action, point, event.pointerId);
+    if (drag && plainLeft) drag.click = true;
   }
 
   // The middle button's press would start the browser's autoscroll.
@@ -243,17 +335,19 @@ export function createStage({
 
   function onPointerMove(event) {
     if (!drag || event.pointerId !== drag.pointerId) {
-      if (!drag && event.altKey !== input.altHeld()) {
-        input.modifiers(event);
+      if (!drag) {
+        if (event.altKey !== input.altHeld()) input.modifiers(event);
+        const point = pointOf(event);
+        hoverAt(event.target === canvas && insideStage(point) ? point : null);
         syncUi();
       }
       return;
     }
-    move(drag.knob ? { x: event.clientX, y: event.clientY } : pointOf(event));
+    move(drag.knob ? { x: event.clientX, y: event.clientY } : pointOf(event), event);
   }
 
   function onPointerUp(event) {
-    if (drag && event.pointerId === drag.pointerId) end();
+    if (drag && event.pointerId === drag.pointerId) end(event.type === "pointercancel");
   }
 
   function onWheel(event) {
@@ -283,7 +377,7 @@ export function createStage({
 
   // The pointer capture was lost without a pointerup (the element went away): the drag ends there.
   function onLostCapture(event) {
-    if (drag && event.pointerId === drag.pointerId) end();
+    if (drag && event.pointerId === drag.pointerId) end(drag.action === "object");
   }
 
   // --- Keys, while the editor is open.
@@ -294,12 +388,14 @@ export function createStage({
     if (event.key !== "Escape" || !stageOwnsKey(event, root)) return;
     event.preventDefault();
     event.stopPropagation();
-    if (drag) end();
+    if (drag) end(true);
     else onEscape();
   }
 
   function onKeyDown(event) {
+    const alt = input.altHeld();
     input.modifiers(event);
+    if (alt !== input.altHeld() && pointer && !drag) hoverAt(pointer);
     // Shift pressed while a movement key is held makes it fast at once: the keys' modifiers follow every key event
     // (view_input.js keyUp passes them on and releases nothing for a key that is not held).
     if (!isMoveKey(event.code)) input.keyUp({ code: event.code, shiftKey: event.shiftKey });
@@ -322,7 +418,9 @@ export function createStage({
   }
 
   function onKeyUp(event) {
+    const alt = input.altHeld();
     input.modifiers(event);
+    if (alt !== input.altHeld() && pointer && !drag) hoverAt(pointer);
     // macOS sends no keyup for a key let go while Meta is down: Meta going up lets every key go.
     const released = event.key === "Meta" ? releaseKeys() : input.keyUp(event);
     if (released && isMoveKey(event.code)) {
@@ -345,10 +443,16 @@ export function createStage({
     input.lostFocus();
     keysMoving = false;
     wheelSteps.reset();
-    if (drag) {
+    if (drag?.action === "object") {
+      const ended = drag;
+      drag = null;
+      ended.handler.cancel();
+    } else if (drag) {
       drag = null;
       camera.endGesture();
     }
+    if (objects?.leave()) requestDraw();
+    objectCursor = null;
     camera.endGesture();
     syncUi();
     requestDraw();
