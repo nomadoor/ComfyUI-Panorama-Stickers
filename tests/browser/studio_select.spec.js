@@ -246,3 +246,70 @@ test("Lock keeps the World image from the gizmo and Delete; Duplicate adds a sel
   expect((await stateOf(page)).stickers.length).toBe(2);
   expect(problems).toEqual([]);
 });
+
+test("dragging the gizmo's XZ square draws the X and Z guide lines through the grabbed center, in their colors", async ({ page }, testInfo) => {
+  const problems = watch(page);
+  await page.setViewportSize({ width: 1440, height: 860 });
+  await page.goto("/tests/browser/pages/studio_select.html?view=above");
+  await page.waitForFunction(() => window.__studio?.ready, null, { timeout: 30_000 });
+  expect(await page.evaluate(() => window.__studio.error)).toBeNull();
+  await page.waitForTimeout(400);
+  // From the page's ABOVE_VIEW (studio_select.js): the board, the XZ square's middle and both guide lines on the stage.
+  const at = await page.evaluate(async () => {
+    const { stageCamera } = await import("/web_src/studio/stage_view.js");
+    const { projectPoint } = await import("/web_src/pano_space.js");
+    const { gizmoHandles, gizmoDrag, gizmoGuideSegment } = await import("/web_src/studio/gizmo_overlay.js");
+    const { screenSegment } = await import("/web_src/studio/world_guides.js");
+    const rect = document.querySelector("[data-stage-canvas]").getBoundingClientRect();
+    const pose = { position: [0, 2.0, 1.4], yaw_deg: 0, pitch_deg: -Math.atan2(2.2, 3.8) * 180 / Math.PI, target: [0, -0.2, -2.4] };
+    const camera = stageCamera(pose, rect.width, rect.height, 50);
+    const gizmo = { mode: "translate", transform: { position: [0.9, -0.4, -2.6], quaternion: { x: 0, y: 0, z: 0, w: 1 }, scale: 1 } };
+    const handles = gizmoHandles(gizmo, camera, rect.width, rect.height);
+    const plane = handles.planes.find((entry) => entry.name === "xz");
+    const grip = { x: plane.points.reduce((sum, p) => sum + p.x, 0) / 4, y: plane.points.reduce((sum, p) => sum + p.y, 0) / 4 };
+    const lines = gizmoDrag(gizmo, "xz", camera, grip, rect.width, rect.height).guides.map((guide) => {
+      const [a, b] = screenSegment(camera, gizmoGuideSegment(guide, camera), rect.width, rect.height);
+      return { name: guide.name, a, b };
+    });
+    const board = projectPoint(camera, [0.9, -0.4, -2.6], rect.width, rect.height);
+    return { shown: plane.shown, stage: { x: rect.left, y: rect.top }, size: { width: rect.width, height: rect.height }, center: handles.center, grip, lines, board };
+  });
+  expect(at.shown).toBe(true);
+  const page_ = (p) => ({ x: at.stage.x + p.x, y: at.stage.y + p.y });
+  await click(page, page_(at.board));
+  expect(await selected(page)).toBe("sticker_2");
+  // Held mid-drag: the overlay's pixels along each guide line, away from the gizmo, are in that axis's color.
+  const grip = page_(at.grip);
+  await page.mouse.move(grip.x, grip.y);
+  await page.mouse.down();
+  for (let i = 1; i <= 6; i += 1) await page.mouse.move(grip.x + i * 12, grip.y + i * 5);
+  const colors = { x: [0xf3, 0x71, 0x59], z: [0xae, 0xce, 0xdb] };
+  for (const line of at.lines) {
+    const dx = line.b.x - line.a.x;
+    const dy = line.b.y - line.a.y;
+    const length = Math.hypot(dx, dy);
+    // Points 100 to 260 px from the center both ways that lie on the stage and the line; of each, the most opaque of the pixel and
+    // its neighbors across the line (the line is 1.5 px and smoothed).
+    const samples = [];
+    for (const away of [-260, -200, -140, -100, 100, 140, 200, 260]) {
+      const p = { x: at.center.x + dx / length * away, y: at.center.y + dy / length * away };
+      if (p.x < 2 || p.y < 2 || p.x > at.size.width - 2 || p.y > at.size.height - 2) continue;
+      // A line going away from the view ends on screen where it vanishes (Z here): only points on the segment count.
+      const t = ((p.x - line.a.x) * dx + (p.y - line.a.y) * dy) / (length * length);
+      if (t < 0.01 || t > 0.99) continue;
+      const near = [-1, 0, 1].map((k) => ({ x: p.x - dy / length * k, y: p.y + dx / length * k }));
+      const pixels = await page.evaluate((points) => points.map(({ x, y }) => window.__studio.overlayAt(x, y)), near);
+      samples.push(pixels.reduce((best, rgba) => (rgba[3] > best[3] ? rgba : best)));
+    }
+    expect(samples.length, line.name).toBeGreaterThanOrEqual(3);
+    const matching = samples.filter((rgba) => rgba[3] > 120 && rgba.slice(0, 3).every((value, index) => Math.abs(value - colors[line.name][index]) < 30));
+    expect(matching.length, `${line.name}: ${JSON.stringify(samples)}`).toBe(samples.length);
+  }
+  await page.screenshot({ path: testInfo.outputPath("plane-guides-xz.png") });
+  await page.mouse.up();
+  // Let go: the guide lines go.
+  const p = at.lines[0];
+  const off = { x: at.center.x + (p.b.x - p.a.x) / Math.hypot(p.b.x - p.a.x, p.b.y - p.a.y) * 200, y: at.center.y + (p.b.y - p.a.y) / Math.hypot(p.b.x - p.a.x, p.b.y - p.a.y) * 200 };
+  expect((await page.evaluate(({ x, y }) => window.__studio.overlayAt(x, y), off))[3]).toBeLessThan(40);
+  expect(problems).toEqual([]);
+});

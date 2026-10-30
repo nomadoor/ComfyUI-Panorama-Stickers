@@ -105,8 +105,8 @@ export function createStageObjects({
   // The gizmo's handle under the pointer, and the one being dragged (gizmo_overlay.js gizmoHit's names).
   let gizmoAxis = null;
   let draggedAxis = null;
-  // The axis guide line of the gizmo drag under way (gizmo_overlay.js gizmoDrag's `guide`), or null.
-  let dragGuide = null;
+  // The axis guide lines of the gizmo drag under way (gizmo_overlay.js gizmoDrag's `guides`), or none.
+  let dragGuides = [];
 
   const editable = () => !readOnly() && tab() === "3d";
 
@@ -250,7 +250,7 @@ export function createStageObjects({
     const frame = playhead();
     const base = row === "camera" ? cameraValue() : evaluateSticker(stickerOf(row), frame);
     draggedAxis = axis;
-    dragGuide = grab.guide ?? null;
+    dragGuides = grab.guides ?? [];
     return {
       move(next, event = {}) {
         const now = size();
@@ -277,12 +277,12 @@ export function createStageObjects({
       },
       end() {
         draggedAxis = null;
-        dragGuide = null;
+        dragGuides = [];
         edits.commit();
       },
       cancel() {
         draggedAxis = null;
-        dragGuide = null;
+        dragGuides = [];
         edits.cancel();
       },
     };
@@ -381,18 +381,22 @@ export function createStageObjects({
     const sky = selectedSky();
     const shownHandles = handles();
     const { width, height } = size();
-    const guideLine = shownHandles && dragGuide ? screenSegment(camera(), gizmoGuideSegment(dragGuide, camera()), width, height) : null;
+    const guideLines = shownHandles ? dragGuides.map((guide) => {
+      const line = screenSegment(camera(), gizmoGuideSegment(guide, camera()), width, height);
+      return line ? { name: guide.name, a: line[0], b: line[1] } : null;
+    }).filter(Boolean) : [];
     return {
       guides: items,
       // A guide's band runs now (StudioEditor.vue marks the overlay: data-loading-guide).
       loading: items.some((item) => item.shimmer > 0),
       camera: marker ? { screen: marker, look: row === "camera" ? "selected" : "normal" } : null,
       // The handle dragged, else the one under the pointer (none while Alt is held), is lit.
-      // While an axis handle is dragged, its guide line ({ name, a, b } in CSS px) runs across the stage.
+      // While a handle is dragged, its axis guide lines ([{ name, a, b }] in CSS px: an axis's one, a plane square's two)
+      // run across the stage.
       gizmo: shownHandles ? {
         handles: shownHandles,
         active: draggedAxis ?? (altHeld ? null : gizmoAxis),
-        guide: guideLine ? { name: dragGuide.name, a: guideLine[0], b: guideLine[1] } : null,
+        guides: guideLines,
       } : null,
       sky: sky ? { geometry: sky.geometry, handles: editable() && !sky.item.locked } : null,
     };
