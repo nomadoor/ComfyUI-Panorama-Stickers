@@ -64,7 +64,7 @@ class TestStickersEditorLoadingContract(unittest.TestCase):
         stage_status = function_block(self.editor, "getStageImageStatus")
         self.assertNotIn("stageWarningDetail", stage_status)
         boot = self.editor.split("function runBootStep", 1)[1].split(
-            "\napp.registerExtension(",
+            "\nexport const oldEditorHooks",
             1,
         )[0]
         self.assertIn("uiState.stageWarningDetail", boot)

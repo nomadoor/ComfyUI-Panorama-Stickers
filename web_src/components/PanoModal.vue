@@ -3,7 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { ICON } from "../icons.js";
 import PanoFloatingRight from "./PanoFloatingRight.vue";
 import PanoFrameRail from "./PanoFrameRail.vue";
-import PanoIconButton from "./PanoIconButton.vue";
+import PanoIconButton from "./shared/PanoIconButton.vue";
 import PanoConfirmDialog from "./PanoConfirmDialog.vue";
 import PanoImageFilePicker from "./PanoImageFilePicker.vue";
 import PanoPaintDock from "./PanoPaintDock.vue";
@@ -13,7 +13,7 @@ import PanoSidePanel from "./PanoSidePanel.vue";
 import PanoTimeline from "./PanoTimeline.vue";
 import PanoTooltip from "./PanoTooltip.vue";
 import PanoToolRail from "./PanoToolRail.vue";
-import PanoVideoTransport from "./PanoVideoTransport.vue";
+import PanoVideoTransport from "./shared/PanoVideoTransport.vue";
 import PanoViewToggle from "./PanoViewToggle.vue";
 import { buildModalShellPreset } from "../modal_shell_presets.js";
 

@@ -1,6 +1,6 @@
 <script setup>
 import PanoSegments from "./PanoSegments.vue";
-import SvgIcon from "./SvgIcon.vue";
+import SvgIcon from "./shared/SvgIcon.vue";
 
 defineProps({
   model: { type: Object, default: () => ({}) },

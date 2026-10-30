@@ -217,7 +217,7 @@ test("the on-node Stickers and Cutout surfaces draw through the same shared view
     assert.match(source(`components/${name}`), /<PanoViewUnavailable v-if="model\.viewUnavailable" \/>/, name);
   }
   // One message for every node surface.
-  assert.match(source("components/PanoViewUnavailable.vue"), /VIEW_UNAVAILABLE_MESSAGE/);
+  assert.match(source("components/shared/PanoViewUnavailable.vue"), /VIEW_UNAVAILABLE_MESSAGE/);
   const files = readdirSync(new URL("../web_src/", import.meta.url)).filter((name) => name.endsWith(".js"));
   assert.deepEqual(files.filter((name) => source(name).includes("3D view unavailable")), ["pano_preview_view.js"]);
 });

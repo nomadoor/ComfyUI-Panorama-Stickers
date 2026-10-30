@@ -1,11 +1,11 @@
 <script setup>
 import { ref } from "vue";
 import { ICON } from "../icons.js";
-import PanoIconButton from "./PanoIconButton.vue";
+import PanoIconButton from "./shared/PanoIconButton.vue";
 import PanoImageFilePicker from "./PanoImageFilePicker.vue";
 import PanoStickersNodeHelp from "./PanoStickersNodeHelp.vue";
-import PanoViewUnavailable from "./PanoViewUnavailable.vue";
-import SvgIcon from "./SvgIcon.vue";
+import PanoViewUnavailable from "./shared/PanoViewUnavailable.vue";
+import SvgIcon from "./shared/SvgIcon.vue";
 
 const props = defineProps({
   model: { type: Object, default: () => ({}) },

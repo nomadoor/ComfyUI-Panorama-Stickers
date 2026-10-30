@@ -21,7 +21,7 @@ The following must be rendered from Vue components under `web_src/components/`:
 
 - modal shell chrome (`PanoModal.vue`)
   - Preview のビューアの `viewer` の配置（ステージと右下の視点の操作のボタン群と閉じるボタンだけ。`docs/preview-node.md`）も `PanoModal.vue` の中に持ち、別のモーダルを作らない。
-- toolbars and button groups (e.g. `PanoToolRail.vue`, `PanoFrameRail.vue`, `PanoViewToggle.vue`, `PanoFloatingRight.vue`, `PanoPaintDock.vue`, `PanoVideoTransport.vue`)
+- toolbars and button groups (e.g. `PanoToolRail.vue`, `PanoFrameRail.vue`, `PanoViewToggle.vue`, `PanoFloatingRight.vue`, `PanoPaintDock.vue`, `shared/PanoVideoTransport.vue`)
 - inspector panels (`PanoSidePanel.vue`)
 - selection menus (`PanoSelectionMenu.vue`)
 - pickers and popovers (e.g. `PanoImageFilePicker.vue`, `PanoCutoutAspectPicker.vue`, `PanoTooltip.vue`)

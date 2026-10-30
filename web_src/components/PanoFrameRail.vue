@@ -1,6 +1,6 @@
 <script setup>
 import PanoCutoutAspectPicker from "./PanoCutoutAspectPicker.vue";
-import PanoIconButton from "./PanoIconButton.vue";
+import PanoIconButton from "./shared/PanoIconButton.vue";
 import PanoFrameRollKnob from "./PanoFrameRollKnob.vue";
 
 defineProps({

@@ -1,7 +1,7 @@
 <script setup>
 import { ICON } from "../icons.js";
-import PanoViewUnavailable from "./PanoViewUnavailable.vue";
-import SvgIcon from "./SvgIcon.vue";
+import PanoViewUnavailable from "./shared/PanoViewUnavailable.vue";
+import SvgIcon from "./shared/SvgIcon.vue";
 
 // Panorama Studio's node surface (ADR 0029): what the node shoots and its output size
 // (pano_studio_status.js), a panorama to look around in, and the editor.

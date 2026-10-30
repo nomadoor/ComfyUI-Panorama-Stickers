@@ -1,5 +1,5 @@
 <script setup>
-import PanoIconButton from "./PanoIconButton.vue";
+import PanoIconButton from "./shared/PanoIconButton.vue";
 
 defineProps({
   buttons: { type: Array, default: () => [] },

@@ -1,7 +1,7 @@
 <script setup>
 import { ref } from "vue";
 import { ICON } from "../icons.js";
-import PanoIconButton from "./PanoIconButton.vue";
+import PanoIconButton from "./shared/PanoIconButton.vue";
 
 const pinned = ref(false);
 const rows = Object.freeze([

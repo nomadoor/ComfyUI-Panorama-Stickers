@@ -7,7 +7,7 @@ const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, "..");
 const sourceRoot = path.join(repoRoot, "web_src");
 const outputPath = path.join(repoRoot, "web", "panorama_suite.js");
-const entryModuleId = "./pano_editor.js";
+const entryModuleId = "./main.js";
 const externalSpecs = new Set([
   "../../scripts/app.js",
   "../../scripts/api.js",

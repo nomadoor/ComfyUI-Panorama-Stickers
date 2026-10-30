@@ -8,7 +8,7 @@ export default defineConfig({
   },
   build: {
     lib: {
-      entry: "web_src/pano_editor.js",
+      entry: "web_src/main.js",
       formats: ["es"],
       fileName: () => "panorama_suite.js",
     },

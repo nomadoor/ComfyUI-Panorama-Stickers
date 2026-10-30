@@ -28,7 +28,8 @@ Panorama のエディタ（Stickers、Cutout、Panorama Studio、Preview のモ�
 
 ## Overview
 
-エディタは `web_src/pano_editor.js` の `showEditor(node, type, options)` が開く。
+エディタは `web_src/pano_editor.js` の `showEditor(node, type, options)` が開く。bundle の入口とノードの登録は
+`web_src/main.js` にあり、`pano_editor.js` が渡す `oldEditorHooks` で `createPanoEditorExtension` を登録する（ADR 0044 の「新旧の境」）。
 コードは次の 3 層に分かれている。
 
 | 層 | ファイル | 役割 |

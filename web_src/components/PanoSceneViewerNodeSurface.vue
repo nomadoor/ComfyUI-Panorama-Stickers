@@ -1,10 +1,10 @@
 <script setup>
 import { ref } from "vue";
 import { ICON } from "../icons.js";
-import PanoIconButton from "./PanoIconButton.vue";
-import PanoVideoTransport from "./PanoVideoTransport.vue";
-import PanoViewUnavailable from "./PanoViewUnavailable.vue";
-import SvgIcon from "./SvgIcon.vue";
+import PanoIconButton from "./shared/PanoIconButton.vue";
+import PanoVideoTransport from "./shared/PanoVideoTransport.vue";
+import PanoViewUnavailable from "./shared/PanoViewUnavailable.vue";
+import SvgIcon from "./shared/SvgIcon.vue";
 
 // The Preview's viewer of a Scene on its node (docs/preview-node.md "ノード上"): the Scene's picture, Reset view and
 // Open viewer at the top right, the playback bar at the bottom, and the play / pause cue of a double click.

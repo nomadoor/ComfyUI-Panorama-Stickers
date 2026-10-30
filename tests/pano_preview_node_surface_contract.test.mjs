@@ -7,7 +7,7 @@ const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
 test("Preview node surface exposes only one fullscreen action", async () => {
   const component = await read("../web_src/components/PanoPreviewNodeSurface.vue");
 
-  assert.ok(component.includes('import PanoIconButton from "./PanoIconButton.vue"'));
+  assert.ok(component.includes('import PanoIconButton from "./shared/PanoIconButton.vue"'));
   assert.ok(component.includes("ICON.fullscreen"));
   assert.ok(component.includes("ICON.fullscreen_close"));
   assert.match(component, /type:\s*'toggle-fullscreen'/);
