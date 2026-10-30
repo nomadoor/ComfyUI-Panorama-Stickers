@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
-import { rulerDragValue, rulerMarks } from "../../studio/frame_layout.js";
+import { rulerDragValue, rulerMarks, rulerSnapStep, rulerSnapValue } from "../../studio/frame_layout.js";
 import { FINE_FACTOR, roundValue } from "../../studio/ui_drag.js";
 import StudioKeyDot from "./StudioKeyDot.vue";
 import StudioResetButton from "./StudioResetButton.vue";
@@ -10,7 +10,7 @@ import StudioResetButton from "./StudioResetButton.vue";
 // it: frame_layout.js rulerStrips), with numbers under a fixed middle mark; its heads sit outside the strip at its two
 // ends, so they never move or shorten it: the name and the value in a fixed width at one end (above a vertical strip,
 // left of Roll), the Keyframe dot and the reset at the other (below a vertical strip, stacked; right of Roll). Dragging the scale moves it under the mark (the value under the mark is the value);
-// Shift makes the movement finer; Escape during the drag puts the value back. The strip takes the pointer on a wider
+// Shift makes the movement finer, or with `snap` (Roll) stops it at multiples of `snap`; Escape during the drag puts the value back. The strip takes the pointer on a wider
 // transparent band than its ticks. Arrow keys step it; the focus looks as everywhere in the editor (docs/design.md
 // "フォーカス"), its fill lighter over the dim. Drawn in white over the dimmed picture outside the frame.
 //
@@ -42,6 +42,8 @@ const props = defineProps({
   keyState: { type: String, default: "none" },
   disabled: { type: Boolean, default: false },
   tip: { type: String, default: "" },
+  // With Shift, stop at multiples of this (0: Shift makes the movement finer instead).
+  snap: { type: Number, default: 0 },
 });
 const emit = defineEmits(["input", "change", "cancel", "key", "reset"]);
 
@@ -91,9 +93,11 @@ function onPointerDown(event) {
 function onPointerMove(event) {
   if (!drag || event.pointerId !== drag.pointerId) return;
   const at = coord(event);
-  drag.raw = rulerDragValue(drag.raw, at - drag.at, props.unitPx, { fine: event.shiftKey, min: props.min, max: props.max });
+  const snapping = event.shiftKey && props.snap > 0;
+  drag.raw = rulerDragValue(drag.raw, at - drag.at, props.unitPx, { fine: event.shiftKey && !snapping, min: props.min, max: props.max });
   drag.at = at;
-  const next = roundValue(drag.raw, props.precision);
+  const bounds = { min: props.min, max: props.max };
+  const next = roundValue(snapping ? rulerSnapValue(drag.raw, props.snap, bounds) : drag.raw, props.precision);
   if (next === drag.sent) return;
   drag.sent = next;
   live.value = next;
@@ -135,8 +139,13 @@ function onKeydown(event) {
   const dir = { ArrowRight: 1, ArrowUp: 1, ArrowLeft: -1, ArrowDown: -1 }[event.key];
   if (!dir) return;
   event.preventDefault();
-  const step = (props.step || props.minor) * (event.shiftKey ? FINE_FACTOR : 1);
-  const next = roundValue(Math.min(props.max, Math.max(props.min, props.value + dir * step)), props.precision);
+  let next;
+  if (event.shiftKey && props.snap > 0) {
+    next = roundValue(rulerSnapStep(props.value, dir, props.snap, { min: props.min, max: props.max }), props.precision);
+  } else {
+    const step = (props.step || props.minor) * (event.shiftKey ? FINE_FACTOR : 1);
+    next = roundValue(Math.min(props.max, Math.max(props.min, props.value + dir * step)), props.precision);
+  }
   if (next === props.value) return;
   emit("input", next);
   emit("change", next);

@@ -33,10 +33,10 @@ Python はこの文書の規則を持たない（列は `—`）。「（新し�
 | 左の列の中身と並び、タブごとの無効 | — | `web_src/components/studio/StudioToolRail.vue`（今は Cursor・Add・Undo・Redo が働き、ほかは席に置いて無効。Undo・Redo は `web_src/studio/session.js` の履歴、Add は `web_src/studio/add_files.js`）。タブごとの無効は（未実装） | `tests/browser/studio_editor.spec.js`、（未作成）タブごとの無効の test |
 | インスペクタの組み立て（タブと選択で何を出すか）、行の格子、欄、スライダー、リセット、Keyframe のポチの置き場所、Easing のパネル、種類ごとの中身 | — | データは `web_src/studio/inspector_model.js` `buildInspectorModel`、編集を状態に当てるのは `web_src/studio/inspector_actions.js` `applyInspectorEdit`、画面は `web_src/components/studio/StudioInspector.vue`・`StudioInspectorCard.vue`・`StudioInspectorRow.vue`・`StudioEasingPanel.vue`（欄とスライダーの部品は `StudioNumberField.vue`・`StudioSlider.vue`・`StudioAspectSlider.vue`・`StudioResetButton.vue`・`StudioKeyDot.vue`、Camera のカードの撮り方の札は `StudioModeTiles.vue`）。Aspect のスライダーが止まる既定の比は `web_src/studio/ui_aspect.js` `ASPECT_PRESETS`・`snapAspectPos`、矢印キーの移り先は `stepAspect`。Sky の画像の FOV の行のリセット先は `inspector_model.js` `skyPlacedSize`。エディタの中でインスペクタとタイムラインが共有する選択は `web_src/studio/session.js` `inspectorSelection` | `tests/studio_inspector_model.test.mjs`、`tests/studio_inspector_actions.test.mjs`、`tests/studio_ui_helpers.test.mjs`（Aspect のスライダーの止まる所）、`tests/browser/studio_inspector.spec.js`、`tests/browser/studio_ui.spec.js`、`tests/studio_session.test.mjs`、`tests/browser/studio_session.spec.js` |
 | 右の中央の列（視点の操作のつまみ）と右下のボタン群（Frame Selected、Reset View、グリッドのボタン）の並び | — | `web_src/components/studio/StudioNavWidget.vue`、`StudioViewButtons.vue`（つまみの働きは `docs/space-and-view.md`） | `tests/browser/studio_editor.spec.js` |
-| 下の中央のバーの中身 | — | `web_src/studio/selection_bar.js` `selectionBar`・`gizmoModeOfKey`、`web_src/components/studio/StudioSelectionBar.vue`、ボタンの働きは `web_src/studio/session.js`（`toggleLock`・`duplicateSelected`・`orderSelected`・`revertSelected`・`deleteSelectedObject`）、ステージの選択とギズモと Sky の画像のハンドルは `web_src/studio/stage_objects.js`（ギズモの形・当たり・ドラッグの動きは `web_src/studio/gizmo_overlay.js`、描くのは `web_src/studio/stage_overlay.js`）。未実装：Replace（古い UI の下にファイルを選ぶ部品が無い）、Camera の Lock（`camera.locked` を読み込みがまだ読まない、`docs/scene-state-v2.md`）、ペイントのまとまりと複数選択のバー | `tests/studio_selection_bar.test.mjs`、`tests/studio_session.test.mjs`、`tests/studio_stage_objects.test.mjs`、`tests/studio_gizmo_overlay.test.mjs`、`tests/browser/studio_select.spec.js` |
+| 下の中央のバーの中身 | — | `web_src/studio/selection_bar.js` `selectionBar`・`gizmoModeOfKey`、`web_src/components/studio/StudioSelectionBar.vue`、ボタンの働きは `web_src/studio/session.js`（`toggleLock`・`duplicateSelected`・`orderSelected`・`revertSelected`・`deleteSelectedObject`）、ステージの選択とギズモと Sky の画像のハンドルは `web_src/studio/stage_objects.js`（ギズモの形・当たり・ドラッグの動きは `web_src/studio/gizmo_overlay.js`、ギズモの中心はガイドの中心 `web_src/studio/world_guides.js` `worldGuideItems`、描くのは `web_src/studio/stage_overlay.js`）。未実装：Replace（古い UI の下にファイルを選ぶ部品が無い）、Camera の Lock（`camera.locked` を読み込みがまだ読まない、`docs/scene-state-v2.md`）、ペイントのまとまりと複数選択のバー | `tests/studio_selection_bar.test.mjs`、`tests/studio_session.test.mjs`、`tests/studio_stage_objects.test.mjs`、`tests/studio_gizmo_overlay.test.mjs`、`tests/browser/studio_select.spec.js` |
 | エディタの中の Camera の見せ方（Camera のボタン、Camera のカード、3D の見た目） | — | 3D の見た目は `web_src/studio/camera_marker.js`（形・塗り・見え方）、描くのは `web_src/studio/stage_overlay.js`。Camera のボタンとカードは（新しい UI、未実装）`web_src/studio/camera_ui.js` | `tests/studio_camera_marker.test.mjs`、`tests/browser/studio_select.spec.js`、（未作成）`tests/studio_camera_ui.test.mjs` |
 | Camera タブの画面（フレームの収め方、枠の外、辺の目盛り、無効にする部品） | — | 収め方と目盛りの計算は `web_src/studio/frame_layout.js`（`frameRect`・`rulerStrips`（目盛りの長さと置き場所）・`rulerMarks`・`rulerDragValue`、目盛りの縮尺と長さと値の幅 `CAMERA_RULERS`）、画面の部品は `web_src/components/studio/StudioCameraFrame.vue`（枠と枠の外）・`StudioEdgeRuler.vue`（辺の目盛り）、無効にする部品は `StudioToolRail.vue` の `cameraTab`・`StudioViewButtons.vue` の `resetDisabled`・`frameTip`・`frameDisabled`（Panorama モードの Frame Selected）・`StudioNavWidget.vue` の `disabled`。辺の目盛りは Camera のカードの行（`frame_layout.js` `cameraRulers`）で、編集とリセットはインスペクタと同じ `inspector_actions.js` `applyInspectorEdit`（`rulerEdit`、Roll だけのリセットは行 `roll`）。ステージへの組み込み（タブ、フレームの中の絵、目盛り、Camera タブで Output の小窓を畳むこと）は `StudioEditor.vue`、タブと Camera の動きを状態に書くのは `web_src/studio/editor.js`、描くのと操作は `web_src/studio/stage.js`（Frame 表示は `stage_view.js` `cameraFrameView`、Panorama モードの ERP は `pano_three_view.js` `renderLiveErp`） | `tests/studio_frame_layout.test.mjs`、`tests/studio_stage_view.test.mjs`、`tests/studio_inspector_actions.test.mjs`（Roll だけのリセット）、`tests/browser/studio_camera_tab.spec.js`、`tests/browser/studio_camera_wired.spec.js`、`tests/browser/studio_camera_fixes.spec.js` |
-| Add のアイコンと、Add とドロップの流れ（選ぶファイル、画像の Sky / World の二択とその取り消し、置く間、失敗の知らせ）、ドラッグ中の印の見た目とラベル | — | 流れは `web_src/studio/add_files.js` `createAddFiles`（下の部品 `pano_sticker_file_import.js` のアップロード、`pano_file_3d.js` の経路）、ファイルを選ぶ画面は `web_src/components/studio/StudioEditor.vue`、二択は `web_src/components/studio/StudioPlaceChoice.vue`、ドラッグの事象は `web_src/studio/drop_input.js` `createDropInput`、印とラベルを描くのは `web_src/components/studio/StudioDropMarker.vue`（印の形と着く所は `web_src/studio/landing.js`、`docs/space-and-view.md`） | `tests/studio_add_files.test.mjs`、`tests/studio_landing.test.mjs`、`tests/browser/studio_add.spec.js` |
+| Add のアイコンと、Add とドロップの流れ（選ぶファイル、画像の Sky / World の二択とその取り消し、置く間、失敗の知らせ）、ドラッグ中の印の見た目とラベル | — | 流れは `web_src/studio/add_files.js` `createAddFiles`（下の部品 `pano_sticker_file_import.js` のアップロード、`pano_file_3d.js` の経路）、ファイルを選ぶ画面は `web_src/components/studio/StudioEditor.vue`、二択は `web_src/components/studio/StudioPlaceChoice.vue`、ドラッグの事象は `web_src/studio/drop_input.js` `createDropInput`、印とラベルを描くのは `web_src/components/studio/StudioDropMarker.vue`（印の形と色、ラベルの置き場所 `dropLabelPlace`、着く所は `web_src/studio/landing.js`、`docs/space-and-view.md`）。読み込み中のガイドと現れる動きの時間は `web_src/studio/load_reveal.js` `createLoadReveal`（置いた 3D ファイルを知らせるのは `add_files.js`、中身の不透明度に掛けるのは `web_src/studio/editor.js`、光の帯を描くのは `stage_overlay.js`） | `tests/studio_add_files.test.mjs`、`tests/studio_landing.test.mjs`、`tests/studio_load_reveal.test.mjs`、`tests/browser/studio_add.spec.js` |
 | ノードの入力から来た物（`port` の Sticker、上流の Scene の層、上流の背景）をステージとタイムラインに出すこと | — | `port` の Sticker の絵と 3D の素材は `web_src/studio/port_media.js` `createPortMedia`（下の部品 `pano_port_picture.js` `createPortPicture`、`pano_space.js` `stickerContentRequest`）、上流の層は `web_src/studio/upstream.js` `createStudioUpstream`（下の部品 `pano_upstream_layers.js` `createUpstreamLayers`）、上流の背景は `web_src/studio/upstream.js` `upstreamBackground`、ステージに描く物にまとめるのは `web_src/studio/stage_content.js` `stageContent`、つなぐのは `web_src/studio/editor.js`。上流の物の編集は（未実装） | `tests/studio_port_media.test.mjs`、`tests/studio_upstream.test.mjs`、`tests/studio_stage_content.test.mjs`、`tests/browser/studio_inputs.spec.js` |
 | 読み込み中と空の画面、一行の知らせとその種類 | — | どれを出すかと種類は `web_src/studio/notice_line.js` `topLine`（シェルの `StudioEditor.vue` が呼ぶ）、画面は `web_src/components/studio/StudioNotice.vue`。開く前に three.js のチャンクと stylesheet を読んでおくのは `web_src/pano_editor_view.js` `preloadEditorView`・`web_src/studio/editor.js` `preloadStudioEditor`、いつ始めるかは `web_src/editor_choice.js` `createStudioPreloader`（組み立ては `web_src/main.js`）。Add とドロップの失敗と 3D ファイルの読み込み中は `web_src/studio/add_files.js` が `ui` に書く。上流の警告と、経路が答えた後に three.js が 3D ファイルを読めないときの知らせは、出す元がまだ無い（未実装） | `tests/studio_notice_line.test.mjs`、`tests/editor_choice.test.mjs`、`tests/browser/studio_editor.spec.js` |
 | タイムラインのバーの並びと、行の頭の並び | — | `web_src/components/studio/StudioTimelineBar.vue`・`StudioTimelineHead.vue`（組み立ては `StudioTimeline.vue`、データは `web_src/studio/timeline_model.js`） | `tests/browser/studio_timeline.spec.js` |
@@ -238,7 +238,10 @@ Camera タブでは、Undo・Redo のほかは同じ席に出したまま無効�
 ペイントの道具を出す（二つは同時に出ない）。何も選んでいないときと、Camera タブでは出さない（ビューの上に重ねる情報は状況で出し入れして
 よい。`docs/agents/ux-principles.md`）。
 
-- 左端に、選んだ物のアイコン（Sky / World の印、Camera、Paint）と名前。
+- 左端に、選んだ物のアイコン（Sky / World の印、Camera、Paint）と名前。名前の欄は、どの名前でも同じ決まった幅（`docs/design.md` の
+  「新しい UI の見た目」の「大きさ」）を取り、名前を左にそろえる。収まらない名前は末尾を「…」で切り、全部の名前を tooltip に出す（切るのは
+  見た目だけで、読み上げる名前は切らない）。バーの幅は選んだ物の種類（並ぶボタン）で変わってよいが、名前の長さでは変わらない（`docs/agents/ux-principles.md`
+  の「変わる文字の幅は先に確保する」）。
 - ギズモの切り替えは Move・Rotate・Scale のアイコンで並べ、`1`・`2`・`3` のキーでも切り替える（tooltip に「Move (1)」のように出す）。
 
 | 選んだ物 | 並び（／は群の区切り） |
@@ -250,6 +253,9 @@ Camera タブでは、Undo・Redo のほかは同じ席に出したまま無効�
 | ペイントのまとまり、複数選択 | 前面へ・背面へ ／ Lock・Delete |
 | ノードの入力から来た物（`port`）、上流から受け取った物 | 上の並びに「元に戻す」を足す（その物の全部の値を元の値へ。`port` の Back to Initial と上流の Revert を一つにしたもの） |
 
+- 空に貼った画像の前面へ・背面へは、重なった二つの角丸の四角のアイコンで示す。動かす物（選んだ画像）を塗りの四角にし、前面へは
+  塗りの四角を手前に、背面へは塗りの四角を奥（線だけの四角の後ろ）に描く（形は `docs/design.md` の「新しい UI の見た目」の「アイコン」）。
+  押すと一番前・一番後ろへ移すので、tooltip は「Bring to front」「Send to back」。
 - 表示・非表示の切り替えはバーに置かない（タイムラインの目のアイコン、`docs/timeline-ui.md` の「表示（目のアイコン）」）。
 - Lock は押すたびに切り替わるボタンで、状態を鍵のアイコンの形で示す（`docs/agents/ux-principles.md` の例外）。
 - Camera は消せないので Delete を置かない。Delete キーを押したときは一行の知らせ「The camera can't be deleted」を出す。
@@ -257,19 +263,40 @@ Camera タブでは、Undo・Redo のほかは同じ席に出したまま無効�
   縦か横の画角だけ、回転のハンドルで Roll を変える（今の動きのまま、新しい UI でも変えない。今の動きは `web_src/editor/pointer_input.js` の
   `startMove`・`startScale`・`startAxisScale`・`startRotate` にあり、当たりの順は `docs/editor-interaction.md` の「`world` の Sticker の操作」の
   選択の順。古い UI の文書には独立した節が無いので、切り替えのときにこの文書へ規則として書き起こす。見た目の値は `docs/design.md`）。
+  ただし回転のハンドルの Shift の止め方は、古い UI の 45° ではなく、ギズモの Rotate と同じ `ROTATE_SNAP_DEG` の倍数（絶対の Roll）にする。
+  選んだ空の画像の枠とハンドルは、World の物の選択の黄ではなく氷の色で描く（ドロップの Sky の印と同じ色。Sky と World の行き先を色で
+  見分けられるようにする。値は `docs/design.md` の「新しい UI の見た目」）。
 
 ### ギズモ
 
 選んだ World の物（画像の板、3D）と Camera に、3D タブでだけ出す（出す条件は `web_src/studio/stage_objects.js`）。ステージの上の 2D の層に、
-物の中心から画面の上で決まった大きさで描く（物が遠くても近くても同じ px）。形は見本 `specimen-11.html` の Move に揃え、Rotate と Scale は
+物の中心から画面の上で決まった大きさで描く（物が遠くても近くても同じ px）。
+
+- 物の中心：その物の World のガイド（`docs/space-and-view.md` の「World の物のガイド」）の中心。3D の Sticker は回した要素の箱の中心、
+  画像の板は板の中心、Camera は位置。3D の Sticker の箱がまだ分からない間（置いて読み込んでいる間）は、読み込み中のガイドの箱の中心。
+  ガイドの無い 3D の Sticker（箱がまだ分からず、読み込み中のガイドも無い）は、中身の原点。中心はギズモと同じ値の一か所
+  （`web_src/studio/world_guides.js` `worldGuideItems` の `center`）から取り、ギズモとガイドが別の点を使わない。
+  3D ファイルの中身の原点は箱の外にあることがある（原点が離れたファイル）ので、原点には描かない。
+- Rotate と Scale は、この中心を動かさずに回し、大きさを変える。中心が中身の原点と違う 3D の Sticker では、回すと大きさを変える
+  ドラッグが `position` の Lane も書く（中心が原点と同じ物、画像の板、Camera では書かない）。形は見本 `specimen-11.html` の Move に揃え、Rotate と Scale は
 同じ線の太さと色で作る（値は `docs/design.md` の「新しい UI の見た目」）。古い UI のギズモ（`docs/editor-interaction.md`）は変えない。
 
 - Move：中心から World の X・Y・Z の向きに三本の棒、棒の先に丸い玉、中心に白い点。棒か玉をドラッグすると、物はその軸の上だけを動く
   （ポインタの光線に最も近い軸の上の点へ。つかんだ点との差を保つ）。その点が視点の前に無いとき（軸の消失点より先を指したとき）は
   動かさず、前の位置に留める。中心の白い点をドラッグすると、つかんだときの視線に垂直な面の上を
   ポインタについて動く。
+- Move の平面の取っ手：二つの軸の間に小さな四角を三つ置く（XY・YZ・XZ の面）。四角は、中心から二つの軸の向きにそれぞれ届く長さの
+  `GIZMO_PLANE_FROM` から `GIZMO_PLANE_TO` までの範囲を、World の中の面として画面に写したもの（面を斜めに見れば四角も斜めになる）。
+  色は Blender にならい、その面に垂直な軸の色（XY は Z の氷、YZ は X の珊瑚、XZ は Y のライム）を薄く塗り、縁を同じ色の線で描く。
+  四角をドラッグすると、物はつかんだときの中心を通るその面の上だけを動く（ポインタの光線と面の交わる点へ。つかんだ点との差を保つ）。
+  光線が面とほぼ平行なときと、交わる点が視点の前に無いときは動かさず、前の位置に留める。面を縁から見るとき（面に垂直な軸と、
+  視点から中心への向きのなす角の余弦の絶対値が `GIZMO_HIDE_RATIO` 未満）は描かず、当たりにも数えない。平面のドラッグでは軸の
+  ガイドの線を描かない。
 - Rotate：World の X・Y・Z の軸のまわりの三つの輪。輪の手前の半分を濃く、奥の半分を薄く描き、当たりは手前の半分だけ。輪をドラッグ
   すると、物はその軸のまわりに回る（つかんだ点の輪の接線の向きにポインタを動かした px を、輪の半径の px で割った角度）。
+  Shift を押している間は、その輪の軸に当たる角度（Y の輪は yaw、X の輪は pitch、Z の輪は roll）を、回し始めの値からの差ではなく
+  絶対の角度で `ROTATE_SNAP_DEG`（`docs/space-and-view.md` の「量の一覧」）の倍数に止める（ほかの二つの角度は止めない）。中心が
+  中身の原点と違う物は、止めた向きで上の「物の中心」を保つ。
 - Scale：物の向きの三本の棒、棒の先に小さな角丸の四角、中心に白い点。棒の当たりは中心から `pointHit` より外だけ（中心の近くで
   つかむと比が乱れるため）。棒か四角をドラッグすると、つかんだ点と中心の、その軸の上の
   画面の距離の比で、大きさを一様に変える（`pano_space.js` `uniformScale`）。
@@ -277,9 +304,13 @@ Camera タブでは、Undo・Redo のほかは同じ席に出したまま無効�
 - 視線とほぼ平行になった軸（Move と Scale の棒の画面の長さが届く長さの `GIZMO_HIDE_RATIO` 未満）は描かず、当たりにも数えない。
 - 軸の取っ手（Move と Scale の棒と玉と四角、Rotate の輪）をドラッグしている間は、つかんだときの物の中心を通る、その軸の向きの
   ガイドの線をステージの端から端まで描く（色はその軸の色。Move の中心の点のドラッグでは描かない）。
-- ポインタの下の取っ手と、ドラッグしている取っ手を白にする。Alt を押している間は白にしない（Alt のドラッグは必ずオービット）。
-- 重なり：奥の取っ手から先に描く。当たりは、玉・四角・中心の点を棒と輪より先に見て、その中で画面の上で最も近いものを選ぶ。
-- ドラッグはモードの Lane だけを記録の規則で書く（`pano_space.js` `gizmoDragLanes`）。一つのドラッグが Undo の 1 段で、Escape と
+- ポインタの下の取っ手と、ドラッグしている取っ手は、軸の色のまま明るく（白へ寄せ）、太く描く（白にはしない。明るい背景で消えるため）。
+  Alt を押している間は明るくしない（Alt のドラッグは必ずオービット）。
+- 棒・玉・四角・輪・平面の四角・中心の点の下に、ガイドと同じ考えの暗い下敷きを描き、明るい背景（白い空の画像など）の上でも
+  見えるようにする（値は `docs/design.md` の「新しい UI の見た目」）。
+- 重なり：平面の四角を先に、次に奥の取っ手から描く。当たりは、玉・四角（Scale の先）・中心の点を先に見て、その中で画面の上で最も
+  近いものを選ぶ。どれにも当たらなければ平面の四角（写した四角の中か）、次に棒と輪を見る。
+- ドラッグはモードの Lane だけを記録の規則で書く（`pano_space.js` `gizmoDragLanes`。上の「物の中心」の Rotate と Scale の `position` を除く）。一つのドラッグが Undo の 1 段で、Escape と
   ウィンドウのフォーカスを失ったときは取り消す。ドラッグの間、取っ手の軸と比べる元の値は、つかんだときのものを使う。
 
 ## ノードの入力から来た物
@@ -343,6 +374,8 @@ Camera タブでは、Undo・Redo のほかは同じ席に出したまま無効�
   画角の上限（`docs/render-contract.md` の「カメラのレンズ」、`lens_fov_limit`）を越える画素は `background_color` で塗る（今の 180° を越えた所と同じ）。
 - 辺の目盛り：フレームの左に FOV、右に Lens（縦の目盛り）、下に Roll（横の目盛り）。目盛りに数値を振る。真ん中の印は動かず、目盛りを
   左右（上下）にドラッグして値を変える。目盛りはフレームの辺について動く。枠の外の上に描く文字と線は、明るい色にする（`docs/design.md`）。
+  - Shift：FOV と Lens は動きを細かくする（`FINE_FACTOR`）。Roll は回転なので、ギズモの Rotate と同じく `ROTATE_SNAP_DEG` の倍数（絶対の
+    角度）に止める。ドラッグでも矢印キーでも同じ（矢印キーは今の値からその向きの次の倍数へ）。
   - 長さ：目盛りの線の帯は、ステージの大きさで伸び縮みしない決まった長さ（値は `docs/design.md` の「大きさ」）。帯の真ん中（真ん中の印）を、
     Roll はフレームの左右の中央に、FOV と Lens はフレームの上下の中央に合わせる。フレームの辺が決まった長さより短いときだけ、辺に収まる
     長さに縮める（縦の目盛りは、上下の頭のうち大きい方の分を上下とも辺から除いた長さ。帯の真ん中を辺の真ん中に保ったまま、上の頭が
@@ -383,22 +416,33 @@ Camera タブでは、Undo・Redo のほかは同じ席に出したまま無効�
 - Add：左の列の Add を押すと、ファイルを選ぶ画面を開く（選べるファイルは `docs/space-and-view.md` の「Add とドロップ」）。一度に一つの
   ファイルを置く。読み取り専用のエディタでは、Add を席に出したまま無効にし、ドロップを受けない。Camera タブでも、Add は左の列の
   ほかのボタンと同じく無効で（上の「左の列」）、ドロップを受けない。二択はタブを切り替えると閉じる（何も置かない）。
-- Add で画像を選んだとき：読み込んだ後、ステージの中央に二つのボタン（Sky のアイコン＋`Sky`、World のアイコン＋`World`）を出し、
-  押したほうに置く。Escape か、二択の外を押すと取り消し、何も置かない。外を押したときは、取り消した後もその押下がいつもどおり働く
-  （視点のドラッグなど）。二択を出している間に、ファイルをステージにドラッグしたときと、次のファイルを選んだときも取り消す。3D ファイルは
+- Add で画像を選んだとき：読み込んだ後、ステージ全体に暗い幕を被せ、その中央に二枚の大きな札（Sky、World）を出し、押したほうに
+  置く。Escape か、札の外（幕の上を含む）を押すと取り消し、何も置かない。外を押したときは、取り消した後もその押下がいつもどおり働く
+  （視点のドラッグなど。幕は押下を受けない）。開いたときは Sky の札にフォーカスを置き、左右の矢印キーで札を移り、Enter か Space で
+  選ぶ。二択を出している間に、ファイルをステージにドラッグしたときと、次のファイルを選んだときも取り消す。3D ファイルは
   選ばせない。二択の見せ方と取り消しの条件はこの文書が持ち、選んだ後の置き場所は `docs/space-and-view.md` の「Add とドロップ」が持つ。
-  - 二択の見た目：浮かせる部品の地の丸い群（`docs/design.md` の「形と重なり」）に、二つのボタンを横に並べる。ボタンの大きさは
-    `docs/design.md` の「大きさ」の「Add の二択」。
+  - 二択の見た目：Camera のカードの撮り方の札（`StudioModeTiles.vue`、見本 `mode-3.html` の M1）と同じ言葉の、ずっと大きな札を
+    横に二枚並べる。札は上に絵、下に名前。絵は線で描き、Sky は空（球の上の半分）に画像を貼る様子、World は地面のグリッドの上に立つ
+    板と箱の様子。絵の線と、ポインタの下・フォーカスの札の地は行き先の色（Sky は氷、World は落ち着いた黄。上の「ドラッグ中の印」と
+    同じ色）。幕と札は出るときにフェードする。値は `docs/design.md` の「大きさ」の「Add の二択」と「動き」。
 - ドロップ：離した点で行き先が決まり、選ばせない。いくつものファイルを落としたときは、画像があれば最初の画像を、無ければ最初の
   3D ファイルを一つだけ置く（古い UI と同じ）。
 - ファイルをドラッグしている間の印：着く所に角のかぎ括弧と薄い塗りを描く（色と大きさは `docs/design.md`）。Sky の枠は、球に写した枠の
-  曲がった辺に沿ってかぎ括弧を描く。3D ファイルの仮の箱は、すべての見える頂点から辺に沿って短い線を出す。ポインタの横に、
-  行き先のラベル（Sky のアイコン＋`Sky`、または World のアイコン＋`World`）を出す。ドラッグの間はファイル名が読めないので、
+  曲がった辺に沿ってかぎ括弧を描く。3D ファイルの仮の箱は、すべての見える頂点から辺に沿って短い線を出す。印の色は行き先で変える：
+  Sky は氷、World は落ち着いた黄（色で着く先を覚えられるようにする）。ポインタの近くに、行き先のラベル（Sky のアイコン＋`Sky`、または
+  World のアイコン＋`World`）を出す。ラベルのアイコンと縁は印と同じ行き先の色にする。ラベルは印に重ねない（置き方は
+  `docs/space-and-view.md` の「ドラッグ中の印」）。ドラッグの間はファイル名が読めないので、
   最初のファイルの項目の種類が `image/` で始まれば画像の印、それ以外（種類が空、`model/`、`application/octet-stream`）は
   3D ファイルの印を出す。
 - 置く間：置いた物はすぐ状態に入り、選んだ状態になる。画像は読み込んだ絵をすぐ描き、裏でアップロードする。3D ファイルは、アップロード
   から中身が描けるまで、上端の中央に読み込み中の一行「Loading 3D model…」を出す（待つ間のほかの規則は `docs/editor-interaction.md` の
   「3D ファイルを置く流れ」の 2・4・5 と同じ）。
+  - 読み込み中のガイド：その間も、置いた所にその物のガイドの箱（形と箱の決め方は `docs/space-and-view.md` の「World の物のガイド」）を
+    描き、箱の線と面を光の帯が斜めに流れ続ける（何も出てこないと心配になるため）。ガイドの見え方（選んでいれば選択の色）はいつもどおり。
+  - 描けたとき：中身が描けた瞬間から `LOAD_REVEAL_MS` の間に、光の帯が消えてガイドがいつもの見え方に戻り、同時に中身が不透明度 0 から
+    その物の不透明度まで ease-out で現れる。
+  - OS で動きを減らす設定のときは、光の帯を流さず（ガイドは止まったまま描く）、中身はすぐに出す。
+  - 読み込み中のガイドと現れる動きは、この間に置いた 3D ファイルだけのもの。エディタを開いたときに読み込む 3D の Sticker には付けない。
 - 失敗：画像を読めない・アップロードできない、3D ファイルが上限より大きい・アップロードできない・経路が読めないときは、置いていた物を
   消し（Undo の段は残さない）、上端の中央に「気をつけてほしい」の一行で理由を出す（文は「3D ファイルを置く流れ」の 6 と同じ。画像は
   `Could not read <ファイル名>`・`Could not upload <ファイル名> (...)`）。この一行は、次のファイルを置くかエディタを閉じるまで出す。
@@ -407,7 +451,8 @@ Camera タブでは、Undo・Redo のほかは同じ席に出したまま無効�
 
 ## 読み込み中と空の画面
 
-- エディタを開いたら、地面のグリッドをすぐに描く。読み込みの画面や、流れるグラデーション・ゆっくり現れる動きは出さない。まだ来ていない
+- エディタを開いたら、地面のグリッドをすぐに描く。読み込みの画面や、流れるグラデーション・ゆっくり現れる動きは出さない（例外は、
+  置いた 3D ファイルの読み込み中のガイドと現れる動きだけ。上の「Add とドロップの見せ方」の「置く間」）。まだ来ていない
   中身（背景、3D の内容）の所はステージの地のままにし、来たものから描く。何を待っているかを、上端の中央に一行で出す（下の「一行の知らせの種類」の
   読み込み中）。
 - すぐに描けるように、新しいエディタの設定がオンのとき、ComfyUI を開いた後の手の空いた時に、ステージの three.js のチャンクと新しい UI の

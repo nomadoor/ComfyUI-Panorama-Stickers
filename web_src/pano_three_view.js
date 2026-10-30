@@ -61,7 +61,7 @@ import { createSparkViews } from "./pano_spark_views.js";
 import { createDepthGridPickMaterial } from "./pano_depth_grid.js";
 import { LENS_GLSL } from "./pano_lens_glsl.js";
 import { createGroundGrid } from "./pano_ground_grid.js";
-import { createLiveErp } from "./pano_live_erp.js";
+import { canvasValueTarget, createLiveErp } from "./pano_live_erp.js";
 
 // The lights of the World pass (docs/render-contract.md "既定の照明", which owns the values; Python's
 // mesh_render.py has the same, both checked against tests/fixtures/default_lighting.json). No shadows.
@@ -113,16 +113,8 @@ const STICKER_DISTANCE = 50;
 const ORIGIN_COLOR = 0xffdd57;
 
 // The Sky's and the world Sticker planes' shaders write their images' (sRGB) values as they are, which the canvas
-// shows as they are. Into a lens face (drawLens), a target three keeps in sRGB like any color-managed output, they
-// write linear light as three's own materials do there: `linearOutput` (shared by all of them) is on only then.
-const linearOutput = { value: false };
-const LINEAR_OUTPUT_GLSL = `
-uniform bool linearOutput;
-vec4 outputColor(vec4 color) {
-  if (!linearOutput || color.a <= 0.0) return color;
-  return vec4(sRGBTransferEOTF(vec4(color.rgb / color.a, 1.0)).rgb * color.a, color.a);
-}
-`;
+// shows as they are. The lens and live ERP faces hold the canvas's values (pano_live_erp.js canvasValueTarget), so
+// the same values go there.
 
 // The ERP is laid out in the panorama convention (forward +Z); World is glTF (forward -Z).
 const ERP_VERTEX = `
@@ -133,7 +125,6 @@ void main() {
 }`;
 
 const ERP_FRAGMENT = `
-${LINEAR_OUTPUT_GLSL}
 uniform sampler2D map;
 uniform float opacity;
 uniform bool halfCoverage;
@@ -151,7 +142,7 @@ void main() {
     }
     uv.x = clamp(lon / PI + 0.5, 0.0, 1.0);
   }
-  gl_FragColor = outputColor(texture2D(map, uv) * opacity);
+  gl_FragColor = texture2D(map, uv) * opacity;
 }`;
 
 const STICKER_VERTEX = `
@@ -165,9 +156,8 @@ const STICKER_FRAGMENT = `
 uniform sampler2D map;
 uniform float opacity;
 varying vec2 vUv;
-${LINEAR_OUTPUT_GLSL}
 void main() {
-  gl_FragColor = outputColor(texture2D(map, vUv) * opacity);
+  gl_FragColor = texture2D(map, vUv) * opacity;
 }`;
 
 // A world Sticker's plane shows its crop (x0, v of y1, x1, v of y0) of the image; v runs up the image.
@@ -176,11 +166,10 @@ uniform sampler2D map;
 uniform float opacity;
 uniform vec4 crop;
 varying vec2 vUv;
-${LINEAR_OUTPUT_GLSL}
 void main() {
   vec4 color = texture2D(map, vec2(mix(crop.x, crop.z, vUv.x), mix(crop.y, crop.w, vUv.y))) * opacity;
   if (color.a <= 0.0) discard;
-  gl_FragColor = outputColor(color);
+  gl_FragColor = color;
 }`;
 
 // The Unwrap view draws every layer on a full-view quad in the ERP layout: longitude runs across
@@ -244,11 +233,10 @@ uniform sampler2D map;
 uniform float opacity;
 varying vec3 vDirection;
 ${STICKER_IMAGE_GLSL}
-${LINEAR_OUTPUT_GLSL}
 void main() {
   vec2 uv;
   if (!stickerImage(toSticker * normalize(vDirection), uv)) discard;
-  gl_FragColor = outputColor(texture2D(map, uv) * opacity);
+  gl_FragColor = texture2D(map, uv) * opacity;
 }`;
 
 // A world Sticker with a lens (ADR 0042): the part of a sphere around its lens's center whose directions, in the
@@ -279,14 +267,13 @@ uniform sampler2D map;
 uniform float opacity;
 uniform vec4 crop;
 ${LENS_PATCH_GLSL}
-${LINEAR_OUTPUT_GLSL}
 void main() {
   vec2 at;
   if (!patchPoint(at)) discard;
   vec2 uv = at * 0.5 + 0.5;
   vec4 color = texture2D(map, vec2(mix(crop.x, crop.z, uv.x), mix(crop.y, crop.w, uv.y))) * opacity;
   if (color.a <= 0.0) discard;
-  gl_FragColor = outputColor(color);
+  gl_FragColor = color;
 }`;
 
 // Its pick material: the same part of the sphere, writing what PICK_FRAGMENT writes.
@@ -627,9 +614,8 @@ void main() {
     if (seen.z >= 0.0) continue;
     vec2 at = seen.xy / -seen.z / faceTan[index];
     if (abs(at.x) > 1.0 || abs(at.y) > 1.0) continue;
-    // The faces hold linear light (three draws into an sRGB target so); the canvas takes sRGB values.
-    vec4 color = sampleFace(index, at * 0.5 + 0.5);
-    gl_FragColor = color.a > 0.0 ? vec4(sRGBTransferOETF(vec4(color.rgb / color.a, 1.0)).rgb * color.a, color.a) : vec4(0.0);
+    // The faces hold the canvas's values (canvasValueTarget).
+    gl_FragColor = sampleFace(index, at * 0.5 + 0.5);
     return;
   }
   gl_FragColor = background;
@@ -639,7 +625,7 @@ function createMaterial(vertexShader, fragmentShader, uniforms, blending = Custo
   return new ShaderMaterial({
     vertexShader,
     fragmentShader,
-    uniforms: { map: { value: null }, opacity: { value: 1 }, linearOutput, ...uniforms },
+    uniforms: { map: { value: null }, opacity: { value: 1 }, ...uniforms },
     depthTest: false,
     depthWrite: false,
     transparent: true,
@@ -1159,7 +1145,7 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     pickable = [];
     pickBoxes = [];
     if (space.grid) children.push(guideGroup(space.grid));
-    if (space.ground) children.push((groundGrid ||= createGroundGrid({ linearOutput })).show(space.ground));
+    if (space.ground) children.push((groundGrid ||= createGroundGrid()).show(space.ground));
     sceneItems.retain(space.sceneUrls ?? []);
     // Each content with its opacity, which the `scene` item's materials keep as they are (opaque).
     const contents = [];
@@ -1311,15 +1297,14 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
   const lensCamera = new PerspectiveCamera();
   const faceRotation = new Matrix4();
 
-  // A face's target: sRGB (three draws linear light into it and the GPU stores it in sRGB, as three documents for a
-  // render target), which the pass reads back as linear light and encodes for the canvas.
+  // A face's target: it holds the canvas's sRGB values and blends them as the canvas does (canvasValueTarget), which
+  // the pass puts on the canvas as they are.
   function lensTarget(owner, index, width, height) {
     let targets = lensTargets.get(owner);
     if (!targets) lensTargets.set(owner, targets = []);
     let target = targets[index];
     if (!target) {
-      target = new WebGLRenderTarget(width, height, { format: RGBAFormat, type: UnsignedByteType, depthBuffer: true, minFilter: LinearFilter, magFilter: LinearFilter, generateMipmaps: false });
-      target.texture.colorSpace = SRGBColorSpace;
+      target = canvasValueTarget(new WebGLRenderTarget(width, height, { format: RGBAFormat, type: UnsignedByteType, depthBuffer: true, minFilter: LinearFilter, magFilter: LinearFilter, generateMipmaps: false }));
       targets[index] = target;
     } else if (target.width !== width || target.height !== height) {
       target.setSize(width, height);
@@ -1424,7 +1409,6 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     const owned = layerTextures.draw(input.owner);
     const uniforms = lensQuad.material.uniforms;
     let count = 0;
-    linearOutput.value = true;
     try {
       fillSky(owned, panorama, input);
       // The World is built once for what picks and the content revision read; each drawn face builds it for its
@@ -1449,7 +1433,6 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
         count += 1;
       });
     } finally {
-      linearOutput.value = false;
       owned.end();
       renderer.setRenderTarget(null);
     }
@@ -1492,16 +1475,8 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
       buildWorld(owned, space, faceOwner);
       setCamera(worldCamera, setup);
       sparkViews.aim(worldCamera, faceOwner);
-      // Spark writes its splats' sRGB colors as they are unless told to write linear light. Its linear is
-      // pow(rgb, 2.2), not the exact sRGB curve the pass encodes with, so under a lens other than 1 the editor
-      // shows splats' dark tones up to about 7 levels off; the node's output is not affected. Accepted (a target
-      // of their own would lose their depth order against the meshes).
-      const spark = sparkViews.has(faceOwner) ? sparkViews.renderer(faceOwner) : null;
-      if (spark) spark.encodeLinear = true;
       renderer.clearDepth();
       renderer.render(world, worldCamera);
-      // The pinhole's renderer is its view's own, which draws without a lens in sRGB (encodeLinear is a uniform).
-      if (spark) spark.encodeLinear = false;
     }
     renderer.autoClear = true;
     if (input.clearColor != null) renderer.setClearColor(0x000000, 0);
@@ -1615,8 +1590,6 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
       if (erp.needsDraw()) {
         const spark = space && sparkViews.has(owner) ? sparkViews.renderer(owner) : null;
         if (input.clearColor != null) renderer.setClearColor(new Color(input.clearColor), 1);
-        // The faces hold linear light (an sRGB target), as the lens faces do.
-        linearOutput.value = true;
         try {
           done = erp.draw({
             scene: world,
@@ -1631,14 +1604,11 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
               liveErpSkyCamera.projectionMatrixInverse.copy(camera.projectionMatrixInverse);
               renderer.render(scene, liveErpSkyCamera);
               if (!space) return;
-              if (spark) spark.encodeLinear = true;
               renderer.clearDepth();
               renderer.render(world, camera);
-              if (spark) spark.encodeLinear = false;
             },
           });
         } finally {
-          linearOutput.value = false;
           if (input.clearColor != null) renderer.setClearColor(0x000000, 0);
         }
       }

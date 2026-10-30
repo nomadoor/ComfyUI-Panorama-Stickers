@@ -176,9 +176,9 @@ export function scaleStickerAxisFromPointer(item, axis, startDistance, currentDi
   return { ...item, [field]: clamp(Number(item?.[field] || 20) * ratio, 1, 179) };
 }
 
-export function rotateStickerFromPointer(item, startAngle, currentAngle, snap = false) {
+export function rotateStickerFromPointer(item, startAngle, currentAngle, snap = false, step = 45) {
   const delta = (Number(currentAngle || 0) - Number(startAngle || 0)) * RAD2DEG;
   let rotation = Number(item?.rot_deg ?? item?.roll_deg ?? 0) - delta;
-  if (snap) rotation = Math.round(rotation / 45) * 45;
+  if (snap) rotation = Math.round(rotation / step) * step;
   return { ...item, rot_deg: rotation };
 }

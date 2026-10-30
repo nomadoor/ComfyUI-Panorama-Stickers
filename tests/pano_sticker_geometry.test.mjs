@@ -201,3 +201,9 @@ test("an edge handle scales only its axis, held to 1..179 degrees", () => {
   assert.deepEqual(scaleStickerAxisFromPointer(sticker, "scale_y", 100, 50), { ...sticker, vFOV_deg: 5 });
   assert.equal(scaleStickerAxisFromPointer(sticker, "scale_x", 10, 1000).hFOV_deg, 179);
 });
+
+test("rotateStickerFromPointer snaps to the step it is given (the new UI's 15°), the old UI's 45° by default", () => {
+  const sticker = { rot_deg: 3 };
+  assert.equal(rotateStickerFromPointer(sticker, 0, -0.2, true, 15).rot_deg, 15);
+  assert.equal(rotateStickerFromPointer(sticker, 0, -0.2, true).rot_deg, 0);
+});

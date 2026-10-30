@@ -83,6 +83,9 @@ export const WHEEL_STEP_PIXELS = 100;
 export const FRAME_WHEEL_REST_MS = 180;
 // The least CSS px the Camera's mark in the 3D tab is long on screen (camera_marker.js cameraMarkerLength).
 export const CAMERA_GUIDE_MIN_PIXELS = 80;
+// The step (degrees) a turn held with Shift stops at, as a multiple of the absolute angle: the gizmo's Rotate, the sky
+// image's rotate handle (docs/studio-ui.md "ギズモ", "下の中央のバー"), and the Camera tab's Roll ruler.
+export const ROTATE_SNAP_DEG = 15;
 // The mark of a 3D file dragged over the stage before its box is known: 1 x 1 x 1, the bottom's center at its origin.
 export const DROP_PREVIEW_BOX = Object.freeze({ min: Object.freeze([-0.5, 0, -0.5]), max: Object.freeze([0.5, 1, 0.5]) });
 // The Preview window's damping.

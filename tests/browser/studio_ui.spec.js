@@ -345,6 +345,34 @@ test("the top-center line's mark follows its kind: coral, soft yellow, none, a t
   expect(problems).toEqual([]);
 });
 
+test("the bar at the bottom center: the name never changes its width, a long name ends with an ellipsis and is whole in the tooltip", async ({ page }) => {
+  const { problems } = await open(page);
+  const bars = await page.evaluate(() => Object.fromEntries([...document.querySelectorAll('[data-theme-col="dark"] [data-bars] [data-bar-row]')].map((bar) => {
+    const name = bar.querySelector(".pano-studio-bar-name");
+    const style = getComputedStyle(name);
+    return [bar.dataset.barRow, {
+      width: bar.getBoundingClientRect().width,
+      nameWidth: name.getBoundingClientRect().width,
+      cut: name.scrollWidth > name.clientWidth,
+      ellipsis: style.textOverflow,
+      tip: bar.querySelector("[data-bar-name]").title,
+      text: name.textContent,
+    }];
+  })));
+  // docs/design.md "大きさ": the name's box is 140px whatever the name.
+  expect(bars.short.nameWidth).toBe(140);
+  expect(bars.long.nameWidth).toBe(140);
+  expect(bars.long.width).toBe(bars.short.width);
+  expect(bars.short.cut).toBe(false);
+  expect(bars.long.cut).toBe(true);
+  expect(bars.long.ellipsis).toBe("ellipsis");
+  expect(bars.long.tip).toBe("a_very_long_file_name_for_testing.glb");
+  expect(bars.long.text).toBe("a_very_long_file_name_for_testing.glb");
+  // A sky image's bar has other buttons, so its width may differ; its name's box does not.
+  expect(bars.sky.nameWidth).toBe(140);
+  expect(problems).toEqual([]);
+});
+
 test("a segmented control's thumb slides to the chosen option; hover eases, a press and reduced motion do not", async ({ page }) => {
   const { problems } = await open(page);
   const tabs = col(page, "dark").locator(".pano-studio-tabs");

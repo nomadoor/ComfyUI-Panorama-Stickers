@@ -58,6 +58,8 @@
   --studio-frame-pad: 8px;
   --studio-window-gap: 8px;
   --studio-float-inset: 16px;
+  /* The name on the bar at the bottom center: one width for every name, so a name never changes the bar's width. */
+  --studio-bar-name-width: 140px;
   --studio-row-gap: 8px;
   --studio-field-h: 26px;
   --studio-btn: 32px;
@@ -1404,9 +1406,11 @@
   pointer-events: none;
 }
 
-/* The selected object's name on the bar at the bottom center: one line, cut with an ellipsis. */
+/* The selected object's name on the bar at the bottom center: the same width for every name, left aligned, one line,
+   cut with an ellipsis (docs/studio-ui.md "下の中央のバー"). */
 .pano-studio-bar-name {
-  max-width: 180px;
+  flex: none;
+  width: var(--studio-bar-name-width);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1986,45 +1990,91 @@
    "ドロップのラベル", "Add の二択"; the mock drop-3.html). */
 
 /* The Sky / World choice at the stage's center: a floating group of two buttons with an icon and text. */
-.pano-studio-at-center { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); }
+
+/* The veil over the whole stage and the two big tiles at its middle (the mode tiles' language, mode-3.html M1). The
+   veil takes no press: a press there cancels (StudioPlaceChoice.vue) and still reaches the stage. */
+.pano-studio-place-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  animation: pano-studio-place-in 160ms ease-out;
+}
+
+.pano-studio-place-veil {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: rgba(0, 0, 0, 0.55);
+}
 
 .pano-studio-place-choice {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px;
+  position: relative;
+  display: flex;
+  gap: 16px;
+  pointer-events: auto;
 }
 
-.pano-studio-place-btn {
-  display: inline-flex;
+.pano-studio-place-tile {
+  --place-color: var(--studio-yellow);
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 6px;
-  height: var(--studio-knob);
-  padding: 0 16px;
+  gap: 14px;
+  width: 180px;
+  height: 150px;
+  padding: 22px 12px 0;
   border: 0;
-  border-radius: var(--studio-r-part);
-  background: transparent;
+  border-radius: 12px;
+  background: var(--studio-panel);
   color: var(--studio-fg);
-  font-size: var(--studio-text-md);
+  font-size: 15px;
   font-weight: var(--studio-weight-head);
   cursor: pointer;
-  transition: background-color var(--studio-motion-hover) ease, color var(--studio-motion-hover) ease;
+  transition: background-color 120ms ease;
 }
 
-.pano-studio-place-btn:hover {
-  background: var(--studio-fill);
+.pano-studio-place-tile.is-sky {
+  --place-color: var(--studio-ice);
 }
 
-.pano-studio-place-btn:active {
-  background: var(--studio-fill-active);
+.pano-studio-place-tile:hover,
+.pano-studio-place-tile:focus-visible {
+  background: color-mix(in srgb, var(--place-color) 16%, var(--studio-panel));
+}
+
+.pano-studio-place-tile:active {
+  background: color-mix(in srgb, var(--place-color) 24%, var(--studio-panel));
   transition: none;
 }
 
-.pano-studio-place-btn svg.icon {
-  width: 18px;
-  height: 18px;
+.pano-studio-place-pic {
   flex: none;
-  stroke-width: var(--studio-icon-stroke);
+  width: 96px;
+  height: 56px;
+  fill: none;
+  stroke: var(--place-color);
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.pano-studio-place-name {
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.pano-studio-place-pic .is-thin {
+  stroke-width: 1;
+  opacity: 0.6;
+}
+
+@keyframes pano-studio-place-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 /* The drag's mark over the stage: drawn only, under the floating parts. The stage is not themed, so the brackets keep
@@ -2039,7 +2089,6 @@
 }
 
 .pano-studio-drop-fill {
-  fill: rgba(232, 207, 116, 0.25);
   stroke: none;
 }
 
@@ -2050,25 +2099,19 @@
   stroke-linejoin: round;
 }
 
-.pano-studio-drop-under {
-  stroke: rgba(0, 0, 0, 0.28);
-  stroke-width: 4.5px;
-}
+/* The mark's colors and widths come from studio/landing.js DROP_LOOK (the color of where it goes). */
 
-.pano-studio-drop-line {
-  stroke: #e8cf74;
-  stroke-width: 2.5px;
-}
-
-/* The label beside the pointer: the mark of where it goes and its name. */
+/* The label near the pointer, off the mark: the mark of where it goes and its name, in the color of where it goes
+   (World the soft yellow, Sky ice). */
 .pano-studio-drop-label {
+  --drop-color: var(--studio-yellow);
   position: absolute;
   display: inline-flex;
   align-items: center;
   gap: 6px;
   height: 26px;
   padding: 0 10px 0 8px;
-  border: 1px solid var(--studio-yellow);
+  border: 1px solid var(--drop-color);
   border-radius: var(--studio-r-part);
   background: color-mix(in srgb, var(--studio-panel) 92%, transparent);
   color: var(--studio-fg);
@@ -2078,14 +2121,19 @@
   pointer-events: none;
 }
 
+.pano-studio-drop-label.is-sky {
+  --drop-color: var(--studio-ice);
+}
+
 .pano-studio-drop-label svg.icon {
   width: 15px;
   height: 15px;
   flex: none;
-  color: var(--studio-yellow);
+  color: var(--drop-color);
   stroke-width: var(--studio-icon-stroke);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .pano-studio-place-btn { transition: none; }
+  .pano-studio-place-tile { transition: none; }
+  .pano-studio-place-layer { animation: none; }
 }
