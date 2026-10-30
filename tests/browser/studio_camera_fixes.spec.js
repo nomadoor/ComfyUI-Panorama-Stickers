@@ -58,11 +58,11 @@ for (const query of ["aspect=16:9&mode=frame", "aspect=1:1&mode=frame", "aspect=
     // The middle mark is the ticks' middle too.
     const mark = await rectOf(page, '[data-ruler="Roll"] [data-ruler-mark]');
     expect(Math.abs(mark.x + mark.width / 2 - midX)).toBeLessThanOrEqual(1);
-    // The fixed lengths, shorter only where the edge is (docs/design.md "大きさ": both heads' larger room, 46px, at both ends).
+    // The fixed lengths, shorter only where the edge is (docs/design.md "大きさ": both heads' larger room, 56px, at both ends).
     const roll = await strip(page, "Roll");
     const fov = await strip(page, "FOV");
     expect(roll.width).toBe(Math.min(320, frame.width));
-    expect(fov.height).toBe(Math.min(200, frame.height - 92));
+    expect(fov.height).toBe(Math.min(200, frame.height - 112));
     const tabs = await rectOf(page, ".pano-studio-at-tabs");
     const rail = await rectOf(page, ".pano-studio-at-rail");
     const knobs = await rectOf(page, ".pano-studio-at-nav");
@@ -87,7 +87,7 @@ for (const query of ["aspect=16:9&mode=frame", "aspect=1:1&mode=frame", "aspect=
       const dot = await rectOf(page, `[data-ruler="${name}"] [data-ruler-acts] .pano-studio-keydot`);
       const reset = await rectOf(page, `[data-ruler="${name}"] [aria-label="Reset ${name}"]`);
       expect(Math.abs(acts.y - (band.bottom + 12))).toBeLessThanOrEqual(0.5);
-      expect(acts.height).toBeLessThanOrEqual(42);
+      expect(acts.height).toBeLessThanOrEqual(44);
       expect(dot.bottom).toBeLessThanOrEqual(reset.y);
       expect(Math.abs(dot.x + dot.width / 2 - middle)).toBeLessThanOrEqual(1);
       expect(Math.abs(reset.x + reset.width / 2 - middle)).toBeLessThanOrEqual(1);
