@@ -48,7 +48,7 @@ import {
   setBrushSize, setCustomColor,
 } from "./paint_bar.js";
 import { createPortMedia } from "./port_media.js";
-import { LINE_TEXT, stageEmpty as emptyStage } from "./notice_line.js";
+import { LINE_TEXT, linkedInputNames, stageEmpty as emptyStage } from "./notice_line.js";
 import { createStudioUpstream, upstreamBackground, upstreamNodeName } from "./upstream.js";
 import { loadNodeInputImage } from "./node_image.js";
 import { gizmoModeOfKey, selectedKind } from "./selection_bar.js";
@@ -74,7 +74,7 @@ function widgetOf(node, name) {
 }
 
 function linked(node, names) {
-  return (node?.inputs ?? []).some((input) => names.includes(input?.name) && input.link != null);
+  return linkedInputNames(node).some((name) => names.includes(name));
 }
 
 // The inputs whose VIDEO sets the Timeline fps (pano_video_fps.js timelineFpsLocked).
@@ -514,7 +514,7 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
       background: ui.background,
       stickers: session.state.stickers.length,
       paint: paintLayers().length,
-      linked: (node?.inputs ?? []).filter((input) => input?.link != null).map((input) => input.name),
+      linked: linkedInputNames(node),
       worldItems: sceneFiles()?.urls.length ?? 0,
       upstream: view.upstream.length,
     });

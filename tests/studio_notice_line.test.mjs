@@ -84,3 +84,13 @@ test("everything drawn or brought by an input counts", () => {
   assert.equal(stageEmpty({ ...nothing, worldItems: 1 }), false);
   assert.equal(stageEmpty({ ...nothing, upstream: 2 }), false);
 });
+
+test("the linked inputs come from the node's isInputConnected, not the deprecated input.link", async () => {
+  const { linkedInputNames } = await import("../web_src/studio/notice_line.js");
+  const connected = new Set([1]);
+  const inputs = [{ name: "world", link: 5 }, { name: "scene", link: null }, { name: "sticker" }];
+  const node = { inputs, isInputConnected: (slot) => connected.has(slot) };
+  assert.deepEqual(linkedInputNames(node), ["scene"]);
+  assert.deepEqual(linkedInputNames({ inputs }), []);
+  assert.deepEqual(linkedInputNames(null), []);
+});
