@@ -3,8 +3,9 @@
 // components/studio/StudioCameraFrame.vue and StudioEdgeRuler.vue use them.
 import { FINE_FACTOR } from "./ui_drag.js";
 
-// The stage's margins around the area the frame is fitted into, in CSS px.
-export const CAMERA_FRAME_MARGIN = Object.freeze({ left: 120, right: 120, top: 60, bottom: 84 });
+// The stage's margins around the area the frame is fitted into, in CSS px. Left and right keep the edge rulers' numbers
+// clear of the left column and the view knobs (docs/design.md "大きさ": 16 + 46 + 12 + 61 + 14, rounded up to 150).
+export const CAMERA_FRAME_MARGIN = Object.freeze({ left: 150, right: 150, top: 60, bottom: 84 });
 // The Roll ruler under the frame: this fraction of the frame's width, at least ROLL_RULER_MIN px.
 export const ROLL_RULER_FRACTION = 0.7;
 export const ROLL_RULER_MIN = 380;

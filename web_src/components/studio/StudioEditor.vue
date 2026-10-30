@@ -99,7 +99,7 @@ function onRuler(which, event, value) {
 // The stage's knobs: nothing moves in Panorama mode, nor a locked Camera or a read-only editor's in the Camera tab.
 const navOff = computed(() => {
   if (!cameraTab.value) return "";
-  if (panorama.value) return "Nothing moves in Panorama mode";
+  if (panorama.value) return "Not available in Panorama mode";
   if (props.view.readOnly) return "Read-only";
   if (camera.value.locked === true) return "Locked";
   return "";

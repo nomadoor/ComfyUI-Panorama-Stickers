@@ -15,23 +15,23 @@ import { buildInspectorModel } from "../web_src/studio/inspector_model.js";
 import { loadSceneState } from "../web_src/pano_scene_state.js";
 import { FINE_FACTOR } from "../web_src/studio/ui_drag.js";
 
-// docs/studio-ui.md "Camera タブ" and docs/design.md "大きさ": the frame in the stage less 120 / 60 / 84, the Roll ruler
+// docs/studio-ui.md "Camera タブ" and docs/design.md "大きさ": the frame in the stage less 150 / 60 / 84, the Roll ruler
 // 70% of the frame and at least 380px, the edge rulers' marks and drag.
 
 test("the margins and the Roll ruler's width are the design's", () => {
-  assert.deepEqual({ ...CAMERA_FRAME_MARGIN }, { left: 120, right: 120, top: 60, bottom: 84 });
+  assert.deepEqual({ ...CAMERA_FRAME_MARGIN }, { left: 150, right: 150, top: 60, bottom: 84 });
   assert.equal(ROLL_RULER_MIN, 380);
   assert.equal(rollRulerWidth(1000), 700);
   assert.equal(rollRulerWidth(300), 380);
 });
 
 test("the frame is the largest box of the ratio in the area, centered in it", () => {
-  // 1180 x 560: the area is 940 x 416.
+  // 1180 x 560: the area is 880 x 416.
   assert.deepEqual(frameRect(1180, 560, 16 / 9), { x: 220, y: 60, width: 740, height: 416 });
   assert.deepEqual(frameRect(1180, 560, 1), { x: 382, y: 60, width: 416, height: 416 });
   assert.deepEqual(frameRect(1180, 560, 9 / 16), { x: 473, y: 60, width: 234, height: 416 });
   // A wide ratio fills the width and centers in the height.
-  assert.deepEqual(frameRect(1180, 560, 4), { x: 120, y: 151, width: 940, height: 235 });
+  assert.deepEqual(frameRect(1180, 560, 4), { x: 150, y: 158, width: 880, height: 220 });
 });
 
 test("a stage too small for the margins gives an empty frame, and a bad ratio counts as 1", () => {

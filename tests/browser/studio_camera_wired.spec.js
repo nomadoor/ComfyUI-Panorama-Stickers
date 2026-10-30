@@ -358,3 +358,26 @@ for (const [mode, selector] of [["frame", "[data-stage-canvas]"], ["panorama", "
     expect(problems).toEqual([]);
   });
 }
+
+// The edge rulers' numbers stay clear of the left column and the view knobs (docs/design.md "大きさ": the frame's side
+// margins), for every ratio and in Panorama mode, at the editor's real size.
+for (const query of ["aspect=16:9&mode=frame", "aspect=1:1&mode=frame", "aspect=9:16&mode=frame", "aspect=16:9&mode=panorama"]) {
+  test(`the edge rulers do not run under the left column or the knobs (${query})`, async ({ page }, testInfo) => {
+    const problems = await open(page, testInfo, query);
+    const places = await page.evaluate(() => {
+      const extent = (selector) => {
+        const boxes = [...document.querySelectorAll(`${selector}, ${selector} *`)].map((el) => el.getBoundingClientRect()).filter((box) => box.width > 0);
+        return { left: Math.min(...boxes.map((box) => box.left)), right: Math.max(...boxes.map((box) => box.right)) };
+      };
+      return {
+        rail: document.querySelector(".pano-studio-at-rail").getBoundingClientRect().right,
+        nav: document.querySelector(".pano-studio-at-nav").getBoundingClientRect().left,
+        fov: extent('[data-ruler="FOV"]'),
+        lens: extent('[data-ruler="Lens"]'),
+      };
+    });
+    expect(places.fov.left).toBeGreaterThanOrEqual(places.rail + 8);
+    expect(places.lens.right).toBeLessThanOrEqual(places.nav - 8);
+    expect(problems).toEqual([]);
+  });
+}

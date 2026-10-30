@@ -15,7 +15,7 @@ import { liveErpSize, liveErpView } from "./erp_preview.js";
 import { STAGE_CLEAR_COLOR, cameraFrameView, stageCamera, stageRenderInput, stageRenderSize, surfaceHit } from "./stage_view.js";
 import { createNotice, createViewCamera, frameSelectedSphere, orbitCenter } from "./view_camera.js";
 import { KNOB_CURSOR, createViewInput, createWheelSteps, knobAction, litKnobs, navigationAction, stageCursor } from "./view_input.js";
-import { BOUND_NOTICE_SECONDS, PITCH_LIMIT, eyeHeight, frameSeconds } from "./view_scale.js";
+import { BOUND_NOTICE_SECONDS, FRAME_WHEEL_REST_MS, PITCH_LIMIT, eyeHeight, frameSeconds } from "./view_scale.js";
 
 // The owners (pano_three_view.js) the live ERP of the Camera tab's Panorama mode, the Output window's Frame picture and
 // its live ERP draw for.
@@ -24,9 +24,6 @@ export const OUTPUT_OWNER = "studio-output";
 export const OUTPUT_ERP_OWNER = "studio-output-erp";
 // The reasons that leave the Output window's picture as it is: the stage's view, its overlay, its own Spark sort.
 const OUTPUT_KEEPS = new Set([DRAW_REASON.VIEW, DRAW_REASON.OVERLAY, DRAW_REASON.SPLAT_STAGE]);
-// A run of wheel steps in the Camera tab's Frame view is one Undo step, taken once the wheel has rested this long
-// (docs/space-and-view.md "Frame 表示" "記録"; the old Frame view's 180 ms, editor/frame_view.js).
-export const FRAME_WHEEL_REST_MS = 180;
 
 // The fields of `ui` the stage writes (the shell reads them).
 export function stageUi() {
