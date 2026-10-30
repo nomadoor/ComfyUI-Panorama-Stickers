@@ -39,9 +39,10 @@ https://github.com/user-attachments/assets/bf74e953-8ceb-4c7f-afa2-1c805f12c7af
 
 ## Nodes
 
+- `Panorama Studio`: Place images, videos and 3D files (GLB, Gaussian splats) in a 3D space around a panorama, animate them with keyframes on a timeline, paint and mask, and shoot them with a Camera as a panorama or a framed view.
 - `Panorama Stickers`: Place and adjust sticker images on an ERP canvas, then output the composited panorama.
 - `Panorama Cutout`: Compose and extract a framed perspective view from an ERP image.
-- `Panorama Preview`: Inspect still or animated ERP inputs in an interactive panorama viewer.
+- `Panorama Preview`: Inspect still or animated ERP inputs, or a `Panorama Studio` scene, in an interactive viewer. The previous node is kept as `Panorama Preview (legacy)`.
 - `Panorama Seam Prep`: Shift an ERP seam into the center and generate hard / blurred vertical seam masks for seam-focused inpainting.
 
 ### On-node panorama controls
@@ -66,6 +67,13 @@ https://github.com/user-attachments/assets/bf74e953-8ceb-4c7f-afa2-1c805f12c7af
 The panorama editors rely on browser hardware acceleration. If a large editor is unusually slow while the small on-node preview remains responsive, open `chrome://gpu` (or `edge://gpu`) and check that Canvas, Compositing, Rasterization, and WebGL are hardware accelerated. If they show `Software only`, fully exit and restart the browser, then check the browser and GPU-driver settings.
 
 ## Changelog
+
+### 2.0.0
+
+- Added `Panorama Studio`: lift images, videos and 3D files (GLB, Gaussian splats) into a 3D space, animate them with keyframes, paint and mask, and shoot them with a Camera (panorama or framed view). It outputs the first frame, its mask, the video and the sticker state, and its `scene` output can feed another `Panorama Studio` or `Panorama Preview`.
+- A new editor for Panorama Studio: 3D and Camera tabs, an inspector, a timeline with keyframes, Add and drag-and-drop of images and 3D files, a gizmo, and a live preview of what the Camera shoots. The node itself shows the Camera's output live, with the output size.
+- `Panorama Preview` opens images, videos and `Panorama Studio` scenes in a new window. The previous node remains as `Panorama Preview (legacy)`.
+- To use the previous editor, turn off "Panorama Studio: new editor" in the settings.
 
 ### 1.5.0
 
@@ -96,7 +104,6 @@ The panorama editors rely on browser hardware acceleration. If a large editor is
 
 - Add tools to split panoramas into multiple images for external upscaling and merge them back afterward.
 - Estimate camera intrinsics automatically from input images.
-- Add 3D scene support.
 - Add integration with Hugin.
 
 ## Acknowledgements

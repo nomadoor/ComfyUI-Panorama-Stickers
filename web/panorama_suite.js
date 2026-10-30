@@ -11871,7 +11871,7 @@ const Oe = Object.freeze({
         l[2] || (l[2] = ue("span", { class: "label" }, "Open Studio", -1))
       ], 36),
       ue("div", {
-        class: "pano-studio dark-theme pano-studio-node-line",
+        class: "pano-studio pano-studio-node-line",
         role: "status",
         style: ct(i.value)
       }, [
@@ -11945,7 +11945,7 @@ function JT() {
     return r === e ? null : (e = r, XT(n(), t));
   };
 }
-const mb = 16, gb = 6, ZT = 8, kx = 8, QT = "#070707";
+const mb = 16, gb = 6, ZT = 8, kx = 8, QT = "transparent";
 function eF(e, t, n) {
   const r = Number.isFinite(n) && n > 0 ? n : 2, i = Math.max(0, e), o = Math.max(0, t - mb - gb), a = Math.min(i, o * r), s = a / r, l = { x: (i - a) / 2, y: (o - s) / 2, w: a, h: s };
   return {

@@ -151,9 +151,8 @@
 /* --- Panorama Studio's node surface (PanoStudioNodeSurface.vue; docs/studio-node-surface.md "表示の構成", values
    docs/design.md "Panorama Studio のノード上の表示"). The canvas under it draws the Camera's output picture; the overlay
    places the Open Studio button and the line under the picture where pano_studio_surface.js lays them out (inline
-   left / top / bottom / width), on the surface's dark fill (pano_preview_runtime.js, STUDIO_SURFACE_FILL). Only the
-   button takes the pointer. The line sits on that dark fill in either theme, so it carries `.pano-studio.dark-theme`
-   (PanoStudioNodeSurface.vue) and reads the dark tokens. */
+   left / top / bottom / width), over the node's own background (the surface is not filled: STUDIO_SURFACE_FILL is transparent). Only the button takes
+   the pointer. The line reads the theme's tokens (ComfyUI's `.dark-theme` on <html>). */
 .pano-studio-node-surface {
   position: absolute;
   inset: 0;
