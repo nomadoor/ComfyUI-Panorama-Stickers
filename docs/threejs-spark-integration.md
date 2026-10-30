@@ -197,6 +197,7 @@ Panorama Studio のエディタの Camera の編集は `docs/editor-interaction.
 - 使い回し：同じ画素・同じ視点（カメラの設定）・同じ内容（`contentRevision`：描いた要素と変形、`world` の Sticker の板の位置と大きさが前の描画と値で違うときに 1 つ進む数。不透明度 0 の物は入らない）なら、前の結果を返す（`pickCacheKey`）。当たる物を変える変更（ジオメトリ・変形・表示）を足すときは、比べる `parts` に入れて `contentRevision` も進むようにすること。1 回の押下で `pickSticker` と、何もない所なら続く `pickSpace` の 2 回呼ばれるが、2 回目はこの使い回しで描かない。ホイールの `reuseWheelPick` はこの上に残る（ホイールの一段ごとに視点が変わるため）。
 - 境目：`pano_pick.js` は WebGL を使わない純粋な関数（詰め方と戻し方、画素の窓、深度から World、光線と箱、最も近い当たり、使い回しのキー）で、`node --test`（`tests/pano_pick.test.mjs`）で確かめる。`pickPass` の表示とマテリアルの入れ替えと戻しも、three.js のオブジェクトだけで確かめる。描画と読み戻し（`drawPick`）は WebGLRenderer が要るので Node では動かず、実機で確かめる。
 - 期待する速さ：GPU の 1 画素の描画は頂点の処理が主で、1,610 万三角形でも数 ms〜数十 ms の見込み（実機で未計測）。CPU の Raycaster の 0.5 秒と比べて 1 桁以上速い。
+- 比べるための仮の部品（`docs/space-and-view.md` の「比べるための仮の設定」が持ち、決まったら消す）：`pickStickerNear`（ポインタのまわりの正方形の画素を描き、最も近い画素の Sticker。`async` で読み戻しを待たない）と `sceneGrid`（要素の粗い占有グリッド、`pano_coarse_grid.js`）。
 - Spark の `SparkRenderer` は `enableLod: false` で作る。エディタは SPLAT を LoD・ページングで描かないので、LoD のワーカーを起こさない。
 
 ## Spark の描画はビューごとに 1 つ
