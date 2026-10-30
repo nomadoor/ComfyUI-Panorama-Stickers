@@ -8977,7 +8977,7 @@ function xy(e, t, n, { media: r, evaluated: i = Fs(e, t) }) {
 function My({ canvas: e, onReady: t, onFailed: n, onUpdate: r = () => {
 }, onSplats: i = () => {
 }, onRestored: o = () => {
-}, load: s = () => import("./.lazy/pano_three_view-Ce7YrxEh.js").then((a) => a.$) }) {
+}, load: s = () => import("./.lazy/pano_three_view-CzfU96g7.js").then((a) => a.$) }) {
   let a = null, l = null, u = !1, d = 0;
   const c = () => {
     l = Ym(a.createThreeView({ onUpdate: r, onSplats: i, createCanvas: () => e }), "editor");
@@ -9119,7 +9119,7 @@ function FM(e) {
   };
 }
 const tf = FM(
-  ({ onUpdate: e, onSplats: t }) => import("./.lazy/pano_three_view-Ce7YrxEh.js").then((n) => n.$).then((n) => Ym(n.createThreeView({ onUpdate: e, onSplats: t, createCanvas: () => Vt({ label: "three.node" }) }), "node"))
+  ({ onUpdate: e, onSplats: t }) => import("./.lazy/pano_three_view-CzfU96g7.js").then((n) => n.$).then((n) => Ym(n.createThreeView({ onUpdate: e, onSplats: t, createCanvas: () => Vt({ label: "three.node" }) }), "node"))
 );
 function si(e, t) {
   if (!t || typeof t != "object") return "";
