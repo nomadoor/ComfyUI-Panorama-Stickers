@@ -16,3 +16,15 @@ for (const [name, { painting, expected }] of Object.entries(cases)) {
     assert.deepEqual(out.raster_objects.map((item) => item.z_index), expected.raster_z_index ?? []);
   });
 }
+
+const brush = JSON.parse(readFileSync(new URL("./fixtures/paint_stroke_brush.json", import.meta.url), "utf8"));
+
+for (const [name, { brush: values, expected }] of Object.entries(brush.cases)) {
+  test(`stroke brush values: ${name}`, () => {
+    const stroke = { ...brush.stroke, ...values };
+    const out = normalizePaintingState({ [stroke.layerKind]: { strokes: [stroke] } });
+    assert.equal(out[stroke.layerKind].strokes.length, 1);
+    const [kept] = out[stroke.layerKind].strokes;
+    assert.deepEqual(Object.fromEntries(brush.brush_keys.filter((key) => key in kept).map((key) => [key, kept[key]])), expected);
+  });
+}
