@@ -5,11 +5,12 @@ import { BACKGROUND_ROW, buildEasingModel, buildTimelineModel } from "../pano_ed
 import { DRAW_REASON } from "../pano_frame_scheduler.js";
 import { backgroundLengthMedia, backgroundVideoMedia } from "../pano_media_session.js";
 import { backgroundBarEnd, backgroundClipAt, backgroundPlace, backgroundShownAt, portMediaFrames } from "../pano_port_media.js";
-import { SCENE_INPUT_NAMES, STUDIO_BACKGROUND_INPUT_NAMES, inputLinked, videoLinked } from "../pano_preview_video.js";
+import { STUDIO_BACKGROUND_INPUT_NAMES, inputLinked, videoLinked } from "../pano_preview_video.js";
 import { clipActive } from "../pano_scene_eval.js";
 import { stateAnimationClips } from "../pano_space.js";
 import { timelineFps } from "../pano_scene_state.js";
 import { timelineFpsLocked } from "../pano_video_fps.js";
+import { ownSceneLinked } from "../pano_upstream.js";
 import { deleteKeyframes, isTimed, rowLaneNames, timelineSpan } from "../pano_timeline.js";
 
 export function createTimeline(deps) {
@@ -53,9 +54,9 @@ export function createTimeline(deps) {
       // Panorama Studio shows its Camera, its Stickers and its `scene` on one Timeline.
       camera: hasCamera(),
       cameraHideable: studio,
-      // Another Studio's Scene on `scene` is upstream: its own `scene` is not drawn, and its elements have
-      // rows of their own below (ADR 0030).
-      scene: sceneV2 && inputLinked(node, SCENE_INPUT_NAMES) && !upstreamLinked(),
+      // Another Studio's Scene on `scene` is upstream: its elements have rows of their own below (ADR 0030),
+      // and the own `world` content, drawn over them, keeps its row (ADR 0048).
+      scene: sceneV2 && ownSceneLinked({ world: inputLinked(node, ["world"]), scene: inputLinked(node, ["scene"]), upstream: upstreamLinked() }),
       upstream: upstreamTimelineLayers(),
       background: backgroundShown() ? { end: portBarEnd(state.background) } : null,
       // A 3D file still uploading is a 3D Sticker before its Source names it.
@@ -83,12 +84,12 @@ export function createTimeline(deps) {
     return timelineSpan(state, {
       bg: backgroundMedia(),
       port: getPortMediaMeta(),
-      sceneItems: upstreamLinked() ? 0 : sceneFiles()?.urls.length ?? 0,
+      sceneItems: sceneFiles()?.urls.length ?? 0,
       upstream: upstreamOutput(openClip),
       openClip,
       camera: studio,
       // The animated 3D files' clips (ADR 0043): one cycle counts as their media's length.
-      animations: stateAnimationClips(state, { sceneFiles: upstreamLinked() ? null : sceneFiles(), stickerFiles: stickerFiles(), editorFile: file3dEditorFile }),
+      animations: stateAnimationClips(state, { sceneFiles: sceneFiles(), stickerFiles: stickerFiles(), editorFile: file3dEditorFile }),
     });
   }
 

@@ -17,7 +17,7 @@
 //               Clip range that sets the Auto length)
 //   background  null, or { end, video } while the node's own bg_media has a row (`end` where its media ends, or null;
 //               `video` whether a VIDEO is linked to it, before its length is known too)
-//   sceneRow    whether the `scene` input is linked (not to an upstream Scene)
+//   sceneRow    whether the node's own 3D content is linked (pano_upstream.js ownSceneLinked)
 //   fpsLocked   whether a VIDEO sets the Timeline fps
 //   readOnly    a read-only editor
 // A selection is { row, keys }: `row` the id of the selected object's row (or null), `keys` the selected Keyframes
@@ -97,8 +97,8 @@ export function timelineEntries(ctx) {
   const own = [];
   if (ctx.background) own.push({ id: BACKGROUND_ROW, kind: "background", owner: state.background, sceneState: state, layer: null, offset: clipOffset(state.background), label: "Background", icon: ICON.unwrap });
   own.push({ id: CAMERA_ROW, kind: "camera", owner: timelineCamera(state), sceneState: state, layer: null, offset: 0, label: "Camera", icon: ICON.camera });
-  // The node's own `scene` is not drawn under an upstream Scene, so its row does not show then.
-  own.push(...stateEntries(state, null, !upstream.length && (!!ctx.sceneRow || ownerTimed(state.scene))));
+  // The own `scene` (the `world` content) is drawn over the upstream layers too, so its row shows with them.
+  own.push(...stateEntries(state, null, !!ctx.sceneRow || ownerTimed(state.scene)));
   return {
     own,
     groups: upstream.map((layer) => ({
