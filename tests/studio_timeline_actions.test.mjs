@@ -170,6 +170,17 @@ test("the eye hides and shows; hiding the selected object releases it; locked St
   assert.equal(toggleVisible(ctxOf(studioState(), { background: { end: null } }), none, "background"), null);
 });
 
+const PAINTED = { raster_objects: [{ id: "r1", type: "raster_frozen", layerKind: "paint", rasterDataUrl: "data:image/png;base64,AAAA", bbox: { u0: 0.2, v0: 0.2, u1: 0.3, v1: 0.3 } }] };
+// docs/studio-ui.md "ペイントのまとまり": hiding the painting lets a selected paint group go.
+test("hiding the painting releases a selected stroke group or raster object; showing it keeps the selection", () => {
+  const ctx = ctxOf(studioState({ painting: PAINTED }));
+  for (const row of ["paint_group:g1", "raster:r1"]) {
+    assert.deepEqual(toggleVisible(ctx, { row, keys: [] }, "painting").selection, none, row);
+  }
+  const hiddenCtx = ctxOf(studioState({ painting_visible: false }));
+  assert.deepEqual(toggleVisible(hiddenCtx, { row: "camera", keys: [] }, "painting").selection, { row: "camera", keys: [] });
+});
+
 // docs/timeline-ui.md "タイムラインの長さ": Clip range drags.
 test("moving a Clip range keeps its start inside the output and may run its end past it", () => {
   const ctx = ctxOf(studioState());

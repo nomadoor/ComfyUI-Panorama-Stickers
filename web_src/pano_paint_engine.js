@@ -1018,6 +1018,10 @@ export function createPaintEngineManager(options = {}) {
   const ERP_RECT = { x0: 0, y0: 0, x1: ERP_W, y1: ERP_H };
   // Per-actionGroup paint surfaces.  Keyed by String(actionGroupId).
   const groupTargets = new Map();
+  // The values of the strokes read by a rebuild told that strokes do not change in place (rebuildCommitted's
+  // immutableStrokes), by stroke object.
+  const knownValues = new WeakMap();
+  let valuesOf = strokeValues;
 
   // Shared current-stroke scratch canvas — only one group OR mask is active at a time,
   // so a single 8MB canvas suffices for all live-stroke rendering.
@@ -1215,7 +1219,7 @@ export function createPaintEngineManager(options = {}) {
         rects = drawStrokeToSurface(surface.ctx, stroke, desc);
         painted = true;
       }
-      return { values: strokeValues(stroke), rects, eraser };
+      return { values: valuesOf(stroke), rects, eraser };
     });
     return { drawn, painted };
   }
@@ -1237,8 +1241,28 @@ export function createPaintEngineManager(options = {}) {
 
   // The strokes of the state drawn into the committed surfaces. A group or the mask is drawn again (whole) only
   // when its strokes changed or its committed pixels changed since the last rebuild; its display then changes
-  // only where those strokes are.
-  function rebuildCommitted(state) {
+  // only where those strokes are. With `immutableStrokes` (a caller whose stroke records never change in place: the
+  // new editor's states, studio/paint.js), a stroke object read before is not read again.
+  function rebuildCommitted(state, { immutableStrokes = false } = {}) {
+    valuesOf = immutableStrokes ? knownValuesOf : strokeValues;
+    try {
+      rebuildCommittedNow(state);
+    } finally {
+      valuesOf = strokeValues;
+    }
+  }
+
+  function knownValuesOf(stroke) {
+    if (!stroke || typeof stroke !== "object") return strokeValues(stroke);
+    let values = knownValues.get(stroke);
+    if (!values) {
+      values = strokeValues(stroke);
+      knownValues.set(stroke, values);
+    }
+    return values;
+  }
+
+  function rebuildCommittedNow(state) {
     for (const group of groupTargets.values()) {
       endPreview(group, null);
       group.activeStroke = null;
@@ -1274,7 +1298,7 @@ export function createPaintEngineManager(options = {}) {
     }
     for (const [gid, list] of lists) {
       const group = groupTargets.get(gid);
-      const values = list.map((stroke) => strokeValues(stroke));
+      const values = list.map((stroke) => valuesOf(stroke));
       const same = group.changed !== null && group.changed.length === 0
         && values.length === group.drawn.length && values.every((item, index) => sameValues(item, group.drawn[index].values));
       if (same) continue;
@@ -1288,7 +1312,7 @@ export function createPaintEngineManager(options = {}) {
       group.display.mark(rects);
     }
 
-    const maskValues = mask.map((stroke) => strokeValues(stroke));
+    const maskValues = mask.map((stroke) => valuesOf(stroke));
     const maskSame = maskTarget.changed !== null && maskTarget.changed.length === 0
       && maskValues.length === maskTarget.drawn.length && maskValues.every((item, index) => sameValues(item, maskTarget.drawn[index].values));
     if (!maskSame) {

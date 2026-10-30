@@ -6,6 +6,7 @@ import { paintingLayerNeedsSync } from "../pano_editor_state.js";
 import { paintingCompositeCount, uploadPaintingLayer } from "../pano_paint_upload.js";
 import { createDamageLog } from "../pano_paint_damage.js";
 import { engineMask, skyPaintLayers } from "../pano_paint_layers.js";
+import { rasterAlphaHits, rasterObjectAlphaAt } from "../pano_paint_objects.js";
 import { rasterEraserDisplay } from "../pano_raster_eraser.js";
 import { clamp } from "../pano_math.js";
 import { cloneJson, drawRasterObjectErp, pointInPoly } from "./helpers.js";
@@ -22,8 +23,8 @@ export function createPaintLayers(deps) {
   let commitState, createRasterSurface, getActivePaintTargetDescriptor,
     getDesiredPaintTargetDescriptor, getOrderedDisplayListObjects,
     getOrderedPaintGroupIds, getPaintingCompositeRevisionKey,
-    inverseTransformErpPointAround, parseRasterObjectSelectionId, processFreehandPoints,
-    rasterizeStrokeToSurface, rebuildPaintEngineIfNeeded, requestDraw, screenPosToErpPoint, shortestWrappedDelta;
+    parseRasterObjectSelectionId, processFreehandPoints,
+    rasterizeStrokeToSurface, rebuildPaintEngineIfNeeded, requestDraw, screenPosToErpPoint;
 
   function isPaintCompositeInteraction(interaction = editor.interaction) {
     const kind = String(interaction?.kind || "");
@@ -116,43 +117,19 @@ export function createPaintLayers(deps) {
   }
 
   function sampleRasterObjectAlphaAt(item, erpPoint) {
-    if (!item || !erpPoint) return null;
-    const bbox = item?.bbox || null;
-    if (!bbox) return null;
-    const tf = item?.transform || {};
-    const center = {
-      u: (Number(bbox.u0 || 0) + Number(bbox.u1 || 0)) * 0.5,
-      v: (Number(bbox.v0 || 0) + Number(bbox.v1 || 0)) * 0.5,
-    };
-    const untranslated = {
-      u: ((Number(erpPoint.u || 0) - Number(tf.du || 0)) % 1 + 1) % 1,
-      v: Number(erpPoint.v || 0) - Number(tf.dv || 0),
-    };
-    const basePoint = inverseTransformErpPointAround(
-      untranslated,
-      center,
-      Number(tf.scale || 1),
-      Number(tf.rot_deg || 0),
-    );
-    const bw = Number(bbox.u1 || 0) - Number(bbox.u0 || 0);
-    const bh = Number(bbox.v1 || 0) - Number(bbox.v0 || 0);
-    if (!(bw > 1e-6) || !(bh > 1e-6)) return null;
-    const localU = shortestWrappedDelta(Number(basePoint.u || 0), Number(bbox.u0 || 0)) / bw;
-    const localV = (Number(basePoint.v || 0) - Number(bbox.v0 || 0)) / bh;
-    if (localU < 0 || localU > 1 || localV < 0 || localV > 1) return 0;
-    const surface = getRasterObjectAlphaSurface(item);
-    if (!surface) return null;
-    const sx = clamp(Math.floor(localU * surface.width), 0, surface.width - 1);
-    const sy = clamp(Math.floor(localV * surface.height), 0, surface.height - 1);
-    return Number(surface.alpha[(sy * surface.width + sx) * 4 + 3] || 0);
+    return rasterObjectAlphaAt(item, erpPoint, (localU, localV) => {
+      const surface = getRasterObjectAlphaSurface(item);
+      if (!surface) return null;
+      const sx = clamp(Math.floor(localU * surface.width), 0, surface.width - 1);
+      const sy = clamp(Math.floor(localV * surface.height), 0, surface.height - 1);
+      return Number(surface.alpha[(sy * surface.width + sx) * 4 + 3] || 0);
+    });
   }
 
   function hitRasterObjectAt(item, geom, p, erpPoint = null) {
     if (!geom?.visible || !pointInPoly(p, geom.corners)) return false;
     const samplePoint = erpPoint || screenPosToErpPoint(p, performance.now());
-    const alpha = sampleRasterObjectAlphaAt(item, samplePoint);
-    if (alpha === null) return true;
-    return alpha > 8;
+    return rasterAlphaHits(sampleRasterObjectAlphaAt(item, samplePoint));
   }
 
   // The size of the paint engine's ERP canvases (without composing them).
@@ -393,8 +370,8 @@ export function createPaintLayers(deps) {
         commitState, createRasterSurface, getActivePaintTargetDescriptor,
         getDesiredPaintTargetDescriptor, getOrderedDisplayListObjects,
         getOrderedPaintGroupIds, getPaintingCompositeRevisionKey,
-        inverseTransformErpPointAround, parseRasterObjectSelectionId, processFreehandPoints,
-        rasterizeStrokeToSurface, rebuildPaintEngineIfNeeded, requestDraw, screenPosToErpPoint, shortestWrappedDelta,
+        parseRasterObjectSelectionId, processFreehandPoints,
+        rasterizeStrokeToSurface, rebuildPaintEngineIfNeeded, requestDraw, screenPosToErpPoint,
       } = api);
     },
     getSharedLivePaintSurface, getLivePaintRevisionSuffix, isPaintCompositeInteraction, hitRasterObjectAt,

@@ -34,7 +34,8 @@ Python はこの文書の規則を持たない（列は `—`）。「（新し�
 | ペイントの道具（左の列の Paint・Mask、下の中央のバーのペイントの道具、ステージで描くこと、ブラシのカーソル、Clear paint・Clear mask） | — | 道具の選び方・太さ・色とバーの中身は `web_src/studio/paint_bar.js`（`createPaintTools`・`paintBar`）、画面は `web_src/components/studio/StudioPaintBar.vue`（色のポップオーバーは `StudioColorPicker.vue`、Clear の確かめは `StudioConfirm.vue`）。ステージで描くことと描く層は `web_src/studio/paint.js` `createStudioPaint`（下の部品：ストロークの記録・点・確定・消しゴムは `web_src/pano_paint_strokes.js`、画素は `pano_paint_engine.js`、層の並びは `pano_paint_layers.js` `skyPaintLayers`。古い UI も同じ下の部品を使う）。状態に書いて Undo の 1 段にするのは `web_src/studio/session.js` `editPainting`、組み立ては `web_src/studio/editor.js`、押したときの振り分けは `web_src/studio/stage.js`。閉じるときのペイントの層のアップロードは `web_src/studio/paint_upload.js`（下の部品 `web_src/pano_paint_upload.js`、古い UI と同じ）で、呼ぶのは `web_src/studio/editor.js` の閉じる処理 | `tests/pano_paint_strokes.test.mjs`、`tests/studio_paint.test.mjs`、`tests/studio_session.test.mjs`、`tests/studio_paint_upload.test.mjs`、`tests/pano_paint_upload.test.mjs`、`tests/browser/studio_paint.spec.js` |
 | インスペクタの組み立て（タブと選択で何を出すか）、行の格子、欄、スライダー、リセット、Keyframe のポチの置き場所、Easing のパネル、種類ごとの中身 | — | データは `web_src/studio/inspector_model.js` `buildInspectorModel`、編集を状態に当てるのは `web_src/studio/inspector_actions.js` `applyInspectorEdit`、画面は `web_src/components/studio/StudioInspector.vue`・`StudioInspectorCard.vue`・`StudioInspectorRow.vue`・`StudioEasingPanel.vue`（欄とスライダーの部品は `StudioNumberField.vue`・`StudioSlider.vue`・`StudioAspectSlider.vue`・`StudioResetButton.vue`・`StudioKeyDot.vue`、Camera のカードの撮り方の札は `StudioModeTiles.vue`）。Aspect のスライダーが止まる既定の比は `web_src/studio/ui_aspect.js` `ASPECT_PRESETS`・`snapAspectPos`、矢印キーの移り先は `stepAspect`。Sky の画像の FOV の行のリセット先は `inspector_model.js` `skyPlacedSize`。エディタの中でインスペクタとタイムラインが共有する選択は `web_src/studio/session.js` `inspectorSelection` | `tests/studio_inspector_model.test.mjs`、`tests/studio_inspector_actions.test.mjs`、`tests/studio_ui_helpers.test.mjs`（Aspect のスライダーの止まる所）、`tests/browser/studio_inspector.spec.js`、`tests/browser/studio_ui.spec.js`、`tests/studio_session.test.mjs`、`tests/browser/studio_session.spec.js` |
 | 右の中央の列（視点の操作のつまみ）と右下のボタン群（Frame Selected、Reset View、グリッドのボタン）の並び | — | `web_src/components/studio/StudioNavWidget.vue`、`StudioViewButtons.vue`（つまみの働きは `docs/space-and-view.md`） | `tests/browser/studio_editor.spec.js` |
-| 下の中央のバーの中身 | — | `web_src/studio/selection_bar.js` `selectionBar`・`gizmoModeOfKey`、`web_src/components/studio/StudioSelectionBar.vue`、ボタンの働きは `web_src/studio/session.js`（`toggleLock`・`duplicateSelected`・`orderSelected`・`revertSelected`・`deleteSelectedObject`）、ステージの選択とギズモと Sky の画像のハンドルは `web_src/studio/stage_objects.js`（ギズモの形・当たり・ドラッグの動きは `web_src/studio/gizmo_overlay.js`、ギズモの中心はガイドの中心 `web_src/studio/world_guides.js` `worldGuideItems`、描くのは `web_src/studio/stage_overlay.js`）。Camera の Lock は `camera.locked`（`docs/scene-state-v2.md`）を `session.js` `toggleLock` で切り替える。未実装：Replace（古い UI の下にファイルを選ぶ部品が無い）、ペイントのまとまりと複数選択のバー | `tests/studio_selection_bar.test.mjs`、`tests/studio_session.test.mjs`、`tests/studio_stage_objects.test.mjs`、`tests/studio_gizmo_overlay.test.mjs`、`tests/browser/studio_select.spec.js`、`tests/browser/studio_camera_button.spec.js` |
+| 下の中央のバーの中身 | — | `web_src/studio/selection_bar.js` `selectionBar`・`gizmoModeOfKey`、`web_src/components/studio/StudioSelectionBar.vue`、ボタンの働きは `web_src/studio/session.js`（`toggleLock`・`duplicateSelected`・`orderSelected`・`revertSelected`・`deleteSelectedObject`）、ステージの選択とギズモと Sky の画像のハンドルは `web_src/studio/stage_objects.js`（ギズモの形・当たり・ドラッグの動きは `web_src/studio/gizmo_overlay.js`、ギズモの中心はガイドの中心 `web_src/studio/world_guides.js` `worldGuideItems`、描くのは `web_src/studio/stage_overlay.js`）。Camera の Lock は `camera.locked`（`docs/scene-state-v2.md`）を `session.js` `toggleLock` で切り替える。前面へ・背面へが Sky の層の全体を並べ替えるのは `session.js` `orderSelected`（全体の並びは `web_src/pano_paint_objects.js` `skyDisplayList`、振り直しは `restackSkyOrder`・`numberSkyOrder`。古い UI と同じ関数）。ペイントのまとまりのバーは次の行。未実装：Replace（古い UI の下にファイルを選ぶ部品が無い）、複数選択のバー | `tests/studio_selection_bar.test.mjs`、`tests/studio_session.test.mjs`、`tests/studio_stage_objects.test.mjs`、`tests/studio_gizmo_overlay.test.mjs`、`tests/browser/studio_select.spec.js`、`tests/browser/studio_camera_button.spec.js` |
+| ペイントのまとまりをつかむこと（つかむ単位、押したときの順と当たり、選んだ枠とハンドル、動かす・大きさを変える式、前面へ・背面へ・Lock・Delete、Undo） | — | 押したときの順（Sky の物を描く順の逆に並べる `skyObjects`）・当たり・ハンドル・選んだ枠とカーソルは `web_src/studio/stage_objects.js`（描くのは `stage_overlay.js`、ラスタの画素の不透明度は `web_src/studio/paint.js` `rasterAlpha`）、ドラッグは `stage_objects.js` `paintDrag` の `edits` から `web_src/studio/session.js` `gesture`・`commitGesture`・`cancelGesture`、一回の操作は `session.js`（`orderSelected`・`toggleLock`・`deleteSelectedObject`）、選択の形（`paint_group:`・`raster:`）の読み方は `web_src/pano_paint_objects.js` `paintObjectRow`・`paintObjectOf`（まとまりの数え方 `countedPaintGroups`、状態ごとの索引 `paintIndexOf`）で、読む所は `session.js` `keepSelection`・`selectObject`・`inspectorSelection`、`selection_bar.js` `selectedKind`・`selectionBar`、`editor.js` `selectionOf`、`timeline_actions.js` `toggleVisible`、タイムラインのペイントの行の選んだ形は `timeline_model.js` `buildStudioTimeline`。当たり・動かす式・大きさを変える式・重なり順の振り直し・消し方は二つの UI が共有する下の部品 `web_src/pano_paint_objects.js`（`strokePathsHit`・`strokeHitLineWidth`・`paintCornerHandle`・`strokeDotHit`・`rasterObjectAlphaAt`・`rasterAlphaHits`・`offsetStrokeGroup`・`transformStrokeGroup`・`offsetRasterObject`・`scaleRasterObject`・`pointerDistance`・`pointerScaleRatio`・`restackSkyOrder`・`numberSkyOrder`・`deletePaintObjects`。古い UI は `web_src/editor/hit_test.js`・`paint_layers.js`・`object_geometry.js`・`items.js`・`pointer_transform.js`・`selection.js`・`commands.js` から呼ぶ）。ストロークのまとまりの枠は共有の `web_src/pano_paint_strokes.js` `strokeGroupFrame`、ERP の点と向きは `erpPointOfDirection`・`directionOfErpPoint`。ドラッグの間の描き直しは `paint.js` の `layers`（ドラッグは動かす物だけを写し（`stage_objects.js` `paintDraft`、`session.js` `gesture` の `copy`）、ほかのストロークは同じ物のまま。ペイントのエンジンの `rebuildCommitted` は `immutableStrokes` で、読んだことのあるストロークを読み直さず、ストロークの変わったまとまりだけを描き直す。ラスタは変形が変わった一つだけを重ね直す）。選択の行の id を作るのは `web_src/pano_paint_layers.js` `paintObjectRowOf`（層の id と同じ） | `tests/studio_stage_objects.test.mjs`、`tests/studio_session.test.mjs`、`tests/studio_selection_bar.test.mjs`、`tests/studio_timeline_model.test.mjs`、`tests/studio_timeline_actions.test.mjs`、`tests/pano_paint_engine.test.mjs`（`immutableStrokes`）、`tests/browser/studio_paint_grab.spec.js`（古い UI の同じ関数は `tests/editor_pointer_input.test.mjs`、`tests/browser/paint_regions.spec.js`） |
 | エディタの中の Camera の見せ方（Camera のボタン、Camera のカード、3D の見た目） | — | 3D の見た目は `web_src/studio/camera_marker.js`（形・塗り・見え方）、描くのは `web_src/studio/stage_overlay.js`。Camera のボタンの押せる・押せないと tooltip、Camera を視点へ持ってくる書き方は `web_src/studio/camera_ui.js`（`cameraButton`・`cameraToView`）、Undo の 1 段にするのは `web_src/studio/session.js` `cameraToView`、今の視点を渡すのは `web_src/studio/editor.js`（`stage.pose()`）、ボタンは `StudioToolRail.vue`。打った瞬間の知らせは（未実装） | `tests/studio_camera_marker.test.mjs`、`tests/browser/studio_select.spec.js`、`tests/studio_camera_ui.test.mjs`、`tests/studio_session.test.mjs`、`tests/browser/studio_camera_button.spec.js` |
 | Camera タブの画面（フレームの収め方、枠の外、辺の目盛り、無効にする部品） | — | 収め方と目盛りの計算は `web_src/studio/frame_layout.js`（`frameRect`・`rulerStrips`（目盛りの長さと置き場所）・`rulerMarks`・`rulerDragValue`、目盛りの縮尺と長さと値の幅 `CAMERA_RULERS`）、画面の部品は `web_src/components/studio/StudioCameraFrame.vue`（枠と枠の外）・`StudioEdgeRuler.vue`（辺の目盛り）、無効にする部品は `StudioToolRail.vue` の `cameraTab`・`StudioViewButtons.vue` の `resetDisabled`・`frameTip`・`frameDisabled`（Panorama モードの Frame Selected）・`StudioNavWidget.vue` の `disabled`。辺の目盛りは Camera のカードの行（`frame_layout.js` `cameraRulers`）で、編集とリセットはインスペクタと同じ `inspector_actions.js` `applyInspectorEdit`（`rulerEdit`、Roll だけのリセットは行 `roll`）。ステージへの組み込み（タブ、フレームの中の絵、目盛り、Camera タブで Output の小窓を畳むこと）は `StudioEditor.vue`、タブと Camera の動きを状態に書くのは `web_src/studio/editor.js`、描くのと操作は `web_src/studio/stage.js`（Frame 表示は `stage_view.js` `cameraFrameView`、Panorama モードの ERP は `pano_three_view.js` `renderLiveErp`） | `tests/studio_frame_layout.test.mjs`、`tests/studio_stage_view.test.mjs`、`tests/studio_inspector_actions.test.mjs`（Roll だけのリセット）、`tests/browser/studio_camera_tab.spec.js`、`tests/browser/studio_camera_wired.spec.js`、`tests/browser/studio_camera_fixes.spec.js` |
 | Add のアイコンと、Add とドロップの流れ（選ぶファイル、画像の Sky / World の二択とその取り消し、置く間、失敗の知らせ）、ドラッグ中の印の見た目とラベル | — | 流れは `web_src/studio/add_files.js` `createAddFiles`（下の部品 `pano_sticker_file_import.js` のアップロード、`pano_file_3d.js` の経路）、ファイルを選ぶ画面は `web_src/components/studio/StudioEditor.vue`、二択は `web_src/components/studio/StudioPlaceChoice.vue`、ドラッグの事象は `web_src/studio/drop_input.js` `createDropInput`、印とラベルを描くのは `web_src/components/studio/StudioDropMarker.vue`（印の形と色、ラベルの置き場所 `dropLabelPlace`、着く所は `web_src/studio/landing.js`、`docs/space-and-view.md`）。読み込み中のガイドと現れる動きの時間は `web_src/studio/load_reveal.js` `createLoadReveal`（置いた 3D ファイルを知らせるのは `add_files.js`、中身の不透明度に掛けるのは `web_src/studio/editor.js`、光の帯を描くのは `stage_overlay.js`） | `tests/studio_add_files.test.mjs`、`tests/studio_landing.test.mjs`、`tests/studio_load_reveal.test.mjs`、`tests/browser/studio_add.spec.js` |
@@ -263,17 +264,116 @@ Camera タブでは、Undo・Redo のほかは同じ席に出したまま無効�
 
 - 空に貼った画像の前面へ・背面へは、重なった二つの角丸の四角のアイコンで示す。動かす物（選んだ画像）を塗りの四角にし、前面へは
   塗りの四角を手前に、背面へは塗りの四角を奥（線だけの四角の後ろ）に描く（形は `docs/design.md` の「新しい UI の見た目」の「アイコン」）。
-  押すと一番前・一番後ろへ移すので、tooltip は「Bring to front」「Send to back」。
+  押すと一番前・一番後ろへ移すので、tooltip は「Bring to front」「Send to back」。ペイントのまとまりも同じボタン。
+- 前面へ・背面へが並べ替えるのは、自分の Sky の層の物の全体（空に貼った画像、ストロークのまとまり、ラスタ。共通の `z_index` の軸、
+  `docs/scene-state-v2.md` の「Sky の重なり順」）。選んだ物を全体の一番前（後ろ）へ移し、全体に描く順で 0 から番号を振り直す（古い UI の
+  `web_src/editor/selection.js` `bringSelectedToFront`・`sendSelectedToBack` と同じ）。すでに一番前（後ろ）なら何もしない。変えたら Undo の 1 段。
+  上流の層の物は並べ替えに入らない（自分の Sky の下にある）。空に貼った画像を選んで押したときも同じ規則で、ペイントとの前後を含めて並べ替え、
+  ペイントのまとまりの `z_index` も振り直す（`CONTEXT.md` の Sticker と同じ共通の軸。持ち主から任された main session の決定、2026-10-31）。
 - 表示・非表示の切り替えはバーに置かない（タイムラインの目のアイコン、`docs/timeline-ui.md` の「表示（目のアイコン）」）。
 - Lock は押すたびに切り替わるボタンで、状態を鍵のアイコンの形で示す（`docs/agents/ux-principles.md` の例外）。
 - Camera は消せないので Delete を置かない。Delete キーを押したときは一行の知らせ「The camera can't be deleted」を出す。
 - 空に貼った画像にはギズモを出さない。ステージの上で、本体のドラッグで向き、四隅のハンドルで画角（縦横比を保つ）、辺のハンドルで
   縦か横の画角だけ、回転のハンドルで Roll を変える（今の動きのまま、新しい UI でも変えない。今の動きは `web_src/editor/pointer_input.js` の
-  `startMove`・`startScale`・`startAxisScale`・`startRotate` にあり、当たりの順は `docs/editor-interaction.md` の「`world` の Sticker の操作」の
-  選択の順。古い UI の文書には独立した節が無いので、切り替えのときにこの文書へ規則として書き起こす。見た目の値は `docs/design.md`）。
+  `startMove`・`startScale`・`startAxisScale`・`startRotate` にあり、当たりの順は下の「ペイントのまとまり」の押したときの順。古い UI の
+  文書には独立した節が無いので、切り替えのときにこの文書へ規則として書き起こす。見た目の値は `docs/design.md`）。
   ただし回転のハンドルの Shift の止め方は、古い UI の 45° ではなく、ギズモの Rotate と同じ `ROTATE_SNAP_DEG` の倍数（絶対の Roll）にする。
   選んだ空の画像の枠とハンドルは、World の物の選択の黄ではなく氷の色で描く（ドロップの Sky の印と同じ色。Sky と World の行き先を色で
   見分けられるようにする。値は `docs/design.md` の「新しい UI の見た目」）。
+
+### ペイントのまとまり
+
+Cursor の道具で、自分のペイントを古い UI と同じ単位でつかみ、動かし、大きさを変える（持ち主の決定、2026-10-31）。ペイントは Sky の層に
+属し、時間で変わらない（`CONTEXT.md` の Sky）。状態の形は `docs/scene-state-v2.md` の `painting`。
+
+- つかむ単位（まとまり）は次の二つで、古い UI と同じ。
+  - ストロークのまとまり：`painting.groups[]` の一つと、同じ `actionGroupId` を持つ `painting.paint.strokes[]`。今の筆はストロークごとに新しい
+    `actionGroupId` を付ける（`web_src/pano_paint_strokes.js` `freehandStrokeRecord`・`lassoFillStrokeRecord`）ので、ふつうは一本のストロークが一つのまとまり。
+  - ラスタ：`painting.raster_objects[]` のうち `layerKind` が `paint` の一つ（消しゴムがストロークのまとまりを画素に変えたもの）。
+  - マスク（`painting.mask` のストロークと、`layerKind` が `mask` のラスタ）はつかまない（古い UI と同じ）。マスクの上の押下は、その奥の物へ通る。
+  - 上流の層のペイントはつかまない（上流の物は今は読み取り専用。下の「ノードの入力から来た物」）。
+  - まとまりの数え方は `pano_paint_strokes.js` `syncPaintGroups` を通した `groups` による：どの項目にも属さないストローク（`skyPaintLayers` が
+    一番手前に描く分）には、一番手前の `z_index` で項目を足し、ストロークの無い項目（`strokeGroupFrame` が `null`）は除く。当たり・枠・
+    並べ替えはこの数え方で行う。状態に書くのは、編集（ドラッグ、前面へ・背面へ、Lock、Delete）が状態を変えるときだけで、ホバーや押下だけでは書かない。
+- 選択の形：まとまりの選択は、選択の行（`session.js` の `selection.row`。今は `"camera"` か Sticker の id）に、描く層と同じ id で入れる：
+  ストロークのまとまりは `paint_group:<actionGroupId>`、ラスタは `raster:<id>`（`pano_paint_layers.js` `skyPaintLayers` の層の id と同じ）。
+  この形を読む所：`selection_bar.js` `selectedKind`（種類 `paint`）・`selectionBar`、`session.js` `keepSelection`（その項目が状態にある間は
+  保つ）・`inspectorSelection`・`deleteSelectedObject`・`toggleLock`・`orderSelected`、`editor.js` `selectionOf`（ステージの選択：Sky の物と同じく
+  球を持たない。回る中心と Frame Selected は `docs/space-and-view.md`）、`stage_objects.js` の押下・ホバー・選んだ枠。
+- タイムライン：まとまりには自分の行が無い。まとまりを選んでいる間、タイムラインのペイントの行（`PAINTING_ROW`）を選んだ形で出す
+  （持ち主から任された main session の決定、2026-10-31）。行の選択の値は `paint_group:`・`raster:` のまま変えず、行の見た目だけが
+  「`selection.row` が `paint_group:` か `raster:` で始まる」ことからペイントの行を選んだ形にする。ペイントの行を押して選ぶ働きは今のまま。
+- 押したときの順（Alt なしの左ボタン。上から最初に当たる一つ）。この順は空に貼った画像と World の物にも同じく当たる。
+
+  | 順 | 当たる物 | 押してドラッグしたとき |
+  |---|---|---|
+  | 1 | 選んでいる World の物か Camera のギズモの取っ手（3D タブ） | 上の「ギズモ」 |
+  | 2 | 選んでいる空の画像のハンドル、選んでいるペイントのまとまりの四隅のハンドル（ロックしていないとき、3D タブ） | 画像は上の表の後の項、まとまりは下の「大きさを変える」 |
+  | 3 | ポインタの下の World の物（`docs/space-and-view.md` の「ホバーの判定」の粗いグリッドの判定。World は無限遠の Sky より手前にあるので、Sky の物と重なっていれば World の物が先） | 選ぶだけ（動かすのはギズモ） |
+  | 4 | Camera の印（3D タブ） | 選ぶだけ |
+  | 5 | 自分の Sky の層の物を手前から：空に貼った画像とペイントのまとまりを、描く順の逆に（共通の `z_index` の大きい順。同じ値の物の順は `docs/scene-state-v2.md` の「Sky の重なり順」が持ち、その手前の物から） | 選び、本体のドラッグで動かす（ロックした物は選ぶだけ） |
+  | 6 | 何も無い | 見回し。動かさずに離せば選択を外す |
+
+  上流の層の Sky の物は自分の Sky の下にあり、今は選べないので、どの順にも数えない（押下は 6 になる）。
+  同じ `z_index` の物の間で、見た目の一番手前に当てるのは古い UI との意図した違い。古い UI の `hitObjectAt` は Sticker・グループ・ラスタを
+  並べた後に `z_index` だけで並べ替えるので、同じ値では奥に描いた Sticker が先に当たる。
+- まとまりの当たり（古い UI の式のまま。`web_src/editor/hit_test.js` `hitObjectAt`、`editor/paint_layers.js` `hitRasterObjectAt`）：
+  - ストロークのまとまり：ストロークの点を画面に写した線から `max(8, 線の幅 / 2 + 6)` px の中、または Lasso の塗りの中。線の幅は筆の
+    太さと筆の種類の倍率から決まる値（`editor/object_geometry.js`）。
+  - ラスタ：変形した枠を画面に写した四角の中で、その向きのラスタの画素の不透明度が 8/255 を超える所（画素を読めないときは四角の中）。
+  - Sky は無限遠なので、視点の位置によらず、ポインタの向きで当たる（空に貼った画像と同じ `viewProjection`。`docs/threejs-spark-integration.md`）。
+    レンズの Camera の Frame 表示では、空に貼った画像と同じピンホールの面で当たる（`docs/space-and-view.md` の「レンズの Camera の当たり」）。
+  - 隠したペイント（`painting_visible` が `false`）は描かないので当たらない（`docs/timeline-ui.md` の「表示（目のアイコン）」）。ロックした
+    まとまりは当たって選べるが、動かない。
+- 選ぶ：まとまりを選ぶと、インスペクタは「種類ごとの中身」の「ペイントのまとまり」のカード、下の中央のバーは上の表の「ペイントのまとまり」の
+  行（左端は筆のアイコンと `Paint`）を出す。選択は状態に書かない。Camera タブでは、ほかの物と同じく選ぶだけで動かさない（下の「Camera タブ」）。
+- 選んだ形：まとまりの枠を画面に写して描く。ストロークのまとまりの枠は、点を囲む ERP の軸にそろえた枠（`strokeGroupFrame`）、ラスタの枠は
+  変形した枠。線と色は選んだ空の画像の枠と同じ（Sky の行き先の氷。値は `docs/design.md` の「Sky の画像のハンドル」）。ハンドルは四隅だけで、
+  辺の中点と回転のハンドルは無い。ロックしたまとまりと Camera タブでは枠だけを描き、ハンドルを描かない。
+- 動かす（本体のドラッグ）：押した所と今の所の ERP の点（ポインタの向きから。`pano_paint_strokes.js` `erpPointOfDirection`）の差 `du`
+  （継ぎ目をまたぐ短い向き）・`dv` を、つかんだときの値に足す。ストロークのまとまりは各ストロークの点（`points`・`rawPoints`・`processedPoints`）に
+  足し（u は 0〜1 で回り、v は 0〜1 に寄せる）、ラスタは `transform.du`・`transform.dv` に足す（`dv` は −1〜1 に寄せる）。式は古い UI の
+  `web_src/editor/items.js` `applyStrokeGroupOffset`・`applyRasterObjectOffset`。
+- 大きさを変える（四隅のハンドル）：枠の画面の中心からポインタまでの距離を、押したときの距離で割った比（どちらも 1 px 以上）で、一様に
+  変える。ストロークのまとまりは各点を、つかんだときの枠の中心のまわりに ERP の u・v で比倍し（比の下限 0.02）、ラスタは
+  `transform.scale` に比を掛ける（0.01〜100 に寄せる）。筆の太さ（ストロークの `size`）は変えない。式は古い UI の `editor/items.js`
+  `applyStrokeGroupTransform`・`applyRasterObjectTransform`。
+  ただし、どのストロークも一点だけのまとまり（筆で一度押しただけの点）では、点の当たりの中の押下は四隅のハンドルより先に本体に
+  当たり、動かす（枠が点とほぼ同じ大きさで、四隅が点に重なるため。古い UI も同じ。`pano_paint_objects.js` `strokeDotHit`）。
+- ラスタの大きさは、ノードが状態から描くとき（`painting_layer` が無いとき。`core/painting.py` `_uv_bbox_to_pixels`）には効かない（`du`・`dv`
+  だけを使う）。古い UI からある差で、ふつうはエディタが閉じるときに `painting_layer` をアップロードし、ノードはそれを描くので見えない。
+  アップロードに失敗したときだけ、大きさを変えたラスタがノードの出力で元の大きさに戻る。
+- 動かすのも大きさを変えるのも ERP の u・v の上で行うので、赤道から離れた所では形が ERP の歪みのまま変わる（極に近いほど横に伸びて見える）。
+  点の v は 0〜1 に寄せるので、極を越えて動かした点は極の線に貼り付いて潰れ、元に戻しても形は戻らない（ドラッグの間はつかんだときの値から
+  求め直すので、離すまでは戻る）。`du` は継ぎ目をまたぐ短い向きで取るので、一回の移動の差が半周（180°）を越えると反対の向きに回る。
+  古い UI と同じ結果にそろえるためで、球面の上の回転にはしない。
+- 回転は、まだ決めていない（下の「まだ決めていないこと」）。
+- 記録：ペイントには Lane も Keyframe も無い（`docs/timeline-ui.md` の「表示（目のアイコン）」のペイントの行）ので、再生ヘッドによらず
+  `painting` をそのまま書き換え、記録の規則は通らない。動かし始めで再生を止める（ストロークと同じ）。
+- ドラッグと Undo：ドラッグは、ほかの新しい UI のドラッグ（ギズモ、空の画像のハンドル）と同じく `stage_objects.js` の `edits` を通す：
+  動くたびに `edits.live`（`session.js` `gesture`。つかんだときの状態の写しに書き直す）、離したら `edits.commit`（`commitGesture`）、
+  Escape とウィンドウのフォーカスの喪失は `edits.cancel`（`cancelGesture`。つかんだときの状態に戻し、段を作らない。
+  `docs/editor-interaction.md` の「ポインタの取り消しとフォーカスの喪失」）。一つのドラッグのペイントの変更が、`commitGesture` で Undo の 1 段に
+  なる。動かさずに離したら段を作らない。`painting_layer` を `null` にするのは、このドラッグの道でも同じ（`gesture` に渡す変更が `painting` と
+  一緒に書く。閉じるときのアップロードは下の「ペイントの道具」）。`session.js` `editPainting` は一回ごとに段を積み、ドラッグの間は受けないので、
+  ドラッグには使わない。一回で終わる操作（Lock、前面へ・背面へ、Delete）だけが、`editPainting` と同じ一回で 1 段の編集を通す。
+- ドラッグの間の描き直し：ペイントそのものをポインタに付けてその場で描き直す（枠だけを先に動かして離してから描く形にはしない。
+  `docs/agents/ux-principles.md` の「反応と速さ」）。描き直すのはつかんだまとまりだけで、ストロークのまとまりはそのまとまりの画素を描き直し、
+  ラスタは変形を変えて重ね直す。ペイントのエンジンは作り直さない（古い UI の `markPaintStrokeVisualsDirty({ rebuildPaintEngine: false })` と
+  `markPaintCompositeVisualsDirty` と同じ）。
+- 前面へ・背面へは上の表の後の項（自分の Sky の層の物の全体で並べ替える）。
+- Lock：そのまとまりの `locked`（`painting.groups[].locked`、`painting.raster_objects[].locked`。どちらもエディタだけが使う。
+  `docs/scene-state-v2.md` の `painting`）を切り替え、Undo の 1 段にする。ノードは `locked` を描画に使わないので、
+  Lock は `painting_layer` を `null` にしない（ペイントのほかの編集とは違う）。ロックしている
+  間は、前面へ・背面へと Delete を無効にする（空に貼った画像と同じ）。
+- Delete（バーのボタンと Delete キー）：ストロークのまとまりはそのストロークと `painting.groups` の項目を、ラスタはその項目を消す（古い UI の
+  `web_src/editor/commands.js` `deleteSelected`）。Undo の 1 段で、選択を外す。Delete キーは、Keyframe を選んでいればそれを先に消す
+  （`docs/timeline-ui.md` の「記録の規則」。`editor.js` の Delete が `StudioTimeline.vue` `handleDelete` を先に呼ぶ、今のとおり）。
+- 選択が外れるとき：Paint・Mask の道具を選んだとき（上の「左の列」）、ペイントを隠したとき（`docs/timeline-ui.md`。目を切り替える
+  `timeline_actions.js` `toggleVisible` が、ペイントの行を隠すときに `paint_group:`・`raster:` の選択も外す）、Undo・Redo などで選んだまとまりが
+  状態から無くなったとき（`session.js` `keepSelection`）。
+- Paint・Mask の道具の間は、まとまりをつかまない（左ボタンはいつも描く。下の「ペイントの道具」）。描いたストロークは、今のとおり新しい
+  まとまりとして一番前に足す（`pano_paint_strokes.js` `ensurePaintGroup`）。
 
 ### ペイントの道具
 
@@ -715,7 +815,7 @@ Paint・Mask の道具を選んでいる間、下の中央のバーはペイン�
   | 7 | 物を選んでいる | 物の選択を外す |
   | 8 | 上のどれでもない | エディタを閉じる |
 
-  視点のドラッグ、ギズモのドラッグ、ペイントのストロークの最中の Escape（取り消し）は、今の規則（`docs/editor-interaction.md` の「ポインタの取り消しとフォーカスの
+  視点のドラッグ、ギズモのドラッグ、ペイントのまとまりのドラッグ、ペイントのストロークの最中の Escape（取り消し）は、今の規則（`docs/editor-interaction.md` の「ポインタの取り消しとフォーカスの
   喪失」）のまま、表より先に当たる。
 - 閉じると編集はいつも保存する。開いて閉じただけなら `state_json` を書かない（今の規則のまま。`docs/timeline-ui.md`）。
 - 読めない `state_json`（JSON として読めない、または読めない `version`。空のテキストは読める：空の状態）：エディタを読み取り専用で開き
@@ -759,7 +859,9 @@ Paint・Mask の道具を選んでいる間、下の中央のバーはペイン�
   cache が読み込み中は毎フレーム作り直されるため）。
 
 - 二次の文字の濃さと、地面のグリッドの見た目の値（最初の画面を作るときに実際の画面で決める）。
-- 次の候補：Cursor の道具でステージのペイントのまとまりを選ぶこと（選んだときのバーは上の表の「ペイントのまとまり」）。
+- ペイントのまとまりの回転：古い UI はストロークのまとまりを回す式（`web_src/editor/items.js` `applyStrokeGroupTransform` の角度）を持つが、
+  回転のハンドルを描かず当たりも返さないので、使う人は回せない。ラスタには回す操作が無い（`transform.rot_deg` はエディタが描くが、ノードが
+  `painting_layer` の無いときに状態から描く `core/painting.py` `_uv_bbox_to_pixels` は `du`・`dv` だけを使い、`scale` と `rot_deg` を使わない）。回すかどうかと、回すときの Shift の止め方は持ち主が決める。
 - 右の中央に縦に置いたつまみの列（試してから、右下にまとめる形に戻すことがある）。
 - 地面の自動推定（Scene のカードに席だけを取る。やるなら ADR 0046 の「開くたびに測り直さない」と合わせ、押したときに一度だけ推定して
   保存する形。次の候補）。

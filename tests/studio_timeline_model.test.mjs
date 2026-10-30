@@ -345,3 +345,15 @@ test("a port Sticker's bar without a duration ends where its media ends, or with
   assert.deepEqual(row(view(ctxOf(state)), "sticker_2").clip, { start: 4, end: null });
   assert.equal(row(view(ctxOf(state)), "sticker_2").label, "Sticker input");
 });
+
+const PAINTED = { raster_objects: [{ id: "r1", type: "raster_frozen", layerKind: "paint", rasterDataUrl: "data:image/png;base64,AAAA", bbox: { u0: 0.2, v0: 0.2, u1: 0.3, v1: 0.3 } }] };
+// docs/studio-ui.md "ペイントのまとまり": a paint group has no row; while one is selected, the Paint row shows selected.
+test("while a paint group is selected, the Paint row shows selected (its selection value stays the group's)", () => {
+  const ctx = ctxOf(studioState({ painting: PAINTED }));
+  for (const selected of ["paint_group:g1", "raster:r1"]) {
+    const model = view(ctx, { selection: { row: selected, keys: [] } });
+    assert.equal(row(model, "painting").selected, true, selected);
+    assert.equal(row(model, "camera").selected, false);
+  }
+  assert.equal(row(view(ctx), "painting").selected, false);
+});
