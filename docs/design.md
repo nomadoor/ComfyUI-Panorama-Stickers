@@ -399,7 +399,7 @@ Tailwind の utility（`.hidden { display: none }` など）を持つので、Vu
   `--muted-foreground`・`--interface-stroke`・`--interface-panel-surface` など）に乗せる。ライトとダークは ComfyUI のテーマ（`.dark-theme`）で
   自動で切り替わる（ComfyUI は `<html>` に `.dark-theme` を付け外しする）。どの名前を使うかは一か所（`web/pano_studio.css` の
   `.pano-studio` と `.dark-theme .pano-studio`）にまとめ、ComfyUI 側の名前が変わったときにそこだけを直す。下の見本の値は、ComfyUI の
-  役割の色が無いときの代わりの値である。ComfyUI の中では ComfyUI の値が使われる（たとえばダークの主の文字は `#fff`、パネルは `#171718`）。
+  役割の色が無いときの代わりの値である。ComfyUI の中では ComfyUI の値が使われる（たとえばダークのパネルは `#171718`）。例外として、ダークの主の文字だけは ComfyUI の `#fff` に乗せず、自前の `#dcdce0` を持つ（まぶしさを抑えるため。持ち主の決定、2026-10-30）。
 - 灰の段は Geist の色の段の役目に倣う：部品の地 / hover / 押したとき / 線 / 線の hover / 強い塗り / 二次の文字 / 主の文字。
   選ばれている状態は、色ではなく灰の強い塗りで示す。
 - ダークの見本の値：パネル `#1b1c1e`、値の箱の地 `#2c2c2e`、主の文字 `#dcdce0`、二次の文字 `#8e8f93`（まだ決めていないこと）、
