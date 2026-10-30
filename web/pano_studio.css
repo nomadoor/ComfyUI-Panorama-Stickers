@@ -986,6 +986,32 @@
   overflow-y: auto;
 }
 
+/* The Timeline's scrollbar: a thin thumb on a clear track (docs/design.md "大きさ"). Chromium reads the
+   ::-webkit-scrollbar rules only while scrollbar-width / scrollbar-color are unset, so those go to Firefox alone. */
+.pano-studio-tl-body::-webkit-scrollbar {
+  width: 6px;
+}
+
+.pano-studio-tl-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.pano-studio-tl-body::-webkit-scrollbar-thumb {
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--studio-fg) 22%, transparent);
+}
+
+.pano-studio-tl-body::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--studio-fg) 40%, transparent);
+}
+
+@supports not selector(::-webkit-scrollbar) {
+  .pano-studio-tl-body {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--studio-fg) 22%, transparent) transparent;
+  }
+}
+
 .pano-studio-tl-line {
   display: grid;
   grid-template-columns: var(--studio-tl-head) minmax(0, 1fr);
