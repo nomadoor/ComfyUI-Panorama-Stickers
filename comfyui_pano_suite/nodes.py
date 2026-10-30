@@ -2146,67 +2146,61 @@ def _camera_sticker_state(state: dict, width: int, height: int) -> str:
     return json.dumps(payload, ensure_ascii=True, separators=(",", ":"))
 
 
-STUDIO_OUTPUT_SIZES = ["1024", "1536", "2048", "2560", "3072", "4096", "auto"]
-STUDIO_DEFAULT_ERP_WIDTH = 2048
-STUDIO_MAX_OUTPUT_SIDE = 4096
+# The longest side of Panorama Studio's output (ADR 0048): 16 MP at 4 : 1 is 8192 x 2048.
+STUDIO_MAX_OUTPUT_SIDE = 8192
 
 
-def _even_side(value: float) -> int:
-    return max(2, 2 * math.floor(value / 2 + 0.5))
+def _to_multiple(value: float, multiple: int) -> int:
+    """`value` rounded to a multiple of `multiple` (Python's round, as ComfyUI's Resolution Selector), at least one."""
+    return max(multiple, round(value / multiple) * multiple)
 
 
-def _studio_camera(state: dict) -> dict | None:
-    """The Camera that shoots Panorama Studio's output: the state's, or None without one or when it is hidden. A hidden
-    Camera stays in the state and shoots as no Camera does."""
+def _studio_output_size(state: dict, megapixels: float, multiple: int, warnings: list[str]) -> tuple[int, int, tuple | None]:
+    """The Studio output's size (ADR 0048; docs/studio-node.md "出力の大きさ"): `megapixels` x 1024 x 1024 pixels in
+    sides that are multiples of `multiple`, by the state's Camera. A Panorama (`erp`) Camera keeps 2 : 1 (an
+    `erp_range` of 180: 1 : 1) exactly: the height is rounded first and the width is that times the ratio. A Frame
+    (`perspective`) Camera is `aspect` : 1 with each side rounded, as the Resolution Selector does. The FOV, the lens
+    curve and the Keyframes do not count. A longest side past STUDIO_MAX_OUTPUT_SIDE is brought to the largest
+    multiple under it, keeping the ratio, with a warning. web_src/pano_studio_status.js `studioOutputSize` gives the
+    same (tests/fixtures/studio_output_size.json). Returns the width, the height, and the size before that reduction
+    (None when it was not reduced)."""
     camera = state["camera"]
-    return camera if camera is not None and camera["visible"] else None
-
-
-def _studio_output_size(state: dict, frames, output_size: str, coverage: int, bg, warnings: list[str]) -> tuple[int, int, tuple | None]:
-    """The Studio output's size (ADR 0029). `output_size` picks the width of the whole (360) ERP; auto is the
-    bg_media width over 360 degrees (twice it for a 180 one), or 2048 with a warning without bg_media. Without a
-    Camera (`_studio_camera`), or with an `erp` one, the output is that ERP over `coverage`. A `perspective` Camera is
-    2 f g(hFOV / 2) wide with f = width / 2pi (the ERP's pixels per radian at the equator), at the output frame of
-    the Timeline's `frames` (of the last layer, `state`) where that is widest, g being the lens curve's
-    `lens_radius` (tan for a pinhole), and the width over its aspect high, both even; a longest side past
-    STUDIO_MAX_OUTPUT_SIDE is reduced to it, keeping the aspect, with a warning. Returns the width, the height, and the
-    size before that reduction (None when it was not reduced)."""
-    if output_size != "auto":
-        width = int(output_size)
-    elif bg is None:
-        warnings.append(f"output_size is auto, but bg_media is not connected; using {STUDIO_DEFAULT_ERP_WIDTH} instead.")
-        width = STUDIO_DEFAULT_ERP_WIDTH
+    total = megapixels * 1024 * 1024
+    if camera["projection"] == "erp":
+        ratio = 1 if camera["erp_range"] == 180 else 2
+        height = _to_multiple(math.sqrt(total / ratio), multiple)
+        size = (height * ratio, height)
+        if height * ratio <= STUDIO_MAX_OUTPUT_SIDE:
+            return *size, None
+        reduced_height = max(multiple, STUDIO_MAX_OUTPUT_SIDE // (ratio * multiple) * multiple)
+        reduced = (reduced_height * ratio, reduced_height)
     else:
-        width = (bg.first_frame if isinstance(bg, OPENED_VIDEOS) else bg).shape[-2] * 360 // coverage
-    camera = _studio_camera(state)
-    if camera is None or camera["projection"] == "erp":
-        return width * coverage // 360, width // 2, None
-    # Only the Camera is evaluated; the Stickers do not change its hFOV.
-    shot = {**state, "stickers": []}
-    # 2 f g_κ(hFOV / 2) at each output frame, the widest: the lens curve (ADR 0042) keeps f at the center.
-    lenses = []
-    for _bg_index, layers in frames:
-        # Each output frame is evaluated; a long Timeline stops at Cancel.
-        comfy.model_management.throw_exception_if_processing_interrupted()
-        lenses.append(evaluate_scene_state(shot, layers[-1][0])["camera"])
-    shot_width = max(width / math.pi * lens_radius(math.radians(lens["hFOV_deg"]) / 2, lens["curve"]) for lens in lenses)
-    shot_height = shot_width / camera["aspect"]
-    size = (_even_side(shot_width), _even_side(shot_height))
-    if max(size) <= STUDIO_MAX_OUTPUT_SIDE:
-        return *size, None
-    scale = STUDIO_MAX_OUTPUT_SIDE / max(shot_width, shot_height)
-    reduced = (_even_side(shot_width * scale), _even_side(shot_height * scale))
-    warnings.append(f"The Camera output would be {size[0]}x{size[1]}; it is reduced to {reduced[0]}x{reduced[1]} "
+        aspect = camera["aspect"]
+        scale = math.sqrt(total / aspect)
+        size = (_to_multiple(aspect * scale, multiple), _to_multiple(scale, multiple))
+        if max(size) <= STUDIO_MAX_OUTPUT_SIDE:
+            return *size, None
+        # The longest side at the cap (the largest multiple under it), the other at the same ratio.
+        longest = STUDIO_MAX_OUTPUT_SIDE // multiple * multiple
+        fit = STUDIO_MAX_OUTPUT_SIDE / max(aspect * scale, scale)
+        reduced = (longest, _to_multiple(scale * fit, multiple)) if aspect >= 1 else (_to_multiple(aspect * scale * fit, multiple), longest)
+    warnings.append(f"The output would be {size[0]}x{size[1]}; it is reduced to {reduced[0]}x{reduced[1]} "
                     f"(the longest side is at most {STUDIO_MAX_OUTPUT_SIDE}).")
     return *reduced, size
 
 
-def _studio_run_key(state_json: str, output_size: str, coverage: str, bg_color: str) -> str:
+def _key_number(value) -> str:
+    """A widget number as JS writes it (String(Number(value))): a whole float without ".0"."""
+    number = float(value)
+    return str(int(number)) if number.is_integer() else repr(number)
+
+
+def _studio_run_key(state_json: str, megapixels, multiple, background_range: str, background_color: str) -> str:
     """The key of the inputs a Studio run's size and output came from: FNV-1a (32 bit) over the code points of the
-    four values joined by NUL, as `studioRunKey` (web_src/pano_studio_status.js) makes it, so that the node surface
+    five values joined by NUL, as `studioRunKey` (web_src/pano_studio_status.js) makes it, so that the node surface
     shows the run's size and output only while they are unchanged."""
     value = 0x811C9DC5
-    for char in f"{state_json}\0{output_size}\0{coverage}\0{bg_color}":
+    for char in f"{state_json}\0{_key_number(megapixels)}\0{_key_number(multiple)}\0{background_range}\0{background_color}":
         value = ((value ^ ord(char)) * 0x01000193) & 0xFFFFFFFF
     return f"{value:08x}"
 

@@ -26,17 +26,15 @@ test("the Studio surface is view-only: the runtime mounts it for Panorama Studio
   assert.match(runtime, /let picked = studioSurface \? null : pick\(\);/);
   assert.match(runtime, /const stickerDrop = stickersMode && !studioSurface;/);
   assert.match(runtime, /if \(!stickersMode \|\| studioSurface \|\| \(ev\.key !== "Delete"/);
-  assert.match(runtime, /const studioOptions = studioSurface \? studioStatusOptions\(node, surfacePlayback\) : null;/);
+  assert.match(runtime, /const studioOptions = studioSurface \? studioStatusOptions\(node\) : null;/);
   assert.match(runtime, /const status = studioStatus\(\{ \.\.\.studioOptions, display: studioRunDisplay\(node, runOutput\) \}, sceneState\);\s*if \(status\) nodeSurfaceUiModel\.status = status;/);
   assert.match(runtime, /\.\.\.\(studioSurface \? \{ status: \{ shot: "", size: "", note: "" \} \} : \{\}\)/);
   // The run's size counts only while its media are the inputs' (and its key, the state and widgets).
   assert.match(runtime, /\["background", "external-sticker", "scene"\]\.every\(\(channel\) => isNodeOutputMediaCurrent\(node, channel\)\)/);
   assert.match(runtime, /run: \(current && ownOutputUiValue\(node, "pano_output_size"\)\) \|\| null/);
-  // Coverage is normalized once, by getCachedState.
-  assert.match(runtime, /coverage: getCachedState\(node\)\.coverage,/);
-  // The status follows output_size, and the surface gives its callback back when it goes.
-  assert.match(runtime, /const sizeWidget = studioSurface \? getWidget\(node, "output_size"\) : null;/);
-  assert.match(runtime, /if \(sizeCallbackWrapper && sizeWidget\.callback === sizeCallbackWrapper\) sizeWidget\.callback = sizeCallbackPrev;/);
+  // The status follows the size and background widgets (ADR 0048), and the surface gives their callbacks back when it goes.
+  assert.match(runtime, /\["megapixels", "multiple", "background_range", "background_color"\]\.map\(\(name\) => getWidget\(node, name\)\)/);
+  assert.match(runtime, /for \(const \{ widget, previous, wrapper \} of sizeCallbacks\) if \(widget\.callback === wrapper\) widget\.callback = previous;/);
 });
 
 test("once it has run, the Studio surface shows the last run's output, edited since or not (ADR 0029)", async () => {

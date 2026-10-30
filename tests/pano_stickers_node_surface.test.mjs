@@ -553,7 +553,7 @@ test("a non-square port image loading after a run leaves state_json unchanged, s
   });
   session.apply({ type: "sync-port", value: portStickerSyncValue(node) });
   const ran = stateWidget.value;
-  const run = { width: 1024, height: 512, capped: false, reduced_from: null, key: studioRunKey(ran, "1024", "360", "#00ff00") };
+  const run = { width: 1024, height: 512, capped: false, reduced_from: null, key: studioRunKey(ran, 0.5, 8, "360", "#00ff00") };
   const erp = { filename: "pano_output_0.png", subfolder: "", type: "temp", coverage: 360 };
 
   // executed: the result names the media; image-loaded: the 200 x 100 image of the port is ready, the port is
@@ -565,7 +565,7 @@ test("a non-square port image loading after a run leaves state_json unchanged, s
   assert.equal(stateWidget.value, ran);
   assert.equal(JSON.parse(ran).stickers[0].size.value.vFOV_deg, 30);
   assert.ok(Math.abs(drawn - Math.tan(15 * Math.PI / 180) / 2) < 1e-12);
-  const options = { stateText: stateWidget.value, outputSize: "1024", coverage: 360, bgColor: "#00ff00", run, erp };
+  const options = { stateText: stateWidget.value, megapixels: 0.5, multiple: 8, backgroundRange: 360, backgroundColor: "#00ff00", run, erp };
   assert.deepEqual(studioRunOutput(options), { kind: "erp", entry: erp, current: true });
 });
 
