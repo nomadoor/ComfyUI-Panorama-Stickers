@@ -36,7 +36,7 @@ Python はこの文書の規則を持たない（列は `—`）。「（未実�
 | カーソル | — | `web_src/studio/view_input.js` `stageCursor`・`LOOK_CURSOR`・`ORBIT_CURSOR`・`KNOB_CURSOR` | `tests/studio_view_input.test.mjs` |
 | 視点の操作の部品（球・手・矢印、操作中に光ること） | — | `web_src/components/studio/StudioNavWidget.vue`、光る規則は `web_src/studio/view_input.js` `knobAction`・`litKnobs` | `tests/studio_view_input.test.mjs`、`tests/browser/studio_editor.spec.js` |
 | 地面のグリッドと原点の印（何をどの高さに描き、どこで薄れるか） | — | `web_src/studio/grid.js` `groundGrid`（量は `view_scale.js`）、描く部品は `web_src/pano_ground_grid.js`（`docs/threejs-spark-integration.md`）、スイッチは `web_src/components/studio/StudioViewButtons.vue` | `tests/studio_stage_view.test.mjs`、`tests/browser/studio_editor.spec.js` |
-| World の物のガイドと、CPU のホバーの判定 | — | `web_src/studio/world_guides.js`（形・ホバー・見え方・Camera の印）、ステージにつなぐのは `web_src/studio/stage_objects.js`、描くのは `web_src/studio/stage_overlay.js`、下の部品 `pano_space.js` `projectPoint`・`boxCorners`・`segmentsHit`。Camera タブでの描き方は、タブがまだ無い（未実装） | `tests/studio_world_guides.test.mjs`、`tests/studio_stage_objects.test.mjs`、`tests/browser/studio_select.spec.js` |
+| World の物のガイドと、CPU のホバーの判定 | — | `web_src/studio/world_guides.js`（形・ホバー・見え方）、Camera の印の形と当たりは `web_src/studio/camera_marker.js`、ステージにつなぐのは `web_src/studio/stage_objects.js`、描くのは `web_src/studio/stage_overlay.js`、下の部品 `pano_space.js` `projectPoint`・`boxCorners`・`segmentsHit`。Camera タブでの描き方は、タブがまだ無い（未実装） | `tests/studio_world_guides.test.mjs`、`tests/studio_camera_marker.test.mjs`、`tests/studio_stage_objects.test.mjs`、`tests/browser/studio_select.spec.js` |
 | Add とドロップの着く所（Add の画像の二択の後の置き場所を含む）と、ドラッグ中の印の形 | — | （未実装）`web_src/studio/landing.js`、下の部品 `pano_three_view.js` `pick`（板を除く当たり）、`pano_space.js` `facingRotation` | （未作成）`tests/studio_landing.test.mjs`、（未作成）`tests/browser/` の場面 |
 | Preview のウィンドウの視点（エディタとの違い、引き継ぎ、減衰と慣性、グリッドの既定） | — | （未実装）`web_src/studio/preview_motion.js`、下の部品 `web_src/pano_interaction_controller.js` の慣性（ADR 0010） | （未作成）`tests/studio_preview_motion.test.mjs` |
 | ウィンドウがフォーカスを失ったとき、Meta を離したときと右クリックのメニューが開いたときにキーを離すこと | — | `web_src/studio/view_input.js` `createViewInput().lostFocus`、事象を受けるのは `web_src/studio/stage.js`（`blur`・`visibilitychange`・Meta の `keyup`・エディタの中の `contextmenu`）、下の部品 `pano_view_keys.js` `createMoveKeys` | `tests/studio_view_input.test.mjs`、`tests/pano_view_keys.test.mjs`、`tests/browser/studio_editor.spec.js`（`blur`・右クリックのメニュー）、`tests/studio_stage.test.mjs`（Meta・右クリックのメニュー） |
@@ -308,7 +308,7 @@ Camera そのものを動かす。
 | 場所と状態 | カーソル |
 |---|---|
 | ステージの上（既定） | 見回しのカーソル（目の形。使えなければ `grab`） |
-| 触れる物の上（ギズモのハンドル、Sky の Sticker の取っ手と本体、`world` の Sticker、Camera の視錐台の線から当たりの幅の中） | 物のカーソル（今の `hit_test.js` の規則） |
+| 触れる物の上（ギズモのハンドル、Sky の Sticker の取っ手と本体、`world` の Sticker、Camera の印（塗った面の中と、線から当たりの幅の中）） | 物のカーソル（今の `hit_test.js` の規則） |
 | Alt を押している間（ステージのどこでも、物の上でも） | オービットのカーソル（輪の形。使えなければ `move`） |
 | 見回しのドラッグ中 | `grabbing` |
 | オービットのドラッグ中 | オービットのカーソル |
@@ -379,6 +379,10 @@ Panorama 表示で、表示している World の物（`world` の Sticker の�
 - 隅が一つでも視点の後ろ（深さが 0 以下）にある板と箱は、当たりに数えない（画面に正しく写らないため）。
 - 重なっているときは、中心（板の中心、箱の中心）の視線の軸に沿った深さが最も浅いものを選ぶ。
 - 判定の対象はガイドを描く物と同じ（非表示・Clip range の外は当たらない）。
+- Camera の印（3D タブ）：画面に写した塗りの面（Frame モードは錐の側面 4 つと奥の枠の面と上の向きの三角、Panorama モードは球の
+  輪郭の円）のどれかの中か、印の線から `CAMERA_HIT_PIXELS`（6 CSS px）の中なら当たり。面の中のどこでも当たり、線の上だけではない。
+  印を描かないとき（隠している、視点が `CAMERA_GUIDE_LENGTH` より近い）は当たらない。押したときの順は `web_src/studio/stage_objects.js`
+  の冒頭（GPU の当たりの World の物の次）。
 
 ## Add とドロップ
 

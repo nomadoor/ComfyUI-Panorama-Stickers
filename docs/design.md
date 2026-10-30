@@ -480,10 +480,10 @@ stylesheet の読み込みは上の「この文書が owner である規則」�
 | `EASING_MIN_ABOVE` | 180px（行 5 つ分）。Easing のパネルを出している間に、上の領域に残す最小の高さ |
 | Camera タブのフレームの余白 | 左右 120px、上 60px、下 84px。Roll の目盛りはフレームの幅の 70%、最小 380px |
 | Camera タブの辺の目盛りの縮尺 | 仮：小さい目盛り 8px ごと、数値 80px ごと（FOV 2° と 20°、Lens 0.02 と 0.2、Roll 1° と 10°）。目盛りは幅 22px、数値は 11px |
-| カメラの見た目 | 線は白、面は白の 10% 前後、選択で落ち着いた黄の線と 18% の塗り |
+| カメラの見た目 | 見本 `camera-1.html`。面は白 10% の塗り（面ごとに重ねる）。線は白 85% の 1.5px の下に黒 30% の 3.5px。奥に隠れる辺は白 35% の 1.5px と黒 12% の 3.5px。上の向きの三角は白 35% の塗り。錐の頂点と球の中心に半径 3px の白い点。選択は線を落ち着いた黄 `#e8cf74` の 2px（下の黒は同じ）、面を同じ黄の 18%（`web_src/studio/camera_marker.js` `MARKER_LOOKS`） |
 | ドロップの印 | 落ち着いた黄の角のかぎ括弧（2.5px）と 25% の塗り、下に暗い線 |
 | World の物のガイド | 平常は白 32% の 1px と黒 32%、ホバーは白 90% の 1.5px と黒 60%、選択は落ち着いた黄 `#e8cf74` の 1.5px と黒 70%。暗い線は明るい線より 2px 太い（`web_src/studio/world_guides.js` `GUIDE_LOOKS`） |
-| ギズモ | X は珊瑚、Y はライム、Z は氷、ポインタの下の取っ手は白（`web_src/studio/stage_objects.js` `GIZMO_COLORS`） |
+| ギズモ | 見本 `specimen-11.html`。X は珊瑚、Y はライム、Z は氷、ポインタの下とドラッグしている取っ手は白 `#ffffff`。届く長さ（中心から棒の先、輪の半径）52px、線 2.5px で端は丸。Move の玉は半径 5px、中心の白い点は半径 4px。Rotate の輪の奥の半分は 35% の不透明。Scale の先は一辺 9px・角丸 2px の四角。下に暗い線を付けない。視線とほぼ平行な軸を隠す `GIZMO_HIDE_RATIO` は 0.2。当たりの幅は玉・四角・中心の点が 9px、棒と輪が 6px（`web_src/studio/gizmo_overlay.js` `GIZMO_LOOK`・`GIZMO_COLORS`） |
 | Sky の画像のハンドル | 枠は選択のガイドと同じ線、四隅は半径 5px・辺の中点は 3.5px・回転は 6px の落ち着いた黄の丸に黒 70% の 1.5px の縁（`web_src/studio/stage_overlay.js`） |
 | タイムラインの最小の高さ | 未定 |
 | ステージの最小の高さ | 未定 |
