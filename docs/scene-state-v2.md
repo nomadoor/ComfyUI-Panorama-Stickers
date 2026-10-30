@@ -13,6 +13,8 @@ Panorama Studio の `state_json`（状態 v2）、Camera を持つ Panorama Stud
 | 規則 | Python | JS | test |
 |---|---|---|---|
 | 状態の読み込み（版の判定、v1 の読み替え、正規化） | `core/scene_state.py` `load_scene_state` | `web_src/pano_scene_state.js` `loadSceneState` | `tests/test_scene_state.py`、`tests/pano_scene_state.test.mjs`、`tests/test_scene_state_parity.py` |
+| 既定の Camera（欠け・`null` の `camera` の読み方）と `camera.erp_range` | `scene_state.py` の既定の Camera の定数（新しく作る） | `pano_scene_state.js` の同じ定数（新しく作る） | （未作成）フィクスチャ `camera_default`、`test_scene_state_parity.py` |
+| 地面の高さ `ground`（既定・欠けたときの読み方・上流からの受け継ぎ） | `scene_state.py` の `GROUND_DEFAULT` と読み込み（新しく作る。ADR 0046） | `pano_scene_state.js` の同じ定数と読み込み（新しく作る） | （未作成）フィクスチャ `ground`、`test_scene_state_parity.py` |
 | パノラマの角度規約（yaw・pitch・roll と ERP の対応） | `core/math.py` `camera_basis`・`ray_directions`・`lon_lat_to_erp` | `web_src/pano_camera_math.js` | `tests/test_camera_orientation.py`、`tests/pano_camera_math.test.mjs` |
 | Timeline の上限の定数 | `scene_state.py` の `TIMELINE_FPS_MIN`・`TIMELINE_FPS_MAX`・`TIMELINE_LENGTH_MAX`・`TIMELINE_FRAME_MAX` | `pano_scene_state.js` の同名の定数 | フィクスチャ `v2_timeline_limits` |
 | `sticker_state` の読み込み | `scene_state.py` `load_sticker_state` | `pano_scene_state.js` `loadStickerState` | `test_scene_state.py`、`pano_scene_state.test.mjs`、`test_scene_state_parity.py` |
@@ -94,10 +96,12 @@ Python と JS の両方の test が同じファイルを読む。Python と JS �
 | `id` | 文字列 または `null` | `null` | この状態の Scene を表す id。下流の Studio は上書き（`upstream`）をこの id ごとに記録する（ADR 0030）。空でない文字列のほかは `null`。下記「Scene の id」。Python は振らない |
 | `timeline.fps` | 数値 | `24.0` | 0 以下は既定値。1〜1000 に寄せる（`TIMELINE_FPS_MIN`・`TIMELINE_FPS_MAX`）。記録された Timeline fps |
 | `timeline.length` | 整数 または `null` | `null` | エディタでの長さの上書き。1 未満は `null`。10,000,000 を超える値は 10,000,000 に寄せる（`TIMELINE_LENGTH_MAX`。`TIMELINE_FRAME_MAX` と同じ値なので、高い fps に再基準化しても長さの秒は縮まない）。`null` なら入力から決める（`docs/studio-node.md` の「Scene の組み立てと撮影の入口」） |
-| `camera` | オブジェクト または `null` | `null` | Camera（下記）。欠け・`null`・オブジェクトでない値は `null`（Camera が無い）。ADR 0029 |
-| `camera.aspect` | 数値 | `1.0` | 0 以下は既定値。Camera の画面の幅 ÷ 高さ。`projection` が `erp` のときは使わない。1/2048〜2048 に寄せる（`scene_state.py` の `camera_aspect`・`CAMERA_ASPECT_LIMIT`、`pano_scene_state.js` の `cameraAspect`・`CAMERA_ASPECT_LIMIT`。フィクスチャ `camera_aspect`）。2048 は `2 : STUDIO_MAX_OUTPUT_SIDE`（4096）の比で、出力の短い辺は 2 画素より小さくならず長い辺は 4096 を超えないので、これより細い比は出力の大きさを変えない（`docs/studio-node.md` の出力の大きさ。範囲の外の値を端に寄せても出力は同じ）。プリセット（1:1・4:3・3:2・16:9 とその縦向き）、インスペクタの Aspect の欄（0.25〜4、`CAMERA_ASPECT_MIN`・`CAMERA_ASPECT_MAX`）はこの中にある。Frame の比の入力（任意の正の数の組）と v1 の Cutout の読み替え（FOV 1〜179 からの比で、最大約 13,131）はこの範囲に寄せ、寄せても出力は変わらない |
-| `camera.projection` | `"perspective"` または `"erp"` | `"perspective"` | それ以外は既定値。撮り方で、Keyframe を持たない。`erp` は Camera の位置と回転から ERP を撮り、`fov` と `aspect` と `curve` を読まない。`perspective` は Camera の画像で、レンズの曲線 `curve`（κ）で直線の像から魚眼までをつなぐ（`docs/render-contract.md` の「カメラのレンズ」） |
-| `camera.visible` | 真偽値 | `true` | 真偽値でなければ既定値。`false` は Camera を置いたまま非表示にする。Panorama Studio は非表示の Camera を Camera が無いときと同じに撮る（下記） |
+| `camera` | オブジェクト | 既定の Camera | Camera（下記）。欠け・`null`・オブジェクトでない値は既定の Camera（下記「既定の Camera」）として読む。Panorama Studio の Camera はいつも一台ある（ADR 0048。ADR 0029 の「`null` は Camera が無い」を置き換える） |
+| `camera.aspect` | 数値 | `1.0` | 0 以下は既定値。Camera の画面の幅 ÷ 高さ。`projection` が `erp` のときは使わない。1/2048〜2048 に寄せる（`scene_state.py` の `camera_aspect`・`CAMERA_ASPECT_LIMIT`、`pano_scene_state.js` の `cameraAspect`・`CAMERA_ASPECT_LIMIT`。フィクスチャ `camera_aspect`）。新しい UI の出力の大きさ（`docs/studio-node.md`。`STUDIO_MAX_OUTPUT_SIDE` 8192、短い辺は `multiple`（8 以上）より小さくならない）では、比が 8192 ÷ 8 ＝ 1024 より細いと短い辺は `multiple` に張り付くので、2048 より細い比は出力の大きさを変えない（範囲の外の値を端に寄せても出力は同じ）。切り替えまでの今の出力（上限 4096、短い辺 2 画素）でも、2048 は `2 : 4096` の比なので同じく変えない。プリセット（1:1・4:3・3:2・16:9 とその縦向き）、インスペクタの Aspect の欄（0.25〜4、`CAMERA_ASPECT_MIN`・`CAMERA_ASPECT_MAX`）はこの中にある。Frame の比の入力（任意の正の数の組）と v1 の Cutout の読み替え（FOV 1〜179 からの比で、最大約 13,131）はこの範囲に寄せ、寄せても出力は変わらない |
+| `camera.projection` | `"perspective"` または `"erp"` | `"perspective"` | それ以外は既定値。撮り方のモードで、Keyframe を持たない。使う人が選ぶ（表示名は `erp` が Panorama、`perspective` が Frame。ADR 0048）。モードを変えても、もう一方のモードの値（`fov`・`aspect`・`curve`・`erp_range`）は保つ。`erp` は Camera の位置と回転から ERP を撮り、`fov` と `aspect` と `curve` を読まない。`perspective` は Camera の画像で、レンズの曲線 `curve`（κ）で直線の像から魚眼までをつなぐ（`docs/render-contract.md` の「カメラのレンズ」） |
+| `camera.erp_range` | `360` または `180` | `360` | それ以外は既定値。Panorama モードで撮る範囲（180 は Camera の前方の半球）。Keyframe を持たない。`perspective` では読まない。背景の範囲（Panorama Studio の `background_range`）とは独立（ADR 0048） |
+| `camera.visible` | 真偽値 | `true` | 真偽値でなければ既定値。`false` は Camera を置いたまま非表示にする。表示だけの切り替えで、Panorama Studio は非表示の Camera でも同じに撮る（ADR 0048。下記） |
+| `camera.locked` | 真偽値 | `false` | 真偽値でなければ既定値。Camera のロック（下のバーと Camera タブの操作を止める。`docs/studio-ui.md`）。Sticker の `locked` と同じく保存し、既定値のときは書かない。Python は読むだけで、描画には使わない（ロックしても同じに撮る） |
 | `camera.position`・`camera.rotation`・`camera.fov` | Lane | 下記 | Camera の値（Viewport camera は保存しない） |
 | `camera.curve` | Lane | 下記 | レンズの曲線 κ（ADR 0042）。`erp` では読まない |
 | `scene.clip` | Clip range | 下記 | `scene` 入力が有効な範囲 |
@@ -109,23 +113,37 @@ Python と JS の両方の test が同じファイルを読む。Python と JS �
 | `painting` | オブジェクト | 空のペイント | 既存の `normalize_painting_state` / `normalizePaintingState` で正規化する。`sky` の静的な層。`version` は保存された値によらず常に `1`。group とラスタ（`raster_objects`）の `z_index` は、`z_index`、次に `zIndex` のうち最初の有限の JSON の数値（真偽値と文字列は数えない。double にできない大きな整数は有限でない）で、どちらにも無いときは groups（raster_objects）の中の順番にする。エディタは数値を書くので、文字列はテキストを手で書いた状態にだけ現れる。group の値は `Math.round` と同じ丸め（半分は +∞ の向き。−2.5 は −2）、ラスタの値は丸めず、どちらも 0 以上に寄せる。group の `locked` はエディタだけが使う（ノードは描画に使わない）ので、Python の読み込みは持たない |
 | `painting_layer` | オブジェクト または `null` | `null` | ペイントのラスタ画像の参照。中身はそのまま保つ |
 | `painting_visible` | 真偽値 | `true` | 真偽値でなければ既定値。`false` ならペイント（ストローク・ラスタ・マスク）を描かず、MASK にも出さない |
+| `ground` | 数値 または欠け | 欠け | 地面の高さ（World の y。ADR 0046）。数でない値・有限でない値は欠けとして読む。欠けているときは、上流の Scene があれば上流の層の `ground`（最も下流で `ground` を持つ層のもの）、無ければ `GROUND_DEFAULT`（-1.6）として読む。正規化の結果には欠けのまま残し、読む側（評価関数と、下の読む場所）が既定の規則で値を求める。使う人が「ここを地面にする」で変えたときだけ値が入る（`docs/studio-ui.md` の Scene のカード、`docs/space-and-view.md` の目の高さ `E`）。読む場所：エディタのグリッドと置く物の位置（JS）、ノードが置く 3D の `port` の Sticker の位置（Python `nodes.py` の `_world_port_sticker`。ADR 0046 の「ノードが置く 3D の `port` の Sticker も地面の上に置く」）、`PANO_SCENE` の下流での上流の層の `ground`（Python・JS） |
 | `upstream` | 配列 | `[]` | 上流の Scene の要素への上書き。下記「上流の上書き（`upstream`）」 |
 | `background.clip` | Clip range | 下記 | 自分の `bg_media` が Timeline 上で有効な範囲（下記「背景の Clip range」）。`background` が欠け・オブジェクトでないときも既定の Clip range |
 
 `scene` は、`scene` 入力が接続されていなくても常に存在する。
 
-`camera` は、Camera を 1 台まで持つ（ADR 0029）。`null` は Camera が無いことを表し、Camera が無いときは World の原点から回転 0 で撮った ERP を出す。オブジェクトのときは、正規化した結果は常に `aspect`・`projection`・`visible`・`position`・`rotation`・`fov`・`curve` をこの順に持つ。
+`camera` は、Camera をちょうど 1 台持つ（ADR 0029、ADR 0048）。正規化した結果は常にオブジェクトで、`aspect`・`projection`・`erp_range`・`visible`・`locked`・`position`・`rotation`・`fov`・`curve` をこの順に持つ。
+
+#### 既定の Camera
+
+`camera` が欠け・`null`・オブジェクトでないときは、次の Camera として読む（Python `scene_state.py` と JS `pano_scene_state.js` の同じ定数。
+フィクスチャで守る）：`aspect` 16 / 9、`projection` `erp`（Panorama モード）、
+`erp_range` 360、`visible` `true`、`locked` `false`、`position` (0, 0, 0)、`rotation` yaw 0・pitch 0・roll 0、`fov` 90、`curve` 1。どの Lane も Keyframe を持たない。
+この Camera の出力は、今までの「Camera が無い」ときの出力（World の原点から回転 0 の 360° の ERP）と同じである。
+- 既定の Camera の値（`aspect` 16 / 9・`fov` 90 など）の持ち主はこの定数一つである。エディタの `newStudioCamera`（`pano_editor_state.js`。今は
+  同じ値を手で書いている）は、この定数から作るように直すか、Camera が消せなくなる切り替えで消す（Camera を新しく置く操作が無くなるため）。
+- オブジェクトの `camera` の欠けたフィールドは、今までどおり上の表の既定値（`aspect` 1.0、`projection` `perspective` など）で埋める。
+  既定の Camera の値と表の既定値が違うのは、オブジェクトの欠けたフィールドを読み替えると、これまで保存した Camera の撮り方が変わるため
+  である（保存するテキストは `perspective` を書かないので、`projection` の既定を `erp` にすると、保存した Frame の Camera が Panorama に
+  変わる）。
 
 表示（`visible`）は、Camera・`scene`・Sticker・ペイントのそれぞれが持つ。エディタのタイムラインの各行の目のアイコンで切り替える（`docs/timeline-ui.md`）。ペイントの表示は、旧ノードと共有する `painting` の形（`normalize_painting_state`）を変えないように、`painting` の中ではなく最上位の `painting_visible` に置く。
 
 - 非表示の `scene` と Sticker は、評価関数の `active` が偽になる（下記「評価関数」）ので描かれない。Clip range・Keyframe・値はそのまま保ち、出力の長さにも今までどおり数える（表示の切り替えで長さは変わらない）。
 - 非表示のペイントは描かない（`nodes.py` の `_resolve_sources` が空のペイントを渡す）。
-- 非表示の Camera は状態に残る。評価関数は今までどおり値を返す（`camera` は `null` にならない）。Panorama Studio は非表示の Camera を Camera が無いときと同じに扱い、World の原点から回転 0 の ERP を撮り、出力の大きさも ERP の規則で決め、`sticker_state` も出さない（`docs/studio-node.md`）。Camera の Keyframe は表示によらず出力の長さに数える。
+- 非表示の Camera は状態に残り、今までどおり撮る（表示だけの切り替え。ADR 0048。`docs/studio-node.md`）。評価関数は今までどおり値を返す。Camera の Keyframe は表示によらず出力の長さに数える。
 
-- ノードでの扱い：状態 v2 を読み書きするのは Panorama Studio だけで、`camera` を読み替えない。`null` なら Camera が無く、原点・回転 0 の ERP を撮る（`docs/studio-node.md` の「Panorama Studio」）。エディタも `camera` を読み替えず、Camera を足す・消すのは編集である。
-- 既存の状態：この版より前の v2 の状態は `camera` のオブジェクトを持つので、そのまま「Camera あり」で `projection` は `perspective` になる。読み込みでも保存でも Camera を消したり書き換えたりしない（ノードのキャッシュが外れないようにするため）。fps の再基準化だけは状態全体と同じく `camera` の時刻も直し、`null` は `null` のまま、`projection` はそのまま保つ。
+- ノードでの扱い：状態 v2 を読み書きするのは Panorama Studio だけで、欠け・`null` の `camera` は既定の Camera として読む（`docs/studio-node.md` の「Panorama Studio」）。エディタは Camera を消さない（消す操作は無い）。Camera のボタンで Camera を今の視点へ持ってくるのは、Camera の Lane の編集である（`docs/studio-ui.md`）。
+- 既存の状態：`camera` のオブジェクトを持つ状態は、そのまま読み、`projection` は書いてあればその値、無ければ `perspective` になる。`camera` が `null` の状態（今までの「Camera が無い」）は既定の Camera（Panorama、原点）として読み、出力は今までと同じ（`coverage` が 180 だった Studio は、Camera の `erp_range` が既定の 360 になるので出力が変わる。Panorama Studio は公開前なので、移す手順は持たない。ADR 0048）。fps の再基準化は状態全体と同じく `camera` の時刻も直す。
 - レンズの値：Keyframe が無く `value` が既定値（1）の `curve` の Lane は、保存するテキストに書かない（下の「保存するテキスト」と同じ理由で、今の状態のテキストとノードのキャッシュを変えない）。既定値ではノードの出力も今と同じになる。読み込みは欠けたら既定値にする。
-- 保存するテキスト：エディタとノード上の UI は `sceneStateText`（`pano_scene_state.js`）で `state_json` を書く。正規化した状態をそのまま JSON にするが、後から足した項目は既定値のときは書かない：`camera.projection` の `perspective`、`camera.visible`・`scene.visible`・`painting_visible` の `true`。ComfyUI の実行のキャッシュは `state_json` のテキストを比べるので、これらを書くと、その項目より前に保存した状態をエディタで開いて閉じただけで再実行になる。書かなくても、読み込みで既定値に戻るので意味は変わらない（`load_scene_state` の結果を書き出して読むと同じ結果になる）。既定値でないとき（`erp`、非表示）だけ書く。同じ理由で、ADR 0030 の項目も次のときは書かない：`id` の `null`、空の `upstream`、`port` の Sticker の空の `handoff_overrides`、Sticker から求まる値（下記「Sticker の id の採番」の最小値）と同じ `next_sticker_id`。既定の Clip range（`start` 0・`in` 0・`duration` `null`）の `background` も書かない（`pano_scene_state.js` の `defaultClip`）。Python は `state_json` を書かないので、この関数を持たない。
+- 保存するテキスト：エディタとノード上の UI は `sceneStateText`（`pano_scene_state.js`）で `state_json` を書く。正規化した状態をそのまま JSON にするが、後から足した項目は既定値のときは書かない：`camera.projection` の `perspective`、`camera.erp_range` の 360、`camera.visible`・`scene.visible`・`painting_visible` の `true`、`camera.locked` の `false`。欠けた `ground` は欠けのまま書かない（値が入っているときだけ書く）。`camera` が既定の Camera と同じ（どの値も既定の Camera の値で、Keyframe が無い）ときは、`camera` そのものを書かない（読み込みで既定の Camera に戻る。今までの「Camera が無い」状態のテキストと同じになる）。ComfyUI の実行のキャッシュは `state_json` のテキストを比べるので、これらを書くと、その項目より前に保存した状態をエディタで開いて閉じただけで再実行になる。書かなくても、読み込みで既定値に戻るので意味は変わらない（`load_scene_state` の結果を書き出して読むと同じ結果になる）。既定値でないとき（`erp`、非表示）だけ書く。同じ理由で、ADR 0030 の項目も次のときは書かない：`id` の `null`、空の `upstream`、`port` の Sticker の空の `handoff_overrides`、Sticker から求まる値（下記「Sticker の id の採番」の最小値）と同じ `next_sticker_id`。既定の Clip range（`start` 0・`in` 0・`duration` `null`）の `background` も書かない（`pano_scene_state.js` の `defaultClip`）。Python は `state_json` を書かないので、この関数を持たない。
 
 ### Lane
 
@@ -325,7 +343,7 @@ evaluateSceneState(state, frame) // -> object
 | フィールド | 意味 |
 |---|---|
 | `frame` | 受け取った Timeline frame |
-| `camera` | `position`、`yaw_deg`・`pitch_deg`・`roll_deg`（`rotation`）、`hFOV_deg`（`fov`、κ による上限に寄せた値）、`curve`、`aspect`。状態の `camera` が `null` なら `null`。`projection` は時間で変わらないので、状態の `camera.projection` を読む |
+| `camera` | `position`、`yaw_deg`・`pitch_deg`・`roll_deg`（`rotation`）、`hFOV_deg`（`fov`、κ による上限に寄せた値）、`curve`、`aspect`。`camera` は自分の状態ではいつもある（読み込みが既定の Camera を入れる。ADR 0048）。上流の層（`PanoSceneValue` の層）の `camera` は `None` のままで、評価関数は `None` を返す（`nodes.py` の `_scene_output` が `None` にする。下流は上流の Camera を使わない）。JS の上流の層の読み込み（`pano_upstream.js` が `loadSceneState` を通す）は、既定の Camera が入っても使わず捨てる。この違いは Python と JS の一致の対象外とする。`projection`・`erp_range` は時間で変わらないので、状態の `camera` のものを読む |
 | `scene` | `active`（`visible` かつ `frame` が `scene.clip` の範囲内）、`clip_frame`、`position`、`yaw_deg`・`pitch_deg`・`roll_deg`（`rotation`）、`scale` |
 | `clip_frame` | 素材の先頭からの経過（Timeline frame、端数あり）。`frame − (start − in)`。素材の時刻（秒）は `clip_frame ÷ timeline.fps` |
 | `stickers[]` | `state.stickers` と同じ順。`id`・`placement`、`active`（`visible` かつ Clip range の範囲内）、`clip_frame`、各 Lane の値のフィールド（`sky` は `yaw_deg`・`pitch_deg`・`roll_deg`・`hFOV_deg`・`vFOV_deg`・`curve`、`world` は `position`・`yaw_deg`・`pitch_deg`・`roll_deg`・`scale` と、`lens` の Lane を持つ Sticker だけ `lens`（`curve`・`hFOV_deg`））、`opacity` |
@@ -392,7 +410,7 @@ rebaseSceneState(state, fps) // -> object
 
 | 値 | 新しい値 |
 |---|---|
-| Camera の Keyframe の `frame`（`camera` が `null` なら `null` のまま。`aspect`・`projection` は変えない） | `r(frame)` |
+| Camera の Keyframe の `frame`（`aspect`・`projection`・`erp_range` は変えない） | `r(frame)` |
 | Clip range の `start` | `start' = r(start)` |
 | 素材の先頭の位置 | `anchor' = r(start − in)` |
 | Clip range の `in` | `start' − anchor'` |
@@ -526,7 +544,7 @@ Python は `ValueError`、JS は `Error` を投げる。
 | `assets[asset_id]` が `type: "dataurl"` | `source: {"kind": "file", "data_url": ...}` |
 | `assets[asset_id]` が `type: "path"`、または資産が見つからない | Sticker を捨てる |
 | `shots` のうちオブジェクトであるものの最初（Cutout。オブジェクトでない shot は除く） | `camera`（Camera あり、`projection` は `perspective`）。`yaw_deg`・`pitch_deg`・`roll_deg` は `rotation.value`、`hFOV_deg`（1〜179 に寄せる）は `fov.value`、`aspect = tan(hFOV/2) ÷ tan(vFOV/2)`（`vFOV_deg` の既定値 60、1〜179 に寄せる）。旧 Cutout の出力と同じ画面比になる。Stickers の v1 の状態は通常 `shots` を持たない（持っていれば Camera に写る） |
-| `shots` がない、空、またはオブジェクトの shot が一つも無い | `camera: null`（Camera が無い）。v1 の Stickers の状態はこれにあたる。v1 の Cutout でもこのときは `null` になる。v1 の Cutout はこのとき ERP をそのまま出力していた。Panorama Studio は Camera の無い状態を原点・回転 0 の ERP で撮る |
+| `shots` がない、空、またはオブジェクトの shot が一つも無い | `camera: null`。読み込みが既定の Camera（Panorama モード、原点・回転 0。上の「既定の Camera」）にする。v1 の Stickers の状態はこれにあたる。v1 の Cutout でもこのときは同じ。v1 の Cutout はこのとき ERP をそのまま出力していた |
 | `painting`・`painting_layer` | 同名のフィールド |
 | `version`・`projection_model`・`alpha_mode` | 捨てる |
 | `coverage`・`bg_color`・`output_preset` | 捨てる。ノードの入力（ウィジェット）が持つ |

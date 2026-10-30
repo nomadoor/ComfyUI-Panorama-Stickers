@@ -26,6 +26,7 @@
 | World の組み立て | — | `pano_three_view.js` `buildWorld`・`setChildren`・`cachedLines` | `tests/pano_pick.test.mjs` |
 | エディタの描画を直接表示する（スケジュール、キャンバス、解像度、コンテキストの喪失） | — | `web_src/pano_frame_scheduler.js` `createFrameScheduler`、`pano_editor_view.js` `screenRenderSize`、`pano_three_view.js` `fitRenderSize`、`web_src/components/PanoModal.vue` | `tests/pano_frame_scheduler.test.mjs`、`tests/pano_editor_direct_view.test.mjs`、`tests/pano_preview_view.test.mjs` |
 | WebGL の unpack 状態 | — | `pano_three_view.js` `settleUnpack` | `tests/pano_editor_view.test.mjs`、`tests/test_three_spark_core_pin.py`、`tests/browser/three_view.spec.js` |
+| Panorama モードの ERP の表示（新しい UI の Output の小窓と Camera タブ。6 方向を描いて ERP に貼り直す、描き直す条件、解像度） | — | （新しい UI、未実装）`web_src/studio/erp_preview.js` | （未作成）`tests/studio_erp_preview.test.mjs`、（未作成）`tests/browser/` の場面 |
 
 ## 版と同梱
 
@@ -268,3 +269,19 @@ three のアップロードは render の中でしか起きないので、Spark 
 キャッシュも実際の値と揃う。render の外で送るペイントの矩形（`uploadTextureRegions`）は、送り終えるたびに同じく両方を three の状態を通して false に戻す。Spark 2.2.0 以降は自分で両方を戻すので、コアのフロントエンドに合わせて Spark を上げたら、この回避を消す（ADR 0031、`tests/test_three_spark_core_pin.py` が知らせる）。
 この場面（再生中の VIDEO の背景、3DGS の Sticker、視点の回転）は `tests/browser/three_view.spec.js` が headless Chromium で描き、
 タブが落ちないことを確かめる。`settleUnpack` を外すと、このテストはクラッシュで落ちる（SwiftShader で確認）。
+
+## Panorama モードの ERP の表示（新しい UI、未実装）
+
+新しい UI の Output の小窓と、Panorama モードの Camera タブ（`docs/studio-ui.md`）は、撮る Camera の位置から描いた ERP をその場で見せる
+（直近の実行の出力は使わない。編集とずれるため。ADR 0048）。
+
+- 描き方：撮る Camera の位置から、Camera の回転に合わせた 6 方向（立方体の面）を、空間の表示と同じ描き方（2 パス、`world` の Sticker、
+  3D の要素、Sky の層）で描き、ERP に貼り直す。範囲は Camera の `erp_range`（180 なら前の半球）。描くのはエディタの表示用で、出力の
+  ERP（`docs/render-contract.md`）と画素が一致することは求めない（向きと範囲は一致させる）。
+- 描き直す条件：毎フレームは描かない。状態・再生位置・Camera・読み込んだ要素のどれかが変わったときだけ描き直す。再生中は再生の
+  フレームごとに描き直す。
+- 解像度：Output の小窓（または Camera タブのフレーム）の画素の大きさに合わせた低い解像度で描く。
+- 向きと範囲の一致を守る test：ERP の画素と方向の対応は、出力と同じ `pano_camera_math.js` の写し方（`docs/scene-state-v2.md` の「パノラマの角度規約」の持ち主）を使い、既存の parity（`tests/test_camera_orientation.py`、`tests/test_studio_run_erp_orientation.py`）に、この表示で描いた ERP の向きの case を足す（未作成）。
+- 3D Gaussian Splatting：Spark の並べ替えは方向ごとに要る（上の表の「Spark の描画はビューごとに 1 つ」）。
+- 重さ：最初に試作で 1 回の描き直しの時間とメモリを測り、持ち主の GPU でも確かめる（AGENTS.md の Working principles 7）。重すぎるときは
+  止めて持ち主に相談する（描き直す条件と解像度のほかに、黙って質を下げることはしない。`docs/agents/ux-principles.md`）。

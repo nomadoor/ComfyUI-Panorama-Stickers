@@ -83,6 +83,19 @@ render_frame(layers, camera, projection, *, bg, bg_key=None, bg_color, device, c
 |---|---|
 | `Projection.erp(width, height, coverage)` | ERP。`coverage` は 360 または 180。180 は Camera の前方の半球 |
 | `Projection.perspective(width, height, hfov_deg, coverage=360, curve=1.0)` | Camera の画像。`curve` はレンズの曲線 κ（下の「カメラのレンズ」）で、1 ならピンホール（直線の像）。画素は正方で、`hfov_deg` を幅に当てる。垂直の FOV は出力の大きさから決まる（`g_κ(vFOV/2) = g_κ(hFOV/2) × height ÷ width`、`g_κ = lens_radius`。κ = 1 では `tan(vFOV/2) = tan(hFOV/2) × height ÷ width`）。`coverage` は、写す `bg_media` の ERP の範囲（360 または 180） |
+| `bg_coverage`（新しい UI、未実装。ADR 0048） | 写す `bg_media` の ERP の範囲（360 または 180）。省くと `coverage` と同じ値になる。Panorama Studio だけが渡す |
+
+- `coverage` と `bg_coverage` の分け方（ADR 0048。Panorama Studio は出力の範囲（Camera の `erp_range`）と背景の範囲（入力の `background_range`）を
+  別々に持つ。`docs/studio-node.md`）：
+  - 出力の範囲を読む所は `coverage`：ERP の経度の幅（`core/math.py` の ERP の光線、`mesh_render.py`・`splat_render.py` の ERP の幅と回り込み）、
+    ERP の Sky の大きさ（`_sky_size` の ERP の高さ）。
+  - 背景の絵を読む所は `bg_coverage`：`_project_background`（180 の背景を前の半球として読む）、透視投影の Sky の大きさの下限
+    （`_sky_size` の `bg_width × 360 ÷ 範囲`）。`render_frame` の「背景をそのまま出力にできるか」の判定（`turned` の否定。今は回転の無い 360 の
+    ERP の出力）は、`coverage` と `bg_coverage` の両方が 360 のときだけにする。
+  - 旧ノード（`PanoramaStickers`・`PanoramaCutout`・Panorama Preview (legacy)）と新しい Preview は `bg_coverage` を渡さないので、
+    `bg_coverage` は `coverage` と同じになり、出力は変わらない（`tests/test_render.py` と旧ノードの基準画像で守る）。
+  - test：`tests/test_studio_node.py` に、出力の範囲 180（`erp_range`）と背景の範囲 360（`background_range`）の組と、その逆の組を足す
+    （`docs/studio-node.md` の「撮る Camera と出力の大きさの設計」）。Projection の形は Python だけのもので、JS との一致は持たない。
 
 - 出力の画素ごとの向き（光線）は、ERP・透視投影とも `core/math.py` の `ray_directions` が画素の中心を通るものとして作る（下記「World の描き方」）。背景と Sky は `_view` でこの向きを ERP の座標に直して標本化し、その ERP も画素の中心で標本化する（`grid_sample` の `align_corners=False`）。エディタと Studio の出力の画素の位置はこれで一致する。
 
