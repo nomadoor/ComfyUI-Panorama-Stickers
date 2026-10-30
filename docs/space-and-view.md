@@ -22,15 +22,16 @@ Add とドロップの着く所、Preview のウィンドウの違い、ウィ�
 
 Python はこの文書の規則を持たない（列は `—`）。「（未実装）」は、ADR 0044 の置き場所（`web_src/studio/`、
 `web_src/components/studio/`）に作る予定のモジュールで、「（未作成）」は作る予定の test である。印の無いものは今ある。
-新しい UI のステージ（`web_src/studio/stage.js`）は、今は Panorama 表示だけを動かす。Frame 表示、選んだ物、World の内容を
-ステージにつなぐのはまだで、その部分を各行に「未実装」と書く。
+新しい UI のステージ（`web_src/studio/stage.js`）は、今は Panorama 表示だけを動かす。World の内容（`web_src/studio/stage_content.js`）と、
+タイムラインで選んだ物（回る中心と Frame Selected）はステージにつないである。Frame 表示と、ステージの上で物を選ぶことはまだで、
+その部分を各行に「未実装」と書く。
 
 | 規則 | Python | JS | test |
 |---|---|---|---|
 | 目の高さ `E` と量の一覧 | — | `web_src/studio/view_scale.js` | `tests/studio_view_scale.test.mjs` |
 | 視点が一つであること、開いたときの視点、Reset View、視点の記憶 | — | `web_src/studio/view_camera.js` `openingView`・`rememberView`・`recallView`、開くと閉じるは `web_src/studio/editor.js`、出力の視点は `web_src/studio/stage_view.js` `outputView`、下の部品 `web_src/pano_view_memory.js` `viewMemory`・`restoredView`、`web_src/pano_node_bridge.js` `editorSession` | `tests/studio_view_camera.test.mjs`、`tests/studio_stage_view.test.mjs`、`tests/pano_view_memory.test.mjs`、`tests/browser/studio_editor.spec.js` |
 | 世界の境界と、止まったときの知らせ、黙って何もしない操作の知らせ | — | `web_src/studio/view_scale.js` `worldBoundRadius`、`web_src/studio/view_camera.js` `clipToBound`・`createNotice`・`VIEW_NOTICES`、一行の知らせを出すのは `web_src/components/studio/StudioNotice.vue` | `tests/studio_view_scale.test.mjs`、`tests/studio_view_camera.test.mjs`、`tests/browser/studio_editor.spec.js` |
-| 注視点 `T`（初めの `T`、付いて動くこと、距離の範囲、決め直す操作、回る中心） | — | `web_src/studio/view_camera.js` `initialTarget`・`orbitCenter`・`createViewCamera`、ポインタの下の当たりは `web_src/studio/stage_view.js` `surfaceHit`（GPU の当たりと地面の近い方）、下の部品 `pano_space.js` `orbitView`・`viewAxes`・`frameView`・`frameSphere`、`pano_three_view.js` `pick`、`web_src/pano_ray_box.js`。選んだ物を回る中心にするのは（未実装） | `tests/studio_view_camera.test.mjs`、`tests/studio_stage_view.test.mjs`、`tests/browser/studio_editor.spec.js` |
+| 注視点 `T`（初めの `T`、付いて動くこと、距離の範囲、決め直す操作、回る中心） | — | `web_src/studio/view_camera.js` `initialTarget`・`orbitCenter`・`createViewCamera`、ポインタの下の当たりは `web_src/studio/stage_view.js` `surfaceHit`（GPU の当たりと地面の近い方）、下の部品 `pano_space.js` `orbitView`・`viewAxes`・`frameView`・`frameSphere`、`pano_three_view.js` `pick`、`web_src/pano_ray_box.js`。選んだ物（タイムラインで選んだ行の物）の中心は `web_src/studio/stage_content.js` `stickerFrameSphere`、つなぐのは `web_src/studio/editor.js` | `tests/studio_view_camera.test.mjs`、`tests/studio_stage_view.test.mjs`、`tests/browser/studio_editor.spec.js` |
 | マウスとキーの割り当て、直接の操作となめらかに動く操作（Panorama 表示と Frame 表示） | — | `web_src/studio/view_input.js` `navigationAction`・`createViewInput`・`createWheelSteps`、`web_src/studio/view_camera.js` `createViewCamera`、事象を受けるのは `web_src/studio/stage.js`、下の部品 `web_src/pano_view_keys.js` `keyMoveView`・`createMoveKeys`、`web_src/pano_wheel.js` `readWheelDirection`。Frame 表示をステージにつなぐこと、レンズの Camera の `pano_lens.js` `lensPickWindow` は（未実装）。 | `tests/studio_view_input.test.mjs`、`tests/studio_view_camera.test.mjs`、`tests/pano_view_keys.test.mjs`、`tests/browser/studio_editor.spec.js` |
 | カーソル | — | `web_src/studio/view_input.js` `stageCursor`・`LOOK_CURSOR`・`ORBIT_CURSOR`・`KNOB_CURSOR` | `tests/studio_view_input.test.mjs` |
 | 視点の操作の部品（球・手・矢印、操作中に光ること） | — | `web_src/components/studio/StudioNavWidget.vue`、光る規則は `web_src/studio/view_input.js` `knobAction`・`litKnobs` | `tests/studio_view_input.test.mjs`、`tests/browser/studio_editor.spec.js` |

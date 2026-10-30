@@ -32,9 +32,12 @@ export function stageUi() {
 
 // canvas: the stage's <canvas>; root: the editor's root element (whose keys the stage takes, stageOwnsKey).
 // opening: view_camera.js openingView()'s { pose }; output: the output view Reset View goes to ({ position, yaw_deg,
-// pitch_deg }). world: { ground, camera } (the ground height, the Camera's position at the playhead).
-// background(): the background to draw ({ media, revision, coverage }) or null. ui: stageUi()'s fields, reactive.
-// onClose(): Escape with nothing else to take back closes the editor.
+// pitch_deg }). world: { ground, camera } (the ground height, the Camera's position at the playhead), read at each
+// frame (the editor changes its fields and asks for a redraw). background(): the background to draw ({ media,
+// revision, coverage }) or null. content(): the working state's content at the playhead (stage_content.js
+// stageContent()) or null. selected(): what is selected for the orbit's center and Frame Selected (view_camera.js
+// orbitCenter: null, { kind: "object", sphere } or { kind: "camera", position }). ui: stageUi()'s fields, reactive.
+// onEscape(): Escape with no view drag to let go; the editor takes back one thing or closes (docs/studio-ui.md "閉じ方").
 export function createStage({
   canvas,
   root,
@@ -42,8 +45,10 @@ export function createStage({
   output,
   world,
   background = () => null,
+  content = () => null,
+  selected = () => null,
   ui,
-  onClose = () => {},
+  onEscape = () => {},
   view: makeView = createEditorView,
   win = window,
   now = () => performance.now(),
@@ -116,6 +121,8 @@ export function createStage({
     if (drag?.action === "joystick" && seconds > 0) report(camera.joystick(drag.offset, seconds));
     if (!camera.animating() && !motion && drag?.action !== "joystick") lastFrame = 0;
     if (!editorView.ready) return;
+    const shown = content();
+    camera.setWorld({ ground: world.ground, camera: world.camera ?? null, content: shown?.sphere ?? null });
     editorView.render(stageRenderInput({
       camera: cameraNow(),
       canvasWidth: canvas.width,
@@ -124,6 +131,7 @@ export function createStage({
       ground: world.ground,
       gridHidden: ui.gridHidden,
       clearColor: ui.background === "loading" ? null : STAGE_CLEAR_COLOR,
+      content: shown,
     }));
     syncUi();
   }
@@ -174,7 +182,7 @@ export function createStage({
   function begin(action, point, pointerId, knob = null) {
     switch (action) {
       case "orbit":
-        camera.beginOrbit(orbitCenter({ selection: null }));
+        camera.beginOrbit(orbitCenter({ selection: selected() }));
         break;
       case "pan":
         camera.beginPan(hitAt(knob ? center() : point));
@@ -280,14 +288,14 @@ export function createStage({
 
   // --- Keys, while the editor is open.
 
-  // Escape takes back one thing (docs/studio-ui.md "閉じ方"): a view drag under way is let go; with nothing to take
-  // back it closes the editor. A value box's drag takes its own Escape first, on the window's capture.
-  function onEscape(event) {
+  // Escape takes back one thing (docs/studio-ui.md "閉じ方"): a view drag under way is let go; else the editor takes
+  // back what is next in its order, or closes. A value box's drag takes its own Escape first, on the window's capture.
+  function onEscapeKey(event) {
     if (event.key !== "Escape" || !stageOwnsKey(event, root)) return;
     event.preventDefault();
     event.stopPropagation();
     if (drag) end();
-    else onClose();
+    else onEscape();
   }
 
   function onKeyDown(event) {
@@ -374,7 +382,7 @@ export function createStage({
   // editor); Escape on the document's capture, after a value box's drag has taken its own on the window's.
   win.addEventListener("keydown", onKeyDown, true);
   win.addEventListener("keyup", onKeyUp, true);
-  win.document.addEventListener("keydown", onEscape, true);
+  win.document.addEventListener("keydown", onEscapeKey, true);
   win.addEventListener("blur", onLostFocus);
   win.document.addEventListener("visibilitychange", onVisibility);
 
@@ -396,15 +404,18 @@ export function createStage({
       report(camera.reset(output));
       requestDraw();
     },
-    // Frame Selected: nothing is selected yet, so the whole World content; none shows yet, so it says so.
-    frameSelected() {
-      report(camera.frameSelected(frameSelectedSphere({ selection: null, content: null, ground: world.ground })));
+    // Frame Selected: the selected object (selected(), or `selection` when given: a Timeline row's double click), else
+    // the whole World content; with nothing to frame it says so.
+    frameSelected(selection = selected()) {
+      report(camera.frameSelected(frameSelectedSphere({ selection, content: content()?.sphere ?? null, ground: world.ground })));
       requestDraw();
     },
     // The shell changed something the stage draws (the grid switch, a background that loaded).
     redraw(reason = DRAW_REASON.STATE) {
       requestDraw(reason);
     },
+    // The box of a loaded World item (the lower view's), null while it loads.
+    sceneBox: (url) => editorView.sceneBox(url),
     // The pose to remember on close: where an eased move goes.
     destination: () => camera.destination(),
     pose: () => camera.pose(),
@@ -429,7 +440,7 @@ export function createStage({
       win.removeEventListener("pointercancel", onPointerUp, true);
       win.removeEventListener("keydown", onKeyDown, true);
       win.removeEventListener("keyup", onKeyUp, true);
-      win.document.removeEventListener("keydown", onEscape, true);
+      win.document.removeEventListener("keydown", onEscapeKey, true);
       win.removeEventListener("blur", onLostFocus);
       win.document.removeEventListener("visibilitychange", onVisibility);
       editorView.dispose();
