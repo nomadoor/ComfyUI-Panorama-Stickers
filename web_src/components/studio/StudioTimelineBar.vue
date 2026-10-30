@@ -1,11 +1,10 @@
 <script setup>
 import { ICON } from "../../icons.js";
-import SvgIcon from "../shared/SvgIcon.vue";
 import StudioIconButton from "./StudioIconButton.vue";
 import StudioNumberField from "./StudioNumberField.vue";
 
 // The Timeline's bar (docs/studio-ui.md "タイムラインのバー"; what each part does: docs/timeline-ui.md). From the left:
-// play and pause, the previous and the next Keyframe, the loop switch, the time and frame; on the right the fps
+// play and pause, the previous and the next Keyframe, the loop button (its icon shows the state), the time and frame; on the right the fps
 // field, the Length field and its reset, and the collapse button. Presentational: `bar` (timeline_model.js
 // buildStudioTimeline().bar) in; `play`, `jump` (direction), `loop-change`, `fps`, `length` (a number, or null for
 // the reset) and `collapse` out.
@@ -47,19 +46,15 @@ const fpsParse = (text) => {
       data-tl="next"
       @press="emit('jump', 1)"
     />
-    <button
-      type="button"
-      class="pano-studio-tl-switch"
+    <StudioIconButton
       role="switch"
       :aria-checked="bar.loop ? 'true' : 'false'"
-      aria-label="Loop"
-      :title="bar.loop ? 'Loop: on' : 'Loop: off'"
+      :icon="bar.loop ? ICON.loop : ICON.loop_off"
+      label="Loop"
+      :tip="bar.loop ? 'Loop: on' : 'Loop: off'"
       data-tl="loop"
-      @click="emit('loop-change', !props.bar.loop)"
-    >
-      <SvgIcon :icon="bar.loop ? ICON.loop : ICON.loop_off" />
-      <span class="pano-studio-tl-switch-track"><span class="pano-studio-tl-switch-knob" /></span>
-    </button>
+      @press="emit('loop-change', !props.bar.loop)"
+    />
     <span class="pano-studio-tl-time pano-studio-num" data-tl="time">
       <span class="pano-studio-tl-timecode">{{ bar.timecode }}</span>
       <span class="pano-studio-tl-frame">{{ bar.frameText }}</span>

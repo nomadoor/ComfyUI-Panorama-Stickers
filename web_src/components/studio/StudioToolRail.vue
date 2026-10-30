@@ -1,5 +1,6 @@
 <script setup>
 import { ICON } from "../../icons.js";
+import StudioAddIcon from "./StudioAddIcon.vue";
 import StudioFloatGroup from "./StudioFloatGroup.vue";
 import StudioIconButton from "./StudioIconButton.vue";
 
@@ -18,12 +19,12 @@ const LATER = "in development";
 const groups = [
   [
     { key: "cursor", icon: ICON.cursor_tool, label: "Cursor", active: true },
-    { key: "paint", icon: ICON.paintbrush_vertical_tool, label: "Paint", disabled: true, tip: `Paint · ${LATER}` },
+    { key: "paint", icon: ICON.palette_tool, label: "Paint", disabled: true, tip: `Paint · ${LATER}` },
     { key: "mask", icon: ICON.circle_dashed_tool, label: "Mask", disabled: true, tip: `Mask · ${LATER}` },
   ],
   [
-    { key: "add", icon: ICON.plus_circle, label: "Add", disabled: true, tip: `Add · ${LATER}` },
-    { key: "camera", icon: ICON.camera, label: "Camera", disabled: true, tip: `Camera · ${LATER}` },
+    { key: "add", icon: "", drawn: "add", label: "Add", disabled: true, tip: `Add · ${LATER}` },
+    { key: "camera", icon: ICON.camera_plus, label: "Camera", disabled: true, tip: `Camera · ${LATER}` },
   ],
 ];
 </script>
@@ -42,7 +43,9 @@ const groups = [
         :active="!!button.active"
         :disabled="!!button.disabled"
         @press="emit('press', button.key)"
-      />
+      >
+        <StudioAddIcon v-if="button.drawn === 'add'" />
+      </StudioIconButton>
     </template>
     <span class="pano-studio-sep" />
     <StudioIconButton data-tool="undo" :icon="ICON.undo" label="Undo" tip="Undo (Ctrl+Z)" :disabled="!props.canUndo" @press="emit('press', 'undo')" />
