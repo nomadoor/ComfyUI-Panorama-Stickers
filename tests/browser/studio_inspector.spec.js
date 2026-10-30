@@ -59,6 +59,21 @@ test("a world 3D's card: its rows, their values, the dots and resets in one colu
     Math.round(r.querySelector(".pano-studio-row-reset").getBoundingClientRect().left),
   ].join()));
   expect(new Set(lefts).size).toBe(1);
+  // A box's content sits at its left: axis letter, value, unit (docs/studio-ui.md "欄"). The value starts at the same
+  // place with or without a unit, and the unit follows the value instead of the box's right edge.
+  const starts = await page.locator(".pano-studio-inspector .pano-studio-field").evaluateAll((boxes) => boxes.map((b) => {
+    const box = b.getBoundingClientRect();
+    const value = b.querySelector(".pano-studio-field-value").getBoundingClientRect();
+    const unit = b.querySelector(".pano-studio-field-unit")?.getBoundingClientRect();
+    const axis = b.querySelector(".pano-studio-field-axis")?.getBoundingClientRect();
+    return { field: b.dataset.field, value: value.left - (axis ? axis.right : box.left), unitGap: unit ? unit.left - value.right : null, right: box.right - (unit || value).right };
+  }));
+  const byField = Object.fromEntries(starts.map((s) => [s.field, s]));
+  // Scale has no unit, Opacity has %, Rotation has °: their values start at the same inset.
+  expect(Math.abs(byField.scale.value - byField.opacity.value)).toBeLessThan(1);
+  for (const s of starts) expect(s.value).toBeLessThan(6);
+  expect(byField.opacity.unitGap).toBeLessThan(4);
+  expect(byField.opacity.right).toBeGreaterThan(8);
   // No scrollbar takes width from the cards.
   const body = await page.locator(".pano-studio-inspector-body").evaluate((el) => el.offsetWidth - el.clientWidth);
   expect(body).toBe(0);
@@ -159,7 +174,25 @@ test("the Camera tab shows only the Camera card; Panorama grays Aspect, H FOV an
   const disabled = () => page.locator(".pano-studio-inspector .pano-studio-row.is-disabled").evaluateAll((rows) => rows.map((r) => r.dataset.row));
   expect(await disabled()).toEqual(["Aspect", "H FOV", "Lens"]);
   await expect(row(page, "Range").locator('[aria-checked="true"]')).toHaveText("360°");
+  // The mode is two tiles right under the heading (mode-3.html M1), outside the row grid: a picture and the name,
+  // 68px tall, the chosen one in the pressed fill, the other without fill.
+  const tiles = page.locator('.pano-studio-inspector [data-row="Mode"] .pano-studio-mode-tile');
+  await expect(tiles).toHaveText(["Panorama", "Frame"]);
+  await expect(tiles.locator("svg")).toHaveCount(2);
+  const tileLook = () => tiles.evaluateAll((items) => items.map((t) => {
+    const style = getComputedStyle(t);
+    return { h: Math.round(t.getBoundingClientRect().height), bg: style.backgroundColor, on: t.getAttribute("aria-checked") };
+  }));
+  const first = await tileLook();
+  expect(first.map((t) => t.h)).toEqual([68, 68]);
+  expect(first.map((t) => t.on)).toEqual(["true", "false"]);
+  expect(first[1].bg).toBe("rgba(0, 0, 0, 0)");
+  expect(first[0].bg).not.toBe("rgba(0, 0, 0, 0)");
+  const heading = await page.locator('[data-card="camera"] .pano-studio-card-title').boundingBox();
+  const tileBox = await tiles.first().boundingBox();
+  expect(Math.round(tileBox.y - (heading.y + heading.height))).toBe(8);
   await page.locator('.pano-studio-inspector [data-row="Mode"] [data-value="perspective"]').click();
+  await expect.poll(async () => (await tileLook()).map((t) => t.on)).toEqual(["false", "true"]);
   await expect.poll(disabled).toEqual(["Range"]);
   expect((await scene(page, "state")).camera.projection).toBe("perspective");
   await row(page, "Aspect").locator('[data-field="aspect"]').click();
