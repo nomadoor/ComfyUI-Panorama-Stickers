@@ -58,6 +58,8 @@
   --studio-frame-pad: 8px;
   --studio-window-gap: 8px;
   --studio-float-inset: 16px;
+  /* The name on the bar at the bottom center: one width for every name, so a name never changes the bar's width. */
+  --studio-bar-name-width: 140px;
   --studio-row-gap: 8px;
   --studio-field-h: 26px;
   --studio-btn: 32px;
@@ -1404,9 +1406,11 @@
   pointer-events: none;
 }
 
-/* The selected object's name on the bar at the bottom center: one line, cut with an ellipsis. */
+/* The selected object's name on the bar at the bottom center: the same width for every name, left aligned, one line,
+   cut with an ellipsis (docs/studio-ui.md "下の中央のバー"). */
 .pano-studio-bar-name {
-  max-width: 180px;
+  flex: none;
+  width: var(--studio-bar-name-width);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

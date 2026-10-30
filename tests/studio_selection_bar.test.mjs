@@ -25,6 +25,8 @@ test("each kind of object has its own bar, with its icon and name at the left", 
   const skyBar = selectionBar({ state, row: "sky_1" });
   assert.deepEqual([skyBar.kind, skyBar.icon, skyBar.name], ["sky", ICON.pano, "poster.png"]);
   assert.deepEqual(keys(skyBar), [["front", "back"], ["duplicate", "replace"], ["lock", "delete"]]);
+  // Bring to front / Send to back: the two overlapping squares of the new UI, not the old UI's stacks.
+  assert.deepEqual(skyBar.groups[0].map((b) => [b.icon, b.tip]), [[ICON.order_front, "Bring to front"], [ICON.order_back, "Send to back"]]);
   const plane = selectionBar({ state, row: "plane_1" });
   assert.deepEqual([plane.kind, plane.icon], ["world-image", ICON.box]);
   assert.deepEqual(keys(plane), [["gizmo:translate", "gizmo:rotate", "gizmo:scale"], ["duplicate", "replace"], ["lock", "delete"]]);
