@@ -32,6 +32,8 @@ export const VIEW_NOTICES = Object.freeze({
   bound: "The view can't go farther",
   "nothing-to-focus": "Nothing to focus on",
   "nothing-to-frame": "Nothing to frame",
+  // The Camera tab on a lens Camera (κ ≠ 1), while its hits (pano_lens.js lensPickWindow) are not wired.
+  "lens-pick": "Objects can't be picked through a lens yet",
 });
 
 const add = (a, b, s = 1) => [a[0] + b[0] * s, a[1] + b[1] * s, a[2] + b[2] * s];
