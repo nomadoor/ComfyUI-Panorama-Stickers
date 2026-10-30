@@ -316,7 +316,7 @@ function setCollapsed(value) {
             @press="onRail"
           />
           <input ref="filePicker" type="file" :accept="WORLD_FILE_ACCEPT" hidden data-add-picker @change="onFilesPicked">
-          <div v-if="ui.choice" class="pano-studio-at-center">
+          <div v-if="ui.choice" class="pano-studio-place-layer">
             <StudioPlaceChoice @choose="(side) => controller.place(side)" @cancel="controller.cancelPlace()" />
           </div>
           <div class="pano-studio-at-notice">

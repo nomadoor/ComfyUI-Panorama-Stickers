@@ -113,14 +113,23 @@ test("Add with an image shows the Sky / World choice at the stage's center; Sky 
   expect(Math.abs(at.y + at.height / 2 - (stage.y + stage.height / 2))).toBeLessThan(2);
   await expect(choice.locator('[data-place="sky"]')).toHaveText("Sky");
   await expect(choice.locator('[data-place="world"]')).toHaveText("World");
+  // Big tiles over a dark veil that covers the stage; the Sky tile has the focus.
+  expect(Math.round((await choice.locator('[data-place="sky"]').boundingBox()).width)).toBe(180);
+  const veil = await page.locator(".pano-studio-place-veil").boundingBox();
+  expect(Math.abs(veil.width - stage.width)).toBeLessThan(2);
+  await expect(choice.locator('[data-place="sky"]')).toBeFocused();
   await page.screenshot({ path: testInfo.outputPath("choice.png") });
   await choice.locator('[data-place="sky"]').click();
   await expect(choice).toHaveCount(0);
   await expect.poll(async () => (await stickers(page))[0]?.source.filename ?? null).toBe("photo.png");
   expect((await stickers(page))[0].placement).toBe("sky");
 
+  // The arrows move between the tiles and Enter chooses.
   await pick(page, "photo");
-  await page.locator('.pano-studio-place-choice [data-place="world"]').click();
+  await expect(choice.locator('[data-place="sky"]')).toBeFocused();
+  await page.keyboard.press("ArrowRight");
+  await expect(choice.locator('[data-place="world"]')).toBeFocused();
+  await page.keyboard.press("Enter");
   await expect.poll(async () => (await stickers(page))[1]?.source.filename ?? null).toBe("photo.png");
   const world = (await stickers(page))[1];
   expect(world.placement).toBe("world");
