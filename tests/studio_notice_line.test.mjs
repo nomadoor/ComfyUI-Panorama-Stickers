@@ -33,6 +33,15 @@ test("a placed 3D file loading shows the ring after the background's; an Add fai
   assert.deepEqual(topLine(ui({ addWarning: "x", notice: "There is no ground to place it on" })), { kind: "stopped", text: "There is no ground to place it on" });
 });
 
+// docs/studio-ui.md "ノードの入力から来た物": waiting for a run to show the upstream Scene is said with no mark,
+// after the warnings and before the empty stage's hint.
+test("waiting for the upstream Scene says so with no mark, after the warnings and before the empty hint", () => {
+  assert.deepEqual(topLine(ui({ upstreamPending: true, empty: true })), { kind: "info", text: LINE_TEXT.upstreamPending });
+  assert.equal(LINE_TEXT.upstreamPending, "Run the workflow to show the upstream scene.");
+  assert.deepEqual(topLine(ui({ upstreamPending: true, background: "failed" })), { kind: "warning", text: LINE_TEXT.backgroundFailed });
+  assert.deepEqual(topLine(ui({ upstreamPending: true, addWarning: "x" })), { kind: "warning", text: "x" });
+});
+
 test("every line's kind is one of the four", () => {
   for (const fields of [{ notice: "x" }, { view: "loading" }, { background: "failed" }, { empty: true }, {}]) {
     assert.ok(NOTICE_KINDS.includes(topLine(ui(fields)).kind));

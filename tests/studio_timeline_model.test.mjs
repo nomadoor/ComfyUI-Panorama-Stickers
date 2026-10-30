@@ -156,6 +156,25 @@ test("an upstream layer without a name falls back to its key; an inherited-only 
   assert.equal(group.rows[0].overridden, false);
 });
 
+// docs/studio-ui.md "ノードの入力から来た物": until the new editor edits upstream items, a layer shows read-only.
+test("a read-only upstream layer keeps its name and disables its rows and actions with the Read-only tip", () => {
+  const record = { layer: "scene_up", stickers: [], scene: { visible: false }, deleted: ["x"] };
+  const model = view(ctxOf(studioState(), { upstream: [upstreamLayer({ record, deleted: 2, readOnly: true })] }));
+  const [group] = model.groups;
+  assert.equal(group.label, "From Studio #4");
+  assert.equal(group.revert.disabled, true);
+  assert.equal(group.restore.disabled, true);
+  const [up] = group.rows;
+  assert.equal(up.dot.disabled, true);
+  assert.equal(up.dot.tip, "Read-only");
+  assert.equal(up.eye.disabled, true);
+  assert.equal(up.eye.tip, "Read-only");
+  assert.equal(up.clipEditable, false);
+  assert.equal(up.keysEditable, false);
+  // The node's own rows stay editable.
+  assert.equal(row(model, "sticker_1").dot.disabled, false);
+});
+
 test("the node's own scene row does not show while an upstream Scene is there", () => {
   const model = view(ctxOf(studioState(), { sceneRow: true, upstream: [upstreamLayer({ scene: true })] }));
   assert.equal(model.rows.some((item) => item.id === "scene"), false);

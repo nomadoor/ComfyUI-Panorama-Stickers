@@ -5,10 +5,8 @@ export const EXTERNAL_STICKER_ID = "sticker_image_1";
 // pano_editor_state.js).
 export const WORLD_UNLIMITED_FIELDS = new Set(["position_x", "position_y", "position_z", "scale"]);
 export const EXTERNAL_STICKER_SOURCE_KIND = "external_image";
-export const EXTERNAL_STICKER_PREVIEW_KEY = "pano_sticker_input_images";
-export const PORT_VIDEO_KEY = "pano_sticker_input_videos";
-export const PORT_FRAMES_KEY = "pano_sticker_input_frames";
-export const PORT_VIDEO_META_KEY = "pano_sticker_input_video_meta";
+// The port Sticker's `ui` keys belong to the lower layer (pano_port_media.js).
+export { EXTERNAL_STICKER_PREVIEW_KEY, PORT_FRAMES_KEY, PORT_VIDEO_KEY, PORT_VIDEO_META_KEY } from "../pano_port_media.js";
 export const ENABLE_STICKERS_NODE_PREVIEW = true;
 export const PAINT_COLOR_SWATCHES = [
   { id: "green", label: "Green", color: { r: 0, g: 1, b: 0, a: 1 } },
