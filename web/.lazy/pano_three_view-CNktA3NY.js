@@ -28238,7 +28238,7 @@ function A_(r, e) {
 }
 let El = null;
 function ac() {
-  return El || (El = import("./spark.module-Cu0-Fqok.js")), El;
+  return El || (El = import("./spark.module-BK1Mc1GG.js")), El;
 }
 function w_(r) {
   const e = [], t = /* @__PURE__ */ new Set();
@@ -28559,7 +28559,7 @@ function H_() {
     depthTest: !0,
     side: 2
   }), t = new ve(new Nn(1, 1), e);
-  t.rotation.x = -Math.PI / 2, t.frustumCulled = !1, t.onBeforeRender = (i, s, a) => {
+  t.rotation.x = -Math.PI / 2, t.frustumCulled = !1, t.renderOrder = -1, t.onBeforeRender = (i, s, a) => {
     a.getWorldPosition(r.viewPosition.value), t.position.x = r.viewPosition.value.x, t.position.z = r.viewPosition.value.z, t.updateMatrixWorld();
   };
   const n = new rn();

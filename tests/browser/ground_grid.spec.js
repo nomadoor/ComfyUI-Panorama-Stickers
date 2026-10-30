@@ -27,11 +27,11 @@ test("the ground grid looks the same through a lens and the live ERP, and an opa
   console.log(`liveErp: ${JSON.stringify(check?.liveErp)}`);
   console.log(`faces: ${JSON.stringify(check?.faces)}`);
   console.log(`splat: ${JSON.stringify(check?.splat)}`);
-  // GRID_SHOTS=<dir> saves the pictures to look at.
+  // GRID_SHOTS=<dir> saves the pictures to look at (GRID_SHOTS_TAG=<tag> adds -<tag> to their names).
   if (process.env.GRID_SHOTS && check?.shots) {
     mkdirSync(process.env.GRID_SHOTS, { recursive: true });
     for (const [name, url] of Object.entries(check.shots)) {
-      writeFileSync(join(process.env.GRID_SHOTS, `${process.env.GRID_SHOTS_PREFIX ?? ""}${name}.png`), Buffer.from(url.split(",")[1], "base64"));
+      writeFileSync(join(process.env.GRID_SHOTS, `grid-${name}${process.env.GRID_SHOTS_TAG ? `-${process.env.GRID_SHOTS_TAG}` : ""}.png`), Buffer.from(url.split(",")[1], "base64"));
     }
   }
   expect(problems).toEqual([]);
@@ -51,5 +51,8 @@ test("the ground grid looks the same through a lens and the live ERP, and an opa
     expect([row["kind0.9"], row.kind0]).toEqual(["pinhole", "cube"]);
     for (const key of ["k0.9", "k0"]) row[key].forEach((value, channel) => expect(Math.abs(value - row.k1[channel])).toBeLessThanOrEqual(2));
   }
+  // The ball's middle shows no grid from any place.
+  expect(check.splat.length).toBe(5);
+  for (const row of check.splat) expect(row.most).toBeLessThanOrEqual(2);
 });
 
