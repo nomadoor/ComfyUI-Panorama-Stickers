@@ -41,7 +41,7 @@ Panorama Studio（`PanoramaStudio`）のノード上の表示（node surface）�
   を一つの箱とする。絵は出力の比（Panorama 360° は 2 : 1、180° は 1 : 1、Frame は出る大きさの幅 : 高さ）のまま、箱の幅と、高さから一行の分
   （`STUDIO_LINE_HEIGHT` と `STUDIO_LINE_GAP`）を除いた高さに収まる最大の大きさにする（contain）。絵と一行をひとまとまりとして、箱の上下と
   左右の中央に置く（絵は箱から一行の分を除いた所の中央に来る）。一行は絵のすぐ下（間 `STUDIO_LINE_GAP`）に、絵と同じ幅で置き、絵から離れない。
-  箱の残り（絵と一行の外）は surface の暗い地（`STUDIO_SURFACE_FILL`、角丸 `STUDIO_PICTURE_RADIUS`）で、ノードの地は見せない。
+  箱の残り（絵と一行の外）は塗らず、ノードの地をそのまま見せる（`STUDIO_SURFACE_FILL` は透明。持ち主の決定、2026-10-30：暗い地は重い）。一行の文字は ComfyUI のテーマ（ライト・ダーク）に従う。
   絵の角は丸める。ノードを縦にも横にも大きくすると、絵は箱に収まる最大の大きさに広がり、中央に留まる。
 - 一行は surface の暗い地の上に出るので、ComfyUI のテーマがライトでもダークの文字の値で書く（読めるように）。
 - ボタンは絵の下の辺から `STUDIO_BUTTON_INSET` 上、左右の中央に、いつも出す（ポインタを載せたときだけ出すことはしない）。
@@ -70,7 +70,7 @@ Panorama Studio（`PanoramaStudio`）のノード上の表示（node surface）�
 - 描き直すのは、描く物が変わりうるときだけ：`state_json` の変更、widget（`background_color`・`background_range`・`megapixels`・`multiple`）
   の変更、入力の接続の変更、実行結果（`executed`）、素材の読み込み、表示フレームの VIDEO の絵、surface の大きさの変更。それ以外の
   animation frame は持たない。Panorama モードの ERP は、Camera の位置と描く物が変わらなければ面を描き直さない（`pano_live_erp.js`）。
-- three.js の view を読み込む前と、読み込めないときは、絵の箱は surface の地（`STUDIO_SURFACE_FILL`）のままである。読み込めないときは
+- three.js の view を読み込む前と、読み込めないときは、絵の箱は塗らない（透明）。読み込めないときは
   `PanoViewUnavailable` を重ねる。
 
 ## 一行の状態
