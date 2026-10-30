@@ -10,7 +10,7 @@ const props = defineProps({
 </script>
 
 <template>
-  <div class="pano-studio-editor" role="dialog" aria-modal="true" :aria-label="nodeTitle">
+  <div class="pano-studio pano-studio-editor" role="dialog" aria-modal="true" :aria-label="nodeTitle">
     <header class="pano-studio-editor-head">
       <span class="pano-studio-editor-title">{{ nodeTitle }}</span>
       <button

@@ -391,25 +391,27 @@ Tailwind の utility（`.hidden { display: none }` など）を持つので、Vu
 新しい UI の層（ADR 0044。Panorama Studio のエディタと新しい Preview のウィンドウ、画面の規則は `docs/studio-ui.md`）の見た目の値を定める。
 旧ノード（`PanoramaStickers`・`PanoramaCutout`・`PanoramaPreview`（legacy））のエディタとノード上の表示は、この文書の上の節の値のまま
 変えない（ADR 0044 の「旧ノードの UI」）。新しい UI の値は、上の節の `--pano-*` を書き換えず、新しい UI の部品の中だけで使う名前で持つ
-（置き場所は（新しい UI、未実装）`web_src/studio/` の stylesheet）。値はどれも、`design-drafts` の見本でオーナーが選んだものである。
+（置き場所は `web/pano_studio.css` の `.pano-studio` が持つ `--studio-*`。新しい UI の部品はすべて `.pano-studio` の中に置く）。値はどれも、`design-drafts` の見本でオーナーが選んだものである。
 
 ### 色
 
 - 地・文字・線の役割の色は、ComfyUI のフロントエンドの役割の色（`--base-background`・`--base-foreground`・`--secondary-background`・
   `--muted-foreground`・`--interface-stroke`・`--interface-panel-surface` など）に乗せる。ライトとダークは ComfyUI のテーマ（`.dark-theme`）で
-  自動で切り替わる。どの名前を使うかは一か所にまとめ、ComfyUI 側の名前が変わったときにそこだけを直す。
+  自動で切り替わる（ComfyUI は `<html>` に `.dark-theme` を付け外しする）。どの名前を使うかは一か所（`web/pano_studio.css` の
+  `.pano-studio` と `.dark-theme .pano-studio`）にまとめ、ComfyUI 側の名前が変わったときにそこだけを直す。下の見本の値は、ComfyUI の
+  役割の色が無いときの代わりの値である。ComfyUI の中では ComfyUI の値が使われる（たとえばダークの主の文字は `#fff`、パネルは `#171718`）。
 - 灰の段は Geist の色の段の役目に倣う：部品の地 / hover / 押したとき / 線 / 線の hover / 強い塗り / 二次の文字 / 主の文字。
   選ばれている状態は、色ではなく灰の強い塗りで示す。
 - ダークの見本の値：パネル `#1b1c1e`、値の箱の地 `#2c2c2e`、主の文字 `#dcdce0`、二次の文字 `#8e8f93`（まだ決めていないこと）、
   線 `#2a2b2d`。ライトは ComfyUI のライトの役割の色の上で同じ役目に当てる。
 - 色は意味のある一点にだけ使う。このノードの意味の色（ライトでは暗めの値を持つ）：
 
-  | 色 | ダークの値 | 使う所 |
-  |---|---|---|
-  | 珊瑚 | `#f37159` | 再生位置、一行の知らせの丸、ギズモの X 軸 |
-  | 氷 | `#aecedb` | Keyframe のポチ（インスペクタ・Camera タブ・タイムライン）、範囲選択、ギズモの Z 軸 |
-  | ライム | `#d6e797` | ギズモの Y 軸 |
-  | 落ち着いた黄 | `#e8cf74` | 選んでいる物のガイド、選んでいる Camera の線、ドロップの着く所 |
+  | 色 | ダークの値 | ライトの値（仮。下の「まだ決めていないこと」） | 使う所 |
+  |---|---|---|---|
+  | 珊瑚 | `#f37159` | `#d9573f` | 再生位置、一行の知らせの丸、ギズモの X 軸 |
+  | 氷 | `#aecedb` | `#5f8fa3` | Keyframe のポチ（インスペクタ・Camera タブ・タイムライン）、範囲選択、ギズモの Z 軸 |
+  | ライム | `#d6e797` | `#7f9a3a` | ギズモの Y 軸 |
+  | 落ち着いた黄 | `#e8cf74` | `#a8861f` | 選んでいる物のガイド、選んでいる Camera の線、ドロップの着く所 |
 
   新しい意味が要るときは、同じトーンで色相を変えた色を足す。機能ごとに色を塗り分けることはしない。
 
@@ -424,8 +426,9 @@ Tailwind の utility（`.hidden { display: none }` など）を持つので、Vu
 
 ### 文字
 
-- 書体は Plus Jakarta Sans。このノードが自分で読み込む（ラテン文字だけ・使う太さだけの woff2 に絞る。SIL OFL 1.1）。ファイルを
-  リポジトリに足すのは、大きさと置き場所を見せて承認を得てから（AGENTS.md の Stop & ask）。それまでは今の指定のまま。
+- 書体は Plus Jakarta Sans。このノードが自分で読み込む（SIL OFL 1.1、本文は `web/fonts/OFL.txt`）。ファイルは
+  `web/fonts/PlusJakartaSans-Latin.woff2`（27,348 bytes）：Google Fonts がラテン文字の範囲に配る可変フォント一つで、500・600・700 の
+  太さをまかなう。`web/pano_studio.css` の `@font-face` が読み込み、範囲の外の文字は次の書体で出す。
 - 大きさは 4 段：11px（注記、タイムライン）、12px（欄の名前、ボタン、本文）、13px（セクションの見出し、値の数字）、15px（ダイアログの見出し）。
 - 太さは 500（本文）、600（見出し）、700（数字の強調だけ）。
 - 数字は `font-variant-numeric: tabular-nums`。
@@ -463,13 +466,16 @@ Tailwind の utility（`.hidden { display: none }` など）を持つので、Vu
 
 ### アイコン
 
-- Tabler の outline のアイコン（`web_src/icons.js`）を使う。線の太さは 1.5〜2 の間で見本で決める（まだ決めていないこと）。
+- Tabler の outline のアイコン（`web_src/icons.js`）を使う。線の太さは 1.75（見本の値。まだ決めていないこと）。
 - Sky の印は `view-360`、World の印は `box`。Add のアイコンは写真と立方体を重ね、立方体を手前にして重なる所の写真の線を切り取る。
 
 ### まだ決めていないこと（spec ではない）
 
-- 二次の文字の濃さ（主の文字を `#dcdce0` にしたのに合わせて見直す）。
+- 二次の文字の濃さ（主の文字を `#dcdce0` にしたのに合わせて見直す）。今は ComfyUI の `--muted-foreground` に乗せ、無いときは
+  ダーク `#8e8f93`・ライト `#6b6b72`（見本の値）。
+- ComfyUI の中では主の文字が ComfyUI の `--base-foreground`（ダークで `#fff`）になり、見本で選んだ `#dcdce0` にならない。
+  ComfyUI の値に乗せるか、主の文字だけ見本の値を持つか。
 - 地面のグリッドの線の色・太さ・濃さ（`docs/space-and-view.md` の「地面のグリッドと原点の印」が値をここに預けている）。
-- アイコンの線の太さ。
-- ライトモードの意味の色（珊瑚・氷・ライム・落ち着いた黄・すみれ）の値。ダークの値は上の表にあり、ライトは暗めの値を見本で並べて決める。
-- Plus Jakarta Sans のファイルを足す承認。
+- アイコンの線の太さ（今は見本の 1.75）。
+- ライトモードの意味の色（珊瑚・氷・ライム・落ち着いた黄・すみれ）の値。今の表のライトの値は仮：珊瑚・氷・ライムは見本の値、落ち着いた黄の
+  `#a8861f` は実装のときに仮に選んだ値（見本に無い）。すみれは値が無い。見本で並べて決める。

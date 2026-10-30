@@ -1,0 +1,21 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>studio ui primitives</title>
+<link rel="stylesheet" href="/web/pano_studio.css">
+<style>
+  /* The page only: the two theme columns and a stand-in stage behind the floating groups. */
+  body { margin: 0; background: #808084; }
+  .scene { display: flex; gap: 0; align-items: stretch; }
+  .col { flex: 1; padding: 16px; }
+  .col.pano-studio { background: var(--studio-panel); }
+  .col.dark { background: #121314; }
+  .col.light { background: #f6f6f7; }
+  .stage { position: relative; height: 300px; border-radius: 12px; overflow: hidden; margin-bottom: 12px;
+    background: linear-gradient(180deg, #9fc7e6 0%, #dceaf3 46%, #e9dcc4 54%, #b9a685 100%); }
+  .stage.night { background: linear-gradient(180deg, #05070d 0%, #141a2b 50%, #1b1a17 55%, #0b0a09 100%); }
+  .at { position: absolute; }
+  .inspector { width: 320px; overflow: hidden; }
+</style>
+<body>
+<div id="app"></div>
+<script type="module" src="./studio_ui.js"></script>
