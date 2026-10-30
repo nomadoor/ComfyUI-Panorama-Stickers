@@ -21,6 +21,12 @@ export const LINE_TEXT = Object.freeze({
   cameraMoved: "Camera moved to this view",
 });
 
+// The names of the node's inputs that have a link. Asks the node (`isInputConnected(slot)`), not the deprecated
+// `input.link` field of the slot.
+export function linkedInputNames(node) {
+  return (node?.inputs ?? []).filter((input, slot) => !!input?.name && !!node.isInputConnected?.(slot)).map((input) => input.name);
+}
+
 // The node's inputs whose content the stage draws: one linked brings something even before the node has run.
 export const STAGE_INPUTS = Object.freeze(["world", ...STUDIO_BACKGROUND_INPUT_NAMES, "sticker", "scene"]);
 
