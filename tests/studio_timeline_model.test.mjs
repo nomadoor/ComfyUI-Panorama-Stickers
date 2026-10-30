@@ -5,6 +5,7 @@ import { ICON } from "../web_src/icons.js";
 import {
   buildStudioTimeline,
   frameToX,
+  hasOwnTime,
   jumpFrames,
   keysInRange,
   timecode,
@@ -125,8 +126,87 @@ test("the expand button: Sticker and Camera rows open, background and scene have
 });
 
 test("the background's bar ends where its media ends, or with the Timeline", () => {
-  assert.deepEqual(row(view(ctxOf(studioState(), { background: { end: 50 } })), "background").clip, { start: 0, end: 50 });
-  assert.deepEqual(row(view(ctxOf(studioState(), { background: { end: null } })), "background").clip, { start: 0, end: null });
+  const video = { media: { bg: { video: true, frames: 50, duration: 50 / 24 } } };
+  assert.deepEqual(row(view(ctxOf(studioState(), { ...video, background: { end: 50 } })), "background").clip, { start: 0, end: 50 });
+  // A VIDEO linked before a run: its length is not known yet.
+  assert.deepEqual(row(view(ctxOf(studioState(), { background: { end: null, video: true } })), "background").clip, { start: 0, end: null });
+});
+
+// docs/timeline-ui.md "Clip range のバー（新しい UI）": a bar only for what has its own time.
+test("hasOwnTime: a background VIDEO or IMAGE batch has its own time, a single image does not", () => {
+  const entry = (ctx) => ({ ctx, entry: { kind: "background", owner: ctx.state.background, layer: null } });
+  const check = (extra) => {
+    const { ctx, entry: item } = entry(ctxOf(studioState(), { background: { end: null }, ...extra }));
+    return hasOwnTime(ctx, item);
+  };
+  assert.equal(check({ media: { bg: { video: true, frames: 48, duration: 2 } } }), true);
+  assert.equal(check({ media: { bg: { frames: 12 } } }), true);
+  assert.equal(check({ background: { end: null, video: true } }), true);
+  assert.equal(check({ media: { bg: { frames: 1 } } }), false);
+  assert.equal(check({}), false);
+  const still = view(ctxOf(studioState(), { background: { end: null }, media: { bg: { frames: 1 } } }));
+  assert.equal(row(still, "background").clip, null);
+});
+
+test("hasOwnTime: a still image, a static 3D file, the Camera and the Paint have no bar; only their dots", () => {
+  const state = studioState({ painting_visible: false });
+  state.stickers[0].clip = { start: 0, in: 0, duration: null };
+  const model = view(ctxOf(state, { sceneRow: true }));
+  for (const id of ["camera", "sticker_1", "sticker_2", "painting", "scene"]) assert.equal(row(model, id).clip, null, id);
+  // The chair's Keyframes still show, at Timeline frames.
+  assert.deepEqual(row(model, "sticker_1").pins.map((pin) => pin.frame), [0, 20]);
+});
+
+test("hasOwnTime: a port VIDEO or IMAGE batch, an animated 3D file and a scene input with items have a bar", () => {
+  const state = studioState();
+  state.stickers[0].clip = { start: 0, in: 0, duration: null };
+  state.stickers[1].source = { kind: "port" };
+  const animations = { stickers: { sticker_1: [{ name: "Walk", duration: 2 }] }, scene: [{ name: "Spin", duration: 1 }] };
+  const model = view(ctxOf(state, { sceneRow: true, media: { port: { kind: "VIDEO", frames: 48, duration: 2 }, animations } }));
+  assert.deepEqual(row(model, "sticker_2").clip, { start: 0, end: 48 });
+  assert.deepEqual(row(model, "sticker_1").clip, { start: 0, end: null });
+  assert.deepEqual(row(model, "scene").clip, { start: 0, end: null });
+  const batch = view(ctxOf(state, { media: { port: { kind: "IMAGE", frames: 5, duration: 5 / 24 }, sceneItems: 3 }, sceneRow: true }));
+  assert.notEqual(row(batch, "sticker_2").clip, null);
+  assert.notEqual(row(batch, "scene").clip, null);
+  assert.equal(row(batch, "sticker_1").clip, null);
+  // One item, or nothing known yet (before a run), is no time of its own.
+  const single = view(ctxOf(state, { media: { sceneItems: 1 }, sceneRow: true }));
+  assert.equal(row(single, "sticker_2").clip, null);
+  assert.equal(row(single, "scene").clip, null);
+});
+
+test("hasOwnTime: a Clip range that is not the default keeps its bar, whatever the thing is", () => {
+  const state = studioState();
+  // poster.png, a still image, trimmed to start at 30.
+  state.stickers[1].clip = { start: 30, in: 0, duration: null };
+  state.scene.clip = { start: 0, in: 0, duration: 40 };
+  const model = view(ctxOf(state, { sceneRow: true, background: { end: null } }));
+  assert.deepEqual(row(model, "sticker_2").clip, { start: 30, end: null });
+  assert.deepEqual(row(model, "sticker_1").clip, { start: 10, end: 70 });
+  assert.deepEqual(row(model, "scene").clip, { start: 0, end: 40 });
+  state.background.clip = { start: 0, in: 6, duration: null };
+  assert.deepEqual(row(view(ctxOf(state, { background: { end: null } })), "background").clip, { start: 0, end: null });
+});
+
+test("hasOwnTime: upstream rows follow the same rule, from their layer's media", () => {
+  const still = upstreamLayer({ scene: true });
+  const plain = view(ctxOf(studioState(), { upstream: [still] }));
+  assert.equal(row(plain, "upstream:scene_up:sticker_1").clip, null);
+  assert.equal(row(plain, "upstream:scene_up:scene").clip, null);
+  const timed = upstreamLayer({ scene: true });
+  timed.sceneState.stickers[0].source = { kind: "port" };
+  timed.portMeta = { kind: "VIDEO", frames: 30, duration: 1.25 };
+  timed.sceneItems = 4;
+  const model = view(ctxOf(studioState(), { upstream: [timed] }));
+  assert.deepEqual(row(model, "upstream:scene_up:sticker_1").clip, { start: 0, end: 30 });
+  assert.notEqual(row(model, "upstream:scene_up:scene").clip, null);
+  const animated = upstreamLayer();
+  animated.animations = { stickers: { "upstream:scene_up:sticker_1": [{ name: "Walk", duration: 1 }] } };
+  assert.notEqual(row(view(ctxOf(studioState(), { upstream: [animated] })), "upstream:scene_up:sticker_1").clip, null);
+  const trimmed = upstreamLayer();
+  trimmed.sceneState.stickers[0].clip = { start: 5, in: 0, duration: null };
+  assert.deepEqual(row(view(ctxOf(studioState(), { upstream: [trimmed] })), "upstream:scene_up:sticker_1").clip, { start: 5, end: null });
 });
 
 // docs/timeline-ui.md "上流の層の行".

@@ -112,6 +112,8 @@ test("the edge rulers are the Camera card's H FOV, Lens and Roll: values, ranges
   assert.deepEqual([frame.fov.value, frame.fov.min, frame.fov.max, frame.fov.valueText, frame.fov.row], [60, 1, 179, "60°", "hfov"]);
   assert.deepEqual([frame.lens.value, frame.lens.valueText, frame.lens.row, frame.lens.field], [1, "1.00", "lens", "curve"]);
   assert.deepEqual([frame.roll.value, frame.roll.valueText, frame.roll.row, frame.roll.min, frame.roll.max], [-4, "-4°", "rotation", -180, 180]);
+  // A ruler holds the digits of the inspector's box of its row, no finer (a Lens of 0.998 would show 1.00 and be a lens).
+  assert.deepEqual([frame.fov.precision, frame.lens.precision, frame.roll.precision], [1, 2, 1]);
   assert.equal(frame.fov.keyState, "now");
   assert.equal(frame.roll.keyState, "none");
   assert.ok(!frame.fov.disabled && !frame.lens.disabled && !frame.roll.disabled);

@@ -166,6 +166,41 @@ test("the Scale slider sets the value under the press; a sky image shows Rotatio
   expect(problems).toEqual([]);
 });
 
+test("a long name stays on one line, cut with an ellipsis, never touching the kind at the right", async ({ page }, testInfo) => {
+  // docs/design.md "大きさ", the card heading.
+  const problems = await open(page);
+  await scene(page, "select", { ids: ["sticker_2"] });
+  const card = page.locator('[data-card="sky"]');
+  await expect(card.locator(".pano-studio-card-sub")).toHaveText("Sky");
+  const look = await card.evaluate((el) => {
+    const title = el.querySelector(".pano-studio-card-title");
+    const name = el.querySelector(".pano-studio-card-name");
+    const sub = el.querySelector(".pano-studio-card-sub");
+    const rows = el.querySelector(".pano-studio-card-rows");
+    const n = name.getBoundingClientRect();
+    const k = sub.getBoundingClientRect();
+    const t = title.getBoundingClientRect();
+    return {
+      gap: k.left - n.right,
+      oneLine: name.getClientRects().length === 1 && n.height <= t.height,
+      cut: name.scrollWidth > name.clientWidth,
+      ellipsis: getComputedStyle(name).textOverflow,
+      tip: name.dataset.tip,
+      inside: n.top >= t.top && n.bottom <= t.bottom && k.top >= t.top && k.bottom <= t.bottom,
+      below: Math.round(rows.getBoundingClientRect().top - t.bottom),
+    };
+  });
+  expect(look.gap).toBeGreaterThanOrEqual(8);
+  expect(look.oneLine).toBe(true);
+  expect(look.cut).toBe(true);
+  expect(look.ellipsis).toBe("ellipsis");
+  expect(look.tip).toBe("Wake up (360° VR) - Original Short Animation - 10.02 - moon.png");
+  expect(look.inside).toBe(true);
+  expect(look.below).toBe(12);
+  await card.screenshot({ path: testInfo.outputPath("inspector-title.png") });
+  expect(problems).toEqual([]);
+});
+
 test("the Camera tab shows only the Camera card; Panorama grays Aspect, H FOV and Lens, Frame turns them on", async ({ page }, testInfo) => {
   const problems = await open(page);
   await scene(page, "tab", "camera");
@@ -190,7 +225,7 @@ test("the Camera tab shows only the Camera card; Panorama grays Aspect, H FOV an
   expect(first[0].bg).not.toBe("rgba(0, 0, 0, 0)");
   const heading = await page.locator('[data-card="camera"] .pano-studio-card-title').boundingBox();
   const tileBox = await tiles.first().boundingBox();
-  expect(Math.round(tileBox.y - (heading.y + heading.height))).toBe(8);
+  expect(Math.round(tileBox.y - (heading.y + heading.height))).toBe(12);
   await page.locator('.pano-studio-inspector [data-row="Mode"] [data-value="perspective"]').click();
   await expect.poll(async () => (await tileLook()).map((t) => t.on)).toEqual(["false", "true"]);
   await expect.poll(disabled).toEqual(["Range"]);

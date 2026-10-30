@@ -119,7 +119,7 @@ export function rulerSnapStep(value, dir, snap, { min = -Infinity, max = Infinit
 // FOV ruler is its H FOV row, Lens its Lens row, Roll the Roll of its Rotation row, so their values, ranges, the
 // Keyframe dots' states (docs/timeline-ui.md "インスペクタの Keyframe のポチ": `fov`, `curve`, `rotation`) and what is
 // grayed (Panorama mode, a locked Camera, a read-only editor) are the card's. Each ruler: { name, row, field, value,
-// min, max, precision, valueText, keyState, disabled, tip, scale (CAMERA_RULERS'), reset (the row its reset sends:
+// min, max, precision (the inspector box's), valueText, keyState, disabled, tip, scale (CAMERA_RULERS'), reset (the row its reset sends:
 // the inspector's H FOV and Lens rows; Roll's own "roll", which leaves Yaw and Pitch), atDefault (its reset is grayed) };
 // `lensStart` is the Lens row's (a κ edit keeps the image's center scale from where it began). Null without the
 // Camera card.
@@ -137,6 +137,8 @@ export function cameraRulers(card) {
       value: box.value,
       min: box.min,
       max: box.max,
+      // The digits of the inspector's box of the same row: the ruler holds no digit the box does not show.
+      precision: box.precision,
       keyState: source.keyState ?? "",
       disabled: !!source.disabled,
       tip: source.disabled ? source.tip : "",
@@ -152,8 +154,8 @@ export function cameraRulers(card) {
   roll.atDefault = roll.disabled || Math.abs(roll.value - CAMERA_ROLL_DEFAULT) < 1e-9;
   return {
     target: card.target,
-    fov: ruler("FOV", hfov, "hFOV_deg", { precision: 1, scale: CAMERA_RULERS.fov, valueText: `${rulerLabel(hfov.fields[0].value, 0)}°` }),
-    lens: ruler("Lens", lens, "curve", { precision: 3, scale: CAMERA_RULERS.lens, valueText: rulerLabel(lens.fields[0].value, 2), lensStart: lens.lensStart }),
+    fov: ruler("FOV", hfov, "hFOV_deg", { scale: CAMERA_RULERS.fov, valueText: `${rulerLabel(hfov.fields[0].value, 0)}°` }),
+    lens: ruler("Lens", lens, "curve", { scale: CAMERA_RULERS.lens, valueText: rulerLabel(lens.fields[0].value, 2), lensStart: lens.lensStart }),
     roll: { ...roll, valueText: `${rulerLabel(roll.value, 0)}°` },
   };
 }

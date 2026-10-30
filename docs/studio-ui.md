@@ -23,9 +23,9 @@ Python はこの文書の規則を持たない（列は `—`）。「（新し�
 `web_src/components/studio/`）に作る予定のもの、「（未作成）」は作る予定の test である。印の無いものは今ある。作ってあるが規則の
 一部がまだ動かないものは、その部分を「未実装」と書く。
 
-開発の間の入口：新しい UI は、ComfyUI の設定 `PanoramaSuite.Editor.NewUI`（既定はオフ）がオンのときだけ Panorama Studio を開く。
-オフなら今までどおり古い UI で開く（`web_src/editor_choice.js` `NEW_UI_SETTING`。組み立ては `web_src/main.js`、新しい UI のエディタは
-`web_src/studio/editor.js`）。切り替えの change でこの設定を消す（ADR 0044 の「置き換えの進め方」）。
+入口：新しい UI は、ComfyUI の設定 `PanoramaSuite.Editor.NewUI`（既定はオン。持ち主の決定、2026-10-30、マイナーアップデートで既定にする）がオンのとき Panorama Studio を開く。
+オフにすると古い UI で開く（ペイントとマスクは、新しい UI に入るまで古い UI でだけ使える）（`web_src/editor_choice.js` `NEW_UI_SETTING`。組み立ては `web_src/main.js`、新しい UI のエディタは
+`web_src/studio/editor.js`）。古い UI を消す change でこの設定を消す（ADR 0044 の「置き換えの進め方」。それまでは古い UI へ戻る道として残す）。
 
 | 規則 | Python | JS | test |
 |---|---|---|---|
@@ -39,6 +39,7 @@ Python はこの文書の規則を持たない（列は `—`）。「（新し�
 | Add のアイコンと、Add とドロップの流れ（選ぶファイル、画像の Sky / World の二択とその取り消し、置く間、失敗の知らせ）、ドラッグ中の印の見た目とラベル | — | 流れは `web_src/studio/add_files.js` `createAddFiles`（下の部品 `pano_sticker_file_import.js` のアップロード、`pano_file_3d.js` の経路）、ファイルを選ぶ画面は `web_src/components/studio/StudioEditor.vue`、二択は `web_src/components/studio/StudioPlaceChoice.vue`、ドラッグの事象は `web_src/studio/drop_input.js` `createDropInput`、印とラベルを描くのは `web_src/components/studio/StudioDropMarker.vue`（印の形と色、ラベルの置き場所 `dropLabelPlace`、着く所は `web_src/studio/landing.js`、`docs/space-and-view.md`）。読み込み中のガイドと現れる動きの時間は `web_src/studio/load_reveal.js` `createLoadReveal`（置いた 3D ファイルを知らせるのは `add_files.js`、中身の不透明度に掛けるのは `web_src/studio/editor.js`、光の帯を描くのは `stage_overlay.js`） | `tests/studio_add_files.test.mjs`、`tests/studio_landing.test.mjs`、`tests/studio_load_reveal.test.mjs`、`tests/browser/studio_add.spec.js` |
 | ノードの入力から来た物（`port` の Sticker、上流の Scene の層、上流の背景）をステージとタイムラインに出すこと | — | `port` の Sticker の絵と 3D の素材は `web_src/studio/port_media.js` `createPortMedia`（下の部品 `pano_port_picture.js` `createPortPicture`、`pano_space.js` `stickerContentRequest`）、上流の層は `web_src/studio/upstream.js` `createStudioUpstream`（下の部品 `pano_upstream_layers.js` `createUpstreamLayers`）、上流の背景は `web_src/studio/upstream.js` `upstreamBackground`、ステージに描く物にまとめるのは `web_src/studio/stage_content.js` `stageContent`、つなぐのは `web_src/studio/editor.js`。上流の物の編集は（未実装） | `tests/studio_port_media.test.mjs`、`tests/studio_upstream.test.mjs`、`tests/studio_stage_content.test.mjs`、`tests/browser/studio_inputs.spec.js` |
 | 読み込み中と空の画面、一行の知らせとその種類 | — | どれを出すかと種類は `web_src/studio/notice_line.js` `topLine`（シェルの `StudioEditor.vue` が呼ぶ）、画面は `web_src/components/studio/StudioNotice.vue`。開く前に three.js のチャンクと stylesheet を読んでおくのは `web_src/pano_editor_view.js` `preloadEditorView`・`web_src/studio/editor.js` `preloadStudioEditor`、いつ始めるかは `web_src/editor_choice.js` `createStudioPreloader`（組み立ては `web_src/main.js`）。Add とドロップの失敗と 3D ファイルの読み込み中は `web_src/studio/add_files.js` が `ui` に書く。上流の警告と、経路が答えた後に three.js が 3D ファイルを読めないときの知らせは、出す元がまだ無い（未実装） | `tests/studio_notice_line.test.mjs`、`tests/editor_choice.test.mjs`、`tests/browser/studio_editor.spec.js` |
+| Preview のウィンドウ（IMAGE・VIDEO・PANO_SCENE の source。視点の違い（`docs/space-and-view.md`）は未実装） | — | 開くのと閉じるのは `web_src/studio/preview_window.js` `openPreviewWindow`（Scene の層は `upstream.js` `createStudioUpstream` と `stage_content.js` `stageContent` で読み取り専用に描く。VIDEO と Scene の背景の再生は `pano_media_session.js` `createBackgroundVideo`、ループのスイッチの記憶は `timeline_actions.js` `readLoopSetting`・`writeLoopSetting`）、画面と下端の再生の帯は `web_src/components/studio/StudioPreviewWindow.vue`、どちらで開くかは `web_src/editor_choice.js` `previewUsesNewWindow`・`createEditorChooser` の `openPreview`、Scene は `web_src/pano_editor.js` `oldEditorHooks.takeSceneViewer`（組み立ては `web_src/main.js`） | `tests/editor_choice.test.mjs`、`tests/browser/preview_window.spec.js` |
 | タイムラインのバーの並びと、行の頭の並び | — | `web_src/components/studio/StudioTimelineBar.vue`・`StudioTimelineHead.vue`（組み立ては `StudioTimeline.vue`、データは `web_src/studio/timeline_model.js`） | `tests/browser/studio_timeline.spec.js` |
 | キーとクリップボードの事象をエディタの外へ出さない | — | `web_src/studio/key_guard.js` `guardEditorKeys`（組み込みは `web_src/studio/editor.js`） | `tests/studio_key_guard.test.mjs`、`tests/browser/studio_keys.spec.js` |
 | ショートカットの一覧（中身、エディタのキーの表、出し方と閉じ方） | — | キーの表と一覧の中身は `web_src/studio/shortcuts.js`（`EDITOR_KEYS`・`editorKeyAction`・`shortcutGroups`）、画面は `web_src/components/studio/StudioShortcuts.vue`、「?」のボタンは `StudioNavWidget.vue`、開く・閉じるの状態（`view.shortcuts`）と「?」のキーは `web_src/studio/editor.js`、置き場所は `StudioEditor.vue` | `tests/studio_shortcuts.test.mjs`、`tests/browser/studio_session.spec.js` |
@@ -378,6 +379,9 @@ Camera タブでは、Undo・Redo のほかは同じ席に出したまま無効�
   左右（上下）にドラッグして値を変える。目盛りはフレームの辺について動く。枠の外の上に描く文字と線は、明るい色にする（`docs/design.md`）。
   - Shift：FOV と Lens は動きを細かくする（`FINE_FACTOR`）。Roll は回転なので、ギズモの Rotate と同じく `ROTATE_SNAP_DEG` の倍数（絶対の
     角度）に止める。ドラッグでも矢印キーでも同じ（矢印キーは今の値からその向きの次の倍数へ）。
+  - 値の桁：ドラッグと矢印キーで決まる値は、インスペクタの同じ行の値の箱と同じ桁に丸める（FOV は 0.1°、Lens は 0.01）。箱に見えない
+    桁を持たせない。Lens が「1.00」と見えて 1 ちょうどでないと（0.998 など）、その Camera はレンズの Camera（κ ≠ 1）として扱われ、
+    Camera タブで物を選べず、パンとホイールが `T` を使う（`docs/space-and-view.md` の「Frame 表示」）ため。
   - 長さ：目盛りの線の帯は、ステージの大きさで伸び縮みしない決まった長さ（値は `docs/design.md` の「大きさ」）。帯の真ん中（真ん中の印）を、
     Roll はフレームの左右の中央に、FOV と Lens はフレームの上下の中央に合わせる。フレームの辺が決まった長さより短いときだけ、辺に収まる
     長さに縮める（縦の目盛りは、上下の頭のうち大きい方の分を上下とも辺から除いた長さ。帯の真ん中を辺の真ん中に保ったまま、上の頭が
