@@ -358,8 +358,10 @@ Scene を組み立てて撮るノード（ADR 0029）。Python のクラスは `
   - 長い辺の上限：`STUDIO_MAX_OUTPUT_SIDE` は 8192（全部のモード。今までの Frame だけの 4096 から上げた。ADR 0048）。16 MP で、インスペクタの欄から
     入る比（0.25〜4、`CAMERA_ASPECT_MIN`・`CAMERA_ASPECT_MAX`）の端の 4 : 1 まで（8192 × 2048）、選んだ `megapixels` が縮められずにそのまま出る。
     状態の `camera.aspect` は 1/2048〜2048 まで持てる（v1 の Cutout の読み替えなど、欄の外から入る比。`docs/scene-state-v2.md`）ので、4 : 1 より
-    細い比では上限を超えうる。そのときは比を保って長い辺をその値に縮め（Panorama モードは高さから決め直し、Frame モードは
-    `multiple` に寄せ直す）、警告する（ログと `pano_sticker_warnings`）。大きな出力のメモリと時間は `docs/runtime-resources.md` と
+    細い比では上限を超えうる。そのときは比を保って長い辺を 8192 以下に縮め、警告する（ログと `pano_sticker_warnings`）。
+    Frame モードは長い辺を 8192 以下で最大の `multiple` の倍数にし、短い辺は同じ比で `multiple` に寄せ直す（最小 `multiple`）。Panorama
+    モードは高さから決め直す：幅（高さ × 比）が 8192 を超えない最大の `multiple` の倍数を高さにする（16 MP までの 2 : 1・1 : 1 は
+    上限に届かない）。大きな出力のメモリと時間は `docs/runtime-resources.md` と
     `docs/render-contract.md`（大きな ERP にストロークを描く重さ）。
   - エディタのCamera のカードには出力の大きさを出さない（大きさはノードの上の値。`docs/studio-ui.md`）。ノードの上には、ノード上の表示の上端の一行で出る大きさを出す（`docs/studio-node-surface.md`）。
 - `scene` 出力は `PanoSceneValue`（上記「`PANO_SCENE`」）で、自分の層（最後の層）の `state` の `camera` を `null` にする（撮影する世界で、Camera を含まない。`_scene_output`。この `null` は `PanoSceneValue` の中の値で、`state_json` の読み込み（欠け・`null` を既定の Camera にする）を通らない。下流は上流の層の Camera を使わない）。自分の層の `state` の `upstream`（上流の層への上書き）も空にする。下流は上書きを当てた後の姿を受け取るためである（ADR 0030。当て方は下記「上流の Scene」の「上書き」）。`id` は保ち、下流はこの `id` ごとに上書きを記録する。上流の Scene を受けたときは、上流の層も含む。Timeline（`fps`・`times`・`frames`）は Camera の Keyframe を数えて決めたもの。
@@ -418,6 +420,10 @@ Scene を組み立てて撮るノード（ADR 0029）。Python のクラスは `
 
 - `sticker` を複数つなげる入力（ComfyUI の `Autogrow`、名前は `sticker0`・`sticker1`…）。`sticker` と `sticker_state` を組で増やす必要があり、
   今は安定して作れないので作らない。作るときは、状態の Source に番号を足し、`PortMedia`・`pano_sticker_input_*`・エディタの同期を配列にする。
+- 次の候補：ノードが置く 3D の `port` の Sticker（`_world_port_sticker`）が `ground` を読むか。`docs/scene-state-v2.md` の `ground` の行と
+  ADR 0046 は「地面の上に置く」（`ground` を読む場所に `_world_port_sticker` を挙げる）が、この文書の上の「`port` の Sticker が状態に
+  なければ」と実装は、`ground` を読まずに原点から `-Z` の正面に収める。どちらに合わせるかを決めるまで、この文書の規則（正面に収める）
+  で動く。決めたら、もう一方の文書を直す。
 
 ### 上流の Scene
 

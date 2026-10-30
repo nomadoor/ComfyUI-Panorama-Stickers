@@ -20,23 +20,25 @@ Add とドロップの着く所、Preview のウィンドウの違い、ウィ�
 
 ## この文書が owner である規則
 
-Python はこの文書の規則を持たない（列は `—`）。「（新しい UI、未実装）」は、ADR 0044 の置き場所（`web_src/studio/`、
+Python はこの文書の規則を持たない（列は `—`）。「（未実装）」は、ADR 0044 の置き場所（`web_src/studio/`、
 `web_src/components/studio/`）に作る予定のモジュールで、「（未作成）」は作る予定の test である。印の無いものは今ある。
+新しい UI のステージ（`web_src/studio/stage.js`）は、今は Panorama 表示だけを動かす。Frame 表示、選んだ物、World の内容を
+ステージにつなぐのはまだで、その部分を各行に「未実装」と書く。
 
 | 規則 | Python | JS | test |
 |---|---|---|---|
-| 目の高さ `E` と量の一覧 | — | （新しい UI、未実装）`web_src/studio/view_scale.js` | （未作成）`tests/studio_view_scale.test.mjs` |
-| 視点が一つであること、開いたときの視点、Reset View、視点の記憶 | — | （新しい UI、未実装）`web_src/studio/view_camera.js`、下の部品 `web_src/pano_view_memory.js` `viewMemory`・`restoredView`、`web_src/pano_node_bridge.js` `editorSession` | （未作成）`tests/studio_view_camera.test.mjs`、`tests/pano_view_memory.test.mjs` |
-| 世界の境界と、止まったときの知らせ、黙って何もしない操作の知らせ | — | （新しい UI、未実装）`web_src/studio/view_scale.js`・`view_camera.js` | （未作成）`tests/studio_view_camera.test.mjs` |
-| 注視点 `T`（初めの `T`、付いて動くこと、距離の範囲、決め直す操作、回る中心） | — | （新しい UI、未実装）`web_src/studio/view_camera.js`、下の部品 `pano_space.js` `orbitView`・`viewAxes`・`frameView`・`fitDistance`・`frameSphere`、`pano_three_view.js` `pick` | （未作成）`tests/studio_view_camera.test.mjs`、（未作成）`tests/browser/` の場面 |
-| マウスとキーの割り当て、直接の操作となめらかに動く操作（Panorama 表示と Frame 表示） | — | （新しい UI、未実装）`web_src/studio/view_input.js`・`view_camera.js`、下の部品 `web_src/pano_view_keys.js` `keyMoveView`・`createMoveKeys`、`web_src/pano_wheel.js`、`web_src/pano_lens.js` `lensPickWindow` | （未作成）`tests/studio_view_input.test.mjs`、`tests/pano_view_keys.test.mjs`、（未作成）`tests/browser/` の場面 |
-| カーソル | — | （新しい UI、未実装）`web_src/studio/view_input.js` | （未作成）`tests/studio_view_input.test.mjs` |
-| 視点の操作の部品（球・手・矢印、操作中に光ること） | — | （新しい UI、未実装）`web_src/components/studio/StudioNavWidget.vue` | （未作成）`tests/browser/` の場面 |
-| 地面のグリッドと原点の印（何をどの高さに描き、どこで薄れるか） | — | （新しい UI、未実装）`web_src/studio/view_scale.js`、描く部品は `pano_three_view.js`（`docs/threejs-spark-integration.md`） | （未作成）`tests/browser/` の場面 |
-| World の物のガイドと、CPU のホバーの判定 | — | （新しい UI、未実装）`web_src/studio/world_guides.js`、下の部品 `pano_space.js` `projectPoint`・`boxCorners`・`segmentsHit` | （未作成）`tests/studio_world_guides.test.mjs` |
-| Add とドロップの着く所（Add の画像の二択の後の置き場所を含む）と、ドラッグ中の印の形 | — | （新しい UI、未実装）`web_src/studio/landing.js`、下の部品 `pano_three_view.js` `pick`（板を除く当たり）、`pano_space.js` `facingRotation` | （未作成）`tests/studio_landing.test.mjs`、（未作成）`tests/browser/` の場面 |
-| Preview のウィンドウの視点（エディタとの違い、引き継ぎ、減衰と慣性、グリッドの既定） | — | （新しい UI、未実装）`web_src/studio/preview_motion.js`、下の部品 `web_src/pano_interaction_controller.js` の慣性（ADR 0010） | （未作成）`tests/studio_preview_motion.test.mjs` |
-| ウィンドウがフォーカスを失ったとき | — | （新しい UI、未実装）`web_src/studio/view_input.js`、下の部品 `pano_view_keys.js` `createMoveKeys` | （未作成）`tests/studio_view_input.test.mjs`、`tests/pano_view_keys.test.mjs` |
+| 目の高さ `E` と量の一覧 | — | `web_src/studio/view_scale.js` | `tests/studio_view_scale.test.mjs` |
+| 視点が一つであること、開いたときの視点、Reset View、視点の記憶 | — | `web_src/studio/view_camera.js` `openingView`・`rememberView`・`recallView`、開くと閉じるは `web_src/studio/editor.js`、出力の視点は `web_src/studio/stage_view.js` `outputView`、下の部品 `web_src/pano_view_memory.js` `viewMemory`・`restoredView`、`web_src/pano_node_bridge.js` `editorSession` | `tests/studio_view_camera.test.mjs`、`tests/studio_stage_view.test.mjs`、`tests/pano_view_memory.test.mjs`、`tests/browser/studio_editor.spec.js` |
+| 世界の境界と、止まったときの知らせ、黙って何もしない操作の知らせ | — | `web_src/studio/view_scale.js` `worldBoundRadius`、`web_src/studio/view_camera.js` `clipToBound`・`createNotice`・`VIEW_NOTICES`、一行の知らせを出すのは `web_src/components/studio/StudioNotice.vue` | `tests/studio_view_scale.test.mjs`、`tests/studio_view_camera.test.mjs`、`tests/browser/studio_editor.spec.js` |
+| 注視点 `T`（初めの `T`、付いて動くこと、距離の範囲、決め直す操作、回る中心） | — | `web_src/studio/view_camera.js` `initialTarget`・`orbitCenter`・`createViewCamera`、ポインタの下の当たりは `web_src/studio/stage_view.js` `surfaceHit`（GPU の当たりと地面の近い方）、下の部品 `pano_space.js` `orbitView`・`viewAxes`・`frameView`・`frameSphere`、`pano_three_view.js` `pick`、`web_src/pano_ray_box.js`。選んだ物を回る中心にするのは（未実装） | `tests/studio_view_camera.test.mjs`、`tests/studio_stage_view.test.mjs`、`tests/browser/studio_editor.spec.js` |
+| マウスとキーの割り当て、直接の操作となめらかに動く操作（Panorama 表示と Frame 表示） | — | `web_src/studio/view_input.js` `navigationAction`・`createViewInput`・`createWheelSteps`、`web_src/studio/view_camera.js` `createViewCamera`、事象を受けるのは `web_src/studio/stage.js`、下の部品 `web_src/pano_view_keys.js` `keyMoveView`・`createMoveKeys`、`web_src/pano_wheel.js` `readWheelDirection`。Frame 表示をステージにつなぐこと、レンズの Camera の `pano_lens.js` `lensPickWindow` は（未実装）。動いている途中のホイールの一段を今見えている視点から求めることも（未実装。今の `createViewCamera` の `wheel` と `tests/studio_view_camera.test.mjs` は行き先から求める） | `tests/studio_view_input.test.mjs`、`tests/studio_view_camera.test.mjs`、`tests/pano_view_keys.test.mjs`、`tests/browser/studio_editor.spec.js` |
+| カーソル | — | `web_src/studio/view_input.js` `stageCursor`・`LOOK_CURSOR`・`ORBIT_CURSOR`・`KNOB_CURSOR` | `tests/studio_view_input.test.mjs` |
+| 視点の操作の部品（球・手・矢印、操作中に光ること） | — | `web_src/components/studio/StudioNavWidget.vue`、光る規則は `web_src/studio/view_input.js` `knobAction`・`litKnobs` | `tests/studio_view_input.test.mjs`、`tests/browser/studio_editor.spec.js` |
+| 地面のグリッドと原点の印（何をどの高さに描き、どこで薄れるか） | — | `web_src/studio/grid.js` `groundGrid`（量は `view_scale.js`）、描く部品は `web_src/pano_ground_grid.js`（`docs/threejs-spark-integration.md`）、スイッチは `web_src/components/studio/StudioViewButtons.vue` | `tests/studio_stage_view.test.mjs`、`tests/browser/studio_editor.spec.js` |
+| World の物のガイドと、CPU のホバーの判定 | — | （未実装）`web_src/studio/world_guides.js`、下の部品 `pano_space.js` `projectPoint`・`boxCorners`・`segmentsHit` | （未作成）`tests/studio_world_guides.test.mjs` |
+| Add とドロップの着く所（Add の画像の二択の後の置き場所を含む）と、ドラッグ中の印の形 | — | （未実装）`web_src/studio/landing.js`、下の部品 `pano_three_view.js` `pick`（板を除く当たり）、`pano_space.js` `facingRotation` | （未作成）`tests/studio_landing.test.mjs`、（未作成）`tests/browser/` の場面 |
+| Preview のウィンドウの視点（エディタとの違い、引き継ぎ、減衰と慣性、グリッドの既定） | — | （未実装）`web_src/studio/preview_motion.js`、下の部品 `web_src/pano_interaction_controller.js` の慣性（ADR 0010） | （未作成）`tests/studio_preview_motion.test.mjs` |
+| ウィンドウがフォーカスを失ったとき、Meta を離したときと右クリックのメニューが開いたときにキーを離すこと | — | `web_src/studio/view_input.js` `createViewInput().lostFocus`、事象を受けるのは `web_src/studio/stage.js`（`blur`・`visibilitychange`・Meta の `keyup`・エディタの中の `contextmenu`）、下の部品 `pano_view_keys.js` `createMoveKeys` | `tests/studio_view_input.test.mjs`、`tests/pano_view_keys.test.mjs`、`tests/browser/studio_editor.spec.js`（`blur`）。Meta と右クリックのメニューは（未作成） |
 
 ## 量の一覧
 
@@ -259,7 +261,8 @@ Camera そのものを動かす。
     `TARGET_MIN_DISTANCE` ÷ `d` 以上 `TARGET_MAX_DISTANCE` ÷ `d` 以下（`d` が範囲に収まる）。この中で `WHEEL_FACTOR` の一段に最も
     近い値にする。範囲の端にいて `k` が 1 になるときは動かず、上の「世界の境界」と同じ一行の知らせを出す。
   - 世界の境界で `P'` が止められたときは、`T` も同じ割合だけ動かす（知らせを出す）。
-  - 動いている途中の一段は、今の行き先から求める。
+  - 動いている途中の一段は、今見えている視点から求める（行き先からではない）。`G` は今見えている視点でポインタの下に拾うので、
+    縮尺の元の `P`・`T` も同じ視点にそろえる。そこから新しい行き先へ `WHEEL_EASE_SECONDS` で動く。
 - 動いている途中で直接の操作をすると、今見えている所で止め、そこから操作が始まる。別のなめらかな操作が来たら、今見えて
   いる所から新しい行き先へ動く。
 - 描画のループが動かし、独自のタイマーを持たない。エディタを閉じると止まる。
@@ -463,10 +466,22 @@ ADR 0047）。
 きれいな状態から始めるためである。
 
 - 修飾キーの状態（Alt を押していないものとする）。
-- 押しているキー（今の WASD / QE の規則と同じく、全部を離したものとする）。
+- 押しているキー（全部を離したものとする。下の「キーを離したものとするとき」）。
 - ホバーの状態（ガイドのホバー、ギズモのハンドルの強調、部品のつまみの強調）。
 - 進んでいるジェスチャー（ドラッグ、ジョイスティック）は、その時点で離したものとして終える。Frame 表示で Camera を動かして
   いたときは、そこまでを Undo の 1 段にする。
+
+### キーを離したものとするとき
+
+上の二つのほかに、次のときも押している WASD / QE を全部離したものとし、キーの移動はそこで終わる（keyup が届かず、キーが
+押されたままになるのを防ぐ）。
+
+- Meta を離したとき：macOS は Meta を押している間に離したキーの keyup を送らない。
+- エディタの中で右クリックのメニューが開いたとき：Chromium はメニューが開いている間 keyup を送らない。ステージ自身は
+  メニューを出さない（上の「マウスとキー」）が、欄の上などでは開く。
+
+押したままのキーのリピートが、フォーカスの移った入力欄などステージのものでない所に来たときは、そのキーを離したものとする
+（入力欄で打つ文字で視点が動かない）。
 
 ## まだ決めていないこと（spec ではない、次の候補）
 
