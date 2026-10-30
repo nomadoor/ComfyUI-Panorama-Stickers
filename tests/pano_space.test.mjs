@@ -507,6 +507,18 @@ test("a Camera's frustum spans its hFOV and aspect, with a mark on its up side",
   assert.ok(segments[9][0][1] > 3);
 });
 
+// A lens Camera's mark goes through its lens like its edge, so only the plain one is a flat triangle to measure.
+test("a Camera's up mark keeps its shape whatever the aspect", () => {
+  const shape = (aspect, curve) => {
+    const camera = { position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0, roll_deg: 0, hFOV_deg: 60, aspect, curve };
+    const segments = cameraFrustumSegments(camera, 1);
+    const [left, apex, right] = segments.slice(-3).map(([a]) => a);
+    return (apex[1] - left[1]) / (right[0] - left[0]);
+  };
+  const wide = shape(16 / 9);
+  for (const aspect of [1, 9 / 16, 3]) assert.ok(Math.abs(shape(aspect) - wide) < 1e-9, `aspect ${aspect}`);
+});
+
 test("a Camera's trajectory samples its position Lane over the Timeline", () => {
   const still = loadSceneState({ version: 2, camera: { position: { value: [1, 2, 3], keyframes: [] } } });
   assert.deepEqual(cameraTrajectory(still, 100), [[1, 2, 3]]);
