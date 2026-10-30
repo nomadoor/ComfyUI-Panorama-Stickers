@@ -1474,7 +1474,7 @@
   right: 0;
   box-sizing: border-box;
   display: flex;
-  padding: 8px 10px;
+  overflow: hidden;
   background: var(--studio-float);
   border-radius: var(--studio-r-box);
   transform-origin: top right;
