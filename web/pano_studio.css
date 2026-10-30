@@ -14,17 +14,125 @@
     U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 
+/* Tokens. Every element of the new UI sits inside `.pano-studio`, which holds the values below; nothing outside it
+   reads them. Light is the default and ComfyUI's `.dark-theme` (on <html>, set by the frontend from the palette)
+   switches to dark. The ComfyUI role colors are named only here; when ComfyUI renames them, change this block.
+   Fallbacks are the values of the design-drafts specimens, used where ComfyUI's role is missing. */
+.pano-studio {
+  /* Gray steps (Geist's roles): panel / fill / hover / pressed / line / strong line / strong fill / 2nd text / text. */
+  --studio-panel: var(--interface-panel-surface, #ffffff);
+  --studio-fill: var(--secondary-background, #f1f1f2);
+  --studio-fill-hover: var(--secondary-background-hover, #e9e9eb);
+  --studio-fill-active: #e0e0e3;
+  --studio-line: var(--interface-stroke, #e2e2e5);
+  --studio-line-strong: var(--border-default, #cfcfd4);
+  --studio-strong: #1b1b1d;
+  --studio-on-strong: #ffffff;
+  --studio-fg-2: var(--muted-foreground, #6b6b72);
+  --studio-fg: var(--base-foreground, #161618);
+  /* Meaning colors: one point each (docs/design.md "色"). Light holds darker values. */
+  --studio-coral: #d9573f;
+  --studio-ice: #5f8fa3;
+  --studio-lime: #7f9a3a;
+  --studio-yellow: #a8861f;
+  /* Floating parts over the stage: 85% opaque, never the 2nd gray on them. */
+  --studio-float-alpha: 85%;
+  --studio-float: color-mix(in srgb, var(--studio-panel) var(--studio-float-alpha), transparent);
+  /* Type. */
+  --studio-font: "Plus Jakarta Sans", system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, sans-serif;
+  --studio-text-xs: 11px;
+  --studio-text-sm: 12px;
+  --studio-text-md: 13px;
+  --studio-text-lg: 15px;
+  --studio-weight: 500;
+  --studio-weight-head: 600;
+  --studio-weight-strong: 700;
+  /* Shape: parts fully round, containers 12px, fields 6px. No shadows anywhere. */
+  --studio-r-part: 999px;
+  --studio-r-box: 12px;
+  --studio-r-field: 6px;
+  /* Sizes (docs/design.md "大きさ"). */
+  --studio-inspector-w: 320px;
+  --studio-row-gap: 8px;
+  --studio-field-h: 26px;
+  --studio-btn: 32px;
+  --studio-btn-sm: 22px;
+  --studio-knob: 34px;
+  --studio-icon: 16px;
+  --studio-icon-stroke: 1.75;
+
+  font-family: var(--studio-font);
+  font-size: var(--studio-text-sm);
+  font-weight: var(--studio-weight);
+  color: var(--studio-fg);
+  -webkit-font-smoothing: antialiased;
+}
+
+.dark-theme .pano-studio,
+.pano-studio.dark-theme {
+  --studio-panel: var(--interface-panel-surface, #1b1c1e);
+  --studio-fill: var(--secondary-background, #2c2c2e);
+  --studio-fill-hover: var(--secondary-background-hover, #343436);
+  --studio-fill-active: #3c3c3f;
+  --studio-line: var(--interface-stroke, #2a2b2d);
+  --studio-line-strong: var(--border-default, #48484c);
+  --studio-strong: #d6d6da;
+  --studio-on-strong: #111112;
+  --studio-fg-2: var(--muted-foreground, #8e8f93);
+  --studio-fg: var(--base-foreground, #dcdce0);
+  --studio-coral: #f37159;
+  --studio-ice: #aecedb;
+  --studio-lime: #d6e797;
+  --studio-yellow: #e8cf74;
+}
+
+.pano-studio *,
+.pano-studio *::before,
+.pano-studio *::after {
+  box-sizing: border-box;
+}
+
+.pano-studio button,
+.pano-studio input {
+  font: inherit;
+  color: inherit;
+}
+
+.pano-studio svg.icon {
+  width: var(--studio-icon);
+  height: var(--studio-icon);
+  flex: none;
+  stroke-width: var(--studio-icon-stroke);
+}
+
+.pano-studio :focus-visible {
+  outline: 2px solid var(--studio-fg);
+  outline-offset: 1px;
+}
+
+/* Text of different sizes on one line centers on the capital height (docs/design.md "文字"). Without text-box
+   (Firefox), line-height 1 in a box of fixed height centers it closely enough. */
+.pano-studio-cap {
+  line-height: 1;
+}
+
+@supports (text-box: trim-both cap alphabetic) {
+  .pano-studio-cap {
+    text-box: trim-both cap alphabetic;
+  }
+}
+
+.pano-studio-num {
+  font-variant-numeric: tabular-nums;
+}
+
 .pano-studio-editor {
   position: fixed;
   inset: 0;
   z-index: 99999;
   display: flex;
   flex-direction: column;
-  background: var(--base-background, #1b1c1e);
-  color: var(--base-foreground, #dcdce0);
-  font-family: "Plus Jakarta Sans", "Geist", system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, sans-serif;
-  font-size: 12px;
-  font-weight: 500;
+  background: var(--studio-panel);
 }
 
 .pano-studio-editor-head {
@@ -32,13 +140,14 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 8px 8px 8px 16px;
-  border-bottom: 1px solid var(--interface-stroke, #2a2b2d);
+  height: 44px;
+  padding: 0 6px 0 14px;
+  border-bottom: 1px solid var(--studio-line);
 }
 
 .pano-studio-editor-title {
-  font-size: 13px;
-  font-weight: 600;
+  font-size: var(--studio-text-md);
+  font-weight: var(--studio-weight-head);
 }
 
 .pano-studio-editor-body {
@@ -46,35 +155,479 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--muted-foreground, #8e8f93);
-  font-size: 13px;
+  color: var(--studio-fg-2);
+  font-size: var(--studio-text-md);
 }
 
+/* Containers (inspector, dialogs, the Output window, the timeline body). */
+.pano-studio-panel {
+  background: var(--studio-panel);
+  border: 1px solid var(--studio-line);
+  border-radius: var(--studio-r-box);
+}
+
+/* Icon button: a circle. `is-sm` is the row's reset size, `is-knob` the view knobs'. `is-active` is the chosen one
+   of a group (a tool), shown by the strong fill rather than a color. */
 .pano-studio-icon-btn {
+  position: relative;
   display: inline-flex;
+  flex: none;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: var(--studio-btn);
+  height: var(--studio-btn);
   padding: 0;
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--studio-r-part);
   background: transparent;
-  color: inherit;
+  color: var(--studio-fg-2);
   cursor: pointer;
 }
 
 .pano-studio-icon-btn:hover {
-  background: var(--secondary-background, #2c2c2e);
+  background: var(--studio-fill-hover);
+  color: var(--studio-fg);
 }
 
-.pano-studio-icon-btn:focus-visible {
-  outline: 2px solid currentColor;
-  outline-offset: 1px;
+.pano-studio-icon-btn:active {
+  background: var(--studio-fill-active);
 }
 
-.pano-studio-icon-btn svg {
+.pano-studio-icon-btn.is-active,
+.pano-studio-icon-btn.is-lit {
+  background: var(--studio-strong);
+  color: var(--studio-on-strong);
+}
+
+.pano-studio-icon-btn.is-sm {
+  width: var(--studio-btn-sm);
+  height: var(--studio-btn-sm);
+}
+
+.pano-studio-icon-btn.is-sm svg.icon {
+  width: 14px;
+  height: 14px;
+}
+
+.pano-studio-icon-btn.is-knob {
+  width: var(--studio-knob);
+  height: var(--studio-knob);
+  cursor: grab;
+}
+
+.pano-studio-icon-btn.is-knob svg.icon {
   width: 18px;
   height: 18px;
-  stroke-width: 2;
+}
+
+.pano-studio-icon-btn[aria-disabled="true"] {
+  opacity: 0.35;
+  background: transparent;
+  color: var(--studio-fg-2);
+  cursor: default;
+}
+
+/* Segmented control: equal widths, icon and text, the chosen one in the strong fill. Tabs are the same control. */
+.pano-studio-seg {
+  display: inline-grid;
+  grid-template-columns: repeat(var(--studio-seg-count, 2), minmax(0, 1fr));
+  padding: 2px;
+  border: 1px solid var(--studio-line);
+  border-radius: var(--studio-r-part);
+  background: var(--studio-fill);
+}
+
+.pano-studio-seg.is-fill {
+  display: grid;
+  width: 100%;
+}
+
+.pano-studio-seg-item {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  height: var(--studio-field-h);
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--studio-r-part);
+  background: transparent;
+  color: var(--studio-fg-2);
+  font-size: var(--studio-text-sm);
+  font-weight: var(--studio-weight-head);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.pano-studio-seg-item:hover {
+  color: var(--studio-fg);
+}
+
+.pano-studio-seg-item.is-active {
+  background: var(--studio-strong);
+  color: var(--studio-on-strong);
+}
+
+.pano-studio-seg-item[aria-disabled="true"],
+.pano-studio-seg.is-disabled .pano-studio-seg-item {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.pano-studio-seg-item[aria-disabled="true"]:hover {
+  color: var(--studio-fg-2);
+}
+
+.pano-studio-seg-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pano-studio-tabs .pano-studio-seg-item {
+  width: 84px;
+  padding: 0;
+}
+
+/* Floating parts over the stage: 85% opaque panel, 1px line, fully round, no blur and no shadow. The 2nd gray is
+   replaced by the text color inside, so nothing on a float uses it. */
+.pano-studio-float {
+  --studio-fg-2: var(--studio-fg);
+  background: var(--studio-float);
+  border: 1px solid var(--studio-line);
+  border-radius: var(--studio-r-part);
+  color: var(--studio-fg);
+}
+
+.pano-studio-float.pano-studio-seg {
+  background: var(--studio-float);
+}
+
+.pano-studio-float.is-rail {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+}
+
+.pano-studio-float.is-knobs {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 3px;
+}
+
+.pano-studio-float.is-bar {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px 4px 3px 12px;
+}
+
+.pano-studio-float.is-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+}
+
+.pano-studio-sep {
+  flex: none;
+  background: var(--studio-line);
+}
+
+.is-rail > .pano-studio-sep,
+.is-knobs > .pano-studio-sep {
+  height: 1px;
+  margin: 4px 6px;
+}
+
+.is-bar > .pano-studio-sep,
+.is-row > .pano-studio-sep {
+  width: 1px;
+  height: 18px;
+  margin: 0 4px;
+}
+
+.pano-studio-float-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 6px;
+  font-size: var(--studio-text-sm);
+  font-weight: var(--studio-weight-head);
+  white-space: nowrap;
+}
+
+/* Inspector card: a section with a heading and rows; sections are divided by a line. */
+.pano-studio-card {
+  padding: 12px 14px 12px;
+}
+
+.pano-studio-card + .pano-studio-card {
+  border-top: 1px solid var(--studio-line);
+}
+
+.pano-studio-card-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 24px;
+  margin-bottom: 6px;
+  font-size: var(--studio-text-md);
+  font-weight: var(--studio-weight-head);
+}
+
+.pano-studio-card-sub {
+  margin-left: auto;
+  color: var(--studio-fg-2);
+  font-size: var(--studio-text-sm);
+  font-weight: var(--studio-weight);
+}
+
+.pano-studio-card-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--studio-row-gap);
+}
+
+/* Inspector row grid: name 62 / 1 / 2 / 3 / key dot 16 / reset 22, 4px apart. Every row has the same columns, so
+   fields, dots and resets line up in columns. */
+.pano-studio-row {
+  display: grid;
+  grid-template-columns: 62px repeat(3, minmax(0, 1fr)) 16px 22px;
+  column-gap: 4px;
+  align-items: center;
+  min-height: var(--studio-field-h);
+}
+
+.pano-studio-row.is-disabled {
+  opacity: 0.4;
+}
+
+.pano-studio-row.is-disabled > * {
+  pointer-events: none;
+}
+
+.pano-studio-row-name {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  height: var(--studio-field-h);
+  color: var(--studio-fg-2);
+  font-size: var(--studio-text-sm);
+  white-space: nowrap;
+}
+
+.pano-studio-row-mark {
+  width: 4px;
+  height: 4px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--studio-fg);
+}
+
+.pano-studio-row-values {
+  grid-column: 2 / 5;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  column-gap: 4px;
+}
+
+.pano-studio-row-control {
+  grid-column: 2 / 4;
+  min-width: 0;
+}
+
+.pano-studio-row-value {
+  grid-column: 4;
+  min-width: 0;
+}
+
+.pano-studio-row-wide {
+  grid-column: 2 / 5;
+  min-width: 0;
+}
+
+.pano-studio-row-dot {
+  grid-column: 5;
+  display: flex;
+  justify-content: center;
+}
+
+.pano-studio-row-reset {
+  grid-column: 6;
+  display: flex;
+  justify-content: center;
+}
+
+/* Number field: no fill until hovered, the arrows cursor; dragged left and right, clicked to type. */
+.pano-studio-field {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  height: var(--studio-field-h);
+  padding: 0 4px;
+  border-radius: var(--studio-r-field);
+  background: transparent;
+  cursor: ew-resize;
+  touch-action: none;
+  user-select: none;
+}
+
+.pano-studio-field:hover,
+.pano-studio-field.is-dragging,
+.pano-studio-field.is-editing {
+  background: var(--studio-fill);
+}
+
+.pano-studio-field.is-dragging {
+  cursor: none;
+}
+
+.pano-studio-field[aria-disabled="true"] {
+  cursor: default;
+}
+
+.pano-studio-field[aria-disabled="true"]:hover {
+  background: transparent;
+}
+
+.pano-studio-field-axis {
+  flex: none;
+  color: var(--studio-fg-2);
+  font-size: var(--studio-text-xs);
+  font-weight: var(--studio-weight-head);
+}
+
+.pano-studio-field-value {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--studio-fg);
+  font-size: var(--studio-text-md);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.pano-studio-field-unit {
+  flex: none;
+  color: var(--studio-fg-2);
+  font-size: var(--studio-text-sm);
+}
+
+.pano-studio-field-input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--studio-fg);
+  font-size: var(--studio-text-md);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  cursor: text;
+  user-select: text;
+}
+
+/* Slider: a 2px line and a 12px round knob; the part left of the knob is filled. Ticks for the Aspect slider. */
+.pano-studio-slider {
+  position: relative;
+  height: 16px;
+  margin: 0 6px 0 2px;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.pano-studio-slider::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 7px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--studio-line-strong);
+}
+
+.pano-studio-slider-fill {
+  position: absolute;
+  left: 0;
+  top: 7px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--studio-fg);
+}
+
+.pano-studio-slider-knob {
+  position: absolute;
+  top: 2px;
+  width: 12px;
+  height: 12px;
+  margin-left: -6px;
+  border-radius: 50%;
+  background: var(--studio-fg);
+}
+
+.pano-studio-slider-tick {
+  position: absolute;
+  top: 3px;
+  width: 1px;
+  height: 10px;
+  margin-left: -0.5px;
+  background: var(--studio-line-strong);
+}
+
+.pano-studio-slider-tick.is-mid {
+  top: 2px;
+  height: 12px;
+  background: var(--studio-fg-2);
+}
+
+.pano-studio-slider[aria-disabled="true"] {
+  cursor: default;
+}
+
+/* Keyframe dot: a 6px diamond with a 1.25px line. None: strong-line gray; keyed: ice line; on the playhead: ice fill. */
+.pano-studio-keydot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: var(--studio-field-h);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.pano-studio-keydot::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border: 1.25px solid var(--studio-line-strong);
+  border-radius: 1px;
+  transform: rotate(45deg);
+}
+
+.pano-studio-keydot.is-has::before {
+  border-color: var(--studio-ice);
+}
+
+.pano-studio-keydot.is-now::before {
+  border-color: var(--studio-ice);
+  background: var(--studio-ice);
+}
+
+.pano-studio-keydot:not([aria-disabled="true"]):hover::before {
+  border-color: var(--studio-ice);
+}
+
+.pano-studio-keydot[aria-disabled="true"] {
+  opacity: 0.35;
+  cursor: default;
 }
