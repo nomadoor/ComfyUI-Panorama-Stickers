@@ -32,7 +32,7 @@ Python はこの文書の規則を持たない（列は `—`）。「（新し�
 | 画面の区画（ステージ、タブ、左の列、右の中央の列、右下、右上、上端の中央、インスペクタ、タイムラインの領域と境界） | — | `web_src/components/studio/StudioEditor.vue`、大きさの規則は `web_src/studio/layout.js`（タイムラインの高さ、Output の小窓の大きさとその記憶）、開くのは `web_src/studio/editor.js` | `tests/studio_stage_view.test.mjs`（`layout.js`）、`tests/browser/studio_editor.spec.js` |
 | 左の列の中身と並び、タブごとの無効 | — | `web_src/components/studio/StudioToolRail.vue`（今は Cursor と Undo・Redo だけが働き、ほかは席に置いて無効。Undo・Redo は `web_src/studio/session.js` の履歴）。タブごとの無効は（未実装） | `tests/browser/studio_editor.spec.js`、（未作成）タブごとの無効の test |
 | インスペクタの組み立て（タブと選択で何を出すか）、行の格子、欄、スライダー、リセット、Keyframe のポチの置き場所、Easing のパネル、種類ごとの中身 | — | データは `web_src/studio/inspector_model.js` `buildInspectorModel`、編集を状態に当てるのは `web_src/studio/inspector_actions.js` `applyInspectorEdit`、画面は `web_src/components/studio/StudioInspector.vue`・`StudioInspectorCard.vue`・`StudioInspectorRow.vue`・`StudioEasingPanel.vue`（欄とスライダーの部品は `StudioNumberField.vue`・`StudioSlider.vue`・`StudioAspectSlider.vue`・`StudioResetButton.vue`・`StudioKeyDot.vue`）。Sky の画像の FOV の行のリセット先は `inspector_model.js` `skyPlacedSize`。エディタの中でインスペクタとタイムラインが共有する選択は `web_src/studio/session.js` `inspectorSelection` | `tests/studio_inspector_model.test.mjs`、`tests/studio_inspector_actions.test.mjs`、`tests/browser/studio_inspector.spec.js`、`tests/browser/studio_ui.spec.js`、`tests/studio_session.test.mjs`、`tests/browser/studio_session.spec.js` |
-| 右の中央の列（視点の操作のつまみ）と右下のボタン群（Frame Selected、Reset View、グリッドのスイッチ）の並び | — | `web_src/components/studio/StudioNavWidget.vue`、`StudioViewButtons.vue`、オンとオフの部品は `StudioSwitch.vue`（つまみの働きは `docs/space-and-view.md`） | `tests/browser/studio_editor.spec.js` |
+| 右の中央の列（視点の操作のつまみ）と右下のボタン群（Frame Selected、Reset View、グリッドのボタン）の並び | — | `web_src/components/studio/StudioNavWidget.vue`、`StudioViewButtons.vue`（つまみの働きは `docs/space-and-view.md`） | `tests/browser/studio_editor.spec.js` |
 | 下の中央のバーの中身 | — | （新しい UI、未実装）`web_src/studio/selection_bar.js`、`web_src/components/studio/StudioSelectionBar.vue` | （未作成）`tests/studio_selection_bar.test.mjs` |
 | エディタの中の Camera の見せ方（Camera のボタン、Camera のカード、3D の見た目） | — | （新しい UI、未実装）`web_src/studio/camera_ui.js`、描く部品は `pano_three_view.js`（`docs/threejs-spark-integration.md`） | （未作成）`tests/studio_camera_ui.test.mjs`、`tests/browser/` の場面 |
 | Camera タブの画面（フレームの収め方、枠の外、辺の目盛り、無効にする部品） | — | （新しい UI、未実装）`web_src/studio/frame_layout.js`、`web_src/components/studio/StudioFrameRulers.vue` | （未作成）`tests/studio_frame_layout.test.mjs`、`tests/browser/` の場面 |
@@ -59,18 +59,28 @@ Python はこの文書の規則を持たない（列は `—`）。「（新し�
 
 一つの画面に全部を置き、選んだ物と今している操作に合わせて出す部品を変える（作業ごとの段は作らない）。ヘッダーは置かない。
 
+画面は旧エディタと同じモーダルで、全画面にはしない。数は `docs/design.md` の「新しい UI の見た目」の「形と重なり」が持ち、ここに写す：
+
+| 対象 | 値 |
+|---|---|
+| 枠の大きさ | 幅 `max(720px, 80vw)`・高さ `max(520px, 82vh)`、最大で幅 `96vw`・高さ `94vh`。画面の真ん中 |
+| 枠の後ろ | 黒の 70% で暗くする（旧エディタのスクリムと同じ） |
+| 枠 | 一枚の地で全体を包む。角丸 16px、内側の余白 8px |
+| 窓 | ステージの窓（左上）、インスペクタの窓（右、幅 320px、上から下まで）、タイムラインの窓（ステージの窓の下だけ）。間 8px、角丸 12px、縁の線なし（地の色の段だけで分ける） |
+| ステージの上に浮かせる部品 | ステージの窓の端から 16px。地は 85%、縁の線なし |
+
 | 区画 | 置くもの |
 |---|---|
-| ステージ | 3D の空間。左右上下の端まで使う。下の部品はステージの上に浮かせる |
+| ステージ | 3D の空間。ステージの窓の端まで使う。下の部品はステージの上に浮かせる |
 | ステージの左上 | タブ `3D` / `Camera`（アイコンと文字、二つは同じ幅の segmented control） |
 | ステージの左（上下の中央） | 左の列（下の「左の列」） |
 | ステージの右（上下の中央） | 視点の操作のつまみ（球・パン・前後）を縦に並べ、その下に「?」（ショートカットの一覧） |
-| ステージの右下 | ボタンとスイッチの群（3D タブ：Frame Selected・Reset View・グリッドのスイッチ。Camera タブ：同じ席に Frame Selected・Reset View（無効）・グリッドのスイッチ・構図の目安のスイッチ） |
+| ステージの右下 | ボタンの群（3D タブ：Frame Selected・Reset View・グリッドのボタン。Camera タブ：同じ席に Frame Selected・Reset View（無効）・グリッドのボタン・構図の目安のスイッチ）。グリッドのボタンは状態をアイコンの形で示す（`docs/agents/ux-principles.md` の例外） |
 | ステージの右上 | Output の小窓（下の「Output の小窓」）。どちらのタブでも出す |
 | ステージの上端の中央 | 一行の知らせ（左に珊瑚の丸）と、読み込み中の一行。Camera タブではタイムコードもここ。一度に一つだけ出し、知らせ＞読み込み中＞タイムコードの順で前のものが勝つ（タイムコードは知らせか読み込み中を出している間だけ隠れる） |
 | ステージの下の中央 | 下の中央のバー（下の「下の中央のバー」） |
-| 右の列 | インスペクタ（幅は `docs/design.md`）。上から下まで伸びる |
-| ステージの下 | タイムライン（中身は `docs/timeline-ui.md`、バーの並びは下の「タイムラインのバー」） |
+| 右の列 | インスペクタの窓（幅は `docs/design.md`）。上から下まで伸びる |
+| ステージの下 | タイムラインの窓（中身は `docs/timeline-ui.md`、バーの並びは下の「タイムラインのバー」）。ステージの窓の幅だけで、インスペクタの下には入らない |
 
 - 3D タブは空間を自由に見る表示、Camera タブは撮る Camera から出力をそのまま見る表示（下の「Camera タブ」）。Unwrap の表示は無い。
 - ステージの上に浮かせる部品は、置き場所が決まっていて、出たり消えたりしても他の部品を動かさない（`docs/agents/ux-principles.md`）。
@@ -259,7 +269,7 @@ Camera タブでは、Undo・Redo のほかは同じ席に出したまま無効�
   幅を持つ）。それぞれ名前・値・Keyframe のポチ（どの Lane に打つかは `docs/timeline-ui.md` の「インスペクタの Keyframe のポチ」）を付け、
   目盛りに数値を振る。真ん中の印は動かず、目盛りを左右（上下）にドラッグして値を変える。目盛りはフレームの辺について動く。枠の外の上に
   描く文字と線は、明るい色にする（`docs/design.md`）。
-- 地面のグリッドと原点の印を Camera タブでも描く規則は `docs/space-and-view.md` の「地面のグリッドと原点の印」。スイッチは右下に置く。
+- 地面のグリッドと原点の印を Camera タブでも描く規則は `docs/space-and-view.md` の「地面のグリッドと原点の印」。グリッドのボタンは右下に置く。
 - 構図の目安（三分割のグリッドと水平の目安。水平の目安は Roll に合わせて傾く）は、右下のスイッチで出す。出力には写さない。
 - 上端の中央に、タイムコード（時刻とフレーム）。
 - 無効にするもの（同じ席に出したまま灰色にし、tooltip で理由を示す）：左の列（Undo・Redo を除く）、Reset View。出さないもの：下の中央の
@@ -300,7 +310,7 @@ Camera タブでは、Undo・Redo のほかは同じ席に出したまま無効�
 |---|---|
 | 再生と一時停止（メディアの再生のボタン 1 つ。`docs/agents/ux-principles.md` の例外） | `docs/timeline-ui.md` の「タイムラインの表示」 |
 | 前の Keyframe へ、次の Keyframe へ | `docs/timeline-ui.md` の「前後の Keyframe へ飛ぶ」 |
-| ループのスイッチ（オンとオフが形で分かるスイッチ。既定はオン） | `docs/timeline-ui.md` の「タイムラインの長さ」 |
+| ループのボタン（一つのアイコンのボタンで、オンとオフをアイコンの形 `repeat` ／ `repeat-off` で示す。`docs/agents/ux-principles.md` の例外。既定はオン） | `docs/timeline-ui.md` の「タイムラインの長さ」 |
 | 時刻とフレーム（例 `00:03.12  78 / 240`） | `docs/timeline-ui.md` の「タイムラインの表示」 |
 | （ここから右寄せ）fps の欄、Length の欄とそのリセット、畳むボタン（状態はアイコンの形で示す） | `docs/timeline-ui.md` の「タイムラインの表示」 |
 
