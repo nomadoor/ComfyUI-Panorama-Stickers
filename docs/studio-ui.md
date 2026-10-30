@@ -538,7 +538,7 @@ Camera タブでは、Undo・Redo のほかは同じ席に出したまま無効�
   Editor。キーは小さな塗りの札（キーキャップ）で示し、修飾キーと `+` でつなぎ、同じことをする別の組み合わせは `/` で並べる（どの
   組み合わせにも同じ修飾キーが付くときは、修飾キーを一度だけ書く：Shift + Click / Drag）。Ctrl の札は macOS では `⌘` と書く。
 - 割り当ての持ち主は括弧の中の文書と code で、一覧はそれを表示するだけである。エディタのキー（Undo・Redo・Delete・Space・1/2/3・
-  「?」・Escape）は一つの表（`web_src/studio/shortcuts.js` `EDITOR_KEYS`）に置き、キーを受ける code（`editor.js`、Escape は
+  Keyframe のコピー・切り取り・貼り付け・「?」・Escape）は一つの表（`web_src/studio/shortcuts.js` `EDITOR_KEYS`）に置き、キーを受ける code（`editor.js`、Escape は
   `stage.js`）と一覧の両方がそれを読む。移動のキーは `pano_view_keys.js` の表、マウスのボタンは `view_input.js` `navigationAction`
   から一覧を作る。ポインタと修飾キーの組み合わせ（ダブルクリック、Shift の刻み、Shift＋クリック）は一覧の行で持ち、数（`ROTATE_SNAP_DEG`、`FINE_FACTOR`）は
   持ち主の定数を読む。
@@ -547,7 +547,7 @@ Camera タブでは、Undo・Redo のほかは同じ席に出したまま無効�
 |---|---|
 | View（`docs/space-and-view.md` の「マウスとキー」） | Look around：左ドラッグ・右ドラッグ。Orbit：Alt＋ドラッグ。Pan：中ボタンのドラッグ。Move forward / back：Alt＋中ボタンのドラッグ。Zoom to the pointer：ホイール。Move：W / S・A / D・Q / E。Move faster (hold)：Shift（移動のキーと一緒に押す）。Look at a point：ダブルクリック（3D タブだけ）。Camera タブの Frame モードでは群の頭に「These move the Camera.」の一行を添える。Camera タブの Panorama モードでは行を出さず、「Nothing moves the view in Panorama mode.」の一行だけを出す |
 | Objects（この文書の「下の中央のバー」、`docs/space-and-view.md`） | Select：クリック。Move / Rotate / Scale：1 / 2 / 3（3D タブで、読み取り専用でないとき）。Rotate in 15° steps：Shift＋ギズモの Rotate と Sky の画像の回転のハンドルのドラッグ（同じ条件。数は `ROTATE_SNAP_DEG`）。Delete：Delete・Backspace（Keyframe を選んでいればそれ、そうでなければ物。読み取り専用でないとき） |
-| Timeline（`docs/timeline-ui.md`） | Play / pause：Space。Add to selection：Shift＋クリック・Shift＋ドラッグ（Keyframe） |
+| Timeline（`docs/timeline-ui.md`） | Play / pause：Space。Add to selection：Shift＋クリック・Shift＋ドラッグ（Keyframe）。Copy keyframes：Ctrl＋C。Cut keyframes：Ctrl＋X。Paste at the playhead：Ctrl＋V（この三つは読み取り専用でないとき。`docs/timeline-ui.md` の「Keyframe のコピーと貼り付け」） |
 | Editor | Undo：Ctrl＋Z。Redo：Shift＋Ctrl＋Z（どちらも読み取り専用でないとき）。Fine steps (×0.1)：Shift＋値のドラッグ（欄と FOV・Lens の辺の目盛り。読み取り専用でないとき）。Roll in 15° steps：Shift＋Roll の目盛りのドラッグ（Camera タブで、読み取り専用でないとき）。Shortcuts：?。Step back / close：Escape（下の「閉じ方」） |
 
 ## 消すもの（新しい UI に作らないもの）
