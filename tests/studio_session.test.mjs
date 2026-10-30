@@ -30,12 +30,13 @@ test("the inspector's selection follows the Timeline's: the selected row's objec
     ids: ["sticker_1"],
     keyframes: { owner: "sticker_1", lane: "size", frames: [0, 4] },
   });
-  // Keyframes of more than one Lane of a row stand for all the row's Lanes at their frames.
-  assert.deepEqual(inspectorSelection({ row: null, keys: [{ row: "camera", lane: "fov", frame: 2 }, { row: "camera", lane: null, frame: 6 }] }).keyframes, {
+  // An open row's Keyframes keep their Lanes apart (docs/timeline-ui.md "行とポチ"); a closed row's pin is all its Lanes.
+  assert.deepEqual(inspectorSelection({ row: null, keys: [{ row: "camera", lane: "fov", frame: 2 }, { row: "camera", lane: "position", frame: 6 }] }).keyframes, {
     owner: "camera",
-    lane: null,
-    frames: [2, 6],
+    lane: "fov",
+    frames: [2],
   });
+  assert.deepEqual(inspectorSelection({ row: null, keys: [{ row: "camera", lane: null, frame: 6 }] }).keyframes, { owner: "camera", lane: null, frames: [6] });
   // The background and the painting have no Easing.
   assert.equal(inspectorSelection({ row: null, keys: [{ row: "background", lane: null, frame: 0 }] }).keyframes, null);
 });
@@ -85,6 +86,28 @@ test("the Easing panel's edit reaches every selected owner's Keyframes", () => {
   assert.equal(result.history, true);
   assert.deepEqual(session.state.camera.fov.keyframes[0].easing, [0, 0, 1, 1]);
   assert.deepEqual(session.state.stickers[0].size.keyframes[0].easing, [0, 0, 1, 1]);
+});
+
+test("the Easing panel's edit of an open row's Keyframes changes only their own Lanes", () => {
+  const lane = (frames, value) => ({ value, keyframes: frames.map((frame) => ({ frame, value })) });
+  const session = createStudioSession({ state: load({ stickers: [world("sticker_1", { position: lane([0, 20], [0, 0, 0]), rotation: lane([0, 30], { yaw_deg: 0, pitch_deg: 0, roll_deg: 0 }), scale: lane([0, 30], 1) })] }) });
+  session.select({ row: null, keys: [{ row: "sticker_1", lane: "position", frame: 0 }, { row: "sticker_1", lane: "rotation", frame: 0 }] });
+  session.applyInspector({ type: "easing", keyframes: inspectorSelection(session.selection).keyframes, easing: "hold", phase: "commit" }, { playhead: 0 });
+  const sticker = session.state.stickers[0];
+  assert.equal(sticker.position.keyframes[0].easing, "hold");
+  assert.equal(sticker.rotation.keyframes[0].easing, "hold");
+  assert.notEqual(sticker.scale.keyframes[0].easing, "hold");
+});
+
+test("Undo and Redo wait while a drag is under way: the screen and the session keep the same state", () => {
+  const session = createStudioSession({ state: load({ stickers: [world("sticker_1")] }) });
+  session.applyInspector(field("sticker_1", "position_x", 5), { playhead: 0 });
+  session.applyInspector(field("sticker_1", "position_x", 7, "input"), { playhead: 0 });
+  assert.equal(session.undo(), null);
+  assert.equal(session.state.stickers[0].position.value[0], 7);
+  session.applyInspector(field("sticker_1", "position_x", 7), { playhead: 0 });
+  assert.ok(session.undo());
+  assert.equal(session.state.stickers[0].position.value[0], 5);
 });
 
 test("Timeline edits: live shows without a step, commit is one step, cancel goes back; fps rebases as one step", () => {

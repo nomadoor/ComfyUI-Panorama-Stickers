@@ -21,30 +21,24 @@ const NO_KEY_ROWS = new Set([BACKGROUND_ROW, PAINTING_ROW]);
 
 export const CAMERA_UNDELETABLE = "The camera can't be deleted";
 
-// The selected Keyframes per owner: [{ owner, lane, frames }] in the order their owners were first selected, `lane`
-// null when they are of more than one Lane of the owner (or a closed row's pin), `frames` sorted. The background
-// and the painting have no Easing and are left out.
+// The selected Keyframes per owner and Lane: [{ owner, lane, frames }] in the order they were first selected, `lane`
+// null for a closed row's pin (all the row's Lanes at its frame), `frames` sorted. An open row's Keyframes keep their
+// Lanes apart, so an Easing edit changes only their own Lanes (docs/timeline-ui.md "行とポチ"). The background and the
+// painting have no Easing and are left out.
 export function keyframeGroups(selection) {
   const groups = new Map();
   for (const key of selection?.keys ?? []) {
     if (NO_KEY_ROWS.has(key.row)) continue;
-    let group = groups.get(key.row);
-    if (!group) {
-      group = { owner: key.row, lanes: new Set(), frames: new Set() };
-      groups.set(key.row, group);
-    }
-    group.lanes.add(key.lane ?? null);
-    group.frames.add(key.frame);
+    const lane = key.lane ?? null;
+    const id = `${key.row}\u0000${lane ?? ""}`;
+    if (!groups.has(id)) groups.set(id, { owner: key.row, lane, frames: new Set() });
+    groups.get(id).frames.add(key.frame);
   }
-  return [...groups.values()].map(({ owner, lanes, frames }) => ({
-    owner,
-    lane: lanes.size === 1 ? [...lanes][0] : null,
-    frames: [...frames].sort((a, b) => a - b),
-  }));
+  return [...groups.values()].map(({ owner, lane, frames }) => ({ owner, lane, frames: [...frames].sort((a, b) => a - b) }));
 }
 
 // The inspector's selection (inspector_model.js buildInspectorModel) for the Timeline's: the selected object, and the
-// Easing panel's Keyframes (the first owner's; the panel's edit reaches every owner, applyInspector).
+// Easing panel's Keyframes (the first group's; the panel's edit reaches every group, applyInspector).
 export function inspectorSelection(selection) {
   const row = selection?.row ?? null;
   return { ids: row ? [row] : [], keyframes: keyframeGroups(selection)[0] ?? null };
@@ -85,7 +79,7 @@ export function createStudioSession({ state: opening, readOnly = false }) {
     const groups = easing ? keyframeGroups(selection) : [];
     let outcome;
     if (easing && groups.length > 1) {
-      // The panel's edit reaches every selected owner's Keyframes (docs/timeline-ui.md "Easing").
+      // The panel's edit reaches every selected group's Keyframes (docs/timeline-ui.md "Easing").
       const outcomes = groups.map((keyframes) => applyInspectorEdit(draft, { ...edit, keyframes }, { ...context, readOnly }));
       outcome = outcomes.reduce((all, one) => ({ ...all, changed: all.changed || one.changed, history: all.history || one.history }), result(false));
     } else {
@@ -159,13 +153,10 @@ export function createStudioSession({ state: opening, readOnly = false }) {
   }
 
   // Undo (-1) or Redo (+1): { fps } ({ from, to } when the step changed the Timeline fps, else null), or null when
-  // there is no step that way. A gesture under way is given up first.
+  // there is no step that way, or while a drag is under way (its live change is neither a step nor given up: the drag
+  // ends with its own commit or cancel, which a step in between would undo or redo behind its back).
   function step(direction) {
-    if (readOnly) return null;
-    if (gestureBase) {
-      state = gestureBase;
-      gestureBase = null;
-    }
+    if (readOnly || gestureBase) return null;
     const snapshot = direction < 0 ? history.undo() : history.redo();
     if (!snapshot) return null;
     const from = state.timeline.fps;
