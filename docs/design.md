@@ -577,8 +577,9 @@ Panorama Studio のノード上の表示（構成と振る舞いは `docs/studio
 
 | 対象 | 値 |
 |---|---|
-| 絵 | 角丸 `STUDIO_PICTURE_RADIUS` 8px、縁の線なし。絵の外は透かす（ノードの地）。view の読み込み前と読み込めないときの絵の箱の地 `STUDIO_PICTURE_EMPTY` は `#070707`（ステージの何も無い所と同じ） |
-| 絵の下の一行 | 高さ `STUDIO_LINE_HEIGHT` 16px、絵との間 `STUDIO_LINE_GAP` 6px、絵と同じ幅。文字 11px。左の撮り方は二次の文字の色・太さ 500、アイコン 16px（線 1.75）と文字の間 4px。右の大きさは主の文字の色・太さ 600・`tabular-nums` |
+| surface の地 | `STUDIO_SURFACE_FILL` `#070707`（ステージの何も無い所と同じ。ライトでもダークでも同じ）、角丸 `STUDIO_PICTURE_RADIUS` 8px、縁の線なし。絵と一行の外を埋め、view の読み込み前と読み込めないときの絵の箱もこの地 |
+| 絵 | 角丸 `STUDIO_PICTURE_RADIUS` 8px、縁の線なし。surface の上下と左右の中央（一行と合わせて） |
+| 絵の下の一行 | 高さ `STUDIO_LINE_HEIGHT` 16px、絵との間 `STUDIO_LINE_GAP` 6px、絵と同じ幅。文字 11px。左の撮り方は二次の文字の色・太さ 500、アイコン 16px（線 1.75）と文字の間 4px。右の大きさは主の文字の色・太さ 600・`tabular-nums`。surface の暗い地の上なので、文字の色はテーマにかかわらずダークの値 |
 | Open Studio のボタン | 浮かせる部品（地は窓の地の 85%、縁の線なし、影なし、角丸 999px）。高さ 30px、左の余白 10px・右の余白 14px、アイコン 16px と文字の間 6px、文字 12px・600、主の文字の色。絵の下の辺から `STUDIO_BUTTON_INSET` 8px 上、左右の中央。hover は地を hover の灰の 85%、押したときは押したときの灰の 85% |
 
 値の置き場所：色と文字とボタンは `web/pano_studio.css` の `.pano-studio-node-*`、絵と一行の置き方の数値（`STUDIO_*`）は
