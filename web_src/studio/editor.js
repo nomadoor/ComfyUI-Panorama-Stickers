@@ -620,6 +620,14 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     edits: cameraEdits,
   };
 
+  // The left column's Camera button (docs/studio-ui.md "エディタの中の Camera"): the Camera to the 3D tab's view, as one
+  // Undo step (Panorama mode switching to Frame). The view does not move.
+  function cameraToView() {
+    if (view.tab !== "3d" || !stage) return;
+    stage.settle();
+    objectOutcome(session.cameraToView(stage.pose(), view.playhead));
+  }
+
   function setTab(tab) {
     if (tab !== "3d" && tab !== "camera") return;
     if (view.tab === tab) return;
@@ -783,6 +791,7 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     rail: (key) => {
       if (key === "undo") historyStep(-1);
       else if (key === "redo") historyStep(1);
+      else if (key === "camera") cameraToView();
     },
     // [add-drop] The files picked with Add, and the Sky / World choice (StudioPlaceChoice.vue).
     addFiles: (files) => addFiles.pick(files),
