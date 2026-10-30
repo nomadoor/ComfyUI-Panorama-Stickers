@@ -39,22 +39,29 @@ uniform vec4 minorColor;
 uniform vec4 majorColor;
 uniform vec4 axisXColor;
 uniform vec4 axisZColor;
+uniform float linePx;
 varying vec3 vWorld;
 
-// How much of a line every \`step\` units covers this pixel (about one pixel wide), faded out where the lines come
-// closer than a few pixels.
-float lines(vec2 at, float step) {
-  vec2 cell = at / step;
-  vec2 width = fwidth(cell);
-  vec2 off = abs(fract(cell - 0.5) - 0.5) / max(width, vec2(1e-6));
-  float cover = 1.0 - min(min(off.x, off.y), 1.0);
-  return cover * (1.0 - smoothstep(0.15, 0.4, max(width.x, width.y)));
+// How much of a line every \`step\` units covers this pixel: a line linePx render pixels wide whose edges are smoothed
+// over one pixel (fwidth gives the pixel's size in grid units, docs/design.md "新しい UI の見た目" "描画のくっきりさ"), faded out where
+// the lines come closer than a few pixels.
+float cover(float offPx) {
+  return 1.0 - smoothstep(linePx * 0.5 - 0.5, linePx * 0.5 + 0.5, offPx);
 }
 
-// The same for one line along an axis (\`across\`: the coordinate that is 0 on it).
+float lines(vec2 at, float step) {
+  vec2 cell = at / step;
+  vec2 width = max(fwidth(cell), vec2(1e-6));
+  vec2 off = abs(fract(cell - 0.5) - 0.5) / width;
+  float hit = max(cover(off.x), cover(off.y));
+  return hit * (1.0 - smoothstep(0.15, 0.4, max(width.x, width.y) * linePx));
+}
+
+// The same for one line along an axis (\`across\`: the coordinate that is 0 on it), 1.5 times as wide.
 float axis(float across) {
-  float width = fwidth(across);
-  return 1.0 - min(abs(across) / max(width * 1.5, 1e-6), 1.0);
+  float width = max(fwidth(across), 1e-6);
+  float halfPx = linePx * 0.75;
+  return 1.0 - smoothstep(halfPx - 0.5, halfPx + 0.5, abs(across) / width);
 }
 
 vec4 over(vec4 top, vec4 under) {
@@ -83,7 +90,8 @@ const vec4Of = (rgba) => new Vector4(rgba[0], rgba[1], rgba[2], rgba[3]);
 
 // The grid and the ring as one group. show(ground) places them for `ground` (web_src/studio/grid.js groundGrid():
 // { y, minorFade, majorFade, originRadius, colors: { minor, major, axisX, axisZ, origin } }, colors as sRGB
-// [r, g, b, a] in 0..1) and returns the group to put in the World.
+// [r, g, b, a] in 0..1, and linePx: the lines' width in render pixels, 1 when missing) and returns the group to put
+// in the World.
 export function createGroundGrid() {
   const uniforms = {
     viewPosition: { value: new Vector3() },
@@ -93,6 +101,7 @@ export function createGroundGrid() {
     majorColor: { value: new Vector4() },
     axisXColor: { value: new Vector4() },
     axisZColor: { value: new Vector4() },
+    linePx: { value: 1 },
   };
   const material = new ShaderMaterial({
     vertexShader: GRID_VERTEX,
@@ -139,6 +148,7 @@ export function createGroundGrid() {
       uniforms.majorColor.value.copy(vec4Of(ground.colors.major));
       uniforms.axisXColor.value.copy(vec4Of(ground.colors.axisX));
       uniforms.axisZColor.value.copy(vec4Of(ground.colors.axisZ));
+      uniforms.linePx.value = ground.linePx ?? 1;
       const [r, g, b, a] = ground.colors.origin;
       ringMaterial.color.setRGB(r, g, b, SRGBColorSpace);
       ringMaterial.opacity = a;

@@ -21,7 +21,7 @@ import {
   saveTimelineHeight,
   timelineHeight,
 } from "../web_src/studio/layout.js";
-import { STAGE_CLEAR_COLOR, groundDepth, outputView, stageCamera, stageRay, stageRenderInput, surfaceHit } from "../web_src/studio/stage_view.js";
+import { STAGE_CLEAR_COLOR, STAGE_RENDER_MAX_SIDE, STAGE_RENDER_SCALE, groundDepth, outputView, stageCamera, stageRay, stageRenderInput, stageRenderSize, surfaceHit } from "../web_src/studio/stage_view.js";
 import { ORIGIN_MARK_RADIUS, eyeHeight, eyeLengths } from "../web_src/studio/view_scale.js";
 
 const close = (actual, expected, eps = 1e-9) => assert.ok(Math.abs(actual - expected) <= eps, `${actual} != ${expected}`);
@@ -95,7 +95,7 @@ test("a stage render draws the background and the grid over the whole canvas, an
   assert.equal(input.background, background);
   assert.equal(input.clearColor, STAGE_CLEAR_COLOR);
   assert.deepEqual(input.layers, []);
-  assert.deepEqual(input.space.ground, groundGrid({ ground: -1.6 }));
+  assert.deepEqual(input.space.ground, { ...groundGrid({ ground: -1.6 }), linePx: STAGE_RENDER_SCALE });
   assert.equal(input.space.grid, null);
   assert.deepEqual([input.space.stickers, input.space.lines, input.space.sceneUrls], [[], [], []]);
   const hidden = stageRenderInput({ camera, canvasWidth: 2, canvasHeight: 2, background: null, ground: -1.6, gridHidden: true, clearColor: null });
@@ -135,4 +135,12 @@ test("the Output window keeps the output's ratio within its least and largest wi
   saveOutputWindow(storage, { width: 280, collapsed: true });
   assert.deepEqual(loadOutputWindow(storage), { width: 280, collapsed: true });
   assert.deepEqual(loadOutputWindow(null).collapsed, false);
+});
+
+test("the stage draws STAGE_RENDER_SCALE times the device pixels, its longer side at most STAGE_RENDER_MAX_SIDE", () => {
+  assert.deepEqual(stageRenderSize(800, 400, 1, 1920, 1080), { width: Math.round(800 * STAGE_RENDER_SCALE), height: Math.round(400 * STAGE_RENDER_SCALE) });
+  assert.deepEqual(stageRenderSize(800, 400, 2, 1920, 1080), { width: Math.round(1600 * STAGE_RENDER_SCALE), height: Math.round(800 * STAGE_RENDER_SCALE) });
+  const big = stageRenderSize(2000, 1000, 2, 2560, 1440);
+  assert.equal(big.width, STAGE_RENDER_MAX_SIDE);
+  assert.equal(big.height, STAGE_RENDER_MAX_SIDE / 2);
 });
