@@ -194,6 +194,16 @@ test("a locked object is selected but shows no gizmo and no handles, and its dra
   assert.equal(objects.overlay().gizmo, null);
 });
 
+test("a locked Camera is selected but shows no gizmo", () => {
+  const { session, objects } = setup({ stickers: [] });
+  session.selectObject("camera");
+  assert.ok(objects.overlay().gizmo, "unlocked: the gizmo shows");
+  session.toggleLock();
+  assert.equal(session.state.camera.locked, true);
+  assert.equal(objects.overlay().gizmo, null);
+  assert.equal(objects.overlay().camera.look, "selected", "still selected");
+});
+
 test("in the Camera tab a press only selects: no gizmo, no handles, no drag, and only the selected object's guide is drawn", () => {
   const { session, objects } = setup({ tab: "camera" });
   const before = session.state;

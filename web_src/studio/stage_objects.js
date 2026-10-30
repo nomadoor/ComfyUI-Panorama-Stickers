@@ -120,7 +120,7 @@ export function createStageObjects({
   // --- What shows.
 
   // The gizmo to show ({ mode, transform, center }, gizmo_overlay.js) or null: on the selected World object where it
-  // shows and can be edited, or on the selected Camera, in the 3D tab. A World object's gizmo sits on its guide's center
+  // shows and can be edited, or on the selected Camera, in the 3D tab; not on a locked one. A World object's gizmo sits on its guide's center
   // (docs/studio-ui.md "ギズモ" "物の中心"; a 3D file's origin can lie far outside its content), the Camera's on its
   // position.
   function gizmo() {
@@ -129,7 +129,7 @@ export function createStageObjects({
     const kind = selectedKind(state(), row);
     if (kind === "camera") {
       const value = cameraValue();
-      if (!value.visible) return null;
+      if (!value.visible || cameraOf(state()).locked === true) return null;
       return { mode: shownGizmoMode(kind, mode()), transform: sceneTransform({ ...value, scale: 1 }) };
     }
     if (kind !== "world-image" && kind !== "world-3d") return null;
