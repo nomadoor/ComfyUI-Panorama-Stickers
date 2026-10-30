@@ -1,37 +1,7 @@
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
-import { fileURLToPath } from "node:url";
-
-const SRC = fileURLToPath(new URL("../web_src/", import.meta.url));
-const STATIC_IMPORT = /^\s*(?:import|export)\s+(?:[^'";]*?\s+from\s+)?["']([^"']+)["']/gm;
-
-const walk = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
-  const file = path.join(dir, entry.name);
-  if (entry.isDirectory()) return walk(file);
-  return /\.(js|vue)$/.test(entry.name) ? [file] : [];
-});
-
-function scriptOf(file) {
-  const text = readFileSync(file, "utf8");
-  if (!file.endsWith(".vue")) return text;
-  return [...text.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/g)].map((match) => match[1]).join("\n");
-}
-
-// The static imports between the modules of web_src. import() is not an edge: it is the lazy chunk boundary.
-function importGraph() {
-  const files = walk(SRC);
-  const graph = new Map(files.map((file) => [file, []]));
-  for (const file of files) {
-    for (const [, from] of scriptOf(file).matchAll(STATIC_IMPORT)) {
-      if (!from.startsWith(".")) continue;
-      const target = [".js", ".vue", ""].map((ext) => path.resolve(path.dirname(file), from) + ext).find((f) => graph.has(f));
-      if (target && !graph.get(file).includes(target)) graph.get(file).push(target);
-    }
-  }
-  return graph;
-}
+import { SRC, importGraph } from "./web_src_imports.mjs";
 
 function findCycle(graph) {
   const state = new Map();
