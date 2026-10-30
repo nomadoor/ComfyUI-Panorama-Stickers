@@ -24,7 +24,7 @@ function onClick() {
     :aria-label="label"
     :aria-pressed="state === 'now' ? 'true' : 'false'"
     :aria-disabled="disabled ? 'true' : null"
-    :title="tip || label"
+    :data-tip="tip || label"
     :data-state="state"
     @click="onClick"
   />

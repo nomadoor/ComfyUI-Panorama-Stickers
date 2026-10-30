@@ -291,7 +291,7 @@ test("the Camera tab folds the Output window, faint and inert, stops its picture
   await expect(output).toHaveClass(/is-collapsed/);
   await expect(output).toHaveClass(/is-suspended/);
   await expect(fold).toHaveAttribute("aria-disabled", "true");
-  await expect(fold).toHaveAttribute("title", "Not available in the Camera view");
+  await expect(fold).toHaveAttribute("data-tip", "Not available in the Camera view");
   expect(await output.evaluate((el) => getComputedStyle(el).opacity)).toBe("0.4");
   // A press does nothing; a hover does not light it.
   await fold.hover();

@@ -67,7 +67,7 @@ function onKeydown(event) {
       :aria-selected="itemRole() === 'tab' ? String(option.value === value) : null"
       :aria-disabled="off(option) ? 'true' : null"
       :aria-label="option.label || null"
-      :title="option.tip || null"
+      :data-tip="option.tip || null"
       :tabindex="option.value === value ? 0 : -1"
       :data-value="option.value"
       @click="choose(option)"

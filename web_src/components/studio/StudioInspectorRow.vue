@@ -33,7 +33,7 @@ const emit = defineEmits(["key-toggle", "reset"]);
     role="group"
     :aria-label="name"
     :aria-disabled="disabled ? 'true' : null"
-    :title="tip || null"
+    :data-tip="tip || null"
     :data-row="name"
   >
     <span class="pano-studio-row-name">

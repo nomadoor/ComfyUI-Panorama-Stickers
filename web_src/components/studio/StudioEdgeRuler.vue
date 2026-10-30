@@ -152,7 +152,7 @@ onBeforeUnmount(() => {
   <div
     class="pano-studio-edge-ruler"
     :class="[vertical ? 'is-vertical' : 'is-horizontal', vertical ? `is-${side}` : '', { 'is-disabled': disabled }]"
-    :title="tip || null"
+    :data-tip="tip || null"
     :data-ruler="name"
   >
     <div

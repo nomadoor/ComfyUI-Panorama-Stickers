@@ -60,7 +60,7 @@ const fpsParse = (text) => {
       <span class="pano-studio-tl-frame">{{ bar.frameText }}</span>
     </span>
     <span class="pano-studio-tl-spacer" />
-    <span class="pano-studio-tl-field" :title="bar.fpsTip">
+    <span class="pano-studio-tl-field" :data-tip="bar.fpsTip">
       <span class="pano-studio-tl-field-name">fps</span>
       <StudioNumberField
         :value="bar.fps"
@@ -76,7 +76,7 @@ const fpsParse = (text) => {
         @change="(value) => emit('fps', value)"
       />
     </span>
-    <span class="pano-studio-tl-field" title="Output length in frames">
+    <span class="pano-studio-tl-field" data-tip="Output length in frames">
       <span class="pano-studio-tl-field-name">Length</span>
       <StudioNumberField
         :value="bar.length"

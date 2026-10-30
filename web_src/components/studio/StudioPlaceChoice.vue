@@ -31,7 +31,7 @@ onBeforeUnmount(() => window.removeEventListener("pointerdown", onWindowDown, tr
       type="button"
       class="pano-studio-place-btn"
       :data-place="option.side"
-      :title="option.tip"
+      :data-tip="option.tip"
       @click="emit('choose', option.side)"
     >
       <SvgIcon :icon="option.icon" />

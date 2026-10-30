@@ -23,6 +23,7 @@ import StudioSelectionBar from "./StudioSelectionBar.vue";
 import StudioTabs from "./StudioTabs.vue";
 import StudioTimeline from "./StudioTimeline.vue";
 import StudioToolRail from "./StudioToolRail.vue";
+import StudioTooltip from "./StudioTooltip.vue";
 import StudioViewButtons from "./StudioViewButtons.vue";
 
 // Panorama Studio's editor in the new UI: the regions of docs/studio-ui.md "画面の区画". No header. A modal frame over a
@@ -390,6 +391,7 @@ function setCollapsed(value) {
         @edit="(edit) => controller.inspectorEdit(edit)"
         @close="controller.close()"
       />
+      <StudioTooltip :root="root" />
     </div>
   </div>
 </template>

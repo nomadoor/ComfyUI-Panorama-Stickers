@@ -32,7 +32,7 @@ function onClick(event) {
     class="pano-studio-icon-btn"
     :class="{ 'is-sm': size === 'sm', 'is-knob': size === 'knob', 'is-active': active, 'is-lit': lit }"
     :aria-label="label"
-    :title="tip || label"
+    :data-tip="tip || label"
     :aria-disabled="disabled ? 'true' : null"
     @click="onClick"
   >
