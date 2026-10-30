@@ -310,6 +310,7 @@ test("dragging the gizmo's XZ square draws the X and Z guide lines through the g
   // Let go: the guide lines go.
   const p = at.lines[0];
   const off = { x: at.center.x + (p.b.x - p.a.x) / Math.hypot(p.b.x - p.a.x, p.b.y - p.a.y) * 200, y: at.center.y + (p.b.y - p.a.y) / Math.hypot(p.b.x - p.a.x, p.b.y - p.a.y) * 200 };
-  expect((await page.evaluate(({ x, y }) => window.__studio.overlayAt(x, y), off))[3]).toBeLessThan(40);
+  // (the overlay redraws on a later frame)
+  await expect.poll(async () => (await page.evaluate(({ x, y }) => window.__studio.overlayAt(x, y), off))[3]).toBeLessThan(40);
   expect(problems).toEqual([]);
 });
