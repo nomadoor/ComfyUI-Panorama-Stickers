@@ -283,13 +283,14 @@ Paint・Mask の道具を選んでいる間、下の中央のバーはペイン�
 
 | 道具 | 並び（／は群の区切り） |
 |---|---|
-| Paint | 名前の欄（筆のアイコンと `Paint`） ／ Pen・Soft Brush・Marker・Pastel・Eraser・Lasso ／ 太さのスライダーと数 ／ 色の点 5 つ（Green・Red・Blue・Black・White）と Custom color ／ Clear paint |
+| Paint | 名前の欄（筆のアイコンと `Paint`） ／ Pen・Soft Brush・Marker・Pastel・Eraser・Lasso ／ 太さのスライダーと数 ／ Clear paint。色の点 5 つ（Green・Red・Blue・Black・White）と Custom color は、バーの上に浮かせた一列（古い UI と同じ置き方） |
 | Mask | 名前の欄（Mask のアイコンと `Mask`） ／ Mask pen・Mask eraser・Mask lasso ／ 太さのスライダーと数 ／ Clear mask |
 
+- 名前の欄は Paint と Mask で同じ幅（`Paint` が収まる幅）にし、物の名前の決まった幅は使わない（ペイントの道具のバーは長く、右下のボタンの群と重ならないようにする）。
 - 道具の中身（古い UI のまま）：選ぶ筆は Paint と Mask で別に覚え、既定はどちらも Pen。太さは 1〜120 で、筆の種類ごとに覚え（Eraser
   と Mask の筆は Pen の太さを使う）、既定は 20。Lasso の間は太さのスライダーを無効にする。色の既定は Green。Eraser の間は色を無効に
   する。どれもエディタを開いている間だけ覚え、状態には書かない。
-- Custom color を押すと、バーの上にポップオーバーを出す：彩度と明度の面、色相の帯、Opacity（0〜100%）、最近の色 8 つ。ポップオーバーで
+- Custom color を押すと、色の一列の上にポップオーバーを出す：彩度と明度の面、色相の帯、Opacity（0〜100%）、最近の色 8 つ。ポップオーバーで
   変えた色がその場で筆の色になる。閉じたとき（Custom color をもう一度押す、色の点を押す、ポップオーバーの外を押す、Escape）に、開いた
   ときと違う色で、色の点のどれでもなければ、最近の色の先頭に足す（同じ色は前のものを除く）。Custom color の点は、筆の色が色の点の
   どれでもないとき選ばれた形になる。
