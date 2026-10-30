@@ -8,14 +8,15 @@
 //
 // state(): the working state v2. tools(): the paint tools (paint_bar.js). edit(apply): writes a change of the painting
 // as one Undo step (session.js editPainting) and returns its outcome. onStart(): a stroke began (playback stops).
-// onChange(): what the stage draws of the painting changed (draw again).
+// onChange(): what the stage draws of the painting changed (draw again). nodeLayer() gives the canvases the node's paint
+// layer is uploaded from when the editor closes (paint_upload.js).
 import { createPanoCanvas, releasePanoCanvas } from "../pano_diagnostics.js";
 import { createPaintEngineManager } from "../pano_paint_engine.js";
 import { drawRasterObjectErp, engineMask, skyPaintLayers } from "../pano_paint_layers.js";
 import {
   brushPresetIdForTool, brushStrokeSize, colorToCss, commitPaintStroke, ensurePaintGroup, erpPointOfDirection,
   freehandStrokeRecord, lassoFillStrokeRecord, nextPaintZIndex, paintTargetDescriptor, strokeGroupFrame, strokeSample,
-  takesStrokePoint, topDisplayZIndex,
+  syncPaintGroups, takesStrokePoint, topDisplayZIndex,
 } from "../pano_paint_strokes.js";
 import { brushOf, painting, toolBrush, toolLayer } from "./paint_bar.js";
 
@@ -260,10 +261,31 @@ export function createStudioPaint({ state, tools, edit, onStart = () => {}, onCh
     return true;
   }
 
+  // The canvases the node's paint layer is uploaded from (paint_upload.js): the committed painting of the state as the
+  // engine draws it, not a stroke under way. { groupIds (the stroke groups in their order), paintCanvas (the groups
+  // composed in that order), maskCanvas, groupCanvas(gid) }, as the old editor uploads them.
+  function nodeLayer() {
+    syncEngine();
+    ensureEngine();
+    const scene = state();
+    const groupIds = scene.painting
+      ? syncPaintGroups(structuredClone(scene.painting), skyOf(scene)).map((group) => String(group.actionGroupId || "")).filter(Boolean)
+      : [];
+    const target = engine.getErpTarget(groupIds);
+    const shown = engine;
+    return {
+      groupIds,
+      paintCanvas: target.displayPaint.canvas,
+      maskCanvas: target.committedMask.canvas,
+      groupCanvas: (gid) => shown.getGroupTarget(gid)?.committedPaint?.canvas ?? null,
+    };
+  }
+
   return {
     press,
     cancel,
     layers,
+    nodeLayer,
     get stroking() {
       return !!active;
     },
