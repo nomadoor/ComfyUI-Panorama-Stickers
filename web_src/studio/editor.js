@@ -18,6 +18,7 @@ import { cameraShot, normalizeCoverageValue, setCameraShot } from "../pano_edito
 import { preloadEditorView } from "../pano_editor_view.js";
 import { DRAW_REASON } from "../pano_frame_scheduler.js";
 import { stageOwnsKey } from "../pano_key_focus.js";
+import { guardEditorKeys } from "./key_guard.js";
 import { editorSession, noteStudioEditorOpen, peekNodeSurface } from "../pano_node_bridge.js";
 import {
   backgroundLengthMedia,
@@ -545,6 +546,7 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
 
   // --- Keys while the editor is open: Undo / Redo, Delete, Space. The stage takes the movement keys and Escape.
   let rootElement = null;
+  let releaseKeyGuard = () => {};
   function onKeyDown(event) {
     if (!rootElement || !stageOwnsKey(event, rootElement)) return;
     const mod = event.ctrlKey || event.metaKey;
@@ -584,6 +586,10 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
   const controller = markRaw({
     onStage: ({ canvas, overlay = null, root }) => {
       rootElement = root;
+      // No key or clipboard event of the editor reaches ComfyUI behind it (docs/studio-ui.md "キーとクリップボードを
+      // ComfyUI に渡さない").
+      releaseKeyGuard();
+      releaseKeyGuard = guardEditorKeys(root);
       const output = outputView(session.state, 0);
       const opening = openingView({ memory: nodeSession.view, output, world: { ...world, boxes: [], content: null }, frameAvailable: false });
       stage = createStage({
@@ -675,6 +681,7 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     addFiles.close();
     dropInput();
     window.removeEventListener("keydown", onKeyDown, true);
+    releaseKeyGuard();
     backgroundVideo.close();
     backgroundVideoElement.remove();
     releasePanoCanvas(backgroundStill);
