@@ -1,0 +1,72 @@
+// What the new UI's stage draws of the working state at the playhead (web_src/studio/stage_content.js): the sky
+// images, the world image planes, the 3D file Stickers' items through the lower builders, and the content's sphere.
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import { loadSceneState } from "../web_src/pano_scene_state.js";
+import { createStageMedia, stageContent, stickerFrameSphere } from "../web_src/studio/stage_content.js";
+
+const file = (filename) => ({ kind: "file", filename, subfolder: "", storage: "input" });
+const state = loadSceneState({
+  version: 2,
+  stickers: [
+    { id: "sky_1", placement: "sky", source: file("sky.png"), size: { value: { hFOV_deg: 30, vFOV_deg: 20 } } },
+    { id: "plane_1", placement: "world", source: file("plane.png"), position: { value: [0, 0, -4] }, scale: { value: 2 } },
+    { id: "box_1", placement: "world", source: file("thing.glb"), position: { value: [3, 0, -3] }, scale: { value: 1 } },
+  ],
+});
+const image = (width, height) => ({ complete: true, naturalWidth: width, naturalHeight: height, src: "x" });
+const media = (sticker) => (sticker.id === "box_1" ? null : { media: image(200, 100), revision: sticker.id });
+const editorFile = (sticker) => (sticker.id === "box_1" ? { kind: "mesh", unlit: true, url: "/thing.glb", generation: 0 } : null);
+const box = { min: [-0.5, -0.5, -0.5], max: [0.5, 0.5, 0.5] };
+
+test("the sky image is a sky layer, the world image a plane, the 3D file an item to load; the sphere bounds the World", () => {
+  const content = stageContent(state, 0, { media, editorFile, sceneBox: (url) => (url.startsWith("file3d:") ? box : null) });
+  assert.deepEqual(content.layers.map((layer) => layer.id), ["sky_1"]);
+  assert.deepEqual(content.space.stickers.map((plane) => [plane.id, plane.width, plane.height]), [["plane_1", 2, 1]]);
+  assert.equal(content.space.fileStickers.length, 1);
+  assert.equal(content.space.fileStickers[0].src, "/thing.glb");
+  assert.deepEqual(content.space.fileStickerKeys, ["file3d:0:box_1"]);
+  assert.equal(content.space.scene, null);
+  assert.ok(content.sphere.radius > 2, "the plane and the 3D item are inside");
+});
+
+test("before anything loads nothing is drawn and there is no World sphere", () => {
+  const content = stageContent(state, 0, { media: () => null });
+  assert.deepEqual(content.layers, []);
+  assert.deepEqual(content.space.stickers, []);
+  assert.deepEqual(content.space.fileStickers, []);
+  assert.equal(content.sphere, null);
+});
+
+test("Frame Selected of a world Sticker fits its own plane or item; a sky Sticker frames all the content", () => {
+  const options = { media, editorFile, sceneBox: (url) => (url.startsWith("file3d:") ? box : null) };
+  const content = stageContent(state, 0, options);
+  const plane = stickerFrameSphere(state, content, "plane_1", options);
+  assert.deepEqual(plane.center.map((v) => Math.round(v * 1e6) / 1e6), [0, 0, -4]);
+  const item = stickerFrameSphere(state, content, "box_1", options);
+  assert.deepEqual(item.center.map((v) => Math.round(v * 1e6) / 1e6), [3, 0, -3]);
+  assert.equal(stickerFrameSphere(state, content, "sky_1", options), content.sphere);
+});
+
+test("the media loads each Sticker's image once by its URL and knows its size once loaded", () => {
+  const made = [];
+  class FakeImage {
+    constructor() {
+      made.push(this);
+    }
+  }
+  let changes = 0;
+  const stageMedia = createStageMedia({ assetSource: (asset) => `/view?filename=${asset.filename}`, source: () => null, onChange: () => (changes += 1), ImageCtor: FakeImage });
+  assert.deepEqual(stageMedia.imageSizes(state), {});
+  assert.equal(stageMedia.media(state.stickers[0]), null);
+  // The 3D file has no image.
+  assert.equal(made.length, 2);
+  Object.assign(made[0], { complete: true, naturalWidth: 400, naturalHeight: 200 });
+  made[0].onload();
+  assert.equal(changes, 1);
+  assert.deepEqual(stageMedia.imageSizes(state), { sky_1: { width: 400, height: 200 } });
+  assert.equal(stageMedia.media(state.stickers[0]).media, made[0]);
+  assert.equal(made.length, 2);
+  stageMedia.dispose();
+});
