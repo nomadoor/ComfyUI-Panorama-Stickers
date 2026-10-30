@@ -7,7 +7,8 @@ import SvgIcon from "../shared/SvgIcon.vue";
 // The Output window at the top right of the stage (docs/studio-ui.md "Output の小窓"): the Camera's output, small,
 // with only a fold button (its icon shows the state) and a corner at the bottom left to drag for its size, which
 // follows the output's ratio and is kept per browser (studio/layout.js). What it shows comes in the `default` slot
-// (the live picture is a later part of the editor; until then it holds the word Output).
+// (the editor puts the canvases of the live picture there); `open` says, when it mounts and on each fold, whether it is
+// open, so the picture is drawn only then.
 //
 // Opening and folding animate the size and the opacity (docs/design.md "動き"): the window stays in the page, folded
 // too, at its open size, and shrinks to the folded pill by a transform anchored at its top right, so what it shows
@@ -17,6 +18,7 @@ const props = defineProps({
   ratio: { type: Number, default: 2 },
   storage: { type: Object, default: null },
 });
+const emit = defineEmits(["open"]);
 
 const kept = loadOutputWindow(props.storage);
 const width = ref(kept.width);
@@ -31,6 +33,7 @@ function measurePill() {
   if (pill.value?.offsetWidth) pillWidth.value = pill.value.offsetWidth;
 }
 onMounted(() => {
+  emit("open", !collapsed.value);
   measurePill();
   globalThis.document?.fonts?.ready?.then(measurePill);
 });
@@ -48,6 +51,7 @@ function keep() {
 function fold() {
   collapsed.value = !collapsed.value;
   keep();
+  emit("open", !collapsed.value);
 }
 
 // Dragging the bottom left corner: left and down make it larger (the window is anchored at the top right).

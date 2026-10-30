@@ -8,8 +8,9 @@ import { dragKind } from "./add_files.js";
 
 // element: the stage's window (the canvas and the parts floating over it); canvas: the stage's canvas, whose corner
 // is the origin of a point; root: the editor's root, whose drops are kept from ComfyUI (with its parent, the dimmed
-// page). add: add_files.js's. readOnly: the editor takes no file. Returns dispose().
-export function createDropInput({ element, canvas, root = null, add, readOnly = false }) {
+// page). add: add_files.js's. takes(): whether the stage takes a file now (not in a read-only editor, nor in the
+// Camera tab). Returns dispose().
+export function createDropInput({ element, canvas, root = null, add, takes = () => true }) {
   if (!element?.addEventListener) return () => {};
   let last = null;
 
@@ -19,8 +20,16 @@ export function createDropInput({ element, canvas, root = null, add, readOnly = 
   }
 
   function onOver(event) {
-    if (readOnly || !dragHasStudioFile(event.dataTransfer)) return;
+    if (!dragHasStudioFile(event.dataTransfer)) return;
     event.preventDefault();
+    if (!takes()) {
+      try {
+        event.dataTransfer.dropEffect = "none";
+      } catch { }
+      last = null;
+      add.dragLeave();
+      return;
+    }
     try {
       event.dataTransfer.dropEffect = "copy";
     } catch { }
@@ -43,7 +52,7 @@ export function createDropInput({ element, canvas, root = null, add, readOnly = 
     event.preventDefault();
     event.stopPropagation();
     last = null;
-    if (readOnly) {
+    if (!takes()) {
       add.dragLeave();
       return;
     }

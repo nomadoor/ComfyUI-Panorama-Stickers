@@ -38,3 +38,13 @@ test("every line's kind is one of the four", () => {
     assert.ok(NOTICE_KINDS.includes(topLine(ui(fields)).kind));
   }
 });
+
+test("the Camera tab's timecode hides only while a notice or a loading line shows, and wins over a warning and the hint", () => {
+  const ready = { notice: null, view: "ready", background: "ready", empty: false };
+  assert.deepEqual(topLine(ready, { timecode: "00:01.00 · 24 / 240" }), { kind: "timecode", text: "00:01.00 · 24 / 240" });
+  assert.equal(topLine({ ...ready, notice: "Nothing to frame" }, { timecode: "t" }).kind, "stopped");
+  assert.equal(topLine({ ...ready, background: "loading" }, { timecode: "t" }).kind, "loading");
+  assert.equal(topLine({ ...ready, background: "failed" }, { timecode: "t" }).kind, "timecode");
+  assert.equal(topLine({ ...ready, background: "none", empty: true }, { timecode: "t" }).kind, "timecode");
+  assert.equal(topLine({ ...ready, background: "none", empty: true }).kind, "info");
+});

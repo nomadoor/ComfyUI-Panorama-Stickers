@@ -1597,41 +1597,6 @@
 .pano-studio-at-edge-right { position: absolute; left: calc(100% + 14px); top: 0; bottom: 0; }
 .pano-studio-at-edge-bottom { position: absolute; top: calc(100% + 10px); left: 50%; transform: translateX(-50%); }
 
-/* Composition guides inside the frame: thirds and a level line turned by the Roll. */
-.pano-studio-frame-guides {
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-  pointer-events: none !important;
-}
-
-.pano-studio-frame-guides i {
-  position: absolute;
-  background: rgb(255 255 255 / 55%);
-}
-
-.pano-studio-frame-level {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 120px;
-  height: 0;
-}
-
-.pano-studio-frame-level::before,
-.pano-studio-frame-level::after {
-  content: "";
-  position: absolute;
-  top: -1px;
-  width: 44px;
-  height: 2px;
-  background: #ffffff;
-  outline: 1px solid rgb(0 0 0 / 25%);
-}
-
-.pano-studio-frame-level::before { left: 0; }
-.pano-studio-frame-level::after { right: 0; }
-
 /* Edge ruler: a head (name, value, Keyframe dot) and a 22px scale under a fixed middle mark. */
 .pano-studio-edge-ruler {
   display: flex;
@@ -1885,6 +1850,25 @@
 .pano-studio-mode-name {
   font-size: var(--studio-text-sm);
   font-weight: var(--studio-weight-head);
+}
+
+/* --- The Camera tab wired into the stage (docs/studio-ui.md "Camera タブ"): Panorama mode's live ERP fills the frame
+   box (studio/stage.js puts the ERP of the box's device pixels on it). */
+.pano-studio-camera-erp {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none !important;
+}
+
+/* The Output window's picture fills its body (docs/studio-ui.md "Output の小窓"; the window keeps the output's ratio). */
+.pano-studio-output-picture {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
 }
 
 /* --- Add and the drop (docs/studio-ui.md "Add とドロップの見せ方"; values: docs/design.md "大きさ" "ドロップの印",

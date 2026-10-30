@@ -61,6 +61,7 @@ import { createSparkViews } from "./pano_spark_views.js";
 import { createDepthGridPickMaterial } from "./pano_depth_grid.js";
 import { LENS_GLSL } from "./pano_lens_glsl.js";
 import { createGroundGrid } from "./pano_ground_grid.js";
+import { createLiveErp } from "./pano_live_erp.js";
 
 // The lights of the World pass (docs/render-contract.md "既定の照明", which owns the values; Python's
 // mesh_render.py has the same, both checked against tests/fixtures/default_lighting.json). No shadows.
@@ -889,7 +890,7 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     return new Mesh(planeGeometry, material);
   };
   let guides = null;
-  // The new UI's ground grid and origin mark (pano_ground_grid.js), made the first time a space asks for it.
+  // The new UI's ground grid (pano_ground_grid.js), made the first time a space asks for it.
   let groundGrid = null;
   // The default lights, always in the World (they change nothing that is not lit).
   const lights = createDefaultLights();
@@ -916,6 +917,12 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
   // Spark's module once it has loaded (when a SPLAT first shows), and per view that draws SPLATs a renderer
   // and SplatMeshes that see only that view's camera.
   let Spark = null;
+  // The live ERPs of Panorama mode (pano_live_erp.js), by owner: { erp, canvas, key } (renderLiveErp).
+  const liveErps = new Map();
+  // The camera a live ERP face draws the Sky with: at the center, turned as the face.
+  const liveErpSkyCamera = new PerspectiveCamera(90, 1, 0.1, 100000);
+  liveErpSkyCamera.matrixAutoUpdate = false;
+  liveErpSkyCamera.matrixWorldAutoUpdate = false;
   const sparkViews = createSparkViews({
     // The editor does not page or LoD its SPLATs, so Spark's LoD worker is not started.
     create: (onDirty) => new Spark.SparkRenderer({ renderer, onDirty, enableLod: false }),
@@ -931,6 +938,8 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     // A lens face's renderer draws for the view it is a face of, and its face is drawn again. The pinhole face is
     // drawn with its view's own renderer (drawLens), so that renderer's sort draws it again too.
     onDirty: (owner) => {
+      // A live ERP's radial sort ended: its faces draw again with the new order.
+      liveErps.get(owner)?.erp.invalidate("splats");
       if (!lensFaceBase.has(owner)) {
         const cache = lensCaches.get(owner);
         if (cache?.shared) cache.dirty.add(0);
@@ -1150,7 +1159,7 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     pickable = [];
     pickBoxes = [];
     if (space.grid) children.push(guideGroup(space.grid));
-    if (space.ground) children.push((groundGrid ||= createGroundGrid()).show(space.ground));
+    if (space.ground) children.push((groundGrid ||= createGroundGrid({ linearOutput })).show(space.ground));
     sceneItems.retain(space.sceneUrls ?? []);
     // Each content with its opacity, which the `scene` item's materials keep as they are (opaque).
     const contents = [];
@@ -1548,7 +1557,7 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
   // With `space`, the view stands at camera.position (a spaceCamera(), pano_space.js) and draws the World
   // over the Sky, which stays at infinity: space is { grid, sceneUrls, scene, stickerUrls, sticker, fileStickers, fileStickerKeys,
   // stickers, lines }. sceneUrls are the item URLs of the `scene` input; loaded items of other URLs are
-  // dropped. grid is a gridSpec() or null; ground is the new UI's ground grid and origin mark (web_src/studio/grid.js
+  // dropped. grid is a gridSpec() or null; ground is the new UI's ground grid (web_src/studio/grid.js
   // groundGrid(), drawn by pano_ground_grid.js) or null. scene is null or { kind ("splat" or "mesh"), url, urls (every item of the input), prefetch
   // (urls to load ahead), transform ({ position, quaternion, scale }), itemQuaternion (the item's turn into
   // the `scene` frame), unlit (its meshes draw without light; false: lit by the default lights) }. sticker is the
@@ -1565,6 +1574,85 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
   // left), or null when none of rect is on the canvas.
   function render(input) {
     return draw(panorama, input, input.space ?? null);
+  }
+
+  // The live ERP of Panorama mode (docs/threejs-spark-integration.md "Panorama モードの ERP の表示") for input.owner,
+  // put on input.canvas (a 2D canvas the caller shows): input is render()'s without camera and rect, with view
+  // ({ position, turn, coverage }: studio/erp_preview.js liveErpView), width and height (the ERP's pixels), near and
+  // far (the cube's planes). The faces are drawn as the space view draws a frame, in two passes: the Sky from the
+  // center turned as the face (fillSky), then the World from the Camera's position (buildWorld) with the owner's one
+  // Spark renderer, sorted once from the position. The faces are drawn again only when what they show changed (the
+  // Sky, the World's inputs and content revision, the clear color: the same plain value the lens faces compare) or a
+  // sort ended (onDirty above); a turn draws only the pass. Returns { faces, pass, counts, ms } (pano_live_erp.js's,
+  // and the call's time), or null without a canvas.
+  function renderLiveErp(input) {
+    const { owner, canvas: target } = input;
+    if (!target) return null;
+    let entry = liveErps.get(owner);
+    if (entry && entry.canvas !== target) {
+      entry.erp.dispose();
+      entry = null;
+    }
+    if (!entry) {
+      entry = { erp: createLiveErp({ renderer, canvas: target, near: input.near, far: input.far }), canvas: target, key: null };
+      liveErps.set(owner, entry);
+    }
+    const { erp } = entry;
+    const started = performance.now();
+    erp.setSize(input.width, input.height);
+    erp.setView({ ...input.view, near: input.near, far: input.far });
+    const space = input.space ?? null;
+    const owned = layerTextures.draw(owner);
+    let done = { faces: false, pass: false };
+    try {
+      fillSky(owned, panorama, input);
+      if (space) buildWorld(owned, space, owner);
+      const key = plainValue({ clearColor: input.clearColor ?? null, background: input.background ?? null, layers: input.layers, space, content: contentRevision });
+      if (!sameValue(key, entry.key)) {
+        entry.key = key;
+        erp.invalidate("content");
+      }
+      if (erp.needsDraw()) {
+        const spark = space && sparkViews.has(owner) ? sparkViews.renderer(owner) : null;
+        if (input.clearColor != null) renderer.setClearColor(new Color(input.clearColor), 1);
+        // The faces hold linear light (an sRGB target), as the lens faces do.
+        linearOutput.value = true;
+        try {
+          done = erp.draw({
+            scene: world,
+            spark,
+            aim: (camera) => sparkViews.aim(camera, owner),
+            drawFace: (camera) => {
+              // The face's own matrices without its position (a face camera's world matrix is not a plain turn, so
+              // it is copied whole rather than rebuilt from a quaternion).
+              liveErpSkyCamera.matrixWorld.copy(camera.matrixWorld).setPosition(0, 0, 0);
+              liveErpSkyCamera.matrixWorldInverse.copy(liveErpSkyCamera.matrixWorld).invert();
+              liveErpSkyCamera.projectionMatrix.copy(camera.projectionMatrix);
+              liveErpSkyCamera.projectionMatrixInverse.copy(camera.projectionMatrixInverse);
+              renderer.render(scene, liveErpSkyCamera);
+              if (!space) return;
+              if (spark) spark.encodeLinear = true;
+              renderer.clearDepth();
+              renderer.render(world, camera);
+              if (spark) spark.encodeLinear = false;
+            },
+          });
+        } finally {
+          linearOutput.value = false;
+          if (input.clearColor != null) renderer.setClearColor(0x000000, 0);
+        }
+      }
+    } finally {
+      owned.end();
+    }
+    settleUnpack();
+    // ms: what this call took on the CPU, the read-back's wait for the GPU included (the pixels are read synchronously).
+    return { faces: done.faces, pass: done.pass, counts: { ...erp.counts }, ms: performance.now() - started };
+  }
+
+  function releaseLiveErp(owner) {
+    liveErps.get(owner)?.erp.dispose();
+    liveErps.delete(owner);
   }
 
   // Sizes the canvas to width x height device pixels, within what the GPU draws to (fitRenderSize), for
@@ -1763,6 +1851,7 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
   // its marks on the layer textures, so those no other owner uses are disposed; it gets a new renderer and
   // its textures again when it draws again.
   function releaseSplats(owner) {
+    releaseLiveErp(owner);
     releaseLensFaces(owner);
     sparkViews.release(owner);
     layerTextures.release(owner);
@@ -1777,6 +1866,7 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
   // Frees the textures and the Spark renderer of an owner that stops drawing; the canvas shrinks on the next
   // render if this owner was the largest.
   function release(owner) {
+    releaseLiveErp(owner);
     releaseLensFaces(owner);
     layerTextures.release(owner);
     owners.delete(owner);
@@ -1833,6 +1923,8 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     pickTarget?.dispose();
     lensTargets.forEach((targets) => targets.forEach((target) => target.dispose()));
     lensQuad.material.dispose();
+    liveErps.forEach((entry) => entry.erp.dispose());
+    liveErps.clear();
     sparkViews.dispose();
     layerTextures.dispose();
     owners.clear();
@@ -1848,5 +1940,5 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     if (!lost) renderer.forceContextLoss();
   }
 
-  return { canvas, render, renderUnwrap, resize, clear, sceneBox, sceneItemError, pick, pickSurface, pickSticker, gizmoPointer, contentRevision: () => contentRevision, release, releaseSplats, stats, dispose };
+  return { canvas, render, renderLiveErp, renderUnwrap, resize, clear, sceneBox, sceneItemError, pick, pickSurface, pickSticker, gizmoPointer, contentRevision: () => contentRevision, release, releaseSplats, stats, dispose };
 }
