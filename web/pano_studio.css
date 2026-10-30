@@ -1508,7 +1508,12 @@
   transform: translateX(-50%);
   pointer-events: none;
 }
-.pano-studio-at-output { position: absolute; right: var(--studio-float-inset); top: var(--studio-float-inset); }
+/* The Output window's corner: its folded pill's center on the tabs' center line (docs/design.md "大きさ"). */
+.pano-studio-at-output {
+  position: absolute;
+  right: var(--studio-float-inset);
+  top: calc(var(--studio-float-inset) + (var(--studio-tab-item) + 2 * var(--studio-float-seg-pad) - var(--studio-btn)) / 2);
+}
 .pano-studio-at-nav { position: absolute; right: var(--studio-float-inset); top: 50%; transform: translateY(-50%); }
 .pano-studio-at-bar { position: absolute; left: 50%; bottom: var(--studio-float-inset); transform: translateX(-50%); }
 
