@@ -84,15 +84,16 @@ def test_the_camera_curve_lane_interpolates_clamps_and_limits_the_fov():
 
 
 @pytest.mark.parametrize("curve, hfov", [(1.0, 90.0), (0.5, 140.0), (0.0, 220.0)])
-def test_the_output_size_keeps_the_center_pixels_per_radian(curve, hfov):
+def test_the_output_size_does_not_follow_the_lens(curve, hfov):
+    # ADR 0048: the size comes from megapixels, multiple and the aspect; the FOV and the lens curve do not count.
     from comfyui_pano_suite import nodes
 
     state = {"version": 2, "camera": {"aspect": 1.5, "fov": {"value": hfov}, "curve": {"value": curve}}}
 
-    image = nodes.PanoramaStudioNode.execute(bg_color="#000000", coverage="360", output_size="1024", state_json=json.dumps(state)).result[0]
+    image = nodes.PanoramaStudioNode.execute(background_color="#000000", background_range="360", megapixels=96 * 64 / 2**20, multiple=32,
+                                             state_json=json.dumps(state)).result[1]
 
-    width = 2.0 * 1024 / (2.0 * math.pi) * lens_radius(math.radians(hfov) / 2.0, curve)
-    assert image.shape[2] == 2 * round(width / 2) and image.shape[1] == 2 * round(width / 1.5 / 2)
+    assert image.shape[1:3] == (64, 96)
 
 
 def test_a_world_stickers_lens_is_part_of_what_the_frame_is_drawn_from():

@@ -85,7 +85,7 @@ def test_an_input_mp4_that_seeks_fast_is_shown_from_the_input_directory(tmp_path
     monkeypatch.setattr(folder_paths, "get_input_directory", lambda: str(input_dir))
     video = _file(input_dir / "clips", "short.mp4", gop=10, audio_rate=8000)
 
-    ui = PanoramaPreviewSceneNode.execute(source=video, coverage="360").ui
+    ui = PanoramaPreviewSceneNode.execute(source=video, background_range="360").ui
 
     assert ui["pano_videos"] == [{"filename": "short.mp4", "subfolder": "clips", "type": "input", "storage": "input", "format": "video/mp4"}]
     assert ui["pano_video_meta"][0]["has_audio"] is True
@@ -99,7 +99,7 @@ def test_an_input_file_of_another_container_is_still_copied(tmp_path, monkeypatc
     monkeypatch.setattr(folder_paths, "get_input_directory", lambda: str(input_dir))
     video = _file(input_dir, "short.mov", gop=10, container_format="mp4")
 
-    entry = PanoramaPreviewSceneNode.execute(source=video, coverage="360").ui["pano_videos"][0]
+    entry = PanoramaPreviewSceneNode.execute(source=video, background_range="360").ui["pano_videos"][0]
 
     assert entry["type"] == "temp" and entry["filename"].endswith(".mp4")
 

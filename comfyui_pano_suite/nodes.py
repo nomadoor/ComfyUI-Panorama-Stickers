@@ -1250,9 +1250,6 @@ def _handoff_lanes(sticker_state: dict, fps: float) -> tuple[str, dict]:
 # 置く"): the editor's default horizontal 100 degrees on a 16:9 view, vertically. The node has no view of its own.
 PORT_3D_FIT_FOV_DEG = math.degrees(2.0 * math.atan(math.tan(math.radians(50.0)) * 9.0 / 16.0))
 
-# Without a Camera (or with a hidden one), Studio takes its ERP output from the World origin at rotation 0 (ADR 0029).
-ORIGIN_CAMERA = {"position": [0.0, 0.0, 0.0], "yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0}
-
 
 def _world_port_sticker(state: dict, media, sticker_id: str | None = None) -> dict:
     """The port Sticker for 3D media: `world`, with rotation 0 and scale 1 (the content keeps its own orientation
@@ -1560,14 +1557,16 @@ def _animation_end(animation, owner: dict, stored_fps: float) -> float | None:
 
 
 def _decide_timeline(state: dict, bg, port: PortMedia | None, scene: SceneContent | None = None, *,
-                     upstream: PanoSceneValue | None = None, overridden_ends=(), contents=None) -> tuple[Fraction, list[Fraction], Fraction, tuple]:
+                     upstream: PanoSceneValue | None = None, overridden_ends=(), contents=None,
+                     inherited_bg: bool = False) -> tuple[Fraction, list[Fraction], Fraction, tuple]:
     """(a) Timeline: the Timeline fps as a fraction, each output frame's time in seconds, the time base those times
     are rounded to (0: exact), and per output frame the bg_media frame to draw and, for each layer (those of
     `upstream`, then `state` with its `port` and `scene`), the Timeline frame to evaluate, its port media frame, and
     its `scene` item (`_layer_frames`). A `scene` batch, like an IMAGE batch on the port, ends its Clip range without a duration.
     The state's Camera, when it has one, shoots the frames and its Keyframes count for the length.
 
-    `bg` is the bg_media IMAGE batch, an opened VIDEO, or None. Without `upstream`, the output frames follow the PTS
+    `bg` is the bg_media IMAGE batch, an opened VIDEO, or None; `inherited_bg` says it is the upstream Scene's
+    (ADR 0048: the node's own background, when connected, takes its place). Without `upstream`, the output frames follow the PTS
     of the VIDEO that sets the Timeline fps: the background VIDEO, or else the sticker VIDEO. With `upstream` (a
     Scene on the `scene` input, ADR 0029), they follow the upstream Scene's: its fps and times, continued at its fps
     when this state is longer. The length is then the longer of the upstream's and this state's own, or the state's
@@ -1593,7 +1592,7 @@ def _decide_timeline(state: dict, bg, port: PortMedia | None, scene: SceneConten
         rate, given, time_base = upstream.rate, upstream.times, upstream.time_base
     fps = float(rate)
     # An upstream background does not set the length: the upstream Scene's length already counts it.
-    own_bg = bg if upstream is None or upstream.bg_media is None else None
+    own_bg = None if inherited_bg else bg
     video = isinstance(own_bg, OPENED_VIDEOS)
     batch = 0 if own_bg is None or video else int(own_bg.shape[0])
     bg_clip = state["background"]["clip"]
@@ -1995,51 +1994,54 @@ def _depth_grid_meta(geometry: dict, fps: float) -> dict:
     }
 
 
-def _build_scene(state_json: str, bg_media, scene, sticker, sticker_state, bg_color, coverage, warnings: list[str]):
+def _build_scene(state_json: str, background, world, scene, sticker, sticker_state, background_color, background_range, warnings: list[str]):
     """The Scene that Studio builds from its inputs, as the PANO_SCENE value: the state with the port Sticker
     appended when missing, its sources, the Timeline (counting the state's Camera), and the media `ui` for the
-    editors. Also returns the opened bg_media and the port Sticker the state stored before (None without one).
+    editors. Also returns the opened background and the port Sticker the state stored before (None without one).
     A source that cannot be read adds to `warnings`.
 
-    A Scene on the `scene` input (ADR 0029) puts its layers under this state's, with the state's overrides of
-    them (`upstream`, ADR 0030) applied (`_override_layers`), and sets the Timeline fps. The editor `ui` shows the
-    upstream layers as they came, without these overrides.
-    Its background, when it has one, is used in place of `bg_media`, `coverage`, and `bg_color`, with a warning
-    when `bg_media` is connected too."""
-    upstream = scene if isinstance(scene, PanoSceneValue) else None
-    scene = None if upstream is not None else _read_scene_file(scene, "scene")
+    `world` is the place's base 3D, drawn as this layer's `scene` content. A Scene on the `scene` input (ADR 0029,
+    only a PANO_SCENE: ADR 0048) puts its layers under this state's, with the state's overrides of them (`upstream`,
+    ADR 0030) applied (`_override_layers`), and sets the Timeline fps; its base 3D and `world` are drawn together.
+    The editor `ui` shows the upstream layers as they came, without these overrides.
+    The node's own `background`, when connected, is used with its `background_range` and `background_color`, in
+    place of the upstream Scene's (ADR 0048); else the upstream background, when it has one, with its range and
+    color, is passed on."""
+    if scene is not None and not isinstance(scene, PanoSceneValue):
+        raise TypeError("Panorama Studio: scene takes only the scene output (PANO_SCENE) of another Panorama Studio; "
+                        f"connect 3D to world instead, not {type(scene).__name__}.")
+    upstream = scene
+    world = _read_scene_file(world, "world")
     sticker = _read_scene_file(sticker, "sticker")
-    _check_da3_inputs(scene, sticker)
-    _check_moge_inputs(scene, sticker)
+    _check_da3_inputs(world, sticker)
+    _check_moge_inputs(world, sticker)
     state = load_scene_state(state_json)
     stored_port = next((item for item in state["stickers"] if item["source"]["kind"] == "port"), None)
     port, handoff = _port_media(state, sticker, sticker_state, warnings)
     sources = _resolve_sources(state, port, warnings)
-    upstream_bg = upstream is not None and upstream.bg_media is not None
-    if upstream_bg:
-        if bg_media is not None:
-            warnings.append("bg_media is not used: the scene input has a background of its own.")
+    inherited_bg = background is None and upstream is not None and upstream.bg_media is not None
+    if inherited_bg:
         bg_media, coverage, bg_rgb = upstream.bg_media, upstream.coverage, upstream.bg_color
     else:
-        coverage = normalize_coverage(coverage)
-        bg_rgb = tuple(_hex_color_to_rgb01(PanoramaStickersNode._normalize_hex_color(bg_color)).tolist())
-    bg = _open_media(bg_media, "bg_media")
+        bg_media, coverage = background, normalize_coverage(background_range)
+        bg_rgb = tuple(_hex_color_to_rgb01(PanoramaStickersNode._normalize_hex_color(background_color)).tolist())
+    bg = _open_media(bg_media, "background")
     # The upstream with this state's overrides applied (ADR 0030), which is drawn and passed on.
     applied, overridden_ends = upstream, []
     if upstream is not None:
         layers, overridden_ends = _override_layers(upstream, state["upstream"], warnings)
         applied = replace(upstream, layers=layers)
-    _animation_warnings(state, scene, port, sources.contents, warnings)
-    rate, times, time_base, frames = _decide_timeline(state, bg, port, _scene_content(scene), upstream=applied, overridden_ends=overridden_ends,
-                                                      contents=sources.contents)
+    _animation_warnings(state, world, port, sources.contents, warnings)
+    rate, times, time_base, frames = _decide_timeline(state, bg, port, _scene_content(world), upstream=applied, overridden_ends=overridden_ends,
+                                                      contents=sources.contents, inherited_bg=inherited_bg)
     fps = float(rate)
     # The `ui` shows the input media in the editor and on the node, under the legacy node's keys.
     layer_ui = {}
-    if scene is not None:
-        _merge_ui_payload(layer_ui, _scene_ui(scene, fps=fps))
+    if world is not None:
+        _merge_ui_payload(layer_ui, _scene_ui(world, fps=fps))
     if port is not None:
         _merge_ui_payload(layer_ui, _port_media_ui(port, fps, time_base))
-    if upstream_bg:
+    if inherited_bg:
         bg_ui = upstream.bg_ui
     else:
         bg_ui = {} if bg_media is None else _bg_media_ui(bg_media, bg, fps)
@@ -2053,22 +2055,25 @@ def _build_scene(state_json: str, bg_media, scene, sticker, sticker_state, bg_co
             # The editor rebases the state to this fps and does not let it be edited (ADR 0024).
             media_ui["pano_timeline_fps"] = [fps]
     else:
-        _merge_ui_payload(media_ui, _upstream_ui(upstream, bg_ui if upstream_bg else None))
-        if not upstream_bg:
+        _merge_ui_payload(media_ui, _upstream_ui(upstream, bg_ui if inherited_bg else None))
+        if not inherited_bg:
             _merge_ui_payload(media_ui, bg_ui)
         # The upstream Scene sets the Timeline fps; the editor shows its length too.
         media_ui["pano_timeline_fps"] = [fps]
         media_ui["pano_timeline_frames"] = [len(frames)]
-    layer = SceneLayer(state, sources, port, scene, layer_ui)
+    layer = SceneLayer(state, sources, port, world, layer_ui)
     layers = (layer,) if upstream is None else (*applied.layers, layer)
-    bg_clip = upstream.bg_clip if upstream_bg else None if bg_media is None else (state["background"]["clip"], state["timeline"]["fps"])
+    if inherited_bg:
+        bg_clip = upstream.bg_clip
+    else:
+        bg_clip = None if bg_media is None else (state["background"]["clip"], state["timeline"]["fps"])
     built = PanoSceneValue(layers, bg_media, coverage, bg_rgb, rate, tuple(times), time_base, frames, bg_ui, media_ui, bg_clip)
     return built, bg, stored_port
 
 
-def _animation_warnings(state: dict, scene, port: PortMedia | None, contents: dict, warnings: list[str]):
+def _animation_warnings(state: dict, world, port: PortMedia | None, contents: dict, warnings: list[str]):
     """Say which animated 3D files are asked for a clip they do not have; they play their first clip."""
-    owners = [("the scene input", state["scene"], scene)]
+    owners = [("the world input", state["scene"], world)]
     for item in state["stickers"]:
         media = port.media if item["source"]["kind"] == "port" and port is not None and port.is_3d else contents.get(item["id"])
         owners.append((f"Sticker {item['id']}", item, media))
@@ -2146,74 +2151,68 @@ def _camera_sticker_state(state: dict, width: int, height: int) -> str:
     return json.dumps(payload, ensure_ascii=True, separators=(",", ":"))
 
 
-STUDIO_OUTPUT_SIZES = ["1024", "1536", "2048", "2560", "3072", "4096", "auto"]
-STUDIO_DEFAULT_ERP_WIDTH = 2048
-STUDIO_MAX_OUTPUT_SIDE = 4096
+# The longest side of Panorama Studio's output (ADR 0048): 16 MP at 4 : 1 is 8192 x 2048.
+STUDIO_MAX_OUTPUT_SIDE = 8192
 
 
-def _even_side(value: float) -> int:
-    return max(2, 2 * math.floor(value / 2 + 0.5))
+def _to_multiple(value: float, multiple: int) -> int:
+    """`value` rounded to a multiple of `multiple` (Python's round, as ComfyUI's Resolution Selector), at least one."""
+    return max(multiple, round(value / multiple) * multiple)
 
 
-def _studio_camera(state: dict) -> dict | None:
-    """The Camera that shoots Panorama Studio's output: the state's, or None without one or when it is hidden. A hidden
-    Camera stays in the state and shoots as no Camera does."""
+def _studio_output_size(state: dict, megapixels: float, multiple: int, warnings: list[str]) -> tuple[int, int, tuple | None]:
+    """The Studio output's size (ADR 0048; docs/studio-node.md "出力の大きさ"): `megapixels` x 1024 x 1024 pixels in
+    sides that are multiples of `multiple`, by the state's Camera. A Panorama (`erp`) Camera keeps 2 : 1 (an
+    `erp_range` of 180: 1 : 1) exactly: the height is rounded first and the width is that times the ratio. A Frame
+    (`perspective`) Camera is `aspect` : 1 with each side rounded, as the Resolution Selector does. The FOV, the lens
+    curve and the Keyframes do not count. A longest side past STUDIO_MAX_OUTPUT_SIDE is brought to the largest
+    multiple under it, keeping the ratio, with a warning. web_src/pano_studio_status.js `studioOutputSize` gives the
+    same (tests/fixtures/studio_output_size.json). Returns the width, the height, and the size before that reduction
+    (None when it was not reduced)."""
     camera = state["camera"]
-    return camera if camera is not None and camera["visible"] else None
-
-
-def _studio_output_size(state: dict, frames, output_size: str, coverage: int, bg, warnings: list[str]) -> tuple[int, int, tuple | None]:
-    """The Studio output's size (ADR 0029). `output_size` picks the width of the whole (360) ERP; auto is the
-    bg_media width over 360 degrees (twice it for a 180 one), or 2048 with a warning without bg_media. Without a
-    Camera (`_studio_camera`), or with an `erp` one, the output is that ERP over `coverage`. A `perspective` Camera is
-    2 f g(hFOV / 2) wide with f = width / 2pi (the ERP's pixels per radian at the equator), at the output frame of
-    the Timeline's `frames` (of the last layer, `state`) where that is widest, g being the lens curve's
-    `lens_radius` (tan for a pinhole), and the width over its aspect high, both even; a longest side past
-    STUDIO_MAX_OUTPUT_SIDE is reduced to it, keeping the aspect, with a warning. Returns the width, the height, and the
-    size before that reduction (None when it was not reduced)."""
-    if output_size != "auto":
-        width = int(output_size)
-    elif bg is None:
-        warnings.append(f"output_size is auto, but bg_media is not connected; using {STUDIO_DEFAULT_ERP_WIDTH} instead.")
-        width = STUDIO_DEFAULT_ERP_WIDTH
+    total = megapixels * 1024 * 1024
+    if camera["projection"] == "erp":
+        ratio = 1 if camera["erp_range"] == 180 else 2
+        height = _to_multiple(math.sqrt(total / ratio), multiple)
+        size = (height * ratio, height)
+        if height * ratio <= STUDIO_MAX_OUTPUT_SIDE:
+            return *size, None
+        reduced_height = max(multiple, STUDIO_MAX_OUTPUT_SIDE // (ratio * multiple) * multiple)
+        reduced = (reduced_height * ratio, reduced_height)
     else:
-        width = (bg.first_frame if isinstance(bg, OPENED_VIDEOS) else bg).shape[-2] * 360 // coverage
-    camera = _studio_camera(state)
-    if camera is None or camera["projection"] == "erp":
-        return width * coverage // 360, width // 2, None
-    # Only the Camera is evaluated; the Stickers do not change its hFOV.
-    shot = {**state, "stickers": []}
-    # 2 f g_κ(hFOV / 2) at each output frame, the widest: the lens curve (ADR 0042) keeps f at the center.
-    lenses = []
-    for _bg_index, layers in frames:
-        # Each output frame is evaluated; a long Timeline stops at Cancel.
-        comfy.model_management.throw_exception_if_processing_interrupted()
-        lenses.append(evaluate_scene_state(shot, layers[-1][0])["camera"])
-    shot_width = max(width / math.pi * lens_radius(math.radians(lens["hFOV_deg"]) / 2, lens["curve"]) for lens in lenses)
-    shot_height = shot_width / camera["aspect"]
-    size = (_even_side(shot_width), _even_side(shot_height))
-    if max(size) <= STUDIO_MAX_OUTPUT_SIDE:
-        return *size, None
-    scale = STUDIO_MAX_OUTPUT_SIDE / max(shot_width, shot_height)
-    reduced = (_even_side(shot_width * scale), _even_side(shot_height * scale))
-    warnings.append(f"The Camera output would be {size[0]}x{size[1]}; it is reduced to {reduced[0]}x{reduced[1]} "
+        aspect = camera["aspect"]
+        scale = math.sqrt(total / aspect)
+        size = (_to_multiple(aspect * scale, multiple), _to_multiple(scale, multiple))
+        if max(size) <= STUDIO_MAX_OUTPUT_SIDE:
+            return *size, None
+        # The longest side at the cap (the largest multiple under it), the other at the same ratio.
+        longest = STUDIO_MAX_OUTPUT_SIDE // multiple * multiple
+        fit = STUDIO_MAX_OUTPUT_SIDE / max(aspect * scale, scale)
+        reduced = (longest, _to_multiple(scale * fit, multiple)) if aspect >= 1 else (_to_multiple(aspect * scale * fit, multiple), longest)
+    warnings.append(f"The output would be {size[0]}x{size[1]}; it is reduced to {reduced[0]}x{reduced[1]} "
                     f"(the longest side is at most {STUDIO_MAX_OUTPUT_SIDE}).")
     return *reduced, size
 
 
-def _studio_run_key(state_json: str, output_size: str, coverage: str, bg_color: str) -> str:
+def _key_number(value) -> str:
+    """A widget number as JS writes it (String(Number(value))): a whole float without ".0"."""
+    number = float(value)
+    return str(int(number)) if number.is_integer() else repr(number)
+
+
+def _studio_run_key(state_json: str, megapixels, multiple, background_range: str, background_color: str) -> str:
     """The key of the inputs a Studio run's size and output came from: FNV-1a (32 bit) over the code points of the
-    four values joined by NUL, as `studioRunKey` (web_src/pano_studio_status.js) makes it, so that the node surface
+    five values joined by NUL, as `studioRunKey` (web_src/pano_studio_status.js) makes it, so that the node surface
     shows the run's size and output only while they are unchanged."""
     value = 0x811C9DC5
-    for char in f"{state_json}\0{output_size}\0{coverage}\0{bg_color}":
+    for char in f"{state_json}\0{_key_number(megapixels)}\0{_key_number(multiple)}\0{background_range}\0{background_color}":
         value = ((value ^ ord(char)) * 0x01000193) & 0xFFFFFFFF
     return f"{value:08x}"
 
 
 class PanoramaStudioNode(io.ComfyNode):
-    """Builds the Scene and shoots it (ADR 0029): the ERP from the World origin at rotation 0 without a Camera (or with
-    a hidden one), else through the state's Camera, by its `projection`."""
+    """Builds the Scene and shoots it (ADR 0029) through the state's Camera, which is always there (ADR 0048): an ERP
+    from its position and rotation (Panorama, `erp`), or its image (Frame, `perspective`)."""
 
     @classmethod
     def define_schema(cls):
@@ -2221,22 +2220,26 @@ class PanoramaStudioNode(io.ComfyNode):
             node_id="PanoramaStudio",
             display_name="Panorama Studio",
             category="Panorama Suite",
+            # By role (ADR 0048): the Scene it carries on, then from the far background to the things placed.
             inputs=[
-                io.MultiType.Input(io.Image.Input("bg_media"), types=[io.Video], optional=True),
+                PanoScene.Input("scene", optional=True),
+                io.MultiType.Input(io.Image.Input("background"), types=[io.Video], optional=True),
+                io.MultiType.Input("world", types=[io.Splat, io.Mesh, *MESH_FILE_TYPES, *SPLAT_FILE_TYPES, MoGeGeometry, DA3Geometry], optional=True),
                 io.MultiType.Input(io.Image.Input("sticker"), types=[io.Video, io.Mesh, io.Splat, *MESH_FILE_TYPES, *SPLAT_FILE_TYPES, MoGeGeometry, DA3Geometry], optional=True),
                 io.String.Input("sticker_state", default="", multiline=False, dynamic_prompts=False, optional=True, force_input=True),
-                io.MultiType.Input("scene", types=[io.Splat, io.Mesh, *MESH_FILE_TYPES, *SPLAT_FILE_TYPES, MoGeGeometry, DA3Geometry, PanoScene], optional=True),
-                io.Color.Input("bg_color", default="#00ff00"),
-                io.Combo.Input("coverage", options=["360", "180"], default="360"),
-                io.Combo.Input("output_size", options=STUDIO_OUTPUT_SIZES, default="2048"),
+                io.Color.Input("background_color", default="#00ff00"),
+                io.Combo.Input("background_range", options=["360", "180"], default="360"),
+                io.Float.Input("megapixels", default=2.0, min=0.1, max=16.0, step=0.1),
+                io.Int.Input("multiple", default=8, min=8, max=128, step=4, advanced=True),
                 io.String.Input("state_json", default="", multiline=True, dynamic_prompts=False, advanced=True),
             ],
+            # Mirroring the inputs, with `scene` on top so that the links between Studios run straight.
             outputs=[
+                PanoScene.Output("scene"),
                 io.Image.Output("first_frame"),
                 io.Mask.Output("first_frame_mask"),
                 io.Video.Output("video"),
                 io.String.Output("sticker_state"),
-                PanoScene.Output("scene"),
             ],
             # An output node runs on every queue, so the editor receives the media in the `ui` even
             # when nothing downstream consumes the outputs.
@@ -2244,47 +2247,43 @@ class PanoramaStudioNode(io.ComfyNode):
         )
 
     @classmethod
-    def execute(cls, bg_color, coverage, output_size, state_json, bg_media=None, sticker=None, sticker_state="", scene=None):
+    def execute(cls, background_color="#00ff00", background_range="360", megapixels=2.0, multiple=8, state_json="",
+                scene=None, background=None, world=None, sticker=None, sticker_state=""):
         warnings = []
-        built, bg, stored_port = _build_scene(state_json, bg_media, scene, sticker, sticker_state, bg_color, coverage, warnings)
+        built, bg, stored_port = _build_scene(state_json, background, world, scene, sticker, sticker_state, background_color, background_range, warnings)
         state = built.layers[-1].state
-        width, height, reduced_from = _studio_output_size(state, built.frames, output_size, built.coverage, bg, warnings)
-        camera = _studio_camera(state)
-        if camera is None or camera["projection"] == "erp":
-            projection = Projection.erp(width, height, built.coverage)
+        camera = state["camera"]
+        width, height, reduced_from = _studio_output_size(state, megapixels, multiple, warnings)
+        # The Camera shoots whether it is shown or hidden (ADR 0048); `built.coverage` is the background's range.
+        if camera["projection"] == "erp":
+            projection = Projection.erp(width, height, camera["erp_range"], built.coverage)
 
             def capture(evaluated):
-                # Without a Camera, the ERP is taken from the World origin at rotation 0.
-                return ORIGIN_CAMERA if camera is None else evaluated["camera"], projection
+                return evaluated["camera"], projection
         else:
             def capture(evaluated):
                 return evaluated["camera"], Projection.perspective(width, height, evaluated["camera"]["hFOV_deg"], built.coverage, evaluated["camera"]["curve"])
 
         image, mask, video = _render_outputs(built, bg, capture, (width, height))
-        # Only a perspective Camera hands its pose to a Sticker (Pose handoff).
-        handoff = _camera_sticker_state(state, width, height) if camera is not None and camera["projection"] == "perspective" else ""
+        # Only a Frame Camera hands its pose to a Sticker (Pose handoff).
+        handoff = _camera_sticker_state(state, width, height) if camera["projection"] == "perspective" else ""
         ui_ret = {**built.media_ui, **_port_pose_ui(state, built.layers[-1].port, stored_port)}
-        # The node surface shows the size output_size auto gives from it (None: no bg_media); the editor's MP4 may be
-        # smaller than the VIDEO, and an upstream Scene's bg_media is not on this node.
-        ui_ret["pano_bg_width"] = [None if bg is None else int((bg.first_frame if isinstance(bg, OPENED_VIDEOS) else bg).shape[-2])]
         # The size the run gave, which media and an upstream Scene can make differ from what the surface works out.
         ui_ret["pano_output_size"] = [{"width": width, "height": height, "capped": reduced_from is not None,
                                        "reduced_from": None if reduced_from is None else list(reduced_from),
-                                       "key": _studio_run_key(state_json, output_size, coverage, bg_color)}]
+                                       "key": _studio_run_key(state_json, megapixels, multiple, background_range, background_color)}]
         # The node surface shows the run's output at full size: an ERP to look around in, else the first frame flat.
         output_entry = entry_from_path(save_output_png(image[0]), media_type="image/png")
-        if camera is None or camera["projection"] == "erp":
+        if camera["projection"] == "erp":
             # The rotation the ERP was shot with (frame 0), which the surface undoes to lay the ERP back in World.
-            rotation = None
-            if camera is not None:
-                shot = evaluate_scene_state(state, 0)["camera"]
-                rotation = {name: shot[name] for name in ("yaw_deg", "pitch_deg", "roll_deg")}
-            ui_ret["pano_output_erp"] = [{**output_entry, "coverage": built.coverage, "rotation": rotation}]
+            shot = evaluate_scene_state(state, 0)["camera"]
+            rotation = {name: shot[name] for name in ("yaw_deg", "pitch_deg", "roll_deg")}
+            ui_ret["pano_output_erp"] = [{**output_entry, "coverage": camera["erp_range"], "rotation": rotation}]
         else:
             ui_ret["pano_output_frame"] = [output_entry]
         _flush_warnings(ui_ret, "pano_sticker_warnings", warnings)
         # The `scene` output is the World that is shot, without the Camera (ADR 0029).
-        return io.NodeOutput(image, mask, video, handoff, _scene_output(built), ui=ui_ret)
+        return io.NodeOutput(_scene_output(built), image, mask, video, handoff, ui=ui_ret)
 
 
 CUTOUT_MAX_OUTPUT_SIDE = 4096
@@ -2683,7 +2682,7 @@ class PanoramaPreviewSceneNode(io.ComfyNode):
             category="Panorama Suite",
             inputs=[
                 io.MatchType.Input("source", template=template),
-                io.Combo.Input("coverage", options=["360", "180"], default="360"),
+                io.Combo.Input("background_range", options=["360", "180"], default="360"),
             ],
             outputs=[
                 io.MatchType.Output(template=template, id="output", display_name="output"),
@@ -2693,8 +2692,8 @@ class PanoramaPreviewSceneNode(io.ComfyNode):
         )
 
     @classmethod
-    def execute(cls, source, coverage="360", unique_id=None):
-        # `coverage` is read by the node's widget on the frontend. A PANO_SCENE carries its own.
+    def execute(cls, source, background_range="360", unique_id=None):
+        # `background_range` is read by the node's widget on the frontend (ADR 0048). A PANO_SCENE carries its own.
         if isinstance(source, PanoSceneValue):
             return io.NodeOutput(source, ui=_preview_scene_ui(source))
         # IMAGE and VIDEO give the legacy Preview's keys, which its node display reads.

@@ -19,7 +19,7 @@ from comfyui_pano_suite.core import gltf_animation
 from comfyui_pano_suite.core_adapters import load_gltf, read_accessor
 from comfyui_pano_suite.scene_mesh import mesh_animation, read_mesh_file
 from comfyui_pano_suite.sticker_media import content_box
-from scene_test_helpers import state_text
+from scene_test_helpers import output_size, state_text
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "gltf_anim"
 GLB = FIXTURES / "anim.glb"
@@ -136,8 +136,8 @@ def _sticker(**extra):
 
 def _run(item, length=10, **inputs):
     state = {"version": 2, "timeline": {"fps": 10, "length": length}, "camera": {"aspect": 1.0, "fov": {"value": 70.0}}, "stickers": [item]}
-    output = nodes.PanoramaStudioNode.execute(state_json=state_text(state), bg_color="#000000", coverage="360", output_size="256", **inputs)
-    return output, output.result[2].get_components().images
+    output = nodes.PanoramaStudioNode.execute(state_json=state_text(state), background_color="#000000", background_range="360", **output_size(56, 56), **inputs)
+    return output, output.result[3].get_components().images
 
 
 def test_a_placed_animated_file_plays_its_first_clip_along_the_timeline(input_dir):
@@ -173,7 +173,7 @@ def test_the_scene_input_and_the_sticker_input_play_the_file_as_a_sticker_does(i
     _output, on_port = _run(port, sticker=file)
 
     assert torch.equal(placed, on_port)
-    output, scene = _run({**_sticker(), "visible": False}, scene=file)
+    output, scene = _run({**_sticker(), "visible": False}, world=file)
     assert not torch.equal(scene[0], scene[4])
     assert output.ui["pano_scene_meta"][0]["animation"]["clips"][1] == {"name": "wave", "duration": BAKED["clips"][1]["duration"]}
     assert output.ui["pano_scene_meta"][0]["animation"]["box"] == content_box(read_mesh_file(file))

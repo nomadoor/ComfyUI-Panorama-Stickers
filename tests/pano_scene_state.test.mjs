@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { FILE_3D_EXTENSIONS, is3dFileSource, loadSceneState, loadStickerState, rebaseSceneState, sceneStateText } from "../web_src/pano_scene_state.js";
+import { FILE_3D_EXTENSIONS, GROUND_DEFAULT, defaultCamera, is3dFileSource, loadSceneState, loadStickerState, rebaseSceneState, sceneGround, sceneStateText } from "../web_src/pano_scene_state.js";
 import { evaluateSceneState } from "../web_src/pano_scene_eval.js";
 
 const fixture = (name) => readFileSync(new URL(`./fixtures/scene_state/${name}.json`, import.meta.url), "utf8");
@@ -25,14 +25,16 @@ test("state_json v1 and v2 fixtures load as the documented v2 state", () => {
   }
 });
 
-test("a state has no Camera unless `camera` is an object, and a Camera has a projection", () => {
+test("a state without a Camera object has the default Camera, and a Camera has a projection", () => {
   for (const camera of ["", ',"camera":null', ',"camera":"front"', ',"camera":[1]']) {
-    assert.equal(loadSceneState(`{"version":2${camera}}`).camera, null);
+    assert.deepEqual(loadSceneState(`{"version":2${camera}}`).camera, defaultCamera());
   }
   assert.deepEqual(loadSceneState('{"version":2,"camera":{}}').camera, {
     aspect: 1,
     projection: "perspective",
+    erp_range: 360,
     visible: true,
+    locked: false,
     position: { value: [0, 0, 0], keyframes: [] },
     rotation: { value: { yaw_deg: 0, pitch_deg: 0, roll_deg: 0 }, keyframes: [] },
     fov: { value: 90, keyframes: [] },
@@ -41,11 +43,12 @@ test("a state has no Camera unless `camera` is an object, and a Camera has a pro
   for (const [projection, expected] of [["erp", "erp"], ["perspective", "perspective"], ["ERP", "perspective"], [null, "perspective"], [1, "perspective"]]) {
     assert.equal(loadSceneState({ version: 2, camera: { projection } }).camera.projection, expected);
   }
-  assert.equal(loadSceneState(fixture("v1_stickers")).camera, null);
+  assert.deepEqual(loadSceneState(fixture("v1_stickers")).camera, defaultCamera());
   assert.equal(loadSceneState(fixture("v1_cutout")).camera.projection, "perspective");
-  assert.equal(rebaseSceneState(loadSceneState(fixture("v2_no_camera")), 60).camera, null);
+  assert.deepEqual(rebaseSceneState(loadSceneState(fixture("v2_no_camera")), 60).camera, defaultCamera());
   assert.equal(rebaseSceneState(loadSceneState(fixture("v2_erp_camera")), 12).camera.projection, "erp");
-  assert.equal(evaluateSceneState(loadSceneState(fixture("v2_no_camera")), 10).camera, null);
+  // An upstream layer's state from the run holds no Camera (nodes.py `_scene_output`).
+  assert.equal(evaluateSceneState({ ...loadSceneState(fixture("v2_no_camera")), camera: null }, 10).camera, null);
 });
 
 test("the state text leaves out the default projection and reads back the same", () => {
@@ -56,6 +59,7 @@ test("the state text leaves out the default projection and reads back the same",
   assert.deepEqual(loadSceneState(text), perspective);
   const erp = loadSceneState(fixture("v2_erp_camera"));
   assert.deepEqual(Object.keys(JSON.parse(sceneStateText(erp)).camera), ["aspect", "projection", "position", "rotation", "fov"]);
+  // A state saved without a Camera keeps its text: the default Camera it reads as is written as null again.
   assert.deepEqual(loadSceneState(sceneStateText(erp)), erp);
   const none = loadSceneState(fixture("v2_no_camera"));
   assert.deepEqual(loadSceneState(sceneStateText(none)), none);
@@ -131,6 +135,32 @@ test("a sticker_state fps is read as the fixture shared with Python says", () =>
 });
 
 // The same cases test_scene_state.py reads.
+test("the Camera is read and written as the fixture shared with Python says", () => {
+  const table = JSON.parse(fixture("camera_default"));
+  assertClose(defaultCamera(), table.default_camera);
+  for (const { name, state, camera, text_camera: textCamera } of table.cases) {
+    const loaded = loadSceneState(state);
+    assertClose(loaded.camera, camera, name);
+    const written = JSON.parse(sceneStateText(loaded));
+    assert.deepEqual(written.camera, textCamera, name);
+    assert.deepEqual(loadSceneState(sceneStateText(loaded)), loaded, name);
+  }
+});
+
+// The same cases test_scene_state.py reads.
+test("the ground is read and written as the fixture shared with Python says", () => {
+  const table = JSON.parse(fixture("ground"));
+  assert.equal(GROUND_DEFAULT, table.default);
+  for (const { name, state, stored, upstream, ground } of table.cases) {
+    const loaded = loadSceneState(state);
+    assert.equal(Object.hasOwn(loaded, "ground"), stored !== null, name);
+    if (stored !== null) assert.equal(loaded.ground, stored, name);
+    assert.equal(sceneGround(loaded, upstream.map((raw) => loadSceneState(raw))), ground, name);
+    const written = JSON.parse(sceneStateText(loaded));
+    assert.equal(Object.hasOwn(written, "ground"), stored !== null, name);
+  }
+});
+
 test("a camera aspect is read as the fixture shared with Python says", () => {
   const table = JSON.parse(fixture("camera_aspect"));
   for (const { json, expected } of table.cases) {

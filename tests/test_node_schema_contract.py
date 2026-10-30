@@ -92,20 +92,26 @@ EXPECTED_SCHEMAS = {
         "hidden": ["UNIQUE_ID"],
         "is_output_node": True,
     },
+    # ADR 0048 (approved change of the ports, before Panorama Studio is public): by role, the Scene it carries on,
+    # then from the far background to the things placed; the outputs mirror them with `scene` on top.
     "PanoramaStudio": {
         "display_name": "Panorama Studio",
         "inputs": [
-            ("bg_media", "COMFY_MULTITYPED_V3", True),
+            ("scene", "PANO_SCENE", True),
+            ("background", "COMFY_MULTITYPED_V3", True),
+            ("world", "COMFY_MULTITYPED_V3", True),
             ("sticker", "COMFY_MULTITYPED_V3", True),
             ("sticker_state", "STRING", True),
-            ("scene", "COMFY_MULTITYPED_V3", True),
-            ("bg_color", "COLOR", False),
-            ("coverage", "COMBO", False),
-            ("output_size", "COMBO", False),
+            ("background_color", "COLOR", False),
+            ("background_range", "COMBO", False),
+            ("megapixels", "FLOAT", False),
+            ("multiple", "INT", False),
             ("state_json", "STRING", False),
         ],
         "input_metadata": {
-            "bg_media": {},
+            "scene": {},
+            "background": {},
+            "world": {},
             "sticker": {},
             "sticker_state": {
                 "default": "",
@@ -113,19 +119,27 @@ EXPECTED_SCHEMAS = {
                 "dynamic_prompts": False,
                 "force_input": True,
             },
-            "scene": {},
-            "bg_color": {
+            "background_color": {
                 "default": "#00ff00",
                 "force_input": None,
             },
-            "coverage": {
+            "background_range": {
                 "default": "360",
                 "options": ["360", "180"],
                 "force_input": None,
             },
-            "output_size": {
-                "default": "2048",
-                "options": ["1024", "1536", "2048", "2560", "3072", "4096", "auto"],
+            "megapixels": {
+                "default": 2.0,
+                "min": 0.1,
+                "max": 16.0,
+                "step": 0.1,
+                "force_input": None,
+            },
+            "multiple": {
+                "default": 8,
+                "min": 8,
+                "max": 128,
+                "step": 4,
                 "force_input": None,
             },
             "state_json": {
@@ -136,11 +150,11 @@ EXPECTED_SCHEMAS = {
             },
         },
         "outputs": [
+            ("scene", "scene", "PANO_SCENE"),
             ("first_frame", "first_frame", "IMAGE"),
             ("first_frame_mask", "first_frame_mask", "MASK"),
             ("video", "video", "VIDEO"),
             ("sticker_state", "sticker_state", "STRING"),
-            ("scene", "scene", "PANO_SCENE"),
         ],
         "hidden": [],
         "is_output_node": True,
@@ -223,15 +237,16 @@ EXPECTED_SCHEMAS = {
         "hidden": ["UNIQUE_ID"],
         "is_output_node": True,
     },
+    # ADR 0048: `coverage` is `background_range`, as on Panorama Studio. The legacy Preview keeps `coverage`.
     "PanoramaPreviewNode": {
         "display_name": "Panorama Preview",
         "inputs": [
             ("source", "COMFY_MATCHTYPE_V3", False),
-            ("coverage", "COMBO", False),
+            ("background_range", "COMBO", False),
         ],
         "input_metadata": {
             "source": {},
-            "coverage": {
+            "background_range": {
                 "default": "360",
                 "options": ["360", "180"],
                 "force_input": None,
@@ -367,10 +382,18 @@ SPLAT_FILE_TYPES = "FILE_3D_PLY,FILE_3D_SPLAT,FILE_3D_SPZ,FILE_3D_KSPLAT,FILE_3D
 def test_studio_media_ports_accept_the_spec_types():
     inputs = {input_.id: input_ for input_ in REGISTERED_NODES["PanoramaStudio"].define_schema().inputs}
 
-    assert inputs["bg_media"].get_io_type() == "IMAGE,VIDEO"
-    # Studio's `scene` also takes the `scene` output of another Studio (ADR 0029).
-    assert inputs["scene"].get_io_type() == f"SPLAT,MESH,{MESH_FILE_TYPES},{SPLAT_FILE_TYPES},MOGE_GEOMETRY,DA3_GEOMETRY,PANO_SCENE"
+    assert inputs["background"].get_io_type() == "IMAGE,VIDEO"
+    # `scene` takes only the `scene` output of another Studio; the place's base 3D is on `world` (ADR 0048).
+    assert inputs["scene"].get_io_type() == "PANO_SCENE"
+    assert inputs["world"].get_io_type() == f"SPLAT,MESH,{MESH_FILE_TYPES},{SPLAT_FILE_TYPES},MOGE_GEOMETRY,DA3_GEOMETRY"
     assert inputs["sticker"].get_io_type() == f"IMAGE,VIDEO,MESH,SPLAT,{MESH_FILE_TYPES},{SPLAT_FILE_TYPES},MOGE_GEOMETRY,DA3_GEOMETRY"
+
+
+def test_studio_multiple_is_an_advanced_widget():
+    inputs = {input_.id: input_ for input_ in REGISTERED_NODES["PanoramaStudio"].define_schema().inputs}
+
+    assert inputs["multiple"].advanced is True
+    assert not inputs["megapixels"].advanced
 
 
 def test_preview_node_passes_its_source_type_through():

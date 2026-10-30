@@ -1,0 +1,387 @@
+{
+  "about": "Panorama Studio's output size (docs/studio-node.md, \"\u51fa\u529b\u306e\u5927\u304d\u3055\", ADR 0048): each case's `state` (state_json) with the `megapixels` and `multiple` widgets gives `width` x `height`, and `reduced_from` is the size before the longest side was brought to STUDIO_MAX_OUTPUT_SIDE (null when it was not). nodes.py `_studio_output_size` and web_src/pano_studio_status.js `studioOutputSize` both read it.",
+  "max_side": 8192,
+  "cases": [
+    {
+      "name": "the default Camera (Panorama 360) at the default 2.0 MP",
+      "state": {
+        "version": 2
+      },
+      "megapixels": 2.0,
+      "multiple": 8,
+      "width": 2048,
+      "height": 1024,
+      "reduced_from": null
+    },
+    {
+      "name": "Panorama 360 at 1.0 MP: width and height rounded apart would leave 2:1",
+      "state": {
+        "version": 2,
+        "camera": {
+          "projection": "erp"
+        }
+      },
+      "megapixels": 1.0,
+      "multiple": 8,
+      "width": 1456,
+      "height": 728,
+      "reduced_from": null
+    },
+    {
+      "name": "Panorama 360 at 0.3 MP",
+      "state": {
+        "version": 2,
+        "camera": {
+          "projection": "erp"
+        }
+      },
+      "megapixels": 0.3,
+      "multiple": 8,
+      "width": 800,
+      "height": 400,
+      "reduced_from": null
+    },
+    {
+      "name": "Panorama 360 at the smallest 0.1 MP",
+      "state": {
+        "version": 2,
+        "camera": {
+          "projection": "erp"
+        }
+      },
+      "megapixels": 0.1,
+      "multiple": 8,
+      "width": 464,
+      "height": 232,
+      "reduced_from": null
+    },
+    {
+      "name": "Panorama 360 at the largest 16 MP is under the cap",
+      "state": {
+        "version": 2,
+        "camera": {
+          "projection": "erp"
+        }
+      },
+      "megapixels": 16.0,
+      "multiple": 8,
+      "width": 5792,
+      "height": 2896,
+      "reduced_from": null
+    },
+    {
+      "name": "Panorama 180 at 2.0 MP",
+      "state": {
+        "version": 2,
+        "camera": {
+          "projection": "erp",
+          "erp_range": 180
+        }
+      },
+      "megapixels": 2.0,
+      "multiple": 8,
+      "width": 1448,
+      "height": 1448,
+      "reduced_from": null
+    },
+    {
+      "name": "Panorama 180 at 16 MP",
+      "state": {
+        "version": 2,
+        "camera": {
+          "projection": "erp",
+          "erp_range": 180
+        }
+      },
+      "megapixels": 16.0,
+      "multiple": 128,
+      "width": 4096,
+      "height": 4096,
+      "reduced_from": null
+    },
+    {
+      "name": "Panorama 360 with multiple 128",
+      "state": {
+        "version": 2,
+        "camera": {
+          "projection": "erp"
+        }
+      },
+      "megapixels": 2.0,
+      "multiple": 128,
+      "width": 2048,
+      "height": 1024,
+      "reduced_from": null
+    },
+    {
+      "name": "Panorama 360: the height at exactly 2.5 multiples rounds to even (2)",
+      "state": {
+        "version": 2,
+        "camera": {
+          "projection": "erp"
+        }
+      },
+      "megapixels": 0.1953125,
+      "multiple": 128,
+      "width": 512,
+      "height": 256,
+      "reduced_from": null
+    },
+    {
+      "name": "Panorama 360: the height at exactly 3.5 multiples rounds to even (4)",
+      "state": {
+        "version": 2,
+        "camera": {
+          "projection": "erp"
+        }
+      },
+      "megapixels": 0.3828125,
+      "multiple": 128,
+      "width": 1024,
+      "height": 512,
+      "reduced_from": null
+    },
+    {
+      "name": "Panorama 360 below one multiple keeps one",
+      "state": {
+        "version": 2,
+        "camera": {
+          "projection": "erp"
+        }
+      },
+      "megapixels": 1e-05,
+      "multiple": 8,
+      "width": 16,
+      "height": 8,
+      "reduced_from": null
+    },
+    {
+      "name": "a hidden, locked Camera shoots the same size",
+      "state": {
+        "version": 2,
+        "camera": {
+          "projection": "erp",
+          "visible": false,
+          "locked": true
+        }
+      },
+      "megapixels": 2.0,
+      "multiple": 8,
+      "width": 2048,
+      "height": 1024,
+      "reduced_from": null
+    },
+    {
+      "name": "Frame 16:9 at 2.0 MP",
+      "state": {
+        "version": 2,
+        "camera": {
+          "aspect": 1.7777777777777777
+        }
+      },
+      "megapixels": 2.0,
+      "multiple": 8,
+      "width": 1928,
+      "height": 1088,
+      "reduced_from": null
+    },
+    {
+      "name": "Frame 1:1 at 2.0 MP",
+      "state": {
+        "version": 2,
+        "camera": {
+          "aspect": 1.0
+        }
+      },
+      "megapixels": 2.0,
+      "multiple": 8,
+      "width": 1448,
+      "height": 1448,
+      "reduced_from": null
+    },
+    {
+      "name": "Frame 9:16 at 2.0 MP",
+      "state": {
+        "version": 2,
+        "camera": {
+          "aspect": 0.5625
+        }
+      },
+      "megapixels": 2.0,
+      "multiple": 8,
+      "width": 1088,
+      "height": 1928,
+      "reduced_from": null
+    },
+    {
+      "name": "Frame: the FOV, its Keyframes and the lens curve do not change the size",
+      "state": {
+        "version": 2,
+        "camera": {
+          "aspect": 1.7777777777777777,
+          "fov": {
+            "value": 150,
+            "keyframes": [
+              {
+                "frame": 0,
+                "value": 20
+              },
+              {
+                "frame": 9,
+                "value": 170
+              }
+            ]
+          },
+          "curve": {
+            "value": 0
+          }
+        }
+      },
+      "megapixels": 2.0,
+      "multiple": 8,
+      "width": 1928,
+      "height": 1088,
+      "reduced_from": null
+    },
+    {
+      "name": "Frame 1:1: a side at exactly 4.5 multiples rounds to even (4)",
+      "state": {
+        "version": 2,
+        "camera": {
+          "aspect": 1.0
+        }
+      },
+      "megapixels": 0.31640625,
+      "multiple": 128,
+      "width": 512,
+      "height": 512,
+      "reduced_from": null
+    },
+    {
+      "name": "Frame 4:1 at 16 MP is exactly at the cap",
+      "state": {
+        "version": 2,
+        "camera": {
+          "aspect": 4.0
+        }
+      },
+      "megapixels": 16.0,
+      "multiple": 8,
+      "width": 8192,
+      "height": 2048,
+      "reduced_from": null
+    },
+    {
+      "name": "Frame 1:4 at 16 MP is exactly at the cap",
+      "state": {
+        "version": 2,
+        "camera": {
+          "aspect": 0.25
+        }
+      },
+      "megapixels": 16.0,
+      "multiple": 8,
+      "width": 2048,
+      "height": 8192,
+      "reduced_from": null
+    },
+    {
+      "name": "Frame 5:1 at 16 MP is capped",
+      "state": {
+        "version": 2,
+        "camera": {
+          "aspect": 5.0
+        }
+      },
+      "megapixels": 16.0,
+      "multiple": 8,
+      "width": 8192,
+      "height": 1640,
+      "reduced_from": [
+        9160,
+        1832
+      ]
+    },
+    {
+      "name": "Frame 1:5 at 16 MP is capped",
+      "state": {
+        "version": 2,
+        "camera": {
+          "aspect": 0.2
+        }
+      },
+      "megapixels": 16.0,
+      "multiple": 8,
+      "width": 1640,
+      "height": 8192,
+      "reduced_from": [
+        1832,
+        9160
+      ]
+    },
+    {
+      "name": "Frame 2048:1 at 16 MP is capped, its short side at one multiple",
+      "state": {
+        "version": 2,
+        "camera": {
+          "aspect": 2048.0
+        }
+      },
+      "megapixels": 16.0,
+      "multiple": 8,
+      "width": 8192,
+      "height": 8,
+      "reduced_from": [
+        185360,
+        88
+      ]
+    },
+    {
+      "name": "Frame 5:1 capped with a multiple that 8192 is not a multiple of",
+      "state": {
+        "version": 2,
+        "camera": {
+          "aspect": 5.0
+        }
+      },
+      "megapixels": 16.0,
+      "multiple": 12,
+      "width": 8184,
+      "height": 1644,
+      "reduced_from": [
+        9156,
+        1836
+      ]
+    },
+    {
+      "name": "a Panorama Camera keeps its Frame aspect, which does not count",
+      "state": {
+        "version": 2,
+        "camera": {
+          "projection": "erp",
+          "aspect": 4.0
+        }
+      },
+      "megapixels": 2.0,
+      "multiple": 8,
+      "width": 2048,
+      "height": 1024,
+      "reduced_from": null
+    },
+    {
+      "name": "a Frame Camera keeps its erp_range, which does not count",
+      "state": {
+        "version": 2,
+        "camera": {
+          "aspect": 1.0,
+          "erp_range": 180
+        }
+      },
+      "megapixels": 2.0,
+      "multiple": 8,
+      "width": 1448,
+      "height": 1448,
+      "reduced_from": null
+    }
+  ]
+}

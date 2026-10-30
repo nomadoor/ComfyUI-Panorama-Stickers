@@ -266,11 +266,11 @@ def _splat_file_bytes(splat):
 
 
 def _execute(scene):
-    return nodes.PanoramaStudioNode.execute(bg_color="#00ff00", coverage="360", output_size="1024", state_json="", scene=scene)
+    return nodes.PanoramaStudioNode.execute(background_color="#00ff00", background_range="360", megapixels=0.5, multiple=8, state_json="", world=scene)
 
 
 @pytest.mark.parametrize("file_format", ["ply", "spz", "ksplat", "splat"])
-def test_splat_files_on_the_scene_input_are_drawn_and_written_for_the_editor(file_format):
+def test_splat_files_on_the_world_input_are_drawn_and_written_for_the_editor(file_format):
     splat = _shell(2000, (0.0, 0.0, 4.0), 1.0)
     if file_format == "splat":
         model = Types.File3D(BytesIO(_splat_file_bytes(splat)), file_format="splat")
@@ -280,13 +280,13 @@ def test_splat_files_on_the_scene_input_are_drawn_and_written_for_the_editor(fil
     output = _execute(model)
 
     # The lossy formats quantize the gaussians, so the image is close to the SPLAT's rather than equal.
-    expected = _execute(splat).result[0]
-    assert float((output.result[0] - expected).abs().mean()) * 255 < 2.0
+    expected = _execute(splat).result[1]
+    assert float((output.result[1] - expected).abs().mean()) * 255 < 2.0
     assert float((expected - torch.tensor(GREEN)).abs().amax(dim=-1).gt(0.1).float().mean()) > 0.01
     assert output.ui["pano_scene_meta"] == [{"kind": "splat"}]
     assert [entry["filename"].endswith(".ply") for entry in output.ui["pano_scene_files"]] == [True]
     # PANO_SCENE holds the SPLAT read from the file, so its consumers do not read the file again.
-    assert isinstance(output.result[4].layers[-1].scene, Types.SPLAT)
+    assert isinstance(output.result[0].layers[-1].scene, Types.SPLAT)
 
 
 def test_a_splat_file_is_read_once_while_it_does_not_change(monkeypatch, tmp_path):
@@ -299,7 +299,7 @@ def test_a_splat_file_is_read_once_while_it_does_not_change(monkeypatch, tmp_pat
     first = _execute(Types.File3D(str(path)))
     second = _execute(Types.File3D(str(path)))
 
-    assert len(reads) == 1 and second.result[4].layers[-1].scene is first.result[4].layers[-1].scene
+    assert len(reads) == 1 and second.result[0].layers[-1].scene is first.result[0].layers[-1].scene
 
 
 def test_splat_files_are_told_by_their_contents():
@@ -312,16 +312,16 @@ def test_splat_files_are_told_by_their_contents():
     assert isinstance(splat_render.read_splat_file(Types.File3D(BytesIO(_splat_file_bytes(splat)))), Types.SPLAT)
     assert splat_render.read_splat_file(Types.File3D(BytesIO(mesh_ply), file_format="ply")) is None
     assert splat_render.read_splat_file(Types.File3D("model.glb")) is None
-    with pytest.raises(ValueError, match="3D file on the scene input is neither"):
+    with pytest.raises(ValueError, match="3D file on the world input is neither"):
         _execute(Types.File3D(BytesIO(mesh_ply), file_format="ply"))
 
 
 def test_a_camera_shoots_the_splat_of_an_upstream_scene():
     # A red ball 4 ahead of the World origin; a Camera downstream at the same place sees it in its center.
     splat = _blobs(_blob((0.0, 0.0, 4.0), (1.0, 0.0, 0.0), size=0.5))
-    pano_scene = _execute(splat).result[4]
+    pano_scene = _execute(splat).result[0]
 
-    image = shoot(pano_scene, camera_state(), bg_color="#00ff00")[0][0]
+    image = shoot(pano_scene, camera_state(), background_color="#00ff00")[1][0]
 
     height, width = image.shape[:2]
     assert torch.allclose(image[height // 2, width // 2], torch.tensor((1.0, 0.0, 0.0)), atol=0.02)

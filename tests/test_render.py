@@ -366,6 +366,50 @@ def test_180_output_draws_bg_color_outside_the_hemisphere_of_the_bg_media():
     assert torch.equal(turned[:, 16:], torch.tensor(GREEN).expand(32, 16, 3))
 
 
+def test_bg_coverage_is_the_coverage_unless_given():
+    # The legacy nodes and the new Preview do not pass it, so their projections are what they were.
+    assert Projection.erp(64, 32).bg_coverage == 360
+    assert Projection.erp(64, 64, coverage=180).bg_coverage == 180
+    assert Projection.perspective(32, 16, 90.0, coverage=180).bg_coverage == 180
+    assert Projection.erp(64, 64, coverage=180, bg_coverage="360").bg_coverage == 360
+    assert Projection.erp(64, 32, bg_coverage=90).bg_coverage == 360
+    assert Projection.erp(64, 32, bg_coverage=360) == Projection.erp(64, 32)
+
+
+def test_a_180_output_reads_a_360_background_as_360():
+    # Red in front (the middle of the ERP), blue behind: a 180 output of a 360 background shows only the red half.
+    bg = torch.zeros((8, 16, 3))
+    bg[..., 2] = 1.0
+    bg[:, 4:12] = torch.tensor([1.0, 0.0, 0.0])
+
+    color, _mask, _depth = _render(Projection.erp(32, 32, coverage=180, bg_coverage=360), bg=bg)
+
+    assert color.shape == (32, 32, 3)
+    # Only the edge columns, filtered across the boundary at ±90°, see some of the blue behind.
+    assert torch.allclose(color[:, 2:-2], torch.tensor([1.0, 0.0, 0.0]).expand(32, 28, 3))
+    assert float(color[..., 2].max()) < 0.5
+
+
+def test_a_360_output_of_a_180_background_shows_bg_color_behind():
+    bg = torch.full((16, 16, 3), 0.5)
+
+    color, _mask, _depth = _render(Projection.erp(64, 32, coverage=360, bg_coverage=180), bg=bg)
+
+    assert torch.allclose(color[:, 16:48], torch.full((32, 32, 3), 0.5))
+    assert torch.equal(color[:, :16], torch.tensor(GREEN).expand(32, 16, 3))
+    assert torch.equal(color[:, 48:], torch.tensor(GREEN).expand(32, 16, 3))
+
+
+def test_an_unturned_360_output_of_a_180_background_is_not_the_background_as_it_is():
+    # The shortcut that returns a 360 background as the output holds only when both ranges are 360.
+    bg = torch.full((16, 16, 3), 0.5)
+
+    color, _mask, _depth = _render(Projection.erp(16, 8, bg_coverage=180), bg=bg)
+
+    assert color.shape == (8, 16, 3)
+    assert torch.equal(color[:, :4], torch.tensor(GREEN).expand(8, 4, 3))
+
+
 def test_180_output_draws_the_sky_in_every_direction():
     state = {**_sticker_state(yaw_deg=135.0, hFOV_deg=20.0, vFOV_deg=20.0), **_camera(yaw_deg=90.0)}
 

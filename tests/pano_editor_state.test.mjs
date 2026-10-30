@@ -41,7 +41,7 @@ import {
 import { applyStickersNodeSurfaceAction } from "../web_src/pano_stickers_node_surface.js";
 import { cutoutFilmPointToWorldDir, worldDirToCutoutFilmPoint } from "../web_src/pano_cutout_view_math.js";
 import { evaluateCamera, evaluateSceneState } from "../web_src/pano_scene_eval.js";
-import { loadSceneState, rebaseSceneState } from "../web_src/pano_scene_state.js";
+import { defaultCamera, loadSceneState, rebaseSceneState } from "../web_src/pano_scene_state.js";
 import { readEditorSource } from "./editor_source.mjs";
 
 const readFixture = (name) => readFileSync(new URL(`./fixtures/scene_state/${name}.json`, import.meta.url), "utf8");
@@ -535,7 +535,7 @@ test("a state saved before the Camera had a projection and before the visibility
   const node = { __panoSceneStateV2: true };
   for (const name of ["v2_canonical", "v2_interpolation"]) {
     const { painting_visible: paintingVisible, id, next_sticker_id: nextStickerId, upstream, background, ...loaded } = loadSceneState(readFixture(name));
-    const { projection, visible, curve, ...camera } = loaded.camera;
+    const { projection, erp_range: erpRange, visible, locked, curve, ...camera } = loaded.camera;
     const { visible: sceneVisible, ...scene } = loaded.scene;
     const stickers = loaded.stickers.map(({ handoff_overrides: handoffOverrides, curve: stickerCurve, ...item }) => item);
     const before = JSON.stringify({ ...loaded, camera, scene, stickers });
@@ -547,15 +547,18 @@ test("a state saved before the Camera had a projection and before the visibility
   assert.equal(JSON.parse(editorStateText(node, parseSceneEditorState(JSON.stringify(erp)))).camera.projection, "erp");
 });
 
-test("the editor keeps a state without a Camera without one", () => {
+// ADR 0048: the Camera is always there. A state saved without one reads as the default Camera, and saving it again
+// writes the same `"camera":null`, so the node's execution cache still hits.
+test("the editor reads a state without a Camera as the default Camera and saves it as before", () => {
   const node = { __panoSceneStateV2: true };
   const text = readFixture("v2_no_camera");
   const state = parseSceneEditorState(text);
-  assert.equal(state.camera, null);
+  assert.deepEqual(state.camera, defaultCamera());
+  assert.equal(JSON.parse(editorStateText(node, state)).camera, null);
   setTimelineFps(state, 60);
   const saved = loadSceneState(editorStateText(node, state));
   assert.deepEqual(saved, rebaseSceneState(loadSceneState(text), 60));
-  assert.equal(saved.camera, null);
+  assert.deepEqual(saved.camera, defaultCamera());
 });
 
 test("an edit, an unreadable text, or the legacy node's other text is written", () => {

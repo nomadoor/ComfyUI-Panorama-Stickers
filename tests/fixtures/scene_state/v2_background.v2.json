@@ -5,7 +5,37 @@
     "fps": 24.0,
     "length": 120
   },
-  "camera": null,
+  "camera": {
+    "aspect": 1.7777777777777777,
+    "projection": "erp",
+    "erp_range": 360,
+    "visible": true,
+    "locked": false,
+    "position": {
+      "value": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "keyframes": []
+    },
+    "rotation": {
+      "value": {
+        "yaw_deg": 0.0,
+        "pitch_deg": 0.0,
+        "roll_deg": 0.0
+      },
+      "keyframes": []
+    },
+    "fov": {
+      "value": 90.0,
+      "keyframes": []
+    },
+    "curve": {
+      "value": 1.0,
+      "keyframes": []
+    }
+  },
   "scene": {
     "clip": {
       "start": 0,

@@ -28,7 +28,7 @@ def test_image_batch_world_sticker_maps_one_to_one_to_output_frames():
 def test_video_world_sticker_plays_in_real_time_at_a_different_fps(tmp_path):
     sticker = _write_red_video(tmp_path / "slow.mkv", [0, 100, 200, 300], 10)
 
-    image = _frames(_run(_world_port_state(), bg_media=_cfr(tmp_path, count=10), sticker=sticker))
+    image = _frames(_run(_world_port_state(), background=_cfr(tmp_path, count=10), sticker=sticker))
 
     assert _video_index_at_center(image) == [0, 0, 0, 1, 1, 2, 2, 2, 3, 3]
 
@@ -45,7 +45,7 @@ def _with_ball(monkeypatch, count=3):
 def test_scene_batch_maps_one_to_one_to_output_frames_and_sets_the_length(monkeypatch):
     _with_ball(monkeypatch)
 
-    image = _frames(_run(scene=object()))
+    image = _frames(_run(world=object()))
 
     assert _batch_index_at_center(image) == [0, 1, 2]
 
@@ -53,8 +53,8 @@ def test_scene_batch_maps_one_to_one_to_output_frames_and_sets_the_length(monkey
 def test_scene_batch_follows_its_clip_range(monkeypatch):
     _with_ball(monkeypatch, count=5)
 
-    result = _run({"version": 2, "scene": {"clip": {"start": 2, "in": 1, "duration": 3}}, "timeline": {"length": 6}}, scene=object())
-    pano_scene = result[4]
+    result = _run({"version": 2, "scene": {"clip": {"start": 2, "in": 1, "duration": 3}}, "timeline": {"length": 6}}, world=object())
+    pano_scene = result[0]
 
     assert _batch_index_at_center(_frames(result)) == [None, None, 1, 2, 3, None]
     # The item is decided in (a) from the content's start (start - in = 1), outside the Clip range too.
@@ -64,8 +64,8 @@ def test_scene_batch_follows_its_clip_range(monkeypatch):
 def test_frames_carry_the_scene_item_only_with_scene_content(monkeypatch):
     _with_ball(monkeypatch, count=1)
 
-    with_scene = _run({"version": 2, "timeline": {"length": 2}}, scene=object())[4]
-    without = _run({"version": 2, "timeline": {"length": 2}})[4]
+    with_scene = _run({"version": 2, "timeline": {"length": 2}}, world=object())[0]
+    without = _run({"version": 2, "timeline": {"length": 2}})[0]
 
     assert with_scene.frames == ((None, ((0.0, None, 0),)), (None, ((1.0, None, 0),)))
     assert without.frames == ((None, ((0.0, None, None),)), (None, ((1.0, None, None),)))
@@ -74,7 +74,7 @@ def test_frames_carry_the_scene_item_only_with_scene_content(monkeypatch):
 def test_single_scene_item_shows_for_the_whole_timeline(monkeypatch):
     views = _with_ball(monkeypatch, count=1)
 
-    video = _run({"version": 2, "timeline": {"length": 4}}, scene=object())[2]
+    video = _run({"version": 2, "timeline": {"length": 4}}, world=object())[3]
     views.clear()
 
     assert _batch_index_at_center(video.get_components().images) == [0, 0, 0, 0]

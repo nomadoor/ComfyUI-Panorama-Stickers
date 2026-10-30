@@ -14,7 +14,7 @@ pytest.importorskip(
 from comfyui_pano_suite.core.scene_eval import evaluate_scene_state
 from comfyui_pano_suite.core.scene_state import load_scene_state
 from comfyui_pano_suite.nodes import PanoramaStudioNode, _inherit_handoff
-from scene_test_helpers import camera_state as _camera, shoot as _shoot, state_text, video_frames as _frames
+from scene_test_helpers import camera_state as _camera, output_size, shoot as _shoot, state_text, video_frames as _frames
 from test_studio_camera import _solid, _upstream
 from tools.bake_legacy_goldens import render_only_runtime
 
@@ -54,7 +54,7 @@ def _with_aspect(camera, aspect):
 def _round_trip_error(camera, sticker_state=None, state=None):
     shot = _shoot(_textured_erp(), camera)
     frames = _frames(shot)
-    scene = _upstream(state, sticker=frames, sticker_state=shot[3] if sticker_state is None else sticker_state(shot[3]), output_size="2048")[4]
+    scene = _upstream(state, sticker=frames, sticker_state=shot[4] if sticker_state is None else sticker_state(shot[4]), **output_size(2048))[0]
     again = _frames(_shoot(scene, camera))
     assert again.shape == frames.shape
     return _interior_error(again, frames)
@@ -88,7 +88,7 @@ def test_trajectory_returns_through_the_sticker_video_at_another_fps():
     shot = _shoot(_textured_erp(), camera)
 
     # The shot's `video` sets the Timeline fps (12) of the receiving state recorded at 24 fps.
-    scene = _upstream(sticker=shot[2], sticker_state=shot[3], output_size="2048")[4]
+    scene = _upstream(sticker=shot[3], sticker_state=shot[4], **output_size(2048))[0]
     again = _frames(_shoot(scene, camera))
 
     assert again.shape == _frames(shot).shape == (13, *again.shape[1:])
@@ -104,7 +104,7 @@ def test_moving_camera_is_baked_into_auto_keyframes_at_every_timeline_frame():
         "fov": [{"frame": 0, "value": 40.0}],
     }})
 
-    port = _upstream({"version": 2}, sticker=_solid([1.0, 0.0, 0.0]), sticker_state=sticker_state)[4].layers[-1].state["stickers"][0]
+    port = _upstream({"version": 2}, sticker=_solid([1.0, 0.0, 0.0]), sticker_state=sticker_state)[0].layers[-1].state["stickers"][0]
 
     # Two frames at 12 fps are four at the 24 fps of the state; the Camera is read between its Keyframes too.
     assert [key["frame"] for key in port["direction"]["keyframes"]] == [0, 1, 2, 3, 4]
@@ -124,7 +124,7 @@ def test_camera_cut_stays_a_cut_at_another_fps():
     shot = _shoot(_textured_erp(), camera)
 
     # The 30 fps shot's `video` sets the Timeline of the receiving state recorded at 24 fps.
-    scene = _upstream(sticker=shot[2], sticker_state=shot[3], output_size="1024")[4]
+    scene = _upstream(sticker=shot[3], sticker_state=shot[4], **output_size(1024))[0]
 
     yaws = [evaluate_scene_state(scene.layers[-1].state, frame)["stickers"][0]["yaw_deg"] for _bg_index, ((frame, *_rest),) in scene.frames]
     assert yaws == pytest.approx([0.0] * 10 + [90.0])
@@ -137,7 +137,7 @@ def test_camera_keyframes_of_one_rotation_keep_the_direction_static():
         "fov": [{"frame": 0, "value": 60.0}, {"frame": 10, "value": 40.0}],
     }})
 
-    port = _upstream({"version": 2}, sticker=_solid([1.0, 0.0, 0.0]), sticker_state=sticker_state)[4].layers[-1].state["stickers"][0]
+    port = _upstream({"version": 2}, sticker=_solid([1.0, 0.0, 0.0]), sticker_state=sticker_state)[0].layers[-1].state["stickers"][0]
 
     assert (port["direction"]["keyframes"], port["roll"]["keyframes"]) == ([], [])
     assert port["direction"]["value"] == pytest.approx({"yaw_deg": 33.0, "pitch_deg": 21.0})
@@ -146,20 +146,21 @@ def test_camera_keyframes_of_one_rotation_keep_the_direction_static():
 
 
 def test_a_port_sticker_added_without_sticker_state_stores_vfov_as_hfov():
-    port = _upstream({"version": 2}, sticker=_solid([1.0, 0.0, 0.0]))[4].layers[-1].state["stickers"][0]
+    port = _upstream({"version": 2}, sticker=_solid([1.0, 0.0, 0.0]))[0].layers[-1].state["stickers"][0]
 
     assert port["size"]["value"] == {"hFOV_deg": 30.0, "vFOV_deg": 30.0}
 
 
 def _run(state=None, **inputs):
-    inputs.setdefault("bg_color", "#00ff00")
-    inputs.setdefault("coverage", "360")
-    inputs.setdefault("output_size", "1024")
+    inputs.setdefault("background_color", "#00ff00")
+    inputs.setdefault("background_range", "360")
+    if "megapixels" not in inputs:
+        inputs.update(output_size(1024))
     return PanoramaStudioNode.execute(state_json=state_text(state), **inputs)
 
 
 def _port(output):
-    return next(item for item in output.result[4].layers[-1].state["stickers"] if item["source"]["kind"] == "port")
+    return next(item for item in output.result[0].layers[-1].state["stickers"] if item["source"]["kind"] == "port")
 
 
 def _sticker_state(camera, fps=24.0):
@@ -208,7 +209,7 @@ def test_connection_order_does_not_matter():
     second = _run(editor_added, sticker=_solid([1.0, 0.0, 0.0]), sticker_state=MOVING)
 
     assert _port(second) == _port(first)
-    assert torch.equal(second.result[0], first.result[0])
+    assert torch.equal(second.result[1], first.result[1])
     assert torch.equal(_frames(second.result), _frames(first.result))
 
 
@@ -297,7 +298,7 @@ def test_world_handoff_returns_the_shot_seen_from_the_camera(aspect):
     camera = _with_aspect(WORLD_TRAJECTORY, aspect)
     with render_only_runtime():
         shot = _shoot(_textured_erp(), camera)
-        scene = _upstream(sticker=_frames(shot), sticker_state=shot[3], output_size="2048")[4]
+        scene = _upstream(sticker=_frames(shot), sticker_state=shot[4], **output_size(2048))[0]
         again = _frames(_shoot(scene, camera))
     assert scene.layers[-1].state["stickers"][0]["placement"] == "world"
     assert again.shape == _frames(shot).shape
@@ -308,7 +309,7 @@ def test_world_round_trip_tolerance_catches_a_camera_moved_away():
     camera = _with_aspect(WORLD_TRAJECTORY, 1.0)
     with render_only_runtime():
         shot = _shoot(_textured_erp(), camera)
-        scene = _upstream(sticker=_frames(shot), sticker_state=shot[3], output_size="2048")[4]
+        scene = _upstream(sticker=_frames(shot), sticker_state=shot[4], **output_size(2048))[0]
         moved = {**camera, "camera": {**camera["camera"], "position": {"value": [0.3, 0.0, 0.0], "keyframes": []}}}
         again = _frames(_shoot(scene, moved))
     assert _interior_error(again, _frames(shot)) > ROUND_TRIP_ERROR
@@ -381,7 +382,7 @@ def test_a_lens_shot_returns_where_it_was_shot(lanes, placement, aspect):
     # A wide frame also checks the port Sticker's vFOV through the lens (g(vFOV / 2) = g(hFOV / 2) x height / width).
     camera = _with_aspect(_lens_camera(lanes), aspect)
     shot = _shoot(_textured_erp(), camera)
-    scene = _upstream(None, sticker=_frames(shot), sticker_state=shot[3], output_size="2048")[4]
+    scene = _upstream(None, sticker=_frames(shot), sticker_state=shot[4], **output_size(2048))[0]
 
     [port] = scene.layers[-1].state["stickers"]
     again = _frames(_shoot(scene, camera))
@@ -398,6 +399,6 @@ def test_a_pinhole_only_moving_shot_hands_todays_plane():
     camera = _camera(MOVING_LENS)
     shot = _shoot(_textured_erp(), camera)
 
-    [port] = _upstream(None, sticker=_frames(shot), sticker_state=shot[3], output_size="2048")[4].layers[-1].state["stickers"]
+    [port] = _upstream(None, sticker=_frames(shot), sticker_state=shot[4], **output_size(2048))[0].layers[-1].state["stickers"]
 
     assert port["placement"] == "world" and "lens" not in port

@@ -180,11 +180,6 @@ def _timeline():
     nodes._decide_timeline(load_scene_state(json.dumps({"version": 2, "timeline": {"length": 10}})), None, None)
 
 
-def _output_size():
-    state = load_scene_state(json.dumps({"version": 2, "camera": {"fov": {"value": 90.0}}}))
-    nodes._studio_output_size(state, [(None, ((float(frame), None, None),)) for frame in range(10)], "1024", 360, None, [])
-
-
 def _components():
     def render(device):
         for _index in range(4):
@@ -193,7 +188,8 @@ def _components():
     SceneVideo(render, 32, 16, Fraction(24), [Fraction(index, 24) for index in range(4)], Fraction(0), None).get_components()
 
 
-@pytest.mark.parametrize("run", [_handoff, _timeline, _output_size, _components], ids=["handoff", "timeline", "output_size", "components"])
+# The output size no longer evaluates the Camera at every frame (ADR 0048), so it has no loop to stop.
+@pytest.mark.parametrize("run", [_handoff, _timeline, _components], ids=["handoff", "timeline", "components"])
 def test_cancel_stops_the_per_frame_loops_of_a_run(run, monkeypatch):
     checks = []
 

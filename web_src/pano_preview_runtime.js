@@ -1409,41 +1409,17 @@ function surfaceSceneState(node, state) {
   return surface.scene.sceneState;
 }
 
-// The bg_media width output_size auto reads (studioNodeStatus): null without bg_media, undefined while it is
-// not known. The node's last result reports it; before a run, it is the width of the linked image, or of the
-// VIDEO file the surface plays (not the editor's MP4 of a result, which may be smaller).
-function studioBgWidth(node, surfacePlayback) {
-  const origins = nodeInputOrigins(node);
-  const bgLinked = !!origins.bg_media;
-  if (!bgLinked && !origins.scene) return null;
-  if (isNodeOutputMediaCurrent(node, "background")) {
-    const reported = ownOutputUiValue(node, "pano_bg_width");
-    if (reported !== undefined) return reported;
-  }
-  // An upstream Scene's bg_media is known only from a result.
-  if (!bgLinked) return undefined;
-  if (videoLinked(node, BACKGROUND_INPUT_NAMES)) {
-    const { playback, video } = surfacePlayback;
-    return playback.source && playback.source === linkedVideoFile(node, BACKGROUND_INPUT_NAMES) && video.videoWidth > 0
-      ? video.videoWidth
-      : undefined;
-  }
-  const image = getLinkedInputImageForPreview(node, BACKGROUND_INPUT_NAMES, null, { preserveReadyWhilePending: false });
-  return isRenderableMediaReady(image) && image.naturalWidth > 0 ? image.naturalWidth : undefined;
-}
-
 // What Panorama Studio's status and run output are made from (studioNodeStatus, studioRunOutput): its state_json
-// text and widgets, the bg_media width, the size its last run reported while that run's media are still the
-// inputs', and the output the run returned (an ERP, or a perspective Camera's first frame).
-function studioStatusOptions(node, surfacePlayback) {
-  const outputSize = String(getWidget(node, "output_size")?.value ?? "");
+// text and widgets, the size its last run reported while that run's media are still the inputs', and the output the
+// run returned (an ERP, or a Frame Camera's first frame).
+function studioStatusOptions(node) {
   const current = ["background", "external-sticker", "scene"].every((channel) => isNodeOutputMediaCurrent(node, channel));
   return {
     stateText: String(getWidget(node, "state_json")?.value ?? ""),
-    outputSize,
-    coverage: getCachedState(node).coverage,
-    bgColor: String(getWidget(node, "bg_color")?.value ?? ""),
-    bgWidth: outputSize === "auto" ? studioBgWidth(node, surfacePlayback) : null,
+    megapixels: Number(getWidget(node, "megapixels")?.value ?? 2),
+    multiple: Number(getWidget(node, "multiple")?.value ?? 8),
+    backgroundRange: Number(getWidget(node, "background_range")?.value) === 180 ? 180 : 360,
+    backgroundColor: String(getWidget(node, "background_color")?.value ?? ""),
     run: (current && ownOutputUiValue(node, "pano_output_size")) || null,
     erp: ownOutputUiValue(node, "pano_output_erp") || null,
     frame: ownOutputUiValue(node, "pano_output_frame") || null,
@@ -2477,7 +2453,7 @@ function attachPanoramaPreviewImpl(node, options = {}) {
         if (surfacePlayback) syncSurfacePlayback();
         else syncLegacyVideo();
         // Panorama Studio shows its last run's output once it has one, edited since or not.
-        const studioOptions = studioSurface ? studioStatusOptions(node, surfacePlayback) : null;
+        const studioOptions = studioSurface ? studioStatusOptions(node) : null;
         const runOutput = studioOptions ? studioRunOutput(studioOptions) : null;
         const sceneState = () => surfaceSceneState(node, getCachedState(node));
         // A collapsed or hidden surface does not load it.
@@ -2899,17 +2875,20 @@ function attachPanoramaPreviewImpl(node, options = {}) {
     bgw.callback = bgwCallbackWrapper;
     bgw.__panoPreviewPatchedCb = bgwCallbackWrapper;
   }
-  // Panorama Studio's status follows output_size.
-  const sizeWidget = studioSurface ? getWidget(node, "output_size") : null;
-  const sizeCallbackPrev = sizeWidget?.callback;
-  const sizeCallbackWrapper = sizeWidget
-    ? (v) => {
-      const out = sizeCallbackPrev ? sizeCallbackPrev(v) : undefined;
+  // Panorama Studio's status follows its size and background widgets.
+  const sizeWidgets = studioSurface
+    ? ["megapixels", "multiple", "background_range", "background_color"].map((name) => getWidget(node, name)).filter(Boolean)
+    : [];
+  const sizeCallbacks = sizeWidgets.map((widget) => {
+    const previous = widget.callback;
+    const wrapper = (v) => {
+      const out = previous ? previous(v) : undefined;
       requestDraw();
       return out;
-    }
-    : null;
-  if (sizeWidget) sizeWidget.callback = sizeCallbackWrapper;
+    };
+    widget.callback = wrapper;
+    return { widget, previous, wrapper };
+  });
 
   const onRemovedPrev = node.onRemoved;
   const onResizePrev = node.onResize;
@@ -3064,7 +3043,7 @@ function attachPanoramaPreviewImpl(node, options = {}) {
     if (swCallbackWrapper && sw?.__panoPreviewPatchedCb === swCallbackWrapper) delete sw.__panoPreviewPatchedCb;
     if (bgwCallbackWrapper && bgw?.callback === bgwCallbackWrapper) bgw.callback = bgwCallbackPrev;
     if (bgwCallbackWrapper && bgw?.__panoPreviewPatchedCb === bgwCallbackWrapper) delete bgw.__panoPreviewPatchedCb;
-    if (sizeCallbackWrapper && sizeWidget.callback === sizeCallbackWrapper) sizeWidget.callback = sizeCallbackPrev;
+    for (const { widget, previous, wrapper } of sizeCallbacks) if (widget.callback === wrapper) widget.callback = previous;
     if (node.onDragOver === stickerDragOverHook) node.onDragOver = onDragOverPrev;
     if (node.onDragDrop === stickerDragDropHook) node.onDragDrop = onDragDropPrev;
     if (node.onRemoved === onRemovedHook) node.onRemoved = onRemovedPrev;

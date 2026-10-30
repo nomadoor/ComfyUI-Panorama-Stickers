@@ -24,7 +24,7 @@ from comfyui_pano_suite.core.scene_state import load_scene_state
 from comfyui_pano_suite.nodes import PanoramaStudioNode, PanoSceneValue
 from comfyui_pano_suite.scene_video import SceneVideo
 from test_legacy_goldens import _golden_mismatch
-from test_stickers_scene_video import _frames
+from scene_test_helpers import output_size
 from tools import bake_legacy_goldens
 from tools.bake_legacy_goldens import ASSETS, FIXTURE_DIR, _painting, _stroke, build_background_erp
 
@@ -34,13 +34,24 @@ from tools.golden_png import read_png16
 
 
 def _execute(state=None, **inputs):
-    inputs.setdefault("bg_color", "#00ff00")
-    inputs.setdefault("coverage", "360")
-    inputs.setdefault("output_size", "auto")
-    return PanoramaStudioNode.execute(
+    """first_frame, first_frame_mask, video, sticker_state, scene: the outputs in the order before ADR 0048, which
+    put `scene` first. A 360 ERP as wide as the `background` (1024 without one) unless `megapixels` and `multiple`
+    say otherwise."""
+    inputs.setdefault("background_color", "#00ff00")
+    inputs.setdefault("background_range", "360")
+    if "megapixels" not in inputs:
+        background = inputs.get("background")
+        inputs.update(output_size(1024 if background is None else int(background.shape[-2])))
+    scene, *rest = PanoramaStudioNode.execute(
         state_json="" if state is None else json.dumps(state),
         **inputs,
     ).result
+    return (*rest, scene)
+
+
+def _frames(result):
+    """Every output frame of `_execute`'s outputs, as GetVideoComponents reads them from the `video` output."""
+    return result[2].get_components().images
 
 
 EDITOR_SAVE_JS = """
@@ -71,10 +82,15 @@ def _run_saved_by_editor(coverage: str, stickers=(), painting=None):
         state["painting"] = painting
     saved = _save_from_editor(json.dumps(state))
     assert json.loads(saved)["version"] == 2
+    if coverage == "180":
+        # ADR 0048: a 180 output is a Panorama 180 Camera's, apart from the 180 background.
+        loaded = load_scene_state(saved)
+        saved = json.dumps({**loaded, "camera": {**loaded["camera"], "erp_range": 180}})
+    size = output_size(512) if coverage == "360" else output_size(512, 512)
     result = PanoramaStudioNode.execute(
-        bg_color="#00ff00", coverage=coverage, output_size="auto", state_json=saved, bg_media=build_background_erp(),
+        background_color="#00ff00", background_range=coverage, state_json=saved, background=build_background_erp(), **size,
     ).result
-    return result[0][0].numpy(), result[1][0].numpy()
+    return np.ascontiguousarray(result[1][0].numpy()), np.ascontiguousarray(result[2][0].numpy())
 
 
 @pytest.mark.parametrize("name", [name for name in bake_legacy_goldens.CASES if name.startswith("stickers_")])
@@ -97,7 +113,7 @@ RED = torch.tensor([1.0, 0.0, 0.0])
 
 
 def test_outputs_are_first_frame_first_frame_mask_video_sticker_state_and_scene_in_order():
-    image, mask, video, sticker_state, pano_scene = _execute({"version": 2, "timeline": {"fps": 30.0}}, bg_media=build_background_erp())
+    image, mask, video, sticker_state, pano_scene = _execute({"version": 2, "timeline": {"fps": 30.0}}, background=build_background_erp())
 
     assert image.shape == (1, 256, 512, 3) and image.dtype == torch.float32 and image.device.type == "cpu"
     assert mask.shape == (1, 256, 512) and float(mask.max()) == 0.0
@@ -107,7 +123,7 @@ def test_outputs_are_first_frame_first_frame_mask_video_sticker_state_and_scene_
 
 
 def test_without_bg_media_the_output_is_bg_color_at_the_output_size():
-    image, _mask, video, *_rest = _execute(output_size="1024", bg_color="#ff0000")
+    image, _mask, video, *_rest = _execute(**output_size(1024), background_color="#ff0000")
 
     assert image.shape == (1, 512, 1024, 3)
     assert torch.equal(image, RED.expand(1, 512, 1024, 3))
@@ -117,7 +133,7 @@ def test_without_bg_media_the_output_is_bg_color_at_the_output_size():
 def test_image_batch_background_maps_one_to_one_to_output_frames():
     bg = torch.stack([_solid([value, value, value])[0] for value in (0.1, 0.5, 0.9)])
 
-    first, _mask, video, *_rest = _execute(bg_media=bg)
+    first, _mask, video, *_rest = _execute(background=bg)
     image = video.get_components().images
 
     assert image.shape == (3, 2, 4, 3)
@@ -128,7 +144,7 @@ def test_image_batch_background_maps_one_to_one_to_output_frames():
 def test_length_override_past_the_background_draws_bg_color():
     bg = _solid([0.5, 0.5, 0.5], batch=2)
 
-    image = _frames(_execute({"version": 2, "timeline": {"length": 3}}, bg_media=bg))
+    image = _frames(_execute({"version": 2, "timeline": {"length": 3}}, background=bg))
 
     assert image.shape[0] == 3
     assert torch.allclose(image[1], bg[1])
@@ -136,7 +152,7 @@ def test_length_override_past_the_background_draws_bg_color():
 
 
 def test_single_background_image_stays_for_the_whole_timeline():
-    image = _frames(_execute({"version": 2, "timeline": {"length": 2}}, bg_media=_solid([0.5, 0.5, 0.5])))
+    image = _frames(_execute({"version": 2, "timeline": {"length": 2}}, background=_solid([0.5, 0.5, 0.5])))
 
     assert image.shape[0] == 2
     assert torch.allclose(image, torch.full((2, 2, 4, 3), 0.5))
@@ -150,8 +166,8 @@ def _column_of_red(image: torch.Tensor) -> float:
 def test_port_sticker_is_appended_with_the_sticker_state_pose():
     sticker_state = json.dumps({"kind": "pano_sticker_state", "version": 1, "pose": {"yaw_deg": 90.0, "pitch_deg": 0.0, "roll_deg": 0.0, "hFOV_deg": 20.0}})
 
-    posed = _execute(output_size="1024", sticker=_solid([1.0, 0.0, 0.0]), sticker_state=sticker_state)[0]
-    default = _execute(output_size="1024", sticker=_solid([1.0, 0.0, 0.0]))[0]
+    posed = _execute(**output_size(1024), sticker=_solid([1.0, 0.0, 0.0]), sticker_state=sticker_state)[0]
+    default = _execute(**output_size(1024), sticker=_solid([1.0, 0.0, 0.0]))[0]
 
     assert _column_of_red(posed) == pytest.approx(0.75, abs=0.01)
     assert _column_of_red(default) == pytest.approx(0.5, abs=0.01)
@@ -163,8 +179,8 @@ def test_port_sticker_in_the_state_takes_the_sticker_state_pose():
     state = {"version": 2, "stickers": [{"id": "p", "source": {"kind": "port"}, "direction": {"value": {"yaw_deg": -90.0}}, "size": {"value": {"hFOV_deg": 20.0}}}]}
     sticker_state = json.dumps({"kind": "pano_sticker_state", "version": 1, "pose": {"yaw_deg": 90.0, "pitch_deg": 0.0, "roll_deg": 0.0, "hFOV_deg": 20.0}})
 
-    image = _execute(state, output_size="1024", sticker=_solid([1.0, 0.0, 0.0]), sticker_state=sticker_state)[0]
-    kept = _execute(state, output_size="1024", sticker=_solid([1.0, 0.0, 0.0]))[0]
+    image = _execute(state, **output_size(1024), sticker=_solid([1.0, 0.0, 0.0]), sticker_state=sticker_state)[0]
+    kept = _execute(state, **output_size(1024), sticker=_solid([1.0, 0.0, 0.0]))[0]
 
     # The stored pose gives way to sticker_state on every run (ADR 0030); without sticker_state it stays.
     assert _column_of_red(image) == pytest.approx(0.75, abs=0.01)
@@ -172,7 +188,7 @@ def test_port_sticker_in_the_state_takes_the_sticker_state_pose():
 
 
 def test_sticker_state_without_a_sticker_is_ignored():
-    image = _execute(output_size="1024", sticker_state=json.dumps({"kind": "pano_sticker_state", "version": 1, "pose": {"yaw_deg": 90.0}}))[0]
+    image = _execute(**output_size(1024), sticker_state=json.dumps({"kind": "pano_sticker_state", "version": 1, "pose": {"yaw_deg": 90.0}}))[0]
 
     assert torch.equal(image, GREEN.expand(1, 512, 1024, 3))
 
@@ -192,7 +208,7 @@ def test_file_source_is_read_from_the_input_directory(tmp_path, monkeypatch):
     _write_png(input_dir / "panorama_stickers" / "red.png", (255, 0, 0))
     monkeypatch.setattr(folder_paths, "get_input_directory", lambda: str(input_dir))
 
-    image = _execute(_file_sticker_state("red.png"), output_size="1024")[0]
+    image = _execute(_file_sticker_state("red.png"), **output_size(1024))[0]
 
     assert _column_of_red(image) == pytest.approx(0.5, abs=0.01)
 
@@ -205,15 +221,15 @@ def test_file_source_outside_the_input_directory_is_not_read(tmp_path, monkeypat
     _write_png(tmp_path / "outside.png", (255, 0, 0))
     monkeypatch.setattr(folder_paths, "get_input_directory", lambda: str(input_dir))
 
-    image = _execute(_file_sticker_state(filename, subfolder), output_size="1024")[0]
+    image = _execute(_file_sticker_state(filename, subfolder), **output_size(1024))[0]
 
     assert torch.equal(image, GREEN.expand(1, 512, 1024, 3))
 
 
-@pytest.mark.parametrize("name", ["scene", "sticker"])
+@pytest.mark.parametrize("name", ["world", "sticker"])
 def test_3d_files_neither_reader_takes_name_the_input(name):
     with pytest.raises(ValueError, match=f"3D file on the {name} input is neither a splat file .* nor a mesh file"):
-        _execute(output_size="1024", **{name: Types.File3D(BytesIO(b"not a model"))})
+        _execute(**output_size(1024), **{name: Types.File3D(BytesIO(b"not a model"))})
 
 
 def _count_render_calls(monkeypatch):
@@ -233,14 +249,14 @@ def test_execute_renders_only_the_first_frame(monkeypatch):
     counts = _count_render_calls(monkeypatch)
     bg = torch.stack([_solid([value, value, value])[0] for value in (0.1, 0.5, 0.9)])
 
-    _execute({"version": 2, "timeline": {"length": 4}}, bg_media=bg)
+    _execute({"version": 2, "timeline": {"length": 4}}, background=bg)
 
     assert counts == {"_sky_layers": 1, "_background": 1, "composite_frame": 1}
 
 
 def test_static_scene_renders_and_composites_once_for_all_frames(monkeypatch):
     state = {"version": 2, "timeline": {"length": 3}, "stickers": [{"id": "p", "source": {"kind": "port"}}]}
-    video = _execute(state, bg_media=_solid([0.5, 0.5, 0.5]), sticker=_solid([1.0, 0.0, 0.0]))[2]
+    video = _execute(state, background=_solid([0.5, 0.5, 0.5]), sticker=_solid([1.0, 0.0, 0.0]))[2]
     counts = _count_render_calls(monkeypatch)
 
     image = video.get_components().images
@@ -251,7 +267,7 @@ def test_static_scene_renders_and_composites_once_for_all_frames(monkeypatch):
 
 def test_background_batch_reuses_the_sky_and_composites_each_frame(monkeypatch):
     bg = torch.stack([_solid([value, value, value])[0] for value in (0.1, 0.5, 0.9)])
-    video = _execute({"version": 2, "timeline": {"length": 4}}, bg_media=bg)[2]
+    video = _execute({"version": 2, "timeline": {"length": 4}}, background=bg)[2]
     counts = _count_render_calls(monkeypatch)
 
     video.get_components()
@@ -278,7 +294,7 @@ def _painted_scene(*direction_keyframes):
 
 def _render_state(state):
     sticker = torch.from_numpy(bake_legacy_goldens._quadrant_sticker()[None])
-    return _execute(state, bg_media=build_background_erp(), sticker=sticker)
+    return _execute(state, background=build_background_erp(), sticker=sticker)
 
 
 def test_first_frame_mask_is_the_mask_of_the_first_output_frame():
@@ -310,7 +326,7 @@ def _sky_sticker_scene(pose_keyframes=(), opacity_keyframes=(), clip=None):
 
 
 def _sticker_scene_video(state):
-    return _execute(state, bg_media=_solid([0.5, 0.5, 0.5], height=64, width=128), sticker=_solid([1.0, 0.0, 0.0]))[2]
+    return _execute(state, background=_solid([0.5, 0.5, 0.5], height=64, width=128), sticker=_solid([1.0, 0.0, 0.0]))[2]
 
 
 def _render_sticker_scene(state):
