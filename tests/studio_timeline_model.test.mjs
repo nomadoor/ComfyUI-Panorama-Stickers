@@ -232,3 +232,12 @@ test("keysInRange finds the pins and Lane Keyframes of the lines and frames a bo
   const pins = keysInRange(model.lines, 0, model.lines.length - 1, 0, 12);
   assert.deepEqual(pins, [{ row: "camera", lane: null, frame: 0 }, { row: "sticker_1", lane: null, frame: 0 }, { row: "sticker_1", lane: "position", frame: 0 }]);
 });
+
+test("a port Sticker's bar without a duration ends where its media ends, or with the Timeline before a run", () => {
+  const state = studioState();
+  state.stickers[1].source = { kind: "port" };
+  state.stickers[1].clip = { start: 4, in: 0, duration: null };
+  assert.deepEqual(row(view(ctxOf(state, { media: { port: { kind: "VIDEO", frames: 48, duration: 2 } } })), "sticker_2").clip, { start: 4, end: 52 });
+  assert.deepEqual(row(view(ctxOf(state)), "sticker_2").clip, { start: 4, end: null });
+  assert.equal(row(view(ctxOf(state)), "sticker_2").label, "Sticker input");
+});

@@ -136,6 +136,19 @@ export function entryKeyable(entry) {
   return entry.kind === "camera" || entry.kind === "sticker";
 }
 
+// Where the bar of a row's Clip range ends, in Timeline frames: its duration's end; without one, where its media ends
+// (the background's `end`, a port Sticker's media, pano_port_media.js portMediaFrames), or null (the Timeline's end)
+// while that is not known or for other content.
+export function clipBarEnd(ctx, entry) {
+  const clip = entry.owner?.clip;
+  if (!clip) return null;
+  if (clip.duration !== null) return clip.start + clip.duration;
+  if (entry.kind === "background") return ctx.background?.end ?? null;
+  if (entry.owner.source?.kind !== "port") return null;
+  const meta = entry.layer ? entry.layer.portMeta : ctx.media?.port;
+  return meta ? portMediaFrames(clip, ctx.state.timeline.fps, meta) : null;
+}
+
 const inSpan = (frame, span) => frame > -FRAME_EPSILON && frame < span - FRAME_EPSILON;
 
 // The Timeline frames of the Keyframes prev and next jump between (docs/timeline-ui.md "前後の Keyframe へ飛ぶ"):
@@ -270,15 +283,6 @@ export function buildStudioTimeline(ctx, { selection = null, playhead = 0, playi
     lines.push({ row: entry.id, lane: null, keys: pins });
     for (const lane of lanes) lines.push({ row: entry.id, lane: lane.lane, keys: lane.keys });
     const clip = entry.owner?.clip;
-    let clipEnd = null;
-    if (clip) {
-      if (clip.duration !== null) clipEnd = clip.start + clip.duration;
-      else if (entry.kind === "background") clipEnd = ctx.background?.end ?? null;
-      else if (entry.owner.source?.kind === "port") {
-        const meta = entry.layer ? entry.layer.portMeta : ctx.media?.port;
-        clipEnd = meta ? portMediaFrames(clip, state.timeline.fps, meta) : null;
-      }
-    }
     return {
       id: entry.id,
       kind: entry.kind,
@@ -296,7 +300,7 @@ export function buildStudioTimeline(ctx, { selection = null, playhead = 0, playi
       dot: keyable ? { state: rowDotState(entry, playhead), disabled: !!dotBlocked, tip: dotBlocked || "Keyframe all values here (not the lens)" } : null,
       upstream: !!entry.layer,
       overridden: overridden(entry),
-      clip: clip ? { start: clip.start, end: clipEnd } : null,
+      clip: clip ? { start: clip.start, end: clipBarEnd(ctx, entry) } : null,
       clipEditable: entryClipEditable(ctx, entry),
       keysEditable: entryKeysEditable(ctx, entry),
       offset: entry.offset,
