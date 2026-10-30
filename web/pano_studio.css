@@ -145,6 +145,81 @@
   }
 }
 
+/* --- Panorama Studio's node surface (PanoStudioNodeSurface.vue; docs/studio-node-surface.md "表示の構成", values
+   docs/design.md "Panorama Studio のノード上の表示"). The canvas under it draws the Camera's output picture; the overlay
+   places the Open Studio button and the line under the picture where pano_studio_surface.js lays them out (inline
+   left / top / bottom / width). Only the button takes the pointer. */
+.pano-studio-node-frame {
+  background: transparent;
+}
+.pano-studio-node-surface {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  user-select: none;
+  line-height: 1;
+}
+.pano-studio-node-open {
+  position: absolute;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 14px 0 10px;
+  border: 0;
+  border-radius: var(--studio-r-part);
+  background: var(--studio-float);
+  color: var(--studio-fg);
+  font-size: var(--studio-text-sm);
+  font-weight: var(--studio-weight-head);
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  pointer-events: auto;
+  transition: background-color var(--studio-motion-hover);
+}
+.pano-studio-node-open:hover {
+  background: color-mix(in srgb, var(--studio-fill-hover) var(--studio-float-alpha), transparent);
+}
+.pano-studio-node-open:active {
+  background: color-mix(in srgb, var(--studio-fill-active) var(--studio-float-alpha), transparent);
+}
+.pano-studio-node-line {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: var(--studio-text-xs);
+  line-height: 1;
+}
+.pano-studio-node-shot {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  color: var(--studio-fg-2);
+  font-weight: var(--studio-weight);
+}
+.pano-studio-node-shot .label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pano-studio-node-size {
+  flex: none;
+  color: var(--studio-fg);
+  font-weight: var(--studio-weight-head);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: auto;
+}
+.pano-studio-node-unavailable {
+  position: absolute;
+}
+
 .pano-studio-num {
   font-variant-numeric: tabular-nums;
 }

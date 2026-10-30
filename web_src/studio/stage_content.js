@@ -115,7 +115,9 @@ export function createStageMedia({ assetSource, source, fetchApi = null, onChang
 // [inputs] `stickerFiles` is the `sticker` input's 3D media (studio/port_media.js files()) or null; `upstream` what the
 // upstream layers draw at `frame` ({ sky, stickers, items }, pano_upstream_layers.js viewInput) or null. A sky port
 // Sticker's evaluated vFOV is the one its media's aspect gives (pano_editor_state.js skyStickerVfov), as drawn.
-export function stageContent(state, frame, { media, editorFile = () => null, sceneFiles = null, sceneBox = () => null, stickerFiles = null, upstream = null }) {
+// `paintLayers` are the painting's layers among the sky ones (pano_surface_paint.js surfacePaintLayers; the node surface
+// draws them, the editor does not yet).
+export function stageContent(state, frame, { media, editorFile = () => null, sceneFiles = null, sceneBox = () => null, stickerFiles = null, upstream = null, paintLayers = [] }) {
   const evaluated = evaluateSceneState(state, frame);
   // Each Sticker's media once per content: the port Sticker's follows the playhead (one follow per frame).
   const shown = new Map();
@@ -128,7 +130,7 @@ export function stageContent(state, frame, { media, editorFile = () => null, sce
     const picture = mediaOnce(sticker);
     if (picture) evaluated.stickers[index].vFOV_deg = skyStickerVfov(sticker, evaluated.stickers[index], mediaSize(picture.media));
   });
-  const ownLayers = skyLayers(state, frame, { media: mediaOnce, zIndex: (sticker) => Number(sticker.z_index || 0), paintLayers: [], evaluated });
+  const ownLayers = skyLayers(state, frame, { media: mediaOnce, zIndex: (sticker) => Number(sticker.z_index || 0), paintLayers, evaluated });
   // The upstream Scene's sky lies under the node's own (each layer keeps its own order).
   const layers = upstream ? [...upstream.sky, ...ownLayers] : ownLayers;
   const stickers = worldStickerLayers(state, frame, state.stickers, { media: mediaOnce, evaluated });

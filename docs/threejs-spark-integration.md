@@ -300,7 +300,7 @@ three のアップロードは render の中でしか起きないので、Spark 
 - 描き直す条件：毎フレームは描かない。状態・再生位置・Camera・読み込んだ要素のどれかが変わったときだけ描き直す。再生中は再生の
   フレームごとに描き直す。
 - 解像度：Output の小窓（または Camera タブのフレーム）の画素の大きさに合わせた低い解像度で描く。
-- 向きと範囲の一致を守る test：ERP の画素と方向の対応は、出力と同じ `pano_camera_math.js` の写し方（`docs/scene-state-v2.md` の「パノラマの角度規約」の持ち主）を使い、既存の parity（`tests/test_camera_orientation.py`、`tests/test_studio_run_erp_orientation.py`）に、この表示で描いた ERP の向きの case を足す（未作成）。
+- 向きと範囲の一致を守る test：ERP の画素と方向の対応は、出力と同じ `pano_camera_math.js` の写し方（`docs/scene-state-v2.md` の「パノラマの角度規約」の持ち主）を使い、既存の parity（`tests/test_camera_orientation.py`）に、この表示で描いた ERP の向きの case を足す（未作成）。
 - 立方体の向き：6 方向は世界の軸にそろえた立方体で描き、Camera の回転は ERP に貼り直すときに掛ける。Camera が回るだけのとき
   （位置・状態・再生位置・読み込んだ要素が変わらない）は、6 面を描き直さず、貼り直しのパスだけを描く。
 - ビューの中の描き方（`renderLiveErp`）：面ごとに、Sky の層を面のカメラの行列から位置だけを除いたカメラで描き（`fillSky`）、深度を消して World を

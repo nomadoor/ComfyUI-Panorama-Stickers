@@ -6,8 +6,8 @@ import { clamp } from "./pano_math.js";
 import { createPanoCanvas, createPanoVideo, releasePanoCanvas } from "./pano_diagnostics.js";
 import { yawPitchToDir } from "./pano_camera_math.js";
 import { isPanoramaPreviewNodeName } from "./pano_preview_identity.js";
-import { editorActive, editorStateWrite, parsePanoEditorState, setEditorActive, sourceAsset } from "./pano_editor_state.js";
-import { loadSceneState } from "./pano_scene_state.js";
+import { cameraShot, editorActive, editorStateWrite, parsePanoEditorState, setEditorActive, sourceAsset } from "./pano_editor_state.js";
+import { loadSceneState, sceneGround } from "./pano_scene_state.js";
 import { surfacePaintLayers } from "./pano_surface_paint.js";
 import { shotCamera, viewProjection, workingSkyLayers } from "./pano_editor_view.js";
 import { acquirePreviewView, previewNodeCamera } from "./pano_preview_view.js";
@@ -31,7 +31,11 @@ import { fitFocalPx, getCutoutCameraParams } from "./pano_cutout_view_math.js";
 import PanoCutoutNodeSurface from "./components/PanoCutoutNodeSurface.vue";
 import PanoStickersNodeSurface from "./components/PanoStickersNodeSurface.vue";
 import PanoStudioNodeSurface from "./components/PanoStudioNodeSurface.vue";
-import { createStudioStatus, studioRunOutput, studioRunQuaternion } from "./pano_studio_status.js";
+import { createStudioStatus } from "./pano_studio_status.js";
+import { STUDIO_PICTURE_EMPTY, STUDIO_PICTURE_RADIUS, studioSurfaceLayout } from "./pano_studio_surface.js";
+import { outputErpInput, outputFrameInput } from "./studio/output_picture.js";
+import { stageContent } from "./studio/stage_content.js";
+import { eyeHeight, worldBoundRadius } from "./studio/view_scale.js";
 import {
   NODE_SURFACE_FRAME,
   createStickersNodeSurfaceSession,
@@ -54,6 +58,7 @@ import {
   stickerSelectionAccent,
 } from "./pano_sticker_affordance.js";
 import { installPanoSuiteStylesheet } from "./pano_styles.js";
+import { installStudioStylesheet } from "./studio/stylesheet.js";
 import {
   buildSharedImageCacheKey,
   createSharedImageCache,
@@ -96,7 +101,7 @@ import {
   removeTrackedDomWidget,
   trackDomWidgetRemoval,
 } from "./pano_dom_widget_lifecycle.js";
-import { DEFAULT_VIEW_HFOV, stateAnimationClips } from "./pano_space.js";
+import { DEFAULT_VIEW_HFOV, sceneFilesOf, stateAnimationClips } from "./pano_space.js";
 import { createFile3dEditorFiles, file3dEditorFileOf } from "./pano_file_3d.js";
 import { createViewportRestoreScheduler } from "./pano_viewport_restore.js";
 import { editorOpen, mediaCache, nodeSurface, stateSync } from "./pano_node_bridge.js";
@@ -107,9 +112,14 @@ const sharedPreviewImageCache = createSharedImageCache();
 const { linkedVideoFile, source: mediaSource } = createComfyMediaAdapter({ app, api });
 // The editor files of the 3D file Stickers the node surfaces' Auto length reads (their animated files' clips, ADR 0043),
 // one registry for every surface, as the editor asks the same route; an answer draws the graph again.
+// Panorama Studio's surfaces also draw the 3D file Stickers from those files, so an answer draws them again.
+const studioSurfaceDraws = new Set();
 const surfaceFile3dFiles = createFile3dEditorFiles({
   fetchApi: (path, options) => api.fetchApi(path, options),
-  onUpdate: () => app?.graph?.setDirtyCanvas?.(true, true),
+  onUpdate: () => {
+    app?.graph?.setDirtyCanvas?.(true, true);
+    studioSurfaceDraws.forEach((draw) => draw());
+  },
 });
 
 function getAnimPreviewWidgetName() {
@@ -538,11 +548,7 @@ const executedRefreshMonitor = {
         // The output of a node that the media is not read from changes nothing on this node.
         if (!selfHit && ![...getMediaSourceIds(node)].some((id) => executionIdMatches(executedId, id))) return;
         const reason = selfHit ? "self" : "upstream";
-        if (selfHit) {
-          // Every run, a cached one resent as it was too, loads Panorama Studio's run output again once.
-          disposeStudioRunImage(node);
-          nodeSurface(node).dom?.requestDraw?.();
-        }
+        if (selfHit) nodeSurface(node).dom?.requestDraw?.();
         if (isRepeatedOutput(mediaCache(node).executedOutputs, executedId, detail.output)) return;
         panoPreviewLog(node, "exec-refresh", { executedId, reason });
         invalidatePreviewImageCaches(node);
@@ -1412,9 +1418,8 @@ function surfaceSceneState(node, state) {
   return surface.scene.sceneState;
 }
 
-// What Panorama Studio's status and run output are made from (studioNodeStatus, studioRunOutput): its state_json
-// text and widgets, the size its last run reported while that run's media are still the inputs', and the output the
-// run returned (an ERP, or a Frame Camera's first frame).
+// What Panorama Studio's status is made from (studioNodeStatus): its state_json text and widgets, and the size its last
+// run reported while that run's media are still the inputs'.
 function studioStatusOptions(node) {
   const current = ["background", "external-sticker", "scene"].every((channel) => isNodeOutputMediaCurrent(node, channel));
   return {
@@ -1424,116 +1429,177 @@ function studioStatusOptions(node) {
     backgroundRange: Number(getWidget(node, "background_range")?.value) === 180 ? 180 : 360,
     backgroundColor: String(getWidget(node, "background_color")?.value ?? ""),
     run: (current && ownOutputUiValue(node, "pano_output_size")) || null,
-    erp: ownOutputUiValue(node, "pano_output_erp") || null,
-    frame: ownOutputUiValue(node, "pano_output_frame") || null,
   };
 }
 
-// Where Panorama Studio's status bar ends (its top 6px plus its height 26px, pano_editor.css, and a gap): a run's
-// flat first frame is fitted below it.
-const STUDIO_BAR_BOTTOM = 38;
-
-function disposeStudioRunImage(node) {
-  const media = mediaCache(node);
-  if (!media?.studioRunImage) return;
-  media.studioRunImage.image.removeAttribute("src");
-  media.studioRunImage = null;
+// The node's background_color (Panorama Studio; the legacy nodes' bg_color).
+function surfaceBackgroundColor(node, fallback = "#000000") {
+  return String((getWidget(node, "background_color") ?? getWidget(node, "bg_color"))?.value || fallback);
 }
 
-// The cached image of the run output `output` (studioRunOutput), or null when it is not the cached one.
-function cachedStudioRunImage(node, output) {
-  const cached = mediaCache(node).studioRunImage;
-  return output && cached?.src === imageSourceFromCandidate(output.entry) ? cached : null;
-}
-
-// What Panorama Studio's surface shows of its last run's output (`output`, studioRunOutput), as drawCanvas takes
-// it: { background } for an ERP, turned back into World by the rotation the run shot it with (studioRunQuaternion
-// of the entry's `rotation`), or { frame } for a perspective Camera's first frame, shown flat. Null while it loads and decodes, when it cannot be
-// loaded, or before any run. The image is the file at full size, loaded once and kept while the node's result
-// names it.
-function studioRunPicture(node, output) {
-  const media = mediaCache(node);
-  const surface = nodeSurface(node);
-  const src = output ? imageSourceFromCandidate(output.entry) : "";
-  if (media.studioRunImage && media.studioRunImage.src !== src) disposeStudioRunImage(node);
-  if (!src) return null;
-  let cached = media.studioRunImage;
-  if (!cached) {
-    const image = new Image();
-    const record = { src, image, ready: false, failed: false };
-    image.src = src;
-    // A file temp no longer holds is not asked for again until another run.
-    image.decode().then(() => {
-      if (media.studioRunImage !== record) return;
-      record.ready = true;
-      surface.dom?.requestDraw?.();
-    }, () => {
-      if (media.studioRunImage !== record) return;
-      record.failed = true;
-      surface.dom?.requestDraw?.();
-    });
-    media.studioRunImage = cached = record;
+// The layer media of a Sticker of the node's state (`item`, a working Sticker or a loaded state v2 one) as the view
+// takes it ({ media, revision, source? }), or null while it has none: its image, or the port Sticker's input media,
+// whose MP4 follows the playhead.
+function surfaceStickerMedia(node, state, item) {
+  if (item.visible === false) return null;
+  let img;
+  if (state.version === 2) {
+    img = getNodePreviewImage(node, item.id, sourceAsset(item.source), { external: item.source.kind === "port" });
+    const surfacePlayback = nodeSurface(node).playback;
+    if (item.source.kind === "port" && surfacePlayback) {
+      // The port Sticker's MP4 follows the playhead; the view keeps the texture before while the
+      // same media has no picture, and drops it for other media on the port.
+      const picture = surfacePlayback.playback.stickerPicture(surfacePlayback.stickerStill, img);
+      const source = portMediaSource(surfacePlayback.playback.stickerMedia, img);
+      return picture ? { media: picture, revision: getRenderableMediaRevisionToken(picture), source } : null;
+    }
+  } else {
+    const external = item.type === "external_image" || item.source_kind === "external_image";
+    const assetId = String(item.asset_id || "") || (external ? String(item.id || "") : "");
+    img = getNodePreviewImage(node, assetId, state.assets?.[item.asset_id], { external });
   }
-  if (!cached.ready) return null;
-  if (output.kind === "frame") return { frame: cached.image };
-  return {
-    background: {
-      media: cached.image,
-      revision: getRenderableMediaRevisionToken(cached.image),
-      coverage: Number(output.entry.coverage) === 180 ? 180 : 360,
-      quaternion: studioRunQuaternion(output.entry.rotation),
-    },
-  };
+  return isRenderableMediaReady(img) ? { media: img, revision: getRenderableMediaRevisionToken(img) } : null;
 }
 
-// What the note of Panorama Studio's surface says it shows (studioNodeStatus `display`).
-function studioRunDisplay(node, output) {
-  if (!output) return "not-run";
-  if (cachedStudioRunImage(node, output)?.failed) return "unavailable";
-  return output.current ? "run" : "edited";
+// The background the on-node surface draws (`bgImg`, the played VIDEO, its still or the linked image): outside its Clip
+// range and media (Panorama Studio) the node's background_color (an upstream Scene's while it stands in), as in the
+// output; null while it loads. `fill` (Panorama Studio) draws background_color without any background, as the output.
+function surfaceBackground(node, state, bgImg, { fill = false } = {}) {
+  const upstreamColor = isNodeOutputMediaCurrent(node, "scene") ? upstreamBackgroundOf((key) => ownOutputUiList(node, key))?.color : null;
+  if (nodeSurface(node).playback?.playback.backgroundShows === false) return bgColorBackground(upstreamColor || surfaceBackgroundColor(node));
+  if (isRenderableMediaReady(bgImg)) return { media: bgImg, revision: getRenderableMediaRevisionToken(bgImg), coverage: Number(state.coverage) === 180 ? 180 : 360 };
+  return fill && !bgImg ? bgColorBackground(upstreamColor || surfaceBackgroundColor(node)) : null;
+}
+
+// The background media the on-node surface draws: Panorama Studio's played background VIDEO (its Timeline), the legacy
+// node's looping one, or the image linked to the background input.
+function surfaceBackgroundMedia(node) {
+  const surface = nodeSurface(node);
+  return (surface.playback
+    ? playbackBackground(surface.playback)
+    : getNodeOwnOutputVideo(node, ["pano_input_videos"], () => surface.dom?.requestDraw?.())
+  ) || getLinkedInputImageForPreview(
+    node,
+    BACKGROUND_INPUT_NAMES,
+    () => surface.dom?.requestDraw?.(),
+    { preserveReadyWhilePending: false },
+  );
+}
+
+// Panorama Studio's picture (docs/studio-node-surface.md "撮る Camera の出力をその場で描く"): the Camera's output at the
+// display frame, drawn live from the state and the inputs into `layout.picture` (pano_studio_surface.js) of the surface's
+// canvas, through the editor's Output window inputs (studio/output_picture.js). Panorama mode draws the live ERP on
+// `erpCanvas`, then copies it. Returns whether the view drew it (false while the three.js view loads or fails).
+function drawStudioPicture(node, canvas, surfaceView, layout, erpCanvas) {
+  const surface = nodeSurface(node);
+  ensureRenderCache(node, "stickers");
+  const state = getCachedState(node);
+  const sceneState = surfaceSceneState(node, state);
+  const ratio = window.devicePixelRatio || 1;
+  const wrap = canvas.parentElement;
+  const surfW = Math.max(1, Math.round(Number(wrap?.clientWidth || canvas.clientWidth || 0) * ratio));
+  const surfH = Math.max(1, Math.round(Number(wrap?.clientHeight || canvas.clientHeight || 0) * ratio));
+  if (canvas.width !== surfW || canvas.height !== surfH) {
+    canvas.width = surfW;
+    canvas.height = surfH;
+  }
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return false;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, surfW, surfH);
+  const box = {
+    x: Math.round(layout.picture.x * ratio),
+    y: Math.round(layout.picture.y * ratio),
+    w: Math.round(layout.picture.w * ratio),
+    h: Math.round(layout.picture.h * ratio),
+  };
+  if (box.w < 2 || box.h < 2) return true;
+  ctx.save();
+  ctx.beginPath();
+  ctx.roundRect(box.x, box.y, box.w, box.h, STUDIO_PICTURE_RADIUS * ratio);
+  ctx.clip();
+  ctx.fillStyle = STUDIO_PICTURE_EMPTY;
+  ctx.fillRect(box.x, box.y, box.w, box.h);
+
+  const frame = surfaceFrame(node);
+  const shot = cameraShot(sceneState.camera, frame);
+  const ground = sceneGround(sceneState);
+  const list = (key) => ownOutputUiList(node, key);
+  const content = stageContent(sceneState, frame, {
+    media: (sticker) => surfaceStickerMedia(node, sceneState, sticker),
+    editorFile: (sticker) => file3dEditorFileOf(surfaceFile3dFiles, sticker, mediaSource),
+    sceneFiles: isNodeOutputMediaCurrent(node, "scene") ? sceneFilesOf(list("pano_scene_files"), list("pano_scene_meta"), mediaSource) : null,
+    stickerFiles: isNodeOutputMediaCurrent(node, "external-sticker") ? sceneFilesOf(list("pano_sticker_files"), list("pano_sticker_meta"), mediaSource) : null,
+    sceneBox: (url) => surfaceView.sceneBox(url),
+    paintLayers: surfacePaintLayers(surface, state),
+  });
+  const background = surfaceBackground(node, state, surfaceBackgroundMedia(node), { fill: true });
+  const radius = worldBoundRadius({ eye: eyeHeight(ground), content: content.sphere, camera: shot.position });
+  let drawn = false;
+  // A change of mode lets go of what the other mode held (the live ERP and its canvas, or the lens faces), as the
+  // editor's Output window does.
+  const kind = sceneState.camera.projection === "erp" ? "erp" : "frame";
+  if (surface.studioKind && surface.studioKind !== kind) {
+    surfaceView.release();
+    if (kind === "frame") {
+      erpCanvas.width = 0;
+      erpCanvas.height = 0;
+    }
+  }
+  surface.studioKind = kind;
+  if (kind === "erp") {
+    const drawnErp = surfaceView.renderLiveErp(outputErpInput({
+      shot,
+      erpRange: sceneState.camera.erp_range === 180 ? 180 : 360,
+      ground,
+      radius,
+      width: box.w,
+      height: box.h,
+      background,
+      content,
+      canvas: erpCanvas,
+    }));
+    if (drawnErp && erpCanvas.width > 1) {
+      ctx.drawImage(erpCanvas, 0, 0, erpCanvas.width, erpCanvas.height, box.x, box.y, box.w, box.h);
+      drawn = true;
+    }
+  } else {
+    const input = outputFrameInput({
+      shot,
+      ground,
+      radius,
+      width: box.w,
+      height: box.h,
+      background,
+      content,
+      backgroundColor: surfaceBackgroundColor(node),
+      lensKind: surface.studioLensKind ?? null,
+    });
+    surface.studioLensKind = input.lens?.kind ?? null;
+    const rendered = surfaceView.render(input);
+    if (rendered) {
+      ctx.drawImage(rendered.canvas, rendered.x, rendered.y, rendered.width, rendered.height, box.x, box.y, box.w, box.h);
+      drawn = true;
+    }
+  }
+  ctx.restore();
+  setRenderLoading(node, !drawn && !surfaceView.failed, "");
+  return drawn;
 }
 
 // What the on-node surfaces draw with three.js: the background, and the Sky layers of the node's
 // state (its sky Stickers and paint) from back to front, at surfaceFrame.
 function surfaceViewInput(node, state, bgImg) {
   const sceneState = surfaceSceneState(node, state);
-  const media = (item) => {
-    if (item.visible === false) return null;
-    let img;
-    if (state.version === 2) {
-      img = getNodePreviewImage(node, item.id, sourceAsset(item.source), { external: item.source.kind === "port" });
-      const surfacePlayback = nodeSurface(node).playback;
-      if (item.source.kind === "port" && surfacePlayback) {
-        // The port Sticker's MP4 follows the playhead; the view keeps the texture before while the
-        // same media has no picture, and drops it for other media on the port.
-        const picture = surfacePlayback.playback.stickerPicture(surfacePlayback.stickerStill, img);
-        const source = portMediaSource(surfacePlayback.playback.stickerMedia, img);
-        return picture ? { media: picture, revision: getRenderableMediaRevisionToken(picture), source } : null;
-      }
-    } else {
-      const external = item.type === "external_image" || item.source_kind === "external_image";
-      const assetId = String(item.asset_id || "") || (external ? String(item.id || "") : "");
-      img = getNodePreviewImage(node, assetId, state.assets?.[item.asset_id], { external });
-    }
-    return isRenderableMediaReady(img) ? { media: img, revision: getRenderableMediaRevisionToken(img) } : null;
-  };
   const paintLayers = surfacePaintLayers(nodeSurface(node), state);
-  // Outside the background's Clip range and media (Panorama Studio), bg_color shows in its place, as in the output.
-  const upstreamColor = isNodeOutputMediaCurrent(node, "scene") ? upstreamBackgroundOf((key) => ownOutputUiList(node, key))?.color : null;
-  const background = nodeSurface(node).playback?.playback.backgroundShows === false
-    ? bgColorBackground(upstreamColor || String((getWidget(node, "background_color") ?? getWidget(node, "bg_color"))?.value || "#000000"))
-    : isRenderableMediaReady(bgImg)
-      ? { media: bgImg, revision: getRenderableMediaRevisionToken(bgImg), coverage: Number(state.coverage) === 180 ? 180 : 360 }
-      : null;
   return {
-    background,
-    layers: workingSkyLayers(sceneState, surfaceFrame(node), state.stickers, { media, paintLayers }),
+    background: surfaceBackground(node, state, bgImg),
+    layers: workingSkyLayers(sceneState, surfaceFrame(node), state.stickers, { media: (item) => surfaceStickerMedia(node, state, item), paintLayers }),
   };
 }
 
-// `run` (Panorama Studio, studioRunPicture) is its last run's output: an ERP (`background`) drawn alone in place
-// of the background and the Sky layers it already holds, or a first frame (`frame`) fitted flat in the surface.
-function drawCanvas(node, canvas, surfaceView, run = null) {
+// The legacy on-node surfaces (PanoramaStickers, PanoramaCutout); Panorama Studio draws drawStudioPicture.
+function drawCanvas(node, canvas, surfaceView) {
   const surface = nodeSurface(node);
   const mode = String(surface.mode || "stickers");
   ensureRenderCache(node, mode);
@@ -1559,30 +1625,12 @@ function drawCanvas(node, canvas, surfaceView, run = null) {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.fillStyle = "#070707";
   ctx.fillRect(0, 0, surfW, surfH);
-  if (run?.frame) {
-    surfaceView.release();
-    setRenderLoading(node, false, "");
-    const { width, height } = getSourcePixelSize(run.frame);
-    const top = STUDIO_BAR_BOTTOM;
-    const scale = Math.min(surfW / width, (surfH - top) / height);
-    ctx.drawImage(run.frame, (surfW - width * scale) / 2, top + (surfH - top - height * scale) / 2, width * scale, height * scale);
-    return;
-  }
-  const runBackground = run?.background || null;
-  // Panorama Studio plays its background VIDEO with its Timeline; the legacy node loops it.
-  const bgImg = runBackground?.media || (surface.playback
-    ? playbackBackground(surface.playback)
-    : getNodeOwnOutputVideo(node, ["pano_input_videos"], () => surface.dom?.requestDraw?.())
-  ) || getLinkedInputImageForPreview(
-    node,
-    BACKGROUND_INPUT_NAMES,
-    () => surface.dom?.requestDraw?.(),
-    { preserveReadyWhilePending: false },
-  );
+  // The legacy node loops its background VIDEO.
+  const bgImg = surfaceBackgroundMedia(node);
   const bgReady = isRenderableMediaReady(bgImg);
   // Draws what camera sees into target and reports whether the view could draw it.
   let input = null;
-  const viewInput = () => (runBackground ? { background: runBackground, layers: [] } : surfaceViewInput(node, state, bgImg));
+  const viewInput = () => surfaceViewInput(node, state, bgImg);
   const drawView = (target, camera) => {
     input ||= viewInput();
     const rendered = surfaceView.render({ width: target.w, height: target.h, camera, ...input });
@@ -1682,11 +1730,10 @@ function drawCanvas(node, canvas, surfaceView, run = null) {
   if (!bgImg && panoramaDrawn) drawPanoGrid(ctx, projection, getNodeUiScale(canvas, rect));
   const selectedId = String(state?.active?.selected_sticker_id || "");
   const poseStickers = surfacePoseStickers(state, surfaceFrame(node));
-  // Panorama Studio's surface only shows the Scene: no selection.
-  const selected = panoramaDrawn && node.__panoStudio !== true
+  const selected = panoramaDrawn
     ? poseStickers.find((item) => String(item?.id || "") === selectedId && item?.visible !== false)
     : null;
-  if (panoramaDrawn && !runBackground) {
+  if (panoramaDrawn) {
     // The Sticker of the sticker input shows as a frame until the node's result has its media.
     poseStickers
       .filter((item) => item !== selected && item?.visible !== false && (item.external || item.source_kind === "external_image"))
@@ -1920,7 +1967,8 @@ function attachPanoramaPreviewImpl(node, options = {}) {
   // Panorama Studio's surface shows the Scene to look around in, without editing or playback.
   const studioSurface = stickersMode && node.__panoStudio === true;
   const stickerDrop = stickersMode && !studioSurface;
-  const panoramaInteractiveView = surface.mode !== "cutout";
+  // Panorama Studio's surface is the Camera's output: it does not look around (ADR 0049).
+  const panoramaInteractiveView = surface.mode !== "cutout" && !studioSurface;
   surface.noPreview = options.noPreview === true;
   surface.openEditor = typeof options.onOpen === "function" ? options.onOpen : null;
   const nodeType = String(node?.comfyClass || node?.type || node?.title || "");
@@ -1961,7 +2009,8 @@ function attachPanoramaPreviewImpl(node, options = {}) {
   root.className = "pano-node-preview-dom";
   root.classList.add(stickersMode ? "pano-node-preview--stickers" : "pano-node-preview--cutout");
   if (noPreview) root.classList.add("pano-node-preview--no-preview");
-  root.setAttribute("data-capture-wheel", "true");
+  // The wheel over Panorama Studio's surface goes to the graph: it does not look around.
+  if (!studioSurface) root.setAttribute("data-capture-wheel", "true");
   root.tabIndex = 0;
 
   root.style.cssText = [
@@ -1987,8 +2036,9 @@ function attachPanoramaPreviewImpl(node, options = {}) {
   }
 
   const wrap = document.createElement("div");
-  // The frame's radius, border and background come from .pano-node-frame (web/pano_editor.css).
-  wrap.className = "pano-node-frame";
+  // The frame's radius, border and background come from .pano-node-frame (web/pano_editor.css); Panorama Studio's
+  // picture has its own corners and no frame around it.
+  wrap.className = studioSurface ? "pano-studio-node-frame" : "pano-node-frame";
   wrap.style.cssText = [
     "position:absolute",
     "inset:0",
@@ -2004,7 +2054,7 @@ function attachPanoramaPreviewImpl(node, options = {}) {
     "object-position:center",
     "display:block",
     "touch-action:none",
-    "cursor:grab",
+    studioSurface ? "cursor:default" : "cursor:grab",
     "user-select:none",
     "-webkit-user-select:none",
   ].join(";");
@@ -2032,7 +2082,7 @@ function attachPanoramaPreviewImpl(node, options = {}) {
   // Node 2.0 decides whether the graph owns wheel input before the nested
   // listener runs. Match the supported frontend protocol used by the
   // Perspective Editor: focus the declared wheel-capture root on entry.
-  const wheelCaptureCleanup = bindWheelCaptureRoot(root);
+  const wheelCaptureCleanup = studioSurface ? () => {} : bindWheelCaptureRoot(root);
 
   const nodeSurfaceHost = document.createElement("div");
   if (nodeSurfaceHost) {
@@ -2083,7 +2133,11 @@ function attachPanoramaPreviewImpl(node, options = {}) {
     if (!state.inTick && !state.raf) state.raf = requestAnimationFrame(tick);
   };
   // The on-node surface draws through the three.js view it shares with the Preview nodes.
-  const surfaceView = acquirePreviewView(requestDraw);
+  // Panorama Studio draws 3D items too, so it hears when one loads or its splats are sorted again.
+  const surfaceView = acquirePreviewView(requestDraw, { items: studioSurface });
+  // Panorama Studio's live ERP (Panorama mode) is put here, then copied into the surface's canvas.
+  const studioErpCanvas = studioSurface ? createPanoCanvas({ label: "node.surface.erp" }) : null;
+  if (studioSurface) studioSurfaceDraws.add(requestDraw);
   const nodeSurfaceUiModel = reactive(stickersMode
     ? {
       ...stickersNodeSurfaceModel(getCachedState(node)),
@@ -2092,7 +2146,7 @@ function attachPanoramaPreviewImpl(node, options = {}) {
       viewUnavailable: false,
       playable: false,
       playing: false,
-      ...(studioSurface ? { status: { shot: "", size: "", note: "" } } : {}),
+      ...(studioSurface ? { status: { mode: "panorama", shot: "", size: "", ratio: 2, cap: "" }, layout: null } : {}),
     }
     : {
       ...cutoutNodeSurfaceModel(getCachedState(node)),
@@ -2372,6 +2426,8 @@ function attachPanoramaPreviewImpl(node, options = {}) {
   if (nodeSurfaceHost && nodeSurfaceSession) {
     try {
       void installPanoSuiteStylesheet();
+      // Panorama Studio's surface takes the new UI's look (docs/design.md "Panorama Studio のノード上の表示").
+      if (studioSurface) void installStudioStylesheet();
       nodeSurfaceVueApp = createApp(studioSurface ? PanoStudioNodeSurface : (stickersMode ? PanoStickersNodeSurface : PanoCutoutNodeSurface), {
         model: nodeSurfaceUiModel,
         onAction: (action) => {
@@ -2455,22 +2511,19 @@ function attachPanoramaPreviewImpl(node, options = {}) {
         state.needsDraw = false;
         if (surfacePlayback) syncSurfacePlayback();
         else syncLegacyVideo();
-        // Panorama Studio shows its last run's output once it has one, edited since or not.
-        const studioOptions = studioSurface ? studioStatusOptions(node) : null;
-        const runOutput = studioOptions ? studioRunOutput(studioOptions) : null;
-        const sceneState = () => surfaceSceneState(node, getCachedState(node));
-        // A collapsed or hidden surface does not load it.
-        const run = studioOptions && surfaceShown(wrap, !!node.flags?.collapsed, editorOpen(node))
-          ? studioRunPicture(node, runOutput)
-          : null;
-        // Collapsed or under the node's open editor, the surface does not draw and frees its textures.
-        if (!node.flags?.collapsed && !editorOpen(node)) drawCanvas(node, canvas, surfaceView, run);
-        else surfaceView.release();
-        nodeSurfaceUiModel.viewUnavailable = surfaceView.failed;
+        // Panorama Studio's line first: the picture takes the output's shape from it.
         if (studioSurface) {
-          const status = studioStatus({ ...studioOptions, display: studioRunDisplay(node, runOutput) }, sceneState);
+          const status = studioStatus(studioStatusOptions(node), () => surfaceSceneState(node, getCachedState(node)));
           if (status) nodeSurfaceUiModel.status = status;
         }
+        // Collapsed or under the node's open editor, the surface does not draw and frees its textures.
+        if (node.flags?.collapsed || editorOpen(node)) surfaceView.release();
+        else if (studioSurface) {
+          const layout = studioSurfaceLayout(wrap.clientWidth, wrap.clientHeight, nodeSurfaceUiModel.status.ratio);
+          if (JSON.stringify(layout) !== JSON.stringify(nodeSurfaceUiModel.layout)) nodeSurfaceUiModel.layout = layout;
+          drawStudioPicture(node, canvas, surfaceView, layout, studioErpCanvas);
+        } else drawCanvas(node, canvas, surfaceView);
+        nodeSurfaceUiModel.viewUnavailable = surfaceView.failed;
       }
     } finally {
       state.inTick = false;
@@ -2842,7 +2895,7 @@ function attachPanoramaPreviewImpl(node, options = {}) {
     ev.stopImmediatePropagation?.();
     viewportRestoreScheduler.schedule(graphSnapshot);
   };
-  const wheelTargets = stickersMode ? [wrap, canvas] : [wrap];
+  const wheelTargets = studioSurface ? [] : stickersMode ? [wrap, canvas] : [wrap];
   ["wheel", "mousewheel", "DOMMouseScroll"].forEach((name) => {
     wheelTargets.forEach((target) => target.addEventListener(name, onPreviewWheel, { passive: false, capture: true }));
   });
@@ -2979,6 +3032,8 @@ function attachPanoramaPreviewImpl(node, options = {}) {
       if (surface.playback === surfacePlayback) surface.playback = null;
     }
     surfaceView.dispose();
+    if (studioErpCanvas) releasePanoCanvas(studioErpCanvas);
+    studioSurfaceDraws.delete(requestDraw);
     surface.scene = null;
     surface.rasterCache?.dispose?.();
     surface.rasterCache = null;
@@ -2993,7 +3048,6 @@ function attachPanoramaPreviewImpl(node, options = {}) {
     dropCueTimer = null;
     sharedPreviewImageCache.disposeOwner(node);
     disposeNodeOutputVideoCache(node);
-    disposeStudioRunImage(node);
     if (state.raf) cancelAnimationFrame(state.raf);
     state.raf = 0;
     if (surface.cutout?.session === nodeSurfaceSession) surface.cutout = null;

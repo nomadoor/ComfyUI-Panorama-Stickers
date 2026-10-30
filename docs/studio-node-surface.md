@@ -46,7 +46,7 @@ Panorama Studio（`PanoramaStudio`）のノード上の表示（node surface）�
 - 一行の左は撮り方のアイコン（Panorama は 360° のアイコン、Frame は比のアイコン）と撮り方の名前、右は出力の大きさ。長いときは
   左の名前を省略記号で切り、大きさは切らない。
 - Vue mount 成功後だけ標準 `Open Studio Editor` widget を隠す。mount 失敗時は標準 widget を表示したままとし、editor への導線を失わない。
-- overlay のうちボタン以外は canvas の操作を遮らない（`pointer-events: none`）。
+- overlay のうちボタンと出力の大きさ（上限の tooltip を出す）以外は canvas の操作を遮らない（`pointer-events: none`）。
 - ノード上の表示は新しい UI の stylesheet（`web/pano_studio.css`）を読み込み、overlay の root に `.pano-studio` を付けてその値を使う。
   ライトとダークは ComfyUI のテーマに従う（`docs/design.md`）。
 
@@ -166,7 +166,7 @@ Timeline のフレーム（表示フレーム）の背景の VIDEO と `port` �
 - backgroundと `port` のStickerの実行結果鮮度は独立して管理し、`bg_media` の接続変更で `port` のSticker textureを失効させない。
 - animation frameは同時に1件だけ予約する。
 - camera frameとresizeはDOM canvasだけを更新し、host graph canvas全体を継続再描画しない。
-- Panorama モードのその場の ERP は node ごとの 2D canvas に描いてから surface の canvas に写す。その canvas は teardown で大きさを 0 にして放す。
+- Panorama モードのその場の ERP は node ごとの 2D canvas に描いてから surface の canvas に写す。その canvas は teardown で大きさを 0 にして放す。Panorama と Frame を切り替えたときは、使わなくなった側（その場の ERP と canvas、レンズの面）を放す。
 - teardownはVue app、RAF、ResizeObserver、media callback、render core、listener、widget hookを破棄・復元する。
   remove / reconfigure / re-addで二重mount、listener、RAF、media callbackを残さない。
 - raster objectのnode preview用surfaceは最大1024×512とし、objectごとに最新revisionだけを保持する。

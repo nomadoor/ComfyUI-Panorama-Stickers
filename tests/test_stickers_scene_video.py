@@ -75,8 +75,8 @@ def _gray(image):
 
 
 def _record_evaluated_frames(monkeypatch):
-    """The frames evaluate_scene_state is called at. `execute` calls it twice before the `video` output is read: for
-    the first frame and for the rotation of the output ERP (ADR 0048), so the `video` frames start at [2:]."""
+    """The frames evaluate_scene_state is called at. `execute` calls it once before the `video` output is read, for the
+    first frame, so the `video` frames start at [1:]."""
     frames = []
     original = nodes.evaluate_scene_state
 
@@ -160,7 +160,7 @@ def test_trimmed_frames_are_evaluated_from_the_start_of_the_trim(tmp_path, monke
 
     _frames(_execute({"version": 2, "timeline": {"fps": 25.0}}, background=_cfr(tmp_path).as_trimmed(0.12, 0.2)))
 
-    assert frames[2:] == pytest.approx([0.0, 1.0, 2.0, 3.0, 4.0])
+    assert frames[1:] == pytest.approx([0.0, 1.0, 2.0, 3.0, 4.0])
 
 
 def test_variable_frame_rate_frames_are_evaluated_at_their_pts(tmp_path, monkeypatch):
@@ -170,7 +170,7 @@ def test_variable_frame_rate_frames_are_evaluated_at_their_pts(tmp_path, monkeyp
     output = _execute({"version": 2, "timeline": {"fps": 25.0}}, background=video)[3]
     components = output.get_components()
 
-    assert frames[2:] == pytest.approx([0.0, 1.0, 1.5, 3.0, 5.0, 6.0])
+    assert frames[1:] == pytest.approx([0.0, 1.0, 1.5, 3.0, 5.0, 6.0])
     assert _gray(components.images) == list(range(6))
     # The frame rate is the stream's average rate, as the core reports it.
     assert components.frame_rate == video.get_frame_rate() == output.get_frame_rate()
@@ -184,7 +184,7 @@ def test_recorded_fps_keeps_seconds_when_the_background_fps_differs(tmp_path, mo
 
     assert output.get_frame_rate() == 25
     assert output.get_frame_count() == 5
-    assert frames[2:] == pytest.approx([0.0, 2.0, 4.0, 6.0, 8.0])
+    assert frames[1:] == pytest.approx([0.0, 2.0, 4.0, 6.0, 8.0])
 
 
 def test_length_override_past_the_background_video_draws_bg_color(tmp_path, monkeypatch):
@@ -195,7 +195,7 @@ def test_length_override_past_the_background_video_draws_bg_color(tmp_path, monk
     assert image.shape[0] == 12
     assert _gray(image[:10]) == list(range(10))
     assert torch.equal(image[10:], torch.tensor([1.0, 0.0, 0.0]).expand(2, 32, 64, 3))
-    assert frames[2:] == pytest.approx([float(index) for index in range(12)])
+    assert frames[1:] == pytest.approx([float(index) for index in range(12)])
 
 
 def test_audio_is_the_background_audio_cut_to_the_output_length(tmp_path):
@@ -306,7 +306,7 @@ def test_non_file_video_is_read_through_the_core(monkeypatch):
     assert image.shape == (3, 4, 8, 3)
     assert torch.allclose(image[:, 0, 0, 0], torch.tensor([0.0, 0.25, 0.5]))
     assert components.frame_rate == 30
-    assert frames[2:] == pytest.approx([0.0, 1.0, 2.0])
+    assert frames[1:] == pytest.approx([0.0, 1.0, 2.0])
     # 3 frames at 30 fps are 0.1 s.
     assert torch.equal(audio["waveform"], waveform[..., :800]) and audio["sample_rate"] == 8000
 
@@ -510,7 +510,7 @@ def test_hold_cut_is_not_late_on_a_video_frame_just_before_the_keyframe(tmp_path
     image = _frames(_execute(state, background=_cfr(tmp_path, count=5), sticker=red))
 
     # The 1 ms PTS of frame 3 is snapped to Timeline frame 3; without the snap it stays just short of it.
-    assert 3.0 - 1e-6 < frames[2:][3] <= 3.0
+    assert 3.0 - 1e-6 < frames[1:][3] <= 3.0
     center = image[:, image.shape[1] // 2, image.shape[2] // 2]
     is_red = [bool(torch.allclose(pixel, torch.tensor([1.0, 0.0, 0.0]), atol=1e-3)) for pixel in center]
     assert is_red == [True, True, True, False, False]
