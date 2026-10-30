@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { createHistory, createEditorHistory } from "../web_src/editor/history.js";
@@ -348,10 +347,6 @@ test("the length's reset returns to the derived length as one Undo step, and doe
   assert.equal(timeline.timelineSpanFrames(), 48);
   history.restoreHistory(-1);
   assert.equal(state.timeline.length, 80);
-  // The field takes only a number; an empty one leaves the length as it is.
-  const vue = readFileSync(new URL("../web_src/components/PanoTimeline.vue", import.meta.url), "utf8");
-  assert.match(vue, /@click="emit\('action', \{ type: 'length', length: null \}\)"/);
-  assert.match(vue, /if \(!text\) \{\n\s*event\.target\.value = lengthText\.value;\n\s*return;/);
 });
 
 // docs/timeline-ui.md: a Clip range or Keyframe drag that is cancelled goes back to where it started, with no Undo

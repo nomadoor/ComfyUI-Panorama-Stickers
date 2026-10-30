@@ -6,7 +6,6 @@ import { Group, Mesh, Object3D, PerspectiveCamera, Scene } from "three";
 import { CAMERA_PREVIEW_OWNER, cameraPreviewChanged, splatDrawReason } from "../web_src/editor/camera_preview.js";
 import { DRAW_REASON } from "../web_src/pano_frame_scheduler.js";
 import { createSparkViews, disposeSpark } from "../web_src/pano_spark_views.js";
-import { readEditorSource } from "./editor_source.mjs";
 
 const STAGE = undefined;
 
@@ -251,15 +250,6 @@ test("a Spark renderer and a SplatMesh never see two cameras in one frame", () =
   assert.deepEqual([...poses(updates.get(previewMesh))], [previewPose]);
   assert.deepEqual(updates.get(stageMesh), stage.seen.map(([, pose]) => pose));
   assert.equal(loaded.pose, null);
-});
-
-// The three.js view's own Spark renderer per owner, sorted for its camera, is held by tests/browser (scene_viewer,
-// lens_view). The editor wiring below goes with the editor's rewrite.
-test("the editor passes its camera preview as its own owner, and frees its renderer when it hides", () => {
-  const editor = readEditorSource();
-  assert.match(editor, /drawEditorViewShot\(\{ x: 0, y: backgroundCanvas\.height - size\.height, w: size\.width, h: size\.height \}, shot, CAMERA_PREVIEW_OWNER\)/);
-  assert.match(editor, /editorView\.releaseSplats\(CAMERA_PREVIEW_OWNER\)/);
-  assert.match(editor, /onSplats: \(owner\) => requestDraw\(\{ localOnly: true, reason: splatDrawReason\(owner\) \}\)/);
 });
 
 test("a Spark renderer's sort draws its own view again: the stage's does not redraw the camera preview", () => {

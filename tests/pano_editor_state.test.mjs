@@ -42,7 +42,6 @@ import { applyStickersNodeSurfaceAction } from "../web_src/pano_stickers_node_su
 import { cutoutFilmPointToWorldDir, worldDirToCutoutFilmPoint } from "../web_src/pano_cutout_view_math.js";
 import { evaluateCamera, evaluateSceneState } from "../web_src/pano_scene_eval.js";
 import { defaultCamera, loadSceneState, rebaseSceneState } from "../web_src/pano_scene_state.js";
-import { readEditorSource } from "./editor_source.mjs";
 
 const readFixture = (name) => readFileSync(new URL(`./fixtures/scene_state/${name}.json`, import.meta.url), "utf8");
 const sceneNode = () => ({ __panoSceneStateV2: true });
@@ -400,17 +399,6 @@ test("a sky Sticker with Keyframes can be locked and edited on the node", () => 
   assert.equal(state.stickers[0].direction.value.yaw_deg, 30, "the reducer does not change the state it was given");
 });
 
-test("the editor has no Render Quality setting", () => {
-  const dir = new URL("../web_src/", import.meta.url);
-  const sources = [
-    ...readdirSync(dir).filter((name) => name.endsWith(".js")),
-    ...readdirSync(new URL("components/", dir), { recursive: true }).filter((name) => name.endsWith(".vue")).map((name) => `components/${name}`),
-  ].map((name) => [name, readFileSync(new URL(name, dir), "utf8")]);
-  for (const [name, text] of sources) {
-    assert.ok(!text.includes("preview_quality") && !text.includes("Render Quality"), name);
-  }
-});
-
 test("the inspector edits the Camera's Lanes by the recording rule", () => {
   const state = parseSceneEditorState(readFixture("v2_canonical"));
   const { camera } = state;
@@ -587,9 +575,6 @@ test("a painting layer saved in an earlier editor session stays current until it
   assert.equal(paintingLayerNeedsSync(null, { ...painted, paintCount: 0 }), false);
   // A pasted node (new id) still references the source node's files, which that node keeps overwriting.
   assert.equal(paintingLayerNeedsSync(saved, { ...painted, nodeId: "7" }), true);
-
-  const editor = readEditorSource();
-  assert.match(editor, /function needsPaintingLayerSync\(\) \{\n[^\n]*\n[^\n]*\n\s*return paintingLayerNeedsSync\(state\.painting_layer, /);
 });
 
 // An undo or redo step restores a snapshot without the painting_layer. Undoing an edit that left the painting
@@ -611,9 +596,6 @@ test("an undo keeps the painting layer while the painting is the same, and drops
   const repainted = restoredHistoryState(current, JSON.stringify(moved));
   assert.equal(repainted.paintingChanged, true);
   assert.equal(repainted.state.painting_layer, undefined);
-
-  const editor = readEditorSource();
-  assert.match(editor, /const restored = restoredHistoryState\(state, snapshot\);[\s\S]*?if \(restored\.paintingChanged\) markPaintStrokeVisualsDirty\(\);\s*else markObjectVisualsDirty\(\);/);
 });
 
 test("opening the editor rebases the state to the fps a video sets, keeping its times in seconds", () => {

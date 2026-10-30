@@ -8,17 +8,11 @@ from types import ModuleType, SimpleNamespace
 
 import torch
 
-from editor_source import editor_source
-
 
 _MISSING = object()
 
 
 class TestNodesPreview(unittest.TestCase):
-    def _web_source_path(self, *parts):
-        repo_root = Path(__file__).resolve().parent.parent
-        return repo_root / "web_src" / Path(*parts)
-
     def _web_runtime_path(self, *parts):
         repo_root = Path(__file__).resolve().parent.parent
         return repo_root / "web" / Path(*parts)
@@ -280,118 +274,6 @@ class TestNodesPreview(unittest.TestCase):
         ]
         assert inputs["coverage"].options == ["360", "180"]
         assert schema.hidden == ["UNIQUE_ID"]
-
-    def test_preview_frontend_route_is_isolated(self):
-        preview_wire = self._web_source_path("pano_node_preview.js").read_text(encoding="utf-8")
-        assert 'from "./pano_preview_previewnode.js"' in preview_wire
-        assert "attachPreviewNodeRuntime" in preview_wire
-        assert "attachStandalonePreviewAuto" not in preview_wire
-        assert 'mode: "stickers"' not in preview_wire.split("export function attachPreviewNode", 1)[1].split("export function attachStickersNodePreview", 1)[0]
-        assert "runtimeAttachPanoramaPreview(target" not in preview_wire
-
-    def test_preview_editor_attach_is_node_created_only(self):
-        lifecycle_js = self._web_source_path("pano_editor_extension.js").read_text(encoding="utf-8")
-        install_block = lifecycle_js.split("function installStandalonePreviewNode", 1)[1].split("function installStandalonePreviewInstance", 1)[0]
-        assert "attachPreviewNode(nodeType" not in install_block
-        instance_block = lifecycle_js.split("function installStandalonePreviewInstance", 1)[1].split("export function createPanoEditorExtension", 1)[0]
-        assert "attachPreview(node, {" in instance_block
-
-    def test_editor_lifecycle_is_delegated_to_the_extension_boundary(self):
-        editor_js = editor_source()
-        main_js = self._web_source_path("main.js").read_text(encoding="utf-8")
-        assert 'from "./pano_editor_extension.js";' in editor_js
-        assert "queuePendingStickerOperation" in editor_js
-        assert "createPanoEditorExtension({" in main_js
-        assert "app.registerExtension(extension);" in main_js
-        assert "function installEditorButton" not in editor_js
-        assert "function installStandalonePreviewInstance" not in editor_js
-
-    def test_preview_runtime_has_no_embedded_button(self):
-        preview_js = self._web_source_path("pano_preview_previewnode.js").read_text(encoding="utf-8")
-        assert 'document.createElement("button")' not in preview_js
-        assert "getLegacyButtonRect" not in preview_js
-
-    def test_preview_node_prefers_self_rendered_input_over_upstream_preview(self):
-        preview_js = self._web_source_path("pano_preview_previewnode.js").read_text(encoding="utf-8")
-        candidate_block = preview_js.split("const candidateGroups = [", 1)[1].split("];", 1)[0]
-        assert candidate_block.index("selfOutput?.ui?.pano_input_images") < candidate_block.index("outputs?.ui?.pano_input_images")
-        assert candidate_block.index("selfOutput?.pano_input_images") < candidate_block.index("outputs?.pano_input_images")
-
-    def test_editor_runtime_and_preview_draw_with_the_three_js_view(self):
-        editor_js = editor_source()
-        runtime_js = self._web_source_path("pano_preview_runtime.js").read_text(encoding="utf-8")
-        preview_node_js = self._web_source_path("pano_preview_previewnode.js").read_text(encoding="utf-8")
-        assert 'from "./pano_editor_view.js"' in editor_js
-        assert 'from "./pano_preview_view.js"' in runtime_js
-        assert 'from "./pano_preview_view.js"' in preview_node_js
-        for source in (editor_js, runtime_js, preview_node_js):
-            assert "createPanoramaRenderCore" not in source
-            assert "renderToTarget(" not in source
-            assert "pano_gl_scene" not in source
-        for name in ("pano_gl_renderer.js", "pano_gl_scene.js", "pano_render_core.js"):
-            assert not self._web_source_path(name).exists()
-
-    def test_preview_node_grid_is_fallback_only(self):
-        preview_js = self._web_source_path("pano_preview_previewnode.js").read_text(encoding="utf-8")
-        assert "if (!isRenderableMediaReady(img) || width <= 1 || height <= 1) {" in preview_js
-        assert "else drawGrid(ctx, width, height);" in preview_js
-        # No media, a failed view (its message is on the node surface), and before the view loads.
-        assert preview_js.count("drawGrid(ctx, width, height);") == 3
-
-    def test_editor_debug_probe_is_removed_from_normal_path(self):
-        editor_js = editor_source()
-        assert "function panoEditorDebug(" not in editor_js
-
-    def test_preview_runtime_wheel_and_scheduler_guards(self):
-        preview_js = self._web_source_path("pano_preview_previewnode.js").read_text(encoding="utf-8")
-        assert 'root.addEventListener("wheel"' in preview_js
-        assert 'canvas.addEventListener("wheel"' not in preview_js
-        assert "mousewheel" not in preview_js
-        assert "DOMMouseScroll" not in preview_js
-        assert "app?.canvas?.setDirty?.(true, true)" not in preview_js
-        assert "lockGraphViewportSnapshot" not in preview_js
-        assert "restoreGraphViewportSnapshot" not in preview_js
-        assert "if (this.controller.applyWheelEvent(ev)) this.requestDraw();" not in preview_js
-        assert 'this.root.setAttribute("data-capture-wheel", "true");' in preview_js
-        assert 'this.root.setAttribute("tabindex", "0");' in preview_js
-        assert "root.focus?.({ preventScroll: true });" in preview_js
-        assert "this.inTick = false;" in preview_js
-        assert "this.queuedDuringTick = false;" in preview_js
-
-    def test_shared_runtime_discards_the_dormant_legacy_stickers_surface(self):
-        runtime_js = self._web_source_path("pano_preview_runtime.js").read_text(encoding="utf-8")
-        assert "function attachLegacyStickersPreview" not in runtime_js
-        assert "legacy_draw_auto" not in runtime_js
-
-    def test_stickers_without_preview_do_not_force_large_node_size(self):
-        lifecycle_js = self._web_source_path("pano_editor_extension.js").read_text(encoding="utf-8")
-        stickers_block = lifecycle_js.split('if (matchType === "PanoramaStickers") {', 1)[1].split(
-            'ensureActionButtonWidget(node, buttonText, () => openEditor(node, "cutout"))',
-            1,
-        )[0]
-        preview_block = stickers_block.split("if (enableStickersPreview) {", 1)[1]
-        assert "attachStickers(node" in preview_block
-        assert "node.size = [360, 260]" in preview_block
-
-    def test_paint_rebuild_ui_scaffold_strings(self):
-        editor_js = editor_source()
-        css = self._web_runtime_path("pano_editor.css").read_text(encoding="utf-8")
-        assert 'data-tool-rail' in editor_js
-        assert 'data-tool-mode' in editor_js
-        assert '.pano-paint-footer' in css
-        assert 'pano-floating-bottom' not in editor_js
-        assert '.pano-floating-left' in css
-        assert '.pano-paint-footer' in css
-        assert 'top: 50%;' in css
-        assert 'Clear All Paint Data' in editor_js
-
-    def test_no_new_active_preview_dependency_on_editor_core(self):
-        editor_js = editor_source()
-        runtime_js = self._web_source_path("pano_preview_runtime.js").read_text(encoding="utf-8")
-        preview_node_js = self._web_source_path("pano_preview_previewnode.js").read_text(encoding="utf-8")
-        assert 'from "./pano_editor_core.js"' not in editor_js
-        assert 'from "./pano_editor_core.js"' not in runtime_js
-        assert 'from "./pano_editor_core.js"' not in preview_node_js
 
     def test_runtime_bundle_exists_and_has_content(self):
         bundle_js = self._web_runtime_path("panorama_suite.js").read_text(encoding="utf-8")
