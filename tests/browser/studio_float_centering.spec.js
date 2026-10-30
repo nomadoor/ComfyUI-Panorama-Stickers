@@ -70,6 +70,24 @@ for (const dpr of [1, 2]) {
       expect(problems).toEqual([]);
     });
 
+    // docs/design.md "上端の中央の一行の上下の位置": the line's vertical center is the tabs' (the Preview window has no line).
+    test("the top-center line's vertical center is the tabs' vertical center", async ({ page }) => {
+      const problems = watch(page);
+      await go(page, "studio_editor.html", "__studio");
+      await expect(page.locator(".pano-studio-notice")).toHaveCount(0, { timeout: 30_000 });
+      await page.locator('[data-action="frame-selected"]').click();
+      await expect(page.locator(".pano-studio-notice")).toHaveText("Nothing to frame");
+      const centers = await page.evaluate(() => {
+        const middle = (selector) => {
+          const rect = document.querySelector(selector).getBoundingClientRect();
+          return rect.top + rect.height / 2;
+        };
+        return { tabs: middle(".pano-studio-tabs"), line: middle(".pano-studio-notice") };
+      });
+      expect(Math.abs(centers.line - centers.tabs)).toBeLessThanOrEqual(LIMIT);
+      expect(problems).toEqual([]);
+    });
+
     test("the paint bar and its colors, the mask bar, and the selection bar", async ({ page }) => {
       const problems = watch(page);
       await go(page, "studio_paint.html", "__studio");

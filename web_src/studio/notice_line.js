@@ -1,11 +1,12 @@
 // The one line at the top center of the stage (docs/studio-ui.md "画面の区画", "読み込み中と空の画面", "一行の知らせの
 // 種類"): which line shows, one at a time, and its kind, which sets the mark on its left. A notice of an operation
 // that did nothing comes before one that was done, before what the stage waits for, before a warning that stays, before the empty stage's hint.
+import { STUDIO_BACKGROUND_INPUT_NAMES } from "../pano_preview_video.js";
 import { VIEW_UNAVAILABLE_MESSAGE } from "../pano_preview_view.js";
 import { ADD_TEXT } from "./add_files.js";
 
-// The kinds and their marks: "stopped" a coral dot, "done" a lime dot, "warning" a soft yellow dot, "info" no mark,
-// "loading" a small spinning ring.
+// The kinds and their marks: "stopped" a coral dot, "done" a lime dot, "warning" a soft yellow dot, "info" a neutral
+// dot, "loading" a small spinning ring.
 export const NOTICE_KINDS = Object.freeze(["stopped", "done", "warning", "info", "loading"]);
 
 export const LINE_TEXT = Object.freeze({
@@ -19,6 +20,17 @@ export const LINE_TEXT = Object.freeze({
   upstreamPending: "Run the workflow to show the upstream scene.",
   cameraMoved: "Camera moved to this view",
 });
+
+// The node's inputs whose content the stage draws: one linked brings something even before the node has run.
+export const STAGE_INPUTS = Object.freeze(["world", ...STUDIO_BACKGROUND_INPUT_NAMES, "sticker", "scene"]);
+
+// Whether the stage is empty (docs/studio-ui.md "読み込み中と空の画面"): nothing of its own drawn and nothing from an
+// input. `background` the own background's status ("none" | "loading" | "ready" | "failed"), `stickers` the number of
+// own Stickers (`port` ones too), `paint` the number of drawn paint layers, `linked` the names of the linked inputs,
+// `worldItems` the number of `world` 3D items in the node's current result, `upstream` the number of upstream layers.
+export function stageEmpty({ background = "none", stickers = 0, paint = 0, linked = [], worldItems = 0, upstream = 0 } = {}) {
+  return background === "none" && !stickers && !paint && !worldItems && !upstream && !linked.some((name) => STAGE_INPUTS.includes(name));
+}
 
 // ui: the stage's and the editor's report (stage.js stageUi() with `background` and `empty`): `notice` the text of an
 // operation that did nothing (null without one), `view` "loading" | "ready" | "failed", `background` "none" |

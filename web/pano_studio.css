@@ -58,6 +58,9 @@
   --studio-frame-pad: 8px;
   --studio-window-gap: 8px;
   --studio-float-inset: 16px;
+  /* The top-left tabs: an item's height and the float's padding around the items (the group is 34 + 2 * 4 = 42px). */
+  --studio-tab-item: 34px;
+  --studio-float-seg-pad: 4px;
   /* The name on the bar at the bottom center: one width for every name, so a name never changes the bar's width. */
   --studio-bar-name-width: 140px;
   --studio-row-gap: 8px;
@@ -376,7 +379,7 @@
 
 .pano-studio-tabs .pano-studio-seg-item {
   width: 108px;
-  height: 34px;
+  height: var(--studio-tab-item);
   padding: 0;
   font-size: var(--studio-text-md);
 }
@@ -397,7 +400,7 @@
 }
 
 .pano-studio-float.pano-studio-seg {
-  --studio-seg-pad: 4px;
+  --studio-seg-pad: var(--studio-float-seg-pad);
   background: var(--studio-float);
   border: 0;
 }
@@ -1494,7 +1497,17 @@
 /* The fixed places over the stage, 16px from its edges. */
 .pano-studio-at-tabs { position: absolute; left: var(--studio-float-inset); top: var(--studio-float-inset); }
 .pano-studio-at-rail { position: absolute; left: var(--studio-float-inset); top: 50%; transform: translateY(-50%); }
-.pano-studio-at-notice { position: absolute; left: 50%; top: var(--studio-float-inset); transform: translateX(-50%); pointer-events: none; }
+/* The top-center line: a box as tall as the tabs' group, the line at its vertical center, so both centers are one line. */
+.pano-studio-at-notice {
+  position: absolute;
+  left: 50%;
+  top: var(--studio-float-inset);
+  height: calc(var(--studio-tab-item) + 2 * var(--studio-float-seg-pad));
+  display: flex;
+  align-items: center;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
 .pano-studio-at-output { position: absolute; right: var(--studio-float-inset); top: var(--studio-float-inset); }
 .pano-studio-at-nav { position: absolute; right: var(--studio-float-inset); top: 50%; transform: translateY(-50%); }
 .pano-studio-at-bar { position: absolute; left: 50%; bottom: var(--studio-float-inset); transform: translateX(-50%); }
@@ -1646,8 +1659,8 @@
   gap: 8px;
 }
 
-/* The one line at the top center: a notice (a coral dot), an operation done (a lime dot), what the stage waits for, or
-   the empty stage's hint. */
+/* The one line at the top center: a notice (a coral dot), an operation done (a lime dot), a warning (a soft yellow
+   dot), what the stage waits for (a ring), or an info line such as the empty stage's hint (a neutral dot). */
 .pano-studio-notice {
   display: inline-flex;
   align-items: center;
@@ -1672,6 +1685,12 @@
 
 .pano-studio-notice.is-done .pano-studio-notice-dot {
   background: var(--studio-lime);
+}
+
+/* Info: a neutral dot, the text color at 55%. */
+.pano-studio-notice.is-info .pano-studio-notice-dot {
+  background: var(--studio-fg);
+  opacity: 0.55;
 }
 
 /* Loading: a small ring, a quarter of it in the text color, turning. */

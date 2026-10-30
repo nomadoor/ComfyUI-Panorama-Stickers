@@ -325,7 +325,7 @@ test("the Keyframe dot sends toggle, a reset at its default and a disabled row s
   expect(problems).toEqual([]);
 });
 
-test("the top-center line's mark follows its kind: coral, soft yellow, none, a turning ring", async ({ page }) => {
+test("the top-center line's mark follows its kind: coral, soft yellow, neutral, a turning ring", async ({ page }) => {
   const { problems } = await open(page);
   const marks = await page.evaluate(() => [...document.querySelectorAll('[data-theme-col="dark"] [data-notices] .pano-studio-notice')].map((line) => {
     const dot = line.querySelector(".pano-studio-notice-dot");
@@ -333,14 +333,15 @@ test("the top-center line's mark follows its kind: coral, soft yellow, none, a t
     return {
       kind: line.dataset.notice,
       dot: dot ? getComputedStyle(dot).backgroundColor : null,
+      opacity: dot ? getComputedStyle(dot).opacity : null,
       ring: ring ? getComputedStyle(ring).animationName : null,
     };
   }));
   expect(marks).toEqual([
-    { kind: "stopped", dot: "rgb(243, 113, 89)", ring: null },
-    { kind: "warning", dot: "rgb(232, 207, 116)", ring: null },
-    { kind: "info", dot: null, ring: null },
-    { kind: "loading", dot: null, ring: "pano-studio-ring" },
+    { kind: "stopped", dot: "rgb(243, 113, 89)", opacity: "1", ring: null },
+    { kind: "warning", dot: "rgb(232, 207, 116)", opacity: "1", ring: null },
+    { kind: "info", dot: "rgb(220, 220, 224)", opacity: "0.55", ring: null },
+    { kind: "loading", dot: null, opacity: null, ring: "pano-studio-ring" },
   ]);
   expect(problems).toEqual([]);
 });

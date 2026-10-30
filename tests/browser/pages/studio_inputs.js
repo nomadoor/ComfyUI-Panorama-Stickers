@@ -7,6 +7,8 @@
 //   upstream-own  the same with the node's own `background` linked too
 //   upstream-world  the same with the node's own `world` linked too (its own `scene` row shows with the group)
 //   upstream-pending  a Scene linked to `scene`, the node not run yet
+//   world     an empty state with only `world` linked, the node not run yet
+//   empty     an empty state with nothing linked
 // The page reports through window.__studio.
 import { BoxGeometry, CanvasTexture, Mesh, MeshStandardMaterial, SRGBColorSpace, Scene } from "three";
 import { GLTFExporter } from "three/examples/jsm/exporters/GLTFExporter.js";
@@ -109,8 +111,16 @@ function upstreamCase(own, world = false) {
   };
 }
 
+// An empty state with only `world` linked (the node not run yet), or with nothing linked ("empty").
+function worldCase(linked) {
+  return { state: { version: 2, timeline: { fps: 24 }, stickers: [] }, inputs: linked ? [{ name: "world", type: "MESH" }] : [], result: {} };
+}
+
 try {
-  const setup = which === "port" ? portCase() : which === "port3d" ? await port3dCase() : upstreamCase(which === "upstream-own", which === "upstream-world");
+  const setup = which === "port" ? portCase()
+    : which === "port3d" ? await port3dCase()
+    : which === "world" || which === "empty" ? worldCase(which === "world")
+    : upstreamCase(which === "upstream-own", which === "upstream-world");
   if (which === "upstream-pending") setup.result = {};
   // Each input comes from a node of its own: ids 100, 101, ...
   const origins = setup.inputs.map((input, index) => ({ id: 100 + index, title: input.name, type: input.type, image: input.image ?? null }));
