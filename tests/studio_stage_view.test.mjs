@@ -22,7 +22,7 @@ import {
   saveTimelineHeight,
   timelineHeight,
 } from "../web_src/studio/layout.js";
-import { STAGE_CLEAR_COLOR, STAGE_RENDER_MAX_SIDE, STAGE_RENDER_SCALE, cameraFrameView, groundDepth, outputView, stageCamera, stageRay, stageRenderInput, stageRenderSize, surfaceHit } from "../web_src/studio/stage_view.js";
+import { LENS_PAN_MAX_DEG, STAGE_CLEAR_COLOR, STAGE_RENDER_MAX_SIDE, STAGE_RENDER_SCALE, cameraFrameView, frameViewFov, groundDepth, lensPickView, lensPinholePoint, outputView, stageCamera, stageRay, stageRenderInput, stageRenderSize, surfaceHit } from "../web_src/studio/stage_view.js";
 import { eyeHeight, eyeLengths } from "../web_src/studio/view_scale.js";
 
 const close = (actual, expected, eps = 1e-9) => assert.ok(Math.abs(actual - expected) <= eps, `${actual} != ${expected}`);
@@ -191,4 +191,55 @@ test("the stage's render input takes a part of the canvas, a lens pass and an ow
   assert.equal(input.owner, "studio-output");
   assert.equal(input.space.ground, null);
   assert.equal(stageRenderInput({ camera: {}, canvasWidth: 1, canvasHeight: 1, background: null, ground: 0, gridHidden: false }).lens, undefined);
+});
+
+// docs/space-and-view.md "レンズの Camera の当たり".
+test("a lens Camera's Frame view picks a pointer through the cube face its ray crosses, on the same ray; nothing past 180°", async () => {
+  const { cameraShot } = await import("../web_src/pano_editor_state.js");
+  const { lensFilmDirection, rotateByQuaternion } = await import("../web_src/pano_lens.js");
+  const state = loadSceneState({ version: 2, camera: { aspect: 16 / 9, position: { value: [0.5, 0, 1] }, rotation: { value: { yaw_deg: 40, pitch_deg: 10, roll_deg: -4 } }, fov: { value: 150 }, curve: { value: 0.7 } } });
+  const frame = { x: 120, y: 61, width: 568, height: 320 };
+  const view = cameraFrameView({ shot: cameraShot(state.camera, 0), frame, width: 808, height: 505, distance: 2, radius: 40 });
+  const { lens } = view;
+  for (const [x, y] of [[lens.centerX, lens.centerY], [lens.centerX + 250, lens.centerY - 90], [lens.centerX - 380, lens.centerY + 200]]) {
+    const pick = lensPickView(view, x, y);
+    const want = rotateByQuaternion(view.camera.quaternion, lensFilmDirection((x - lens.centerX) / lens.focalPx, (lens.centerY - y) / lens.focalPx, lens.curve));
+    const ray = stageRay(pick.camera, pick.x, pick.y, pick.width, pick.height);
+    closeVec(ray.direction, want, 1e-6);
+    assert.deepEqual(ray.origin, view.camera.position);
+    assert.equal(pick.width, pick.height);
+  }
+  // κ = 0 maps θ = ρ: a film point π + 0.5 from the center is past 180°.
+  const fisheye = { camera: view.camera, lens: { curve: 0, focalPx: 100, centerX: 400, centerY: 250 } };
+  assert.equal(lensPickView(fisheye, 400 + 100 * (Math.PI + 0.5), 250), null);
+});
+
+test("a lens pan takes the pointer at the pinhole point of the same center scale: f tan θ along its ray, none past LENS_PAN_MAX_DEG", async () => {
+  const { lensAngle } = await import("../web_src/pano_lens.js");
+  const lens = { curve: 0.7, focalPx: 300, centerX: 400, centerY: 250 };
+  const at = lensPinholePoint(lens, 400, 250);
+  closeVec([at.x, at.y], [400, 250]);
+  const x = 400 + 240;
+  const y = 250 - 120;
+  const rho = Math.hypot(240, 120) / 300;
+  const q = lensPinholePoint(lens, x, y);
+  close(Math.hypot(q.x - 400, q.y - 250), 300 * Math.tan(lensAngle(rho, 0.7)), 1e-9);
+  close(Math.atan2(250 - q.y, q.x - 400), Math.atan2(120, 240), 1e-12);
+  // A pinhole (κ = 1) maps a pixel to itself.
+  const flat = lensPinholePoint({ ...lens, curve: 1 }, x, y);
+  closeVec([flat.x, flat.y], [x, y], 1e-9);
+  // Past LENS_PAN_MAX_DEG off the axis there is no pinhole point.
+  const far = Math.tan(0.7 * (LENS_PAN_MAX_DEG + 1) * Math.PI / 180) / 0.7 * 300;
+  assert.equal(lensPinholePoint(lens, 400 + far, 250), null);
+});
+
+test("the Frame view's H FOV for its amounts is the pinhole of the image center's scale, under 180° for a lens", async () => {
+  const { cameraShot } = await import("../web_src/pano_editor_state.js");
+  const pinhole = cameraShot(loadSceneState({ version: 2, camera: { fov: { value: 70 } } }).camera, 0);
+  assert.equal(frameViewFov(pinhole), pinhole.hFOV_deg);
+  const wide = cameraShot(loadSceneState({ version: 2, camera: { fov: { value: 200 }, curve: { value: 0.5 } } }).camera, 0);
+  const fov = frameViewFov(wide);
+  // The frame's half width is f · lens_radius(H FOV / 2): tan(fov / 2) is that in units of f.
+  close(Math.tan(fov * Math.PI / 360), Math.tan(0.5 * 100 * Math.PI / 180) / 0.5, 1e-9);
+  assert.ok(fov < 180);
 });

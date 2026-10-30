@@ -178,11 +178,12 @@ export function createStageObjects({
 
   const hoverPicker = createHoverPicker({ requestFrame, onResult: (changed) => changed && onHover() });
 
-  // The id of the World object under `point` for `purpose` ("hover" or "press"), or null.
-  function objectUnder(point, purpose) {
+  // The id of the World object under `point` for `purpose` ("hover" or "press"), or null. `through` ({ camera, width,
+  // height }) is the view a lens Camera's press tests in instead of the stage's (press()).
+  function objectUnder(point, purpose, through = null) {
     const mode = hitMode();
-    const { width, height } = size();
-    const view = camera();
+    const { width, height } = through ?? size();
+    const view = through?.camera ?? camera();
     const items = guides();
     const world = (id) => (id && stickerOf(id)?.placement === "world" ? id : null);
     // The GPU pick within `radius` px: read now for a press, at most once a frame without waiting for a hover.
@@ -331,7 +332,10 @@ export function createStageObjects({
 
   // What a left press without Alt at `point` does: a drag handler { move(point, event), end(), cancel() }, or null
   // when it touches nothing (the stage looks around; its click without a move lets the selection go).
-  function press(point) {
+  // `through` ({ camera, width, height }, with `point` in its px) is the view a lens Camera's Frame view picks in (stage_view.js
+  // lensPickView: a cube face's pinhole): the GPU pick and the sky images are tested there (docs/space-and-view.md
+  // "レンズの Camera の当たり"). The stage hands it in the Camera tab only, where a press only selects.
+  function press(point, through = null) {
     const canEdit = editable();
     if (canEdit) {
       const drag = gizmoDrag(point);
@@ -344,7 +348,8 @@ export function createStageObjects({
         }
       }
     }
-    const picked = objectUnder(point, "press");
+    const view = through ?? { camera: camera(), ...size() };
+    const picked = objectUnder(point, "press", through);
     if (picked) {
       select(picked);
       return selectOnly();
@@ -353,7 +358,7 @@ export function createStageObjects({
       select("camera");
       return selectOnly();
     }
-    const sky = skyUnder(skyItems(state(), content()), projection(), point);
+    const sky = skyUnder(skyItems(state(), content()), through ? viewProjection(view.camera, view.width, view.height) : projection(), point);
     if (sky) {
       select(sky.item.id);
       return canEdit && !sky.item.locked ? skyDrag("move", sky.item, sky.geometry, point) : selectOnly();

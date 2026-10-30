@@ -253,18 +253,64 @@ test("Frame mode: a Lens ruler drag that shows 1.00 leaves the Camera a pinhole,
   expect(problems).toEqual([]);
 });
 
-test("Frame mode: on a lens Camera a click and a middle drag say that objects can't be picked through a lens yet", async ({ page }, testInfo) => {
-  // docs/space-and-view.md "黙って何もしない操作": the lens Camera's hits (lensPickWindow) are not wired yet.
+// Through a lens Camera of the frame box (κ = cam.curve, its image's center scale f fitting the H FOV in the box's width,
+// docs/render-contract.md "カメラのレンズ"), from the Camera's own basis, independent of the stage's code: the World ray
+// through the stage point `px`, and the stage point of the World point `p`.
+async function lensRay(page, px, frame, cam) {
+  return page.evaluate(async ({ px, frame, cam }) => {
+    const { cameraBasis } = await import("/web_src/pano_camera_math.js");
+    const { lensAxesDirection, lensRadius } = await import("/web_src/pano_lens.js");
+    const { panoToWorld } = await import("/web_src/pano_world.js");
+    const focal = frame.width / 2 / lensRadius((cam.hFOV_deg * Math.PI) / 360, cam.curve);
+    const film = { x: (px.x - frame.x - frame.width / 2) / focal, y: (frame.y + frame.height / 2 - px.y) / focal };
+    const d = panoToWorld(lensAxesDirection(cameraBasis(cam.yaw_deg, cam.pitch_deg, cam.roll_deg), film.x, film.y, cam.curve));
+    return { origin: [...cam.position], direction: [d.x, d.y, d.z] };
+  }, { px, frame, cam });
+}
+
+async function lensPixel(page, p, frame, cam) {
+  return page.evaluate(async ({ p, frame, cam }) => {
+    const { cameraBasis } = await import("/web_src/pano_camera_math.js");
+    const { lensAxesFilm, lensRadius } = await import("/web_src/pano_lens.js");
+    const { worldToPano } = await import("/web_src/pano_world.js");
+    const focal = frame.width / 2 / lensRadius((cam.hFOV_deg * Math.PI) / 360, cam.curve);
+    const at = worldToPano({ x: p[0] - cam.position[0], y: p[1] - cam.position[1], z: p[2] - cam.position[2] });
+    const film = lensAxesFilm(cameraBasis(cam.yaw_deg, cam.pitch_deg, cam.roll_deg), at, cam.curve);
+    return { x: frame.x + frame.width / 2 + film.x * focal, y: frame.y + frame.height / 2 - film.y * focal };
+  }, { p, frame, cam });
+}
+
+test("Frame mode: on a lens Camera a click selects the object under the pointer, a pan keeps the grabbed point under it, a wheel step too", async ({ page }, testInfo) => {
+  // docs/space-and-view.md "レンズの Camera の当たり": the pointer goes back along the lens (lensPickWindow).
   const problems = await open(page, testInfo, "aspect=16:9&mode=frame&curve=0.7");
   const frame = await frameBox(page);
   const stage = await stageBox(page);
+  const start = await camera(page);
+  expect(start.curve).toBe(0.7);
+  // The red plane lies 30° left of the Camera's axis, where a pinhole's pan would be some 14% off.
   const red = await page.evaluate((rgb) => window.__studio.stageCentroid(rgb), RED);
   await page.mouse.click(stage.x + red.x, stage.y + red.y);
-  await expect(page.locator(".pano-studio-notice")).toHaveText("Objects can't be picked through a lens yet");
-  expect(await page.evaluate(() => window.__studio.session.selection.row ?? null)).toBeNull();
-  await expect(page.locator(".pano-studio-notice")).toHaveCount(0, { timeout: 5_000 });
-  await drag100(page, stage.x + frame.x + frame.width / 2, stage.y + frame.y + frame.height / 2, "middle");
-  await expect(page.locator(".pano-studio-notice")).toHaveText("Objects can't be picked through a lens yet");
+  await page.waitForTimeout(100);
+  expect(await page.evaluate(() => window.__studio.session.selection.row)).toBe("sticker_1");
+  await expect(page.locator(".pano-studio-notice")).toHaveCount(0);
+  // The grabbed point: the pointer's ray on the red plane, which faces the Camera's position 3 ahead at yaw 0 (z = const).
+  const ray = await lensRay(page, red, frame, start);
+  const planeZ = start.position[2] - 3;
+  const t = (planeZ - ray.origin[2]) / ray.direction[2];
+  const grabbed = ray.origin.map((value, axis) => value + ray.direction[axis] * t);
+  await drag100(page, stage.x + red.x, stage.y + red.y, "middle");
+  const panned = await camera(page);
+  expect(panned.yaw_deg).toBeCloseTo(start.yaw_deg, 6);
+  const after = await lensPixel(page, grabbed, frame, panned);
+  expect(Math.hypot(after.x - (red.x + 100), after.y - red.y)).toBeLessThan(3);
+  // One wheel step toward it scales about the point under the pointer: it stays there.
+  await page.mouse.move(stage.x + red.x + 100, stage.y + red.y);
+  await page.mouse.wheel(0, -100);
+  await page.waitForTimeout(200);
+  const wheeled = await camera(page);
+  expect(Math.hypot(...wheeled.position.map((value, axis) => value - panned.position[axis]))).toBeGreaterThan(0.05);
+  const still = await lensPixel(page, grabbed, frame, wheeled);
+  expect(Math.hypot(still.x - (red.x + 100), still.y - red.y)).toBeLessThan(3);
   expect(problems).toEqual([]);
 });
 

@@ -4,6 +4,7 @@
 // lower three.js view (pano_three_view.js render). Pure: the GPU pick comes in as a point.
 import { getCutoutCameraParams, shotCurve } from "../pano_cutout_view_math.js";
 import { frameViewContext, placeDirection, screenRenderSize, shotCamera } from "../pano_editor_view.js";
+import { lensAngle, lensPickWindow } from "../pano_lens.js";
 import { evaluateCamera } from "../pano_scene_eval.js";
 import { DEFAULT_VIEW_HFOV, placedCamera, spaceCamera } from "../pano_space.js";
 import { groundGrid } from "./grid.js";
@@ -70,6 +71,48 @@ export function cameraFrameView({ shot, frame, width, height, distance, radius }
   const context = frameViewContext(shot, gate, canvas);
   const camera = placedCamera(shotCamera(context.shot), shot.position, distance, { center: [0, 0, 0], radius });
   return { camera, rect: context.rect, lens: context.lens ?? null, shot: context.shot };
+}
+
+// The H FOV (degrees) the Frame view's amounts take of `shot` (docs/space-and-view.md "レンズの Camera の当たり"): its own
+// for a pinhole; for a lens Camera (κ ≠ 1) the pinhole of its image center's scale over the frame, 2·atan(W ÷ 2f), under
+// 180° even where the lens's H FOV is past it.
+export function frameViewFov(shot) {
+  if (shotCurve(shot) === 1) return shot.hFOV_deg;
+  return 2 * Math.atan(getCutoutCameraParams(shot).tanHalfX) * 180 / Math.PI;
+}
+
+// How far off a lens Camera's axis (degrees) a pan still takes the pointer (lensPinholePoint).
+export const LENS_PAN_MAX_DEG = 89;
+// The side (px) of the cube face a lens pick draws its pixel in (pano_lens.js lensPickWindow).
+const LENS_PICK_SIZE = 1024;
+
+// The film point (units of f, x right and y up) of the point (x, y) of a lens Camera's Frame view, in the px of `lens`
+// (cameraFrameView()'s: { curve, focalPx, centerX, centerY }).
+function lensFilm(lens, x, y) {
+  return { x: (x - lens.centerX) / lens.focalPx, y: (lens.centerY - y) / lens.focalPx };
+}
+
+// Where a lens Camera's Frame view (cameraFrameView()'s { camera, lens }) picks the point (x, y) of its rect: the World-
+// aligned cube face the pointer's ray crosses, as a pinhole camera of a square view, and that ray's pixel in it —
+// { camera, x, y, width, height } — or null past 180° off the axis (docs/space-and-view.md "レンズの Camera の当たり").
+export function lensPickView({ camera, lens }, x, y) {
+  const film = lensFilm(lens, x, y);
+  const face = lensPickWindow(film.x, film.y, lens.curve, LENS_PICK_SIZE, camera.quaternion);
+  if (!face) return null;
+  return { camera: { ...camera, quaternion: face.quaternion, fovY_deg: 90, aspect: 1 }, x: face.x, y: face.y, width: face.size, height: face.size };
+}
+
+// The point a pan on a lens Camera's Frame view takes the pointer at (x, y) as: where a pinhole of the image center's
+// scale f shows the pointer's ray (f·tan θ from the center along it), in the same px; null past LENS_PAN_MAX_DEG off the
+// axis. A pan that does not turn the view keeps a point at its depth under the pointer when it moves by these points.
+export function lensPinholePoint(lens, x, y) {
+  const film = lensFilm(lens, x, y);
+  const rho = Math.hypot(film.x, film.y);
+  if (rho === 0) return { x, y };
+  const theta = lensAngle(rho, lens.curve);
+  if (!(theta < LENS_PAN_MAX_DEG * Math.PI / 180)) return null;
+  const scale = Math.tan(theta) / rho * lens.focalPx;
+  return { x: lens.centerX + film.x * scale, y: lens.centerY - film.y * scale };
 }
 
 // The ray from the view through (x, y) of a stage of width x height CSS px seen from `camera` (stageCamera()):
