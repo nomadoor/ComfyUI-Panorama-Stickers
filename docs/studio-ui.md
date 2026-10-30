@@ -20,23 +20,29 @@ Panorama モードの ERP をブラウザで描く仕組み（`docs/threejs-spar
 ## この文書が owner である規則
 
 Python はこの文書の規則を持たない（列は `—`）。「（新しい UI、未実装）」は ADR 0044 の置き場所（`web_src/studio/`、
-`web_src/components/studio/`）に作る予定のもの、「（未作成）」は作る予定の test である。
+`web_src/components/studio/`）に作る予定のもの、「（未作成）」は作る予定の test である。印の無いものは今ある。作ってあるが規則の
+一部がまだ動かないものは、その部分を「未実装」と書く。
+
+開発の間の入口：新しい UI は、ComfyUI の設定 `PanoramaSuite.Editor.NewUI`（既定はオフ）がオンのときだけ Panorama Studio を開く。
+オフなら今までどおり古い UI で開く（`web_src/editor_choice.js` `NEW_UI_SETTING`。組み立ては `web_src/main.js`、新しい UI のエディタは
+`web_src/studio/editor.js`）。切り替えの change でこの設定を消す（ADR 0044 の「置き換えの進め方」）。
 
 | 規則 | Python | JS | test |
 |---|---|---|---|
-| 画面の区画（ステージ、タブ、左の列、右の中央の列、右下、右上、上端の中央、インスペクタ、タイムラインの領域と境界） | — | （新しい UI、未実装）`web_src/components/studio/StudioEditor.vue`・`StudioStageOverlay.vue`、`web_src/studio/layout.js` | （未作成）`tests/browser/` の場面 |
-| 左の列の中身と並び、タブごとの無効 | — | （新しい UI、未実装）`web_src/components/studio/StudioToolRail.vue` | （未作成）`tests/studio_ui_model.test.mjs` |
-| インスペクタの組み立て（タブと選択で何を出すか）、行の格子、欄、スライダー、リセット、Keyframe のポチの置き場所、Easing のパネル、種類ごとの中身 | — | （新しい UI、未実装）`web_src/studio/inspector_rows.js`（data builder）、`web_src/components/studio/StudioInspector.vue`・`StudioField.vue`・`StudioEasingPanel.vue` | （未作成）`tests/studio_inspector_rows.test.mjs`、`tests/browser/` の場面 |
+| 画面の区画（ステージ、タブ、左の列、右の中央の列、右下、右上、上端の中央、インスペクタ、タイムラインの領域と境界） | — | `web_src/components/studio/StudioEditor.vue`、大きさの規則は `web_src/studio/layout.js`（タイムラインの高さ、Output の小窓の大きさとその記憶）、開くのは `web_src/studio/editor.js` | `tests/studio_stage_view.test.mjs`（`layout.js`）、`tests/browser/studio_editor.spec.js` |
+| 左の列の中身と並び、タブごとの無効 | — | `web_src/components/studio/StudioToolRail.vue`（今は Cursor だけを選べ、ほかは席に置いて無効）。タブごとの無効は（未実装） | `tests/browser/studio_editor.spec.js`、（未作成）タブごとの無効の test |
+| インスペクタの組み立て（タブと選択で何を出すか）、行の格子、欄、スライダー、リセット、Keyframe のポチの置き場所、Easing のパネル、種類ごとの中身 | — | データは `web_src/studio/inspector_model.js` `buildInspectorModel`、編集を状態に当てるのは `web_src/studio/inspector_actions.js` `applyInspectorEdit`、画面は `web_src/components/studio/StudioInspector.vue`・`StudioInspectorCard.vue`・`StudioInspectorRow.vue`・`StudioEasingPanel.vue`（欄とスライダーの部品は `StudioNumberField.vue`・`StudioSlider.vue`・`StudioAspectSlider.vue`・`StudioResetButton.vue`・`StudioKeyDot.vue`）。Easing のプリセットをアイコンだけにすることと、Sky の画像の FOV の行のリセット先（下の「種類ごとの中身」）は（未実装） | `tests/studio_inspector_model.test.mjs`、`tests/studio_inspector_actions.test.mjs`、`tests/browser/studio_inspector.spec.js`、`tests/browser/studio_ui.spec.js` |
+| 右の中央の列（視点の操作のつまみ）と右下のボタン群（Frame Selected、Reset View、グリッドのスイッチ）の並び | — | `web_src/components/studio/StudioNavWidget.vue`、`StudioViewButtons.vue`、オンとオフの部品は `StudioSwitch.vue`（つまみの働きは `docs/space-and-view.md`） | `tests/browser/studio_editor.spec.js` |
 | 下の中央のバーの中身 | — | （新しい UI、未実装）`web_src/studio/selection_bar.js`、`web_src/components/studio/StudioSelectionBar.vue` | （未作成）`tests/studio_selection_bar.test.mjs` |
 | エディタの中の Camera の見せ方（Camera のボタン、Camera のカード、3D の見た目） | — | （新しい UI、未実装）`web_src/studio/camera_ui.js`、描く部品は `pano_three_view.js`（`docs/threejs-spark-integration.md`） | （未作成）`tests/studio_camera_ui.test.mjs`、`tests/browser/` の場面 |
 | Camera タブの画面（フレームの収め方、枠の外、辺の目盛り、無効にする部品） | — | （新しい UI、未実装）`web_src/studio/frame_layout.js`、`web_src/components/studio/StudioFrameRulers.vue` | （未作成）`tests/studio_frame_layout.test.mjs`、`tests/browser/` の場面 |
 | Add のアイコンと、画像を Add したときの Sky / World の二択、ドラッグ中の印の見た目とラベル | — | （新しい UI、未実装）`web_src/components/studio/StudioPlaceChoice.vue`、`web_src/studio/landing.js`（着く所は `docs/space-and-view.md`） | （未作成）`tests/browser/` の場面 |
-| 読み込み中と空の画面、一行の知らせ | — | （新しい UI、未実装）`web_src/components/studio/StudioNotice.vue` | （未作成）`tests/browser/` の場面 |
+| 読み込み中と空の画面、一行の知らせ | — | `web_src/components/studio/StudioNotice.vue`（どれを出すかはシェルの `StudioEditor.vue`）。読み込み中と空の画面の文言は（未実装） | `tests/browser/studio_editor.spec.js` |
 | タイムラインのバーの並びと、行の頭の並び | — | `web_src/components/studio/StudioTimelineBar.vue`・`StudioTimelineHead.vue`（組み立ては `StudioTimeline.vue`、データは `web_src/studio/timeline_model.js`） | `tests/browser/studio_timeline.spec.js` |
 | ショートカットの一覧の中身 | — | （新しい UI、未実装）`web_src/components/studio/StudioShortcuts.vue` | （未作成）`tests/studio_ui_model.test.mjs` |
-| 閉じ方 | — | （新しい UI、未実装）`web_src/components/studio/StudioEditor.vue`、下の部品 `pano_node_bridge.js` | （未作成）`tests/studio_ui_model.test.mjs` |
+| 閉じ方 | — | `web_src/components/studio/StudioEditor.vue`、Escape を受けるのは `web_src/studio/stage.js`（ドキュメントの捕捉で受け、欄のドラッグの Escape は先に欄が取る）、閉じるのは `web_src/studio/editor.js`、下の部品 `pano_node_bridge.js`。Escape の順の表の 2〜6 段と、閉じるときの保存は（未実装。今のステージは視点のドラッグを離すこととエディタを閉じることだけで、まだ何も編集しないので `state_json` を書かない） | `tests/browser/studio_editor.spec.js`、`tests/browser/studio_ui.spec.js`（欄のドラッグの Escape） |
 | Preview のウィンドウの画面 | — | （新しい UI、未実装）`web_src/components/studio/StudioPreviewWindow.vue` | （未作成）`tests/browser/` の場面 |
-| Output の小窓（折りたたみ、大きさ、記憶） | — | （新しい UI、未実装）`web_src/components/studio/StudioOutputPreview.vue` | （未作成）`tests/browser/` の場面 |
+| Output の小窓（折りたたみ、大きさ、記憶） | — | `web_src/components/studio/StudioOutputPreview.vue`、大きさと記憶は `web_src/studio/layout.js` `outputWindowSize`・`loadOutputWindow`・`saveOutputWindow`。中の絵（Panorama モードの ERP、Frame モードの絵）は（未実装。`docs/threejs-spark-integration.md`） | `tests/studio_stage_view.test.mjs`、`tests/browser/studio_editor.spec.js` |
 
 ## 目指すもの
 
@@ -160,6 +166,8 @@ Camera タブでは、Undo・Redo のほかは同じ席に出したまま無効�
 | ペイントのまとまり | 見出し `Paint` だけ。操作は下の中央のバー |
 | 何も選んでいない | Scene のカード：Ground（地面の高さの値、`Set ground` のボタン、リセット）。`Set ground` の隣に、地面の自動推定のボタンのための席を空けておく（今は置かない） |
 
+- 空に貼った画像（Sky）の FOV の行のリセットは、置いたときの大きさに戻す：H は `NEW_STICKER_HFOV`（30°、`pano_space.js`）、V は画像の
+  縦横比から求めた値（縦横比を崩さない）。上流から受け取った物とノードの入力から来た物（`port`）は、上の「リセットと Keyframe のポチ」のとおり。
 - 土台の 3D（`world` の入力、`docs/studio-node.md`）は選べないので、カードは無い。土台を合わせるのは地面の高さだけ。
 - 画像の側のレンズの値（Sky の画像の `curve`、World の物の `lens`）はインスペクタに出さない。往復（Pose handoff）が撮った Camera の値を
   入れ、描くときに逆に戻して貼る（ADR 0042、`docs/scene-state-v2.md`）。
@@ -187,7 +195,8 @@ Camera タブでは、Undo・Redo のほかは同じ席に出したまま無効�
 ### Easing のパネル
 
 - タイムラインで Keyframe を選んでいる間だけ、インスペクタの下端に置く。選んでいないときは消す。
-- 中身：見出し `Easing` と既定に戻すボタン、プリセット 5 つ（Hold・Linear・Ease in-out・Ease in・Ease out）の segmented control、
+- 中身：見出し `Easing` と既定に戻すボタン、プリセット 5 つ（Hold・Linear・Ease in-out・Ease in・Ease out）の segmented control
+  （アイコンだけを出し、名前は tooltip に出す。名前の文字はパネルの幅に収まらないため）、
   縦横 1:1 の曲線のグラフ、ベジェの 4 つの値の入力欄（例 `0.42, 0, 0.58, 1`。選んでコピーでき、貼り付けもできる）。
 - グラフはいつも 1:1。上の領域が 5 行分（約 180 px、値は `docs/design.md`）より狭くなるときは、グラフの一辺を縮めて 1:1 のまま小さくする。
 - 出し方：パネルの高さを伸ばして出さず、下端に重ねて透明から出す（値は `docs/design.md`）。上の領域の下の余白は動かさずに一度で取る。
@@ -361,8 +370,6 @@ Camera タブでは、Undo・Redo のほかは同じ席に出したまま無効�
 ## まだ決めていないこと（spec ではない）
 
 - 二次の文字の濃さと、地面のグリッドの見た目の値（最初の画面を作るときに実際の画面で決める）。
-- Plus Jakarta Sans のファイルを足す承認（大きさとライセンスを見せてから。`docs/design.md`）。
-- 開発の間だけ新しい UI を開く入口の形（ADR 0044）。
 - ペイントの道具の見た目の細部（中身は今のまま）。
 - 右の中央に縦に置いたつまみの列（試してから、右下にまとめる形に戻すことがある）。
 - 地面の自動推定（Scene のカードに席だけを取る。やるなら ADR 0046 の「開くたびに測り直さない」と合わせ、押したときに一度だけ推定して
