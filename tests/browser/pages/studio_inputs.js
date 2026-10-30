@@ -5,6 +5,7 @@
 //   port3d    the `sticker` input's GLB, its port Sticker a world object in front of the view
 //   upstream  another Studio's Scene on `scene`: a sky image, a world board and its background
 //   upstream-own  the same with the node's own `background` linked too
+//   upstream-pending  a Scene linked to `scene`, the node not run yet
 // The page reports through window.__studio.
 import { BoxGeometry, CanvasTexture, Mesh, MeshStandardMaterial, SRGBColorSpace, Scene } from "three";
 import { GLTFExporter } from "three/examples/jsm/exporters/GLTFExporter.js";
@@ -105,6 +106,7 @@ function upstreamCase(own) {
 
 try {
   const setup = which === "port" ? portCase() : which === "port3d" ? await port3dCase() : upstreamCase(which === "upstream-own");
+  if (which === "upstream-pending") setup.result = {};
   // Each input comes from a node of its own: ids 100, 101, ...
   const origins = setup.inputs.map((input, index) => ({ id: 100 + index, title: input.name, type: input.type, image: input.image ?? null }));
   const graphNodes = [...origins, ...(setup.upstreamNode ? [setup.upstreamNode] : [])];
@@ -115,7 +117,7 @@ try {
     __panoStudio: true,
     __panoSceneStateV2: true,
     inputs: setup.inputs.map((input, index) => ({ name: input.name, link: index + 1 })),
-    widgets: [{ name: "state_json", value: JSON.stringify(setup.state) }, { name: "background_color", value: "#000000" }],
+    widgets: [{ name: "state_json", value: JSON.stringify(setup.state) }, { name: "bg_color", value: "#000000" }],
     graph: { getNodeById: (id) => graphNodes.find((item) => item.id === id) ?? null, _nodes: graphNodes, nodes: graphNodes },
     getInputLink: (index) => (origins[index] ? { origin_id: origins[index].id, origin_slot: 0, type: origins[index].type } : null),
     getInputNode: (index) => origins[index] ?? null,

@@ -92,3 +92,40 @@ test("the sticker input's GLB is drawn as its world port Sticker and selected by
   await shot(page, "port3d");
   expect(problems).toEqual([]);
 });
+
+test("another Studio's Scene on scene: its layers are drawn, shown read-only in a group named after it", async ({ page }, testInfo) => {
+  const problems = await open(page, testInfo, "upstream");
+  const colors = await page.evaluate(() => window.__studio.colors);
+  const { sky: [front], world: [board] } = await places(page, { sky: [[0, 0]], world: [[1.6, 0, -3]] });
+  await expect.poll(() => stageAt(page, front).then((rgb) => near(rgb, colors.upstreamSky)), { timeout: 10_000 }).toBe(true);
+  await expect.poll(() => stageAt(page, board).then((rgb) => near(rgb, colors.upstreamBoard)), { timeout: 10_000 }).toBe(true);
+
+  const group = page.locator('[data-group="scene_up"]');
+  await expect(group).toContainText("From Studio Up");
+  await expect(group.locator('[data-part="revert"]')).toHaveAttribute("aria-disabled", "true");
+  const head = page.locator('[data-head="upstream:scene_up:sticker_1"]');
+  await expect(head).toBeVisible();
+  await expect(head.locator('[data-part="eye"]')).toHaveAttribute("aria-disabled", "true");
+
+  // Not selected on the stage (read-only for now).
+  await page.mouse.click(front.x, front.y);
+  await page.waitForTimeout(200);
+  expect(await page.evaluate(() => window.__studio.session.selection.row)).toBeNull();
+  // Its row selects it: the inspector shows it read-only and the bar does not show.
+  await head.locator('[data-part="name"]').click();
+  await expect.poll(() => page.evaluate(() => window.__studio.session.selection.row)).toBe("upstream:scene_up:sticker_1");
+  await expect(page.locator('[data-region="inspector"]')).toContainText("Upstream · scene_up");
+  await expect(page.locator('[data-bar="revert"]')).toHaveCount(0);
+  await shot(page, "layers");
+  // Nothing was written: closing leaves the node's state as it was.
+  const before = await page.evaluate(() => JSON.stringify(window.__studio.session.state.upstream));
+  expect(before).toBe("[]");
+  expect(problems).toEqual([]);
+});
+
+test("a Scene linked to scene before the node ran: the line asks for a run", async ({ page }, testInfo) => {
+  const problems = await open(page, testInfo, "upstream-pending");
+  await expect(page.locator(".pano-studio-notice")).toContainText("Run the workflow to show the upstream scene.");
+  await shot(page, "pending");
+  expect(problems).toEqual([]);
+});
