@@ -69,7 +69,8 @@ test("a row selected in the Timeline shows in the inspector; an edit changes the
   expect((await studio(page, "state")).stickers[0].opacity.value).toBeCloseTo(0.4, 6);
   await expect(page.locator('[data-tool="undo"]')).not.toHaveAttribute("aria-disabled", "true");
   // Ctrl+Z with the stage holding the keys.
-  await page.locator('[data-region="stage"]').click({ position: { x: 600, y: 150 } });
+  // The editor takes the keys back from the field (a click on the stage's empty space would let the selection go).
+  await page.locator(".pano-studio-editor").focus();
   await page.keyboard.press("Control+z");
   expect((await studio(page, "state")).stickers[0].opacity.value).toBe(1);
   // Redo from the left rail, then Undo from it.
@@ -84,7 +85,8 @@ test("a row selected in the Timeline shows in the inspector; an edit changes the
   await rowName(page, "camera").click();
   await expect(cardTitle(page)).toHaveText("Camera");
   // Delete on the Camera says it can't be deleted.
-  await page.locator('[data-region="stage"]').click({ position: { x: 600, y: 150 } });
+  // The editor takes the keys back from the field (a click on the stage's empty space would let the selection go).
+  await page.locator(".pano-studio-editor").focus();
   await page.keyboard.press("Delete");
   await expect(page.locator(".pano-studio-notice")).toHaveText(/The camera can't be deleted/);
   expect(problems).toEqual([]);
@@ -131,7 +133,8 @@ test("closing writes state_json once with the edit, and opening and closing with
   await rowName(page, "sticker_2").click();
   await type(page, "Scale", "scale", 2.5);
   // Escape steps back one thing at a time: the object's selection, then the editor closes.
-  await page.locator('[data-region="stage"]').click({ position: { x: 600, y: 150 } });
+  // The editor takes the keys back from the field (a click on the stage's empty space would let the selection go).
+  await page.locator(".pano-studio-editor").focus();
   await page.keyboard.press("Escape");
   await expect(cardTitle(page)).toHaveText("Scene");
   expect(await page.evaluate(() => window.__studio.writes)).toBe(0);

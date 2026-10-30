@@ -96,6 +96,14 @@ export function buildStickerGeometry(item, projection) {
     stickerDirection(frame, 0, frame.tanY + Math.max(frame.tanY * 0.43, 0.053)),
     projection,
   );
+  // The middle of each edge, where a frame's edge handle scales one axis (pano_sticker_affordance.js
+  // hitFrameAffordance with `edges`).
+  const edgeCenters = [
+    ["top", 0, frame.tanY, 0, 1],
+    ["right", frame.tanX, 0, 1, 2],
+    ["bottom", 0, -frame.tanY, 2, 3],
+    ["left", -frame.tanX, 0, 3, 0],
+  ].map(([edge, x, y, a, b]) => ({ edge, point: projectWorldDirection(stickerDirection(frame, x, y), projection), a, b }));
   const projected = [center, ...corners, rotateStemBase, rotateHint];
   if (projected.some((point) => !point || !Number.isFinite(point.x) || !Number.isFinite(point.y))) {
     return { visible: false };
@@ -108,6 +116,13 @@ export function buildStickerGeometry(item, projection) {
     center: { x: center.x, y: center.y },
     corners: corners.map((point) => ({ x: point.x, y: point.y })),
     boundaryEdges,
+    edgeMidpoints: edgeCenters.filter((entry) => entry.point).map(({ edge, point, a, b }) => ({
+      edge,
+      x: point.x,
+      y: point.y,
+      a: { x: corners[a].x, y: corners[a].y },
+      b: { x: corners[b].x, y: corners[b].y },
+    })),
     rotateStemBase: { x: rotateStemBase.x, y: rotateStemBase.y },
     rotateHandle: {
       x: rotateStemBase.x + (handleDx / handleLength) * STICKER_NODE_ROTATE_HANDLE_OFFSET_PX,
@@ -151,6 +166,14 @@ export function scaleStickerFromPointer(item, startDistance, currentDistance) {
     hFOV_deg: clamp(Number(item?.hFOV_deg || 20) * ratio, 1, 179),
     vFOV_deg: clamp(Number(item?.vFOV_deg || 20) * ratio, 1, 179),
   };
+}
+
+// An edge handle's scale ("scale_x" the hFOV, "scale_y" the vFOV) by the pointer's distance from the center against
+// where it started, as scaleStickerFromPointer scales both.
+export function scaleStickerAxisFromPointer(item, axis, startDistance, currentDistance) {
+  const ratio = Math.max(1, Number(currentDistance || 0)) / Math.max(1, Number(startDistance || 1));
+  const field = axis === "scale_x" ? "hFOV_deg" : "vFOV_deg";
+  return { ...item, [field]: clamp(Number(item?.[field] || 20) * ratio, 1, 179) };
 }
 
 export function rotateStickerFromPointer(item, startAngle, currentAngle, snap = false) {

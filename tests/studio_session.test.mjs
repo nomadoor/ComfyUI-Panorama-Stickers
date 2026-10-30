@@ -183,3 +183,110 @@ test("the text for state_json: none when the state means the widget's text, else
   assert.equal(parsed.stickers[0].position.value[0], 5);
   assert.match(parsed.id, /^[A-Za-z0-9_-]{16}$/);
 });
+
+// --- The stage's edits of the selected object (docs/studio-ui.md "下の中央のバー").
+
+test("a stage drag changes a copy of the state it started from on each move, and its end is one Undo step", () => {
+  const session = createStudioSession({ state: load({ stickers: [world("w")] }) });
+  const moveTo = (x) => session.gesture((draft) => {
+    draft.stickers[0].position.value = [x, 2, 3];
+    return true;
+  });
+  assert.equal(moveTo(5).stopPlayback, true);
+  moveTo(7);
+  assert.deepEqual(session.state.stickers[0].position.value, [7, 2, 3]);
+  assert.equal(session.canUndo, false, "no step while it is under way");
+  assert.equal(session.undo(), null, "Undo waits for the drag's end");
+  assert.equal(session.commitGesture().history, true);
+  assert.equal(session.canUndo, true);
+  session.undo();
+  assert.deepEqual(session.state.stickers[0].position.value, [1, 2, 3], "one step takes the whole drag back");
+  assert.equal(session.commitGesture().changed, false, "a drag that changed nothing writes no step");
+});
+
+test("a stage drag given up puts back the state it started from, with no step", () => {
+  const session = createStudioSession({ state: load({ stickers: [world("w")] }) });
+  const before = session.state;
+  session.gesture((draft) => {
+    draft.stickers[0].scale.value = 9;
+    return true;
+  });
+  assert.equal(session.cancelGesture().cancel, true);
+  assert.equal(session.state, before);
+  assert.equal(session.canUndo, false);
+  assert.equal(session.gesture(() => false).changed, false);
+  assert.equal(session.state, before);
+});
+
+test("the stage selects an object, and its Keyframes go with a change of object", () => {
+  const session = createStudioSession({ state: load({ stickers: [world("w"), sky("s")] }) });
+  session.select({ row: "w", keys: [{ row: "w", lane: "position", frame: 0 }] });
+  assert.equal(session.selectObject("w"), false, "the same object keeps its Keyframes");
+  assert.equal(session.selection.keys.length, 1);
+  assert.equal(session.selectObject("s"), true);
+  assert.deepEqual(session.selection, { row: "s", keys: [] });
+  session.selectObject("camera");
+  assert.equal(session.selection.row, "camera");
+  session.selectObject("gone");
+  assert.equal(session.selection.row, null);
+});
+
+test("Lock turns the selected Sticker's lock over as one Undo step", () => {
+  const session = createStudioSession({ state: load({ stickers: [world("w")] }) });
+  session.select({ row: "w" });
+  assert.equal(session.toggleLock().history, true);
+  assert.equal(session.state.stickers[0].locked, true);
+  assert.equal(session.deleteSelectedObject().changed, false, "a locked object is not deleted");
+  session.toggleLock();
+  assert.equal(session.state.stickers[0].locked, false);
+  session.undo();
+  assert.equal(session.state.stickers[0].locked, true);
+  session.select({ row: "camera" });
+  assert.equal(session.toggleLock().changed, false, "the Camera's lock waits for camera.locked in the loaders");
+});
+
+test("Duplicate copies the selected Sticker under a new id and selects the copy; a sky copy turns 8° and goes in front", () => {
+  const session = createStudioSession({ state: load({ stickers: [sky("s", { z_index: 3 }), world("w")] }) });
+  session.select({ row: "s" });
+  session.duplicateSelected();
+  const skyCopy = session.state.stickers.at(-1);
+  assert.notEqual(skyCopy.id, "s");
+  assert.equal(session.selection.row, skyCopy.id);
+  assert.equal(skyCopy.direction.value.yaw_deg, 8);
+  assert.equal(skyCopy.z_index, 4);
+  session.select({ row: "w" });
+  session.duplicateSelected();
+  const worldCopy = session.state.stickers.at(-1);
+  assert.deepEqual(worldCopy.position.value, [1, 2, 3], "a World copy stays where it is, for the gizmo to move");
+  assert.equal(session.selection.row, worldCopy.id);
+  assert.equal(new Set(session.state.stickers.map((item) => item.id)).size, 4);
+  session.undo();
+  assert.equal(session.state.stickers.length, 3);
+});
+
+test("an input's Sticker is not duplicated", () => {
+  const session = createStudioSession({ state: load({ stickers: [{ id: "p", placement: "world", source: { kind: "port" } }] }) });
+  session.select({ row: "p" });
+  assert.equal(session.duplicateSelected().changed, false);
+});
+
+test("Bring to front and Send to back put the selected sky image first or last among the sky images", () => {
+  const session = createStudioSession({ state: load({ stickers: [sky("a", { z_index: 0 }), sky("b", { z_index: 1 }), sky("c", { z_index: 2 })] }) });
+  const order = () => [...session.state.stickers].sort((x, y) => x.z_index - y.z_index).map((item) => item.id);
+  session.select({ row: "a" });
+  session.orderSelected("front");
+  assert.deepEqual(order(), ["b", "c", "a"]);
+  assert.equal(session.orderSelected("front").changed, false, "already in front: no step");
+  session.orderSelected("back");
+  assert.deepEqual(order(), ["a", "b", "c"]);
+});
+
+test("Back to source resets every row of an input's Sticker as one Undo step", () => {
+  const session = createStudioSession({ state: load({ stickers: [{ id: "p", placement: "world", source: { kind: "port" }, position: { value: [4, 5, 6] }, scale: { value: 3 } }] }) });
+  session.select({ row: "p" });
+  assert.equal(session.revertSelected().history, true);
+  assert.deepEqual(session.state.stickers[0].position.value, [0, 0, 0]);
+  assert.equal(session.state.stickers[0].scale.value, 1);
+  session.undo();
+  assert.deepEqual(session.state.stickers[0].position.value, [4, 5, 6]);
+});

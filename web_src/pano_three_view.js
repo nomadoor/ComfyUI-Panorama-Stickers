@@ -780,14 +780,20 @@ export function createGizmo(camera) {
   const target = new Object3D();
   controls.attach(target);
   let shown = false;
+  let colors = null;
   return {
     // Shows it at { mode ("translate", "rotate" or "scale"), transform ({ position, quaternion, scale }, as
-    // pano_space.js sceneTransform() gives it) }, and returns the objects to add to the World. It draws
+    // pano_space.js sceneTransform() gives it), colors? }, and returns the objects to add to the World. It draws
     // over the World (its materials do not test depth). While a handle is dragged the stand-in keeps
     // where the drag took it, so it follows the pointer even when the Sticker's value is taken at another
-    // frame.
-    show({ mode, transform }) {
+    // frame. `colors` ({ x, y, z, active }, CSS colors; the new UI's) paints the axes and the handle under the
+    // pointer; without it the gizmo keeps TransformControls' colors.
+    show({ mode, transform, colors: wanted = null }) {
       shown = true;
+      if (wanted && !sameValue(wanted, colors)) {
+        colors = { ...wanted };
+        controls.setColors(colors.x, colors.y, colors.z, colors.active);
+      }
       if (!controls.dragging) {
         controls.mode = mode;
         target.position.set(...transform.position);

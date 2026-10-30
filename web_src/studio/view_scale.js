@@ -26,6 +26,9 @@ const IN_EYE_HEIGHTS = Object.freeze({
   TARGET_MAX_DISTANCE: 30,
   // The radius of the sphere Frame Selected fits around a selected Camera (centered on its position).
   CAMERA_FRAME_RADIUS: 1,
+  // How far ahead the Camera's mark in the 3D tab reaches (its frustum's length; the Panorama mode's ring is half
+  // as wide).
+  CAMERA_GUIDE_LENGTH: 0.5,
   // The height of an image placed in the World.
   WORLD_IMAGE_HEIGHT: 1,
   // Where the grid's 1-unit lines start to fade and where they are gone (horizontal distance from the view).
