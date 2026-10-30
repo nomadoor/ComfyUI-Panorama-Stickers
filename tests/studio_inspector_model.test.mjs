@@ -79,6 +79,14 @@ test("a Ground the state holds is shown and is not at its default", () => {
   assert.equal(ground.atDefault, false);
 });
 
+test("while the ground height cannot be saved, the Ground row is grayed with the reason, its seat kept", () => {
+  const ground = row(model(load(), { groundSaved: false }).cards[0], "ground");
+  assert.equal(ground.disabled, true);
+  assert.equal(ground.fields[0].disabled, true);
+  assert.match(ground.tip, /not saved/i);
+  assert.equal(ground.seat, true);
+});
+
 test("a sky Sticker shows Rotation (Y P R), FOV (H V) and Opacity, with the Sky icon and its name", () => {
   const state = load({ stickers: [sky("sticker_1")] });
   const [card] = model(state, { selection: { ids: ["sticker_1"] } }).cards;

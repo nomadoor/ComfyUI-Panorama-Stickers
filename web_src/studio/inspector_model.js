@@ -400,8 +400,13 @@ function cameraCard(state, { playhead, readOnly }) {
   };
 }
 
-function sceneCard(state, { readOnly }) {
+// Until the state keeps `ground` (defaults.js), an edited ground height would not be saved: `groundSaved` false grays
+// the row with the reason instead of taking an edit that closing would lose.
+export const GROUND_NOT_SAVED_TIP = "The ground height is not saved yet: the node does not keep it";
+
+function sceneCard(state, { readOnly, groundSaved }) {
   const ground = groundOf(state);
+  const off = readOnly || !groundSaved;
   return {
     kind: "scene",
     title: "Scene",
@@ -414,16 +419,16 @@ function sceneCard(state, { readOnly }) {
       layout: "multi",
       control: "ground",
       lanes: [],
-      fields: [{ field: "ground", value: ground, unit: "", step: 0.01, precision: 2, min: -Infinity, max: Infinity, disabled: readOnly }],
+      fields: [{ field: "ground", value: ground, unit: "", step: 0.01, precision: 2, min: -Infinity, max: Infinity, disabled: off }],
       // The seat for the ground's estimate button (docs/studio-ui.md "種類ごとの中身"); nothing is placed in it yet.
       seat: true,
       keyState: null,
       keyDisabled: true,
       resettable: true,
       atDefault: !Number.isFinite(state.ground),
-      disabled: readOnly,
+      disabled: off,
       marked: false,
-      tip: readOnly ? "Read-only" : "",
+      tip: readOnly ? "Read-only" : groundSaved ? "" : GROUND_NOT_SAVED_TIP,
     }],
   };
 }
@@ -460,10 +465,11 @@ function easingModel(state, upstream, keyframes) {
 // `upstream:<key>:<id>`), the `tab` ("3d" | "camera") and the Timeline frame `playhead`. `upstream` is the working
 // layers (pano_upstream.js upstreamWorkingLayers), `animations` the clips of the 3D files by Sticker id
 // ([{ name }]), `portSize` the size of the port Sticker's media ({ width, height }), `imageSizes` the sizes of the
-// Stickers' images by Sticker id ({ width, height } px, once loaded).
+// Stickers' images by Sticker id ({ width, height } px, once loaded), `groundSaved` whether an edited ground height
+// is saved (GROUND_NOT_SAVED_TIP).
 // Returns { cards: [{ kind, title, icon, note, target, rows }], easing }.
-export function buildInspectorModel({ state, selection = {}, tab = "3d", playhead = 0, readOnly = false, upstream = [], animations = {}, portSize = null, imageSizes = {} }) {
-  const options = { playhead, readOnly, upstream, animations, portSize, imageSizes };
+export function buildInspectorModel({ state, selection = {}, tab = "3d", playhead = 0, readOnly = false, upstream = [], animations = {}, portSize = null, imageSizes = {}, groundSaved = true }) {
+  const options = { playhead, readOnly, upstream, animations, portSize, imageSizes, groundSaved };
   const ids = selection.ids ?? [];
   let cards;
   if (tab === "camera") cards = [cameraCard(state, options)];

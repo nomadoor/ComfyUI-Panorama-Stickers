@@ -31,6 +31,8 @@ const props = defineProps({
   portSize: { type: Object, default: null },
   // The Stickers' image sizes by id ({ width, height } px), for a sky image's FOV reset.
   imageSizes: { type: Object, default: () => ({}) },
+  // Whether an edited ground height is saved (inspector_model.js GROUND_NOT_SAVED_TIP).
+  groundSaved: { type: Boolean, default: true },
 });
 const emit = defineEmits(["edit", "close"]);
 
@@ -44,6 +46,7 @@ const model = computed(() => buildInspectorModel({
   animations: props.animations,
   portSize: props.portSize,
   imageSizes: props.imageSizes,
+  groundSaved: props.groundSaved,
 }));
 
 // --- The Easing panel's size: its graph is square and as wide as the panel, smaller when it would leave less than

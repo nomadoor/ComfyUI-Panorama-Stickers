@@ -187,6 +187,7 @@ function setCollapsed(value) {
       :read-only="view.readOnly"
       :animations="view.animations"
       :image-sizes="view.imageSizes"
+      :ground-saved="false"
       @edit="(edit) => controller.inspectorEdit(edit)"
       @close="controller.close()"
     />
