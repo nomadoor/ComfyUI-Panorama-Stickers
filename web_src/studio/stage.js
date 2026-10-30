@@ -3,20 +3,20 @@
 // (pano_editor_view.js createEditorView). It owns the render loop (pano_frame_scheduler.js), which moves the eased
 // actions, the joystick and the movement keys, and draws. It builds no DOM: StudioEditor.vue renders the stage and
 // hands over its canvas and root, and reads `ui` (a Vue reactive object) for the notice, the cursor and the knobs.
-import { createEditorView, deviceLens, shotCamera, shotLensImage, viewProjection } from "../pano_editor_view.js";
+import { createEditorView, deviceLens, shotLensImage, viewProjection } from "../pano_editor_view.js";
 import { DRAW_REASON, createFrameScheduler } from "../pano_frame_scheduler.js";
 import { stageOwnsKey } from "../pano_key_focus.js";
 import { MOVE_KEY_CODES, isMoveKey } from "../pano_view_keys.js";
 import { createStageObjects } from "./stage_objects.js";
 import { drawStageOverlay } from "./stage_overlay.js";
 import { editorKeyAction } from "./shortcuts.js";
-import { placedCamera } from "../pano_space.js";
 import { shortestYawDelta } from "../pano_camera_math.js";
-import { liveErpSize, liveErpView } from "./erp_preview.js";
+import { liveErpSize } from "./erp_preview.js";
+import { outputErpInput, outputFrameInput } from "./output_picture.js";
 import { STAGE_CLEAR_COLOR, cameraFrameView, frameViewFov, lensPickView, lensPinholePoint, stageCamera, stageRenderInput, stageRenderSize, surfaceHit } from "./stage_view.js";
 import { createNotice, createViewCamera, frameSelectedSphere, orbitCenter } from "./view_camera.js";
 import { KNOB_CURSOR, createViewInput, createWheelSteps, knobAction, litKnobs, navigationAction, stageCursor } from "./view_input.js";
-import { BOUND_NOTICE_SECONDS, FRAME_WHEEL_REST_MS, PITCH_LIMIT, eyeHeight, frameSeconds } from "./view_scale.js";
+import { BOUND_NOTICE_SECONDS, FRAME_WHEEL_REST_MS, PITCH_LIMIT, frameSeconds } from "./view_scale.js";
 
 // The owners (pano_three_view.js) the live ERP of the Camera tab's Panorama mode, the Output window's Frame picture and
 // its live ERP draw for.
@@ -153,9 +153,6 @@ export function createStage({
     },
     content: () => content(),
     ground: () => world.ground,
-    // The "pixels" hit test's hover, read back later (hit_test.js, a temporary dev comparison).
-    onHover: () => pointer && hoverAt(pointer),
-    requestFrame: (callback) => win.requestAnimationFrame(callback),
   }) : null;
 
   // --- The Camera tab: the Frame view, where the viewpoint is the Camera itself (a viewpoint of its own, whose moves
@@ -415,22 +412,23 @@ export function createStage({
     const fit = Math.min(1, canvas.width / target.width, canvas.height / target.height);
     const width = Math.max(1, Math.floor(target.width * fit));
     const height = Math.max(1, Math.floor(target.height * fit));
-    const shot = cameraTab.shot();
-    const view = placedCamera(shotCamera(shot), shot.position, eyeHeight(world.ground), { center: [0, 0, 0], radius: camera.bound() });
-    const lens = shotLensImage(shot, width, height, cameraTab.backgroundColor(), null, outputLensKind);
-    outputLensKind = lens?.kind ?? null;
-    const surface = editorView.render(stageRenderInput({
-      camera: view,
+    const input = outputFrameInput({
+      shot: cameraTab.shot(),
+      ground: world.ground,
+      radius: camera.bound(),
+      width,
+      height,
+      background: background(),
+      content: shown,
+      backgroundColor: cameraTab.backgroundColor(),
+      lensKind: outputLensKind,
+      owner: OUTPUT_OWNER,
+      rect: { x: 0, y: canvas.height - height, w: width, h: height },
       canvasWidth: canvas.width,
       canvasHeight: canvas.height,
-      background: background(),
-      ground: world.ground,
-      gridHidden: true,
-      content: shown,
-      rect: { x: 0, y: canvas.height - height, w: width, h: height },
-      lens,
-      owner: OUTPUT_OWNER,
-    }));
+    });
+    outputLensKind = input.lens?.kind ?? null;
+    const surface = editorView.render(input);
     if (!surface) return;
     outputDrawn = { kind: "frame", canvas: target.canvas, width: target.width, height: target.height };
     const request = ++outputFrames;
@@ -459,22 +457,18 @@ export function createStage({
   function drawOutputErp(shown, target, reasons) {
     const pixels = liveErpSize(target.width / (win.devicePixelRatio || 1), target.height / (win.devicePixelRatio || 1), win.devicePixelRatio || 1, cameraTab.erpRange());
     if (!outputStale(target, reasons)) return;
-    const shot = cameraTab.shot();
-    const planes = placedCamera({}, shot.position, eyeHeight(world.ground), { center: [0, 0, 0], radius: camera.bound() });
-    const input = stageRenderInput({ camera: null, canvasWidth: 1, canvasHeight: 1, background: background(), ground: world.ground, gridHidden: true, content: shown });
-    const drawn = editorView.renderLiveErp({
-      owner: OUTPUT_ERP_OWNER,
-      canvas: target.canvas,
-      view: liveErpView(shot, cameraTab.erpRange()),
+    const drawn = editorView.renderLiveErp(outputErpInput({
+      shot: cameraTab.shot(),
+      erpRange: cameraTab.erpRange(),
+      ground: world.ground,
+      radius: camera.bound(),
       width: pixels.width,
       height: pixels.height,
-      near: planes.near,
-      far: planes.far,
-      background: input.background,
-      layers: input.layers,
-      space: input.space,
-      clearColor: STAGE_CLEAR_COLOR,
-    });
+      background: background(),
+      content: shown,
+      owner: OUTPUT_ERP_OWNER,
+      canvas: target.canvas,
+    }));
     if (drawn) outputDrawn = { kind: "erp", canvas: target.canvas, width: target.width, height: target.height };
   }
 
@@ -516,24 +510,21 @@ export function createStage({
     const frame = cameraTab.frame();
     const target = cameraTab.erpCanvas();
     if (!(frame?.width > 0 && frame?.height > 0) || !target) return;
-    const shot = cameraTab.shot();
     const range = cameraTab.erpRange();
     const pixels = liveErpSize(frame.width, frame.height, win.devicePixelRatio || 1, range);
-    const planes = placedCamera({}, shot.position, eyeHeight(world.ground), { center: [0, 0, 0], radius: camera.bound() });
-    const input = stageRenderInput({ camera: null, canvasWidth: 1, canvasHeight: 1, background: background(), ground: world.ground, gridHidden: ui.gridHidden, content: shown });
-    const drawn = editorView.renderLiveErp({
-      owner: LIVE_ERP_OWNER,
-      canvas: target,
-      view: liveErpView(shot, range),
+    const drawn = editorView.renderLiveErp(outputErpInput({
+      shot: cameraTab.shot(),
+      erpRange: range,
+      ground: world.ground,
+      radius: camera.bound(),
       width: pixels.width,
       height: pixels.height,
-      near: planes.near,
-      far: planes.far,
-      background: input.background,
-      layers: input.layers,
-      space: input.space,
-      clearColor: STAGE_CLEAR_COLOR,
-    });
+      background: background(),
+      content: shown,
+      owner: LIVE_ERP_OWNER,
+      canvas: target,
+      gridHidden: ui.gridHidden,
+    }));
     // What drew: the last call's, and the time of the last one that drew the faces.
     if (drawn && (drawn.faces || drawn.pass)) liveErp = { ...drawn, facesMs: drawn.faces ? drawn.ms : liveErp?.facesMs ?? null };
   }
@@ -1075,8 +1066,6 @@ export function createStage({
       bound: () => camera.bound(),
       pick: ({ x, y }) => (editorView.ready ? editorView.pick(stageCamera(camera.pose(), size.width, size.height, camera.bound()), x, y, size.width, size.height) : null),
     },
-    // For the tests and the dev measurement of the hit test's modes (studio/hit_test.js; temporary, with them).
-    hitTest: { objects: () => objects, view: () => editorView },
     // The pose to remember on close: where an eased move goes.
     destination: () => camera.destination(),
     pose: () => camera.pose(),

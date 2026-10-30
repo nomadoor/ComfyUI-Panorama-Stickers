@@ -476,14 +476,6 @@ def save_editor_frames(images, progress=None) -> list[Path]:
     return paths
 
 
-def save_output_png(image) -> Path:
-    """An RGB IMAGE (h, w, 3) as a PNG in temp at its own size, for the node surface to show a run's output."""
-    path = temp_file_path(f"pano_output_{uuid.uuid4().hex[:12]}.png")
-    with TEMP_FILES.writing(path):
-        Image.fromarray(image.clamp(0.0, 1.0).mul_(255).add_(0.5).byte().cpu().numpy(), "RGB").save(path, compress_level=1)
-    return path
-
-
 def make_frames_ui_payload(paths: list[Path], fps: float, *, frames_key: str, meta_key: str) -> dict:
     """The `ui` of the PNGs `save_editor_frames` saved, with the meta of an MP4 of them at `fps`."""
     return {

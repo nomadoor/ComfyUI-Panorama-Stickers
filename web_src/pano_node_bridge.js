@@ -95,8 +95,6 @@ const GROUPS = {
     // { key, player } of createLoopingPreviewVideo.
     ownOutputVideo: null,
     ownOutputRev: 0,
-    // { src, image, ready, failed } of Panorama Studio's last run output (an ERP or a first frame).
-    studioRunImage: null,
     executedOutputs: new Map(),
     outputFromRun: false,
   }),
@@ -193,7 +191,6 @@ const CLEAR = {
       releaseImage(entry?.pendingImg);
     });
     media.ownOutputVideo?.player?.destroy?.();
-    releaseImage(media.studioRunImage?.image);
   },
   stateSync() {},
 };

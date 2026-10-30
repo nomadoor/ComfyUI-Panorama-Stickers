@@ -56,7 +56,6 @@ import { editorKeyAction } from "./shortcuts.js";
 import { createStage, stageUi } from "./stage.js";
 import { createStageMedia, stageContent, stickerFrameSphere } from "./stage_content.js";
 import { outputView } from "./stage_view.js";
-import { HIT_TEST_SETTING_ID, hitTestMode } from "./hit_test.js";
 import { installStudioStylesheet } from "./stylesheet.js";
 import { readLoopSetting, writeLoopSetting } from "./timeline_actions.js";
 import { spanOf } from "./timeline_model.js";
@@ -890,8 +889,6 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
           tab: () => view.tab,
           readOnly: () => readOnly,
           loading: reveal,
-          // A temporary dev comparison of how the object under the pointer is found (hit_test.js).
-          hitMode: () => hitTestMode(app?.ui?.settings?.getSettingValue?.(HIT_TEST_SETTING_ID)),
         },
         cameraTab,
         root,
