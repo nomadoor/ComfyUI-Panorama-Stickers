@@ -641,8 +641,9 @@ export function frameSphere(content, selected = null) {
 // not known, or when it has none (fit3dPosition; core/world.py has the same constant).
 export const NEW_WORLD_STICKER_DISTANCE = 2;
 const NEW_WORLD_STICKER_RADIUS_RATIO = 0.5;
-// A new world Sticker is as wide as a new sky Sticker (30 degrees) seen from the view.
-const NEW_STICKER_HFOV = 30;
+// A new sky Sticker's hFOV (its vFOV follows its image's aspect, pano_editor_state.js stickerVfovFromAspect), and a new
+// world Sticker is as wide as one seen from the view.
+export const NEW_STICKER_HFOV = 30;
 
 // The rotation of a world Sticker at `at` that faces the point `from`: its forward (local -Z) points
 // from `from` to it, so its plane faces back at `from` upright, as a plane of rotation 0 faces a

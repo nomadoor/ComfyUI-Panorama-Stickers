@@ -1,6 +1,7 @@
 // The Sticker that comes in through the node's `sticker` input (the port Sticker, or the legacy external
 // Sticker): its pose from the linked inputs, and keeping it in the state as the inputs change.
 import { deriveCutoutAspectFromFov } from "../pano_cutout_view_math.js";
+import { stickerVfovFromAspect } from "../pano_editor_state.js";
 import { runExternalStickerSync } from "../pano_external_sticker_sync.js";
 import { clamp, wrapYaw } from "../pano_math.js";
 import {
@@ -53,13 +54,8 @@ export function createExternalStickers(deps) {
     return null;
   }
 
-  function computeStickerVFov(hFovDeg, width, height) {
-    const w = Math.max(1, Number(width || 1));
-    const h = Math.max(1, Number(height || 1));
-    const hf = clamp(Number(hFovDeg || 30), 0.1, 179) * DEG2RAD;
-    const vf = 2 * Math.atan(Math.tan(hf * 0.5) * (h / w));
-    return clamp(vf * RAD2DEG, 0.1, 179);
-  }
+  // The vFOV of a Sticker's image aspect is the lower rule's (pano_editor_state.js).
+  const computeStickerVFov = stickerVfovFromAspect;
   function parseLinkedStickerState(raw) {
     const text = String(raw || "").trim();
     if (!text) return null;
