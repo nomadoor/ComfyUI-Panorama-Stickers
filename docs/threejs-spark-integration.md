@@ -4,7 +4,7 @@
 
 この文書が持たない規則：視点の操作・`world` の Sticker と Camera の編集・ギズモ・Panorama Studio のエディタ・上流の Scene の表示と編集・`port` の Sticker の同期と Pose handoff の表示・インスペクタ（`docs/editor-interaction.md`）、タイムラインと Keyframe の記録の規則（`docs/timeline-ui.md`）、状態 v2 と評価関数（`docs/scene-state-v2.md`）、ノードの出力と実行結果の `ui`（`docs/studio-node.md`）、描画関数（`docs/render-contract.md`）、ノード上の表示の規則（`docs/studio-node-surface.md`）。
 
-新しい UI の層（ADR 0044）に切り替えるとき、空間の表示の地面のグリッドと原点の印（何をどの高さに描き、どこで薄れるか）は `docs/space-and-view.md` の「地面のグリッドと原点の印」に移る。描く仕組みと、視点のカメラの near と far はこの文書が持ち続け、新しい UI では far を `docs/space-and-view.md` の世界の境界の半径から決める（下の「新しい UI のステージの描画」）。切り替えるまでは古い UI がこの文書の規則で動くので、ここの記述は消さずに残す。
+新しい UI の層（ADR 0044）に切り替えるとき、空間の表示の地面のグリッド（何をどの高さに描き、どこで薄れるか）は `docs/space-and-view.md` の「地面のグリッド」に移る（新しい UI では原点の印を描かない）。描く仕組みと、視点のカメラの near と far はこの文書が持ち続け、新しい UI では far を `docs/space-and-view.md` の世界の境界の半径から決める（下の「新しい UI のステージの描画」）。切り替えるまでは古い UI がこの文書の規則で動くので、ここの記述は消さずに残す。
 
 ## この文書が owner である規則
 
@@ -26,7 +26,7 @@
 | World の組み立て | — | `pano_three_view.js` `buildWorld`・`setChildren`・`cachedLines` | `tests/pano_pick.test.mjs` |
 | エディタの描画を直接表示する（スケジュール、キャンバス、解像度、コンテキストの喪失） | — | `web_src/pano_frame_scheduler.js` `createFrameScheduler`、`pano_editor_view.js` `screenRenderSize`、`pano_three_view.js` `fitRenderSize`、`web_src/components/PanoModal.vue` | `tests/pano_frame_scheduler.test.mjs`、`tests/pano_editor_direct_view.test.mjs`、`tests/pano_preview_view.test.mjs` |
 | WebGL の unpack 状態 | — | `pano_three_view.js` `settleUnpack` | `tests/pano_editor_view.test.mjs`、`tests/test_three_spark_core_pin.py`、`tests/browser/three_view.spec.js` |
-| 新しい UI のステージの描画（視点のカメラの far、地面のグリッドと原点の印を描く部品、すぐ読み込む側の箱の当たり） | — | `web_src/studio/stage_view.js` `stageCamera`・`stageRenderInput`、`pano_space.js` `spaceCamera`、`web_src/pano_ground_grid.js` `createGroundGrid`（`pano_three_view.js` が `space.ground` のときだけ描く）、`web_src/pano_ray_box.js` `rayBoxDepth`（`pano_pick.js` `rayBoxDepth` の写し） | `tests/studio_stage_view.test.mjs`、`tests/pano_ray_box.test.mjs`、`tests/browser/studio_editor.spec.js` |
+| 新しい UI のステージの描画（視点のカメラの far、地面のグリッドを描く部品、すぐ読み込む側の箱の当たり） | — | `web_src/studio/stage_view.js` `stageCamera`・`stageRenderInput`、`pano_space.js` `spaceCamera`、`web_src/pano_ground_grid.js` `createGroundGrid`（`pano_three_view.js` が `space.ground` のときだけ描く）、`web_src/pano_ray_box.js` `rayBoxDepth`（`pano_pick.js` `rayBoxDepth` の写し） | `tests/studio_stage_view.test.mjs`、`tests/pano_ray_box.test.mjs`、`tests/browser/studio_editor.spec.js` |
 | Panorama モードの ERP の表示（新しい UI の Output の小窓と Camera タブ。6 方向を描いて ERP に貼り直す、描き直す条件、解像度） | — | 描く部品は `web_src/pano_live_erp.js` `createLiveErp`（three.js のチャンクに入る側。three.js だけを import する）、渡す値（位置・回転の行列・範囲・大きさ）は `web_src/studio/erp_preview.js`。ビューへの組み込み（`drawFace` に 2 パスの描き方を渡す、Spark の `onDirty` を `invalidate("splats")` にする、描く物の変化で面を描き直す）は `pano_three_view.js` `renderLiveErp`、ステージ（Camera タブ）と Output の小窓から呼ぶのは `web_src/studio/stage.js` | `tests/studio_erp_preview.test.mjs`、`tests/browser/live_erp.spec.js`、`tests/browser/studio_camera_wired.spec.js` |
 
 ## 版と同梱
@@ -279,7 +279,7 @@ three のアップロードは render の中でしか起きないので、Spark 
 - far：視点の three.js のカメラは `stageCamera`（`web_src/studio/stage_view.js`）が `spaceCamera` で作り、外接球の代わりに、原点を
   中心とする世界の境界の半径 `R`（`docs/space-and-view.md` の「世界の境界」）の球を渡す。far は境界の中の物と、グリッドが消える
   距離の先まで届く。near は上の「空間の表示」の式のまま。
-- 地面のグリッドと原点の印：描く部品は `web_src/pano_ground_grid.js` の `createGroundGrid`（`y = ground` の一枚の板を断片の
+- 地面のグリッド：描く部品は `web_src/pano_ground_grid.js` の `createGroundGrid`（`y = ground` の一枚の板を断片の
   シェーダで線にし、深度を書かないので World の物がその上に描かれる）。`pano_three_view.js` の `buildWorld` は、描画の入力の
   `space.ground`（`web_src/studio/grid.js` の `groundGrid` の値。何をどの高さに描き、どこで薄れるかは `docs/space-and-view.md`）が
   あるときだけ描く。古い UI は `space.ground` を渡さないので、古いグリッド（`space.grid`）のままである。

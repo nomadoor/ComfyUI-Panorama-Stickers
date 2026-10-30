@@ -11,7 +11,7 @@ ADR 0048（撮る Camera・入口の役割・画面の組み直し）にある�
 新しい UI に切り替えるまで、Panorama Studio と Preview は古い UI で開き、その画面の規則は `docs/editor-interaction.md`・
 `docs/preview-node.md`・`docs/vue-ui-boundary.md` が持つ（ADR 0044 の「置き換えの進め方」）。
 
-この文書が持たない規則：視点の動かし方・注視点・カーソル・視点の操作のつまみの働き・地面のグリッドと原点の印・World の物のガイド・
+この文書が持たない規則：視点の動かし方・注視点・カーソル・視点の操作のつまみの働き・地面のグリッド・World の物のガイド・
 Add とドロップの着く所（`docs/space-and-view.md`）、Keyframe の記録・範囲選択・再生・タイムラインの行（`docs/timeline-ui.md`）、
 撮る Camera と撮り方のモード・ノードの入力と出力の大きさ（`docs/studio-node.md`）、状態の形（`docs/scene-state-v2.md`）、
 Panorama モードの ERP をブラウザで描く仕組み（`docs/threejs-spark-integration.md`）、色・文字・余白・角丸・動きの値（`docs/design.md` の
@@ -313,10 +313,10 @@ Camera タブでは、Undo・Redo のほかは同じ席に出したまま無効�
   幅を持つ）。それぞれ名前・値・Keyframe のポチ（どの Lane に打つかは `docs/timeline-ui.md` の「インスペクタの Keyframe のポチ」）を付け、
   目盛りに数値を振る。真ん中の印は動かず、目盛りを左右（上下）にドラッグして値を変える。目盛りはフレームの辺について動く。枠の外の上に
   描く文字と線は、明るい色にする（`docs/design.md`）。
-- Camera タブ（Frame モードと Panorama モード）でも地面のグリッドと原点の印を描き、右下のグリッドのボタンで出し入れする。何も無い空間でも、
+- Camera タブ（Frame モードと Panorama モード）でも地面のグリッドを描き、右下のグリッドのボタンで出し入れする。何も無い空間でも、
   自分がどこにいてどちらを向いているかが分かるようにするためである。Camera に張り付いた目安（三分割・水平の目安など）は置かない
   （持ち主の決定、2026-10-30）。グリッドは出力にも Output の小窓にも写さない。何をどこに描くか、3D タブとスイッチを共有することは
-  `docs/space-and-view.md` の「地面のグリッドと原点の印」。
+  `docs/space-and-view.md` の「地面のグリッド」。
 - 上端の中央に、タイムコード（時刻とフレーム）。
 - 無効にするもの（同じ席に出したまま灰色にし、tooltip で理由を示す）：左の列（Undo・Redo を除く）、Reset View。出さないもの：下の中央の
   バー。Output の小窓は出したまま。シャッターのボタンは無い（カメラの値は各値のポチか、タイムラインの行のポチで打つ）。
@@ -325,7 +325,9 @@ Camera タブでは、Undo・Redo のほかは同じ席に出したまま無効�
   一行は足さない（ADR 0048。使い方は README で見せる）。辺の目盛りは同じ席に出したまま、FOV と Lens は灰色で触れない（Panorama では効かない）。Roll は効く
   （ERP が Camera の向きで回るため）ので、触れる。
 - Camera タブの右下の Frame Selected は、視点ではなく Camera を動かす（Undo の 1 段。`docs/space-and-view.md` の「Frame 表示」）。tooltip は
-  「Frame selected · Moves the camera」。
+  「Frame selected · Moves the camera」。Panorama モードでは Camera を枠に収める意味が無いので、同じ席に出したまま無効にし、tooltip は
+  「Not available in Panorama mode」（左の列の「Not available in the Camera view」と言い方をそろえる）。視点の操作のつまみも同じ tooltip で
+  無効にする。ロックした Camera と読み取り専用のエディタでは、Frame Selected とつまみを無効にし、tooltip は「Locked」「Read-only」。
 
 ## Add とドロップの見せ方
 
@@ -442,6 +444,9 @@ Camera タブでは、Undo・Redo のほかは同じ席に出したまま無効�
 - 見た目はエディタと同じ（`docs/design.md` の「新しい UI の見た目」）。
 
 ## まだ決めていないこと（spec ではない）
+
+- 次の候補：Output の小窓（Frame モード）は、3D ファイルの Sticker を読み込んでいる間、ステージを描くたびに描き直されることがある（内容の
+  cache が読み込み中は毎フレーム作り直されるため）。
 
 - 二次の文字の濃さと、地面のグリッドの見た目の値（最初の画面を作るときに実際の画面で決める）。
 - ペイントの道具の見た目の細部（中身は今のまま）。
