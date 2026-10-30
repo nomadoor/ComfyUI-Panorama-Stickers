@@ -17,6 +17,7 @@ import {
   loadOutputWindow,
   loadTimelineHeight,
   outputWindowSize,
+  outputWindowView,
   saveOutputWindow,
   saveTimelineHeight,
   timelineHeight,
@@ -140,6 +141,15 @@ test("the Output window keeps the output's ratio within its least and largest wi
   assert.deepEqual(loadOutputWindow(storage), { width: 280, collapsed: true });
   // Folded by default (owner, 2026-10-30).
   assert.deepEqual(loadOutputWindow(null).collapsed, true);
+});
+
+test("the Camera tab folds the Output window and stops its picture without touching what the viewer chose", () => {
+  // The 3D tab: the viewer's choice.
+  assert.deepEqual(outputWindowView({ collapsed: false }), { folded: false, open: true, foldable: true });
+  assert.deepEqual(outputWindowView({ collapsed: true }), { folded: true, open: false, foldable: true });
+  // The Camera tab: folded, not drawn, its button inert, whichever the choice.
+  assert.deepEqual(outputWindowView({ collapsed: false, suspended: true }), { folded: true, open: false, foldable: false });
+  assert.deepEqual(outputWindowView({ collapsed: true, suspended: true }), { folded: true, open: false, foldable: false });
 });
 
 test("the stage draws STAGE_RENDER_SCALE times the device pixels, its longer side at most STAGE_RENDER_MAX_SIDE", () => {

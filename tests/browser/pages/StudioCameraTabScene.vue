@@ -1,7 +1,6 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
 import { CAMERA_RULERS } from "/web_src/studio/frame_layout.js";
-import { timecode } from "/web_src/studio/timeline_model.js";
 import { formatNumber } from "/web_src/studio/ui_drag.js";
 import { LENS_CURVE_MAX, LENS_CURVE_MIN, lensFovLimit } from "/web_src/pano_lens.js";
 import StudioCameraFrame from "/web_src/components/studio/StudioCameraFrame.vue";
@@ -39,7 +38,9 @@ const ruler = (name, apply) => ({
   onChange: (value) => props.onEvent({ name: `${name}:change`, value }),
   onCancel: () => props.onEvent({ name: `${name}:cancel` }),
   onKey: () => props.onEvent({ name: `${name}:key` }),
+  onReset: () => props.onEvent({ name: `${name}:reset` }),
 });
+const stripStyle = (place, vertical) => (vertical ? { top: `${place.offset}px`, height: `${place.length}px` } : { left: `${place.offset}px`, width: `${place.length}px` });
 
 const stageCanvas = ref(null);
 const erpHolder = ref(null);
@@ -105,7 +106,7 @@ onBeforeUnmount(() => window.removeEventListener("resize", paintStage));
     <div class="pano-studio-stage stage" :class="{ 'is-panorama': panorama }" data-stage>
       <canvas v-show="!panorama" ref="stageCanvas" class="pano-studio-stage-canvas" />
       <StudioCameraFrame :aspect="panorama ? 2 : aspect" @rect="onRect">
-        <template #default="{ rollWidth }">
+        <template #default="{ rulers: place }">
           <div v-if="panorama" ref="erpHolder" class="erp" data-erp />
           <StudioEdgeRuler
             class="pano-studio-at-edge-left"
@@ -124,6 +125,9 @@ onBeforeUnmount(() => window.removeEventListener("resize", paintStage));
             :key-state="s.keys.fov"
             :disabled="panorama"
             :tip="panorama ? NOT_IN_PANORAMA : ''"
+            :value-chars="CAMERA_RULERS.fov.valueChars"
+            :at-default="s.fov === 90"
+            :style="stripStyle(place.vertical, true)"
             v-bind="ruler('fov', (v) => (s.fov = v))"
           />
           <StudioEdgeRuler
@@ -143,11 +147,14 @@ onBeforeUnmount(() => window.removeEventListener("resize", paintStage));
             :key-state="s.keys.lens"
             :disabled="panorama"
             :tip="panorama ? NOT_IN_PANORAMA : ''"
+            :value-chars="CAMERA_RULERS.lens.valueChars"
+            :at-default="s.lens === 1"
+            :style="stripStyle(place.vertical, true)"
             v-bind="ruler('lens', (v) => (s.lens = v))"
           />
           <StudioEdgeRuler
             class="pano-studio-at-edge-bottom"
-            :style="{ width: `${rollWidth}px` }"
+            :style="stripStyle(place.roll, false)"
             orientation="horizontal"
             name="Roll"
             :value="s.roll"
@@ -160,6 +167,8 @@ onBeforeUnmount(() => window.removeEventListener("resize", paintStage));
             :precision="1"
             :value-text="`${formatNumber(s.roll, 0)}°`"
             :key-state="s.keys.roll"
+            :value-chars="CAMERA_RULERS.roll.valueChars"
+            :at-default="s.roll === 0"
             v-bind="ruler('roll', (v) => (s.roll = v))"
           />
         </template>
@@ -167,11 +176,8 @@ onBeforeUnmount(() => window.removeEventListener("resize", paintStage));
 
       <StudioTabs class="pano-studio-at-tabs" value="camera" />
       <StudioToolRail class="pano-studio-at-rail" camera-tab can-undo />
-      <div class="pano-studio-at-notice">
-        <span class="pano-studio-timecode pano-studio-cap" data-timecode>{{ timecode(78, 24) }} · 78 / 240</span>
-      </div>
       <div class="pano-studio-at-output">
-        <StudioOutputPreview :ratio="panorama ? 2 : aspect" />
+        <StudioOutputPreview :ratio="panorama ? 2 : aspect" suspended :suspended-tip="CAMERA_TAB" />
       </div>
       <div class="pano-studio-at-nav">
         <StudioNavWidget />

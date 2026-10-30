@@ -79,8 +79,9 @@ test("Frame mode: the stage looks through the Camera into the frame of the outpu
   const got = await page.evaluate((rgb) => window.__studio.stageCentroid(rgb), RED);
   expect(got).not.toBeNull();
   expect(Math.hypot(got.x - want.x, got.y - want.y)).toBeLessThan(8);
-  // The timecode at the top center, the bar at the bottom center gone, the rail and Reset View disabled.
-  await expect(page.locator("[data-timecode]")).toHaveText("00:00.00 · 0 / 240");
+  // No timecode at the top center (the timeline has it), the bar at the bottom center gone, the rail and Reset View
+  // disabled.
+  await expect(page.locator("[data-timecode]")).toHaveCount(0);
   await expect(page.locator('[data-region="bar"] > *')).toHaveCount(0);
   await expect(page.locator('[data-action="reset-view"]')).toHaveAttribute("aria-disabled", "true");
   for (const tool of ["cursor", "paint", "mask", "add", "camera"]) {
@@ -296,7 +297,7 @@ const outputPicture = (page, kind) => page.evaluate((which) => {
 }, kind);
 
 for (const mode of ["frame", "panorama"]) {
-  test(`the Output window shows the Camera's output in ${mode} mode, in both tabs`, async ({ page }, testInfo) => {
+  test(`the Output window shows the Camera's output in ${mode} mode in the 3D tab, and folds in the Camera tab`, async ({ page }, testInfo) => {
     const problems = watch(page);
     await page.setViewportSize({ width: 1440, height: 860 });
     await page.goto(`/tests/browser/pages/studio_camera_wired.html?aspect=16:9&mode=${mode}`);
@@ -304,21 +305,19 @@ for (const mode of ["frame", "panorama"]) {
     expect(await page.evaluate(() => window.__studio.error)).toBeNull();
     await expect(page.locator(".pano-studio-notice")).toHaveCount(0, { timeout: 30_000 });
     console.log(`renderer: ${await page.evaluate(() => window.__studio.rendererOf())}`);
-    // Folded by default; opened, it draws (Frame mode: opened in the 3D tab; Panorama mode: in the Camera tab).
+    // Folded by default; opened in the 3D tab, it draws.
     await expect(page.locator('[data-region="output"]')).toHaveClass(/is-collapsed/);
-    if (mode === "panorama") {
-      await page.locator('[role="tablist"] button', { hasText: "Camera" }).click();
-      await page.waitForFunction(() => window.__studio.stage().liveErp()?.counts.faces > 0);
-      await page.waitForTimeout(300);
-    }
     await page.locator('[data-action="output-fold"]').click();
     const kind = mode === "frame" ? "frame" : "erp";
     await expect.poll(async () => (await outputPicture(page, kind))?.red ?? 0, { timeout: 10_000 }).toBeGreaterThan(3);
     const picture = await outputPicture(page, kind);
     expect(picture.colors).toBeGreaterThan(5);
     if (kind === "erp") expect(picture.width).toBe(2 * picture.height);
-    // Still there in the other tab.
-    await page.locator('[role="tablist"] button', { hasText: mode === "panorama" ? "3D" : "Camera" }).click();
+    // The Camera tab folds it (docs/studio-ui.md "Output の小窓"); the 3D tab opens it again.
+    await page.locator('[role="tablist"] button', { hasText: "Camera" }).click();
+    await expect(page.locator('[data-region="output"]')).toHaveClass(/is-collapsed/);
+    await page.locator('[role="tablist"] button', { hasText: "3D" }).click();
+    await expect(page.locator('[data-region="output"]')).not.toHaveClass(/is-collapsed/);
     await page.waitForTimeout(400);
     expect((await outputPicture(page, kind)).red).toBeGreaterThan(3);
     expect(problems).toEqual([]);
