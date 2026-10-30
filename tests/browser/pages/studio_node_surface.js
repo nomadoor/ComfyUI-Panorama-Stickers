@@ -105,19 +105,45 @@ surface.setMode = (next) => {
   raw.camera.projection = next === "panorama" ? "erp" : "perspective";
   surface.setWidget("state_json", JSON.stringify(raw));
 };
+// The picture's box in CSS px of the surface: as wide as the line and right above it (6px), and centered up and down
+// with it (as much room above the picture as below the line).
+surface.pictureBox = () => {
+  const line = host.querySelector(".pano-studio-node-line");
+  const frame = host.querySelector(".pano-studio-node-frame");
+  const top = frame.clientHeight - (line.offsetTop + line.offsetHeight);
+  return { x: line.offsetLeft, y: top, w: line.offsetWidth, h: line.offsetTop - 6 - top };
+};
 // The color at a point of the picture, (u, v) in 0..1 of the picture's box (the layout the overlay reads).
 surface.pictureColor = (u, v) => {
   const canvas = host.querySelector("canvas");
-  const line = host.querySelector(".pano-studio-node-line");
   const ratio = window.devicePixelRatio || 1;
-  const width = line.getBoundingClientRect().width;
-  const top = 0;
-  const height = line.offsetTop - 6 - top;
-  const left = line.offsetLeft;
+  const box = surface.pictureBox();
   const g = canvas.getContext("2d");
-  const [r, gg, b] = g.getImageData(Math.round((left + u * width) * ratio), Math.round((top + v * height) * ratio), 1, 1).data;
+  const [r, gg, b] = g.getImageData(Math.round((box.x + u * box.w) * ratio), Math.round((box.y + v * box.h) * ratio), 1, 1).data;
   return [r, gg, b];
 };
+// Resizes the stand-in node's DOM widget area, as a node resize does in either renderer.
+surface.resize = (width, height) => {
+  host.style.width = `${width}px`;
+  host.style.height = `${height}px`;
+};
+// What the surface shows right after the frame that resized it painted: called in the frame of the resize (before the
+// ResizeObserver), it answers from the next frame's first callback whether the canvas and the line already had the new
+// size's layout.
+surface.resizeAndSample = (width, height) => new Promise((resolve) => {
+  requestAnimationFrame(() => {
+    surface.resize(width, height);
+    requestAnimationFrame(() => {
+      const canvas = host.querySelector("canvas");
+      const ratio = window.devicePixelRatio || 1;
+      resolve({
+        canvas: [canvas.width, canvas.height],
+        expected: [Math.round(width * ratio), Math.round(height * ratio)],
+        box: surface.pictureBox(),
+      });
+    });
+  });
+});
 surface.node = node;
 
 try {

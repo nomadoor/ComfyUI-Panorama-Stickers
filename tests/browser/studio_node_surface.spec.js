@@ -27,6 +27,7 @@ async function open(page, mode) {
   return problems;
 }
 
+const pictureBox = (page) => page.evaluate(() => window.__surface.pictureBox());
 const color = (page, u, v) => page.evaluate(([x, y]) => window.__surface.pictureColor(x, y), [u, v]);
 
 test("Frame mode: the surface draws the Camera's frame live, and turning the Camera in state_json draws it again", async ({ page }) => {
@@ -37,9 +38,8 @@ test("Frame mode: the surface draws the Camera's frame live, and turning the Cam
   await expect.poll(async () => near(await color(page, 0.5, 0.5), RED), { timeout: 20_000 }).toBe(true);
   await expect.poll(async () => near(await color(page, 0.03, 0.1), GREEN)).toBe(true);
   // The picture keeps the output's shape: 16 : 9 over the line.
-  const box = await page.locator(".pano-studio-node-line").boundingBox();
-  const node = await page.locator("#node").boundingBox();
-  expect(Math.abs(box.width / (box.y - node.y - 6) - 16 / 9)).toBeLessThan(0.02);
+  const box = await pictureBox(page);
+  expect(Math.abs(box.w / box.h - 16 / 9)).toBeLessThan(0.02);
 
   await page.evaluate(() => window.__surface.turnCamera(180));
   await expect.poll(async () => near(await color(page, 0.5, 0.5), GREEN)).toBe(true);
@@ -54,9 +54,8 @@ test("Panorama mode: the surface draws the live ERP from the Camera, its turn mo
   // The ERP's center is the Camera's forward: the red image.
   await expect.poll(async () => near(await color(page, 0.5, 0.5), RED), { timeout: 20_000 }).toBe(true);
   await expect.poll(async () => near(await color(page, 0.02, 0.5), GREEN)).toBe(true);
-  const box = await page.locator(".pano-studio-node-line").boundingBox();
-  const node = await page.locator("#node").boundingBox();
-  expect(Math.abs(box.width / (box.y - node.y - 6) - 2)).toBeLessThan(0.02);
+  const box = await pictureBox(page);
+  expect(Math.abs(box.w / box.h - 2)).toBeLessThan(0.02);
 
   // Turned a quarter: the image leaves the center for a quarter of the ERP's width to one side.
   await page.evaluate(() => window.__surface.turnCamera(90));
@@ -82,9 +81,8 @@ test("the line follows megapixels, multiple and the Camera's mode at once, witho
   await expect(page.locator(".pano-studio-node-shot")).toHaveText("Panorama 360°");
   // The picture takes the new shape too.
   await expect.poll(async () => {
-    const box = await page.locator(".pano-studio-node-line").boundingBox();
-    const node = await page.locator("#node").boundingBox();
-    return Math.round((box.width / (box.y - node.y - 6)) * 100) / 100;
+    const box = await pictureBox(page);
+    return Math.round((box.w / box.h) * 100) / 100;
   }).toBe(2);
   expect(problems).toEqual([]);
 });
@@ -102,5 +100,46 @@ test("the Open Studio button sits at the picture's bottom center, always shown, 
   expect(b.height).toBe(30);
   await button.click();
   expect(await page.evaluate(() => window.__surface.opened)).toBe(1);
+  expect(problems).toEqual([]);
+});
+
+// The surface is one box under the widgets: the picture is the largest that fits it less the line, at the output's
+// shape, centered up and down and across with the line right under it, and the rest is the surface's dark fill
+// (docs/studio-node-surface.md "表示の構成"). A node resize lays it out again in the same frame.
+test("resizing the node keeps the picture as large as fits and centered, the line under it and the button on it", async ({ page }) => {
+  const problems = await open(page, "frame");
+  await expect.poll(async () => near(await color(page, 0.5, 0.5), RED), { timeout: 20_000 }).toBe(true);
+  const LINE = 16 + 6;
+  for (const [width, height] of [[300, 500], [640, 260], [700, 500]]) {
+    const sample = await page.evaluate(([w, h]) => window.__surface.resizeAndSample(w, h), [width, height]);
+    // Already laid out and drawn in the frame of the resize: no frame shows the cleared or stretched canvas.
+    expect(sample.canvas).toEqual(sample.expected);
+    const box = sample.box;
+    const fit = Math.min(width, (height - LINE) * 16 / 9);
+    expect(Math.abs(box.w - fit)).toBeLessThan(1.5);
+    expect(Math.abs(box.w / box.h - 16 / 9)).toBeLessThan(0.02);
+    expect(Math.abs(box.x - (width - box.w) / 2)).toBeLessThan(1.5);
+    expect(Math.abs(box.y - (height - box.h - LINE) / 2)).toBeLessThan(1.5);
+    const line = await page.locator(".pano-studio-node-line").boundingBox();
+    const node = await page.locator("#node").boundingBox();
+    expect(Math.abs(line.y - node.y - (box.y + box.h + 6))).toBeLessThan(1.5);
+    expect(Math.abs(line.width - box.w)).toBeLessThan(1.5);
+    const button = await page.locator(".pano-studio-node-open").boundingBox();
+    expect(Math.abs(button.x + button.width / 2 - (node.x + box.x + box.w / 2))).toBeLessThan(1.5);
+    expect(Math.abs(node.y + box.y + box.h - (button.y + button.height) - 8)).toBeLessThan(1.5);
+    // The picture is drawn to its edges, and around it is the surface's dark fill, not the node's background.
+    await expect.poll(async () => near(await color(page, 0.5, 0.5), RED)).toBe(true);
+    await expect.poll(async () => near(await color(page, 0.02, 0.05), GREEN)).toBe(true);
+    const outside = await page.evaluate(([w, h]) => {
+      const host = document.getElementById("node");
+      const box = window.__surface.pictureBox();
+      const x = box.x > 4 ? box.x / 2 : w / 2;
+      const y = box.x > 4 ? h / 2 : box.y / 2;
+      const probe = document.elementFromPoint(host.getBoundingClientRect().left + x, host.getBoundingClientRect().top + y);
+      return { fill: getComputedStyle(host.querySelector(".pano-studio-node-frame")).backgroundColor, probe: Boolean(probe?.closest("#node")) };
+    }, [width, height]);
+    expect(outside).toEqual({ fill: "rgb(7, 7, 7)", probe: true });
+  }
+  await page.screenshot({ path: test.info().outputPath("resized.png") });
   expect(problems).toEqual([]);
 });

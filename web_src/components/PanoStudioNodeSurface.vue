@@ -6,7 +6,7 @@ import SvgIcon from "./shared/SvgIcon.vue";
 
 // Panorama Studio's node surface (docs/studio-node-surface.md "表示の構成", ADR 0049): over the Camera's output picture
 // the canvas draws, the Open Studio button at the picture's bottom center, and under it the line with how the Camera
-// shoots and the output size (pano_studio_status.js). Where they go is `model.layout` (pano_studio_surface.js
+// shoots and the output size (pano_studio_status.js), all on the surface's dark fill. Where they go is `model.layout` (pano_studio_surface.js
 // studioSurfaceLayout, the one the canvas draws the picture by), null before the surface is laid out.
 const props = defineProps({
   model: {
@@ -47,7 +47,8 @@ const modeIcon = computed(() => (props.model.status.mode === "panorama" ? ICON.p
       <SvgIcon :icon="ICON.fullscreen" />
       <span class="label">Open Studio</span>
     </button>
-    <div class="pano-studio-node-line" role="status" :style="lineStyle">
+    <!-- On the surface's dark fill in either theme: the dark tokens (web/pano_studio.css). -->
+    <div class="pano-studio dark-theme pano-studio-node-line" role="status" :style="lineStyle">
       <span class="pano-studio-node-shot">
         <SvgIcon :icon="modeIcon" />
         <span class="label">{{ model.status.shot }}</span>
