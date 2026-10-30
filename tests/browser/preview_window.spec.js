@@ -94,3 +94,128 @@ test("a PANO_SCENE source: its objects draw read-only over its background, and t
   await expect(page.locator("[data-preview-window]")).toHaveCount(0);
   expect(problems).toEqual([]);
 });
+
+// docs/space-and-view.md "Preview のウィンドウ": the grid starts hidden; a drag let go while moving coasts, a press stops it.
+test("the grid starts hidden, and a look drag let go while moving coasts until a press stops it", async ({ page }) => {
+  const problems = await open(page);
+  await expect(page.locator("[data-action=grid]")).toHaveAttribute("aria-checked", "false");
+  await expect.poll(() => page.evaluate(() => window.__preview.sample()), { timeout: 20_000 }).toBeGreaterThan(20);
+  const canvas = page.locator("[data-stage-canvas]");
+  const box = await canvas.boundingBox();
+  const y = box.y + box.height / 2;
+  // The drag is sent in the page at 10 ms a move, so a slow headless frame does not separate the last moves from the
+  // release (ADR 0010 measures the speed over the last 80 ms).
+  await page.evaluate(async ({ x, y }) => {
+    const target = document.querySelector("[data-stage-canvas]");
+    const send = (type, clientX, buttons) => target.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerId: 1, pointerType: "mouse", isPrimary: true, button: 0, buttons, clientX, clientY: y }));
+    send("pointerdown", x, 1);
+    for (let i = 1; i <= 8; i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      send("pointermove", x - i * 30, 1);
+    }
+    send("pointerup", x - 240, 0);
+  }, { x: box.x + 700, y });
+  const released = await page.evaluate(() => window.__preview.pose().yaw_deg);
+  await page.waitForTimeout(150);
+  const later = await page.evaluate(() => window.__preview.pose().yaw_deg);
+  expect(Math.abs(later - released)).toBeGreaterThan(0.5);
+  await page.mouse.move(box.x + 700, y);
+  // A press stops it where it is.
+  await page.mouse.down();
+  const stopped = await page.evaluate(() => window.__preview.pose().yaw_deg);
+  await page.waitForTimeout(150);
+  expect(await page.evaluate(() => window.__preview.pose().yaw_deg)).toBeCloseTo(stopped, 6);
+  await page.mouse.up();
+  // A drag held still before it is let go does not coast.
+  await page.mouse.move(box.x + 500, y);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 400, y);
+  await page.waitForTimeout(200);
+  await page.mouse.up();
+  const held = await page.evaluate(() => window.__preview.pose().yaw_deg);
+  await page.waitForTimeout(150);
+  expect(await page.evaluate(() => window.__preview.pose().yaw_deg)).toBeCloseTo(held, 6);
+  expect(problems).toEqual([]);
+});
+
+test("an IMAGE opens at the node's yaw and pitch and hands them back on close, keeping the node's FOV", async ({ page }) => {
+  await open(page, "?handoff");
+  const pose = await page.evaluate(() => window.__preview.pose());
+  expect(pose.position).toEqual([0, 0, 0]);
+  expect(pose.yaw_deg).toBeCloseTo(30, 6);
+  expect(pose.pitch_deg).toBeCloseTo(5, 6);
+  await page.keyboard.press("Escape");
+  await expect(page.locator("[data-preview-window]")).toHaveCount(0);
+  const view = await page.evaluate(() => window.__preview.runtimeView());
+  expect(view.yaw).toBeCloseTo(30, 6);
+  expect(view.fov).toBe(70);
+  expect(await page.evaluate(() => window.__preview.told)).toContain("draw");
+});
+
+test("a Scene opens at the node viewer's view and playhead, stops the node meanwhile, and hands both back", async ({ page }) => {
+  const problems = await open(page, "?scene&handoff");
+  const pose = await page.evaluate(() => window.__preview.pose());
+  expect(pose.position).toEqual([0.5, 0, 1]);
+  expect(pose.yaw_deg).toBeCloseTo(40, 6);
+  expect(pose.pitch_deg).toBeCloseTo(-10, 6);
+  // The node was playing: the window goes on playing from its frame, and the node rests and does not draw.
+  let record = await page.evaluate(() => window.__preview.record());
+  expect(record.windowOpen).toBe(true);
+  expect(record.playing).toBe(false);
+  expect(await page.evaluate(() => window.__preview.told)).toEqual(["rest"]);
+  expect(await page.evaluate(() => window.__preview.playback().playing)).toBe(true);
+  await expect.poll(() => page.evaluate(() => window.__preview.playback().frame)).toBeGreaterThan(12);
+  // Space pauses it; the frame stays.
+  await page.locator("[data-stage-canvas]").click({ position: { x: 300, y: 300 } });
+  await page.keyboard.press("Space");
+  await expect.poll(() => page.evaluate(() => window.__preview.playback().playing)).toBe(false);
+  const frame = await page.evaluate(() => window.__preview.playback().frame);
+  await page.keyboard.press("Escape");
+  await expect(page.locator("[data-preview-window]")).toHaveCount(0);
+  record = await page.evaluate(() => window.__preview.record());
+  expect(record.windowOpen).toBe(false);
+  expect(record.frame).toBe(frame);
+  expect(record.playing).toBe(false);
+  expect(record.view.viewPosition).toEqual([0.5, 0, 1]);
+  expect(record.view.viewYaw).toBeCloseTo(40, 6);
+  expect(await page.evaluate(() => window.__preview.told)).toEqual(["rest", "activate"]);
+  expect(problems).toEqual([]);
+});
+
+// docs/studio-ui.md "Preview のウィンドウ": Space as in the editor.
+test("Space plays and pauses; not with Ctrl", async ({ page }) => {
+  await open(page, "?scene");
+  await page.locator("[data-stage-canvas]").click({ position: { x: 300, y: 300 } });
+  await page.keyboard.press("Space");
+  await expect.poll(() => page.evaluate(() => window.__preview.playback().playing)).toBe(true);
+  await page.keyboard.press("Space");
+  await expect.poll(() => page.evaluate(() => window.__preview.playback().playing)).toBe(false);
+  await page.keyboard.press("Control+Space");
+  await page.waitForTimeout(100);
+  expect(await page.evaluate(() => window.__preview.playback().playing)).toBe(false);
+});
+
+// docs/studio-ui.md "Preview のウィンドウ": a Scene's background shows inside its Clip range, its bg_color outside.
+test("a Scene's background outside its Clip range shows its bg_color", async ({ page }) => {
+  const problems = await open(page, "?scene&clip");
+  const green = ({ top }) => top[1] > 150 && top[0] < 90 && top[2] < 90;
+  const blue = ({ top }) => top[2] > top[0] + 40 && top[1] < 150;
+  await expect.poll(async () => green(await page.evaluate(() => window.__preview.colors())), { timeout: 20_000 }).toBe(true);
+  await page.locator("[data-seek]").fill("15");
+  await expect.poll(async () => blue(await page.evaluate(() => window.__preview.colors())), { timeout: 20_000 }).toBe(true);
+  await page.locator("[data-seek]").fill("25");
+  await expect.poll(async () => green(await page.evaluate(() => window.__preview.colors())), { timeout: 20_000 }).toBe(true);
+  expect(problems).toEqual([]);
+});
+
+// docs/studio-ui.md "Preview のウィンドウ": an IMAGE covers the node's background_range.
+test("an IMAGE covers the node's background_range: with 180 the back shows no picture", async ({ page }) => {
+  // ?back: the node looks back (yaw 180), so the window opens looking at the half a 180 picture does not cover.
+  await open(page, "?handoff&back");
+  await expect.poll(() => page.evaluate(() => window.__preview.sample()), { timeout: 20_000 }).toBeGreaterThan(20);
+  const full = await page.evaluate(() => window.__preview.sample());
+  await open(page, "?handoff&back&range180");
+  await page.waitForTimeout(1000);
+  const half = await page.evaluate(() => window.__preview.sample());
+  expect(Math.abs(full - half)).toBeGreaterThan(10);
+});
