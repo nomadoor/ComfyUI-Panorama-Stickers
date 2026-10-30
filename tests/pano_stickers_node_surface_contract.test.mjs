@@ -354,10 +354,7 @@ test("DOM teardown retains the mount record, unregisters widgets, and restores o
   assert.match(teardown, /dom\.root\?\.remove\?\.\(\)/);
   assert.match(teardown, /if \(w === dom\?\.widget\) return true/);
   assert.match(teardown, /removable\.forEach\(\(widget\) => removeNodeWidget\(node, widget\)\)/);
-  assert.match(restore, /sw\?\.callback === swCallbackWrapper/);
-  assert.match(restore, /delete sw\.__panoPreviewPatchedCb/);
-  assert.match(restore, /bgw\?\.callback === bgwCallbackWrapper/);
-  assert.match(restore, /delete bgw\.__panoPreviewPatchedCb/);
+  assert.match(restore, /widgetRestores\.forEach\(\(restore\) => restore\(\)\)/);
 });
 
 test("Stickers teardown commits an active gesture before destroying the surface session", async () => {

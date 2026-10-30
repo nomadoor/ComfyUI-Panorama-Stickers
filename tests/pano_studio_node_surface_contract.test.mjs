@@ -33,8 +33,9 @@ test("the Studio surface is view-only: the runtime mounts it for Panorama Studio
   assert.match(runtime, /\["background", "external-sticker", "scene"\]\.every\(\(channel\) => isNodeOutputMediaCurrent\(node, channel\)\)/);
   assert.match(runtime, /run: \(current && ownOutputUiValue\(node, "pano_output_size"\)\) \|\| null/);
   // The status follows the size and background widgets (ADR 0048), and the surface gives their callbacks back when it goes.
-  assert.match(runtime, /\["megapixels", "multiple", "background_range", "background_color"\]\.map\(\(name\) => getWidget\(node, name\)\)/);
-  assert.match(runtime, /for \(const \{ widget, previous, wrapper \} of sizeCallbacks\) if \(widget\.callback === wrapper\) widget\.callback = previous;/);
+  assert.match(runtime, /\["state_json", "background_color", "background_range", "megapixels", "multiple"\]/);
+  assert.match(runtime, /chainWidgetCallback\(widget, \(\) => requestDraw\(\)\)/);
+  assert.match(runtime, /widgetRestores\.forEach\(\(restore\) => restore\(\)\)/);
 });
 
 test("once it has run, the Studio surface shows the last run's output, edited since or not (ADR 0029)", async () => {

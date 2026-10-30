@@ -139,7 +139,6 @@ const ALLOWED_PANO_PROPERTIES = {
   __panoHidden: "widget: hidden by hideWidget",
   __panoComputeSizeBeforeHide: "widget: its computeSize before hideWidget",
   __panoQueueBarrierInstalled: "widget: state_json waits for state producers before it serializes",
-  __panoPreviewPatchedCb: "widget: the node surface's callback wrapper",
   __panoLoadState: "image: load state (pano_image_state.js)",
   __panoLoadSource: "image: the source the load state is for",
   __panoSrc: "image: the source of a UI image (pano_comfy_media.js)",

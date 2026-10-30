@@ -78,6 +78,7 @@ import {
   videoLinked,
 } from "./pano_preview_video.js";
 import { bindWheelCaptureRoot, readWheelDirection } from "./pano_wheel.js";
+import { chainWidgetCallback } from "./pano_widget_callback.js";
 import { queuePendingStickerOperation } from "./pano_editor_extension.js";
 import {
   bindStickerDropTarget,
@@ -2851,46 +2852,14 @@ function attachPanoramaPreviewImpl(node, options = {}) {
     wrap.addEventListener(name, (ev) => stopCanvasEventUnlessResizeGrip(ev, eventSurface));
   });
 
-  const sw = getWidget(node, "state_json");
-  let swCallbackPrev = null;
-  let swCallbackWrapper = null;
-  if (sw && !sw.__panoPreviewPatchedCb) {
-    swCallbackPrev = sw.callback;
-    swCallbackWrapper = (v) => {
-      const out = swCallbackPrev ? swCallbackPrev(v) : undefined;
-      requestDraw();
-      return out;
-    };
-    sw.callback = swCallbackWrapper;
-    sw.__panoPreviewPatchedCb = swCallbackWrapper;
-  }
-  const bgw = getWidget(node, "background_color") ?? getWidget(node, "bg_color");
-  let bgwCallbackPrev = null;
-  let bgwCallbackWrapper = null;
-  if (bgw && !bgw.__panoPreviewPatchedCb) {
-    bgwCallbackPrev = bgw.callback;
-    bgwCallbackWrapper = (v) => {
-      const out = bgwCallbackPrev ? bgwCallbackPrev(v) : undefined;
-      requestDraw();
-      return out;
-    };
-    bgw.callback = bgwCallbackWrapper;
-    bgw.__panoPreviewPatchedCb = bgwCallbackWrapper;
-  }
-  // Panorama Studio's status follows its size and background widgets.
-  const sizeWidgets = studioSurface
-    ? ["megapixels", "multiple", "background_range", "background_color"].map((name) => getWidget(node, name)).filter(Boolean)
-    : [];
-  const sizeCallbacks = sizeWidgets.map((widget) => {
-    const previous = widget.callback;
-    const wrapper = (v) => {
-      const out = previous ? previous(v) : undefined;
-      requestDraw();
-      return out;
-    };
-    widget.callback = wrapper;
-    return { widget, previous, wrapper };
-  });
+  // The widgets the surface draws from: a change ComfyUI reports through the widget's callback draws again
+  // (chained with the callback's own `this` and arguments, pano_widget_callback.js). Panorama Studio's status follows
+  // its size and background widgets too.
+  const watchedWidgets = (studioSurface
+    ? ["state_json", "background_color", "background_range", "megapixels", "multiple"]
+    : ["state_json", "background_color", "bg_color"]
+  ).map((name) => getWidget(node, name)).filter(Boolean);
+  const widgetRestores = watchedWidgets.map((widget) => chainWidgetCallback(widget, () => requestDraw()));
 
   const onRemovedPrev = node.onRemoved;
   const onResizePrev = node.onResize;
@@ -3041,11 +3010,7 @@ function attachPanoramaPreviewImpl(node, options = {}) {
     if (node.onResize === onResizeHook) node.onResize = onResizePrev;
     if (node.onExecuted === onExecutedHook) node.onExecuted = onExecutedPrev;
     if (node.onConnectionsChange === onConnectionsChangeHook) node.onConnectionsChange = onConnectionsChangePrev;
-    if (swCallbackWrapper && sw?.callback === swCallbackWrapper) sw.callback = swCallbackPrev;
-    if (swCallbackWrapper && sw?.__panoPreviewPatchedCb === swCallbackWrapper) delete sw.__panoPreviewPatchedCb;
-    if (bgwCallbackWrapper && bgw?.callback === bgwCallbackWrapper) bgw.callback = bgwCallbackPrev;
-    if (bgwCallbackWrapper && bgw?.__panoPreviewPatchedCb === bgwCallbackWrapper) delete bgw.__panoPreviewPatchedCb;
-    for (const { widget, previous, wrapper } of sizeCallbacks) if (widget.callback === wrapper) widget.callback = previous;
+    widgetRestores.forEach((restore) => restore());
     if (node.onDragOver === stickerDragOverHook) node.onDragOver = onDragOverPrev;
     if (node.onDragDrop === stickerDragDropHook) node.onDragDrop = onDragDropPrev;
     if (node.onRemoved === onRemovedHook) node.onRemoved = onRemovedPrev;
