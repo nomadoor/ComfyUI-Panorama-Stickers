@@ -416,16 +416,32 @@
   align-items: center;
   gap: 8px;
   height: 24px;
-  margin-bottom: 6px;
+  margin-bottom: 12px;
   font-size: var(--studio-text-md);
   font-weight: var(--studio-weight-head);
 }
 
+.pano-studio-card-title > svg {
+  flex: none;
+}
+
+/* The name shrinks into the room left and is cut with "…"; no text-box trim here, so the clip cuts no glyph. */
+.pano-studio-card-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 24px;
+}
+
 .pano-studio-card-sub {
+  flex: none;
   margin-left: auto;
   color: var(--studio-fg-2);
-  font-size: var(--studio-text-sm);
+  font-size: var(--studio-text-xs);
   font-weight: var(--studio-weight);
+  white-space: nowrap;
 }
 
 .pano-studio-card-rows {
@@ -1924,7 +1940,7 @@
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 6px;
-  margin: 2px 0 4px;
+  margin: 0 0 4px;
 }
 
 .pano-studio-mode-tile {
