@@ -149,6 +149,18 @@ test("a Scene linked to scene before the node ran: the line asks for a run", asy
   expect(problems).toEqual([]);
 });
 
+// docs/studio-ui.md "読み込み中と空の画面": a linked `world` brings 3D content, so the stage is not empty.
+test("the empty stage's hint shows with nothing linked, and not with `world` linked", async ({ page }, testInfo) => {
+  let problems = await open(page, testInfo, "empty");
+  await expect(page.locator(".pano-studio-notice")).toHaveText("Drop an image or a 3D file, or press Add");
+  await expect(page.locator(".pano-studio-notice")).toHaveAttribute("data-notice", "info");
+  expect(problems).toEqual([]);
+
+  problems = await open(page, testInfo, "world");
+  await expect(page.locator(".pano-studio-notice")).toHaveCount(0);
+  expect(problems).toEqual([]);
+});
+
 test("the upstream background shows while the node has no background of its own, and the node's own replaces it", async ({ page }, testInfo) => {
   let problems = await open(page, testInfo, "upstream");
   const colors = await page.evaluate(() => window.__studio.colors);
