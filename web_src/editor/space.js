@@ -3,7 +3,7 @@
 import { frameViewButton } from "../pano_editor_ui_state.js";
 import { DRAW_REASON } from "../pano_frame_scheduler.js";
 import { editorSession } from "../pano_node_bridge.js";
-import { nodeInputOrigins } from "../pano_preview_video.js";
+import { SCENE_INPUT_NAMES, inputLinked } from "../pano_preview_video.js";
 import { clipActive, evaluateCamera, evaluateSceneState, evaluateSticker } from "../pano_scene_eval.js";
 import { facingRotation, frameSphere, hasWorldContent, sceneContentBox } from "../pano_space.js";
 import { createSpaceNavigation } from "../pano_space_navigation.js";
@@ -65,7 +65,7 @@ export function createSpace(deps) {
   }
 
   function hasSpaceContent() {
-    return stateV2 && hasWorldContent({ sceneLinked: sceneV2 && !!nodeInputOrigins(node).scene, files: sceneFiles(), stickers: state.stickers });
+    return stateV2 && hasWorldContent({ sceneLinked: sceneV2 && inputLinked(node, SCENE_INPUT_NAMES), files: sceneFiles(), stickers: state.stickers });
   }
 
   // The space view in 6DoF, where the Viewport camera moves through the World with the 3D view controls.

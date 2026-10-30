@@ -28238,7 +28238,7 @@ function A_(r, e) {
 }
 let El = null;
 function ac() {
-  return El || (El = import("./spark.module-BK1Mc1GG.js")), El;
+  return El || (El = import("./spark.module-DHaGbsLF.js")), El;
 }
 function w_(r) {
   const e = [], t = /* @__PURE__ */ new Set();
@@ -28653,7 +28653,7 @@ function Z_({ renderer: r, canvas: e, near: t = 0.01, far: n = 1e3 }) {
     try {
       if (x.faces) {
         const [xe, Te, ze] = p.position;
-        l.position.set(xe, Te, ze), l.updateMatrixWorld(!0), l.coordinateSystem !== r.coordinateSystem && (l.coordinateSystem = r.coordinateSystem, l.updateCoordinateSystem()), X && x.sort && (d.position.set(xe, Te, ze), d.near = p.near, d.far = p.far, d.updateMatrixWorld(!0), U == null || U(d), N.sorted = X.update({ scene: Y, camera: d }), N.sorted.catch(() => {
+        l.position.set(xe, Te, ze), l.updateMatrixWorld(!0), l.coordinateSystem !== r.coordinateSystem && (l.coordinateSystem = r.coordinateSystem, l.updateCoordinateSystem()), X && x.sort && (d.position.set(xe, Te, ze), (d.near !== p.near || d.far !== p.far) && (d.near = p.near, d.far = p.far, d.updateProjectionMatrix()), d.updateMatrixWorld(!0), U == null || U(d), N.sorted = X.update({ scene: Y, camera: d }), N.sorted.catch(() => {
         }), E.sorts += 1);
         const We = X && { autoUpdate: X.autoUpdate, target: X.target };
         X && (X.autoUpdate = !1, X.target = { width: p.face, height: p.face });

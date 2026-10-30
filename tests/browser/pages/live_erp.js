@@ -139,6 +139,19 @@ async function run() {
   check.sparkAutoUpdate = spark.autoUpdate;
   check.sparkTarget = spark.target ?? null;
 
+  // The radial sort's viewpoint takes the planes setView gives: its projection follows them.
+  const update = spark.update.bind(spark);
+  let sortProjection = null;
+  spark.update = (args) => {
+    sortProjection = args.camera.projectionMatrix.clone();
+    return update(args);
+  };
+  erp.setView({ ...liveErpView({ position: [0.3, 0, 0] }), near: 0.5, far: 50 });
+  const replaned = erp.draw({ scene, spark });
+  if (replaned.sorted) await replaned.sorted;
+  spark.update = update;
+  check.sortProjection = sortProjection ? sortProjection.equals(new THREE.PerspectiveCamera(90, 1, 0.5, 50).projectionMatrix) : null;
+
   // An empty World with the stage's clear color, set as the editor sets it (pano_three_view.js renderLiveErp: on the
   // canvas, before the faces): every face's direction reads the same color, the first face too.
   erp.setSize(256, 128);

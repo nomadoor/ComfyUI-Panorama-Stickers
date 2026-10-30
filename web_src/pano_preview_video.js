@@ -1,9 +1,11 @@
 import { createPanoVideo } from "./pano_diagnostics.js";
 
+// Panorama Studio's input that carries its background: `background` (docs/studio-node.md "Panorama Studio", ADR 0048),
+// `bg_media` before the rename.
+export const STUDIO_BACKGROUND_INPUT_NAMES = ["background", "bg_media"];
 // The inputs that carry the background: Cutout and Preview's erp_image, the legacy Stickers bg_erp,
-// Panorama Studio's `background` (`bg_media` before ADR 0048), and the Preview's `source` (`PanoramaPreviewNode`; its
-// Scene too).
-export const BACKGROUND_INPUT_NAMES = ["erp_image", "bg_erp", "bg_media", "background", "source"];
+// Panorama Studio's (STUDIO_BACKGROUND_INPUT_NAMES), and the Preview's `source` (`PanoramaPreviewNode`; its Scene too).
+export const BACKGROUND_INPUT_NAMES = ["erp_image", "bg_erp", ...STUDIO_BACKGROUND_INPUT_NAMES, "source"];
 // The inputs that carry the media of the port Sticker: the legacy Stickers sticker_image and
 // Panorama Studio's sticker.
 export const STICKER_INPUT_NAMES = ["sticker_image", "sticker"];
@@ -13,6 +15,10 @@ export const SCENE_INPUT_NAMES = ["scene", "world"];
 // The inputs the Pose handoff of Panorama Studio's result (`pano_sticker_handoff`, ADR 0030) comes from: the port's
 // media and the `sticker_state` of the Studio that shot it.
 export const HANDOFF_INPUT_NAMES = ["sticker", "sticker_state"];
+// The widgets of the background's color and range: Panorama Studio and the Preview's `background_color` and
+// `background_range` (ADR 0048), the legacy nodes' `bg_color` and `coverage`. A node has one of each pair.
+export const BACKGROUND_COLOR_WIDGET_NAMES = ["background_color", "bg_color"];
+export const BACKGROUND_RANGE_WIDGET_NAMES = ["background_range", "coverage"];
 
 const CHANNEL_INPUT_NAMES = {
   background: BACKGROUND_INPUT_NAMES,
@@ -33,6 +39,12 @@ export function nodeInputOrigins(node) {
     if (origin) origins[String(input?.name || "")] = origin;
   });
   return origins;
+}
+
+// Whether anything is linked to one of the inputs `names` of a node.
+export function inputLinked(node, names) {
+  const origins = nodeInputOrigins(node);
+  return names.some((name) => !!origins[name]);
 }
 
 // Whether a VIDEO is linked to one of the inputs `names` of a node, by the type of the link.

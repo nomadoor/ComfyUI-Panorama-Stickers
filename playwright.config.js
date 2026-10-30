@@ -2,7 +2,8 @@
 // through the Vite dev server, which Playwright starts on 127.0.0.1 and stops after the run. ComfyUI is not used.
 import { defineConfig } from "@playwright/test";
 
-const port = 5199;
+// PW_PORT lets parallel runs (several worktrees at once) use their own port.
+const port = Number(process.env.PW_PORT) || 5199;
 
 export default defineConfig({
   testDir: "tests/browser",

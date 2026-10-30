@@ -58,11 +58,11 @@ for (const query of ["aspect=16:9&mode=frame", "aspect=1:1&mode=frame", "aspect=
     // The middle mark is the ticks' middle too.
     const mark = await rectOf(page, '[data-ruler="Roll"] [data-ruler-mark]');
     expect(Math.abs(mark.x + mark.width / 2 - midX)).toBeLessThanOrEqual(1);
-    // The fixed lengths, shorter only where the edge is (docs/design.md "大きさ": both heads' larger room, 46px, at both ends).
+    // The fixed lengths, shorter only where the edge is (docs/design.md "大きさ": both heads' larger room, 56px, at both ends).
     const roll = await strip(page, "Roll");
     const fov = await strip(page, "FOV");
     expect(roll.width).toBe(Math.min(320, frame.width));
-    expect(fov.height).toBe(Math.min(200, frame.height - 92));
+    expect(fov.height).toBe(Math.min(200, frame.height - 112));
     const tabs = await rectOf(page, ".pano-studio-at-tabs");
     const rail = await rectOf(page, ".pano-studio-at-rail");
     const knobs = await rectOf(page, ".pano-studio-at-nav");
@@ -82,12 +82,12 @@ for (const query of ["aspect=16:9&mode=frame", "aspect=1:1&mode=frame", "aspect=
       expect(Math.abs(head.x + head.width / 2 - middle)).toBeLessThanOrEqual(1);
       expect(head.y).toBeGreaterThanOrEqual(frame.y - 0.5);
       expect(head.y).toBeGreaterThan(tabs.bottom + 8);
-      // The dot over the reset, stacked, 4px below the strip, within 42px, inside the frame's height, above the stage's bottom.
+      // The dot over the reset, stacked, 12px below the strip, within 44px, inside the frame's height, above the stage's bottom.
       const acts = await rectOf(page, `[data-ruler="${name}"] [data-ruler-acts]`);
       const dot = await rectOf(page, `[data-ruler="${name}"] [data-ruler-acts] .pano-studio-keydot`);
       const reset = await rectOf(page, `[data-ruler="${name}"] [aria-label="Reset ${name}"]`);
-      expect(Math.abs(acts.y - (band.bottom + 4))).toBeLessThanOrEqual(0.5);
-      expect(acts.height).toBeLessThanOrEqual(42);
+      expect(Math.abs(acts.y - (band.bottom + 12))).toBeLessThanOrEqual(0.5);
+      expect(acts.height).toBeLessThanOrEqual(44);
       expect(dot.bottom).toBeLessThanOrEqual(reset.y);
       expect(Math.abs(dot.x + dot.width / 2 - middle)).toBeLessThanOrEqual(1);
       expect(Math.abs(reset.x + reset.width / 2 - middle)).toBeLessThanOrEqual(1);
@@ -95,13 +95,13 @@ for (const query of ["aspect=16:9&mode=frame", "aspect=1:1&mode=frame", "aspect=
       expect(acts.bottom).toBeLessThan(stage.bottom - 8);
       boxes.push(head, acts);
     }
-    // Roll: the name and value 10px left of its strip, the dot then the reset 8px right of it, on its line.
+    // Roll: the name and value 10px left of its strip, the dot then the reset 16px right of it, on its line.
     const rollHead = await rectOf(page, '[data-ruler="Roll"] [data-ruler-head]');
     const rollActs = await rectOf(page, '[data-ruler="Roll"] [data-ruler-acts]');
     const rollDot = await rectOf(page, '[data-ruler="Roll"] [data-ruler-acts] .pano-studio-keydot');
     const rollReset = await rectOf(page, '[data-ruler="Roll"] [aria-label="Reset Roll"]');
     expect(Math.abs(roll.x - 10 - rollHead.right)).toBeLessThanOrEqual(0.5);
-    expect(Math.abs(rollActs.x - (roll.right + 8))).toBeLessThanOrEqual(0.5);
+    expect(Math.abs(rollActs.x - (roll.right + 16))).toBeLessThanOrEqual(0.5);
     expect(rollDot.right).toBeLessThanOrEqual(rollReset.x);
     for (const box of [rollHead, rollDot, rollReset]) expect(Math.abs(box.y + box.height / 2 - (roll.y + roll.height / 2))).toBeLessThanOrEqual(1);
     boxes.push(rollHead, rollActs);

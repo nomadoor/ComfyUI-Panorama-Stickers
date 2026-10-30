@@ -1717,8 +1717,8 @@
 }
 
 .pano-studio-edge-ruler.is-vertical .pano-studio-edge-ruler-acts {
-  top: calc(100% + 4px);
-  gap: 2px;
+  top: calc(100% + 12px);
+  gap: 4px;
 }
 
 .pano-studio-edge-ruler.is-horizontal :is(.pano-studio-edge-ruler-head, .pano-studio-edge-ruler-acts) {
@@ -1732,8 +1732,8 @@
 }
 
 .pano-studio-edge-ruler.is-horizontal .pano-studio-edge-ruler-acts {
-  left: calc(100% + 8px);
-  gap: 2px;
+  left: calc(100% + 16px);
+  gap: 4px;
 }
 
 .pano-studio-edge-ruler-acts .pano-studio-keydot {

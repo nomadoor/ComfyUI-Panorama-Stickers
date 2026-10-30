@@ -3,7 +3,8 @@ import test from "node:test";
 
 import { getCachedVideoThumbnails, setCachedVideoThumbnails } from "../web_src/editor/video_thumbnail_cache.js";
 import { getNodeGridVisibility, loadSharedUiSettings, saveSharedUiSettings, setNodeGridVisibility } from "../web_src/editor/ui_settings.js";
-import { hsv01ToRgb, isAutoOutputPresetValue, parseOutputPresetValue, rgb01ToHsv } from "../web_src/editor/helpers.js";
+import { getWidget, hsv01ToRgb, isAutoOutputPresetValue, parseOutputPresetValue, rgb01ToHsv } from "../web_src/editor/helpers.js";
+import { BACKGROUND_COLOR_WIDGET_NAMES, BACKGROUND_RANGE_WIDGET_NAMES } from "../web_src/pano_preview_video.js";
 
 test("the filmstrip cache keeps the last 12 sources and refreshes a source it returns", () => {
   const entry = (n) => ({ thumbnails: [{ id: `t${n}` }], thumbnailCount: 1, duration: n, fps: 24 });
@@ -52,4 +53,14 @@ test("output presets and colors", () => {
   const { h, s, v } = rgb01ToHsv(color);
   const back = hsv01ToRgb(h, s, v);
   for (const k of ["r", "g", "b"]) assert.ok(Math.abs(back[k] - color[k]) < 1e-9);
+});
+
+test("the old editor finds the background widgets under Panorama Studio's names and the legacy nodes' names", () => {
+  const studio = { widgets: [{ name: "background_color", value: "#112233" }, { name: "background_range", value: "180" }] };
+  assert.equal(getWidget(studio, BACKGROUND_COLOR_WIDGET_NAMES).value, "#112233");
+  assert.equal(getWidget(studio, BACKGROUND_RANGE_WIDGET_NAMES).value, "180");
+  const legacy = { widgets: [{ name: "bg_color", value: "#00ff00" }, { name: "coverage", value: "360" }] };
+  assert.equal(getWidget(legacy, BACKGROUND_COLOR_WIDGET_NAMES).value, "#00ff00");
+  assert.equal(getWidget(legacy, BACKGROUND_RANGE_WIDGET_NAMES).value, "360");
+  assert.equal(getWidget(legacy, "output_preset"), null);
 });
