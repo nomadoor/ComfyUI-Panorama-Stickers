@@ -123,7 +123,10 @@ def test_saved_custom_nodes_match_current_v3_schemas(workflow_path):
             if template is not None:
                 accepted = template.allowed_types
             saved_types = set(str(saved_input["type"]).split(","))
-            if accepted and saved_input["type"] != current_input.io_type:
+            if template is not None:
+                # Exactly the template's types: one more would let a link the schema refuses pass.
+                assert saved_types == {getattr(t, "io_type", t) for t in accepted}
+            elif accepted and saved_input["type"] != current_input.io_type:
                 # The saved list starts with the input's own type, then the extra accepted types.
                 assert {getattr(t, "io_type", t) for t in accepted} <= saved_types
             else:
