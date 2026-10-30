@@ -311,68 +311,26 @@ def test_the_run_key_changes_with_the_state_and_the_widgets():
     key = nodes._studio_run_key("{}", 2.0, 8, "360", "#00ff00")
 
     assert key == nodes._studio_run_key("{}", 2, 8, "360", "#00ff00")
-    # background_color is in the output ERP the node surface shows.
+    # background_color changes the output.
     others = [("{ }", 2.0, 8, "360", "#00ff00"), ("{}", 2.5, 8, "360", "#00ff00"), ("{}", 2.0, 16, "360", "#00ff00"),
               ("{}", 2.0, 8, "180", "#00ff00"), ("{}", 2.0, 8, "360", "#ff0000")]
     assert len({key, *(nodes._studio_run_key(*args) for args in others)}) == 6
 
 
-def _output_erp(result, key="pano_output_erp"):
-    """The ui entry of the run's output ERP (or, with `key`, its perspective first frame) and its PNG, read from temp."""
-    from comfyui_pano_suite.core.temp_files import TEMP_FILES, ensure_temp_root
+@pytest.mark.parametrize("projection", ["erp", "perspective"])
+def test_a_run_writes_no_output_image_for_the_node_surface(projection):
+    # The node surface draws the Camera's output live (ADR 0049), so the run returns no picture of its output.
+    result = _studio({"version": 2, "camera": _camera(projection)}, **output_size(64, 32))
 
-    (entry,) = result.ui[key]
-    path = ensure_temp_root() / entry["subfolder"] / entry["filename"]
-    assert TEMP_FILES.is_registered(path)
-    with Image.open(path) as png:
-        return entry, np.asarray(png.convert("RGB"))
-
-
-@pytest.mark.parametrize("erp_range", [360, 180])
-def test_an_erp_run_returns_its_output_at_full_size_for_the_node_surface(erp_range):
-    # The node surface shows the run's output in place of drawing the Scene again; a 180 output is the front half.
-    state = {"version": 2, "camera": {"projection": "erp", "erp_range": erp_range}}
-    size = output_size(1024) if erp_range == 360 else output_size(512, 512)
-    result = _studio(state, background=build_background_erp(), **size)
-    entry, png = _output_erp(result)
-
-    assert entry["type"] == "temp" and entry["format"] == "image/png" and entry["coverage"] == erp_range
-    # The rotation is always the Camera's at frame 0 (ADR 0048).
-    assert entry["rotation"] == {"yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0}
-    image = result.result[1][0]
-    assert png.shape == tuple(image.shape) == (512, 1024 * erp_range // 360, 3)
-    assert np.array_equal(png, (image.clamp(0, 1) * 255 + 0.5).byte().numpy())
-
-
-def test_an_erp_camera_returns_its_output_and_a_perspective_one_its_first_frame():
-    erp = _studio({"version": 2, "camera": _camera("erp", yaw_deg=30.0)}, **output_size(1024))
-    entry, png = _output_erp(erp)
-    assert entry["coverage"] == 360 and png.shape == (512, 1024, 3) and entry["rotation"]["yaw_deg"] == 30.0
-    assert "pano_output_frame" not in erp.ui
-
-    # A Frame Camera's output is no ERP: the node surface shows its first frame as a flat image, at full size.
-    shot = _studio({"version": 2, "camera": _camera(fov=90.0, aspect=2.0)}, **output_size(324, 162), background=build_background_erp())
-    assert "pano_output_erp" not in shot.ui
-    entry, png = _output_erp(shot, "pano_output_frame")
-    image = shot.result[1][0]
-    assert entry["type"] == "temp" and entry["format"] == "image/png" and "coverage" not in entry
-    assert png.shape == tuple(image.shape) == (162, 324, 3)
-    assert np.array_equal(png, (image.clamp(0, 1) * 255 + 0.5).byte().numpy())
-
-
-def test_a_hidden_frame_camera_returns_its_first_frame():
-    camera = {**_camera(fov=90.0, yaw_deg=30.0), "visible": False}
-    result = _studio({"version": 2, "camera": camera}, **output_size(64, 64))
-
-    assert "pano_output_erp" not in result.ui and result.ui["pano_output_frame"]
+    assert "pano_output_erp" not in result.ui and "pano_output_frame" not in result.ui
 
 
 def test_the_output_erp_takes_the_range_of_the_camera_not_of_an_upstream_scene():
     upstream = _outputs(background_range="180", **output_size(64), background=_solid([0.5, 0.5, 0.5], height=16, width=16))
     scene = next(value for value in upstream if isinstance(value, PanoSceneValue))
-    entry, png = _output_erp(_studio(**output_size(1024), scene=scene))
+    result = _studio(**output_size(1024), scene=scene)
 
-    assert entry["coverage"] == 360 and png.shape == (512, 1024, 3)
+    assert tuple(result.result[1].shape) == (1, 512, 1024, 3)
 
 
 # --- Outputs.

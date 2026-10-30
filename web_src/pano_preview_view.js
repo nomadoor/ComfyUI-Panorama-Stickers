@@ -14,7 +14,7 @@ export function previewNodeCamera(view, width, height) {
   return viewportCamera({ yaw_deg: view.yaw, pitch_deg: view.pitch, roll_deg: 0, hFOV_deg: view.fov }, width, height);
 }
 
-// load({ onUpdate, onSplats }) resolves to a view with render(input), release(owner) and dispose(), made with those
+// load({ onUpdate, onSplats }) resolves to a view with render(input), renderLiveErp(input), release(owner) and dispose(), made with those
 // hooks (pano_three_view.js createThreeView). Returns acquire(onChange, { items }), which hands out a handle per node;
 // onChange runs when the view becomes ready or fails to load. A node that draws 3D items (`items`, the Preview's
 // Scene viewer) is also told when an item the view loads is ready and when its own splats are sorted again; the
@@ -67,6 +67,13 @@ export function createSharedView(load) {
         if (disposed) return null;
         ensureView();
         return view ? view.render({ ...input, owner: user }) : null;
+      },
+      // Draws the live ERP (pano_three_view.js renderLiveErp) for this node on input.canvas; null until the view has
+      // loaded. Releasing the node's textures releases it too (Panorama Studio's surface, docs/studio-node-surface.md).
+      renderLiveErp(input) {
+        if (disposed) return null;
+        ensureView();
+        return view ? view.renderLiveErp({ ...input, owner: user }) : null;
       },
       // The World under a point of the last space render (pano_three_view.js pickSurface), the box and the load
       // error of a 3D item, and the count that changes with what is hit: the Preview's viewer of a Scene moves its

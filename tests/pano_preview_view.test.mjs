@@ -91,6 +91,10 @@ function fakeLoader() {
         this.renders.push(input);
         return { canvas: "canvas" };
       },
+      renderLiveErp(input) {
+        this.renders.push(input);
+        return { faces: true, pass: true };
+      },
       release(owner) {
         this.released.push(owner);
       },
@@ -144,6 +148,23 @@ test("on-node Previews share one view that loads on the first frame and goes wit
   loads[1].resolve();
   await settle();
   assert.equal(loads[1].view.disposed, true, "a view that arrives after every node left is dropped");
+});
+
+test("a node draws its live ERP through the shared view as its own owner, and nothing before the view loads", async () => {
+  const { load, loads } = fakeLoader();
+  const acquire = createSharedView(load);
+  const a = acquire(() => {});
+  assert.equal(a.renderLiveErp({ width: 8, canvas: "erp" }), null);
+  loads[0].resolve();
+  await settle();
+  assert.deepEqual(a.renderLiveErp({ width: 8, canvas: "erp", owner: "ignored" }), { faces: true, pass: true });
+  const [drawn] = loads[0].view.renders;
+  assert.equal(drawn.canvas, "erp");
+  assert.notEqual(drawn.owner, "ignored");
+  a.release();
+  assert.deepEqual(loads[0].view.released, [drawn.owner], "releasing the node releases its live ERP with its textures");
+  a.dispose();
+  assert.equal(a.renderLiveErp({}), null);
 });
 
 // A Scene drawn on a node (docs/preview-node.md "`PANO_SCENE` を見る") loads its items and Spark sorts its splats after
@@ -210,8 +231,9 @@ test("the on-node Preview draws through the shared three.js view and its Vue sur
 
 test("the on-node Stickers and Cutout surfaces draw through the same shared view and show a failed view in Vue", () => {
   const runtime = source("pano_preview_runtime.js");
-  assert.match(runtime, /const surfaceView = acquirePreviewView\(requestDraw\)/);
-  assert.match(runtime, /drawCanvas\(node, canvas, surfaceView, run\);\s*else surfaceView\.release\(\);\s*nodeSurfaceUiModel\.viewUnavailable = surfaceView\.failed;/);
+  assert.match(runtime, /const surfaceView = acquirePreviewView\(requestDraw, \{ items: studioSurface \}\)/);
+  assert.match(runtime, /if \(node\.flags\?\.collapsed \|\| editorOpen\(node\)\) surfaceView\.release\(\);/);
+  assert.match(runtime, /\} else drawCanvas\(node, canvas, surfaceView\);\s*nodeSurfaceUiModel\.viewUnavailable = surfaceView\.failed;/);
   assert.match(runtime, /surfaceView\.dispose\(\)/);
   for (const name of ["PanoStickersNodeSurface.vue", "PanoCutoutNodeSurface.vue"]) {
     assert.match(source(`components/${name}`), /<PanoViewUnavailable v-if="model\.viewUnavailable" \/>/, name);
