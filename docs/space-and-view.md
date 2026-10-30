@@ -38,7 +38,7 @@ Python はこの文書の規則を持たない（列は `—`）。「（未実�
 | 地面のグリッド（何をどの高さに描き、どこで薄れるか） | — | `web_src/studio/grid.js` `groundGrid`（量は `view_scale.js`）、描く部品は `web_src/pano_ground_grid.js`（`docs/threejs-spark-integration.md`）、スイッチは `web_src/components/studio/StudioViewButtons.vue` | `tests/studio_stage_view.test.mjs`、`tests/browser/studio_editor.spec.js` |
 | World の物のガイドと、CPU のホバーの判定 | — | `web_src/studio/world_guides.js`（形・中心・ホバー・見え方。読み込み中のガイドの箱は `web_src/studio/load_reveal.js` が渡す）、Camera の印の形と当たりは `web_src/studio/camera_marker.js`、ステージにつなぐのは `web_src/studio/stage_objects.js`、描くのは `web_src/studio/stage_overlay.js`、下の部品 `pano_space.js` `projectPoint`・`boxCorners`。Camera タブ（Frame 表示）では `stage.js` が Frame 表示の枠の箱で描く（`stage_overlay.js` の `origin`）。レンズの Camera（κ ≠ 1）の上には描かない（未実装） | `tests/studio_world_guides.test.mjs`、`tests/studio_camera_marker.test.mjs`、`tests/studio_stage_objects.test.mjs`、`tests/browser/studio_select.spec.js`、`tests/browser/studio_camera_wired.spec.js` |
 | Add とドロップの着く所（Add の画像の二択の後の置き場所を含む）と、ドラッグ中の印の形 | — | `web_src/studio/landing.js`（着く所 `landingHit`・`landingBoxes`・`groundLanding`・`groundBelow`、置く値 `skyPose`・`worldImageTransform`・`file3dTransform`・`file3dPosition`・`facingYaw`、印 `dropMarker`、ラベルの置き場所 `dropLabelPlace`）、置くのは `web_src/studio/add_files.js`、下の部品 `pano_three_view.js` `pick`（板を除く当たり）、CPU の箱の当たりは `web_src/studio/view_camera.js` `boxDepth`、`pano_sticker_geometry.js` `buildStickerGeometry`（Sky の枠） | `tests/studio_landing.test.mjs`、`tests/studio_add_files.test.mjs`、`tests/browser/studio_add.spec.js` |
-| Preview のウィンドウの視点（エディタとの違い、引き継ぎ、減衰と慣性、グリッドの既定） | — | （未実装）`web_src/studio/preview_motion.js`、下の部品 `web_src/pano_interaction_controller.js` の慣性（ADR 0010） | （未作成）`tests/studio_preview_motion.test.mjs` |
+| Preview のウィンドウの視点（エディタとの違い、引き継ぎ、地面の高さ、減衰と慣性、グリッドの既定） | — | 減衰と慣性は `web_src/studio/preview_motion.js` `createPreviewMotion`（ステージの `follow`、`web_src/studio/stage.js`）、引き継ぎと地面の高さは `preview_motion.js` `previewOpening`・`previewOpeningPose`・`previewHandBack`・`previewGround`（地面の規則は `pano_scene_state.js` `sceneGround`）、つなぐのは `web_src/studio/preview_window.js`、慣性の減り方の値は `web_src/pano_interaction_controller.js`（ADR 0010） | `tests/studio_preview_motion.test.mjs`、`tests/browser/preview_window.spec.js` |
 | ウィンドウがフォーカスを失ったとき、Meta を離したときと右クリックのメニューが開いたときにキーを離すこと | — | `web_src/studio/view_input.js` `createViewInput().lostFocus`、事象を受けるのは `web_src/studio/stage.js`（`blur`・`visibilitychange`・Meta の `keyup`・エディタの中の `contextmenu`）、下の部品 `pano_view_keys.js` `createMoveKeys` | `tests/studio_view_input.test.mjs`、`tests/pano_view_keys.test.mjs`、`tests/browser/studio_editor.spec.js`（`blur`・右クリックのメニュー）、`tests/studio_stage.test.mjs`（Meta・右クリックのメニュー） |
 
 ## 量の一覧
@@ -489,8 +489,13 @@ ADR 0047）。
 - `T` を決め直すのはダブルクリックと Reset View だけ（Preview には選択が無いので、回る中心はいつも `T`）。
 - 開いたとき：ノード上の表示から `P`・`yaw`・`pitch` を引き継ぐ（`docs/preview-node.md` の「大きなウィンドウ」）。画角は
   `DEFAULT_VIEW_HFOV`、`T` は「初めの `T`」で求める。引き継ぐものが無ければ原点、yaw 0、pitch 0。閉じると、ノード上の表示が
-  ウィンドウの最後の `P`・`yaw`・`pitch` を引き継ぐ（今と同じ）。Preview は Camera を使わない。Reset View は原点、yaw 0、pitch 0
-  へ動く。
+  ウィンドウの最後の `P`・`yaw`・`pitch` を引き継ぐ（今と同じ。なめらかに動いている途中や慣性で動いている途中なら、その時の
+  行き先の視点）。Preview は Camera を使わない。Reset View は原点、yaw 0、pitch 0 へ動く。
+  - `PANO_SCENE`：ノード上の Scene のビューアの視点（位置・yaw・pitch）をそのまま引き継ぎ、閉じると返す。
+  - IMAGE・VIDEO：ノード上の表示は見回しだけ（3DoF）なので、yaw・pitch を引き継ぎ、`P` は原点から始める。閉じると yaw・pitch
+    だけを返す（ウィンドウで動いた `P` は返さない）。ノード上の画角は変えない。
+- 地面の高さ `ground`（グリッドの高さと `E`）：`PANO_SCENE` は、その層の状態から `docs/scene-state-v2.md` の `ground` の規則で読む
+  （自分の層は無いので、最も下流で `ground` を持つ層のもの、無ければ `GROUND_DEFAULT`）。IMAGE・VIDEO は `GROUND_DEFAULT`。
 - 世界の境界は上と同じ（Camera の項は無い）。
 - 手触り：見るための場所なので、エディタと違って減衰と慣性を付ける（ADR 0047）。
   - 減衰：操作は行き先の視点を動かし、表示の視点はそれを追う。追い方は、フレームごとに、行き先との差に
@@ -500,6 +505,11 @@ ADR 0047）。
     同じ減り方（`pano_interaction_controller.js` の `PANO_INERTIA_DAMPING`・`PANO_INERTIA_START_SPEED`・`PANO_INERTIA_STOP_SPEED`）で
     止まる。止めて離したときは慣性を付けない。ジョイスティック・ホイール・キーには慣性を付けない。慣性で動いている間に押すと、
     その場で止まる。慣性の動きにも世界の境界を当てる。
+  - 慣性の速さの単位：ポインタの速さ（CSS px / 秒）で測り、始めと止めの閾値（角度 / 秒）とは `ORBIT_DEG_PER_PIXEL` を掛けて比べる
+    （見回し・オービット・パンで同じ。パンは角度を持たないため、一つの換算にそろえる）。慣性の一フレームは、そのフレームの秒だけ
+    その速さでドラッグしたのと同じに動く（パンは離したときに掴んでいた深さのまま）。
+  - 慣性は、ほかの視点の操作（押す、ホイール、ダブルクリック、WASD / QE、Reset View）を始めたときにも止まる。慣性で動いている間に
+    別の操作が足されることはない。
 - 地面のグリッドは、既定で隠す。出すかどうかは見る人が右下のボタン群の決まった席のスイッチ（on / off）で決める
   （押すたびに状態が反転するボタンにしない。`docs/agents/ux-principles.md`）。席は出たり消えたりしない。World の内容の有無で
   自動で出し入れせず、隠している間に絵が変わらない移動をしても知らせない（スイッチがいつも見えているため。ADR 0047）。

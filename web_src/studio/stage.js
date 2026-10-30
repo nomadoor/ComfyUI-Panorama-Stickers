@@ -69,6 +69,8 @@ export function stageUi() {
 // stage shows the 3D tab only.
 // motion: what moves on its own besides the view (load_reveal.js createLoadReveal()'s animating(), revealing()): while
 // animating() the stage draws each frame, and while revealing() an item fades in, so the Output window draws again too.
+// follow: the Preview window's feel (preview_motion.js createPreviewMotion): the view shown follows the moved view and a
+// drag let go coasts. Without it (the editor) the view shown is the moved view.
 export function createStage({
   canvas,
   overlay = null,
@@ -84,6 +86,7 @@ export function createStage({
   ui,
   onEscape = () => {},
   motion: ownMotion = null,
+  follow = null,
   view: makeView = createEditorView,
   win = window,
   now = () => performance.now(),
@@ -131,7 +134,7 @@ export function createStage({
     requestAnimationFrame: (callback) => win.requestAnimationFrame(callback),
     cancelAnimationFrame: (id) => win.cancelAnimationFrame(id),
     draw,
-    animating: () => camera.animating() || drag?.action === "joystick" || keysMoving || !!ownMotion?.animating(),
+    animating: () => camera.animating() || drag?.action === "joystick" || keysMoving || !!ownMotion?.animating() || !!follow?.animating(),
   });
 
   const objects = objectDeps ? createStageObjects({
@@ -209,7 +212,17 @@ export function createStage({
         return { camera: view.camera, x: view.rect.x, y: view.rect.y, width: view.rect.w, height: view.rect.h, lens: view.lens, shot: view.shot };
       }
     }
-    return { camera: stageCamera(camera.pose(), size.width, size.height, camera.bound()), x: 0, y: 0, width: size.width, height: size.height, lens: null, shot: null };
+    return { camera: stageCamera(shownPose(), size.width, size.height, camera.bound()), x: 0, y: 0, width: size.width, height: size.height, lens: null, shot: null };
+  }
+
+  // The 3D tab's view as it shows: the moved view, or with `follow` the view that follows it.
+  function shownPose() {
+    return follow ? follow.pose() : camera.pose();
+  }
+
+  // A coast under way (follow) stops where it is: another operation starts.
+  function stopCoast() {
+    if (follow?.stop() && !drag && !keysMoving) camera.endGesture();
   }
 
   function local(point, view = viewport()) {
@@ -293,7 +306,12 @@ export function createStage({
     }
     if (motion && keysCamera) moved(keysCamera, keysCamera.keys(motion.direction, motion.seconds, motion.fast), "keys");
     if (drag?.action === "joystick" && seconds > 0 && drag.camera) moved(drag.camera, drag.camera.joystick(drag.offset, seconds), "drag");
-    if (!camera.animating() && !motion && drag?.action !== "joystick") lastFrame = 0;
+    if (follow) {
+      const coasted = follow.step(seconds, camera);
+      report(coasted.result);
+      if (coasted.ended && !drag && !keysMoving) camera.endGesture();
+    }
+    if (!camera.animating() && !motion && drag?.action !== "joystick" && !follow?.animating()) lastFrame = 0;
     if (!editorView.ready) return;
     const shown = content();
     camera.setWorld({ ground: world.ground, camera: world.camera ?? null, content: shown?.sphere ?? null });
@@ -330,6 +348,7 @@ export function createStage({
   let outputDrawn = null;
   let outputLensKind = null;
   let outputFrames = 0;
+  // The Frame picture failed (its canvas took no bitmap): none is drawn until the window folds and opens again.
   let outputFailed = false;
 
   // What the Output window shows now: { kind: "frame" | "erp", canvas, width, height } (device px), or null while it
@@ -342,6 +361,8 @@ export function createStage({
     const box = target ? { width: target.clientWidth, height: target.clientHeight } : null;
     if (!target || !(box?.width > 0 && box?.height > 0)) {
       releaseOutput();
+      // A picture that failed is tried again when the window opens again.
+      outputFailed = false;
       return null;
     }
     if (outputDrawn && outputDrawn.kind !== kind) releaseOutput();
@@ -393,7 +414,12 @@ export function createStage({
         bitmap.close();
         return;
       }
-      shownOn.getContext("bitmaprenderer")?.transferFromImageBitmap(bitmap);
+      const renderer = shownOn.getContext("bitmaprenderer");
+      if (!renderer) {
+        bitmap.close();
+        throw new Error("the Output window's canvas has no \"bitmaprenderer\" context");
+      }
+      renderer.transferFromImageBitmap(bitmap);
     }).catch((error) => {
       if (request !== outputFrames || disposed || outputFailed) return;
       outputFailed = true;
@@ -588,6 +614,7 @@ export function createStage({
   }
 
   function begin(action, point, pointerId, knob = null) {
+    stopCoast();
     const view = navCamera();
     if (view === frameCamera) commitFrame();
     const frame = view === frameCamera;
@@ -633,6 +660,7 @@ export function createStage({
     if (drag.action === "look") moved(view, view.look(dx, dy), "drag");
     else if (drag.action === "orbit") moved(view, view.orbit(dx, dy), "drag");
     else if (drag.action === "pan") moved(view, view.pan(dx, dy), "drag");
+    if (view === camera) follow?.sample(drag.action, dx, dy, now());
     requestDraw();
   }
 
@@ -655,7 +683,10 @@ export function createStage({
       if (ended.camera === frameCamera) reportLensPick();
     }
     input.endGesture();
-    if (!keysMoving) ended.camera?.endGesture();
+    // With `follow`, a drag let go while moving coasts on its gesture (its pan keeps the depth it grabbed).
+    const coasts = !cancel && ended.camera === camera && !!follow?.release(ended.action, now());
+    if (cancel) follow?.stop();
+    if (!keysMoving && !coasts) ended.camera?.endGesture();
     if (ended.camera === frameCamera && frameCamera) {
       if (cancel) cancelFrame();
       else commitFrame();
@@ -743,6 +774,7 @@ export function createStage({
     if (!step) return;
     const view = navCamera();
     if (!view) return;
+    stopCoast();
     // A wheel run in the Frame view is a gesture of its own: another one under way is one step first (one during a
     // drag joins the drag's).
     if (view === frameCamera && frameGesture && frameGesture !== "wheel" && !drag) commitFrame();
@@ -758,6 +790,7 @@ export function createStage({
   // the Camera tab (docs/space-and-view.md "Frame 表示").
   function onDoubleClick(event) {
     if (event.button !== 0 || event.altKey || viewMode() !== "space") return;
+    stopCoast();
     report(camera.focus(hitAt(pointOf(event))));
     requestDraw();
   }
@@ -807,6 +840,7 @@ export function createStage({
     event.preventDefault();
     event.stopPropagation();
     if (input.keyDown(event, now()) && !keysMoving) {
+      stopCoast();
       const view = navCamera();
       if (view === frameCamera && frameGesture && frameGesture !== "keys" && !drag) commitFrame();
       if (!drag) view?.beginKeys();
@@ -840,6 +874,7 @@ export function createStage({
 
   // The window lost focus or the page was hidden: Alt up, every key released, the hover gone, the drag ended.
   function onLostFocus() {
+    follow?.stop();
     input.lostFocus();
     keysMoving = false;
     wheelSteps.reset();
@@ -915,6 +950,7 @@ export function createStage({
     // Reset View: to the output view the editor opened with. Not in the Camera tab.
     resetView() {
       if (viewMode() !== "space") return;
+      stopCoast();
       report(camera.reset(output));
       requestDraw();
     },

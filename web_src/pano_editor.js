@@ -40,7 +40,7 @@ import {
 } from "./pano_image_state.js";
 import { createComfyMediaAdapter } from "./pano_comfy_media.js";
 import { flushPanoStateProducers } from "./pano_editor_extension.js";
-import { isNodeOutputMediaCurrent } from "./pano_preview_video.js";
+import { BACKGROUND_COLOR_WIDGET_NAMES, BACKGROUND_RANGE_WIDGET_NAMES, STUDIO_BACKGROUND_INPUT_NAMES, isNodeOutputMediaCurrent } from "./pano_preview_video.js";
 import { isStickerImageFile } from "./pano_sticker_file_import.js";
 import {
   registerExternalStickerSync,
@@ -137,12 +137,12 @@ async function showEditor(node, type, options = {}) {
   const nodeTitle = getEditorNodeTitle(node, type);
   await installPanoSuiteStylesheet();
   const presetWidget = getWidget(node, "output_preset");
-  const coverageWidget = getWidget(node, "coverage");
-  const bgWidget = getWidget(node, "bg_color");
+  const coverageWidget = getWidget(node, BACKGROUND_RANGE_WIDGET_NAMES);
+  const bgWidget = getWidget(node, BACKGROUND_COLOR_WIDGET_NAMES);
   const stateWidget = getWidget(node, STATE_WIDGET);
 
   const getLinkedBackgroundImageForSizing = () => {
-    const inputNames = type === "stickers" ? ["bg_media", "bg_erp", "erp_image"] : ["erp_image", "bg_erp"];
+    const inputNames = type === "stickers" ? [...STUDIO_BACKGROUND_INPUT_NAMES, "bg_erp", "erp_image"] : ["erp_image", "bg_erp"];
     return loadPreferredExactLinkedImage(
       node,
       inputNames,
