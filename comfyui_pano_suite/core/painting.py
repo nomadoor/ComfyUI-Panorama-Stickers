@@ -488,6 +488,13 @@ def _composite_raster_objects(
         _composite_one_raster_object(paint, mask, obj, width, height)
 
 
+def _stroke_opacity(stroke: dict) -> float:
+    """The stroke's opacity, 0 to 1, as the editor's paint engine reads it (`stroke.opacity ?? 1`): only a missing one is
+    1, so an opacity of 0 draws nothing."""
+    opacity = stroke.get("opacity")
+    return 1.0 if opacity is None else max(0.0, min(1.0, float(opacity)))
+
+
 def _composite_one_erp_stroke(paint: np.ndarray, mask: np.ndarray, stroke: dict, width: int, height: int) -> None:
     if (stroke.get("targetSpace") or {}).get("kind") != "ERP_GLOBAL":
         return
@@ -501,13 +508,13 @@ def _composite_one_erp_stroke(paint: np.ndarray, mask: np.ndarray, stroke: dict,
             if tool_kind == "eraser":
                 _erase_from_mask(mask, alpha)
             else:
-                _composite_mask_layer(mask, alpha, max(0.0, min(1.0, float(stroke.get("opacity") or 1.0))))
+                _composite_mask_layer(mask, alpha, _stroke_opacity(stroke))
             return
         stroke_alpha = _stroke_freehand_alpha(stroke, width, height)
         if tool_kind == "eraser":
             _erase_from_mask(mask, stroke_alpha)
         else:
-            _composite_mask_layer(mask, stroke_alpha, max(0.0, min(1.0, float(stroke.get("opacity") or 1.0))))
+            _composite_mask_layer(mask, stroke_alpha, _stroke_opacity(stroke))
         return
 
     if geometry_kind == "lasso_fill":
@@ -520,7 +527,7 @@ def _composite_one_erp_stroke(paint: np.ndarray, mask: np.ndarray, stroke: dict,
             max(0.0, min(1.0, float(color.get("b", 0.0)))),
         ], dtype=np.float32)
         color_alpha = max(0.0, min(1.0, float(color.get("a", 1.0))))
-        _composite_color_layer(paint, alpha * color_alpha, color_rgb, max(0.0, min(1.0, float(stroke.get("opacity") or 1.0))))
+        _composite_color_layer(paint, alpha * color_alpha, color_rgb, _stroke_opacity(stroke))
         return
     stroke_alpha = _stroke_freehand_alpha(stroke, width, height)
     if tool_kind == "eraser":
@@ -533,7 +540,7 @@ def _composite_one_erp_stroke(paint: np.ndarray, mask: np.ndarray, stroke: dict,
         max(0.0, min(1.0, float(color.get("b", 0.0)))),
     ], dtype=np.float32)
     color_alpha = max(0.0, min(1.0, float(color.get("a", 1.0))))
-    _composite_color_layer(paint, stroke_alpha * color_alpha, color_rgb, max(0.0, min(1.0, float(stroke.get("opacity") or 1.0))))
+    _composite_color_layer(paint, stroke_alpha * color_alpha, color_rgb, _stroke_opacity(stroke))
 
 
 def _ordered_erp_composite_items(normalized: dict) -> list[dict]:
