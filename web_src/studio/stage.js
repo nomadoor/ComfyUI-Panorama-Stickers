@@ -11,10 +11,9 @@ import { createStageObjects } from "./stage_objects.js";
 import { drawStageOverlay } from "./stage_overlay.js";
 import { editorKeyAction } from "./shortcuts.js";
 import { shortestYawDelta } from "../pano_camera_math.js";
-import { lensCurveBent } from "../pano_lens.js";
 import { liveErpSize } from "./erp_preview.js";
 import { outputErpInput, outputFrameInput } from "./output_picture.js";
-import { STAGE_CLEAR_COLOR, cameraFrameView, frameViewFov, lensPickView, lensPinholePoint, stageCamera, stageRenderInput, stageRenderSize, surfaceHit } from "./stage_view.js";
+import { STAGE_CLEAR_COLOR, cameraFrameHit, frameViewFov, lensPickView, lensPinholePoint, stageCamera, stageRenderInput, stageRenderSize, surfaceHit } from "./stage_view.js";
 import { createNotice, createViewCamera, frameSelectedSphere, orbitCenter } from "./view_camera.js";
 import { KNOB_CURSOR, createViewInput, createWheelSteps, knobAction, litKnobs, navigationAction, stageCursor } from "./view_input.js";
 import { BOUND_NOTICE_SECONDS, FRAME_WHEEL_REST_MS, PITCH_LIMIT, frameSeconds } from "./view_scale.js";
@@ -147,10 +146,8 @@ export function createStage({
   const objects = objectDeps ? createStageObjects({
     ...objectDeps,
     editorView,
-    // A lens Camera's Frame view: no gizmo or handle is drawn on its bent picture (docs/space-and-view.md "レンズの
-    // Camera の当たり").
-    lens: () => viewMode() === "frame" && !!viewport().hitLens,
-    camera: () => viewport().camera,
+    // On a lens Camera's Frame view the camera carries its bent picture (docs/space-and-view.md "レンズの Camera の当たり").
+    camera: () => viewport().objectCamera,
     size: () => {
       const { width, height } = viewport();
       return { width, height };
@@ -204,9 +201,11 @@ export function createStage({
     if (!frameGesture && !drag && !keysMoving && !samePose(frameCamera.pose(), want)) frameCamera.enter(want);
   }
 
-  // Where and how the stage is seen now: { camera, x, y, width, height, lens, shot } — the three.js camera of the view
+  // Where and how the stage is seen now: { camera, objectCamera, x, y, width, height, lens, shot } — the three.js camera of the view
   // (stage_view.js stageCamera(), or the Frame view's cameraFrameView()) and the box it spans in the stage's CSS px.
-  // Pointer points are in that box (local()) for the hits, the guides and the objects.
+  // Pointer points are in that box (local()) for the hits, the guides and the objects. `objectCamera` is what the
+  // guides, the hover, the gizmo and the handles go by: `camera`, carrying a lens Camera's bent picture
+  // (pano_lens.js withLensImage) on its Frame view.
   function viewport() {
     if (viewMode() === "frame") {
       const shot = cameraTab.shot();
@@ -216,18 +215,18 @@ export function createStage({
         const pose = frameCamera.pose();
         const distance = Math.hypot(...pose.target.map((value, axis) => value - pose.position[axis]));
         const fit = { frame, width: size.width, height: size.height, distance, radius: frameCamera.bound() };
-        const view = cameraFrameView({ shot, ...fit });
-        // `lens` and `drawCamera` draw the picture; `camera` and `hitLens` are what the hits, the guides, the gizmo and the
-        // pan go by. A κ shown as 1.00 (pano_lens.js lensCurveBent) is a pinhole for them: the view of the same shot at κ 1.
-        const bent = !!view.lens && lensCurveBent(view.lens.curve);
-        const hit = view.lens && !bent ? cameraFrameView({ shot: { ...shot, curve: 1 }, ...fit }) : view;
+        // `lens` and `drawCamera` draw the picture; `camera`, `objectCamera` and `hitLens` are what the hits, the guides,
+        // the gizmo and the pan go by (stage_view.js cameraFrameHit).
+        const { view, hit, hitLens, objectCamera } = cameraFrameHit(shot, fit);
         return {
-          camera: hit.camera, drawCamera: view.camera, x: view.rect.x, y: view.rect.y, width: view.rect.w, height: view.rect.h,
-          lens: view.lens, hitLens: bent ? view.lens : null, shot: view.shot,
+          camera: hit.camera, drawCamera: view.camera, objectCamera,
+          x: view.rect.x, y: view.rect.y, width: view.rect.w, height: view.rect.h,
+          lens: view.lens, hitLens, shot: view.shot,
         };
       }
     }
-    return { camera: stageCamera(shownPose(), size.width, size.height, camera.bound()), x: 0, y: 0, width: size.width, height: size.height, lens: null, hitLens: null, shot: null };
+    const view = stageCamera(shownPose(), size.width, size.height, camera.bound());
+    return { camera: view, objectCamera: view, x: 0, y: 0, width: size.width, height: size.height, lens: null, hitLens: null, shot: null };
   }
 
   // The 3D tab's view as it shows: the moved view, or with `follow` the view that follows it.
@@ -244,12 +243,11 @@ export function createStage({
     return { x: point.x - view.x, y: point.y - view.y };
   }
 
-  // The guides and the CPU hover show on the 3D tab and the Frame view of a pinhole Camera. A lens Camera's picture is
-  // bent, so the pinhole guides would not lie on it (not drawn yet: docs/space-and-view.md "レンズの Camera の当たり");
-  // its objects are still selected by a press (pickView()).
+  // The guides and the CPU hover show on the 3D tab and the Frame view (a lens Camera's mapped onto its bent picture:
+  // docs/space-and-view.md "レンズの Camera の当たり").
   function objectsOn() {
     const mode = viewMode();
-    return !!objects && (mode === "space" || (mode === "frame" && !viewport().hitLens));
+    return !!objects && (mode === "space" || mode === "frame");
   }
 
   // A painting tool is chosen and the stage paints (the 3D tab, once the view is ready).
@@ -560,7 +558,7 @@ export function createStage({
     const scene = objectsOn() ? objects.overlay({ altHeld: input.altHeld(), gridHidden: ui.gridHidden }) : null;
     const ring = paintOn() && pointer && (!drag || drag.action === "paint") ? paint.ring(local(pointer, view), directionsOf(view)) : null;
     drawStageOverlay(ctx, {
-      camera: view.camera,
+      camera: view.objectCamera,
       width: view.width,
       height: view.height,
       origin: { x: view.x, y: view.y },
@@ -777,12 +775,9 @@ export function createStage({
     return selection?.kind === "object" ? selection : null;
   }
 
-  // A left press on the objects (stage_objects.js press): in the view's box, or through a lens Camera's cube face.
+  // A left press on the objects (stage_objects.js press), in the view's box (on a lens Camera's bent picture too).
   function pressObject(point) {
-    const view = viewport();
-    if (!view.hitLens) return objects.press(local(point, view));
-    const at = pickView(point);
-    return at ? objects.press({ x: at.x, y: at.y }, { camera: at.camera, width: at.width, height: at.height }) : null;
+    return objects.press(local(point, viewport()));
   }
 
   // --- The stage's events.

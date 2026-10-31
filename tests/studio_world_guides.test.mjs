@@ -89,3 +89,33 @@ test("the port Sticker's 3D media has a box guide of its item at the playhead, w
   // Its item at the playhead not loaded yet: no guide.
   assert.deepEqual(worldGuideItems(portState, content, () => null), []);
 });
+
+// docs/space-and-view.md "レンズの Camera の当たり": on a lens Camera's picture the guides bend and the hover follows
+// the bent outline (pano_lens.js withLensImage).
+test("on a lens Camera's picture a guide line bends, cut past the lens's limit, and the hover takes the bent outline", async () => {
+  const { lensProjectPoint, withLensImage } = await import("../web_src/pano_lens.js");
+  const { screenLines } = await import("../web_src/studio/world_guides.js");
+  const focal = W / 2 / Math.tan(DEFAULT_VIEW_HFOV / 2 * Math.PI / 180);
+  const lens = withLensImage(camera, { curve: 0.5, focalPx: focal, centerX: W / 2, centerY: H / 2 });
+  // A pinhole line stays one straight run.
+  assert.equal(screenLines(camera, [[-3, -1, -4], [3, -1, -4]], W, H)[0].length, 2);
+  const [run] = screenLines(lens, [[-3, -1, -4], [3, -1, -4]], W, H);
+  assert.ok(run.length > 8, "bent into many points");
+  // Its middle point lies below the chord between its ends (a horizontal line below the axis bows toward the center).
+  const middle = lensProjectPoint(lens, [0, -1, -4]);
+  assert.ok(run.some((p) => Math.abs(p.x - middle.x) < 1e-6 && Math.abs(p.y - middle.y) < 1e-6), "through the mapped middle");
+  assert.ok(middle.y > run[0].y + 1, "bowed");
+  // A line from ahead to straight behind is cut at the limit (κ 0.5: 179°).
+  const cut = screenLines(withLensImage(camera, { curve: 0.8, focalPx: focal, centerX: W / 2, centerY: H / 2 }), [[0, -1, -1], [0, -1, 3]], W, H);
+  assert.equal(cut.length, 1);
+  // The hover: the plane at (0, 0, -4) is hit at its mapped center, and not just outside its bent edge.
+  const items = worldGuideItems(state, contentOf(), () => box);
+  const plane = items.find((item) => item.id === "plane");
+  const center = lensProjectPoint(lens, plane.center);
+  assert.equal(hoverGuide([plane], lens, center, W, H), "plane");
+  const edge = lensProjectPoint(lens, plane.corners[0].map((value, axis) => (value + plane.corners[1][axis]) / 2));
+  const outward = { x: edge.x + (edge.x - center.x) * 0.05, y: edge.y + (edge.y - center.y) * 0.05 };
+  assert.equal(hoverGuide([plane], lens, outward, W, H), null);
+  const inward = { x: edge.x - (edge.x - center.x) * 0.05, y: edge.y - (edge.y - center.y) * 0.05 };
+  assert.equal(hoverGuide([plane], lens, inward, W, H), "plane");
+});

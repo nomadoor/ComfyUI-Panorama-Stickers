@@ -144,3 +144,80 @@ test("a Camera is a lens Camera for the Camera tab's hits, guides and gizmo when
   assert.equal(lensCurveBent(0.5), true);
   assert.equal(lensCurveBent(0), true);
 });
+
+// docs/space-and-view.md "レンズの Camera の当たり": one function maps a 3D point to the lens Camera's stage point, and
+// its inverse gives the ray back; the guides, the hover, the gizmo and the handles all go through them.
+test("a 3D point maps onto a lens Camera's stage like a pinhole at κ 1, and back to its ray at other κ", async () => {
+  const { lensProjectPoint, lensStageRay, withLensImage } = await import("../web_src/pano_lens.js");
+  const { projectPoint, spaceCamera } = await import("../web_src/pano_space.js");
+  const W = 800;
+  const H = 400;
+  const view = { position: [1, 0.5, 2], yaw_deg: 30, pitch_deg: -10, roll_deg: 5, hFOV_deg: 90, distance: 5 };
+  const pinhole = spaceCamera(view, W, H, { center: [0, 0, 0], radius: 50 });
+  const focal = (W / 2) / Math.tan(45 * DEG);
+  const lens = (curve) => withLensImage(pinhole, { curve, focalPx: focal, centerX: W / 2, centerY: H / 2 });
+  const points = [[1, 0.5, -3], [3, 1, -1], [-2, -1, -4], [1.2, 0.4, 1.5]];
+  for (const p of points) {
+    const a = projectPoint(pinhole, p, W, H);
+    const b = lensProjectPoint(lens(1), p);
+    if (!a) continue;
+    assert.ok(b, `κ 1 maps ${p}`);
+    assert.ok(Math.abs(a.x - b.x) < 1e-6 && Math.abs(a.y - b.y) < 1e-6, `κ 1 is the pinhole at ${p}`);
+    // projectPoint on a camera carrying the lens image is the same function.
+    assert.deepEqual(projectPoint(lens(1), p, W, H), b);
+  }
+  // A point `deg` off the axis to the right, two units from the eye.
+  const offAxis = (deg) => rotateByQuaternion(pinhole.quaternion, [2 * Math.sin(deg * DEG), 0, -2 * Math.cos(deg * DEG)]).map((value, axis) => value + pinhole.position[axis]);
+  for (const curve of [0.8, 0.5]) {
+    let behind = 0;
+    for (const p of [...points, [1, 0.5, 4], [4, 0.5, 2.2], offAxis(100), offAxis(-105)]) {
+      const at = lensProjectPoint(lens(curve), p);
+      if (!at) continue;
+      if (!projectPoint(pinhole, p, W, H)) behind += 1;
+      const ray = lensStageRay(lens(curve), at.x, at.y);
+      const d = p.map((value, axis) => value - pinhole.position[axis]);
+      const length = Math.hypot(...d);
+      assert.ok(Math.abs(at.z - length) < 1e-9, "its depth is the distance from the eye");
+      d.forEach((value, axis) => assert.ok(Math.abs(value / length - ray.direction[axis]) < 1e-9, `round trip κ ${curve} at ${p}`));
+    }
+    assert.ok(behind >= 1, `κ ${curve} maps a point behind the camera's plane`);
+  }
+});
+
+test("points past lens_fov_limit are not mapped, and a lens Camera's straight line maps to a fine curve cut there", async () => {
+  const { lensProjectPoint, lensPolylines, withLensImage } = await import("../web_src/pano_lens.js");
+  const { spaceCamera } = await import("../web_src/pano_space.js");
+  const pinhole = spaceCamera({ position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0, roll_deg: 0, hFOV_deg: 90, distance: 5 }, 1920, 1080, { center: [0, 0, 0], radius: 50 });
+  const camera = withLensImage(pinhole, { curve: 0.8, focalPx: 600, centerX: 960, centerY: 540 });
+  const limit = lensFovLimit(0.8) / 2 * DEG;
+  const at = (angle) => [Math.sin(angle), 0, -Math.cos(angle)];
+  assert.ok(lensProjectPoint(camera, at(limit - 0.01)), "inside the limit");
+  assert.equal(lensProjectPoint(camera, at(limit + 0.01)), null, "past the limit");
+  assert.ok(lensProjectPoint(camera, at(100 * DEG)), "behind the camera's plane, still in the lens");
+  // A segment across the view: every point of its curve lies on the lens image of the 3D line.
+  const project = (p) => lensProjectPoint(camera, p);
+  const [run] = lensPolylines(project, [-3, -1, -2], [3, -1, -2]);
+  assert.ok(run.length >= 9, `subdivided (${run.length} points)`);
+  for (let i = 1; i < run.length; i += 1) {
+    // Each piece's middle in 3D maps within half a px of the piece's chord middle: the curve does not look angular.
+    const a = run[i - 1];
+    const b = run[i];
+    const mid = project(a.world.map((value, axis) => (value + b.world[axis]) / 2));
+    assert.ok(Math.hypot(mid.x - (a.x + b.x) / 2, mid.y - (a.y + b.y) / 2) < 0.5, `piece ${i}`);
+  }
+  // From ahead and below to behind: the run stops at the limit.
+  const runs = lensPolylines(project, [0, -1, -1], [0, -1, 3]);
+  assert.equal(runs.length, 1);
+  const last = runs[0][runs[0].length - 1].world;
+  const angle = Math.atan2(Math.hypot(last[0], last[1]), -last[2]);
+  assert.ok(angle < limit && angle > limit - 0.5 * DEG, `cut near the limit (${angle / DEG})`);
+});
+
+test("straight behind the axis is no film point: at κ under 0.5 it would be the whole ring, not one point", () => {
+  assert.equal(lensDirectionFilm([0, 0, 1], 0.4), null);
+  assert.equal(lensDirectionFilm([0, 0, 1], 0), null);
+  assert.deepEqual(lensDirectionFilm([0, 0, -1], 0.4), { x: 0, y: 0 });
+  // Just off straight behind it is a point far out.
+  const near = lensDirectionFilm([1e-6, 0, 1], 0.4);
+  assert.ok(near && near.x > 1);
+});

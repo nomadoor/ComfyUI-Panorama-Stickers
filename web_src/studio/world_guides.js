@@ -4,6 +4,7 @@
 // or not at all). The Camera's mark is camera_marker.js's. Pure: World segments in, screen segments out;
 // stage_overlay.js draws them.
 import { boxCorners, planeCorners, planeOutlineSegments, projectPoint, sceneContentBox, transformPoint } from "../pano_space.js";
+import { lensPolylines } from "../pano_lens.js";
 import { quaternionToRotation } from "../pano_world.js";
 
 // The looks of a guide (docs/design.md "新しい UI の見た目"): a light line over a dark line 2px wider, so it shows on
@@ -107,10 +108,16 @@ export function pointInPolygon(point, polygon) {
 // null: a plane where the point is inside its projected corners, a box inside the screen rectangle around its 8
 // projected corners. An object with a corner behind the view is not hit. Of several, the one whose center is
 // shallowest along the view axis.
+// On a lens Camera's picture (pano_lens.js withLensImage) the outline is the bent one the overlay draws (screenLines):
+// a plane's edges between its corners, a box's edges, each mapped piece by piece; an object with a part past the lens's
+// limit is not hit.
 export function hoverGuide(items, camera, point, width, height) {
   let best = null;
   for (const item of items) {
-    const projected = item.corners.map((corner) => projectPoint(camera, corner, width, height));
+    const projected = camera.lensImage
+      ? lensOutline(camera, item.kind === "plane" ? loop(item.corners) : item.segments, width, height)
+      : item.corners.map((corner) => projectPoint(camera, corner, width, height));
+    if (!projected) continue;
     if (projected.some((p) => !p)) continue;
     let inside;
     if (item.kind === "plane") {
@@ -128,9 +135,24 @@ export function hoverGuide(items, camera, point, width, height) {
   return best?.id ?? null;
 }
 
+// The points of the World segments `segments` on a lens Camera's picture, in order (screenLines), or null when a part
+// of one is past the lens's limit.
+function lensOutline(camera, segments, width, height) {
+  const points = [];
+  for (const segment of segments) {
+    const runs = screenLines(camera, segment, width, height);
+    if (runs.length !== 1) return null;
+    const [run] = runs;
+    const ends = [segment[0], segment[1]].map((p) => projectPoint(camera, p, width, height));
+    if (ends.some((p) => !p)) return null;
+    points.push(...run);
+  }
+  return points;
+}
+
 // How a guide is drawn now: "selected", "hover", "normal", or null (not drawn). While the grid is hidden only the
 // selected one is drawn. A locked object does not light up under the pointer, and nothing does while Alt is held (an Alt
-// drag always orbits). The Camera tab's Frame view draws them the same (ADR 0051; a lens Camera's draws none, stage.js).
+// drag always orbits). The Camera tab's Frame view draws them the same (ADR 0051; a lens Camera's bent, screenLines).
 export function guideLook({ selected = false, hovered = false, locked = false, altHeld = false, gridHidden = false }) {
   if (selected) return "selected";
   if (gridHidden) return null;
@@ -180,4 +202,16 @@ export function screenSegment(camera, [a, b], width, height) {
   const pa = projectPoint(camera, from, width, height);
   const pb = projectPoint(camera, to, width, height);
   return pa && pb ? [{ x: pa.x, y: pa.y }, { x: pb.x, y: pb.y }] : null;
+}
+
+// A World segment [a, b] on a width x height stage seen from `camera`, as the overlay draws it: runs of screen points
+// ([[{ x, y }]]). A pinhole's is screenSegment's one straight run (none when all of it is behind); on a lens Camera's
+// picture (pano_lens.js withLensImage) the line is bent, mapped piece by piece and cut past the lens's limit
+// (pano_lens.js lensPolylines; docs/space-and-view.md "レンズの Camera の当たり").
+export function screenLines(camera, segment, width, height) {
+  if (camera.lensImage) {
+    return lensPolylines((p) => projectPoint(camera, p, width, height), segment[0], segment[1]).map((run) => run.map(({ x, y }) => ({ x, y })));
+  }
+  const line = screenSegment(camera, segment, width, height);
+  return line ? [line] : [];
 }

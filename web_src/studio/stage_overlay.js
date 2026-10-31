@@ -5,7 +5,7 @@ import { projectPoint } from "../pano_space.js";
 import { LOAD_LOOK } from "./load_reveal.js";
 import { MARKER_DOT_RADIUS, MARKER_LOOKS, MARKER_TOP_FILL, MARKER_UNDER } from "./camera_marker.js";
 import { GIZMO_COLORS, GIZMO_LOOK, gizmoColor } from "./gizmo_overlay.js";
-import { GUIDE_LOOKS, GUIDE_UNDER_EXTRA, screenSegment } from "./world_guides.js";
+import { GUIDE_LOOKS, GUIDE_UNDER_EXTRA, screenLines } from "./world_guides.js";
 import { BRUSH_RING } from "./paint.js";
 
 // The sky image's handles (docs/studio-ui.md "下の中央のバー"; pano_sticker_affordance.js hits them): corner and rotate
@@ -27,11 +27,9 @@ function strokeTwice(ctx, path, look) {
 
 function segmentsPath(camera, segments, width, height) {
   const path = new Path2D();
+  // A lens Camera's picture bends each line (world_guides.js screenLines).
   for (const segment of segments) {
-    const shown = screenSegment(camera, segment, width, height);
-    if (!shown) continue;
-    path.moveTo(shown[0].x, shown[0].y);
-    path.lineTo(shown[1].x, shown[1].y);
+    for (const run of screenLines(camera, segment, width, height)) run.forEach((point, index) => (index ? path.lineTo(point.x, point.y) : path.moveTo(point.x, point.y)));
   }
   return path;
 }
@@ -168,7 +166,7 @@ function roundedSquare(ctx, center, size, radius) {
 // The gizmo (gizmo_overlay.js gizmoHandles) as the draft specimen-11.html draws Move: round-capped bars with a ball
 // (Move) or a rounded square (Scale) at the end, or rings whose far half is faint (Rotate), and the white center dot;
 // Move's plane squares under its bars.
-// The far handles first, each over a dark underlay; `active` (a handle name) is lit: its color toward white, thicker. `guides` ([{ name, a, b }]) are the axis guide lines
+// The far handles first, each over a dark underlay; `active` (a handle name) is lit: its color toward white, thicker. `guides` ([{ name, points }], bent on a lens Camera's picture) are the axis guide lines
 // of a drag (a plane square's two), each in its axis's color under the handles.
 function drawGizmo(ctx, handles, active, guides = []) {
   const lit = (name) => name === active;
@@ -180,8 +178,7 @@ function drawGizmo(ctx, handles, active, guides = []) {
     ctx.lineWidth = L.guideWidth;
     ctx.strokeStyle = GIZMO_COLORS[guide.name];
     ctx.beginPath();
-    ctx.moveTo(guide.a.x, guide.a.y);
-    ctx.lineTo(guide.b.x, guide.b.y);
+    guide.points.forEach((point, index) => (index ? ctx.lineTo(point.x, point.y) : ctx.moveTo(point.x, point.y)));
     ctx.stroke();
     ctx.globalAlpha = 1;
   }
@@ -322,7 +319,7 @@ function drawScene(ctx, camera, width, height, scene) {
   // The selected paint group (docs/studio-ui.md "ペイントのまとまり"): its frame through its four corners in the sky
   // image's look, with the corner dots only (no edge or rotate handles).
   if (scene.paint) {
-    strokeTwice(ctx, polygonPath(scene.paint.corners), GUIDE_LOOKS.skySelected);
+    strokeTwice(ctx, polygonPath(scene.paint.outline), GUIDE_LOOKS.skySelected);
     if (scene.paint.handles) for (const corner of scene.paint.corners) dot(ctx, corner, CORNER_RADIUS);
   }
   if (scene.gizmo) drawGizmo(ctx, scene.gizmo.handles, scene.gizmo.active, scene.gizmo.guides);

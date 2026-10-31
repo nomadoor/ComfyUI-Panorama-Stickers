@@ -11,7 +11,7 @@
 // the depth of what the pointer is over, so a drag of the same length moves the view the same way.
 import { animationMetaOf, animationPose } from "./pano_animation.js";
 import { DEG2RAD, RAD2DEG, clamp, wrapYaw } from "./pano_camera_math.js";
-import { lensFilmDirection, lensRadius } from "./pano_lens.js";
+import { lensFilmDirection, lensProjectPoint, lensRadius } from "./pano_lens.js";
 import { evaluateLane } from "./pano_scene_eval.js";
 import { is3dFileSource } from "./pano_scene_state.js";
 import { panoramaAngles, quaternionToRotation, rotationToQuaternion, worldRotation } from "./pano_world.js";
@@ -295,8 +295,10 @@ export function placedCamera(camera, position, distance, sphere = null) {
 }
 
 // Where the World point p lands in a width x height view drawn with a spaceCamera(), and its depth z
-// along the view axis (null when it is not in front).
+// along the view axis (null when it is not in front). A camera carrying a lens picture (pano_lens.js withLensImage)
+// maps through the lens instead (pano_lens.js lensProjectPoint: z is then the distance from the eye).
 export function projectPoint(camera, p, width, height) {
+  if (camera.lensImage) return lensProjectPoint(camera, p);
   const { right, up, forward } = cameraAxes(camera);
   const d = [p[0] - camera.position[0], p[1] - camera.position[1], p[2] - camera.position[2]];
   const z = d[0] * forward[0] + d[1] * forward[1] + d[2] * forward[2];

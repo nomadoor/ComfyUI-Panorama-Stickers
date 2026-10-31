@@ -1741,12 +1741,19 @@
 }
 
 /* The Output window: a container (12px), 85% opaque, folded to a pill holding its line (docs/design.md "Output の小窓の
-   一行"). Folding shrinks the window to the pill by a transform anchored at the top right while it fades (no relayout
-   of what it shows) and the pill's fill fades in; opening runs the other way (docs/design.md "動き"). The line itself
-   stays put at the top right in both forms and never fades. The element keeps the size of the shown state. */
+   一行"). Open, the picture fills the window and the line lies over its top edge on a faint dark gradient. Folding
+   shrinks the window to the pill by a transform anchored at the top right while it fades (no relayout of what it
+   shows) and the pill's fill fades in; opening runs the other way (docs/design.md "動き"). The line itself stays put
+   at the top right in both forms and never fades. The element keeps the size of the shown state. */
 .pano-studio-output {
   position: relative;
   color: var(--studio-fg);
+  /* Open, the line is light on the picture whatever the theme; the gradient behind it keeps it faintly readable on a
+     bright picture. */
+  --studio-output-over-fg: #ffffff;
+  --studio-output-over-fg-2: rgba(255, 255, 255, 0.78);
+  --studio-output-over-shade: linear-gradient(to bottom, rgba(0, 0, 0, 0.45), rgba(0, 0, 0, 0.22) 50%, rgba(0, 0, 0, 0));
+  --studio-output-over-shade-height: 48px;
 }
 
 .pano-studio-output-window {
@@ -1756,12 +1763,23 @@
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  justify-content: flex-end;
   overflow: hidden;
   background: var(--studio-float);
   border-radius: var(--studio-r-box);
   transform-origin: top right;
   transition: transform var(--studio-motion-fold) ease-out, opacity var(--studio-motion-fold) ease-out;
+}
+
+/* The shade under the line, over the picture's top edge. */
+.pano-studio-output-window::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--studio-output-over-shade-height);
+  background: var(--studio-output-over-shade);
+  pointer-events: none;
 }
 
 .pano-studio-output.is-collapsed .pano-studio-output-window {
@@ -1772,12 +1790,13 @@
 
 .pano-studio-output-body {
   display: flex;
-  flex: none;
+  flex: 1 1 auto;
   width: 100%;
+  min-height: 0;
 }
 
-/* The line: right-aligned, the fold button at its right end (8px from the size). Its fill shows folded only (open, it is
-   the window's top row). */
+/* The line, one button: right-aligned, the chevron at its right end (8px from the size). Its fill shows folded only
+   (open, it lies over the picture). Only the chevron answers the pointer; the line itself never lights. */
 .pano-studio-output-pill {
   position: absolute;
   top: 0;
@@ -1790,11 +1809,35 @@
   width: max-content;
   /* OUTPUT_LINE_HEIGHT (studio/layout.js), set on the window by StudioOutputPreview.vue. */
   height: var(--studio-output-line);
-  padding: 0 35px 0 12px;
-  isolation: isolate;
+  margin: 0;
+  padding: 0 5px 0 12px;
+  border: 0;
+  background: transparent;
+  color: var(--studio-output-over-fg);
+  font: inherit;
   font-size: var(--studio-text-sm);
   line-height: 1;
   white-space: nowrap;
+  isolation: isolate;
+  cursor: pointer;
+}
+
+.pano-studio-output.is-collapsed .pano-studio-output-pill {
+  color: var(--studio-fg);
+}
+
+.pano-studio-output.is-suspended .pano-studio-output-pill {
+  cursor: default;
+}
+
+/* The keyboard's focus shows on the chevron, as the pointer's hover does, not on the whole line. */
+.pano-studio:not([data-input="pointer"]) .pano-studio-output .pano-studio-output-pill:focus-visible {
+  background-color: transparent;
+  color: var(--studio-output-over-fg);
+}
+
+.pano-studio:not([data-input="pointer"]) .pano-studio-output.is-collapsed .pano-studio-output-pill:focus-visible {
+  color: var(--studio-fg);
 }
 
 .pano-studio-output-pill::before {
@@ -1819,42 +1862,66 @@
   fill: none;
   stroke: currentColor;
   stroke-width: 1.5;
-  color: var(--studio-fg);
 }
 
 .pano-studio-output-shot {
-  color: var(--studio-fg);
   font-weight: var(--studio-weight-head);
 }
 
 .pano-studio-output-size {
-  color: var(--studio-fg-2);
+  color: var(--studio-output-over-fg-2);
   font-weight: var(--studio-weight);
   font-variant-numeric: tabular-nums;
 }
 
-.pano-studio-output-fold {
-  position: absolute;
-  top: 5px;
-  right: 5px;
-  color: var(--studio-fg);
+.pano-studio-output.is-collapsed .pano-studio-output-size {
+  color: var(--studio-fg-2);
 }
 
-.pano-studio-output-fold svg.icon {
+/* The chevron: 22px, faint until the pointer is over the line (or the keyboard is on it), then full and nudged 1px the
+   way it points. */
+.pano-studio-output-chevron {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--studio-btn-sm);
+  height: var(--studio-btn-sm);
+  opacity: 0.7;
+  transition: opacity var(--studio-motion-hover) ease-out, translate var(--studio-motion-hover) ease-out;
+}
+
+.pano-studio-output-chevron svg.icon {
+  width: 14px;
+  height: 14px;
   transition: transform var(--studio-motion-fold) ease-out;
 }
 
-.pano-studio-output-fold.is-folded svg.icon {
+.pano-studio-output-chevron.is-folded svg.icon {
   transform: rotate(180deg);
 }
 
-/* The Camera tab: the line as in the 3D tab; only the fold button is faint, and it does not react
-   (docs/design.md "大きさ"). */
-.pano-studio-output.is-suspended .pano-studio-output-fold {
+.pano-studio-output:not(.is-suspended) .pano-studio-output-pill:hover .pano-studio-output-chevron,
+.pano-studio:not([data-input="pointer"]) .pano-studio-output:not(.is-suspended) .pano-studio-output-pill:focus-visible .pano-studio-output-chevron {
+  opacity: 1;
+  translate: 0 1px;
+}
+
+.pano-studio-output:not(.is-suspended) .pano-studio-output-pill:hover .pano-studio-output-chevron.is-folded,
+.pano-studio:not([data-input="pointer"]) .pano-studio-output:not(.is-suspended) .pano-studio-output-pill:focus-visible .pano-studio-output-chevron.is-folded {
+  translate: 0 -1px;
+}
+
+/* The Camera tab: the line as in the 3D tab; only the chevron is faint, and nothing reacts (docs/design.md "大きさ"). */
+.pano-studio-output.is-suspended .pano-studio-output-chevron {
   opacity: 0.4;
-  background: transparent;
-  color: var(--studio-fg);
-  cursor: default;
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pano-studio-output:not(.is-suspended) .pano-studio-output-pill .pano-studio-output-chevron {
+    translate: none;
+  }
 }
 
 /* The corner dragged for the size: faint until the pointer is over the window. */
