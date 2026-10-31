@@ -7,7 +7,8 @@ import StudioIconButton from "./StudioIconButton.vue";
 import StudioInspectorCard from "./StudioInspectorCard.vue";
 
 // The inspector of Panorama Studio's new editor (docs/studio-ui.md "インスペクタ"), for the shell's inspector column:
-// the top row (the node's name and ✕), the cards of the tab and the selection (web_src/studio/inspector_model.js),
+// the top row (the node's name and ✕), the cards of the selection (the Camera tab with the Camera's on top,
+// web_src/studio/inspector_model.js),
 // which scroll without a scrollbar, and the Easing panel fixed at the bottom while Keyframes are selected.
 //
 // Presentational: the working state and the editor's selection come in; every change goes out as `edit`, which the
@@ -18,7 +19,7 @@ const props = defineProps({
   state: { type: Object, required: true },
   // { ids: [...], paint?: true, keyframes?: { owner, lane, frames } } (inspector_model.js buildInspectorModel).
   selection: { type: Object, default: () => ({ ids: [] }) },
-  // "3d" | "camera".
+  // "3d" | "camera" (the Camera tab keeps the Camera's card on top; Set ground is off in its Panorama mode).
   tab: { type: String, default: "3d" },
   // The Timeline frame.
   playhead: { type: Number, default: 0 },

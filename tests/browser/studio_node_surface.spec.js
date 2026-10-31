@@ -77,6 +77,11 @@ test("the line follows megapixels, multiple and the Camera's mode at once, witho
   await expect(size).not.toHaveText("1368 × 768");
   const sized = await size.textContent();
   expect(sized.split(" × ").map(Number).every((side) => side % 64 === 0)).toBe(true);
+  // A missing widget falls back to the node's default (2 and 8, pano_studio_status.js studioSizeWidgets, shared with
+  // the editor's Output window).
+  await page.evaluate(() => window.__surface.removeWidget("megapixels"));
+  await page.evaluate(() => window.__surface.removeWidget("multiple"));
+  await expect(size).toHaveText("1928 × 1088");
   await page.evaluate(() => window.__surface.setMode("panorama"));
   await expect(page.locator(".pano-studio-node-shot")).toHaveText("Panorama 360°");
   // The picture takes the new shape too.

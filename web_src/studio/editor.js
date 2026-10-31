@@ -14,6 +14,7 @@ import { createApp, markRaw, reactive, shallowReactive } from "vue";
 import StudioEditor from "../components/studio/StudioEditor.vue";
 import { createComfyMediaAdapter } from "../pano_comfy_media.js";
 import { createPanoCanvas, createPanoVideo, releasePanoCanvas } from "../pano_diagnostics.js";
+import { studioSizeWidgets } from "../pano_studio_status.js";
 import { queuePendingStickerOperation } from "../pano_editor_extension.js";
 import { cameraShot, normalizeCoverageValue, readableStateText, setCameraShot } from "../pano_editor_state.js";
 import { preloadEditorView } from "../pano_editor_view.js";
@@ -267,6 +268,9 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     animations: {},
     // The stage's tab: "3d" or "camera" (docs/studio-ui.md "Camera タブ"). The 3D tab each time the editor opens.
     tab: "3d",
+    // The node's `megapixels` and `multiple` when the editor opened, for the Output window's line (docs/studio-ui.md
+    // "Output の小窓": the editor is modal, so they do not change while it is open).
+    sizeWidgets: studioSizeWidgets((name) => widgetOf(node, name)?.value),
     // The list of shortcuts is open (docs/studio-ui.md "ショートカットの一覧"): closed each time the editor opens.
     shortcuts: false,
     // [inputs] The size of the port Sticker's media (its vFOV follows it), null before it loads.

@@ -1,7 +1,8 @@
 // Selecting and editing objects on the stage (web_src/studio/stage_objects.js): the press order of
 // docs/editor-interaction.md "`world` の Sticker の操作" (the gizmo, the selected sky image's handles, the World object
 // by the hover's test (hit_test.js coarseUnder), the Camera's mark, a sky image), what a drag writes by the recording rule, the Camera tab's
-// select-only presses, and what the overlay draws. The three.js view is a stand-in; the gizmo is the overlay's
+// presses (the selected object's gizmo, handles and body first, as in the 3D tab; anything else selects and leaves the
+// drag to the Camera), and what the overlay draws. The three.js view is a stand-in; the gizmo is the overlay's
 // (gizmo_overlay.js), hit and dragged on screen.
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -23,7 +24,7 @@ const H = 500;
 const file = (filename) => ({ kind: "file", filename, subfolder: "", storage: "input" });
 const image = { naturalWidth: 100, naturalHeight: 100, complete: true };
 
-function setup({ tab = "3d", stickers = null, sceneBox = () => null, editorFile = () => null, mode = "translate", painting = undefined, paintingVisible = true, rasterAlpha = undefined, view = { width: W, height: H }, cameraAt = [0, -1, -6] } = {}) {
+function setup({ tab = "3d", lens = false, readOnly = false, stickers = null, sceneBox = () => null, editorFile = () => null, mode = "translate", painting = undefined, paintingVisible = true, rasterAlpha = undefined, view = { width: W, height: H }, cameraAt = [0, -1, -6] } = {}) {
   const session = createStudioSession({
     state: loadSceneState({
       version: 2,
@@ -60,6 +61,8 @@ function setup({ tab = "3d", stickers = null, sceneBox = () => null, editorFile 
     select: (row) => session.selectObject(row),
     edits: { live: (apply, copy) => session.gesture(apply, copy), commit: () => session.commitGesture(), cancel: () => session.cancelGesture() },
     tab: () => tab,
+    lens: () => lens,
+    readOnly: () => readOnly,
     mode: () => gizmoMode.value,
     rasterAlpha,
   });
@@ -226,19 +229,116 @@ test("a locked Camera is selected but shows no gizmo", () => {
   assert.equal(objects.overlay().camera.look, "selected", "still selected");
 });
 
-test("in the Camera tab a press only selects: no gizmo, no handles, no drag, and only the selected object's guide is drawn", () => {
+test("in the Camera tab a press on an object not selected selects it and leaves the drag to the Camera; the guides are drawn as in the 3D tab", () => {
   const { session, objects } = setup({ tab: "camera" });
   const before = session.state;
   const drag = objects.press(center);
   assert.equal(session.selection.row, "sky");
+  assert.equal(drag.passes, true, "the stage moves the Camera with this drag");
   drag.move({ x: 900, y: 250 });
   drag.end();
   assert.equal(session.state, before, "nothing moves");
   session.selectObject("board");
   const scene = objects.overlay();
-  assert.equal(scene.gizmo, null);
   assert.equal(scene.camera, null, "the Camera's mark is the 3D tab's");
   assert.deepEqual(scene.guides.map((guide) => guide.look), ["selected"]);
+  // Not selected, the board's guide is drawn thin, and bright under the pointer (docs/space-and-view.md "World の物のガイド").
+  session.selectObject(null);
+  assert.deepEqual(objects.overlay().guides.map((guide) => guide.look), ["normal"]);
+  const x = W / 2 * (1 + (3 / 5) / Math.tan(50 * Math.PI / 180));
+  objects.hover({ x, y: H / 2 });
+  assert.deepEqual(objects.overlay().guides.map((guide) => guide.look), ["hover"]);
+  assert.equal(objects.press({ x: 5, y: 5 }), null, "a press on nothing is left to the view");
+});
+
+test("in the Camera tab the selected World object's gizmo shows and is pressed first, its drag written as in the 3D tab", () => {
+  const { session, objects } = setup({ tab: "camera" });
+  session.selectObject("board");
+  const ball = ballOf(objects, "x");
+  assert.equal(objects.hover(ball).cursor, "grab");
+  const drag = objects.press(ball);
+  assert.notEqual(drag.passes, true);
+  drag.move({ x: ball.x + 100, y: ball.y + 40 });
+  assert.equal(session.canUndo, false);
+  drag.end();
+  assert.equal(session.canUndo, true, "one Undo step");
+  const position = evaluateLane(session.state.stickers[1], "position", 0);
+  assert.ok(position[0] > 3.5 && Math.abs(position[1]) < 1e-9 && Math.abs(position[2] + 5) < 1e-9);
+  // Its body takes the press too, as in the 3D tab (the drag moves nothing: the gizmo moves it).
+  session.undo();
+  const x = W / 2 * (1 + (3 / 5) / Math.tan(50 * Math.PI / 180));
+  const onBody = [[30, 30], [-30, 30], [30, -30], [-30, -30], [20, 40]].map(([dx, dy]) => ({ x: x + dx, y: H / 2 + dy })).find((point) => objects.hover(point).cursor === "default");
+  assert.ok(onBody, "a point on its body away from the gizmo");
+  const before = session.state;
+  const body = objects.press(onBody);
+  assert.ok(body);
+  body.move({ x: onBody.x + 50, y: onBody.y });
+  body.end();
+  assert.equal(session.state, before);
+  assert.notEqual(body.passes, true);
+});
+
+test("in the Camera tab the selected sky image's handles show and its body's drag turns it", () => {
+  const { session, objects, camera } = setup({ tab: "camera" });
+  session.selectObject("sky");
+  assert.equal(objects.overlay().sky.handles, true);
+  const drag = objects.press(onSky);
+  assert.notEqual(drag.passes, true);
+  drag.move({ x: W * 0.75, y: onSky.y });
+  drag.end();
+  const want = viewProjection(camera, W, H).ray(W * 0.75, H / 2);
+  const yaw = evaluateLane(session.state.stickers[0], "direction", 0).yaw_deg;
+  assert.ok(Math.abs(yaw - Math.atan2(want.x, want.z) * 180 / Math.PI) < 1e-6);
+  assert.equal(session.canUndo, true);
+});
+
+test("in the Camera tab a press on a locked selected object passes to the Camera (it cannot be moved there)", () => {
+  const { session, objects } = setup({ tab: "camera" });
+  session.selectObject("sky");
+  session.toggleLock();
+  const drag = objects.press(onSky);
+  assert.equal(drag.passes, true);
+  assert.equal(session.selection.row, "sky");
+  session.selectObject("board");
+  session.toggleLock();
+  const x = W / 2 * (1 + (3 / 5) / Math.tan(50 * Math.PI / 180));
+  assert.equal(objects.press({ x, y: H / 2 }).passes, true);
+  assert.equal(session.selection.row, "board");
+  const painted2 = setup({ tab: "camera", painting: painted() });
+  painted2.session.selectObject("paint_group:g1");
+  painted2.session.toggleLock();
+  assert.equal(painted2.objects.press(strokeAt).passes, true);
+});
+
+test("in a read-only Camera tab every press passes to the Camera, and nothing shows a gizmo", () => {
+  const { session, objects } = setup({ tab: "camera", readOnly: true });
+  session.selectObject("board");
+  assert.equal(objects.overlay().gizmo, null);
+  const x = W / 2 * (1 + (3 / 5) / Math.tan(50 * Math.PI / 180));
+  assert.equal(objects.press({ x, y: H / 2 }).passes, true);
+  assert.equal(objects.press(onSky).passes, true);
+  assert.equal(session.selection.row, "sky");
+});
+
+test("the Camera carried into the Camera tab shows no gizmo (the view is inside it)", () => {
+  const { session, objects } = setup({ tab: "camera", stickers: [] });
+  session.selectObject("camera");
+  assert.equal(objects.overlay().gizmo, null);
+  assert.equal(objects.overlay().camera, null);
+});
+
+test("on a lens Camera's Frame view no gizmo or handle shows and every press only selects, the drag left to the Camera", () => {
+  const { session, objects } = setup({ tab: "camera", lens: true });
+  session.selectObject("board");
+  assert.equal(objects.overlay().gizmo, null);
+  session.selectObject("sky");
+  assert.equal(objects.overlay().sky.handles, false);
+  const before = session.state;
+  const drag = objects.press(onSky);
+  assert.equal(drag.passes, true);
+  drag.move({ x: 900, y: 250 });
+  drag.end();
+  assert.equal(session.state, before);
 });
 
 test("a press through another view (a lens Camera's cube face) tests the World objects and the sky images in that view", () => {
@@ -505,15 +605,22 @@ test("a raster object is hit where its pixels show; its drag moves its transform
   assert.equal(unread.session.selection.row, "raster:r1");
 });
 
-test("in the Camera tab a press on the paint only selects it", () => {
+test("in the Camera tab a press on the paint selects it and leaves the drag to the Camera; selected, its body and corners edit it", () => {
   const { session, objects } = setup({ tab: "camera", painting: painted() });
   const before = session.state;
   const drag = objects.press(strokeAt);
   assert.equal(session.selection.row, "paint_group:g1");
+  assert.equal(drag.passes, true);
   drag.move({ x: 500, y: 300 });
   drag.end();
   assert.equal(session.state, before);
-  assert.equal(objects.overlay().paint.handles, false);
+  assert.equal(objects.overlay().paint.handles, true);
+  const move = objects.press(strokeAt);
+  assert.notEqual(move.passes, true);
+  move.move({ x: strokeAt.x + 40, y: strokeAt.y });
+  move.end();
+  assert.notEqual(session.state, before, "the selected group moved");
+  assert.equal(session.canUndo, true);
 });
 
 test("a long stroke whose frame reaches behind the view is still grabbed on its visible part, without a frame drawn", () => {

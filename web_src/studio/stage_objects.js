@@ -4,16 +4,20 @@
 // on the overlay. It builds no DOM.
 //
 // A left press, in this order (docs/studio-ui.md "ペイントのまとまり" "押したときの順"):
-//   1. a handle of the gizmo of the selected World object or Camera (3D tab only; gizmo_overlay.js): drags it;
+//   1. a handle of the gizmo of the selected World object or Camera (gizmo_overlay.js): drags it;
 //   2. a handle of the selected sky image (a corner scales both FOVs, an edge one, the rotate handle the Roll), or a
-//      corner of the selected paint group (scales it); not while locked, 3D tab only;
+//      corner of the selected paint group (scales it); not while locked;
 //   3. the World object under the pointer (objectUnder: the same test as the hover, hit_test.js coarseUnder): selects
 //      it (its drag does nothing: the gizmo moves it);
 //   4. the Camera's mark (3D tab; camera_marker.js: anywhere on its filled shape or near its lines): selects the Camera;
 //   5. the node's own Sky from the visual front (skyObjects: the sky images and the paint groups by the draw order,
 //      reversed): selects it and its drag turns a sky image (its direction) or moves a paint group (not a locked one);
 //   6. nothing: the stage looks around, and a press let go without moving lets the selection go.
-// In the Camera tab a press only selects (steps 3 to 5 without a drag), and no gizmo or handle shows.
+// The Camera tab's Frame view does the same for the selected object (its gizmo, its handles, its body: docs/studio-ui.md
+// "Camera タブ", ADR 0051); a press on any other object, or on a locked one, selects it and its drag is the stage's,
+// which moves the Camera (the handler says `passes`). The Camera selected there shows no gizmo (the view is inside it), and on a lens Camera
+// (`lens()`, whose bent picture the gizmo and the handles cannot be drawn on) no gizmo or handle shows and every press
+// passes.
 //
 // A drag writes through `edits`: edits.live(apply) on each move (apply(draft) changes a copy of the state the drag
 // started from), edits.commit() at the end (one Undo step when it changed something), edits.cancel() when it is given
@@ -176,7 +180,8 @@ function viewKey(camera, width, height) {
 // state(), content() (stage_content.js stageContent()), playhead(): the working state, what is drawn of it and the
 // Timeline frame. camera() and size(): the stage's three.js camera (stage_view.js stageCamera()) and its CSS size.
 // selection(): the selected row ("camera", a Sticker id, a paint group's `paint_group:` / `raster:` row, or null); select(row) selects (null lets go). mode(): the
-// gizmo's mode. tab(): "3d" or "camera". ground(): the ground height. readOnly(): no edits. loading: load_reveal.js
+// gizmo's mode. tab(): "3d" or "camera". lens(): the Camera tab shows a lens Camera's Frame view. ground(): the ground
+// height. readOnly(): no edits. loading: load_reveal.js
 // createLoadReveal()'s for the guides of 3D files just placed (their stand-in box and band), or null.
 // rasterAlpha(item, u, v): the alpha (0..255) of a paint raster object's image at a point of its box (0..1 across), or
 // null while it cannot be read (studio/paint.js rasterAlpha); a raster object is then hit anywhere in its box.
@@ -192,6 +197,7 @@ export function createStageObjects({
   edits,
   mode = () => "translate",
   tab = () => "3d",
+  lens = () => false,
   ground = () => -1.6,
   readOnly = () => false,
   loading = null,
@@ -204,7 +210,8 @@ export function createStageObjects({
   // The axis guide lines of the gizmo drag under way (gizmo_overlay.js gizmoDrag's `guides`), or none.
   let dragGuides = [];
 
-  const editable = () => !readOnly() && tab() === "3d";
+  // The objects can be edited on the stage: not read-only, and not on a lens Camera's Frame view.
+  const editable = () => !readOnly() && !(tab() === "camera" && lens());
 
   function stickerOf(id) {
     return state().stickers.find((item) => item.id === id) ?? null;
@@ -257,7 +264,7 @@ export function createStageObjects({
   // --- What shows.
 
   // The gizmo to show ({ mode, transform, center }, gizmo_overlay.js) or null: on the selected World object where it
-  // shows and can be edited, or on the selected Camera, in the 3D tab; not on a locked one. A World object's gizmo sits on its guide's center
+  // shows and can be edited, or on the selected Camera in the 3D tab; not on a locked one. A World object's gizmo sits on its guide's center
   // (docs/studio-ui.md "ギズモ" "物の中心"; a 3D file's origin can lie far outside its content), the Camera's on its
   // position.
   function gizmo() {
@@ -265,6 +272,7 @@ export function createStageObjects({
     const row = selection();
     const kind = selectedKind(state(), row);
     if (kind === "camera") {
+      if (tab() !== "3d") return null;
       const value = cameraValue();
       if (!value.visible || cameraOf(state()).locked === true) return null;
       return { mode: shownGizmoMode(kind, mode()), transform: sceneTransform({ ...value, scale: 1 }) };
@@ -527,16 +535,20 @@ export function createStageObjects({
     };
   }
 
-  // A press that selects and whose drag does nothing.
+  // A press that selects and whose drag does nothing; and one whose drag the stage takes (it moves the Camera).
   const selectOnly = () => ({ move() {}, end() {}, cancel() {} });
+  const passOn = () => ({ ...selectOnly(), passes: true });
 
   // What a left press without Alt at `point` does: a drag handler { move(point, event), end(), cancel() }, or null
   // when it touches nothing (the stage looks around; its click without a move lets the selection go).
   // `through` ({ camera, width, height }, with `point` in its px) is the view a lens Camera's Frame view picks in (stage_view.js
   // lensPickView: a cube face's pinhole): the World objects (objectUnder) and the sky images are tested there (docs/space-and-view.md
-  // "レンズの Camera の当たり"). The stage hands it in the Camera tab only, where a press only selects.
+  // "レンズの Camera の当たり"). The stage hands it on a lens Camera's Frame view only, where a press only selects.
   function press(point, through = null) {
     const canEdit = editable();
+    // In the Camera tab only the selected object that can be edited takes the drag; a press on another one, or on a
+    // locked one, selects it and passes (the drag moves the Camera).
+    const passes = (row, locked) => tab() !== "3d" && !(canEdit && row === selection() && !locked);
     if (canEdit) {
       const drag = gizmoDrag(point);
       if (drag) return drag;
@@ -553,8 +565,9 @@ export function createStageObjects({
     const view = through ?? { camera: camera(), ...size() };
     const picked = objectUnder(point, through);
     if (picked) {
+      const pass = passes(picked, !!guides().find((item) => item.id === picked)?.locked);
       select(picked);
-      return selectOnly();
+      return pass ? passOn() : selectOnly();
     }
     if (cameraMarkerHit(cameraMarker(), point)) {
       select("camera");
@@ -563,7 +576,9 @@ export function createStageObjects({
     const under = skyObjectUnder(point, through ? viewOf(view.camera, view.width, view.height) : stageView());
     if (under) {
       const { object, geometry } = under;
+      const pass = passes(object.row, object.kind === "sky" ? !!object.item.locked : !!object.locked);
       select(object.row);
+      if (pass) return passOn();
       if (object.kind === "sky") return canEdit && !object.item.locked ? skyDrag("move", object.item, geometry, point) : selectOnly();
       return canEdit && !object.locked ? paintDrag("move", object, geometry, point) : selectOnly();
     }
@@ -574,7 +589,6 @@ export function createStageObjects({
   // gizmo's handles with the one lit, the selected sky image's or paint group's frame and handles.
   function overlay({ altHeld = false, gridHidden = false } = {}) {
     const row = selection();
-    const shownTab = tab();
     // A 3D file just placed: its guide's band of light while it loads and fades in (load_reveal.js).
     const phase = loading ? loading.phase() : 0;
     const items = guides().map((item) => {
@@ -582,7 +596,7 @@ export function createStageObjects({
       return {
         segments: item.segments,
         corners: item.corners,
-        look: guideLook({ selected: item.id === row, hovered: item.id === hovered, locked: item.locked, altHeld, gridHidden, tab: shownTab }),
+        look: guideLook({ selected: item.id === row, hovered: item.id === hovered, locked: item.locked, altHeld, gridHidden }),
         ...(shimmer > 0 ? { shimmer, phase } : {}),
       };
     }).filter((item) => item.look);
@@ -610,7 +624,7 @@ export function createStageObjects({
       } : null,
       sky: sky ? { geometry: sky.geometry, handles: editable() && !sky.item.locked } : null,
       // The selected paint group's frame (its corners and screen center in CSS px), with its corner handles unless it is
-      // locked or in the Camera tab.
+      // locked or on a lens Camera's Frame view.
       paint: paint ? { corners: paint.geometry.corners, center: paint.geometry.center, handles: editable() && !paint.object.locked } : null,
     };
   }

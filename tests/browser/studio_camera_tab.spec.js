@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import { frameRect, rulerStrips } from "../../web_src/studio/frame_layout.js";
 
 // The Camera tab's parts (StudioCameraFrame, StudioEdgeRuler; docs/studio-ui.md "Camera タブ", docs/design.md "大きさ")
-// on tests/browser/pages/studio_camera_tab.html: the frame fitted into the stage less 150 / 88 / 84 for each ratio, the
+// on tests/browser/pages/studio_camera_tab.html: the frame fitted into the stage less 150 / 88 / 115 for each ratio, the
 // dim outside, the rulers' tick strips centered on the frame's edges, Panorama mode's gray FOV and Lens over the live ERP, and the rulers'
 // drag (Shift finer, Escape back).
 

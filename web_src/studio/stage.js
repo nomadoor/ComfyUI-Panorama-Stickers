@@ -11,6 +11,7 @@ import { createStageObjects } from "./stage_objects.js";
 import { drawStageOverlay } from "./stage_overlay.js";
 import { editorKeyAction } from "./shortcuts.js";
 import { shortestYawDelta } from "../pano_camera_math.js";
+import { lensCurveBent } from "../pano_lens.js";
 import { liveErpSize } from "./erp_preview.js";
 import { outputErpInput, outputFrameInput } from "./output_picture.js";
 import { STAGE_CLEAR_COLOR, cameraFrameView, frameViewFov, lensPickView, lensPinholePoint, stageCamera, stageRenderInput, stageRenderSize, surfaceHit } from "./stage_view.js";
@@ -146,6 +147,9 @@ export function createStage({
   const objects = objectDeps ? createStageObjects({
     ...objectDeps,
     editorView,
+    // A lens Camera's Frame view: no gizmo or handle is drawn on its bent picture (docs/space-and-view.md "レンズの
+    // Camera の当たり").
+    lens: () => viewMode() === "frame" && !!viewport().hitLens,
     camera: () => viewport().camera,
     size: () => {
       const { width, height } = viewport();
@@ -211,11 +215,19 @@ export function createStage({
         syncFrameCamera(shot, frame);
         const pose = frameCamera.pose();
         const distance = Math.hypot(...pose.target.map((value, axis) => value - pose.position[axis]));
-        const view = cameraFrameView({ shot, frame, width: size.width, height: size.height, distance, radius: frameCamera.bound() });
-        return { camera: view.camera, x: view.rect.x, y: view.rect.y, width: view.rect.w, height: view.rect.h, lens: view.lens, shot: view.shot };
+        const fit = { frame, width: size.width, height: size.height, distance, radius: frameCamera.bound() };
+        const view = cameraFrameView({ shot, ...fit });
+        // `lens` and `drawCamera` draw the picture; `camera` and `hitLens` are what the hits, the guides, the gizmo and the
+        // pan go by. A κ shown as 1.00 (pano_lens.js lensCurveBent) is a pinhole for them: the view of the same shot at κ 1.
+        const bent = !!view.lens && lensCurveBent(view.lens.curve);
+        const hit = view.lens && !bent ? cameraFrameView({ shot: { ...shot, curve: 1 }, ...fit }) : view;
+        return {
+          camera: hit.camera, drawCamera: view.camera, x: view.rect.x, y: view.rect.y, width: view.rect.w, height: view.rect.h,
+          lens: view.lens, hitLens: bent ? view.lens : null, shot: view.shot,
+        };
       }
     }
-    return { camera: stageCamera(shownPose(), size.width, size.height, camera.bound()), x: 0, y: 0, width: size.width, height: size.height, lens: null, shot: null };
+    return { camera: stageCamera(shownPose(), size.width, size.height, camera.bound()), x: 0, y: 0, width: size.width, height: size.height, lens: null, hitLens: null, shot: null };
   }
 
   // The 3D tab's view as it shows: the moved view, or with `follow` the view that follows it.
@@ -237,7 +249,7 @@ export function createStage({
   // its objects are still selected by a press (pickView()).
   function objectsOn() {
     const mode = viewMode();
-    return !!objects && (mode === "space" || (mode === "frame" && !viewport().lens));
+    return !!objects && (mode === "space" || (mode === "frame" && !viewport().hitLens));
   }
 
   // A painting tool is chosen and the stage paints (the 3D tab, once the view is ready).
@@ -260,11 +272,12 @@ export function createStage({
   }
 
   // The viewpoint the stage's operations move now, or null where nothing moves (Panorama mode, a locked Camera, a
-  // read-only editor, a frame not laid out yet).
+  // read-only editor, a frame not laid out yet, and an object's drag in the Frame view: both would write the state as
+  // one gesture).
   function navCamera() {
     const mode = viewMode();
     if (mode === "space") return camera;
-    if (mode !== "frame" || !cameraTab.movable()) return null;
+    if (mode !== "frame" || !cameraTab.movable() || drag?.action === "object") return null;
     const frame = cameraTab.frame();
     if (!(frame?.width > 0 && frame?.height > 0)) return null;
     syncFrameCamera(cameraTab.shot(), frame);
@@ -327,7 +340,9 @@ export function createStage({
       keysCamera = navCamera();
       keysCamera?.beginKeys();
     }
-    if (motion && keysCamera) moved(keysCamera, keysCamera.keys(motion.direction, motion.seconds, motion.fast), "keys");
+    // An object's drag in the Frame view holds the state's gesture: the Camera waits until it ends.
+    const keysHeld = !!frameCamera && keysCamera === frameCamera && drag?.action === "object";
+    if (motion && keysCamera && !keysHeld) moved(keysCamera, keysCamera.keys(motion.direction, motion.seconds, motion.fast), "keys");
     if (drag?.action === "joystick" && seconds > 0 && drag.camera) moved(drag.camera, drag.camera.joystick(drag.offset, seconds), "drag");
     if (follow) {
       const coasted = follow.step(seconds, camera);
@@ -488,7 +503,7 @@ export function createStage({
       lensKind = lens?.kind ?? null;
     }
     editorView.render(stageRenderInput({
-      camera: view.camera,
+      camera: view.drawCamera ?? view.camera,
       canvasWidth: canvas.width,
       canvasHeight: canvas.height,
       background: background(),
@@ -611,7 +626,7 @@ export function createStage({
   function pickView(point) {
     const view = viewport();
     const { x, y } = local(point, view);
-    if (view.lens) return lensPickView(view, x, y);
+    if (view.hitLens) return lensPickView({ camera: view.camera, lens: view.hitLens }, x, y);
     return { camera: view.camera, x, y, width: view.width, height: view.height };
   }
 
@@ -628,8 +643,8 @@ export function createStage({
   // lensPinholePoint), or null where it takes none; elsewhere the point itself.
   function panPoint(point) {
     const view = viewport();
-    if (!view.lens) return point;
-    const at = lensPinholePoint(view.lens, point.x - view.x, point.y - view.y);
+    if (!view.hitLens) return point;
+    const at = lensPinholePoint(view.hitLens, point.x - view.x, point.y - view.y);
     return at && { x: at.x + view.x, y: at.y + view.y };
   }
 
@@ -765,7 +780,7 @@ export function createStage({
   // A left press on the objects (stage_objects.js press): in the view's box, or through a lens Camera's cube face.
   function pressObject(point) {
     const view = viewport();
-    if (!view.lens) return objects.press(local(point, view));
+    if (!view.hitLens) return objects.press(local(point, view));
     const at = pickView(point);
     return at ? objects.press({ x: at.x, y: at.y }, { camera: at.camera, width: at.width, height: at.height }) : null;
   }
@@ -792,11 +807,12 @@ export function createStage({
       requestDraw();
       return;
     }
-    // In the Camera tab a press on an object selects it, and the drag still moves the Camera (docs/space-and-view.md
-    // "Frame 表示"); a press on nothing lets the selection go on its click.
+    // The selected object's gizmo, handles and body take the press, in the Camera tab too; there a press on another
+    // object selects it and its drag moves the Camera (`passes`, docs/space-and-view.md "Frame 表示"). A press on
+    // nothing lets the selection go on its click.
     let pressedObject = false;
     let handler = plainLeft && objects && editorView.ready ? pressObject(point) : null;
-    if (handler && viewMode() !== "space") {
+    if (handler?.passes) {
       handler.end();
       handler = null;
       pressedObject = true;
@@ -805,7 +821,10 @@ export function createStage({
       event.preventDefault();
       canvas.setPointerCapture?.(event.pointerId);
       objects.leave();
-      drag = { action: "object", pointerId: event.pointerId, last: point, start: point, offset: 0, knob: null, handler, moved: false };
+      // A Frame view's change still waiting (a wheel run) is one Undo step before the object's edit.
+      if (viewMode() === "frame") commitFrame();
+      const at = local(point);
+      drag = { action: "object", pointerId: event.pointerId, last: at, start: at, offset: 0, knob: null, handler, moved: false };
       syncUi();
       requestDraw();
       return;
