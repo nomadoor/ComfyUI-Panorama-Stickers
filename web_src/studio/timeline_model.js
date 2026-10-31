@@ -29,7 +29,7 @@ import { sceneStickerLabel } from "../pano_editor_state.js";
 import { paintObjectRow } from "../pano_paint_objects.js";
 import { portMediaFrames } from "../pano_port_media.js";
 import { defaultClip } from "../pano_scene_state.js";
-import { FRAME_EPSILON } from "../pano_scene_eval.js";
+import { FRAME_EPSILON, clipOrigin } from "../pano_scene_eval.js";
 import {
   BACKGROUND_ROW,
   hasPainting,
@@ -65,7 +65,7 @@ export function spanOf(ctx, openClip = null) {
   return timelineSpan(ctx.state, { ...(ctx.media || {}), camera: true, openClip });
 }
 
-const clipOffset = (owner) => (owner?.clip ? owner.clip.start - owner.clip.in : 0);
+const clipOffset = (owner) => (owner?.clip ? clipOrigin(owner.clip) : 0);
 
 // Every row of the Timeline as an entry: { id, kind, owner, sceneState, layer, offset, label, icon }, the node's own
 // (`own`) and per upstream layer (`groups`). `kind` is background, camera, sticker, painting or scene; `owner` holds

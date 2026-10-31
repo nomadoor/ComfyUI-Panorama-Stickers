@@ -7,7 +7,7 @@ import { ICON } from "../icons.js";
 import { CAMERA_ASPECT_MAX, CAMERA_ASPECT_MIN, WORLD_MIN_SCALE, skyStickerVfov, stickerVfovFromAspect } from "../pano_editor_state.js";
 import { NEW_STICKER_HFOV } from "../pano_space.js";
 import { LENS_CURVE_DIGITS, LENS_CURVE_MAX, LENS_CURVE_MIN, lensFovLimit } from "../pano_lens.js";
-import { FRAME_EPSILON, evaluateCamera, evaluateLane, evaluateSticker } from "../pano_scene_eval.js";
+import { FRAME_EPSILON, clipFrame, evaluateCamera, evaluateLane, evaluateSticker } from "../pano_scene_eval.js";
 import {
   ANIMATION_DEFAULT,
   ANIMATION_SPEED_MAX,
@@ -83,7 +83,7 @@ function laneDefault(owner, name) {
 
 // The frame of an owner's own time base at a Timeline frame: a Sticker's material starts at start - in.
 export function ownerFrame(owner, playhead) {
-  return owner.clip ? playhead - (owner.clip.start - owner.clip.in) : playhead;
+  return owner.clip ? clipFrame(owner.clip, playhead) : playhead;
 }
 
 // The Keyframe dot of a row over the Lanes `names` at the owner's frame: "none", "has" or "now".
