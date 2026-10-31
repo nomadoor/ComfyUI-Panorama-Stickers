@@ -6,8 +6,9 @@ import { BACKGROUND_INPUT_NAMES, setNodeOutputLookup } from "../web_src/pano_pre
 
 // The read profiles of pano_comfy_media.js: how the old editor and the new UI ("editor"), the node surfaces of
 // pano_preview_runtime.js ("nodeSurface") and the Preview node's runtime pano_preview_previewnode.js ("previewNode")
-// read ComfyUI's results. These pin what each reader did before its copy moved here; where the profiles differ is an
-// owner question (handoff refactor comfymedia D1-D8), not a choice of these tests.
+// read ComfyUI's results. These pin what each reader did before its copy moved here. Where the profiles differ (an id
+// ending in ":", finding a result by a key that names the node, storage before type in /view, a trimmed filename, a
+// tuple of entries) the owner has not decided which is right yet; these tests keep each as it is, they do not choose.
 
 const api = { apiURL: (route) => `/api${route}` };
 const adapter = (read, app = { nodeOutputs: {} }) => createComfyMediaAdapter({ app, api, read });

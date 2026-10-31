@@ -108,7 +108,8 @@ try {
     node.getInputLink = (slot) => (slot === 0 ? link : null);
     node.isInputConnected = (slot) => slot === 0;
     node.getInputNode = (slot) => (slot === 0 ? origin : null);
-    // storage differs from type: the Preview node reads storage first (handoff refactor comfymedia D3).
+    // storage differs from type: the Preview node reads /view's type from storage first, the editor reads type only
+    // (aligning the two is an open owner decision; docs/editor-architecture.md "ComfyUI の実行結果を読む").
     app.nodeOutputs = { 22: { images: [{ filename: "erp.png", subfolder: "pano", type: "temp", storage: "output" }] } };
   }
   if (QUERY.has("video")) {

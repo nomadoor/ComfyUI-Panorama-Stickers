@@ -288,7 +288,9 @@ test("the playhead revision adds a VIDEO's time, readyState and pause to its rev
   assert.equal(mediaPlayheadRevisionToken(null), "");
 }));
 
-// The node surfaces' readiness (docs/comfymedia: differs from isDecodedImageReady only for media they never get).
+// The node surfaces' readiness. It differs from isDecodedImageReady only for media the node surfaces never pass: an
+// image without a height, and anything that is neither an image, a VIDEO nor a canvas, which needs `complete` here.
+// Whether to keep one rule is an open owner decision.
 test("renderable media: a sized canvas, a VIDEO with a frame, or a complete image with a width", () => withElements(() => {
   const canvas = new FakeCanvas();
   Object.assign(canvas, { width: 4, height: 2 });

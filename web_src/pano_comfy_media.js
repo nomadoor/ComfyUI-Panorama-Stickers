@@ -7,8 +7,10 @@ import {
 } from "./pano_preview_video.js";
 import { mediaCache } from "./pano_node_bridge.js";
 
-// How a reader reads ComfyUI's results. Each flag is one place where the readers read differently today
-// (handoff refactor comfymedia D1-D5); unifying one removes its flag. Callers name a profile, they do not compose flags.
+// How a reader reads ComfyUI's results (the rule's owner: docs/editor-architecture.md, the owner-table row
+// "ComfyUI の実行結果を読む"). Each flag is one place where the readers read differently today, kept as it was; whether
+// to align each one is an open owner decision, and aligning one removes its flag. Callers name a profile, they do not
+// compose flags.
 // - editor: the old editor and the new UI (Studio editor, Preview window).
 // - nodeSurface: the legacy Stickers / Cutout and Panorama Studio node surfaces (pano_preview_runtime.js).
 // - previewNode: the Preview node's IMAGE / VIDEO and the legacy Panorama Preview (pano_preview_previewnode.js).
