@@ -4,6 +4,7 @@
 // it (pano_video_playback.js createVideoPlayback), the still of its last confirmed frame, and what the views draw of it.
 // Both editors use it: the old one (editor/media_session.js, which adds the legacy transport and its filmstrip) and
 // the new one (studio/editor.js).
+import { BACKGROUND_UI_KEYS } from "./pano_background_choice.js";
 import { isPanoramaPreviewNodeName } from "./pano_preview_identity.js";
 import { createVideoPlayback } from "./pano_video_playback.js";
 
@@ -12,11 +13,13 @@ const HAVE_CURRENT_DATA = 2;
 // The keys of the node's result ({ videoKey, metaKey }) that hold the background VIDEO an editor shows: the
 // Preview's own, an upstream Scene's background (`upstream`, pano_upstream.js upstreamBackgroundOf), or the editor
 // MP4 of the Stickers / Cutout / Panorama Studio background input. `nodeName` is the node's class; `type` the editor's.
+// The keys are pano_background_choice.js BACKGROUND_UI_KEYS (the old editor asks here).
 export function backgroundVideoKeys({ nodeName = "", upstream = null, type = "stickers" } = {}) {
-  if (isPanoramaPreviewNodeName(nodeName)) return { videoKey: "pano_videos", metaKey: "pano_video_meta" };
+  const { preview, studio } = BACKGROUND_UI_KEYS;
+  if (isPanoramaPreviewNodeName(nodeName)) return { videoKey: preview.video, metaKey: preview.meta };
   if (upstream) return { videoKey: upstream.videoKey, metaKey: upstream.metaKey };
-  if (type === "stickers" || type === "cutout") return { videoKey: "pano_input_videos", metaKey: "pano_input_video_meta" };
-  return { videoKey: "pano_videos", metaKey: "pano_video_meta" };
+  if (type === "stickers" || type === "cutout") return { videoKey: studio.video, metaKey: studio.meta };
+  return { videoKey: preview.video, metaKey: preview.meta };
 }
 
 // The meta entry of a VIDEO in a result's `ui` value (a list of one, or the entry itself), or null.

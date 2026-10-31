@@ -5,6 +5,7 @@
 // surfaceTimelineMedia with pano_node_playback.js backgroundShows, pano_scene_viewer.js backgroundAt); the browser
 // scenes named in each test pin the same behaviour where it is drawn.
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
@@ -46,9 +47,9 @@ function choose(caller, { ui = {}, widgets = STUDIO_WIDGETS, stale = [], ownLink
   return chooseBackground(caller, { uiList: uiListOf(ui), current: currentOf(stale), ownLinked, scene, widget: widgetsOf(widgets), clip, fps }, { colorBackground });
 }
 
-test("the keys are the run result's (node_runtime.py PREVIEW_UI_KEYS, nodes.py _upstream_ui)", () => {
-  assert.deepEqual(BACKGROUND_UI_KEYS.studio, { image: "pano_input_images", video: "pano_input_videos", meta: "pano_input_video_meta" });
-  assert.deepEqual(BACKGROUND_UI_KEYS.preview, { image: "pano_input_images", video: "pano_videos", meta: "pano_video_meta" });
+test("the keys are the run result's: the table Python is checked against (tests/fixtures/background_ui_keys.json)", () => {
+  const table = JSON.parse(readFileSync(new URL("./fixtures/background_ui_keys.json", import.meta.url), "utf8"));
+  for (const name of ["studio", "preview", "upstream"]) assert.deepEqual({ ...BACKGROUND_UI_KEYS[name] }, table[name], name);
   for (const name of ["image", "video", "meta"]) {
     assert.equal(BACKGROUND_UI_KEYS.upstream[name], BACKGROUND_UI_KEYS.studio[name].replace("pano_", "pano_upstream_"));
   }

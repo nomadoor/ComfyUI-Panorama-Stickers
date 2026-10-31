@@ -4,10 +4,11 @@
 // by another node is), then the file its linked input loads directly (pano_comfy_media.js, before a run), also when
 // the result's picture does not load. The result is read only while it is current for the input
 // (pano_preview_video.js isNodeOutputMediaCurrent).
+import { BACKGROUND_UI_KEYS } from "../pano_background_choice.js";
 import { isNodeOutputMediaCurrent } from "../pano_preview_video.js";
 
-// The key of the node's own result that has the picture its input got (node_runtime.py PREVIEW_UI_KEYS "image").
-export const NODE_INPUT_IMAGE_KEY = "pano_input_images";
+// The key of the node's own result that has the picture its input got (pano_background_choice.js BACKGROUND_UI_KEYS).
+export const NODE_INPUT_IMAGE_KEY = BACKGROUND_UI_KEYS.studio.image;
 
 const loaded = (image) => !!image?.complete && image.naturalWidth > 0;
 
