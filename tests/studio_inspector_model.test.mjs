@@ -401,3 +401,19 @@ test("the Easing graph is square and as wide as the inspector, and shrinks to ke
   // Never negative.
   assert.equal(easingGraphSide({ width: 292, height: 200, chrome: 120 }), 0);
 });
+
+test("the Camera card's Range row shows the Camera's erp_range, 360 or 180", () => {
+  const rangeOf = (raw) => row(model(load(raw)).cards.find((card) => card.kind === "camera"), "range").value;
+  assert.equal(rangeOf({ camera: { projection: "erp" } }), 360);
+  assert.equal(rangeOf({ camera: { projection: "erp", erp_range: 180 } }), 180);
+  assert.equal(rangeOf({ camera: { projection: "erp", erp_range: 360 } }), 360);
+});
+
+test("an upstream element's row shows its card in the inspector (found in its layer)", () => {
+  const state = load();
+  const layers = [{ sceneState: load({ id: "up", stickers: [world("st_1")] }), ui: {} }];
+  const upstream = upstreamWorkingLayers(layers, [], state.timeline.fps);
+  const id = upstream[0].sceneState.stickers[0].id;
+  const m = model(state, { upstream, selection: { ids: [id] } });
+  assert.deepEqual(m.cards.map((card) => card.target?.id), [id], "an upstream element's row shows its card");
+});

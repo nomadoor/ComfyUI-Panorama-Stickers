@@ -18,7 +18,7 @@ import { deletePaintObjects, numberSkyOrder, paintObjectOf, paintObjectRow, rest
 import { syncPaintGroups } from "../pano_paint_strokes.js";
 import { normalizePaintingState } from "../pano_paint_types.js";
 import { cameraToView as moveCameraToView } from "./camera_ui.js";
-import { defaultCamera } from "./defaults.js";
+import { editableCamera } from "./camera_state.js";
 import { applyInspectorEdit } from "./inspector_actions.js";
 import { ROW_LANES } from "./inspector_model.js";
 import { BACKGROUND_ROW, PAINTING_ROW } from "../pano_timeline.js";
@@ -298,8 +298,7 @@ export function createStudioSession({ state: opening, readOnly = false }) {
   function editCamera(edit) {
     if (readOnly || gestureBase) return result(false);
     const draft = structuredClone(state);
-    draft.camera ??= defaultCamera();
-    if (!edit(draft.camera)) return result(false);
+    if (!edit(editableCamera(draft))) return result(false);
     state = draft;
     record();
     return result(true, { history: true });

@@ -5,8 +5,8 @@
 import { getCutoutCameraParams, shotCurve } from "../pano_cutout_view_math.js";
 import { frameViewContext, placeDirection, screenRenderSize, shotCamera } from "../pano_editor_view.js";
 import { lensAngle, lensCurveBent, lensFilm, lensPickWindow, withLensImage } from "../pano_lens.js";
-import { evaluateCamera } from "../pano_scene_eval.js";
 import { DEFAULT_VIEW_HFOV, placedCamera, spaceCamera } from "../pano_space.js";
+import { cameraAt } from "./camera_state.js";
 import { groundGrid } from "./grid.js";
 
 const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
@@ -16,8 +16,8 @@ const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 // Reset View"): the Camera's position and yaw there, looking level (pitch 0). A state without a Camera (an older
 // one) has the default Camera, at the World's origin with yaw 0.
 export function outputView(state, frame) {
-  const value = state.camera ? evaluateCamera(state.camera, frame) : null;
-  return { position: value ? [...value.position] : [0, 0, 0], yaw_deg: value?.yaw_deg ?? 0, pitch_deg: 0 };
+  const value = cameraAt(state, frame);
+  return { position: [...value.position], yaw_deg: value.yaw_deg, pitch_deg: 0 };
 }
 
 // The stage draws STAGE_RENDER_SCALE times the device pixels and the browser shrinks the picture, so the edges of the

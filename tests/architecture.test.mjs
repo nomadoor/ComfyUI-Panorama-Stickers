@@ -127,12 +127,16 @@ test("three.js and Spark are not reached from web_src/main.js through static imp
   assert.deepEqual(eager, []);
 });
 
-// docs/editor-architecture.md "Paint layers": the editor, the new UI, the node surface and the upstream Scene's
-// layers order paint with the one skyPaintLayers of pano_paint_layers.js.
-test("every place that lays paint on the Sky imports skyPaintLayers from pano_paint_layers.js", () => {
-  for (const file of ["editor/paint_layers.js", "studio/paint.js", "pano_surface_paint.js", "pano_upstream_layers.js"]) {
-    const from = IMPORTS.get(file).find(({ names }) => names.includes("skyPaintLayers"));
-    assert.equal(from?.target, "pano_paint_layers.js", file);
+// docs/editor-architecture.md "Paint layers": the old editor, the new UI, the node surface and the upstream Scene's
+// layers show paint through createPaintDisplay (pano_paint_display.js), which alone orders it with the one
+// skyPaintLayers of pano_paint_layers.js.
+const SHOWS_PAINT = ["editor/paint_layers.js", "studio/paint.js", "pano_surface_paint.js", "pano_upstream_layers.js"];
+test("every place that lays paint on the Sky does it through createPaintDisplay, the one caller of skyPaintLayers", () => {
+  const callers = [...IMPORTS].filter(([, imports]) => imports.some(({ names, target }) => target === "pano_paint_layers.js" && names.includes("skyPaintLayers"))).map(([file]) => file).sort();
+  assert.deepEqual(callers, ["pano_paint_display.js"]);
+  for (const file of SHOWS_PAINT) {
+    const from = IMPORTS.get(file).find(({ names }) => names.includes("createPaintDisplay"));
+    assert.equal(from?.target, "pano_paint_display.js", file);
   }
 });
 

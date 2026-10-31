@@ -9,10 +9,10 @@ import {
   jumpFrames,
   keysInRange,
   timecode,
-  timelineCamera,
   xToFrame,
   xToFrameExact,
 } from "../web_src/studio/timeline_model.js";
+import { cameraOf } from "../web_src/studio/camera_state.js";
 import { ctxOf, studioState, upstreamLayer } from "./studio_timeline_fixtures.mjs";
 
 const view = (ctx, options = {}) => buildStudioTimeline(ctx, { selection: { row: null, keys: [] }, playhead: 0, ...options });
@@ -40,7 +40,7 @@ test("a state whose camera is null shows the Camera row as the default Camera, w
   assert.deepEqual(camera.pins, []);
   assert.equal(camera.dot.state, "none");
   assert.equal(camera.eye.icon, ICON.eye);
-  assert.equal(timelineCamera(state).position.keyframes.length, 0);
+  assert.equal(cameraOf(state).position.keyframes.length, 0);
 });
 
 test("a row's pins are at Timeline frames, half where only some of its Lanes have a Keyframe", () => {

@@ -7,6 +7,7 @@ import {
   lensAngle,
   lensDirectionFilm,
   lensFaceCoordinates,
+  lensFilm,
   lensFilmDirection,
   lensFovLimit,
   lensPickWindow,
@@ -220,4 +221,15 @@ test("straight behind the axis is no film point: at κ under 0.5 it would be the
   // Just off straight behind it is a point far out.
   const near = lensDirectionFilm([1e-6, 0, 1], 0.4);
   assert.ok(near && near.x > 1);
+});
+
+// The old UI's Frame view (web_src/editor/frame_view.js pickFrame) takes a canvas point p over its rect to the film the
+// same way as lensFilm of the point in the rect, to the last bit.
+test("lensFilm of a point in a rect is the old Frame view's film of the canvas point", () => {
+  const lens = { curve: 0.37, focalPx: 411.3, centerX: 317.7, centerY: 181.9 };
+  const rect = { x: 12.3, y: 45.6 };
+  for (const p of [{ x: 0, y: 0 }, { x: 330.01, y: 227.53 }, { x: 999.9, y: 1.1 }, { x: 12.3, y: 45.6 }]) {
+    const old = { x: (p.x - rect.x - lens.centerX) / lens.focalPx, y: (lens.centerY - (p.y - rect.y)) / lens.focalPx };
+    assert.deepEqual(lensFilm(lens, p.x - rect.x, p.y - rect.y), old);
+  }
 });

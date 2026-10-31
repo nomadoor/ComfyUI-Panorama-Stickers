@@ -270,3 +270,8 @@ test("the Frame view's hits go by the lens picture only for a κ not shown as 1.
   assert.equal(bent.objectCamera.lensImage, bent.view.lens);
   assert.equal(cameraFrameHit(shotAt(1), fit).objectCamera.lensImage, undefined);
 });
+
+test("a state whose Camera is null has the output view of the default Camera: the origin, yaw 0, level", () => {
+  assert.deepEqual(outputView({ ...loadSceneState(null), camera: null }, 0), { position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0 });
+  assert.deepEqual(outputView({ ...loadSceneState(null), camera: null }, 12.5), { position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0 });
+});

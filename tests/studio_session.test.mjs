@@ -578,3 +578,16 @@ test("Delete takes a stroke group's strokes and entry, or a raster object, as on
   session.undo();
   assert.equal(session.state.painting.raster_objects.length, 1);
 });
+
+test("the Camera button on a state whose Camera is null puts the default Camera there, in Frame mode at the view", () => {
+  const pose = { position: [1, 2, 3], yaw_deg: 30, pitch_deg: -10, roll_deg: 0, target: [0, 0, 0] };
+  const session = createStudioSession({ state: { ...load({}), camera: null } });
+  const outcome = session.cameraToView(pose, 0);
+  assert.equal(outcome.changed, true);
+  const want = load({}).camera;
+  assert.equal(session.state.camera.projection, "perspective");
+  assert.deepEqual(session.state.camera.position.value, [1, 2, 3]);
+  assert.deepEqual(session.state.camera.rotation.value, { yaw_deg: 30, pitch_deg: -10, roll_deg: 0 });
+  assert.deepEqual(session.state.camera.fov, want.fov, "the default angle of view stays");
+  assert.equal(session.state.camera.aspect, want.aspect);
+});

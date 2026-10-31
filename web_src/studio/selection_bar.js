@@ -6,6 +6,7 @@ import { sceneStickerLabel } from "../pano_editor_state.js";
 import { paintObjectOf } from "../pano_paint_objects.js";
 import { is3dFileSource } from "../pano_scene_state.js";
 import { isUpstreamSticker } from "../pano_upstream.js";
+import { findSticker } from "./row_object.js";
 
 // The gizmo's modes (pano_three_view.js createGizmo) and their keys.
 export const GIZMO_MODES = Object.freeze([
@@ -20,7 +21,8 @@ export function selectedKind(state, row) {
   if (!row) return null;
   if (row === "camera") return "camera";
   if (paintObjectOf(state, row)) return "paint";
-  const sticker = state.stickers.find((item) => item.id === row);
+  // Not in the upstream layers: an upstream element has no bar (docs/studio-ui.md "ノードの入力から来た物").
+  const sticker = findSticker(state, [], row);
   if (!sticker) return null;
   if (sticker.placement === "sky") return "sky";
   return is3dFileSource(sticker.source) || sticker.source.kind === "port" ? "world-3d" : "world-image";
@@ -78,7 +80,7 @@ export function selectionBar({ state, row, mode = "translate", readOnly = false 
       ],
     };
   }
-  const sticker = state.stickers.find((item) => item.id === row);
+  const sticker = findSticker(state, [], row);
   const locked = sticker.locked === true;
   const fromSource = sticker.source.kind === "port" || isUpstreamSticker(sticker);
   const edits = readOnly || locked;
