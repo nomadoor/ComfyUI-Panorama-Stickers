@@ -66,7 +66,8 @@ Panorama Studio（`PanoramaStudio`）のノード上の表示（node surface）�
   - Frame モード：Camera の枠の絵（`outputFrameInput`）。レンズの曲線 κ ≠ 1 の Camera はレンズの像として描く。
   - どちらも地面のグリッドは描かない（編集の印なので、出力に無い）。
 - 描く物は、エディタの Output の小窓と同じ：エディタで見える物は、ノード上でもそのまま見える（ADR 0052。持ち主の決定、2026-10-31）。
-  作り方はエディタと同じ（`web_src/studio/stage_content.js` の `stageContent`）で、表示フレームの物を描く：背景（Clip range の外と素材が
+  作り方はエディタと同じ（`web_src/studio/stage_content.js` の `stageContent`）で、表示フレームの物を描く：背景（上流の Scene の背景が
+  代わりに立つときはその画像・VIDEO。下の「表示フレームと VIDEO」。Clip range の外と素材が
   終わった先は `background_color`、背景が無いときも `background_color`。出力と同じ）、sky の Sticker とペイント（同じ表示順）、`world` の
   画像の Sticker、3D ファイルの Sticker（エディタと同じ route で読む）、`world` 入力の 3D（実行結果の `pano_scene_files`）、深度の格子
   （`kind` が `depth_grid` の列。`docs/studio-ui.md` の「ノードの入力から来た物」と同じく、入力ごとの色のプロキシの動画を表示フレームに
@@ -120,9 +121,22 @@ Timeline のフレーム（表示フレーム）の背景の VIDEO と `port` �
 - node surfaceが表示するフレーム（表示フレーム）はノードごとの一時状態で、`state_json` にも
   `node.properties` にも保存しない。最初は frame 0 で、reloadやworkflowを開き直すと frame 0 に戻る。
   再生のボタンで再生すると進み、一時停止したフレームのまま残る（下の「再生のボタン」）。
-- 背景のVIDEOは、ノードの実行結果の `pano_input_videos`（`bg_media` が2フレーム以上のとき）か、上流の
-  LoadVideoが読むファイルで、エディタと同じ候補順で選ぶ（`backgroundVideoSources`）。読めないVIDEOは次の候補へ進む。シークバーや時刻表示は出さない。
+- 自分の背景のとき：背景のVIDEOは、ノードの実行結果の `pano_input_videos`（`bg_media` が2フレーム以上のとき）か、背景の入力に
+  つないだ LoadVideoが読むファイルで、エディタと同じ候補順で選ぶ（`backgroundVideoSources`）。読めないVIDEOは次の候補へ進む。シークバーや時刻表示は出さない。
   読めなかったVIDEOのURLは、候補から一度消えたら（再実行や接続変更）もう一度試す。
+  VIDEO が無いときの背景の画像は、ノード自身の実行結果の `pano_input_images`（背景のつなぎ先が実行の時と同じ間）の最初の物を先に、
+  無ければ背景の入力につないだ先がそのまま読むファイルを読む（`pano_comfy_media.js` の `nodeSurfaceLinkedSource`）。
+- 上流の Scene の背景が代わりに立つ間（`scene` の今の実行結果に `pano_upstream_input_images` か `pano_upstream_input_videos` が
+  あるとき。何で決めるかは `docs/timeline-ui.md` の「どの背景を出すか」の行）は、エディタと同じくその背景を出す（`pano_background_choice.js`
+  の `BACKGROUND_CALLERS` の surface の `upstreamPicture`）。VIDEO の候補は実行結果の
+  `pano_upstream_input_videos` だけで、自分の `pano_input_videos` と背景の入力が読むファイルは候補にしない。VIDEO が無いときは
+  実行結果の `pano_upstream_input_images` の最初の物の画像を出す（URL はノード自身の実行結果の画像と同じく作る。`pano_comfy_media.js` の
+  `nodeSurface` の読み方）。読み込み中は背景を描かない（`backgroundAt` の `pending`）。範囲は `pano_upstream_coverage`、`bg_color` は上流の `pano_upstream_bg_color`。
+  ノード上は実行結果で決めるので、背景の入力をつなぎ直しても、実行し直すまでは上流の背景のまま出す（エディタはつながりで決める。揃えるかは持ち主が未決。`BACKGROUND_CALLERS` の `upstreamWhen`）。
+- 上流の背景の VIDEO も、自分の背景の VIDEO と同じ一本の VIDEO 要素と状態機械で表示フレームに合わせる：再生のボタンで動き
+  （下の「再生のボタン」）、音は出さず、同時に再生するのは一つのノードだけ。見えないときとエディタを開いている間の扱い（src を外す、
+  静止画を放す）も自分の背景の VIDEO と同じ（下の「見えないときとエディタを開いている間」）。上流の背景の画像は、見えないときとエディタを開いている間は放し
+  （上流の層の素材と同じ）、見えるようになると読み直す。
 - 背景のVIDEOはエディタと同じ状態機械 `pano_video_playback.js` で表示フレームに合わせ、音は出さない（muted）。
   表示フレームの背景は、そのフレームのVIDEOの静止画（最大幅2048）を描く。
 - 各フレームのStickerは共有evaluator（エディタの `workingSkyLayers` / `surfacePoseStickers` と同じ）で評価する。
