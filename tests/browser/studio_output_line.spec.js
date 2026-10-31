@@ -3,8 +3,9 @@ import { expect, test } from "@playwright/test";
 // The Output window's line of the output's shape in the new editor (tests/browser/pages/studio_camera_wired.html, a real
 // browser engine): docs/studio-ui.md "Output の小窓" (folded and open, both tabs, the node surface's line of the estimate,
 // right-aligned with the fold button at its right end, the folded width following the line with the right end fixed,
-// the open width kept whatever the mode, the height the picture's and the line's, the size's tooltip at the upper
-// limit) and docs/design.md "Output の小窓の一行", "Camera タブの Output の小窓" (ADR 0051).
+// the open width kept whatever the mode, the picture filling the open window with the line over its top edge, the whole
+// line the fold button with only its chevron answering the pointer, the size's tooltip at the upper limit) and
+// docs/design.md "Output の小窓の一行", "Camera タブの Output の小窓" (ADR 0051).
 
 function watch(page) {
   const problems = [];
@@ -53,9 +54,9 @@ async function lineOf(page) {
       glyph: box(pill.querySelector("[data-output-mode]")),
       shotBox: box(pill.querySelector("[data-output-shot]")),
       sizeBox: box(pill.querySelector("[data-output-size]")),
-      button: box(el.querySelector('[data-action="output-fold"]')),
+      button: box(pill.querySelector("[data-output-chevron]")),
       opacity: getComputedStyle(pill).opacity,
-      buttonOpacity: getComputedStyle(el.querySelector('[data-action="output-fold"]')).opacity,
+      buttonOpacity: getComputedStyle(pill.querySelector("[data-output-chevron]")).opacity,
     };
   });
 }
@@ -99,15 +100,16 @@ test("the folded width follows the line with its right end fixed, and a mode cha
   expect(Math.abs(panorama.pill.right - frame.pill.right)).toBeLessThanOrEqual(0.5);
   expect(Math.abs(panorama.button.x - frame.button.x)).toBeLessThanOrEqual(0.5);
   expect(panorama.pill.width).not.toBe(frame.pill.width);
-  // No flash: the line does not animate (nothing in it has a transition or an animation).
+  // No flash: the line does not animate (nothing in it has a transition or an animation, but the chevron's own
+  // hover and turn).
   expect(await line(page).evaluate((el) => [el, ...el.querySelectorAll("*")].every((node) => {
     const style = getComputedStyle(node);
-    return style.animationName === "none" && (style.transitionDuration === "0s" || node === el);
+    return style.animationName === "none" && (style.transitionDuration === "0s" || node === el || !!node.closest("[data-output-chevron]"));
   }))).toBe(true);
   expect(problems).toEqual([]);
 });
 
-test("open, the line heads the window: its width is kept whatever the mode, its height the picture's and the line's 32px", async ({ page }, testInfo) => {
+test("open, the picture fills the window and the line lies over its top edge: the width kept whatever the mode, the height width / ratio", async ({ page }, testInfo) => {
   const problems = await load(page, "aspect=16:9&mode=frame");
   const folded = await lineOf(page);
   await fold(page).click();
@@ -116,14 +118,25 @@ test("open, the line heads the window: its width is kept whatever the mode, its 
   const win = await rectOf(page, ".pano-studio-output-window");
   const picture = await rectOf(page, ".pano-studio-output-body");
   const open = await lineOf(page);
-  // The line stays where it was (same right end, same top), the window's top row.
+  // The line stays where it was (same right end, same vertical center), at the window's top right.
   expect(Math.abs(open.pill.right - folded.pill.right)).toBeLessThanOrEqual(0.5);
-  expect(Math.abs(open.pill.y - folded.pill.y)).toBeLessThanOrEqual(0.5);
+  expect(Math.abs(open.pill.y + open.pill.height / 2 - (folded.pill.y + folded.pill.height / 2))).toBeLessThanOrEqual(0.5);
+  expect(Math.abs(open.button.x - folded.button.x)).toBeLessThanOrEqual(0.5);
   expect(Math.abs(open.pill.right - win.right)).toBeLessThanOrEqual(0.5);
-  expect(Math.round(picture.y - win.y)).toBe(32);
-  expect(Math.round(picture.width)).toBe(Math.round(win.width));
-  expect(Math.abs(picture.height - win.width / (16 / 9))).toBeLessThanOrEqual(1);
-  expect(Math.abs(win.height - (picture.height + 32))).toBeLessThanOrEqual(0.5);
+  // No header strip: the picture is the whole window, and the line's top is inside it.
+  expect(picture).toEqual(win);
+  expect(Math.abs(win.height - win.width / (16 / 9))).toBeLessThanOrEqual(1);
+  expect(open.pill.y).toBeGreaterThanOrEqual(picture.y);
+  expect(open.pill.bottom).toBeLessThanOrEqual(picture.bottom);
+  // Over the picture the line is light, on a dark gradient fading down from the top edge.
+  const shade = await page.locator(".pano-studio-output-window").evaluate((el) => {
+    const after = getComputedStyle(el, "::after");
+    return { image: after.backgroundImage, height: parseFloat(after.height), top: after.top };
+  });
+  expect(shade.image).toMatch(/^linear-gradient\(rgba\(0, 0, 0, 0\.45\).*rgba\(0, 0, 0, 0\)\)$/);
+  expect(shade.height).toBeGreaterThanOrEqual(32);
+  expect(shade.top).toBe("0px");
+  expect(await line(page).evaluate((el) => getComputedStyle(el.querySelector("[data-output-shot]")).color)).toBe("rgb(255, 255, 255)");
   // The whole line fits the window.
   expect(open.glyph.x).toBeGreaterThanOrEqual(win.x);
   await page.screenshot({ path: testInfo.outputPath("output_line_open.png") });
@@ -134,9 +147,69 @@ test("open, the line heads the window: its width is kept whatever the mode, its 
   await page.waitForTimeout(300);
   const panorama = await rectOf(page, ".pano-studio-output-window");
   expect(panorama.width).toBe(win.width);
-  expect(Math.abs(panorama.height - (win.width / 2 + 32))).toBeLessThanOrEqual(1);
+  expect(Math.abs(panorama.height - win.width / 2)).toBeLessThanOrEqual(1);
   expect(Math.abs(panorama.right - win.right)).toBeLessThanOrEqual(0.5);
   expect(Math.abs(panorama.y - win.y)).toBeLessThanOrEqual(0.5);
+  expect(await rectOf(page, ".pano-studio-output-body")).toEqual(panorama);
+  expect(problems).toEqual([]);
+});
+
+test("in the 3D tab a press anywhere on the line opens and folds the window, and the line is one button for the keyboard (Enter)", async ({ page }) => {
+  const problems = await load(page, "aspect=16:9&mode=frame");
+  await expect(fold(page)).toHaveAttribute("aria-expanded", "false");
+  // The glyph, the name and the size all toggle it, folded and open.
+  for (const part of ["[data-output-mode]", "[data-output-shot]", "[data-output-size]", "[data-output-chevron]"]) {
+    await line(page).locator(part).click();
+    await expect(output(page)).not.toHaveClass(/is-collapsed/);
+    await expect(fold(page)).toHaveAttribute("aria-expanded", "true");
+    await page.waitForTimeout(250);
+    await line(page).locator(part).click();
+    await expect(output(page)).toHaveClass(/is-collapsed/);
+    await expect(fold(page)).toHaveAttribute("aria-expanded", "false");
+    await page.waitForTimeout(250);
+  }
+  // The keyboard: one button, Enter toggles it (Space is the editor's Play / pause on every button, studio/shortcuts.js).
+  expect(await fold(page).evaluate((el) => el.tagName)).toBe("BUTTON");
+  expect(await page.locator('[data-region="output"] button').count()).toBe(1);
+  await fold(page).focus();
+  await page.keyboard.press("Enter");
+  await expect(fold(page)).toHaveAttribute("aria-expanded", "true");
+  await page.keyboard.press("Enter");
+  await expect(fold(page)).toHaveAttribute("aria-expanded", "false");
+  expect(problems).toEqual([]);
+});
+
+test("hovering the line changes only the chevron, never the line's own look", async ({ page }) => {
+  const problems = await load(page, "aspect=16:9&mode=frame");
+  const looks = () => line(page).evaluate((el) => {
+    const look = (node) => {
+      const style = getComputedStyle(node);
+      return [style.backgroundColor, style.color, style.opacity, style.translate, style.boxShadow, style.outlineStyle].join("|");
+    };
+    const chevron = el.querySelector("[data-output-chevron]");
+    return {
+      line: look(el),
+      fill: getComputedStyle(el, "::before").backgroundColor + getComputedStyle(el, "::before").opacity,
+      parts: [...el.children].filter((node) => node !== chevron).map(look),
+      chevron: look(chevron),
+    };
+  });
+  for (const state of ["folded", "open"]) {
+    if (state === "open") {
+      await fold(page).click();
+      await expect(output(page)).not.toHaveClass(/is-collapsed/);
+    }
+    await page.mouse.move(5, 5);
+    await page.waitForTimeout(300);
+    const before = await looks();
+    await line(page).locator("[data-output-shot]").hover();
+    await page.waitForTimeout(300);
+    const over = await looks();
+    expect(over.line).toBe(before.line);
+    expect(over.fill).toBe(before.fill);
+    expect(over.parts).toEqual(before.parts);
+    expect(over.chevron).not.toBe(before.chevron);
+  }
   expect(problems).toEqual([]);
 });
 
@@ -155,11 +228,21 @@ for (const query of ["aspect=16:9&mode=frame", "aspect=16:9&mode=panorama"]) {
     expect(after.buttonOpacity).toBe("0.4");
     await expect(fold(page)).toHaveAttribute("aria-disabled", "true");
     await expect(fold(page)).toHaveAttribute("data-tip", "Not available in the Camera view");
-    await fold(page).hover();
+    // The tooltip is on the whole line; a hover lights nothing, the chevron stays faint and still.
+    await line(page).locator("[data-output-shot]").hover();
     await page.waitForTimeout(300);
-    expect(await fold(page).evaluate((el) => [getComputedStyle(el).backgroundColor, getComputedStyle(el).opacity])).toEqual(["rgba(0, 0, 0, 0)", "0.4"]);
+    expect(await fold(page).evaluate((el) => {
+      const chevron = getComputedStyle(el.querySelector("[data-output-chevron]"));
+      return [getComputedStyle(el).backgroundColor, getComputedStyle(el).opacity, chevron.opacity, chevron.translate];
+    })).toEqual(["rgba(0, 0, 0, 0)", "1", "0.4", "none"]);
+    await expect(page.locator(".pano-studio-tip.is-shown")).toHaveText("Not available in the Camera view", { timeout: 5_000 });
+    // A press anywhere on the line, or the keyboard, does nothing.
+    await line(page).locator("[data-output-shot]").click({ force: true });
     await fold(page).click({ force: true });
+    await fold(page).focus();
+    await page.keyboard.press("Enter");
     await expect(output(page)).toHaveClass(/is-collapsed/);
+    await expect(fold(page)).toHaveAttribute("aria-expanded", "false");
     const stage = await rectOf(page, '[data-region="stage"]');
     await page.screenshot({ path: testInfo.outputPath("output_line_camera_tab.png"), clip: { x: stage.right - 420, y: stage.y, width: 420, height: 80 } });
     expect(problems).toEqual([]);

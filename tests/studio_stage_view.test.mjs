@@ -132,17 +132,18 @@ test("the timeline keeps its least height and leaves the stage its least height;
   assert.equal(loadTimelineHeight(null), TIMELINE_DEFAULT_HEIGHT);
 });
 
-test("the Output window's picture keeps the output's ratio within its least and largest width under the 32px line, and its fold, per browser", () => {
-  // Open: as wide as the picture, as high as the picture and the line (docs/studio-ui.md "Output の小窓").
+test("the Output window's picture fills it at the output's ratio within its least and largest width, and its fold, per browser", () => {
+  // The line (the folded pill, and open, laid over the picture's top) is 32px high (docs/design.md "Output の小窓の一行").
   assert.equal(OUTPUT_LINE_HEIGHT, 32);
-  assert.deepEqual(outputWindowSize(300, 2), { width: 300, height: 182, picture: { width: 300, height: 150 } });
-  assert.deepEqual(outputWindowSize(300, 16 / 9), { width: 300, height: 201, picture: { width: 300, height: 169 } });
+  // Open: the picture fills the window, no header row above it (docs/studio-ui.md "Output の小窓").
+  assert.deepEqual(outputWindowSize(300, 2), { width: 300, height: 150 });
+  assert.deepEqual(outputWindowSize(300, 16 / 9), { width: 300, height: 169 });
   // The width kept does not change with the mode or the ratio; only the height does.
   assert.equal(outputWindowSize(300, 9 / 16).width, 300);
-  assert.equal(outputWindowSize(300, 9 / 16).height, 533 + 32);
+  assert.equal(outputWindowSize(300, 9 / 16).height, 533);
   // The least and largest sizes are the picture's.
   assert.equal(outputWindowSize(1, 2).width, OUTPUT_MIN_WIDTH);
-  assert.equal(outputWindowSize(1, 2).picture.height, OUTPUT_MIN_WIDTH / 2);
+  assert.equal(outputWindowSize(1, 2).height, OUTPUT_MIN_WIDTH / 2);
   assert.equal(outputWindowSize(1e6, 2).width, OUTPUT_MAX_WIDTH);
   // A width kept before the least grew (168px) opens at the least (256px, docs/design.md "Output の小窓の最小と最大の大きさ").
   assert.equal(OUTPUT_MIN_WIDTH, 256);

@@ -6,25 +6,26 @@ import SvgIcon from "../shared/SvgIcon.vue";
 
 // The Output window at the top right of the stage (docs/studio-ui.md "Output の小窓"; looks: docs/design.md "Output の
 // 小窓の一行"): the line of the output's shape (how the Camera shoots and the output size, `line`: pano_studio_status.js
-// studioNodeStatus, the node surface's line) right-aligned with the fold button at its right end, folded or open, and,
-// open, the Camera's output under it. Its corner at the bottom left is dragged for its width, which is kept per browser
-// with its fold (studio/layout.js); the picture's height follows the output's ratio. What it shows comes in the
-// `default` slot (the editor puts the canvases of the live picture there); `open` says, when it mounts and on each fold,
-// whether it is open, so the picture is drawn only then. While `suspended` (the Camera tab) it shows folded with its
-// line as in the 3D tab, only its fold button faint and inert, and it reports closed; what the viewer chose and the
-// browser keeps is left as it was.
+// studioNodeStatus, the node surface's line) right-aligned with the fold chevron at its right end, folded or open, and,
+// open, the Camera's output filling the window with the line laid over its top edge. The whole line is the one fold
+// button. Its corner at the bottom left is dragged for its width, which is kept per browser with its fold
+// (studio/layout.js); the picture's height follows the output's ratio. What it shows comes in the `default` slot (the
+// editor puts the canvases of the live picture there); `open` says, when it mounts and on each fold, whether it is
+// open, so the picture is drawn only then. While `suspended` (the Camera tab) it shows folded with its line as in the
+// 3D tab, only its chevron faint and the line inert, and it reports closed; what the viewer chose and the browser keeps
+// is left as it was.
 //
 // Opening and folding animate the size and the opacity (docs/design.md "動き"): the window stays in the page, folded
 // too, at its open size, and shrinks to the folded pill by a transform anchored at its top right, so what it shows
 // is not drawn again while it moves; the pill's fill fades in its place. The line itself stays where it is and never
-// fades: its right end, the fold button, does not move, and a new line is shown as it is (no flash).
+// fades: its right end, the chevron, does not move, and a new line is shown as it is (no flash).
 const props = defineProps({
   // The output's width / height.
   ratio: { type: Number, default: 2 },
   // The line: { mode: "panorama" | "frame", shot, size, cap } (pano_studio_status.js studioNodeStatus).
   line: { type: Object, default: () => ({ mode: "panorama", shot: "", size: "", cap: "" }) },
   storage: { type: Object, default: null },
-  // The Camera tab: folded, its fold button faint and inert, the kept state untouched.
+  // The Camera tab: folded, its chevron faint and the line inert, the kept state untouched.
   suspended: { type: Boolean, default: false },
   suspendedTip: { type: String, default: "" },
 });
@@ -60,9 +61,10 @@ const windowStyle = computed(() => ({
   "--studio-output-fold-x": String(Math.min(1, pillWidth.value / size.value.width)),
   "--studio-output-fold-y": String(Math.min(1, OUTPUT_LINE_HEIGHT / size.value.height)),
 }));
-const pictureStyle = computed(() => ({ height: `${size.value.picture.height}px` }));
 
 const foldTip = computed(() => (shown.value.foldable ? (shown.value.folded ? "Show output" : "Hide output") : props.suspendedTip || "Output"));
+// The line is read out after what the button does.
+const foldLabel = computed(() => [foldTip.value, props.line.shot, props.line.size].filter(Boolean).join(", "));
 
 function keep() {
   saveOutputWindow(props.storage, { width: size.value.width, collapsed: collapsed.value });
@@ -103,7 +105,7 @@ function onGripUp() {
     data-region="output"
   >
     <div class="pano-studio-output-window" :style="windowStyle" :inert="shown.folded || null" :aria-hidden="shown.folded ? 'true' : null">
-      <div class="pano-studio-output-body" :style="pictureStyle">
+      <div class="pano-studio-output-body">
         <slot />
       </div>
       <span
@@ -116,7 +118,19 @@ function onGripUp() {
         @pointercancel="onGripUp"
       />
     </div>
-    <div ref="pill" class="pano-studio-output-pill" data-output-line>
+    <!-- The whole line is the fold button (owner, 2026-10-31); only its chevron answers the pointer. -->
+    <button
+      ref="pill"
+      type="button"
+      class="pano-studio-output-pill"
+      :aria-label="foldLabel"
+      :data-tip="foldTip"
+      :aria-expanded="String(!shown.folded)"
+      :aria-disabled="shown.foldable ? null : 'true'"
+      data-output-line
+      data-action="output-fold"
+      @click="fold"
+    >
       <!-- The mode's glyph (the mock camera-output-1.html): a 2:1 equirect grid, or a framed shot. -->
       <svg v-if="line.mode === 'panorama'" class="pano-studio-output-glyph" viewBox="0 0 20 10" aria-hidden="true" data-output-mode="panorama">
         <rect x=".75" y=".75" width="18.5" height="8.5" rx="1" />
@@ -127,19 +141,9 @@ function onGripUp() {
       </svg>
       <span class="pano-studio-output-shot" data-output-shot>{{ line.shot }}</span>
       <span class="pano-studio-output-size" data-output-size :data-tip="line.cap || null">{{ line.size }}</span>
-    </div>
-    <button
-      type="button"
-      class="pano-studio-icon-btn is-sm pano-studio-output-fold"
-      :class="{ 'is-folded': shown.folded }"
-      :aria-label="foldTip"
-      :data-tip="foldTip"
-      :aria-expanded="String(!shown.folded)"
-      :aria-disabled="shown.foldable ? null : 'true'"
-      data-action="output-fold"
-      @click="fold"
-    >
-      <SvgIcon :icon="ICON.chevron" />
+      <span class="pano-studio-output-chevron" :class="{ 'is-folded': shown.folded }" aria-hidden="true" data-output-chevron>
+        <SvgIcon :icon="ICON.chevron" />
+      </span>
     </button>
   </div>
 </template>
