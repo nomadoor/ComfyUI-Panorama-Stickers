@@ -150,9 +150,9 @@
 
 /* --- Panorama Studio's node surface (PanoStudioNodeSurface.vue; docs/studio-node-surface.md "表示の構成", values
    docs/design.md "Panorama Studio のノード上の表示"). The canvas under it draws the Camera's output picture; the overlay
-   places the Open Studio button and the line under the picture where pano_studio_surface.js lays them out (inline
-   left / top / bottom / width), over the node's own background (the surface is not filled: STUDIO_SURFACE_FILL is transparent). Only the button takes
-   the pointer. The line reads the theme's tokens (ComfyUI's `.dark-theme` on <html>). */
+   places the Open Studio button, the play button and the line under the picture where pano_studio_surface.js lays them
+   out (inline left / top / bottom / width), over the node's own background (the surface is not filled: STUDIO_SURFACE_FILL is transparent). Only the buttons
+   (and the output size's tooltip) take the pointer. The line reads the theme's tokens (ComfyUI's `.dark-theme` on <html>). */
 .pano-studio-node-surface {
   position: absolute;
   inset: 0;
@@ -160,11 +160,15 @@
   user-select: none;
   line-height: 1;
 }
-.pano-studio-node-open {
+/* Open Studio and the play button (docs/studio-node-surface.md "再生のボタン"): the floating part's shape, placed by their
+   left edges (studioSurfaceLayout lays the group out). Open Studio without its label (`is-compact`, a narrow node) and
+   the play button are 30px circles. */
+.pano-studio-node-open,
+.pano-studio-node-play {
   position: absolute;
-  transform: translateX(-50%);
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
   height: 30px;
   padding: 0 14px 0 10px;
@@ -180,10 +184,17 @@
   pointer-events: auto;
   transition: background-color var(--studio-motion-hover);
 }
-.pano-studio-node-open:hover {
+.pano-studio-node-play,
+.pano-studio-node-open.is-compact {
+  width: 30px;
+  padding: 0;
+}
+.pano-studio-node-open:hover,
+.pano-studio-node-play:hover {
   background: color-mix(in srgb, var(--studio-fill-hover) var(--studio-float-alpha), transparent);
 }
-.pano-studio-node-open:active {
+.pano-studio-node-open:active,
+.pano-studio-node-play:active {
   background: color-mix(in srgb, var(--studio-fill-active) var(--studio-float-alpha), transparent);
 }
 .pano-studio-node-line {

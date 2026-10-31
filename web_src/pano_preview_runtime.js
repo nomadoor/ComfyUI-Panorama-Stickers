@@ -12,9 +12,10 @@ import { surfacePaintLayers } from "./pano_surface_paint.js";
 import { shotCamera, viewProjection, workingSkyLayers } from "./pano_editor_view.js";
 import { acquirePreviewView, previewNodeCamera } from "./pano_preview_view.js";
 import { createComfyMediaAdapter } from "./pano_comfy_media.js";
-import { createNodePlayback, surfaceShown } from "./pano_node_playback.js";
+import { createNodePlayback, createSoloPlayback, surfaceShown } from "./pano_node_playback.js";
+import { createDepthColors } from "./pano_depth_color.js";
 import { backgroundClipAt, bgColorBackground, portMediaMeta, portMediaSource } from "./pano_port_media.js";
-import { layerUiList, upstreamBackgroundOf, upstreamLayersOf, upstreamOverriddenEnds, upstreamWorkingLayers } from "./pano_upstream.js";
+import { upstreamBackgroundOf } from "./pano_upstream.js";
 import {
   beginCutoutRollGesture,
   buildCutoutAddFrameAction,
@@ -34,7 +35,9 @@ import PanoStudioNodeSurface from "./components/PanoStudioNodeSurface.vue";
 import { createStudioStatus, studioSizeWidgets } from "./pano_studio_status.js";
 import { STUDIO_PICTURE_RADIUS, STUDIO_SURFACE_FILL, studioSurfaceLayout } from "./pano_studio_surface.js";
 import { outputErpInput, outputFrameInput } from "./studio/output_picture.js";
+import { groundOf } from "./studio/defaults.js";
 import { stageContent } from "./studio/stage_content.js";
+import { createStudioUpstream } from "./studio/upstream.js";
 import { eyeHeight, worldBoundRadius } from "./studio/view_scale.js";
 import {
   NODE_SURFACE_FRAME,
@@ -73,6 +76,7 @@ import {
   isRepeatedOutput,
   isTrackedMediaInputConnectionChange,
   isVideoFile,
+  linkedInputType,
   nodeInputOrigins,
   outputSourceToken,
   restoreLoadedNodeOutput,
@@ -109,11 +113,13 @@ const { app } = appModule;
 setNodeOutputLookup((node) => lookupNodeOutputEntry(node.id));
 trackRunOutputs(api);
 const sharedPreviewImageCache = createSharedImageCache();
-const { linkedVideoFile, source: mediaSource } = createComfyMediaAdapter({ app, api });
+const { linkedVideoFile, source: mediaSource, assetSource: mediaAssetSource } = createComfyMediaAdapter({ app, api });
 // The editor files of the 3D file Stickers the node surfaces' Auto length reads (their animated files' clips, ADR 0043),
 // one registry for every surface, as the editor asks the same route; an answer draws the graph again.
 // Panorama Studio's surfaces also draw the 3D file Stickers from those files, so an answer draws them again.
 const studioSurfaceDraws = new Set();
+// Only one Panorama Studio node plays on its surface at a time (docs/studio-node-surface.md "再生のボタン").
+const studioSurfacePlayback = createSoloPlayback();
 const surfaceFile3dFiles = createFile3dEditorFiles({
   fetchApi: (path, options) => api.fetchApi(path, options),
   onUpdate: () => {
@@ -1353,8 +1359,8 @@ function ownOutputUiList(node, key) {
 // them: the surface's playback then counts the VIDEO it plays; null when the upstream Scene's background stands
 // in, which its length holds already, with its Clip range as `upstreamClip` and its MP4's meta as
 // `upstreamMedia`), the port Sticker's media, the `scene` items, and the upstream Scene's
-// length with the ends of the Clip ranges the node overrides in it. `state` is the node's working state v2. The
-// upstream layers' working copies are kept while the result and the state stay the same.
+// length with the ends of the Clip ranges the node overrides in it (the surface's upstream layers', as in the editor).
+// `state` is the node's working state v2.
 function surfaceTimelineMedia(node, state) {
   const media = {};
   const list = (key) => ownOutputUiList(node, key);
@@ -1375,15 +1381,9 @@ function surfaceTimelineMedia(node, state) {
   }
   if (isNodeOutputMediaCurrent(node, "external-sticker")) media.port = portMediaMeta(list);
   if (layers.length) {
-    const surface = nodeSurface(node);
-    if (surface.upstreamLength?.layers !== layers || surface.upstreamLength.state !== state) {
-      const upstream = upstreamLayersOf(layers);
-      const working = upstreamWorkingLayers(upstream, state.upstream, state.timeline.fps);
-      const portMeta = (index) => portMediaMeta((key) => layerUiList(upstream[index].ui, key));
-      surface.upstreamLength = { layers, state, ends: upstreamOverriddenEnds(working, state.upstream, new Map(), portMeta, state.timeline.fps) };
-    }
-    const [frames] = list("pano_upstream_frames").length ? list("pano_upstream_frames") : list("pano_timeline_frames");
-    media.upstream = { frames: Number(frames) > 0 ? Number(frames) : 0, ends: surface.upstreamLength.ends };
+    // The upstream Scene's length as the editor counts it (studio/upstream.js output()), from the layers the picture draws.
+    const upstream = nodeSurface(node).studioInputs?.upstream.output() ?? null;
+    if (upstream) media.upstream = upstream;
   } else if (scene) {
     media.sceneItems = list("pano_scene_files").length;
   }
@@ -1485,7 +1485,8 @@ function surfaceBackgroundMedia(node) {
 
 // Panorama Studio's picture (docs/studio-node-surface.md "撮る Camera の出力をその場で描く"): the Camera's output at the
 // display frame, drawn live from the state and the inputs into `layout.picture` (pano_studio_surface.js) of the surface's
-// canvas, through the editor's Output window inputs (studio/output_picture.js). Panorama mode draws the live ERP on
+// canvas, through the editor's Output window inputs (studio/output_picture.js), with what the editor draws of the inputs
+// (the surface's `studioInputs`: the upstream Scene's layers and the depth grids in their proxies' colors). Panorama mode draws the live ERP on
 // `erpCanvas`, then copies it. Returns whether the view drew it (false while the three.js view loads or fails).
 function drawStudioPicture(node, canvas, surfaceView, layout, erpCanvas) {
   const surface = nodeSurface(node);
@@ -1510,7 +1511,11 @@ function drawStudioPicture(node, canvas, surfaceView, layout, erpCanvas) {
     w: Math.round(layout.picture.w * ratio),
     h: Math.round(layout.picture.h * ratio),
   };
-  if (box.w < 2 || box.h < 2) return true;
+  // Too small to draw: the depth grids' color VIDEOs are let go as for a picture without them.
+  if (box.w < 2 || box.h < 2) {
+    surface.studioInputs?.depthColors.retain([]);
+    return true;
+  }
   ctx.save();
   ctx.beginPath();
   ctx.roundRect(box.x, box.y, box.w, box.h, STUDIO_PICTURE_RADIUS * ratio);
@@ -1518,7 +1523,9 @@ function drawStudioPicture(node, canvas, surfaceView, layout, erpCanvas) {
 
   const frame = surfaceFrame(node);
   const shot = cameraShot(sceneState.camera, frame);
-  const ground = sceneGround(sceneState);
+  // What the inputs bring that the editor draws too: the upstream Scene's layers and the depth grids' colors.
+  const inputs = surface.studioInputs;
+  const ground = inputs ? groundOf(sceneState, inputs.upstream.working()) : sceneGround(sceneState);
   const list = (key) => ownOutputUiList(node, key);
   const content = stageContent(sceneState, frame, {
     media: (sticker) => surfaceStickerMedia(node, sceneState, sticker),
@@ -1527,7 +1534,10 @@ function drawStudioPicture(node, canvas, surfaceView, layout, erpCanvas) {
     stickerFiles: isNodeOutputMediaCurrent(node, "external-sticker") ? sceneFilesOf(list("pano_sticker_files"), list("pano_sticker_meta"), mediaSource) : null,
     sceneBox: (url) => surfaceView.sceneBox(url),
     paintLayers: surfacePaintLayers(surface, state),
+    upstream: inputs?.upstream.viewInput(frame) ?? null,
+    depthColor: inputs?.depthColor ?? null,
   });
+  inputs?.depthColors.retain(content.space.depthSlots);
   const background = surfaceBackground(node, state, surfaceBackgroundMedia(node), { fill: true });
   const radius = worldBoundRadius({ eye: eyeHeight(ground), content: content.sphere, camera: shot.position });
   let drawn = false;
@@ -1959,7 +1969,7 @@ function attachPanoramaPreviewImpl(node, options = {}) {
   }
   surface.mode = String(options.mode || "stickers") === "cutout" ? "cutout" : "stickers";
   const stickersMode = surface.mode === "stickers";
-  // Panorama Studio's surface shows the Scene to look around in, without editing or playback.
+  // Panorama Studio's surface shows the Camera's output, without editing; it plays from its play button (ADR 0052).
   const studioSurface = stickersMode && node.__panoStudio === true;
   const stickerDrop = stickersMode && !studioSurface;
   // Panorama Studio's surface is the Camera's output: it does not look around (ADR 0049).
@@ -2131,6 +2141,10 @@ function attachPanoramaPreviewImpl(node, options = {}) {
   // The on-node surface draws through the three.js view it shares with the Preview nodes.
   // Panorama Studio draws 3D items too, so it hears when one loads or its splats are sorted again.
   const surfaceView = acquirePreviewView(requestDraw, { items: studioSurface });
+  // Open Studio's width with its label (studioSurfaceLayout's openWidth), measured once the new UI's stylesheet applies;
+  // null until then (Open Studio alone at the center, the play button after).
+  let studioOpenWidth = null;
+  let studioStyled = false;
   // Panorama Studio's live ERP (Panorama mode) is put here, then copied into the surface's canvas.
   const studioErpCanvas = studioSurface ? createPanoCanvas({ label: "node.surface.erp" }) : null;
   if (studioSurface) studioSurfaceDraws.add(requestDraw);
@@ -2186,6 +2200,7 @@ function attachPanoramaPreviewImpl(node, options = {}) {
       readState: () => getCachedState(node),
       // Panorama Studio plays its Camera's Keyframes too, as its editor does.
       camera: node.__panoStudio === true,
+      solo: studioSurfacePlayback,
       onFrame: requestDraw,
       // The still is at most NODE_STILL_MAX_WIDTH wide; the node shows it small.
       onCapture: () => {
@@ -2212,6 +2227,45 @@ function attachPanoramaPreviewImpl(node, options = {}) {
     });
     surfacePlayback = { playback, video, still, stickerVideo, stickerStill, stickerSource: "" };
     surface.playback = surfacePlayback;
+    // What Panorama Studio's picture draws of its inputs as the editor does (docs/studio-node-surface.md "撮る Camera の
+    // 出力をその場で描く"): the depth grids' colors (a proxy MP4 per input following the display frame) and the upstream
+    // Scene's layers with the node's overrides. Out of sight both let their media go (release) and load again when shown.
+    if (studioSurface) {
+      const depthColors = createDepthColors({
+        createVideo: () => createPanoVideo(document, "node.depth-video"),
+        createCanvas: () => createPanoCanvas({ label: "node.depth-still" }),
+        releaseCanvas: releasePanoCanvas,
+        onChange: requestDraw,
+      });
+      const upstream = createStudioUpstream({
+        list: () => {
+          const value = isNodeOutputMediaCurrent(node, "scene") ? ownOutputUiList(node, "pano_upstream_layers") : [];
+          return value.length ? value : null;
+        },
+        linkType: () => linkedInputType(node, "scene"),
+        uiList: (key) => ownOutputUiList(node, key),
+        state: () => surfaceSceneState(node, getCachedState(node)),
+        mediaSource,
+        mediaAssetSource,
+        revisionOf: getRenderableMediaRevisionToken,
+        playing: () => playback.advancing,
+        editorFile: (sticker) => file3dEditorFileOf(surfaceFile3dFiles, sticker, mediaSource),
+        onMedia: requestDraw,
+      });
+      surface.studioInputs = {
+        depthColors,
+        upstream,
+        depthColor: (slot, request) => depthColors.picture(slot, request, playback.advancing),
+        release() {
+          depthColors.retain([]);
+          upstream.dispose();
+        },
+        dispose() {
+          depthColors.dispose();
+          upstream.dispose();
+        },
+      };
+    }
   }
   // The Timeline plays on the node only while it is shown: collapsed, in a subgraph or another graph, or
   // under the node's open editor (which plays the same VIDEO itself), the node pauses and lets its VIDEO go.
@@ -2238,6 +2292,8 @@ function attachPanoramaPreviewImpl(node, options = {}) {
       releasePanoCanvas(still);
       still.__panoFrameIdx = 0;
     }
+    // Out of sight the depth grids' color VIDEOs and the upstream layers' media are let go too.
+    if (!shown) surface.studioInputs?.release();
     nodeSurfaceUiModel.playable = playable;
     nodeSurfaceUiModel.playing = playback.playing;
   };
@@ -2423,7 +2479,12 @@ function attachPanoramaPreviewImpl(node, options = {}) {
     try {
       void installPanoSuiteStylesheet();
       // Panorama Studio's surface takes the new UI's look (docs/design.md "Panorama Studio のノード上の表示").
-      if (studioSurface) void installStudioStylesheet();
+      if (studioSurface) {
+        installStudioStylesheet().then(() => {
+          studioStyled = true;
+          requestDraw();
+        });
+      }
       nodeSurfaceVueApp = createApp(studioSurface ? PanoStudioNodeSurface : (stickersMode ? PanoStickersNodeSurface : PanoCutoutNodeSurface), {
         model: nodeSurfaceUiModel,
         onAction: (action) => {
@@ -2492,17 +2553,21 @@ function attachPanoramaPreviewImpl(node, options = {}) {
   // Panorama Studio's surface draws a new size at once: resizing its canvas clears it, and this callback comes after this
   // frame's animation frame callbacks, so a draw left for the next frame would show the cleared or stretched picture
   // once (docs/studio-node-surface.md "描画と後始末"; the stage's flush, pano_frame_scheduler.js).
-  const resizeObserver = typeof ResizeObserver !== "undefined"
-    ? new ResizeObserver(() => {
-      if (surfacePlayback) syncSurfacePlayback();
-      requestDraw();
-      if (studioSurface && state.raf && !state.inTick) {
-        cancelAnimationFrame(state.raf);
-        tick(performance.now());
-      }
-    })
-    : null;
+  const drawResized = () => {
+    if (surfacePlayback) syncSurfacePlayback();
+    requestDraw();
+    if (studioSurface && state.raf && !state.inTick) {
+      cancelAnimationFrame(state.raf);
+      tick(performance.now());
+    }
+  };
+  const resizeObserver = typeof ResizeObserver !== "undefined" ? new ResizeObserver(drawResized) : null;
   resizeObserver?.observe(wrap);
+  // Open Studio's width changes with its label (a narrow node, the font loading): the buttons are laid out again with it,
+  // in the same frame.
+  const studioOpenButton = studioSurface ? nodeSurfaceHost?.querySelector(".pano-studio-node-open") : null;
+  const openObserver = studioOpenButton && typeof ResizeObserver !== "undefined" ? new ResizeObserver(drawResized) : null;
+  if (studioOpenButton) openObserver?.observe(studioOpenButton);
 
   const tick = (ts) => {
     state.raf = 0;
@@ -2522,7 +2587,12 @@ function attachPanoramaPreviewImpl(node, options = {}) {
         // Collapsed or under the node's open editor, the surface does not draw and frees its textures.
         if (node.flags?.collapsed || editorOpen(node)) surfaceView.release();
         else if (studioSurface) {
-          const layout = studioSurfaceLayout(wrap.clientWidth, wrap.clientHeight, nodeSurfaceUiModel.status.ratio);
+          // Open Studio's width with its label, from the button while it shows it.
+          if (studioStyled && studioOpenButton?.offsetWidth > 0 && !studioOpenButton.classList.contains("is-compact")) studioOpenWidth = studioOpenButton.offsetWidth;
+          const layout = studioSurfaceLayout(wrap.clientWidth, wrap.clientHeight, nodeSurfaceUiModel.status.ratio, {
+            playable: nodeSurfaceUiModel.playable,
+            openWidth: studioOpenWidth,
+          });
           if (JSON.stringify(layout) !== JSON.stringify(nodeSurfaceUiModel.layout)) nodeSurfaceUiModel.layout = layout;
           drawStudioPicture(node, canvas, surfaceView, layout, studioErpCanvas);
         } else drawCanvas(node, canvas, surfaceView);
@@ -3016,6 +3086,7 @@ function attachPanoramaPreviewImpl(node, options = {}) {
   const restoreDom = () => {
     state.destroyed = true;
     resizeObserver?.disconnect?.();
+    openObserver?.disconnect?.();
     stickersMode ? flushNodeSurfaceGesture() : cancelCutoutNodeSurfaceGesture();
     canvas.removeEventListener("lostpointercapture", cancelCutoutDrag);
     stickerDropTargetCleanup();
@@ -3034,6 +3105,8 @@ function attachPanoramaPreviewImpl(node, options = {}) {
       releasePanoCanvas(surfacePlayback.stickerStill);
       if (surface.playback === surfacePlayback) surface.playback = null;
     }
+    surface.studioInputs?.dispose();
+    surface.studioInputs = null;
     surfaceView.dispose();
     if (studioErpCanvas) releasePanoCanvas(studioErpCanvas);
     studioSurfaceDraws.delete(requestDraw);

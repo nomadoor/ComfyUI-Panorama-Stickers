@@ -38,6 +38,7 @@ import {
   ownerTimed,
   PAINTING_ROW,
   rowKeyframes,
+  timelinePlayable,
   timelineSpan,
 } from "../pano_timeline.js";
 import { upstreamLayerOverridden, upstreamRowId } from "../pano_upstream.js";
@@ -372,7 +373,7 @@ export function buildStudioTimeline(ctx, { selection = null, playhead = 0, playi
   return {
     span,
     bar: {
-      playable: span > 1,
+      playable: timelinePlayable(span),
       playing,
       loop,
       timecode: timecode(playhead, fps),

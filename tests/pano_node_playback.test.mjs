@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createNodePlayback, surfaceShown } from "../web_src/pano_node_playback.js";
+import { createNodePlayback, createSoloPlayback, surfaceShown } from "../web_src/pano_node_playback.js";
 import { portMediaSource } from "../web_src/pano_port_media.js";
 import { loadSceneState } from "../web_src/pano_scene_state.js";
 import { keyAllLanes } from "../web_src/pano_timeline.js";
@@ -142,7 +142,7 @@ class FakeClock {
   }
 }
 
-function setup(state = loadSceneState(null), { camera = false } = {}) {
+function setup(state = loadSceneState(null), { camera = false, solo = null } = {}) {
   const video = new FakeVideo();
   const stickerVideo = new FakeVideo();
   const clock = new FakeClock();
@@ -168,6 +168,7 @@ function setup(state = loadSceneState(null), { camera = false } = {}) {
       log.changes += 1;
     },
     camera,
+    solo,
   });
   // What each draw of the node passes: the surface shown with these candidates and the port Sticker's MP4.
   const follow = (sources, shown = true, sticker = null) => playback.follow({ shown, sources, state, sticker });
@@ -181,9 +182,14 @@ function timedState(length = 48) {
   return state;
 }
 
-test("the play button shows for a timed scene or a background VIDEO that loads", () => {
+// docs/timeline-ui.md "再生できるか": the node plays when its Timeline is longer than one frame, as the editor's bar does
+// (pano_timeline.js timelinePlayable of timelineSpan), whatever makes it long.
+test("the play button shows when the Timeline is longer than one frame, as in the editor", () => {
   const { follow, video } = setup();
   assert.equal(follow([]), false);
+  // A background VIDEO makes the Timeline as long as it once its length is known.
+  assert.equal(follow(["/view?filename=bg.mp4"]), false);
+  video.loaded(2);
   assert.equal(follow(["/view?filename=bg.mp4"]), true);
   video.fail();
   assert.equal(follow(["/view?filename=bg.mp4"]), false);
@@ -200,6 +206,22 @@ test("the play button shows for a timed scene or a background VIDEO that loads",
   studio.playback.toggle();
   studio.clock.framesAhead(150);
   assert.ok(studio.log.frames.at(-1) > 120, "the span reaches the Camera's last Keyframe");
+});
+
+// The owner's report (ADR 0052): a MoGe VIDEO on `world` is a depth grid sequence, which has no Keyframe, no Clip range
+// and no VIDEO of the node's own, yet the editor plays it through its items.
+test("a node with only a depth grid sequence on `world` plays through its items, and one item does not", () => {
+  const { playback, state, clock } = setup(loadSceneState({ version: 2, timeline: { fps: FPS } }), { camera: true });
+  const follow = (sceneItems) => playback.follow({ shown: true, sources: [], state, media: { sceneItems } });
+  assert.equal(follow(4), true);
+  playback.toggle();
+  clock.framesAhead(3);
+  assert.equal(playback.frame, 3);
+  clock.framesAhead(1);
+  assert.equal(playback.frame, 0, "four items loop at the end");
+  playback.pause();
+  assert.equal(follow(1), false);
+  assert.equal(follow(0), false);
 });
 
 test("a failed VIDEO gives way to the next candidate, as in the editor, until it leaves the candidates", () => {
@@ -335,7 +357,7 @@ test("play loops within the output's length, with no minimum, and a one-frame Ti
   assert.notEqual(video.playback.frame, 12, "frame 12 is past the output");
   // A still: one frame, nothing to play.
   const still = setup(timedState(1));
-  assert.equal(still.follow([]), true, "the button stays, harmless");
+  assert.equal(still.follow([]), false, "no button for one frame");
   still.playback.toggle();
   assert.equal(still.playback.playing, false);
   assert.equal(still.clock.callbacks.size, 0);
@@ -427,6 +449,9 @@ test("a Timeline that no longer reaches the paused frame, or nothing left to pla
   state.scene.position.keyframes = [];
   state.scene.rotation.keyframes = [];
   state.scene.scale.keyframes = [];
+  // A length set by hand still plays, as in the editor; back to Auto, one frame is left.
+  assert.equal(follow([]), true);
+  state.timeline.length = null;
   assert.equal(follow([]), false);
   assert.equal(playback.frame, 0);
 });
@@ -598,4 +623,29 @@ test("past the end of a background VIDEO with the default Clip range, the node s
   // An upstream background with its Studio's default Clip range ends with its media too.
   playback.follow({ shown: true, sources: ["/bg.mp4"], state, media: { bg: null, upstreamMedia: { video: true, frames: 48, duration: 2 } } });
   assert.equal(playback.backgroundShows, false);
+});
+
+// docs/studio-node-surface.md "再生のボタン": the nodes share one three.js view, so only one Studio node plays at a time.
+test("starting a node pauses the one playing before, on its frame, and tells it", () => {
+  const solo = createSoloPlayback();
+  const a = setup(timedState(48), { solo });
+  const b = setup(timedState(48), { solo });
+  a.follow([]);
+  b.follow([]);
+  a.playback.toggle();
+  a.clock.framesAhead(5);
+  const changes = a.log.changes;
+  b.playback.toggle();
+  assert.equal(b.playback.playing, true);
+  assert.equal(a.playback.playing, false);
+  assert.equal(a.playback.frame, 5);
+  assert.ok(a.log.changes > changes, "the paused node hears of it (its button shows Play)");
+  // Pausing and starting the same node again does not touch the other.
+  b.playback.toggle();
+  b.playback.toggle();
+  assert.equal(b.playback.playing, true);
+  // A disposed node is forgotten: starting another does not reach it.
+  b.playback.dispose();
+  a.playback.toggle();
+  assert.equal(a.playback.playing, true);
 });

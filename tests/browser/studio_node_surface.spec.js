@@ -5,6 +5,7 @@ import { expect, test } from "@playwright/test";
 // run, and the Open Studio button opens the editor. tests/browser/pages/studio_node_surface.html.
 
 const RED = [220, 40, 40];
+const BLUE = [40, 150, 210];
 const GREEN = [0, 255, 0];
 const near = (a, b, tolerance = 40) => a.every((value, i) => Math.abs(value - b[i]) <= tolerance);
 
@@ -18,12 +19,12 @@ function watch(page) {
   return problems;
 }
 
-async function open(page, mode) {
+async function open(page, mode, query = "") {
   const problems = watch(page);
-  await page.goto(`/tests/browser/pages/studio_node_surface.html?mode=${mode}`);
+  await page.goto(`/tests/browser/pages/studio_node_surface.html?mode=${mode}${query}`);
   await page.waitForFunction(() => window.__surface?.ready || window.__surface?.error, null, { timeout: 30_000 });
   expect(await page.evaluate(() => window.__surface.error)).toBeNull();
-  await expect(page.locator(".pano-studio-node-line")).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator("#node .pano-studio-node-line")).toBeVisible({ timeout: 30_000 });
   return problems;
 }
 
@@ -94,6 +95,8 @@ test("the line follows megapixels, multiple and the Camera's mode at once, witho
 
 test("the Open Studio button sits at the picture's bottom center, always shown, and opens the editor", async ({ page }) => {
   const problems = await open(page, "frame");
+  // A Timeline of one frame does not play: no play button, and it takes no seat (docs/studio-node-surface.md "再生のボタン").
+  await expect(page.locator(".pano-studio-node-play")).toHaveCount(0);
   const button = page.locator(".pano-studio-node-open");
   await expect(button).toBeVisible();
   await expect(button).toHaveText("Open Studio");
@@ -103,6 +106,7 @@ test("the Open Studio button sits at the picture's bottom center, always shown, 
   expect(Math.abs(b.x + b.width / 2 - (line.x + line.width / 2))).toBeLessThan(1.5);
   expect(Math.abs(line.y - 6 - (b.y + b.height) - 8)).toBeLessThan(1.5);
   expect(b.height).toBe(30);
+  await page.screenshot({ path: test.info().outputPath("one-frame.png") });
   await button.click();
   expect(await page.evaluate(() => window.__surface.opened)).toBe(1);
   expect(problems).toEqual([]);
@@ -146,5 +150,155 @@ test("resizing the node keeps the picture as large as fits and centered, the lin
     expect(outside).toEqual({ fill: "rgba(0, 0, 0, 0)", probe: true });
   }
   await page.screenshot({ path: test.info().outputPath("resized.png") });
+  expect(problems).toEqual([]);
+});
+
+// ADR 0052: what the editor shows, the node shows. A MoGe VIDEO on `world` is a depth grid sequence: the node draws its
+// item at the display frame in its proxy's colors, and plays it from the play button (docs/studio-node-surface.md
+// "撮る Camera の出力をその場で描く", "再生のボタン").
+const depthRow = (page, index = 0) => page.evaluate((i) => window.__surface.depthRow(0.5, i), index);
+const playbackOf = (page, index = 0) => page.evaluate((i) => window.__surface.playback(i), index);
+
+test("a depth grid sequence on `world`: frame 0 is drawn, the play button plays it and pauses on the frame shown", async ({ page }) => {
+  const problems = await open(page, "frame", "&case=moge");
+  // Frame 0 draws item 0, left of the middle.
+  await expect.poll(async () => (await depthRow(page)).share, { timeout: 20_000 }).toBeGreaterThan(0.02);
+  expect((await depthRow(page)).u).toBeLessThan(0.5);
+  const play = page.locator(".pano-studio-node-play");
+  const openButton = page.locator(".pano-studio-node-open");
+  await expect(play).toHaveCount(1);
+  await expect(play).toHaveAttribute("title", "Play");
+  // One group centered on the picture: the play button, 8px, then Open Studio.
+  const [p, o, line] = await Promise.all([play.boundingBox(), openButton.boundingBox(), page.locator(".pano-studio-node-line").boundingBox()]);
+  expect(p.width).toBe(30);
+  expect(p.height).toBe(30);
+  expect(Math.abs(o.x - (p.x + p.width) - 8)).toBeLessThan(1.5);
+  expect(Math.abs((p.x + o.x + o.width) / 2 - (line.x + line.width / 2))).toBeLessThan(1.5);
+  expect(Math.abs(p.y - o.y)).toBeLessThan(0.5);
+
+  await play.click();
+  await expect(play).toHaveAttribute("title", "Pause");
+  await expect.poll(async () => (await playbackOf(page)).frame, { timeout: 10_000 }).toBeGreaterThan(0);
+  await page.screenshot({ path: test.info().outputPath("depth-playing.png") });
+  await play.click();
+  await expect(play).toHaveAttribute("title", "Play");
+  const paused = await playbackOf(page);
+  expect(paused.playing).toBe(false);
+  // The paused frame stays, and the picture shows its item (0 and 1 left of the middle, 2 and 3 right of it).
+  await page.waitForTimeout(300);
+  expect((await playbackOf(page)).frame).toBe(paused.frame);
+  await expect.poll(async () => {
+    const row = await depthRow(page);
+    return row.share > 0.02 && (row.u < 0.5) === (paused.frame < 2);
+  }, { timeout: 10_000 }).toBe(true);
+  await page.screenshot({ path: test.info().outputPath("depth-paused.png") });
+  expect(problems).toEqual([]);
+});
+
+test("a narrow node makes Open Studio a round icon button with its name as the tooltip", async ({ page }) => {
+  const problems = await open(page, "frame", "&case=moge");
+  await expect(page.locator(".pano-studio-node-play")).toHaveCount(1);
+  await page.evaluate(() => window.__surface.resize(150, 140));
+  const openButton = page.locator(".pano-studio-node-open");
+  await expect(openButton).toHaveClass(/is-compact/);
+  await expect(openButton).toHaveText("");
+  await expect(openButton).toHaveAttribute("title", "Open Studio");
+  const [p, o, line] = await Promise.all([page.locator(".pano-studio-node-play").boundingBox(), openButton.boundingBox(), page.locator(".pano-studio-node-line").boundingBox()]);
+  expect(o.width).toBe(30);
+  expect(Math.abs(o.x - (p.x + p.width) - 8)).toBeLessThan(1.5);
+  expect(Math.abs((p.x + o.x + o.width) / 2 - (line.x + line.width / 2))).toBeLessThan(1.5);
+  await page.screenshot({ path: test.info().outputPath("narrow.png") });
+  // Wide again, the label comes back.
+  await page.evaluate(() => window.__surface.resize(360, 240));
+  await expect(openButton).toHaveText("Open Studio");
+  await expect(openButton).not.toHaveClass(/is-compact/);
+  await openButton.click();
+  expect(await page.evaluate(() => window.__surface.opened)).toBe(1);
+  expect(problems).toEqual([]);
+});
+
+test("only one Studio node plays at a time: starting another pauses the one playing", async ({ page }) => {
+  const problems = await open(page, "frame", "&case=moge&nodes=2");
+  const plays = page.locator(".pano-studio-node-play");
+  await expect(plays).toHaveCount(2);
+  await plays.nth(0).click();
+  await expect.poll(async () => (await playbackOf(page, 0)).playing).toBe(true);
+  await plays.nth(1).click();
+  await expect.poll(async () => (await playbackOf(page, 1)).playing).toBe(true);
+  expect((await playbackOf(page, 0)).playing).toBe(false);
+  await expect(plays.nth(0)).toHaveAttribute("title", "Play");
+  await expect(plays.nth(1)).toHaveAttribute("title", "Pause");
+  expect(problems).toEqual([]);
+});
+
+test("a collapsed node lets its depth grid's color VIDEO go and loads it again when expanded", async ({ page }) => {
+  const problems = await open(page, "frame", "&case=moge");
+  await expect.poll(async () => (await depthRow(page)).share, { timeout: 20_000 }).toBeGreaterThan(0.02);
+  expect(await page.evaluate(() => window.__surface.depthVideosLoaded())).toBe(1);
+  await page.evaluate(() => window.__surface.collapse(true));
+  await expect.poll(() => page.evaluate(() => window.__surface.depthVideosLoaded())).toBe(0);
+  await page.evaluate(() => window.__surface.collapse(false));
+  await expect.poll(() => page.evaluate(() => window.__surface.depthVideosLoaded())).toBe(1);
+  await expect.poll(async () => (await depthRow(page)).share, { timeout: 20_000 }).toBeGreaterThan(0.02);
+  expect(problems).toEqual([]);
+});
+
+test("the upstream Scene's layers on `scene` are drawn, as the editor draws them", async ({ page }) => {
+  const problems = await open(page, "frame", "&case=upstream");
+  // The layer's blue sky image straight ahead, background_color around it.
+  await expect.poll(async () => near(await color(page, 0.5, 0.5), BLUE), { timeout: 20_000 }).toBe(true);
+  await expect.poll(async () => near(await color(page, 0.03, 0.1), GREEN)).toBe(true);
+  // A Timeline of one frame: no play button.
+  await expect(page.locator(".pano-studio-node-play")).toHaveCount(0);
+  expect(problems).toEqual([]);
+});
+
+// docs/studio-node-surface.md "見えないときとエディタを開いている間": the editor plays the same media itself.
+test("while the node's editor is open, the depth grid's color VIDEO is let go, and loaded again when it closes", async ({ page }) => {
+  const problems = await open(page, "frame", "&case=moge");
+  await expect.poll(async () => (await depthRow(page)).share, { timeout: 20_000 }).toBeGreaterThan(0.02);
+  expect(await page.evaluate(() => window.__surface.depthVideosLoaded())).toBe(1);
+  await page.evaluate(() => window.__surface.editor(true));
+  await expect.poll(() => page.evaluate(() => window.__surface.depthVideosLoaded())).toBe(0);
+  await page.evaluate(() => window.__surface.editor(false));
+  await expect.poll(() => page.evaluate(() => window.__surface.depthVideosLoaded())).toBe(1);
+  expect(problems).toEqual([]);
+});
+
+test("while the node's editor is open, the upstream layers' media are let go, and read again when it closes", async ({ page }) => {
+  const problems = await open(page, "frame", "&case=upstream");
+  await expect.poll(async () => near(await color(page, 0.5, 0.5), BLUE), { timeout: 20_000 }).toBe(true);
+  const made = await page.evaluate(() => window.__surface.upstreamImagesMade());
+  expect(made).toBe(1);
+  await page.evaluate(() => window.__surface.editor(true));
+  // The surface draws (and lets go) under the open editor before it closes.
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  expect(await page.evaluate(() => window.__surface.upstreamImagesMade())).toBe(1);
+  await page.evaluate(() => window.__surface.editor(false));
+  // Its image was let go, so drawing again makes it again.
+  await expect.poll(() => page.evaluate(() => window.__surface.upstreamImagesMade())).toBe(2);
+  await expect.poll(async () => near(await color(page, 0.5, 0.5), BLUE), { timeout: 20_000 }).toBe(true);
+  expect(problems).toEqual([]);
+});
+
+test("the node's upstream overrides apply to the upstream layers it draws, as in the editor", async ({ page }) => {
+  const problems = await open(page, "frame", "&case=upstream&override=hide");
+  // The node's state hides the layer's sky image: background_color where it was.
+  await expect.poll(async () => near(await color(page, 0.03, 0.1), GREEN), { timeout: 20_000 }).toBe(true);
+  await page.waitForTimeout(500);
+  expect(near(await color(page, 0.5, 0.5), GREEN)).toBe(true);
+  expect(problems).toEqual([]);
+});
+
+test("removing the node that plays lets the others play, without touching the removed one", async ({ page }) => {
+  const problems = await open(page, "frame", "&case=moge&nodes=2");
+  const plays = page.locator(".pano-studio-node-play");
+  await expect(plays).toHaveCount(2);
+  await plays.nth(0).click();
+  await expect.poll(async () => (await playbackOf(page, 0)).playing).toBe(true);
+  await page.evaluate(() => window.__surface.remove(0));
+  await expect(plays).toHaveCount(1);
+  await plays.nth(0).click();
+  await expect.poll(async () => (await playbackOf(page, 1)).playing).toBe(true);
   expect(problems).toEqual([]);
 });
