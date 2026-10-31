@@ -1,0 +1,10125 @@
+{
+ "studio": {
+  "rows": [
+   {
+    "name": "first",
+    "layers": [],
+    "canvases": 4,
+    "released": 0,
+    "images": 3,
+    "readies": 0,
+    "alpha": null
+   },
+   {
+    "name": "loaded",
+    "layers": [
+     [
+      "raster:r1",
+      "m0",
+      null
+     ],
+     [
+      "raster:r2",
+      "m1",
+      null
+     ]
+    ],
+    "canvases": 7,
+    "released": 1,
+    "images": 3,
+    "readies": 2,
+    "alpha": 0
+   },
+   {
+    "name": "same",
+    "layers": [
+     [
+      "raster:r1",
+      "m0",
+      false
+     ],
+     [
+      "raster:r2",
+      "m1",
+      false
+     ]
+    ],
+    "canvases": 7,
+    "released": 1,
+    "images": 3,
+    "readies": 2,
+    "alpha": 0
+   },
+   {
+    "name": "moved",
+    "layers": [
+     [
+      "raster:r1",
+      "m2",
+      "new media"
+     ],
+     [
+      "raster:r2",
+      "m1",
+      false
+     ]
+    ],
+    "canvases": 8,
+    "released": 2,
+    "images": 4,
+    "readies": 2,
+    "alpha": 0
+   },
+   {
+    "name": "back",
+    "layers": [
+     [
+      "raster:r1",
+      "m3",
+      "new media"
+     ],
+     [
+      "raster:r2",
+      "m1",
+      false
+     ]
+    ],
+    "canvases": 9,
+    "released": 3,
+    "images": 5,
+    "readies": 3,
+    "alpha": 0
+   },
+   {
+    "name": "r2 gone",
+    "layers": [
+     [
+      "raster:r1",
+      "m3",
+      false
+     ]
+    ],
+    "canvases": 9,
+    "released": 4,
+    "images": 5,
+    "readies": 4,
+    "alpha": 0
+   },
+   {
+    "name": "hidden",
+    "layers": [],
+    "canvases": 9,
+    "released": 4,
+    "images": 5,
+    "readies": 4,
+    "alpha": 0
+   },
+   {
+    "name": "shown",
+    "layers": [
+     [
+      "raster:r1",
+      "m3",
+      false
+     ]
+    ],
+    "canvases": 9,
+    "released": 4,
+    "images": 5,
+    "readies": 4,
+    "alpha": 0
+   },
+   {
+    "name": "resized",
+    "layers": [
+     [
+      "raster:r1",
+      "m3",
+      false
+     ]
+    ],
+    "canvases": 9,
+    "released": 4,
+    "images": 5,
+    "readies": 4,
+    "alpha": 0
+   },
+   {
+    "name": "drag 0",
+    "layers": [
+     [
+      "raster:r1",
+      "m4",
+      "new media"
+     ]
+    ],
+    "canvases": 10,
+    "released": 5,
+    "images": 6,
+    "readies": 4,
+    "alpha": 0
+   },
+   {
+    "name": "drag 1",
+    "layers": [
+     [
+      "raster:r1",
+      "m5",
+      "new media"
+     ]
+    ],
+    "canvases": 11,
+    "released": 6,
+    "images": 7,
+    "readies": 5,
+    "alpha": 0
+   },
+   {
+    "name": "drag 2",
+    "layers": [
+     [
+      "raster:r1",
+      "m6",
+      "new media"
+     ]
+    ],
+    "canvases": 12,
+    "released": 7,
+    "images": 8,
+    "readies": 6,
+    "alpha": 0
+   },
+   {
+    "name": "drag 3",
+    "layers": [
+     [
+      "raster:r1",
+      "m7",
+      "new media"
+     ]
+    ],
+    "canvases": 13,
+    "released": 8,
+    "images": 9,
+    "readies": 7,
+    "alpha": 0
+   },
+   {
+    "name": "drag 4",
+    "layers": [
+     [
+      "raster:r1",
+      "m8",
+      "new media"
+     ]
+    ],
+    "canvases": 14,
+    "released": 9,
+    "images": 10,
+    "readies": 8,
+    "alpha": 0
+   },
+   {
+    "name": "drag 5",
+    "layers": [
+     [
+      "raster:r1",
+      "m9",
+      "new media"
+     ]
+    ],
+    "canvases": 15,
+    "released": 10,
+    "images": 11,
+    "readies": 9,
+    "alpha": 0
+   },
+   {
+    "name": "drag 6",
+    "layers": [
+     [
+      "raster:r1",
+      "m10",
+      "new media"
+     ]
+    ],
+    "canvases": 16,
+    "released": 11,
+    "images": 12,
+    "readies": 10,
+    "alpha": 0
+   },
+   {
+    "name": "drag 7",
+    "layers": [
+     [
+      "raster:r1",
+      "m11",
+      "new media"
+     ]
+    ],
+    "canvases": 17,
+    "released": 12,
+    "images": 13,
+    "readies": 11,
+    "alpha": 0
+   },
+   {
+    "name": "drag 8",
+    "layers": [
+     [
+      "raster:r1",
+      "m12",
+      "new media"
+     ]
+    ],
+    "canvases": 18,
+    "released": 13,
+    "images": 14,
+    "readies": 12,
+    "alpha": 0
+   },
+   {
+    "name": "drag 9",
+    "layers": [
+     [
+      "raster:r1",
+      "m13",
+      "new media"
+     ]
+    ],
+    "canvases": 19,
+    "released": 14,
+    "images": 15,
+    "readies": 13,
+    "alpha": 0
+   },
+   {
+    "name": "drag 10",
+    "layers": [
+     [
+      "raster:r1",
+      "m14",
+      "new media"
+     ]
+    ],
+    "canvases": 20,
+    "released": 15,
+    "images": 16,
+    "readies": 14,
+    "alpha": 0
+   },
+   {
+    "name": "drag 11",
+    "layers": [
+     [
+      "raster:r1",
+      "m15",
+      "new media"
+     ]
+    ],
+    "canvases": 21,
+    "released": 16,
+    "images": 17,
+    "readies": 15,
+    "alpha": 0
+   },
+   {
+    "name": "drag 12",
+    "layers": [
+     [
+      "raster:r1",
+      "m16",
+      "new media"
+     ]
+    ],
+    "canvases": 22,
+    "released": 17,
+    "images": 18,
+    "readies": 16,
+    "alpha": 0
+   },
+   {
+    "name": "drag 13",
+    "layers": [
+     [
+      "raster:r1",
+      "m17",
+      "new media"
+     ]
+    ],
+    "canvases": 23,
+    "released": 18,
+    "images": 19,
+    "readies": 17,
+    "alpha": 0
+   },
+   {
+    "name": "drag 14",
+    "layers": [
+     [
+      "raster:r1",
+      "m18",
+      "new media"
+     ]
+    ],
+    "canvases": 24,
+    "released": 19,
+    "images": 20,
+    "readies": 18,
+    "alpha": 0
+   },
+   {
+    "name": "drag 15",
+    "layers": [
+     [
+      "raster:r1",
+      "m19",
+      "new media"
+     ]
+    ],
+    "canvases": 25,
+    "released": 20,
+    "images": 21,
+    "readies": 19,
+    "alpha": 0
+   },
+   {
+    "name": "drag 16",
+    "layers": [
+     [
+      "raster:r1",
+      "m20",
+      "new media"
+     ]
+    ],
+    "canvases": 26,
+    "released": 21,
+    "images": 22,
+    "readies": 20,
+    "alpha": 0
+   },
+   {
+    "name": "drag 17",
+    "layers": [
+     [
+      "raster:r1",
+      "m21",
+      "new media"
+     ]
+    ],
+    "canvases": 27,
+    "released": 22,
+    "images": 23,
+    "readies": 21,
+    "alpha": 0
+   },
+   {
+    "name": "drag 18",
+    "layers": [
+     [
+      "raster:r1",
+      "m22",
+      "new media"
+     ]
+    ],
+    "canvases": 28,
+    "released": 23,
+    "images": 24,
+    "readies": 22,
+    "alpha": 0
+   },
+   {
+    "name": "drag 19",
+    "layers": [
+     [
+      "raster:r1",
+      "m23",
+      "new media"
+     ]
+    ],
+    "canvases": 29,
+    "released": 24,
+    "images": 25,
+    "readies": 23,
+    "alpha": 0
+   },
+   {
+    "name": "drag 20",
+    "layers": [
+     [
+      "raster:r1",
+      "m24",
+      "new media"
+     ]
+    ],
+    "canvases": 30,
+    "released": 25,
+    "images": 26,
+    "readies": 24,
+    "alpha": 0
+   },
+   {
+    "name": "drag 21",
+    "layers": [
+     [
+      "raster:r1",
+      "m25",
+      "new media"
+     ]
+    ],
+    "canvases": 31,
+    "released": 26,
+    "images": 27,
+    "readies": 25,
+    "alpha": 0
+   },
+   {
+    "name": "drag 22",
+    "layers": [
+     [
+      "raster:r1",
+      "m26",
+      "new media"
+     ]
+    ],
+    "canvases": 32,
+    "released": 27,
+    "images": 28,
+    "readies": 26,
+    "alpha": 0
+   },
+   {
+    "name": "drag 23",
+    "layers": [
+     [
+      "raster:r1",
+      "m27",
+      "new media"
+     ]
+    ],
+    "canvases": 33,
+    "released": 28,
+    "images": 29,
+    "readies": 27,
+    "alpha": 0
+   },
+   {
+    "name": "drag 24",
+    "layers": [
+     [
+      "raster:r1",
+      "m28",
+      "new media"
+     ]
+    ],
+    "canvases": 34,
+    "released": 29,
+    "images": 30,
+    "readies": 28,
+    "alpha": 0
+   },
+   {
+    "name": "drag 25",
+    "layers": [
+     [
+      "raster:r1",
+      "m29",
+      "new media"
+     ]
+    ],
+    "canvases": 35,
+    "released": 30,
+    "images": 31,
+    "readies": 29,
+    "alpha": 0
+   },
+   {
+    "name": "drag 26",
+    "layers": [
+     [
+      "raster:r1",
+      "m30",
+      "new media"
+     ]
+    ],
+    "canvases": 36,
+    "released": 31,
+    "images": 32,
+    "readies": 30,
+    "alpha": 0
+   },
+   {
+    "name": "drag 27",
+    "layers": [
+     [
+      "raster:r1",
+      "m31",
+      "new media"
+     ]
+    ],
+    "canvases": 37,
+    "released": 32,
+    "images": 33,
+    "readies": 31,
+    "alpha": 0
+   },
+   {
+    "name": "drag 28",
+    "layers": [
+     [
+      "raster:r1",
+      "m32",
+      "new media"
+     ]
+    ],
+    "canvases": 38,
+    "released": 33,
+    "images": 34,
+    "readies": 32,
+    "alpha": 0
+   },
+   {
+    "name": "drag 29",
+    "layers": [
+     [
+      "raster:r1",
+      "m33",
+      "new media"
+     ]
+    ],
+    "canvases": 39,
+    "released": 34,
+    "images": 35,
+    "readies": 33,
+    "alpha": 0
+   },
+   {
+    "name": "drag 30",
+    "layers": [
+     [
+      "raster:r1",
+      "m34",
+      "new media"
+     ]
+    ],
+    "canvases": 40,
+    "released": 35,
+    "images": 36,
+    "readies": 34,
+    "alpha": 0
+   },
+   {
+    "name": "drag 31",
+    "layers": [
+     [
+      "raster:r1",
+      "m35",
+      "new media"
+     ]
+    ],
+    "canvases": 41,
+    "released": 36,
+    "images": 37,
+    "readies": 35,
+    "alpha": 0
+   },
+   {
+    "name": "drag 32",
+    "layers": [
+     [
+      "raster:r1",
+      "m36",
+      "new media"
+     ]
+    ],
+    "canvases": 42,
+    "released": 37,
+    "images": 38,
+    "readies": 36,
+    "alpha": 0
+   },
+   {
+    "name": "drag 33",
+    "layers": [
+     [
+      "raster:r1",
+      "m37",
+      "new media"
+     ]
+    ],
+    "canvases": 43,
+    "released": 38,
+    "images": 39,
+    "readies": 37,
+    "alpha": 0
+   },
+   {
+    "name": "drag 34",
+    "layers": [
+     [
+      "raster:r1",
+      "m38",
+      "new media"
+     ]
+    ],
+    "canvases": 44,
+    "released": 39,
+    "images": 40,
+    "readies": 38,
+    "alpha": 0
+   },
+   {
+    "name": "drag 35",
+    "layers": [
+     [
+      "raster:r1",
+      "m39",
+      "new media"
+     ]
+    ],
+    "canvases": 45,
+    "released": 40,
+    "images": 41,
+    "readies": 39,
+    "alpha": 0
+   },
+   {
+    "name": "drag 36",
+    "layers": [
+     [
+      "raster:r1",
+      "m40",
+      "new media"
+     ]
+    ],
+    "canvases": 46,
+    "released": 41,
+    "images": 42,
+    "readies": 40,
+    "alpha": 0
+   },
+   {
+    "name": "drag 37",
+    "layers": [
+     [
+      "raster:r1",
+      "m41",
+      "new media"
+     ]
+    ],
+    "canvases": 47,
+    "released": 42,
+    "images": 43,
+    "readies": 41,
+    "alpha": 0
+   },
+   {
+    "name": "drag 38",
+    "layers": [
+     [
+      "raster:r1",
+      "m42",
+      "new media"
+     ]
+    ],
+    "canvases": 48,
+    "released": 43,
+    "images": 44,
+    "readies": 42,
+    "alpha": 0
+   },
+   {
+    "name": "drag 39",
+    "layers": [
+     [
+      "raster:r1",
+      "m43",
+      "new media"
+     ]
+    ],
+    "canvases": 49,
+    "released": 44,
+    "images": 45,
+    "readies": 43,
+    "alpha": 0
+   },
+   {
+    "name": "drag 40",
+    "layers": [
+     [
+      "raster:r1",
+      "m44",
+      "new media"
+     ]
+    ],
+    "canvases": 50,
+    "released": 45,
+    "images": 46,
+    "readies": 44,
+    "alpha": 0
+   },
+   {
+    "name": "drag 41",
+    "layers": [
+     [
+      "raster:r1",
+      "m45",
+      "new media"
+     ]
+    ],
+    "canvases": 51,
+    "released": 46,
+    "images": 47,
+    "readies": 45,
+    "alpha": 0
+   },
+   {
+    "name": "drag 42",
+    "layers": [
+     [
+      "raster:r1",
+      "m46",
+      "new media"
+     ]
+    ],
+    "canvases": 52,
+    "released": 47,
+    "images": 48,
+    "readies": 46,
+    "alpha": 0
+   },
+   {
+    "name": "drag 43",
+    "layers": [
+     [
+      "raster:r1",
+      "m47",
+      "new media"
+     ]
+    ],
+    "canvases": 53,
+    "released": 48,
+    "images": 49,
+    "readies": 47,
+    "alpha": 0
+   },
+   {
+    "name": "drag 44",
+    "layers": [
+     [
+      "raster:r1",
+      "m48",
+      "new media"
+     ]
+    ],
+    "canvases": 54,
+    "released": 49,
+    "images": 50,
+    "readies": 48,
+    "alpha": 0
+   },
+   {
+    "name": "drag 45",
+    "layers": [
+     [
+      "raster:r1",
+      "m49",
+      "new media"
+     ]
+    ],
+    "canvases": 55,
+    "released": 50,
+    "images": 51,
+    "readies": 49,
+    "alpha": 0
+   },
+   {
+    "name": "drag 46",
+    "layers": [
+     [
+      "raster:r1",
+      "m50",
+      "new media"
+     ]
+    ],
+    "canvases": 56,
+    "released": 51,
+    "images": 52,
+    "readies": 50,
+    "alpha": 0
+   },
+   {
+    "name": "drag 47",
+    "layers": [
+     [
+      "raster:r1",
+      "m51",
+      "new media"
+     ]
+    ],
+    "canvases": 57,
+    "released": 52,
+    "images": 53,
+    "readies": 51,
+    "alpha": 0
+   },
+   {
+    "name": "drag 48",
+    "layers": [
+     [
+      "raster:r1",
+      "m52",
+      "new media"
+     ]
+    ],
+    "canvases": 58,
+    "released": 53,
+    "images": 54,
+    "readies": 52,
+    "alpha": 0
+   },
+   {
+    "name": "drag 49",
+    "layers": [
+     [
+      "raster:r1",
+      "m53",
+      "new media"
+     ]
+    ],
+    "canvases": 59,
+    "released": 54,
+    "images": 55,
+    "readies": 53,
+    "alpha": 0
+   },
+   {
+    "name": "drag 50",
+    "layers": [
+     [
+      "raster:r1",
+      "m54",
+      "new media"
+     ]
+    ],
+    "canvases": 60,
+    "released": 55,
+    "images": 56,
+    "readies": 54,
+    "alpha": 0
+   },
+   {
+    "name": "drag 51",
+    "layers": [
+     [
+      "raster:r1",
+      "m55",
+      "new media"
+     ]
+    ],
+    "canvases": 61,
+    "released": 56,
+    "images": 57,
+    "readies": 55,
+    "alpha": 0
+   },
+   {
+    "name": "drag 52",
+    "layers": [
+     [
+      "raster:r1",
+      "m56",
+      "new media"
+     ]
+    ],
+    "canvases": 62,
+    "released": 57,
+    "images": 58,
+    "readies": 56,
+    "alpha": 0
+   },
+   {
+    "name": "drag 53",
+    "layers": [
+     [
+      "raster:r1",
+      "m57",
+      "new media"
+     ]
+    ],
+    "canvases": 63,
+    "released": 58,
+    "images": 59,
+    "readies": 57,
+    "alpha": 0
+   },
+   {
+    "name": "drag 54",
+    "layers": [
+     [
+      "raster:r1",
+      "m58",
+      "new media"
+     ]
+    ],
+    "canvases": 64,
+    "released": 59,
+    "images": 60,
+    "readies": 58,
+    "alpha": 0
+   },
+   {
+    "name": "drag 55",
+    "layers": [
+     [
+      "raster:r1",
+      "m59",
+      "new media"
+     ]
+    ],
+    "canvases": 65,
+    "released": 60,
+    "images": 61,
+    "readies": 59,
+    "alpha": 0
+   },
+   {
+    "name": "drag 56",
+    "layers": [
+     [
+      "raster:r1",
+      "m60",
+      "new media"
+     ]
+    ],
+    "canvases": 66,
+    "released": 61,
+    "images": 62,
+    "readies": 60,
+    "alpha": 0
+   },
+   {
+    "name": "drag 57",
+    "layers": [
+     [
+      "raster:r1",
+      "m61",
+      "new media"
+     ]
+    ],
+    "canvases": 67,
+    "released": 62,
+    "images": 63,
+    "readies": 61,
+    "alpha": 0
+   },
+   {
+    "name": "drag 58",
+    "layers": [
+     [
+      "raster:r1",
+      "m62",
+      "new media"
+     ]
+    ],
+    "canvases": 68,
+    "released": 63,
+    "images": 64,
+    "readies": 62,
+    "alpha": 0
+   },
+   {
+    "name": "drag 59",
+    "layers": [
+     [
+      "raster:r1",
+      "m63",
+      "new media"
+     ]
+    ],
+    "canvases": 69,
+    "released": 64,
+    "images": 65,
+    "readies": 63,
+    "alpha": 0
+   },
+   {
+    "name": "drag 60",
+    "layers": [
+     [
+      "raster:r1",
+      "m64",
+      "new media"
+     ]
+    ],
+    "canvases": 70,
+    "released": 65,
+    "images": 66,
+    "readies": 64,
+    "alpha": 0
+   },
+   {
+    "name": "drag 61",
+    "layers": [
+     [
+      "raster:r1",
+      "m65",
+      "new media"
+     ]
+    ],
+    "canvases": 71,
+    "released": 66,
+    "images": 67,
+    "readies": 65,
+    "alpha": 0
+   },
+   {
+    "name": "drag 62",
+    "layers": [
+     [
+      "raster:r1",
+      "m66",
+      "new media"
+     ]
+    ],
+    "canvases": 72,
+    "released": 67,
+    "images": 68,
+    "readies": 66,
+    "alpha": 0
+   },
+   {
+    "name": "drag 63",
+    "layers": [
+     [
+      "raster:r1",
+      "m67",
+      "new media"
+     ]
+    ],
+    "canvases": 73,
+    "released": 68,
+    "images": 69,
+    "readies": 67,
+    "alpha": 0
+   },
+   {
+    "name": "drag 64",
+    "layers": [
+     [
+      "raster:r1",
+      "m68",
+      "new media"
+     ]
+    ],
+    "canvases": 74,
+    "released": 69,
+    "images": 70,
+    "readies": 68,
+    "alpha": 0
+   },
+   {
+    "name": "drag 65",
+    "layers": [
+     [
+      "raster:r1",
+      "m69",
+      "new media"
+     ]
+    ],
+    "canvases": 75,
+    "released": 70,
+    "images": 71,
+    "readies": 69,
+    "alpha": 0
+   },
+   {
+    "name": "drag 66",
+    "layers": [
+     [
+      "raster:r1",
+      "m70",
+      "new media"
+     ]
+    ],
+    "canvases": 76,
+    "released": 71,
+    "images": 72,
+    "readies": 70,
+    "alpha": 0
+   },
+   {
+    "name": "drag 67",
+    "layers": [
+     [
+      "raster:r1",
+      "m71",
+      "new media"
+     ]
+    ],
+    "canvases": 77,
+    "released": 72,
+    "images": 73,
+    "readies": 71,
+    "alpha": 0
+   },
+   {
+    "name": "drag 68",
+    "layers": [
+     [
+      "raster:r1",
+      "m72",
+      "new media"
+     ]
+    ],
+    "canvases": 78,
+    "released": 73,
+    "images": 74,
+    "readies": 72,
+    "alpha": 0
+   },
+   {
+    "name": "drag 69",
+    "layers": [
+     [
+      "raster:r1",
+      "m73",
+      "new media"
+     ]
+    ],
+    "canvases": 79,
+    "released": 74,
+    "images": 75,
+    "readies": 73,
+    "alpha": 0
+   },
+   {
+    "name": "empty",
+    "layers": [],
+    "canvases": 79,
+    "released": 74,
+    "images": 75,
+    "readies": 74,
+    "alpha": 0
+   },
+   {
+    "name": "disposed",
+    "layers": [],
+    "canvases": 79,
+    "released": 75,
+    "images": 75,
+    "readies": 74
+   }
+  ],
+  "draws": [
+   {
+    "size": [
+     0,
+     0
+    ],
+    "draws": [
+     [
+      "translate",
+      307.1999999999998,
+      409.59999999999997
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i0",
+      -204.79999999999998,
+      -153.6,
+      409.59999999999997,
+      307.2
+     ],
+     [
+      "translate",
+      2355.2,
+      409.59999999999997
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i0",
+      -204.79999999999998,
+      -153.6,
+      409.59999999999997,
+      307.2
+     ],
+     [
+      "translate",
+      4403.2,
+      409.59999999999997
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i0",
+      -204.79999999999998,
+      -153.6,
+      409.59999999999997,
+      307.2
+     ]
+    ]
+   },
+   {
+    "size": [
+     0,
+     0
+    ],
+    "draws": [
+     [
+      "translate",
+      -1023.5,
+      435.20000000000005
+     ],
+     [
+      "rotate",
+      0
+     ],
+     [
+      "scale",
+      1,
+      1
+     ],
+     [
+      "i1",
+      -0.5,
+      -25.599999999999994,
+      1,
+      51.19999999999999
+     ],
+     [
+      "translate",
+      1024.5,
+      435.20000000000005
+     ],
+     [
+      "rotate",
+      0
+     ],
+     [
+      "scale",
+      1,
+      1
+     ],
+     [
+      "i1",
+      -0.5,
+      -25.599999999999994,
+      1,
+      51.19999999999999
+     ],
+     [
+      "translate",
+      3072.5,
+      435.20000000000005
+     ],
+     [
+      "rotate",
+      0
+     ],
+     [
+      "scale",
+      1,
+      1
+     ],
+     [
+      "i1",
+      -0.5,
+      -25.599999999999994,
+      1,
+      51.19999999999999
+     ]
+    ]
+   },
+   {
+    "size": [
+     0,
+     0
+    ],
+    "draws": [
+     [
+      "i0",
+      0,
+      0
+     ]
+    ]
+   },
+   {
+    "size": [
+     0,
+     0
+    ],
+    "draws": [
+     [
+      "translate",
+      -614.4000000000001,
+      409.59999999999997
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i3",
+      -204.79999999999998,
+      -153.6,
+      409.59999999999997,
+      307.2
+     ],
+     [
+      "translate",
+      1433.6,
+      409.59999999999997
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i3",
+      -204.79999999999998,
+      -153.6,
+      409.59999999999997,
+      307.2
+     ],
+     [
+      "translate",
+      3481.6,
+      409.59999999999997
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i3",
+      -204.79999999999998,
+      -153.6,
+      409.59999999999997,
+      307.2
+     ]
+    ]
+   },
+   {
+    "size": [
+     0,
+     0
+    ],
+    "draws": [
+     [
+      "translate",
+      307.1999999999998,
+      409.59999999999997
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i4",
+      -204.79999999999998,
+      -153.6,
+      409.59999999999997,
+      307.2
+     ],
+     [
+      "translate",
+      2355.2,
+      409.59999999999997
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i4",
+      -204.79999999999998,
+      -153.6,
+      409.59999999999997,
+      307.2
+     ],
+     [
+      "translate",
+      4403.2,
+      409.59999999999997
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i4",
+      -204.79999999999998,
+      -153.6,
+      409.59999999999997,
+      307.2
+     ]
+    ]
+   },
+   {
+    "size": [
+     0,
+     0
+    ],
+    "draws": [
+     [
+      "translate",
+      -1638.4,
+      409.59999999999997
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i5",
+      -204.79999999999998,
+      -153.6,
+      409.59999999999997,
+      307.2
+     ],
+     [
+      "translate",
+      409.6,
+      409.59999999999997
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i5",
+      -204.79999999999998,
+      -153.6,
+      409.59999999999997,
+      307.2
+     ],
+     [
+      "translate",
+      2457.6,
+      409.59999999999997
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i5",
+      -204.79999999999998,
+      -153.6,
+      409.59999999999997,
+      307.2
+     ]
+    ]
+   }
+  ]
+ },
+ "editor": {
+  "rows": [
+   {
+    "name": "first",
+    "layers": [],
+    "canvases": 0,
+    "released": 0,
+    "images": 3,
+    "readies": 0,
+    "eraser": null
+   },
+   {
+    "name": "loaded",
+    "layers": [
+     [
+      "raster:r1",
+      "m0",
+      null
+     ],
+     [
+      "raster:r2",
+      "m1",
+      null
+     ],
+     [
+      "raster:rb",
+      "m2",
+      null
+     ]
+    ],
+    "canvases": 3,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m0"
+   },
+   {
+    "name": "same",
+    "layers": [
+     [
+      "raster:r1",
+      "m0",
+      false
+     ],
+     [
+      "raster:r2",
+      "m1",
+      false
+     ],
+     [
+      "raster:rb",
+      "m2",
+      false
+     ]
+    ],
+    "canvases": 3,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m0"
+   },
+   {
+    "name": "moved",
+    "layers": [
+     [
+      "raster:r1",
+      "m3",
+      "new media"
+     ],
+     [
+      "raster:r2",
+      "m1",
+      false
+     ],
+     [
+      "raster:rb",
+      "m2",
+      false
+     ]
+    ],
+    "canvases": 4,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m0"
+   },
+   {
+    "name": "back",
+    "layers": [
+     [
+      "raster:r1",
+      "m0",
+      "new media"
+     ],
+     [
+      "raster:r2",
+      "m1",
+      false
+     ],
+     [
+      "raster:rb",
+      "m2",
+      false
+     ]
+    ],
+    "canvases": 4,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m0"
+   },
+   {
+    "name": "r2 gone",
+    "layers": [
+     [
+      "raster:r1",
+      "m0",
+      false
+     ],
+     [
+      "raster:rb",
+      "m2",
+      false
+     ]
+    ],
+    "canvases": 4,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m0"
+   },
+   {
+    "name": "hidden",
+    "layers": [],
+    "canvases": 4,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m0"
+   },
+   {
+    "name": "shown",
+    "layers": [
+     [
+      "raster:r1",
+      "m0",
+      true
+     ],
+     [
+      "raster:rb",
+      "m2",
+      true
+     ]
+    ],
+    "canvases": 4,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m0"
+   },
+   {
+    "name": "resized",
+    "layers": [
+     [
+      "raster:r1",
+      "m4",
+      "new media"
+     ],
+     [
+      "raster:rb",
+      "m5",
+      "new media"
+     ]
+    ],
+    "canvases": 6,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m4"
+   },
+   {
+    "name": "drag 0",
+    "layers": [
+     [
+      "raster:r1",
+      "m6",
+      "new media"
+     ]
+    ],
+    "canvases": 7,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m4"
+   },
+   {
+    "name": "drag 1",
+    "layers": [
+     [
+      "raster:r1",
+      "m7",
+      "new media"
+     ]
+    ],
+    "canvases": 8,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m4"
+   },
+   {
+    "name": "drag 2",
+    "layers": [
+     [
+      "raster:r1",
+      "m8",
+      "new media"
+     ]
+    ],
+    "canvases": 9,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m4"
+   },
+   {
+    "name": "drag 3",
+    "layers": [
+     [
+      "raster:r1",
+      "m9",
+      "new media"
+     ]
+    ],
+    "canvases": 10,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m4"
+   },
+   {
+    "name": "drag 4",
+    "layers": [
+     [
+      "raster:r1",
+      "m10",
+      "new media"
+     ]
+    ],
+    "canvases": 11,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m4"
+   },
+   {
+    "name": "drag 5",
+    "layers": [
+     [
+      "raster:r1",
+      "m11",
+      "new media"
+     ]
+    ],
+    "canvases": 12,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m4"
+   },
+   {
+    "name": "drag 6",
+    "layers": [
+     [
+      "raster:r1",
+      "m12",
+      "new media"
+     ]
+    ],
+    "canvases": 13,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m4"
+   },
+   {
+    "name": "drag 7",
+    "layers": [
+     [
+      "raster:r1",
+      "m13",
+      "new media"
+     ]
+    ],
+    "canvases": 14,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m4"
+   },
+   {
+    "name": "drag 8",
+    "layers": [
+     [
+      "raster:r1",
+      "m14",
+      "new media"
+     ]
+    ],
+    "canvases": 15,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m4"
+   },
+   {
+    "name": "drag 9",
+    "layers": [
+     [
+      "raster:r1",
+      "m15",
+      "new media"
+     ]
+    ],
+    "canvases": 16,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m4"
+   },
+   {
+    "name": "drag 10",
+    "layers": [
+     [
+      "raster:r1",
+      "m16",
+      "new media"
+     ]
+    ],
+    "canvases": 17,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m4"
+   },
+   {
+    "name": "drag 11",
+    "layers": [
+     [
+      "raster:r1",
+      "m17",
+      "new media"
+     ]
+    ],
+    "canvases": 18,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m4"
+   },
+   {
+    "name": "drag 12",
+    "layers": [
+     [
+      "raster:r1",
+      "m18",
+      "new media"
+     ]
+    ],
+    "canvases": 19,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m4"
+   },
+   {
+    "name": "drag 13",
+    "layers": [
+     [
+      "raster:r1",
+      "m19",
+      "new media"
+     ]
+    ],
+    "canvases": 20,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m4"
+   },
+   {
+    "name": "drag 14",
+    "layers": [
+     [
+      "raster:r1",
+      "m20",
+      "new media"
+     ]
+    ],
+    "canvases": 21,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m4"
+   },
+   {
+    "name": "drag 15",
+    "layers": [
+     [
+      "raster:r1",
+      "m21",
+      "new media"
+     ]
+    ],
+    "canvases": 22,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m4"
+   },
+   {
+    "name": "drag 16",
+    "layers": [
+     [
+      "raster:r1",
+      "m22",
+      "new media"
+     ]
+    ],
+    "canvases": 23,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m4"
+   },
+   {
+    "name": "drag 17",
+    "layers": [
+     [
+      "raster:r1",
+      "m23",
+      "new media"
+     ]
+    ],
+    "canvases": 24,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m4"
+   },
+   {
+    "name": "drag 18",
+    "layers": [
+     [
+      "raster:r1",
+      "m24",
+      "new media"
+     ]
+    ],
+    "canvases": 25,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m4"
+   },
+   {
+    "name": "drag 19",
+    "layers": [
+     [
+      "raster:r1",
+      "m25",
+      "new media"
+     ]
+    ],
+    "canvases": 26,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m4"
+   },
+   {
+    "name": "drag 20",
+    "layers": [
+     [
+      "raster:r1",
+      "m26",
+      "new media"
+     ]
+    ],
+    "canvases": 27,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m4"
+   },
+   {
+    "name": "drag 21",
+    "layers": [
+     [
+      "raster:r1",
+      "m27",
+      "new media"
+     ]
+    ],
+    "canvases": 28,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m4"
+   },
+   {
+    "name": "drag 22",
+    "layers": [
+     [
+      "raster:r1",
+      "m28",
+      "new media"
+     ]
+    ],
+    "canvases": 29,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m4"
+   },
+   {
+    "name": "drag 23",
+    "layers": [
+     [
+      "raster:r1",
+      "m29",
+      "new media"
+     ]
+    ],
+    "canvases": 30,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m4"
+   },
+   {
+    "name": "drag 24",
+    "layers": [
+     [
+      "raster:r1",
+      "m30",
+      "new media"
+     ]
+    ],
+    "canvases": 31,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m4"
+   },
+   {
+    "name": "drag 25",
+    "layers": [
+     [
+      "raster:r1",
+      "m31",
+      "new media"
+     ]
+    ],
+    "canvases": 32,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m4"
+   },
+   {
+    "name": "drag 26",
+    "layers": [
+     [
+      "raster:r1",
+      "m32",
+      "new media"
+     ]
+    ],
+    "canvases": 33,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m4"
+   },
+   {
+    "name": "drag 27",
+    "layers": [
+     [
+      "raster:r1",
+      "m33",
+      "new media"
+     ]
+    ],
+    "canvases": 34,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m4"
+   },
+   {
+    "name": "drag 28",
+    "layers": [
+     [
+      "raster:r1",
+      "m34",
+      "new media"
+     ]
+    ],
+    "canvases": 35,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m4"
+   },
+   {
+    "name": "drag 29",
+    "layers": [
+     [
+      "raster:r1",
+      "m35",
+      "new media"
+     ]
+    ],
+    "canvases": 36,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m4"
+   },
+   {
+    "name": "drag 30",
+    "layers": [
+     [
+      "raster:r1",
+      "m36",
+      "new media"
+     ]
+    ],
+    "canvases": 37,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m4"
+   },
+   {
+    "name": "drag 31",
+    "layers": [
+     [
+      "raster:r1",
+      "m37",
+      "new media"
+     ]
+    ],
+    "canvases": 38,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m4"
+   },
+   {
+    "name": "drag 32",
+    "layers": [
+     [
+      "raster:r1",
+      "m38",
+      "new media"
+     ]
+    ],
+    "canvases": 39,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m4"
+   },
+   {
+    "name": "drag 33",
+    "layers": [
+     [
+      "raster:r1",
+      "m39",
+      "new media"
+     ]
+    ],
+    "canvases": 40,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m4"
+   },
+   {
+    "name": "drag 34",
+    "layers": [
+     [
+      "raster:r1",
+      "m40",
+      "new media"
+     ]
+    ],
+    "canvases": 41,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m4"
+   },
+   {
+    "name": "drag 35",
+    "layers": [
+     [
+      "raster:r1",
+      "m41",
+      "new media"
+     ]
+    ],
+    "canvases": 42,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m4"
+   },
+   {
+    "name": "drag 36",
+    "layers": [
+     [
+      "raster:r1",
+      "m42",
+      "new media"
+     ]
+    ],
+    "canvases": 43,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m4"
+   },
+   {
+    "name": "drag 37",
+    "layers": [
+     [
+      "raster:r1",
+      "m43",
+      "new media"
+     ]
+    ],
+    "canvases": 44,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m4"
+   },
+   {
+    "name": "drag 38",
+    "layers": [
+     [
+      "raster:r1",
+      "m44",
+      "new media"
+     ]
+    ],
+    "canvases": 45,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m4"
+   },
+   {
+    "name": "drag 39",
+    "layers": [
+     [
+      "raster:r1",
+      "m45",
+      "new media"
+     ]
+    ],
+    "canvases": 46,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m4"
+   },
+   {
+    "name": "drag 40",
+    "layers": [
+     [
+      "raster:r1",
+      "m46",
+      "new media"
+     ]
+    ],
+    "canvases": 47,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m4"
+   },
+   {
+    "name": "drag 41",
+    "layers": [
+     [
+      "raster:r1",
+      "m47",
+      "new media"
+     ]
+    ],
+    "canvases": 48,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m4"
+   },
+   {
+    "name": "drag 42",
+    "layers": [
+     [
+      "raster:r1",
+      "m48",
+      "new media"
+     ]
+    ],
+    "canvases": 49,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m4"
+   },
+   {
+    "name": "drag 43",
+    "layers": [
+     [
+      "raster:r1",
+      "m49",
+      "new media"
+     ]
+    ],
+    "canvases": 50,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m4"
+   },
+   {
+    "name": "drag 44",
+    "layers": [
+     [
+      "raster:r1",
+      "m50",
+      "new media"
+     ]
+    ],
+    "canvases": 51,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m4"
+   },
+   {
+    "name": "drag 45",
+    "layers": [
+     [
+      "raster:r1",
+      "m51",
+      "new media"
+     ]
+    ],
+    "canvases": 52,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m4"
+   },
+   {
+    "name": "drag 46",
+    "layers": [
+     [
+      "raster:r1",
+      "m52",
+      "new media"
+     ]
+    ],
+    "canvases": 53,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m4"
+   },
+   {
+    "name": "drag 47",
+    "layers": [
+     [
+      "raster:r1",
+      "m53",
+      "new media"
+     ]
+    ],
+    "canvases": 54,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m4"
+   },
+   {
+    "name": "drag 48",
+    "layers": [
+     [
+      "raster:r1",
+      "m54",
+      "new media"
+     ]
+    ],
+    "canvases": 55,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m4"
+   },
+   {
+    "name": "drag 49",
+    "layers": [
+     [
+      "raster:r1",
+      "m55",
+      "new media"
+     ]
+    ],
+    "canvases": 56,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m4"
+   },
+   {
+    "name": "drag 50",
+    "layers": [
+     [
+      "raster:r1",
+      "m56",
+      "new media"
+     ]
+    ],
+    "canvases": 57,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m4"
+   },
+   {
+    "name": "drag 51",
+    "layers": [
+     [
+      "raster:r1",
+      "m57",
+      "new media"
+     ]
+    ],
+    "canvases": 58,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m4"
+   },
+   {
+    "name": "drag 52",
+    "layers": [
+     [
+      "raster:r1",
+      "m58",
+      "new media"
+     ]
+    ],
+    "canvases": 59,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m4"
+   },
+   {
+    "name": "drag 53",
+    "layers": [
+     [
+      "raster:r1",
+      "m59",
+      "new media"
+     ]
+    ],
+    "canvases": 60,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m4"
+   },
+   {
+    "name": "drag 54",
+    "layers": [
+     [
+      "raster:r1",
+      "m60",
+      "new media"
+     ]
+    ],
+    "canvases": 61,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m4"
+   },
+   {
+    "name": "drag 55",
+    "layers": [
+     [
+      "raster:r1",
+      "m61",
+      "new media"
+     ]
+    ],
+    "canvases": 62,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m4"
+   },
+   {
+    "name": "drag 56",
+    "layers": [
+     [
+      "raster:r1",
+      "m62",
+      "new media"
+     ]
+    ],
+    "canvases": 63,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m4"
+   },
+   {
+    "name": "drag 57",
+    "layers": [
+     [
+      "raster:r1",
+      "m63",
+      "new media"
+     ]
+    ],
+    "canvases": 64,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m4"
+   },
+   {
+    "name": "drag 58",
+    "layers": [
+     [
+      "raster:r1",
+      "m64",
+      "new media"
+     ]
+    ],
+    "canvases": 65,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m4"
+   },
+   {
+    "name": "drag 59",
+    "layers": [
+     [
+      "raster:r1",
+      "m65",
+      "new media"
+     ]
+    ],
+    "canvases": 66,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m4"
+   },
+   {
+    "name": "drag 60",
+    "layers": [
+     [
+      "raster:r1",
+      "m67",
+      "new media"
+     ]
+    ],
+    "canvases": 68,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m66"
+   },
+   {
+    "name": "drag 61",
+    "layers": [
+     [
+      "raster:r1",
+      "m68",
+      "new media"
+     ]
+    ],
+    "canvases": 69,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m66"
+   },
+   {
+    "name": "drag 62",
+    "layers": [
+     [
+      "raster:r1",
+      "m69",
+      "new media"
+     ]
+    ],
+    "canvases": 70,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m66"
+   },
+   {
+    "name": "drag 63",
+    "layers": [
+     [
+      "raster:r1",
+      "m70",
+      "new media"
+     ]
+    ],
+    "canvases": 71,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m66"
+   },
+   {
+    "name": "drag 64",
+    "layers": [
+     [
+      "raster:r1",
+      "m71",
+      "new media"
+     ]
+    ],
+    "canvases": 72,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m66"
+   },
+   {
+    "name": "drag 65",
+    "layers": [
+     [
+      "raster:r1",
+      "m72",
+      "new media"
+     ]
+    ],
+    "canvases": 73,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m66"
+   },
+   {
+    "name": "drag 66",
+    "layers": [
+     [
+      "raster:r1",
+      "m73",
+      "new media"
+     ]
+    ],
+    "canvases": 74,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m66"
+   },
+   {
+    "name": "drag 67",
+    "layers": [
+     [
+      "raster:r1",
+      "m74",
+      "new media"
+     ]
+    ],
+    "canvases": 75,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m66"
+   },
+   {
+    "name": "drag 68",
+    "layers": [
+     [
+      "raster:r1",
+      "m75",
+      "new media"
+     ]
+    ],
+    "canvases": 76,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m66"
+   },
+   {
+    "name": "drag 69",
+    "layers": [
+     [
+      "raster:r1",
+      "m76",
+      "new media"
+     ]
+    ],
+    "canvases": 77,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m66"
+   },
+   {
+    "name": "empty",
+    "layers": [],
+    "canvases": 77,
+    "released": 0,
+    "images": 3,
+    "readies": 1,
+    "eraser": "m66"
+   }
+  ],
+  "draws": [
+   {
+    "size": [
+     2048,
+     1024
+    ],
+    "draws": [
+     [
+      "translate",
+      307.1999999999998,
+      409.59999999999997
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i0",
+      -204.79999999999998,
+      -153.6,
+      409.59999999999997,
+      307.2
+     ],
+     [
+      "translate",
+      2355.2,
+      409.59999999999997
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i0",
+      -204.79999999999998,
+      -153.6,
+      409.59999999999997,
+      307.2
+     ],
+     [
+      "translate",
+      4403.2,
+      409.59999999999997
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i0",
+      -204.79999999999998,
+      -153.6,
+      409.59999999999997,
+      307.2
+     ]
+    ]
+   },
+   {
+    "size": [
+     2048,
+     1024
+    ],
+    "draws": [
+     [
+      "translate",
+      -1023.5,
+      435.20000000000005
+     ],
+     [
+      "rotate",
+      0
+     ],
+     [
+      "scale",
+      1,
+      1
+     ],
+     [
+      "i1",
+      -0.5,
+      -25.599999999999994,
+      1,
+      51.19999999999999
+     ],
+     [
+      "translate",
+      1024.5,
+      435.20000000000005
+     ],
+     [
+      "rotate",
+      0
+     ],
+     [
+      "scale",
+      1,
+      1
+     ],
+     [
+      "i1",
+      -0.5,
+      -25.599999999999994,
+      1,
+      51.19999999999999
+     ],
+     [
+      "translate",
+      3072.5,
+      435.20000000000005
+     ],
+     [
+      "rotate",
+      0
+     ],
+     [
+      "scale",
+      1,
+      1
+     ],
+     [
+      "i1",
+      -0.5,
+      -25.599999999999994,
+      1,
+      51.19999999999999
+     ]
+    ]
+   },
+   {
+    "size": [
+     2048,
+     1024
+    ],
+    "draws": [
+     [
+      "translate",
+      -1638.4,
+      358.4
+     ],
+     [
+      "rotate",
+      0
+     ],
+     [
+      "scale",
+      1,
+      1
+     ],
+     [
+      "i2",
+      -204.79999999999998,
+      -153.6,
+      409.59999999999997,
+      307.2
+     ],
+     [
+      "translate",
+      409.6,
+      358.4
+     ],
+     [
+      "rotate",
+      0
+     ],
+     [
+      "scale",
+      1,
+      1
+     ],
+     [
+      "i2",
+      -204.79999999999998,
+      -153.6,
+      409.59999999999997,
+      307.2
+     ],
+     [
+      "translate",
+      2457.6,
+      358.4
+     ],
+     [
+      "rotate",
+      0
+     ],
+     [
+      "scale",
+      1,
+      1
+     ],
+     [
+      "i2",
+      -204.79999999999998,
+      -153.6,
+      409.59999999999997,
+      307.2
+     ]
+    ]
+   },
+   {
+    "size": [
+     2048,
+     1024
+    ],
+    "draws": [
+     [
+      "translate",
+      -614.4000000000001,
+      409.59999999999997
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i0",
+      -204.79999999999998,
+      -153.6,
+      409.59999999999997,
+      307.2
+     ],
+     [
+      "translate",
+      1433.6,
+      409.59999999999997
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i0",
+      -204.79999999999998,
+      -153.6,
+      409.59999999999997,
+      307.2
+     ],
+     [
+      "translate",
+      3481.6,
+      409.59999999999997
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i0",
+      -204.79999999999998,
+      -153.6,
+      409.59999999999997,
+      307.2
+     ]
+    ]
+   },
+   {
+    "size": [
+     1024,
+     512
+    ],
+    "draws": [
+     [
+      "translate",
+      153.5999999999999,
+      204.79999999999998
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i0",
+      -102.39999999999999,
+      -76.8,
+      204.79999999999998,
+      153.6
+     ],
+     [
+      "translate",
+      1177.6,
+      204.79999999999998
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i0",
+      -102.39999999999999,
+      -76.8,
+      204.79999999999998,
+      153.6
+     ],
+     [
+      "translate",
+      2201.6,
+      204.79999999999998
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i0",
+      -102.39999999999999,
+      -76.8,
+      204.79999999999998,
+      153.6
+     ]
+    ]
+   },
+   {
+    "size": [
+     1024,
+     512
+    ],
+    "draws": [
+     [
+      "translate",
+      -819.2,
+      179.2
+     ],
+     [
+      "rotate",
+      0
+     ],
+     [
+      "scale",
+      1,
+      1
+     ],
+     [
+      "i2",
+      -102.39999999999999,
+      -76.8,
+      204.79999999999998,
+      153.6
+     ],
+     [
+      "translate",
+      204.8,
+      179.2
+     ],
+     [
+      "rotate",
+      0
+     ],
+     [
+      "scale",
+      1,
+      1
+     ],
+     [
+      "i2",
+      -102.39999999999999,
+      -76.8,
+      204.79999999999998,
+      153.6
+     ],
+     [
+      "translate",
+      1228.8,
+      179.2
+     ],
+     [
+      "rotate",
+      0
+     ],
+     [
+      "scale",
+      1,
+      1
+     ],
+     [
+      "i2",
+      -102.39999999999999,
+      -76.8,
+      204.79999999999998,
+      153.6
+     ]
+    ]
+   }
+  ]
+ },
+ "surface": {
+  "rows": [
+   {
+    "name": "first",
+    "layers": [
+     [
+      "paint_group:g1",
+      "e0:g1",
+      null
+     ]
+    ],
+    "canvases": 0,
+    "released": 0,
+    "images": 3,
+    "readies": 0,
+    "engines": [
+     [
+      2048,
+      1
+     ]
+    ]
+   },
+   {
+    "name": "loaded",
+    "layers": [
+     [
+      "paint_group:g1",
+      "e0:g1",
+      true
+     ],
+     [
+      "raster:r1",
+      "m0",
+      null
+     ],
+     [
+      "raster:r2",
+      "m1",
+      null
+     ]
+    ],
+    "canvases": 2,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      2
+     ]
+    ]
+   },
+   {
+    "name": "same",
+    "layers": [
+     [
+      "paint_group:g1",
+      "e0:g1",
+      true
+     ],
+     [
+      "raster:r1",
+      "m0",
+      false
+     ],
+     [
+      "raster:r2",
+      "m1",
+      false
+     ]
+    ],
+    "canvases": 2,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      3
+     ]
+    ]
+   },
+   {
+    "name": "moved",
+    "layers": [
+     [
+      "paint_group:g1",
+      "e0:g1",
+      true
+     ],
+     [
+      "raster:r1",
+      "m2",
+      "new media"
+     ],
+     [
+      "raster:r2",
+      "m1",
+      false
+     ]
+    ],
+    "canvases": 3,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      4
+     ]
+    ]
+   },
+   {
+    "name": "back",
+    "layers": [
+     [
+      "paint_group:g1",
+      "e0:g1",
+      true
+     ],
+     [
+      "raster:r1",
+      "m3",
+      "new media"
+     ],
+     [
+      "raster:r2",
+      "m1",
+      false
+     ]
+    ],
+    "canvases": 4,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "r2 gone",
+    "layers": [
+     [
+      "raster:r1",
+      "m3",
+      false
+     ]
+    ],
+    "canvases": 4,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "hidden",
+    "layers": [],
+    "canvases": 4,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "shown",
+    "layers": [
+     [
+      "raster:r1",
+      "m4",
+      "new media"
+     ]
+    ],
+    "canvases": 5,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "resized",
+    "layers": [
+     [
+      "raster:r1",
+      "m4",
+      false
+     ]
+    ],
+    "canvases": 5,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 0",
+    "layers": [
+     [
+      "raster:r1",
+      "m5",
+      "new media"
+     ]
+    ],
+    "canvases": 6,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 1",
+    "layers": [
+     [
+      "raster:r1",
+      "m6",
+      "new media"
+     ]
+    ],
+    "canvases": 7,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 2",
+    "layers": [
+     [
+      "raster:r1",
+      "m7",
+      "new media"
+     ]
+    ],
+    "canvases": 8,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 3",
+    "layers": [
+     [
+      "raster:r1",
+      "m8",
+      "new media"
+     ]
+    ],
+    "canvases": 9,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 4",
+    "layers": [
+     [
+      "raster:r1",
+      "m9",
+      "new media"
+     ]
+    ],
+    "canvases": 10,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 5",
+    "layers": [
+     [
+      "raster:r1",
+      "m10",
+      "new media"
+     ]
+    ],
+    "canvases": 11,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 6",
+    "layers": [
+     [
+      "raster:r1",
+      "m11",
+      "new media"
+     ]
+    ],
+    "canvases": 12,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 7",
+    "layers": [
+     [
+      "raster:r1",
+      "m12",
+      "new media"
+     ]
+    ],
+    "canvases": 13,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 8",
+    "layers": [
+     [
+      "raster:r1",
+      "m13",
+      "new media"
+     ]
+    ],
+    "canvases": 14,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 9",
+    "layers": [
+     [
+      "raster:r1",
+      "m14",
+      "new media"
+     ]
+    ],
+    "canvases": 15,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 10",
+    "layers": [
+     [
+      "raster:r1",
+      "m15",
+      "new media"
+     ]
+    ],
+    "canvases": 16,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 11",
+    "layers": [
+     [
+      "raster:r1",
+      "m16",
+      "new media"
+     ]
+    ],
+    "canvases": 17,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 12",
+    "layers": [
+     [
+      "raster:r1",
+      "m17",
+      "new media"
+     ]
+    ],
+    "canvases": 18,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 13",
+    "layers": [
+     [
+      "raster:r1",
+      "m18",
+      "new media"
+     ]
+    ],
+    "canvases": 19,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 14",
+    "layers": [
+     [
+      "raster:r1",
+      "m19",
+      "new media"
+     ]
+    ],
+    "canvases": 20,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 15",
+    "layers": [
+     [
+      "raster:r1",
+      "m20",
+      "new media"
+     ]
+    ],
+    "canvases": 21,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 16",
+    "layers": [
+     [
+      "raster:r1",
+      "m21",
+      "new media"
+     ]
+    ],
+    "canvases": 22,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 17",
+    "layers": [
+     [
+      "raster:r1",
+      "m22",
+      "new media"
+     ]
+    ],
+    "canvases": 23,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 18",
+    "layers": [
+     [
+      "raster:r1",
+      "m23",
+      "new media"
+     ]
+    ],
+    "canvases": 24,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 19",
+    "layers": [
+     [
+      "raster:r1",
+      "m24",
+      "new media"
+     ]
+    ],
+    "canvases": 25,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 20",
+    "layers": [
+     [
+      "raster:r1",
+      "m25",
+      "new media"
+     ]
+    ],
+    "canvases": 26,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 21",
+    "layers": [
+     [
+      "raster:r1",
+      "m26",
+      "new media"
+     ]
+    ],
+    "canvases": 27,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 22",
+    "layers": [
+     [
+      "raster:r1",
+      "m27",
+      "new media"
+     ]
+    ],
+    "canvases": 28,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 23",
+    "layers": [
+     [
+      "raster:r1",
+      "m28",
+      "new media"
+     ]
+    ],
+    "canvases": 29,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 24",
+    "layers": [
+     [
+      "raster:r1",
+      "m29",
+      "new media"
+     ]
+    ],
+    "canvases": 30,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 25",
+    "layers": [
+     [
+      "raster:r1",
+      "m30",
+      "new media"
+     ]
+    ],
+    "canvases": 31,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 26",
+    "layers": [
+     [
+      "raster:r1",
+      "m31",
+      "new media"
+     ]
+    ],
+    "canvases": 32,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 27",
+    "layers": [
+     [
+      "raster:r1",
+      "m32",
+      "new media"
+     ]
+    ],
+    "canvases": 33,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 28",
+    "layers": [
+     [
+      "raster:r1",
+      "m33",
+      "new media"
+     ]
+    ],
+    "canvases": 34,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 29",
+    "layers": [
+     [
+      "raster:r1",
+      "m34",
+      "new media"
+     ]
+    ],
+    "canvases": 35,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 30",
+    "layers": [
+     [
+      "raster:r1",
+      "m35",
+      "new media"
+     ]
+    ],
+    "canvases": 36,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 31",
+    "layers": [
+     [
+      "raster:r1",
+      "m36",
+      "new media"
+     ]
+    ],
+    "canvases": 37,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 32",
+    "layers": [
+     [
+      "raster:r1",
+      "m37",
+      "new media"
+     ]
+    ],
+    "canvases": 38,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 33",
+    "layers": [
+     [
+      "raster:r1",
+      "m38",
+      "new media"
+     ]
+    ],
+    "canvases": 39,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 34",
+    "layers": [
+     [
+      "raster:r1",
+      "m39",
+      "new media"
+     ]
+    ],
+    "canvases": 40,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 35",
+    "layers": [
+     [
+      "raster:r1",
+      "m40",
+      "new media"
+     ]
+    ],
+    "canvases": 41,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 36",
+    "layers": [
+     [
+      "raster:r1",
+      "m41",
+      "new media"
+     ]
+    ],
+    "canvases": 42,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 37",
+    "layers": [
+     [
+      "raster:r1",
+      "m42",
+      "new media"
+     ]
+    ],
+    "canvases": 43,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 38",
+    "layers": [
+     [
+      "raster:r1",
+      "m43",
+      "new media"
+     ]
+    ],
+    "canvases": 44,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 39",
+    "layers": [
+     [
+      "raster:r1",
+      "m44",
+      "new media"
+     ]
+    ],
+    "canvases": 45,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 40",
+    "layers": [
+     [
+      "raster:r1",
+      "m45",
+      "new media"
+     ]
+    ],
+    "canvases": 46,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 41",
+    "layers": [
+     [
+      "raster:r1",
+      "m46",
+      "new media"
+     ]
+    ],
+    "canvases": 47,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 42",
+    "layers": [
+     [
+      "raster:r1",
+      "m47",
+      "new media"
+     ]
+    ],
+    "canvases": 48,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 43",
+    "layers": [
+     [
+      "raster:r1",
+      "m48",
+      "new media"
+     ]
+    ],
+    "canvases": 49,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 44",
+    "layers": [
+     [
+      "raster:r1",
+      "m49",
+      "new media"
+     ]
+    ],
+    "canvases": 50,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 45",
+    "layers": [
+     [
+      "raster:r1",
+      "m50",
+      "new media"
+     ]
+    ],
+    "canvases": 51,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 46",
+    "layers": [
+     [
+      "raster:r1",
+      "m51",
+      "new media"
+     ]
+    ],
+    "canvases": 52,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 47",
+    "layers": [
+     [
+      "raster:r1",
+      "m52",
+      "new media"
+     ]
+    ],
+    "canvases": 53,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 48",
+    "layers": [
+     [
+      "raster:r1",
+      "m53",
+      "new media"
+     ]
+    ],
+    "canvases": 54,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 49",
+    "layers": [
+     [
+      "raster:r1",
+      "m54",
+      "new media"
+     ]
+    ],
+    "canvases": 55,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 50",
+    "layers": [
+     [
+      "raster:r1",
+      "m55",
+      "new media"
+     ]
+    ],
+    "canvases": 56,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 51",
+    "layers": [
+     [
+      "raster:r1",
+      "m56",
+      "new media"
+     ]
+    ],
+    "canvases": 57,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 52",
+    "layers": [
+     [
+      "raster:r1",
+      "m57",
+      "new media"
+     ]
+    ],
+    "canvases": 58,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 53",
+    "layers": [
+     [
+      "raster:r1",
+      "m58",
+      "new media"
+     ]
+    ],
+    "canvases": 59,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 54",
+    "layers": [
+     [
+      "raster:r1",
+      "m59",
+      "new media"
+     ]
+    ],
+    "canvases": 60,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 55",
+    "layers": [
+     [
+      "raster:r1",
+      "m60",
+      "new media"
+     ]
+    ],
+    "canvases": 61,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 56",
+    "layers": [
+     [
+      "raster:r1",
+      "m61",
+      "new media"
+     ]
+    ],
+    "canvases": 62,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 57",
+    "layers": [
+     [
+      "raster:r1",
+      "m62",
+      "new media"
+     ]
+    ],
+    "canvases": 63,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 58",
+    "layers": [
+     [
+      "raster:r1",
+      "m63",
+      "new media"
+     ]
+    ],
+    "canvases": 64,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 59",
+    "layers": [
+     [
+      "raster:r1",
+      "m64",
+      "new media"
+     ]
+    ],
+    "canvases": 65,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 60",
+    "layers": [
+     [
+      "raster:r1",
+      "m65",
+      "new media"
+     ]
+    ],
+    "canvases": 66,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 61",
+    "layers": [
+     [
+      "raster:r1",
+      "m66",
+      "new media"
+     ]
+    ],
+    "canvases": 67,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 62",
+    "layers": [
+     [
+      "raster:r1",
+      "m67",
+      "new media"
+     ]
+    ],
+    "canvases": 68,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 63",
+    "layers": [
+     [
+      "raster:r1",
+      "m68",
+      "new media"
+     ]
+    ],
+    "canvases": 69,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 64",
+    "layers": [
+     [
+      "raster:r1",
+      "m69",
+      "new media"
+     ]
+    ],
+    "canvases": 70,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 65",
+    "layers": [
+     [
+      "raster:r1",
+      "m70",
+      "new media"
+     ]
+    ],
+    "canvases": 71,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 66",
+    "layers": [
+     [
+      "raster:r1",
+      "m71",
+      "new media"
+     ]
+    ],
+    "canvases": 72,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 67",
+    "layers": [
+     [
+      "raster:r1",
+      "m72",
+      "new media"
+     ]
+    ],
+    "canvases": 73,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 68",
+    "layers": [
+     [
+      "raster:r1",
+      "m73",
+      "new media"
+     ]
+    ],
+    "canvases": 74,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "drag 69",
+    "layers": [
+     [
+      "raster:r1",
+      "m74",
+      "new media"
+     ]
+    ],
+    "canvases": 75,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   },
+   {
+    "name": "empty",
+    "layers": [],
+    "canvases": 75,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": [
+     [
+      2048,
+      5
+     ]
+    ]
+   }
+  ],
+  "draws": [
+   {
+    "size": [
+     1024,
+     512
+    ],
+    "draws": [
+     [
+      "translate",
+      153.5999999999999,
+      204.79999999999998
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i0",
+      -102.39999999999999,
+      -76.8,
+      204.79999999999998,
+      153.6
+     ],
+     [
+      "translate",
+      1177.6,
+      204.79999999999998
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i0",
+      -102.39999999999999,
+      -76.8,
+      204.79999999999998,
+      153.6
+     ],
+     [
+      "translate",
+      2201.6,
+      204.79999999999998
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i0",
+      -102.39999999999999,
+      -76.8,
+      204.79999999999998,
+      153.6
+     ]
+    ]
+   },
+   {
+    "size": [
+     1024,
+     512
+    ],
+    "draws": [
+     [
+      "translate",
+      -511.79999999999995,
+      217.60000000000002
+     ],
+     [
+      "rotate",
+      0
+     ],
+     [
+      "scale",
+      1,
+      1
+     ],
+     [
+      "i1",
+      -0.19999999999998863,
+      -12.799999999999997,
+      0.39999999999997726,
+      25.599999999999994
+     ],
+     [
+      "translate",
+      512.2,
+      217.60000000000002
+     ],
+     [
+      "rotate",
+      0
+     ],
+     [
+      "scale",
+      1,
+      1
+     ],
+     [
+      "i1",
+      -0.19999999999998863,
+      -12.799999999999997,
+      0.39999999999997726,
+      25.599999999999994
+     ],
+     [
+      "translate",
+      1536.2,
+      217.60000000000002
+     ],
+     [
+      "rotate",
+      0
+     ],
+     [
+      "scale",
+      1,
+      1
+     ],
+     [
+      "i1",
+      -0.19999999999998863,
+      -12.799999999999997,
+      0.39999999999997726,
+      25.599999999999994
+     ]
+    ]
+   },
+   {
+    "size": [
+     1024,
+     512
+    ],
+    "draws": [
+     [
+      "translate",
+      -307.20000000000005,
+      204.79999999999998
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i0",
+      -102.39999999999999,
+      -76.8,
+      204.79999999999998,
+      153.6
+     ],
+     [
+      "translate",
+      716.8,
+      204.79999999999998
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i0",
+      -102.39999999999999,
+      -76.8,
+      204.79999999999998,
+      153.6
+     ],
+     [
+      "translate",
+      1740.8,
+      204.79999999999998
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i0",
+      -102.39999999999999,
+      -76.8,
+      204.79999999999998,
+      153.6
+     ]
+    ]
+   },
+   {
+    "size": [
+     1024,
+     512
+    ],
+    "draws": [
+     [
+      "translate",
+      153.5999999999999,
+      204.79999999999998
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i0",
+      -102.39999999999999,
+      -76.8,
+      204.79999999999998,
+      153.6
+     ],
+     [
+      "translate",
+      1177.6,
+      204.79999999999998
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i0",
+      -102.39999999999999,
+      -76.8,
+      204.79999999999998,
+      153.6
+     ],
+     [
+      "translate",
+      2201.6,
+      204.79999999999998
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i0",
+      -102.39999999999999,
+      -76.8,
+      204.79999999999998,
+      153.6
+     ]
+    ]
+   },
+   {
+    "size": [
+     1024,
+     512
+    ],
+    "draws": [
+     [
+      "translate",
+      153.5999999999999,
+      204.79999999999998
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i0",
+      -102.39999999999999,
+      -76.8,
+      204.79999999999998,
+      153.6
+     ],
+     [
+      "translate",
+      1177.6,
+      204.79999999999998
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i0",
+      -102.39999999999999,
+      -76.8,
+      204.79999999999998,
+      153.6
+     ],
+     [
+      "translate",
+      2201.6,
+      204.79999999999998
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i0",
+      -102.39999999999999,
+      -76.8,
+      204.79999999999998,
+      153.6
+     ]
+    ]
+   },
+   {
+    "size": [
+     1024,
+     512
+    ],
+    "draws": [
+     [
+      "translate",
+      -819.2,
+      204.79999999999998
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i0",
+      -102.39999999999999,
+      -76.8,
+      204.79999999999998,
+      153.6
+     ],
+     [
+      "translate",
+      204.8,
+      204.79999999999998
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i0",
+      -102.39999999999999,
+      -76.8,
+      204.79999999999998,
+      153.6
+     ],
+     [
+      "translate",
+      1228.8,
+      204.79999999999998
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i0",
+      -102.39999999999999,
+      -76.8,
+      204.79999999999998,
+      153.6
+     ]
+    ]
+   }
+  ]
+ },
+ "surfaceMaskOnly": {
+  "rows": [
+   {
+    "name": "first",
+    "layers": [],
+    "canvases": 0,
+    "released": 0,
+    "images": 3,
+    "readies": 0,
+    "engines": []
+   },
+   {
+    "name": "loaded",
+    "layers": [
+     [
+      "raster:r1",
+      "m0",
+      null
+     ],
+     [
+      "raster:r2",
+      "m1",
+      null
+     ]
+    ],
+    "canvases": 2,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "same",
+    "layers": [
+     [
+      "raster:r1",
+      "m0",
+      false
+     ],
+     [
+      "raster:r2",
+      "m1",
+      false
+     ]
+    ],
+    "canvases": 2,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "moved",
+    "layers": [
+     [
+      "raster:r1",
+      "m2",
+      "new media"
+     ],
+     [
+      "raster:r2",
+      "m1",
+      false
+     ]
+    ],
+    "canvases": 3,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "back",
+    "layers": [
+     [
+      "raster:r1",
+      "m3",
+      "new media"
+     ],
+     [
+      "raster:r2",
+      "m1",
+      false
+     ]
+    ],
+    "canvases": 4,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "r2 gone",
+    "layers": [
+     [
+      "raster:r1",
+      "m3",
+      false
+     ]
+    ],
+    "canvases": 4,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "hidden",
+    "layers": [],
+    "canvases": 4,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "shown",
+    "layers": [
+     [
+      "raster:r1",
+      "m4",
+      "new media"
+     ]
+    ],
+    "canvases": 5,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "resized",
+    "layers": [
+     [
+      "raster:r1",
+      "m4",
+      false
+     ]
+    ],
+    "canvases": 5,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 0",
+    "layers": [
+     [
+      "raster:r1",
+      "m5",
+      "new media"
+     ]
+    ],
+    "canvases": 6,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 1",
+    "layers": [
+     [
+      "raster:r1",
+      "m6",
+      "new media"
+     ]
+    ],
+    "canvases": 7,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 2",
+    "layers": [
+     [
+      "raster:r1",
+      "m7",
+      "new media"
+     ]
+    ],
+    "canvases": 8,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 3",
+    "layers": [
+     [
+      "raster:r1",
+      "m8",
+      "new media"
+     ]
+    ],
+    "canvases": 9,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 4",
+    "layers": [
+     [
+      "raster:r1",
+      "m9",
+      "new media"
+     ]
+    ],
+    "canvases": 10,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 5",
+    "layers": [
+     [
+      "raster:r1",
+      "m10",
+      "new media"
+     ]
+    ],
+    "canvases": 11,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 6",
+    "layers": [
+     [
+      "raster:r1",
+      "m11",
+      "new media"
+     ]
+    ],
+    "canvases": 12,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 7",
+    "layers": [
+     [
+      "raster:r1",
+      "m12",
+      "new media"
+     ]
+    ],
+    "canvases": 13,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 8",
+    "layers": [
+     [
+      "raster:r1",
+      "m13",
+      "new media"
+     ]
+    ],
+    "canvases": 14,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 9",
+    "layers": [
+     [
+      "raster:r1",
+      "m14",
+      "new media"
+     ]
+    ],
+    "canvases": 15,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 10",
+    "layers": [
+     [
+      "raster:r1",
+      "m15",
+      "new media"
+     ]
+    ],
+    "canvases": 16,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 11",
+    "layers": [
+     [
+      "raster:r1",
+      "m16",
+      "new media"
+     ]
+    ],
+    "canvases": 17,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 12",
+    "layers": [
+     [
+      "raster:r1",
+      "m17",
+      "new media"
+     ]
+    ],
+    "canvases": 18,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 13",
+    "layers": [
+     [
+      "raster:r1",
+      "m18",
+      "new media"
+     ]
+    ],
+    "canvases": 19,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 14",
+    "layers": [
+     [
+      "raster:r1",
+      "m19",
+      "new media"
+     ]
+    ],
+    "canvases": 20,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 15",
+    "layers": [
+     [
+      "raster:r1",
+      "m20",
+      "new media"
+     ]
+    ],
+    "canvases": 21,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 16",
+    "layers": [
+     [
+      "raster:r1",
+      "m21",
+      "new media"
+     ]
+    ],
+    "canvases": 22,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 17",
+    "layers": [
+     [
+      "raster:r1",
+      "m22",
+      "new media"
+     ]
+    ],
+    "canvases": 23,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 18",
+    "layers": [
+     [
+      "raster:r1",
+      "m23",
+      "new media"
+     ]
+    ],
+    "canvases": 24,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 19",
+    "layers": [
+     [
+      "raster:r1",
+      "m24",
+      "new media"
+     ]
+    ],
+    "canvases": 25,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 20",
+    "layers": [
+     [
+      "raster:r1",
+      "m25",
+      "new media"
+     ]
+    ],
+    "canvases": 26,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 21",
+    "layers": [
+     [
+      "raster:r1",
+      "m26",
+      "new media"
+     ]
+    ],
+    "canvases": 27,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 22",
+    "layers": [
+     [
+      "raster:r1",
+      "m27",
+      "new media"
+     ]
+    ],
+    "canvases": 28,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 23",
+    "layers": [
+     [
+      "raster:r1",
+      "m28",
+      "new media"
+     ]
+    ],
+    "canvases": 29,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 24",
+    "layers": [
+     [
+      "raster:r1",
+      "m29",
+      "new media"
+     ]
+    ],
+    "canvases": 30,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 25",
+    "layers": [
+     [
+      "raster:r1",
+      "m30",
+      "new media"
+     ]
+    ],
+    "canvases": 31,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 26",
+    "layers": [
+     [
+      "raster:r1",
+      "m31",
+      "new media"
+     ]
+    ],
+    "canvases": 32,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 27",
+    "layers": [
+     [
+      "raster:r1",
+      "m32",
+      "new media"
+     ]
+    ],
+    "canvases": 33,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 28",
+    "layers": [
+     [
+      "raster:r1",
+      "m33",
+      "new media"
+     ]
+    ],
+    "canvases": 34,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 29",
+    "layers": [
+     [
+      "raster:r1",
+      "m34",
+      "new media"
+     ]
+    ],
+    "canvases": 35,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 30",
+    "layers": [
+     [
+      "raster:r1",
+      "m35",
+      "new media"
+     ]
+    ],
+    "canvases": 36,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 31",
+    "layers": [
+     [
+      "raster:r1",
+      "m36",
+      "new media"
+     ]
+    ],
+    "canvases": 37,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 32",
+    "layers": [
+     [
+      "raster:r1",
+      "m37",
+      "new media"
+     ]
+    ],
+    "canvases": 38,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 33",
+    "layers": [
+     [
+      "raster:r1",
+      "m38",
+      "new media"
+     ]
+    ],
+    "canvases": 39,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 34",
+    "layers": [
+     [
+      "raster:r1",
+      "m39",
+      "new media"
+     ]
+    ],
+    "canvases": 40,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 35",
+    "layers": [
+     [
+      "raster:r1",
+      "m40",
+      "new media"
+     ]
+    ],
+    "canvases": 41,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 36",
+    "layers": [
+     [
+      "raster:r1",
+      "m41",
+      "new media"
+     ]
+    ],
+    "canvases": 42,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 37",
+    "layers": [
+     [
+      "raster:r1",
+      "m42",
+      "new media"
+     ]
+    ],
+    "canvases": 43,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 38",
+    "layers": [
+     [
+      "raster:r1",
+      "m43",
+      "new media"
+     ]
+    ],
+    "canvases": 44,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 39",
+    "layers": [
+     [
+      "raster:r1",
+      "m44",
+      "new media"
+     ]
+    ],
+    "canvases": 45,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 40",
+    "layers": [
+     [
+      "raster:r1",
+      "m45",
+      "new media"
+     ]
+    ],
+    "canvases": 46,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 41",
+    "layers": [
+     [
+      "raster:r1",
+      "m46",
+      "new media"
+     ]
+    ],
+    "canvases": 47,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 42",
+    "layers": [
+     [
+      "raster:r1",
+      "m47",
+      "new media"
+     ]
+    ],
+    "canvases": 48,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 43",
+    "layers": [
+     [
+      "raster:r1",
+      "m48",
+      "new media"
+     ]
+    ],
+    "canvases": 49,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 44",
+    "layers": [
+     [
+      "raster:r1",
+      "m49",
+      "new media"
+     ]
+    ],
+    "canvases": 50,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 45",
+    "layers": [
+     [
+      "raster:r1",
+      "m50",
+      "new media"
+     ]
+    ],
+    "canvases": 51,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 46",
+    "layers": [
+     [
+      "raster:r1",
+      "m51",
+      "new media"
+     ]
+    ],
+    "canvases": 52,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 47",
+    "layers": [
+     [
+      "raster:r1",
+      "m52",
+      "new media"
+     ]
+    ],
+    "canvases": 53,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 48",
+    "layers": [
+     [
+      "raster:r1",
+      "m53",
+      "new media"
+     ]
+    ],
+    "canvases": 54,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 49",
+    "layers": [
+     [
+      "raster:r1",
+      "m54",
+      "new media"
+     ]
+    ],
+    "canvases": 55,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 50",
+    "layers": [
+     [
+      "raster:r1",
+      "m55",
+      "new media"
+     ]
+    ],
+    "canvases": 56,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 51",
+    "layers": [
+     [
+      "raster:r1",
+      "m56",
+      "new media"
+     ]
+    ],
+    "canvases": 57,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 52",
+    "layers": [
+     [
+      "raster:r1",
+      "m57",
+      "new media"
+     ]
+    ],
+    "canvases": 58,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 53",
+    "layers": [
+     [
+      "raster:r1",
+      "m58",
+      "new media"
+     ]
+    ],
+    "canvases": 59,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 54",
+    "layers": [
+     [
+      "raster:r1",
+      "m59",
+      "new media"
+     ]
+    ],
+    "canvases": 60,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 55",
+    "layers": [
+     [
+      "raster:r1",
+      "m60",
+      "new media"
+     ]
+    ],
+    "canvases": 61,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 56",
+    "layers": [
+     [
+      "raster:r1",
+      "m61",
+      "new media"
+     ]
+    ],
+    "canvases": 62,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 57",
+    "layers": [
+     [
+      "raster:r1",
+      "m62",
+      "new media"
+     ]
+    ],
+    "canvases": 63,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 58",
+    "layers": [
+     [
+      "raster:r1",
+      "m63",
+      "new media"
+     ]
+    ],
+    "canvases": 64,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 59",
+    "layers": [
+     [
+      "raster:r1",
+      "m64",
+      "new media"
+     ]
+    ],
+    "canvases": 65,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 60",
+    "layers": [
+     [
+      "raster:r1",
+      "m65",
+      "new media"
+     ]
+    ],
+    "canvases": 66,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 61",
+    "layers": [
+     [
+      "raster:r1",
+      "m66",
+      "new media"
+     ]
+    ],
+    "canvases": 67,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 62",
+    "layers": [
+     [
+      "raster:r1",
+      "m67",
+      "new media"
+     ]
+    ],
+    "canvases": 68,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 63",
+    "layers": [
+     [
+      "raster:r1",
+      "m68",
+      "new media"
+     ]
+    ],
+    "canvases": 69,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 64",
+    "layers": [
+     [
+      "raster:r1",
+      "m69",
+      "new media"
+     ]
+    ],
+    "canvases": 70,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 65",
+    "layers": [
+     [
+      "raster:r1",
+      "m70",
+      "new media"
+     ]
+    ],
+    "canvases": 71,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 66",
+    "layers": [
+     [
+      "raster:r1",
+      "m71",
+      "new media"
+     ]
+    ],
+    "canvases": 72,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 67",
+    "layers": [
+     [
+      "raster:r1",
+      "m72",
+      "new media"
+     ]
+    ],
+    "canvases": 73,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 68",
+    "layers": [
+     [
+      "raster:r1",
+      "m73",
+      "new media"
+     ]
+    ],
+    "canvases": 74,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "drag 69",
+    "layers": [
+     [
+      "raster:r1",
+      "m74",
+      "new media"
+     ]
+    ],
+    "canvases": 75,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   },
+   {
+    "name": "empty",
+    "layers": [],
+    "canvases": 75,
+    "released": 0,
+    "images": 3,
+    "readies": 3,
+    "engines": []
+   }
+  ],
+  "draws": [
+   {
+    "size": [
+     1024,
+     512
+    ],
+    "draws": [
+     [
+      "translate",
+      153.5999999999999,
+      204.79999999999998
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i0",
+      -102.39999999999999,
+      -76.8,
+      204.79999999999998,
+      153.6
+     ],
+     [
+      "translate",
+      1177.6,
+      204.79999999999998
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i0",
+      -102.39999999999999,
+      -76.8,
+      204.79999999999998,
+      153.6
+     ],
+     [
+      "translate",
+      2201.6,
+      204.79999999999998
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i0",
+      -102.39999999999999,
+      -76.8,
+      204.79999999999998,
+      153.6
+     ]
+    ]
+   },
+   {
+    "size": [
+     1024,
+     512
+    ],
+    "draws": [
+     [
+      "translate",
+      -511.79999999999995,
+      217.60000000000002
+     ],
+     [
+      "rotate",
+      0
+     ],
+     [
+      "scale",
+      1,
+      1
+     ],
+     [
+      "i1",
+      -0.19999999999998863,
+      -12.799999999999997,
+      0.39999999999997726,
+      25.599999999999994
+     ],
+     [
+      "translate",
+      512.2,
+      217.60000000000002
+     ],
+     [
+      "rotate",
+      0
+     ],
+     [
+      "scale",
+      1,
+      1
+     ],
+     [
+      "i1",
+      -0.19999999999998863,
+      -12.799999999999997,
+      0.39999999999997726,
+      25.599999999999994
+     ],
+     [
+      "translate",
+      1536.2,
+      217.60000000000002
+     ],
+     [
+      "rotate",
+      0
+     ],
+     [
+      "scale",
+      1,
+      1
+     ],
+     [
+      "i1",
+      -0.19999999999998863,
+      -12.799999999999997,
+      0.39999999999997726,
+      25.599999999999994
+     ]
+    ]
+   },
+   {
+    "size": [
+     1024,
+     512
+    ],
+    "draws": [
+     [
+      "translate",
+      -307.20000000000005,
+      204.79999999999998
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i0",
+      -102.39999999999999,
+      -76.8,
+      204.79999999999998,
+      153.6
+     ],
+     [
+      "translate",
+      716.8,
+      204.79999999999998
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i0",
+      -102.39999999999999,
+      -76.8,
+      204.79999999999998,
+      153.6
+     ],
+     [
+      "translate",
+      1740.8,
+      204.79999999999998
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i0",
+      -102.39999999999999,
+      -76.8,
+      204.79999999999998,
+      153.6
+     ]
+    ]
+   },
+   {
+    "size": [
+     1024,
+     512
+    ],
+    "draws": [
+     [
+      "translate",
+      153.5999999999999,
+      204.79999999999998
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i0",
+      -102.39999999999999,
+      -76.8,
+      204.79999999999998,
+      153.6
+     ],
+     [
+      "translate",
+      1177.6,
+      204.79999999999998
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i0",
+      -102.39999999999999,
+      -76.8,
+      204.79999999999998,
+      153.6
+     ],
+     [
+      "translate",
+      2201.6,
+      204.79999999999998
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i0",
+      -102.39999999999999,
+      -76.8,
+      204.79999999999998,
+      153.6
+     ]
+    ]
+   },
+   {
+    "size": [
+     1024,
+     512
+    ],
+    "draws": [
+     [
+      "translate",
+      153.5999999999999,
+      204.79999999999998
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i0",
+      -102.39999999999999,
+      -76.8,
+      204.79999999999998,
+      153.6
+     ],
+     [
+      "translate",
+      1177.6,
+      204.79999999999998
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i0",
+      -102.39999999999999,
+      -76.8,
+      204.79999999999998,
+      153.6
+     ],
+     [
+      "translate",
+      2201.6,
+      204.79999999999998
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i0",
+      -102.39999999999999,
+      -76.8,
+      204.79999999999998,
+      153.6
+     ]
+    ]
+   },
+   {
+    "size": [
+     1024,
+     512
+    ],
+    "draws": [
+     [
+      "translate",
+      -819.2,
+      204.79999999999998
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i0",
+      -102.39999999999999,
+      -76.8,
+      204.79999999999998,
+      153.6
+     ],
+     [
+      "translate",
+      204.8,
+      204.79999999999998
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i0",
+      -102.39999999999999,
+      -76.8,
+      204.79999999999998,
+      153.6
+     ],
+     [
+      "translate",
+      1228.8,
+      204.79999999999998
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i0",
+      -102.39999999999999,
+      -76.8,
+      204.79999999999998,
+      153.6
+     ]
+    ]
+   }
+  ]
+ },
+ "upstream": {
+  "rows": [
+   {
+    "name": "first",
+    "layers": [
+     [
+      "upstream:#0:paint_group:g1",
+      "m0",
+      null
+     ]
+    ],
+    "canvases": 6,
+    "released": 0,
+    "images": 3,
+    "readies": 0
+   },
+   {
+    "name": "loaded",
+    "layers": [
+     [
+      "upstream:#0:paint_group:g1",
+      "m0",
+      false
+     ],
+     [
+      "upstream:#0:raster:r1",
+      "m1",
+      null
+     ],
+     [
+      "upstream:#0:raster:r2",
+      "m2",
+      null
+     ]
+    ],
+    "canvases": 8,
+    "released": 0,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "same",
+    "layers": [
+     [
+      "upstream:#0:paint_group:g1",
+      "m0",
+      false
+     ],
+     [
+      "upstream:#0:raster:r1",
+      "m1",
+      false
+     ],
+     [
+      "upstream:#0:raster:r2",
+      "m2",
+      false
+     ]
+    ],
+    "canvases": 8,
+    "released": 0,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "moved",
+    "layers": [
+     [
+      "upstream:#0:paint_group:g1",
+      "m3",
+      "new media"
+     ],
+     [
+      "upstream:#0:raster:r1",
+      "m4",
+      "new media"
+     ],
+     [
+      "upstream:#0:raster:r2",
+      "m5",
+      "new media"
+     ]
+    ],
+    "canvases": 15,
+    "released": 2,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "back",
+    "layers": [
+     [
+      "upstream:#0:paint_group:g1",
+      "m6",
+      "new media"
+     ],
+     [
+      "upstream:#0:raster:r1",
+      "m7",
+      "new media"
+     ],
+     [
+      "upstream:#0:raster:r2",
+      "m8",
+      "new media"
+     ]
+    ],
+    "canvases": 22,
+    "released": 4,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "r2 gone",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m9",
+      "new media"
+     ]
+    ],
+    "canvases": 23,
+    "released": 6,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "hidden",
+    "layers": [],
+    "canvases": 23,
+    "released": 7,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "shown",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m10",
+      "new media"
+     ]
+    ],
+    "canvases": 24,
+    "released": 7,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "resized",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m11",
+      "new media"
+     ]
+    ],
+    "canvases": 25,
+    "released": 8,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 0",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m12",
+      "new media"
+     ]
+    ],
+    "canvases": 26,
+    "released": 9,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 1",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m13",
+      "new media"
+     ]
+    ],
+    "canvases": 27,
+    "released": 10,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 2",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m14",
+      "new media"
+     ]
+    ],
+    "canvases": 28,
+    "released": 11,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 3",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m15",
+      "new media"
+     ]
+    ],
+    "canvases": 29,
+    "released": 12,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 4",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m16",
+      "new media"
+     ]
+    ],
+    "canvases": 30,
+    "released": 13,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 5",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m17",
+      "new media"
+     ]
+    ],
+    "canvases": 31,
+    "released": 14,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 6",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m18",
+      "new media"
+     ]
+    ],
+    "canvases": 32,
+    "released": 15,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 7",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m19",
+      "new media"
+     ]
+    ],
+    "canvases": 33,
+    "released": 16,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 8",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m20",
+      "new media"
+     ]
+    ],
+    "canvases": 34,
+    "released": 17,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 9",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m21",
+      "new media"
+     ]
+    ],
+    "canvases": 35,
+    "released": 18,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 10",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m22",
+      "new media"
+     ]
+    ],
+    "canvases": 36,
+    "released": 19,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 11",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m23",
+      "new media"
+     ]
+    ],
+    "canvases": 37,
+    "released": 20,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 12",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m24",
+      "new media"
+     ]
+    ],
+    "canvases": 38,
+    "released": 21,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 13",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m25",
+      "new media"
+     ]
+    ],
+    "canvases": 39,
+    "released": 22,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 14",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m26",
+      "new media"
+     ]
+    ],
+    "canvases": 40,
+    "released": 23,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 15",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m27",
+      "new media"
+     ]
+    ],
+    "canvases": 41,
+    "released": 24,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 16",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m28",
+      "new media"
+     ]
+    ],
+    "canvases": 42,
+    "released": 25,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 17",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m29",
+      "new media"
+     ]
+    ],
+    "canvases": 43,
+    "released": 26,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 18",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m30",
+      "new media"
+     ]
+    ],
+    "canvases": 44,
+    "released": 27,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 19",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m31",
+      "new media"
+     ]
+    ],
+    "canvases": 45,
+    "released": 28,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 20",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m32",
+      "new media"
+     ]
+    ],
+    "canvases": 46,
+    "released": 29,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 21",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m33",
+      "new media"
+     ]
+    ],
+    "canvases": 47,
+    "released": 30,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 22",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m34",
+      "new media"
+     ]
+    ],
+    "canvases": 48,
+    "released": 31,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 23",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m35",
+      "new media"
+     ]
+    ],
+    "canvases": 49,
+    "released": 32,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 24",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m36",
+      "new media"
+     ]
+    ],
+    "canvases": 50,
+    "released": 33,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 25",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m37",
+      "new media"
+     ]
+    ],
+    "canvases": 51,
+    "released": 34,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 26",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m38",
+      "new media"
+     ]
+    ],
+    "canvases": 52,
+    "released": 35,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 27",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m39",
+      "new media"
+     ]
+    ],
+    "canvases": 53,
+    "released": 36,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 28",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m40",
+      "new media"
+     ]
+    ],
+    "canvases": 54,
+    "released": 37,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 29",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m41",
+      "new media"
+     ]
+    ],
+    "canvases": 55,
+    "released": 38,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 30",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m42",
+      "new media"
+     ]
+    ],
+    "canvases": 56,
+    "released": 39,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 31",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m43",
+      "new media"
+     ]
+    ],
+    "canvases": 57,
+    "released": 40,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 32",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m44",
+      "new media"
+     ]
+    ],
+    "canvases": 58,
+    "released": 41,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 33",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m45",
+      "new media"
+     ]
+    ],
+    "canvases": 59,
+    "released": 42,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 34",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m46",
+      "new media"
+     ]
+    ],
+    "canvases": 60,
+    "released": 43,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 35",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m47",
+      "new media"
+     ]
+    ],
+    "canvases": 61,
+    "released": 44,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 36",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m48",
+      "new media"
+     ]
+    ],
+    "canvases": 62,
+    "released": 45,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 37",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m49",
+      "new media"
+     ]
+    ],
+    "canvases": 63,
+    "released": 46,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 38",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m50",
+      "new media"
+     ]
+    ],
+    "canvases": 64,
+    "released": 47,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 39",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m51",
+      "new media"
+     ]
+    ],
+    "canvases": 65,
+    "released": 48,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 40",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m52",
+      "new media"
+     ]
+    ],
+    "canvases": 66,
+    "released": 49,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 41",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m53",
+      "new media"
+     ]
+    ],
+    "canvases": 67,
+    "released": 50,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 42",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m54",
+      "new media"
+     ]
+    ],
+    "canvases": 68,
+    "released": 51,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 43",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m55",
+      "new media"
+     ]
+    ],
+    "canvases": 69,
+    "released": 52,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 44",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m56",
+      "new media"
+     ]
+    ],
+    "canvases": 70,
+    "released": 53,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 45",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m57",
+      "new media"
+     ]
+    ],
+    "canvases": 71,
+    "released": 54,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 46",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m58",
+      "new media"
+     ]
+    ],
+    "canvases": 72,
+    "released": 55,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 47",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m59",
+      "new media"
+     ]
+    ],
+    "canvases": 73,
+    "released": 56,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 48",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m60",
+      "new media"
+     ]
+    ],
+    "canvases": 74,
+    "released": 57,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 49",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m61",
+      "new media"
+     ]
+    ],
+    "canvases": 75,
+    "released": 58,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 50",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m62",
+      "new media"
+     ]
+    ],
+    "canvases": 76,
+    "released": 59,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 51",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m63",
+      "new media"
+     ]
+    ],
+    "canvases": 77,
+    "released": 60,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 52",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m64",
+      "new media"
+     ]
+    ],
+    "canvases": 78,
+    "released": 61,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 53",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m65",
+      "new media"
+     ]
+    ],
+    "canvases": 79,
+    "released": 62,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 54",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m66",
+      "new media"
+     ]
+    ],
+    "canvases": 80,
+    "released": 63,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 55",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m67",
+      "new media"
+     ]
+    ],
+    "canvases": 81,
+    "released": 64,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 56",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m68",
+      "new media"
+     ]
+    ],
+    "canvases": 82,
+    "released": 65,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 57",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m69",
+      "new media"
+     ]
+    ],
+    "canvases": 83,
+    "released": 66,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 58",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m70",
+      "new media"
+     ]
+    ],
+    "canvases": 84,
+    "released": 67,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 59",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m71",
+      "new media"
+     ]
+    ],
+    "canvases": 85,
+    "released": 68,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 60",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m72",
+      "new media"
+     ]
+    ],
+    "canvases": 86,
+    "released": 69,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 61",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m73",
+      "new media"
+     ]
+    ],
+    "canvases": 87,
+    "released": 70,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 62",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m74",
+      "new media"
+     ]
+    ],
+    "canvases": 88,
+    "released": 71,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 63",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m75",
+      "new media"
+     ]
+    ],
+    "canvases": 89,
+    "released": 72,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 64",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m76",
+      "new media"
+     ]
+    ],
+    "canvases": 90,
+    "released": 73,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 65",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m77",
+      "new media"
+     ]
+    ],
+    "canvases": 91,
+    "released": 74,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 66",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m78",
+      "new media"
+     ]
+    ],
+    "canvases": 92,
+    "released": 75,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 67",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m79",
+      "new media"
+     ]
+    ],
+    "canvases": 93,
+    "released": 76,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 68",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m80",
+      "new media"
+     ]
+    ],
+    "canvases": 94,
+    "released": 77,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 69",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m81",
+      "new media"
+     ]
+    ],
+    "canvases": 95,
+    "released": 78,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "empty",
+    "layers": [],
+    "canvases": 95,
+    "released": 79,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "disposed",
+    "layers": [],
+    "canvases": 95,
+    "released": 79,
+    "images": 3,
+    "readies": 3
+   }
+  ],
+  "draws": [
+   {
+    "size": [
+     0,
+     0
+    ],
+    "draws": [
+     [
+      "translate",
+      307.1999999999998,
+      409.59999999999997
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i0",
+      -204.79999999999998,
+      -153.6,
+      409.59999999999997,
+      307.2
+     ],
+     [
+      "translate",
+      2355.2,
+      409.59999999999997
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i0",
+      -204.79999999999998,
+      -153.6,
+      409.59999999999997,
+      307.2
+     ],
+     [
+      "translate",
+      4403.2,
+      409.59999999999997
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i0",
+      -204.79999999999998,
+      -153.6,
+      409.59999999999997,
+      307.2
+     ]
+    ]
+   },
+   {
+    "size": [
+     0,
+     0
+    ],
+    "draws": [
+     [
+      "translate",
+      -1023.5,
+      435.20000000000005
+     ],
+     [
+      "rotate",
+      0
+     ],
+     [
+      "scale",
+      1,
+      1
+     ],
+     [
+      "i1",
+      -0.5,
+      -25.599999999999994,
+      1,
+      51.19999999999999
+     ],
+     [
+      "translate",
+      1024.5,
+      435.20000000000005
+     ],
+     [
+      "rotate",
+      0
+     ],
+     [
+      "scale",
+      1,
+      1
+     ],
+     [
+      "i1",
+      -0.5,
+      -25.599999999999994,
+      1,
+      51.19999999999999
+     ],
+     [
+      "translate",
+      3072.5,
+      435.20000000000005
+     ],
+     [
+      "rotate",
+      0
+     ],
+     [
+      "scale",
+      1,
+      1
+     ],
+     [
+      "i1",
+      -0.5,
+      -25.599999999999994,
+      1,
+      51.19999999999999
+     ]
+    ]
+   },
+   {
+    "size": [
+     0,
+     0
+    ],
+    "draws": [
+     [
+      "translate",
+      -614.4000000000001,
+      409.59999999999997
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i0",
+      -204.79999999999998,
+      -153.6,
+      409.59999999999997,
+      307.2
+     ],
+     [
+      "translate",
+      1433.6,
+      409.59999999999997
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i0",
+      -204.79999999999998,
+      -153.6,
+      409.59999999999997,
+      307.2
+     ],
+     [
+      "translate",
+      3481.6,
+      409.59999999999997
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i0",
+      -204.79999999999998,
+      -153.6,
+      409.59999999999997,
+      307.2
+     ]
+    ]
+   },
+   {
+    "size": [
+     0,
+     0
+    ],
+    "draws": [
+     [
+      "translate",
+      -1023.5,
+      435.20000000000005
+     ],
+     [
+      "rotate",
+      0
+     ],
+     [
+      "scale",
+      1,
+      1
+     ],
+     [
+      "i1",
+      -0.5,
+      -25.599999999999994,
+      1,
+      51.19999999999999
+     ],
+     [
+      "translate",
+      1024.5,
+      435.20000000000005
+     ],
+     [
+      "rotate",
+      0
+     ],
+     [
+      "scale",
+      1,
+      1
+     ],
+     [
+      "i1",
+      -0.5,
+      -25.599999999999994,
+      1,
+      51.19999999999999
+     ],
+     [
+      "translate",
+      3072.5,
+      435.20000000000005
+     ],
+     [
+      "rotate",
+      0
+     ],
+     [
+      "scale",
+      1,
+      1
+     ],
+     [
+      "i1",
+      -0.5,
+      -25.599999999999994,
+      1,
+      51.19999999999999
+     ]
+    ]
+   },
+   {
+    "size": [
+     0,
+     0
+    ],
+    "draws": [
+     [
+      "translate",
+      307.1999999999998,
+      409.59999999999997
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i0",
+      -204.79999999999998,
+      -153.6,
+      409.59999999999997,
+      307.2
+     ],
+     [
+      "translate",
+      2355.2,
+      409.59999999999997
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i0",
+      -204.79999999999998,
+      -153.6,
+      409.59999999999997,
+      307.2
+     ],
+     [
+      "translate",
+      4403.2,
+      409.59999999999997
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i0",
+      -204.79999999999998,
+      -153.6,
+      409.59999999999997,
+      307.2
+     ]
+    ]
+   },
+   {
+    "size": [
+     0,
+     0
+    ],
+    "draws": [
+     [
+      "translate",
+      -1023.5,
+      435.20000000000005
+     ],
+     [
+      "rotate",
+      0
+     ],
+     [
+      "scale",
+      1,
+      1
+     ],
+     [
+      "i1",
+      -0.5,
+      -25.599999999999994,
+      1,
+      51.19999999999999
+     ],
+     [
+      "translate",
+      1024.5,
+      435.20000000000005
+     ],
+     [
+      "rotate",
+      0
+     ],
+     [
+      "scale",
+      1,
+      1
+     ],
+     [
+      "i1",
+      -0.5,
+      -25.599999999999994,
+      1,
+      51.19999999999999
+     ],
+     [
+      "translate",
+      3072.5,
+      435.20000000000005
+     ],
+     [
+      "rotate",
+      0
+     ],
+     [
+      "scale",
+      1,
+      1
+     ],
+     [
+      "i1",
+      -0.5,
+      -25.599999999999994,
+      1,
+      51.19999999999999
+     ]
+    ]
+   }
+  ]
+ },
+ "upstreamMaskOnly": {
+  "rows": [
+   {
+    "name": "first",
+    "layers": [
+     [
+      "upstream:#0:mask_display",
+      "m0",
+      null
+     ]
+    ],
+    "canvases": 8,
+    "released": 0,
+    "images": 3,
+    "readies": 0
+   },
+   {
+    "name": "loaded",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m1",
+      null
+     ],
+     [
+      "upstream:#0:raster:r2",
+      "m2",
+      null
+     ],
+     [
+      "upstream:#0:mask_display",
+      "m0",
+      false
+     ]
+    ],
+    "canvases": 10,
+    "released": 0,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "same",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m1",
+      false
+     ],
+     [
+      "upstream:#0:raster:r2",
+      "m2",
+      false
+     ],
+     [
+      "upstream:#0:mask_display",
+      "m0",
+      false
+     ]
+    ],
+    "canvases": 10,
+    "released": 0,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "moved",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m3",
+      "new media"
+     ],
+     [
+      "upstream:#0:raster:r2",
+      "m4",
+      "new media"
+     ],
+     [
+      "upstream:#0:mask_display",
+      "m5",
+      "new media"
+     ]
+    ],
+    "canvases": 17,
+    "released": 2,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "back",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m6",
+      "new media"
+     ],
+     [
+      "upstream:#0:raster:r2",
+      "m7",
+      "new media"
+     ],
+     [
+      "upstream:#0:mask_display",
+      "m8",
+      "new media"
+     ]
+    ],
+    "canvases": 24,
+    "released": 4,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "r2 gone",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m9",
+      "new media"
+     ]
+    ],
+    "canvases": 25,
+    "released": 6,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "hidden",
+    "layers": [],
+    "canvases": 25,
+    "released": 7,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "shown",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m10",
+      "new media"
+     ]
+    ],
+    "canvases": 26,
+    "released": 7,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "resized",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m11",
+      "new media"
+     ]
+    ],
+    "canvases": 27,
+    "released": 8,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 0",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m12",
+      "new media"
+     ]
+    ],
+    "canvases": 28,
+    "released": 9,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 1",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m13",
+      "new media"
+     ]
+    ],
+    "canvases": 29,
+    "released": 10,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 2",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m14",
+      "new media"
+     ]
+    ],
+    "canvases": 30,
+    "released": 11,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 3",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m15",
+      "new media"
+     ]
+    ],
+    "canvases": 31,
+    "released": 12,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 4",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m16",
+      "new media"
+     ]
+    ],
+    "canvases": 32,
+    "released": 13,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 5",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m17",
+      "new media"
+     ]
+    ],
+    "canvases": 33,
+    "released": 14,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 6",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m18",
+      "new media"
+     ]
+    ],
+    "canvases": 34,
+    "released": 15,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 7",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m19",
+      "new media"
+     ]
+    ],
+    "canvases": 35,
+    "released": 16,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 8",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m20",
+      "new media"
+     ]
+    ],
+    "canvases": 36,
+    "released": 17,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 9",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m21",
+      "new media"
+     ]
+    ],
+    "canvases": 37,
+    "released": 18,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 10",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m22",
+      "new media"
+     ]
+    ],
+    "canvases": 38,
+    "released": 19,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 11",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m23",
+      "new media"
+     ]
+    ],
+    "canvases": 39,
+    "released": 20,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 12",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m24",
+      "new media"
+     ]
+    ],
+    "canvases": 40,
+    "released": 21,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 13",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m25",
+      "new media"
+     ]
+    ],
+    "canvases": 41,
+    "released": 22,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 14",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m26",
+      "new media"
+     ]
+    ],
+    "canvases": 42,
+    "released": 23,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 15",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m27",
+      "new media"
+     ]
+    ],
+    "canvases": 43,
+    "released": 24,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 16",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m28",
+      "new media"
+     ]
+    ],
+    "canvases": 44,
+    "released": 25,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 17",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m29",
+      "new media"
+     ]
+    ],
+    "canvases": 45,
+    "released": 26,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 18",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m30",
+      "new media"
+     ]
+    ],
+    "canvases": 46,
+    "released": 27,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 19",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m31",
+      "new media"
+     ]
+    ],
+    "canvases": 47,
+    "released": 28,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 20",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m32",
+      "new media"
+     ]
+    ],
+    "canvases": 48,
+    "released": 29,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 21",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m33",
+      "new media"
+     ]
+    ],
+    "canvases": 49,
+    "released": 30,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 22",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m34",
+      "new media"
+     ]
+    ],
+    "canvases": 50,
+    "released": 31,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 23",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m35",
+      "new media"
+     ]
+    ],
+    "canvases": 51,
+    "released": 32,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 24",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m36",
+      "new media"
+     ]
+    ],
+    "canvases": 52,
+    "released": 33,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 25",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m37",
+      "new media"
+     ]
+    ],
+    "canvases": 53,
+    "released": 34,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 26",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m38",
+      "new media"
+     ]
+    ],
+    "canvases": 54,
+    "released": 35,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 27",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m39",
+      "new media"
+     ]
+    ],
+    "canvases": 55,
+    "released": 36,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 28",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m40",
+      "new media"
+     ]
+    ],
+    "canvases": 56,
+    "released": 37,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 29",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m41",
+      "new media"
+     ]
+    ],
+    "canvases": 57,
+    "released": 38,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 30",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m42",
+      "new media"
+     ]
+    ],
+    "canvases": 58,
+    "released": 39,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 31",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m43",
+      "new media"
+     ]
+    ],
+    "canvases": 59,
+    "released": 40,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 32",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m44",
+      "new media"
+     ]
+    ],
+    "canvases": 60,
+    "released": 41,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 33",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m45",
+      "new media"
+     ]
+    ],
+    "canvases": 61,
+    "released": 42,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 34",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m46",
+      "new media"
+     ]
+    ],
+    "canvases": 62,
+    "released": 43,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 35",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m47",
+      "new media"
+     ]
+    ],
+    "canvases": 63,
+    "released": 44,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 36",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m48",
+      "new media"
+     ]
+    ],
+    "canvases": 64,
+    "released": 45,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 37",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m49",
+      "new media"
+     ]
+    ],
+    "canvases": 65,
+    "released": 46,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 38",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m50",
+      "new media"
+     ]
+    ],
+    "canvases": 66,
+    "released": 47,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 39",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m51",
+      "new media"
+     ]
+    ],
+    "canvases": 67,
+    "released": 48,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 40",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m52",
+      "new media"
+     ]
+    ],
+    "canvases": 68,
+    "released": 49,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 41",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m53",
+      "new media"
+     ]
+    ],
+    "canvases": 69,
+    "released": 50,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 42",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m54",
+      "new media"
+     ]
+    ],
+    "canvases": 70,
+    "released": 51,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 43",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m55",
+      "new media"
+     ]
+    ],
+    "canvases": 71,
+    "released": 52,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 44",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m56",
+      "new media"
+     ]
+    ],
+    "canvases": 72,
+    "released": 53,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 45",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m57",
+      "new media"
+     ]
+    ],
+    "canvases": 73,
+    "released": 54,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 46",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m58",
+      "new media"
+     ]
+    ],
+    "canvases": 74,
+    "released": 55,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 47",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m59",
+      "new media"
+     ]
+    ],
+    "canvases": 75,
+    "released": 56,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 48",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m60",
+      "new media"
+     ]
+    ],
+    "canvases": 76,
+    "released": 57,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 49",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m61",
+      "new media"
+     ]
+    ],
+    "canvases": 77,
+    "released": 58,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 50",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m62",
+      "new media"
+     ]
+    ],
+    "canvases": 78,
+    "released": 59,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 51",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m63",
+      "new media"
+     ]
+    ],
+    "canvases": 79,
+    "released": 60,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 52",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m64",
+      "new media"
+     ]
+    ],
+    "canvases": 80,
+    "released": 61,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 53",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m65",
+      "new media"
+     ]
+    ],
+    "canvases": 81,
+    "released": 62,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 54",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m66",
+      "new media"
+     ]
+    ],
+    "canvases": 82,
+    "released": 63,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 55",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m67",
+      "new media"
+     ]
+    ],
+    "canvases": 83,
+    "released": 64,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 56",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m68",
+      "new media"
+     ]
+    ],
+    "canvases": 84,
+    "released": 65,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 57",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m69",
+      "new media"
+     ]
+    ],
+    "canvases": 85,
+    "released": 66,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 58",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m70",
+      "new media"
+     ]
+    ],
+    "canvases": 86,
+    "released": 67,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 59",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m71",
+      "new media"
+     ]
+    ],
+    "canvases": 87,
+    "released": 68,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 60",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m72",
+      "new media"
+     ]
+    ],
+    "canvases": 88,
+    "released": 69,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 61",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m73",
+      "new media"
+     ]
+    ],
+    "canvases": 89,
+    "released": 70,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 62",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m74",
+      "new media"
+     ]
+    ],
+    "canvases": 90,
+    "released": 71,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 63",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m75",
+      "new media"
+     ]
+    ],
+    "canvases": 91,
+    "released": 72,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 64",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m76",
+      "new media"
+     ]
+    ],
+    "canvases": 92,
+    "released": 73,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 65",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m77",
+      "new media"
+     ]
+    ],
+    "canvases": 93,
+    "released": 74,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 66",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m78",
+      "new media"
+     ]
+    ],
+    "canvases": 94,
+    "released": 75,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 67",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m79",
+      "new media"
+     ]
+    ],
+    "canvases": 95,
+    "released": 76,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 68",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m80",
+      "new media"
+     ]
+    ],
+    "canvases": 96,
+    "released": 77,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "drag 69",
+    "layers": [
+     [
+      "upstream:#0:raster:r1",
+      "m81",
+      "new media"
+     ]
+    ],
+    "canvases": 97,
+    "released": 78,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "empty",
+    "layers": [],
+    "canvases": 97,
+    "released": 79,
+    "images": 3,
+    "readies": 3
+   },
+   {
+    "name": "disposed",
+    "layers": [],
+    "canvases": 97,
+    "released": 79,
+    "images": 3,
+    "readies": 3
+   }
+  ],
+  "draws": [
+   {
+    "size": [
+     0,
+     0
+    ],
+    "draws": [
+     [
+      "translate",
+      307.1999999999998,
+      409.59999999999997
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i0",
+      -204.79999999999998,
+      -153.6,
+      409.59999999999997,
+      307.2
+     ],
+     [
+      "translate",
+      2355.2,
+      409.59999999999997
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i0",
+      -204.79999999999998,
+      -153.6,
+      409.59999999999997,
+      307.2
+     ],
+     [
+      "translate",
+      4403.2,
+      409.59999999999997
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i0",
+      -204.79999999999998,
+      -153.6,
+      409.59999999999997,
+      307.2
+     ]
+    ]
+   },
+   {
+    "size": [
+     0,
+     0
+    ],
+    "draws": [
+     [
+      "translate",
+      -1023.5,
+      435.20000000000005
+     ],
+     [
+      "rotate",
+      0
+     ],
+     [
+      "scale",
+      1,
+      1
+     ],
+     [
+      "i1",
+      -0.5,
+      -25.599999999999994,
+      1,
+      51.19999999999999
+     ],
+     [
+      "translate",
+      1024.5,
+      435.20000000000005
+     ],
+     [
+      "rotate",
+      0
+     ],
+     [
+      "scale",
+      1,
+      1
+     ],
+     [
+      "i1",
+      -0.5,
+      -25.599999999999994,
+      1,
+      51.19999999999999
+     ],
+     [
+      "translate",
+      3072.5,
+      435.20000000000005
+     ],
+     [
+      "rotate",
+      0
+     ],
+     [
+      "scale",
+      1,
+      1
+     ],
+     [
+      "i1",
+      -0.5,
+      -25.599999999999994,
+      1,
+      51.19999999999999
+     ]
+    ]
+   },
+   {
+    "size": [
+     0,
+     0
+    ],
+    "draws": [
+     [
+      "translate",
+      -614.4000000000001,
+      409.59999999999997
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i0",
+      -204.79999999999998,
+      -153.6,
+      409.59999999999997,
+      307.2
+     ],
+     [
+      "translate",
+      1433.6,
+      409.59999999999997
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i0",
+      -204.79999999999998,
+      -153.6,
+      409.59999999999997,
+      307.2
+     ],
+     [
+      "translate",
+      3481.6,
+      409.59999999999997
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i0",
+      -204.79999999999998,
+      -153.6,
+      409.59999999999997,
+      307.2
+     ]
+    ]
+   },
+   {
+    "size": [
+     0,
+     0
+    ],
+    "draws": [
+     [
+      "translate",
+      -1023.5,
+      435.20000000000005
+     ],
+     [
+      "rotate",
+      0
+     ],
+     [
+      "scale",
+      1,
+      1
+     ],
+     [
+      "i1",
+      -0.5,
+      -25.599999999999994,
+      1,
+      51.19999999999999
+     ],
+     [
+      "translate",
+      1024.5,
+      435.20000000000005
+     ],
+     [
+      "rotate",
+      0
+     ],
+     [
+      "scale",
+      1,
+      1
+     ],
+     [
+      "i1",
+      -0.5,
+      -25.599999999999994,
+      1,
+      51.19999999999999
+     ],
+     [
+      "translate",
+      3072.5,
+      435.20000000000005
+     ],
+     [
+      "rotate",
+      0
+     ],
+     [
+      "scale",
+      1,
+      1
+     ],
+     [
+      "i1",
+      -0.5,
+      -25.599999999999994,
+      1,
+      51.19999999999999
+     ]
+    ]
+   },
+   {
+    "size": [
+     0,
+     0
+    ],
+    "draws": [
+     [
+      "translate",
+      307.1999999999998,
+      409.59999999999997
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i0",
+      -204.79999999999998,
+      -153.6,
+      409.59999999999997,
+      307.2
+     ],
+     [
+      "translate",
+      2355.2,
+      409.59999999999997
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i0",
+      -204.79999999999998,
+      -153.6,
+      409.59999999999997,
+      307.2
+     ],
+     [
+      "translate",
+      4403.2,
+      409.59999999999997
+     ],
+     [
+      "rotate",
+      0.5235987755982988
+     ],
+     [
+      "scale",
+      1.7,
+      1.7
+     ],
+     [
+      "i0",
+      -204.79999999999998,
+      -153.6,
+      409.59999999999997,
+      307.2
+     ]
+    ]
+   },
+   {
+    "size": [
+     0,
+     0
+    ],
+    "draws": [
+     [
+      "translate",
+      -1023.5,
+      435.20000000000005
+     ],
+     [
+      "rotate",
+      0
+     ],
+     [
+      "scale",
+      1,
+      1
+     ],
+     [
+      "i1",
+      -0.5,
+      -25.599999999999994,
+      1,
+      51.19999999999999
+     ],
+     [
+      "translate",
+      1024.5,
+      435.20000000000005
+     ],
+     [
+      "rotate",
+      0
+     ],
+     [
+      "scale",
+      1,
+      1
+     ],
+     [
+      "i1",
+      -0.5,
+      -25.599999999999994,
+      1,
+      51.19999999999999
+     ],
+     [
+      "translate",
+      3072.5,
+      435.20000000000005
+     ],
+     [
+      "rotate",
+      0
+     ],
+     [
+      "scale",
+      1,
+      1
+     ],
+     [
+      "i1",
+      -0.5,
+      -25.599999999999994,
+      1,
+      51.19999999999999
+     ]
+    ]
+   }
+  ]
+ }
+}
