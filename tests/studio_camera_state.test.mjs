@@ -41,6 +41,11 @@ test("a write to a draft without a Camera puts the default Camera there first; o
   assert.equal(draft.camera, camera);
   assert.deepEqual(camera, defaultCamera());
   assert.equal(editableCamera(draft), camera);
+  const missing = load({});
+  delete missing.camera;
+  assert.deepEqual(editableCamera(missing), defaultCamera(), "undefined is filled as null is");
+  // Only null and undefined are filled (??=). Other falsy values cannot come from loadSceneState, so they are not
+  // a case: a draft's `camera` is a Camera object, null or missing.
 });
 
 test("a move to a pose writes only the Lanes that change by the recording rule, keeping the nearest turn, and says whether it changed", () => {

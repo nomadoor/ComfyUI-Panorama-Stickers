@@ -30,7 +30,8 @@ export function cameraAt(state, frame) {
   };
 }
 
-// The Camera of a draft to write to: a draft without one gets the default Camera first.
+// The Camera of a draft to write to: a draft whose `camera` is null or undefined gets the default Camera first. Other
+// falsy values (false, 0, "") never reach here: loadSceneState gives a Camera object, and rebaseSceneState keeps null.
 export function editableCamera(draft) {
   draft.camera ??= defaultCamera();
   return draft.camera;

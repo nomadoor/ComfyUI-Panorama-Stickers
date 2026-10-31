@@ -204,6 +204,8 @@ function applyReset(state, found, row, context) {
 
 function applyEasing(state, keyframes, easing, upstream) {
   if (!keyframes?.frames?.length) return false;
+  // Without a Camera an Easing edit writes nothing (the other edits put the default Camera there first, camera_state.js
+  // editableCamera); whether to align it is an open decision of the owner.
   const owner = keyframes.owner === "camera" ? (state.camera ?? null) : keyframeOwner(state, upstream, keyframes.owner);
   if (!owner || owner.locked) return false;
   if (isUpstreamSticker(owner) && !upstreamStickerEditable(owner)) return false;

@@ -751,9 +751,9 @@ function cameraSetup({ camera, row = "camera", mode = "rotate", viewAt = [0, 0, 
   return { session, objects };
 }
 
-// C-1 (handoff/refactor camera.md): the gizmo writes the whole rotation as gizmoDragLanes reads it (yaw in
-// -180..180), not the nearest turn of its base as setCameraShot does. This test intentionally changes if C-1 is
-// aligned (owner question Q1).
+// The gizmo writes the whole rotation as gizmoDragLanes reads it (yaw in -180..180), not the nearest turn of its base
+// as the Camera tab and the Camera button do (camera_state.js moveCameraPose). Whether the gizmo should keep the
+// nearest turn too is an open decision of the owner; this test intentionally changes if they are aligned.
 test("a Rotate drag of the Camera's gizmo writes all three angles at the frame, the yaw wrapped across 180°", () => {
   const { session, objects } = cameraSetup({
     camera: {

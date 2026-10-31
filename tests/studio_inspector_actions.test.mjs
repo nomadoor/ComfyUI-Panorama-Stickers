@@ -332,7 +332,8 @@ test("a state whose Camera is null gets the default Camera from a field, a choic
   state = nulled();
   applyInspectorEdit(state, { type: "reset", target: camera, row: "aspect" }, { playhead: 0 });
   assert.deepEqual(state.camera, defaults);
-  // C-2 (handoff/refactor camera.md): the Easing panel's owner is `state.camera ?? null`, so nothing is written.
+  // The Easing panel takes the Camera as `state.camera ?? null`, so on a state without a Camera nothing is written,
+  // while the other edits put the default Camera there first. Whether to align it is an open decision of the owner.
   state = nulled();
   const outcome = applyInspectorEdit(state, { type: "easing", keyframes: { owner: "camera", lane: null, frames: [0] }, easing: "hold", phase: "commit" }, { playhead: 0 });
   assert.equal(outcome.changed, false);
