@@ -281,3 +281,18 @@ test("dispose lets go of the canvases and detaches the images' callbacks", () =>
     assert.equal(display.rasterCanvas(raster("a")), null);
   });
 });
+
+test("a raster layer's revision is the key its canvas was drawn for, with keep latest and seen alike", () => {
+  withFakes((env) => {
+    for (const keep of ["latest", "seen"]) {
+      const display = createPaintDisplay({ ...BASE, keep, ...(keep === "seen" ? { seenLimit: 4 } : {}) });
+      display.layers(stateOf([raster("a")]));
+      env.flush();
+      const [first] = display.layers(stateOf([raster("a")]));
+      const [moved] = display.layers(stateOf([raster("a", 0.2)]));
+      assert.ok(first.revision.startsWith("a:100:50:"), keep);
+      assert.notEqual(moved.revision, first.revision, keep);
+      if (keep === "seen") assert.match(first.revision, /:\d+$/);
+    }
+  });
+});

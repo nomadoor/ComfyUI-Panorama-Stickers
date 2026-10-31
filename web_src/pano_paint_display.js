@@ -168,6 +168,8 @@ export function createPaintDisplay(options) {
   // keep "latest": id -> { key, dataUrl, canvas, image }. keep "seen": key -> canvas.
   const entries = new Map();
   const seen = new Map();
+  // The key each canvas was drawn for, which is also its layer's revision.
+  const keyOf = new WeakMap();
   const recent = imageRule === "recent16" ? createRecentImages() : null;
   const imageIds = new WeakMap();
   let nextImageId = 1;
@@ -226,7 +228,10 @@ export function createPaintDisplay(options) {
         seen.clear();
       }
       const canvas = draw(img, item, width, height);
-      if (canvas) seen.set(key, canvas);
+      if (canvas) {
+        seen.set(key, canvas);
+        keyOf.set(canvas, key);
+      }
       return canvas;
     }
     const key = lookKey(item, width, height);
@@ -253,6 +258,7 @@ export function createPaintDisplay(options) {
       const img = entry.image ?? loadImage(item, ready);
       if (!isReady(img)) return null;
       entry.canvas = draw(img, item, width, height);
+      if (entry.canvas) keyOf.set(entry.canvas, key);
     }
     return entry.canvas;
   }
@@ -298,7 +304,7 @@ export function createPaintDisplay(options) {
         const canvas = rasterCanvas(item);
         if (!canvas) return null;
         if (sources.raster) return sources.raster(item, canvas);
-        return { media: canvas, revision: keep === "seen" ? `${lookKey(item, canvas.width, canvas.height)}` : entries.get(item.id).key };
+        return { media: canvas, revision: keyOf.get(canvas) };
       },
       mask: own
         ? () => (showsMask ? engineMask(ownEngine(state.painting)) : null)
