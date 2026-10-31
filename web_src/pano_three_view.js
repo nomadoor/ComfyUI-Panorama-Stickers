@@ -864,11 +864,13 @@ export function createGizmo(camera) {
 // onUpdate runs when something every view draws changes by itself: a `scene` item finished loading, or Spark
 // loaded. onSplats(owner) runs when the Spark renderer of owner's view (pano_spark_views.js) has new splats or
 // a new order to draw: only that view draws again. createCanvas makes the view's canvas
-// (pano_diagnostics.js createPanoCanvas; the chunk does not import from the eager bundle).
+// (pano_diagnostics.js createPanoCanvas; the chunk does not import from the eager bundle). ownWorlds: each owner draws a
+// World of its own (the nodes' shared view, pano_preview_view.js: each node its own inputs), so each holds its own
+// `scene` and 3D Sticker items; without, every owner draws the one World (the editor's stage and its windows).
 // Loads of `scene` items running at once; scrubbing a MoGe VIDEO queues the rest.
 const SCENE_LOADS = 2;
 
-export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, createCanvas }) {
+export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, createCanvas, ownWorlds = false }) {
   const canvas = createCanvas();
   // The World is depth tested, so the canvas has a depth buffer; the Sky draws without it.
   // three leaves the context's unpack state at its last texture upload (premultiplied Sky layers), and Spark
@@ -982,20 +984,43 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
   let closed = false;
   // The selected world Sticker's gizmo (createGizmo), made the first time one shows.
   let gizmo = null;
-  const sceneItems = createSceneItems({
-    load: loadItem,
-    dispose: disposeItem,
-    onUpdate,
-    concurrency: SCENE_LOADS,
-  });
-  // The items of the `sticker` input's 3D media, loaded the same way. An item loads here even when
-  // `scene` has the same file, since an object has one parent.
-  const stickerItems = createSceneItems({
-    load: loadItem,
-    dispose: disposeItem,
-    onUpdate,
-    concurrency: SCENE_LOADS,
-  });
+  const createItems = () => createSceneItems({ load: loadItem, dispose: disposeItem, onUpdate, concurrency: SCENE_LOADS });
+  // The loaded 3D items of a World: `scene`'s, the `sticker` input's 3D media (loaded the same way; an item loads there
+  // even when `scene` has the same file, since an object has one parent), and the upstream Scene's layers' by slot (a
+  // layer and its `scene` or 3D Sticker; a slot no render asks for any more is closed). A render asks for all the items
+  // its World draws and lets go of the others (pano_scene_items.js requestMany, retain), so two Worlds drawn through
+  // one queue would drop each other's items at every render, and neither would ever show them: a World has its own.
+  function createWorldItems() {
+    const upstream = new Map();
+    return {
+      scene: createItems(),
+      sticker: createItems(),
+      upstream,
+      upstreamOf(slot) {
+        let items = upstream.get(slot);
+        if (!items) upstream.set(slot, items = createItems());
+        return items;
+      },
+      all() {
+        return [this.scene, this.sticker, ...upstream.values()];
+      },
+      close() {
+        this.all().forEach((items) => items.close());
+        upstream.clear();
+      },
+    };
+  }
+  // The items of each World by its owner (ownWorlds), or of the one World under undefined.
+  const worlds = new Map();
+  const worldKey = (owner) => (ownWorlds ? owner : undefined);
+  function worldItems(owner) {
+    let items = worlds.get(worldKey(owner));
+    if (!items) worlds.set(worldKey(owner), items = createWorldItems());
+    return items;
+  }
+  // The item queues of owner's World, none before it draws.
+  const worldQueues = (owner) => worlds.get(worldKey(owner))?.all() ?? [];
+  const allItems = () => [...worlds.values()].flatMap((items) => items.all());
   // The hit grids of the World 3D Stickers (the 3D file Stickers' and the port Sticker's items; sceneGrid), built
   // in idle time once per input (coarseGridKey: a batch shares one) from its first item drawn, and the key of each
   // item key's grid.
@@ -1006,17 +1031,6 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
       : setTimeout(run, 0)),
     now: () => performance.now(),
   });
-  // The 3D items of the upstream Scene's layers, by slot (a layer and its `scene` or 3D Sticker), loaded
-  // the same way; a slot no render asks for any more is closed.
-  const upstreamItems = new Map();
-  const upstreamItemsOf = (slot) => {
-    let items = upstreamItems.get(slot);
-    if (!items) {
-      items = createSceneItems({ load: loadItem, dispose: disposeItem, onUpdate, concurrency: SCENE_LOADS });
-      upstreamItems.set(slot, items);
-    }
-    return items;
-  };
   const domeGeometry = new SphereGeometry(DOME_RADIUS, 64, 32);
   const planeGeometry = new PlaneGeometry(1, 1);
   const quadGeometry = new PlaneGeometry(2, 2);
@@ -1180,9 +1194,14 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
   // The World of a space input: the default lights, the guides, the `scene` item, the 3D Stickers' items (the
   // port Sticker's and the 3D file Stickers', in one queue), the world Sticker planes and lines, with the Spark
   // renderer of owner's view, and the upstream Scene's items and planes (ADR 0030), which are drawn and picked
-  // as the node's own. The objects are kept between renders, and `world` is filled again only when they
-  // change. What is not seen (opacity 0) is not picked.
+  // as the node's own. The items are those of the World of the owner drawing (owned.owner, worldItems). The objects are
+  // kept between renders, and `world` is filled again only when they change. What is not seen (opacity 0) is not picked.
   function buildWorld(owned, space, owner) {
+    // The pick state below (pickable, pickBoxes, contentParts, contentRevision) is still the view's, of the last render: the
+    // node surfaces never pick, and the Preview's Scene viewer picks right after its own render. A node that picks in a
+    // shared view while others draw needs it per World too.
+    const worldOwn = worldItems(owned.owner);
+    const { scene: sceneItems, sticker: stickerItems, upstream: upstreamItems } = worldOwn;
     const children = [lights];
     const parts = [];
     pickable = [];
@@ -1212,7 +1231,7 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     const slots = new Set();
     for (const entry of space.upstreamItems ?? []) {
       slots.add(entry.slot);
-      const items = upstreamItemsOf(entry.slot);
+      const items = worldOwn.upstreamOf(entry.slot);
       items.retain(entry.urls);
       if (entry.request) contents.push({ content: contentGroup(items, entry.request, items.request(entry.request, atRest)), input: entry.request, opacity: entry.opacity });
     }
@@ -1701,19 +1720,20 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     if (color !== null) renderer.setClearColor(0x000000, 0);
   }
 
-  // The box of the loaded `scene` or 3D Sticker item at url (or a 3D file Sticker's key) in its own frame
+  // The box of the loaded `scene` or 3D Sticker item at url (or a 3D file Sticker's key) of owner's World in its own frame
   // ({ min, max }; a SPLAT's in 3DGS coordinates), or null while it loads.
-  function sceneBox(url) {
-    for (const items of [sceneItems, stickerItems, ...upstreamItems.values()]) {
+  function sceneBox(url, owner) {
+    for (const items of worldQueues(owner)) {
       const box = items.box(url);
       if (box) return box;
     }
     return null;
   }
 
-  // Why the `scene` or 3D Sticker item at url (or key) failed to load ("HTTP 404" when its file is gone), or null.
-  function sceneItemError(url) {
-    for (const items of [sceneItems, stickerItems, ...upstreamItems.values()]) {
+  // Why the `scene` or 3D Sticker item at url (or key) of owner's World failed to load ("HTTP 404" when its file is gone),
+  // or null.
+  function sceneItemError(url, owner) {
+    for (const items of worldQueues(owner)) {
       const error = items.error(url);
       if (error) return error;
     }
@@ -1908,12 +1928,20 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     sparkViews.release(owner);
   }
 
+  // Frees the items of owner's World (ownWorlds) for good: the owner draws no more (a node removed). A release() alone
+  // keeps them, as the one World keeps its items between renders.
+  function releaseWorld(owner) {
+    if (!ownWorlds) return;
+    worlds.get(owner)?.close();
+    worlds.delete(owner);
+  }
+
   // What the diagnostics sample (pano_diagnostics.js watchThreeView): renderer.info (calls and
   // triangles of the last pass drawn), the layer textures the owners share, the `scene` and 3D Sticker items,
   // and the Spark renderers.
   function stats() {
     const { memory, render: drawn, programs } = renderer.info;
-    const items = [sceneItems, stickerItems, ...upstreamItems.values()].flatMap((each) => [...each.items.values()]);
+    const items = allItems().flatMap((each) => [...each.items.values()]);
     return {
       textures: memory.textures,
       layerTextures: layerTextures.size,
@@ -1939,11 +1967,9 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     if (closed) return;
     closed = true;
     coarseGrids.close();
-    sceneItems.close();
-    stickerItems.close();
+    worlds.forEach((items) => items.close());
+    worlds.clear();
     depthColors.dispose();
-    upstreamItems.forEach((items) => items.close());
-    upstreamItems.clear();
     if (guides) disposeObject(guides.group);
     groundGrid?.dispose();
     lines.lines.forEach((line) => disposeObject(line));
@@ -1976,5 +2002,5 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     if (!lost) renderer.forceContextLoss();
   }
 
-  return { canvas, render, renderLiveErp, renderUnwrap, resize, clear, sceneBox, sceneGrid, sceneItemError, pick, pickSurface, pickSticker, gizmoPointer, contentRevision: () => contentRevision, release, releaseSplats, stats, dispose };
+  return { canvas, render, renderLiveErp, renderUnwrap, resize, clear, sceneBox, sceneGrid, sceneItemError, pick, pickSurface, pickSticker, gizmoPointer, contentRevision: () => contentRevision, release, releaseWorld, releaseSplats, stats, dispose };
 }

@@ -9889,7 +9889,7 @@ function Bg(e, t, n, { media: r, evaluated: i = bs(e, t) }) {
   }), a;
 }
 function Rx() {
-  return import("./.lazy/pano_three_view-Coa-ESpT.js").then((e) => e.$);
+  return import("./.lazy/pano_three_view-COda6ec2.js").then((e) => e.$);
 }
 function Kg({ canvas: e, onReady: t, onFailed: n, onUpdate: r = () => {
 }, onSplats: i = () => {
@@ -10031,10 +10031,10 @@ function GT(e) {
         return t ? t.pickSurface(f, p, g, m, y) : null;
       },
       sceneBox(f) {
-        return t ? t.sceneBox(f) : null;
+        return t ? t.sceneBox(f, d) : null;
       },
       sceneItemError(f) {
-        return t ? t.sceneItemError(f) : null;
+        return t ? t.sceneItemError(f, d) : null;
       },
       contentRevision() {
         return t ? t.contentRevision() : 0;
@@ -10043,14 +10043,19 @@ function GT(e) {
       release() {
         t == null || t.release(d);
       },
+      // Frees the loaded 3D items of this node's World while it is out of sight or under its editor
+      // (docs/studio-node-surface.md "見えないときとエディタを開いている間"); its next render loads them again.
+      releaseWorld() {
+        t == null || t.releaseWorld(d);
+      },
       dispose() {
-        u || (u = !0, i.delete(d), t == null || t.release(d), !i.size && (r = !1, t == null || t.dispose(), t = null));
+        u || (u = !0, i.delete(d), t == null || t.release(d), t == null || t.releaseWorld(d), !i.size && (r = !1, t == null || t.dispose(), t = null));
       }
     };
   };
 }
 const Ug = GT(
-  ({ onUpdate: e, onSplats: t }) => import("./.lazy/pano_three_view-Coa-ESpT.js").then((n) => n.$).then((n) => Tw(n.createThreeView({ onUpdate: e, onSplats: t, createCanvas: () => Ht({ label: "three.node" }) }), "node"))
+  ({ onUpdate: e, onSplats: t }) => import("./.lazy/pano_three_view-COda6ec2.js").then((n) => n.$).then((n) => Tw(n.createThreeView({ onUpdate: e, onSplats: t, ownWorlds: !0, createCanvas: () => Ht({ label: "three.node" }) }), "node"))
 ), Em = Object.freeze({
   editor: Object.freeze({ outputByExecutionId: !1, executionIdKeepsEmptyTail: !1, viewType: "type", trimFilename: !1, tupleNeedsStringName: !1 }),
   nodeSurface: Object.freeze({ outputByExecutionId: !0, executionIdKeepsEmptyTail: !1, viewType: "storage", trimFilename: !1, tupleNeedsStringName: !1 }),
@@ -15378,7 +15383,7 @@ function _R(e, t = {}) {
       sticker: Ce,
       media: Fe ? sR(e, Le, qe) : {}
     });
-    ((Ce == null ? void 0 : Ce.src) || "") !== z.stickerSource && (z.stickerSource = (Ce == null ? void 0 : Ce.src) || "", hn(ke)), be.source !== He && (hn(me), me.__panoFrameIdx = 0), Fe || (dt = r.studioInputs) == null || dt.release(), _.playable = et, _.playing = be.playing;
+    ((Ce == null ? void 0 : Ce.src) || "") !== z.stickerSource && (z.stickerSource = (Ce == null ? void 0 : Ce.src) || "", hn(ke)), be.source !== He && (hn(me), me.__panoFrameIdx = 0), Fe || ((dt = r.studioInputs) == null || dt.release(), I.releaseWorld()), _.playable = et, _.playing = be.playing;
   }, Y = () => {
     var me, ke;
     const be = ((me = i.ownOutputVideo) == null ? void 0 : me.player) ?? null;
@@ -15567,7 +15572,8 @@ function _R(e, t = {}) {
           const He = V(lR(e), () => hd(e, Sn(e)));
           He && (_.status = He);
         }
-        if ((ke = e.flags) != null && ke.collapsed || G0(e)) I.release();
+        if ((ke = e.flags) != null && ke.collapsed || G0(e))
+          I.release(), I.releaseWorld();
         else if (l) {
           C && (Z == null ? void 0 : Z.offsetWidth) > 0 && !Z.classList.contains("is-compact") && (oe = Z.offsetWidth);
           const He = ND(y.clientWidth, y.clientHeight, _.status.ratio, {
