@@ -6,9 +6,6 @@ import { GROUND_DEFAULT, defaultCamera, sceneGround } from "../pano_scene_state.
 // values (a state's `camera`, normalized).
 export { GROUND_DEFAULT, defaultCamera };
 
-// studio/editor.js still reads cameraOf here until it imports camera_state.js (the owner of reading the Camera).
-export { cameraOf } from "./camera_state.js";
-
 // The ground height a state stands on (docs/scene-state-v2.md `ground`): its own `ground`, else that of the most
 // downstream upstream layer that has one, else GROUND_DEFAULT. `upstream` is the upstream Scene's working layers
 // (pano_upstream.js upstreamWorkingLayers, from the farthest upstream), none without an upstream Scene.
