@@ -247,14 +247,22 @@ test("the Lock locks the Camera as one Undo step: no gizmo, Camera tab and inspe
   await page.locator('.pano-studio-at-rail').hover();
   await page.screenshot({ path: `${SHOTS}/camera-button-lock-3d-locked.png` });
 
-  // The Camera tab: the rulers are grayed with "Locked", and a drag on the stage moves nothing.
+  // The Camera tab: the rulers, Frame Selected and the knobs are grayed, saying where to unlock (the Camera tab has no
+  // Lock, ADR 0055), and a drag on the stage moves nothing.
   await page.locator('[role="tablist"] button', { hasText: "Camera" }).click();
   await expect(page.locator("[data-frame-box]")).toHaveCount(1);
   await page.waitForTimeout(300);
+  const unlockTip = "Locked · Unlock in the 3D tab";
   for (const name of ["FOV", "Lens", "Roll"]) {
     await expect(page.locator(`[data-ruler="${name}"]`)).toHaveClass(/is-disabled/);
-    await expect(page.locator(`[data-ruler="${name}"]`)).toHaveAttribute("data-tip", "Locked");
+    await expect(page.locator(`[data-ruler="${name}"]`)).toHaveAttribute("data-tip", unlockTip);
+    // Its Keyframe dot and its reset say the same.
+    await expect(page.locator(`[data-ruler="${name}"] [data-ruler-acts] [aria-label="${name} Keyframe"]`)).toHaveAttribute("data-tip", unlockTip);
+    await expect(page.locator(`[data-ruler="${name}"] [data-ruler-acts] [aria-label="Reset ${name}"]`)).toHaveAttribute("data-tip", unlockTip);
   }
+  await expect(page.locator('[data-action="frame-selected"]')).toHaveAttribute("data-tip", unlockTip);
+  await expect(page.locator('[data-knob="orbit"]')).toHaveAttribute("data-tip", unlockTip);
+  await expect(page.locator('.pano-studio-at-bar [data-kind]')).toHaveCount(0);
   const frame = await page.locator("[data-frame-box]").boundingBox();
   await dragBy(page, { x: frame.x + frame.width / 2, y: frame.y + frame.height / 2 }, 80, 30);
   const roll = await page.locator('[data-ruler="Roll"] [data-ruler-track]').boundingBox();

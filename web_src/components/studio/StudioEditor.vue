@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { createBackdropClose } from "../../studio/backdrop.js";
-import { cameraButton } from "../../studio/camera_ui.js";
+import { CAMERA_TAB_LOCKED_TIP, cameraButton } from "../../studio/camera_ui.js";
 import { cameraOf } from "../../studio/camera_state.js";
 import { liveErpRatio } from "../../studio/erp_preview.js";
 import { cameraRulers, rulerEdit } from "../../studio/frame_layout.js";
@@ -100,7 +100,7 @@ function onBackdropUp(event) {
 // --- The bar at the bottom center: the paint tools while Paint or Mask is chosen, else the selected object's (none
 // while nothing is selected). The Camera tab shows it as the 3D tab does (ADR 0051; its tool is always Cursor).
 const paintModel = computed(() => props.view.paint);
-const bar = computed(() => selectionBar({ state: props.view.state, row: props.view.selection?.row ?? null, mode: props.view.gizmoMode, readOnly: props.view.readOnly }));
+const bar = computed(() => selectionBar({ state: props.view.state, row: props.view.selection?.row ?? null, mode: props.view.gizmoMode, readOnly: props.view.readOnly, tab: props.view.tab }));
 
 // --- The Camera tab (docs/studio-ui.md "Camera タブ"): the frame of the output's ratio (the ERP's in Panorama mode)
 // with the edge rulers, which are the Camera card's rows and send the inspector's edits. Each tick strip has its fixed
@@ -132,7 +132,7 @@ const navOff = computed(() => {
   if (!cameraTab.value) return "";
   if (panorama.value) return "Not available in Panorama mode";
   if (props.view.readOnly) return "Read-only";
-  if (camera.value.locked === true) return "Locked";
+  if (camera.value.locked === true) return CAMERA_TAB_LOCKED_TIP;
   return "";
 });
 // --- The list of shortcuts (docs/studio-ui.md "ショートカットの一覧"): what works on the screen now.

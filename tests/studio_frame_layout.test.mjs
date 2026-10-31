@@ -17,6 +17,7 @@ import { cameraRulers, rulerEdit } from "../web_src/studio/frame_layout.js";
 import { buildCameraCard, buildInspectorModel } from "../web_src/studio/inspector_model.js";
 import { loadSceneState } from "../web_src/pano_scene_state.js";
 import { FINE_FACTOR } from "../web_src/studio/ui_drag.js";
+import { CAMERA_TAB_LOCKED_TIP } from "../web_src/studio/camera_ui.js";
 
 // docs/studio-ui.md "Camera タブ" and docs/design.md "大きさ": the frame in the stage less 150 / 88 / 115, the edge rulers'
 // fixed lengths centered on the frame's edges, their marks and drag.
@@ -126,6 +127,16 @@ test("the edge rulers are the Camera card's H FOV, Lens and Roll: values, ranges
   assert.ok(readOnly.fov.disabled && readOnly.lens.disabled && readOnly.roll.disabled);
   // Another card makes none.
   assert.equal(cameraRulers(buildInspectorModel({ state: cameraState({}) }).cards[1]), null);
+});
+
+test("a locked Camera's rulers say where to unlock it: the Camera tab has no Lock (ADR 0055); read-only stays Read-only", () => {
+  const locked = rulersOf(cameraState({ projection: "perspective", locked: true }));
+  for (const name of ["fov", "lens", "roll"]) {
+    assert.equal(locked[name].disabled, true);
+    assert.equal(locked[name].tip, CAMERA_TAB_LOCKED_TIP);
+  }
+  assert.equal(CAMERA_TAB_LOCKED_TIP, "Locked · Unlock in the 3D tab");
+  assert.equal(rulersOf(cameraState({ projection: "perspective", locked: true }), { readOnly: true }).roll.tip, "Read-only");
 });
 
 test("a ruler's events are the inspector's edits of its row: input live, change one step, cancel back, the dot keys the row", () => {

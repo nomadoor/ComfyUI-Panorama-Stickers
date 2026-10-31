@@ -6,7 +6,7 @@ import { api } from "../../scripts/api.js";
 import { createEditorChooser, createStudioPreloader, NEW_UI_SETTING, NEW_UI_SETTING_ID, previewUsesNewWindow } from "./editor_choice.js";
 import { createPanoEditorExtension } from "./pano_editor_extension.js";
 import { oldEditorHooks } from "./pano_editor.js";
-import { linkedInputType } from "./pano_preview_video.js";
+import { inputLinked, linkedInputType } from "./pano_preview_video.js";
 import { openStudioEditor, preloadStudioEditor } from "./studio/editor.js";
 import { openPreviewWindow } from "./studio/preview_window.js";
 
@@ -17,7 +17,11 @@ const openEditor = createEditorChooser({
   openOld: oldEditorHooks.openEditor,
   openStudio: (node) => openStudioEditor(node, { app, api }),
   openPreview: (node) => openPreviewWindow(node, { app, api }),
-  previewTakes: (node) => previewUsesNewWindow({ type: node?.comfyClass ?? node?.type, sourceType: linkedInputType(node, "source") }),
+  previewTakes: (node) => previewUsesNewWindow({
+    type: node?.comfyClass ?? node?.type,
+    sourceType: linkedInputType(node, "source"),
+    sourceLinked: inputLinked(node, ["source"]),
+  }),
 });
 
 // With the setting on, the Preview's Scene opens in the new window too (docs/studio-ui.md "Preview のウィンドウ").

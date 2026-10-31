@@ -6,7 +6,8 @@
 // type stays the template's union ("IMAGE,VIDEO,PANO_SCENE", withComfyMatchType sets it from the other inputs of the
 // template and the allowed types) while the link takes the concrete type of the output it comes from.
 //
-// ?video / ?scene: the source is a VIDEO or a PANO_SCENE (an IMAGE without either). ?off: the setting
+// ?video / ?scene: the source is a VIDEO or a PANO_SCENE (an IMAGE without either). ?none: nothing is linked to the
+// source. ?off: the setting
 // PanoramaSuite.Editor.NewUI is off. ?result: the IMAGE's origin has a result with an image, which the node surface
 // reads (pano_comfy_media.js "previewNode").
 import { app } from "./comfy/app.js";
@@ -34,7 +35,9 @@ try {
   extension.beforeRegisterNodeDef(PanoramaPreviewNode, { name: "PanoramaPreviewNode" });
 
   const origin = { id: 7, type: SOURCE === "VIDEO" ? "LoadVideo" : SOURCE === "IMAGE" ? "LoadImage" : "PanoramaStudio", outputs: [{ name: "out", type: SOURCE, links: [1] }] };
-  const links = { 1: { id: 1, origin_id: 7, origin_slot: 0, target_id: 21, target_slot: 0, type: SOURCE } };
+  const linked = !query.has("none");
+  if (!linked) origin.outputs[0].links = [];
+  const links = linked ? { 1: { id: 1, origin_id: 7, origin_slot: 0, target_id: 21, target_slot: 0, type: SOURCE } } : {};
   const host = document.getElementById("graph");
   const node = new PanoramaPreviewNode();
   const graph = {
@@ -48,7 +51,7 @@ try {
     size: [360, 260],
     flags: {},
     graph,
-    inputs: [{ name: "source", type: "IMAGE,VIDEO,PANO_SCENE", link: 1 }],
+    inputs: [{ name: "source", type: "IMAGE,VIDEO,PANO_SCENE", link: linked ? 1 : null }],
     outputs: [{ name: "output", type: SOURCE, links: null }],
     widgets: [{ name: "background_range", type: "combo", value: "360" }],
     getInputLink(slot) {

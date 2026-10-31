@@ -116,3 +116,11 @@ test("the new Preview window takes the Panorama Preview node with an IMAGE or a 
   assert.equal(previewUsesNewWindow({ type: "PanoramaPreviewNode", sourceType: "" }), false);
   assert.equal(previewUsesNewWindow({ type: "PanoramaStickerPreview", sourceType: "IMAGE" }), false);
 });
+
+test("with nothing linked to its source (no link on the slot), the Panorama Preview node opens the new window too", () => {
+  assert.equal(previewUsesNewWindow({ type: "PanoramaPreviewNode", sourceType: "", sourceLinked: false }), true);
+  // A link whose type is not known (an untyped Reroute) keeps the browser's fullscreen.
+  assert.equal(previewUsesNewWindow({ type: "PanoramaPreviewNode", sourceType: "", sourceLinked: true }), false);
+  assert.equal(previewUsesNewWindow({ type: "PanoramaPreviewNode", sourceType: "IMAGE", sourceLinked: true }), true);
+  assert.equal(previewUsesNewWindow({ type: "PanoramaStickerPreview", sourceType: "", sourceLinked: false }), false);
+});

@@ -72,7 +72,7 @@ Scene を見る表示（ビューア）は、エディタの部品を、エデ�
 
 #### ノード上
 
-- 置くもの（`PANO_SCENE` のとき）：Vue の overlay の右上に、アイコンのボタンを 2 つ：`Reset view`（原点の正面に戻る。エディタの Reset View と同じ遷移。小さなノードで迷ったときに戻る手段が要るため）と `Open viewer`（下の大きなウィンドウ）。下端に再生の帯（下の「再生の帯」）。IMAGE・VIDEO のときは旧 Preview の runtime の表示のまま。ただし、設定 `PanoramaSuite.Editor.NewUI` がオンで新しい Preview のウィンドウがそのノードを開くとき（`web_src/editor_choice.js` `previewUsesNewWindow`）、右上のボタンはブラウザの全画面ではなく `Open viewer` になり、新しいウィンドウ（`docs/studio-ui.md` の「Preview のウィンドウ」）を開く。どの入口も同じ選び方（`createEditorChooser`）を通す。設定がオフのときは、旧 Preview と同じ `Fullscreen` のまま（`web_src/pano_preview_previewnode.js` の `opensWindow`）。
+- 置くもの（`PANO_SCENE` のとき）：Vue の overlay の右上に、アイコンのボタンを 2 つ：`Reset view`（原点の正面に戻る。エディタの Reset View と同じ遷移。小さなノードで迷ったときに戻る手段が要るため）と `Open viewer`（下の大きなウィンドウ）。下端に再生の帯（下の「再生の帯」）。IMAGE・VIDEO のときは旧 Preview の runtime の表示のまま。ただし、設定 `PanoramaSuite.Editor.NewUI` がオンで新しい Preview のウィンドウがそのノードを開くとき（`web_src/editor_choice.js` `previewUsesNewWindow`）、右上のボタンはブラウザの全画面ではなく `Open viewer` になり、新しいウィンドウ（`docs/studio-ui.md` の「Preview のウィンドウ」）を開く。新しいウィンドウが開くのは、`source` に IMAGE か VIDEO をつないだときと、`source` に何もつないでいないとき（`source` の差し口に link が無いとき。黒いステージのウィンドウ。持ち主、2026-10-31）。link はあるが型が分からないとき（型の無い Reroute を通したときなど）は `Fullscreen` のまま。どの入口も同じ選び方（`createEditorChooser`）を通す。設定がオフのときは、旧 Preview と同じ `Fullscreen` のまま（`web_src/pano_preview_previewnode.js` の `opensWindow`）。
 - マウス：エディタと同じプリセットの表を、ノードの上でもそのまま使う（同じ操作を二通り覚えさせないため）。オブジェクトの操作が無いので、左ドラッグはいつも表の「何もないところ」の扱い。surface の上の押し下げ・ドラッグ・ホイールは surface が受け、ComfyUI のキャンバスのパンやノードの移動にしない（Studio のノード上の表示と同じ）。ノードのタイトルの帯は ComfyUI のまま。
 - ホイール：Studio のノード上の表示と同じ捕捉の規則（`docs/studio-node-surface.md` の「見回し」）で受け、エディタと同じポインタの下へのズームにする。
 - 右クリックのメニュー：右ドラッグを使うプリセット（Default・Unity-like）では、surface の上の右クリックのメニューを抑止する（エディタの 6DoF と同じ。ノードのメニューはタイトルの帯の右クリックで出る）。
