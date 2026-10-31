@@ -1,0 +1,94 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import { createComfyMediaAdapter, executionIdMatches } from "../web_src/pano_comfy_media.js";
+
+// The read profiles of pano_comfy_media.js: how the old editor and the new UI ("editor"), the node surfaces of
+// pano_preview_runtime.js ("nodeSurface") and the Preview node's runtime pano_preview_previewnode.js ("previewNode")
+// read ComfyUI's results. These pin what each reader did before its copy moved here; where the profiles differ is an
+// owner question (handoff refactor comfymedia D1-D8), not a choice of these tests.
+
+const api = { apiURL: (route) => `/api${route}` };
+const adapter = (read, app = { nodeOutputs: {} }) => createComfyMediaAdapter({ app, api, read });
+const SUBGRAPH = "a1b2c3d4-0000-4000-8000-000000000001";
+
+test("execution ids: a last part matches, an id ending in ':' differs only in the previewNode reading", () => {
+  // [a, b, nodeSurface (empty parts dropped), previewNode (empty last part kept)]
+  const table = [
+    ["12", "12", true, true],
+    ["12:5", "5", true, true],
+    ["12:7:5", "5", true, true],
+    [`${SUBGRAPH}:5`, "5", true, true],
+    ["12:5", "12", false, false],
+    ["7:5", "12:5", true, true],
+    ["12:", "12", true, false],
+    ["5:", "7:", false, true],
+    [":", "::", false, true],
+    ["12: 5", "5", true, true],
+    ["", "", false, false],
+  ];
+  for (const [a, b, surface, preview] of table) {
+    assert.equal(executionIdMatches(a, b), surface, `${a} ~ ${b}`);
+    assert.equal(executionIdMatches(a, b, { keepEmptyTail: true }), preview, `${a} ~ ${b} (empty tail)`);
+  }
+});
+
+test("/view URLs of ui entries in each profile", () => {
+  // [entry, editor, nodeSurface, previewNode]
+  const table = [
+    [{ filename: "a.png", type: "temp" }, "type=temp", "type=temp", "type=temp"],
+    [{ filename: "a.png", type: "temp", storage: "input" }, "type=temp", "type=input", "type=input"],
+    [{ filename: "a.png", type: "comfy_image" }, "type=comfy_image", "type=output", "type=output"],
+    [{ filename: "a.png" }, "type=output", "type=output", "type=output"],
+    [{ filename: "a.png", storage: "input", subfolder: "s" }, "type=output&subfolder=s", "type=input&subfolder=s", "type=input&subfolder=s"],
+  ];
+  for (const [entry, ...expected] of table) {
+    ["editor", "nodeSurface", "previewNode"].forEach((read, index) => {
+      assert.equal(adapter(read).source(entry), `/api/view?filename=a.png&${expected[index]}`, `${read} ${JSON.stringify(entry)}`);
+    });
+  }
+  const padded = { filename: " a.png ", type: "output" };
+  assert.equal(adapter("editor").source(padded), "/api/view?filename=+a.png+&type=output");
+  assert.equal(adapter("nodeSurface").source(padded), "/api/view?filename=+a.png+&type=output");
+  assert.equal(adapter("previewNode").source(padded), "/api/view?filename=a.png&type=output");
+  assert.equal(adapter("previewNode").source({ filename: "  " }), "");
+});
+
+test("candidates: strings, tuples, src and url; a tuple of entries differs only in the previewNode reading", () => {
+  for (const read of ["editor", "nodeSurface", "previewNode"]) {
+    const media = adapter(read);
+    assert.equal(media.source(["a.png", "sub", "temp"]), "/api/view?filename=a.png&type=temp&subfolder=sub");
+    assert.equal(media.source(["x.png"]), "x.png");
+    assert.equal(media.source([null, "b.png"]), "b.png");
+    assert.equal(media.source(" /view?x=1 "), "/view?x=1");
+    assert.equal(media.source({ src: "blob:1" }), "blob:1");
+    assert.equal(media.source({ url: "data:x" }), "data:x");
+    assert.equal(media.source([]), "");
+    assert.equal(media.source(null), "");
+  }
+  const entries = [{ filename: "a.png", type: "temp" }, { filename: "b.png" }];
+  const broken = "/api/view?filename=%5Bobject+Object%5D&type=output&subfolder=%5Bobject+Object%5D";
+  assert.equal(adapter("editor").source(entries), broken);
+  assert.equal(adapter("nodeSurface").source(entries), broken);
+  assert.equal(adapter("previewNode").source(entries), "/api/view?filename=a.png&type=temp");
+});
+
+test("the nodeSurface profile builds the same view candidates and asset URLs as before", () => {
+  const media = adapter("nodeSurface");
+  assert.deepEqual(media.sourceCandidates("renders/final.png"), [
+    "/api/view?filename=final.png&type=temp&subfolder=renders",
+    "/api/view?filename=final.png&type=output&subfolder=renders",
+    "/api/view?filename=final.png&type=input&subfolder=renders",
+    "renders/final.png",
+  ]);
+  assert.deepEqual(media.sourceCandidates("/view?filename=a.png"), ["/view?filename=a.png"]);
+  assert.deepEqual(media.sourceCandidates(""), []);
+  assert.equal(media.assetSource({ type: "comfy_image", filename: "s.png", subfolder: "stk", storage: "temp" }), "/api/view?filename=s.png&type=temp&subfolder=stk");
+  assert.equal(media.assetSource({ type: "comfy_image", filename: "s.png" }), "/api/view?filename=s.png&type=input");
+  assert.equal(media.assetSource({ type: "dataurl", value: "data:x" }), "data:x");
+});
+
+test("a profile is named; an unknown name throws", () => {
+  assert.throws(() => adapter("nodeSurface ".trim() + "x"), /Unknown ComfyUI read profile/);
+  assert.throws(() => adapter("toString"), /Unknown ComfyUI read profile/);
+});

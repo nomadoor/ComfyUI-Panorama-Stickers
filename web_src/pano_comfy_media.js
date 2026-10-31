@@ -1,13 +1,61 @@
 import { isVideoFile, outputSourceToken } from "./pano_preview_video.js";
 import { mediaCache } from "./pano_node_bridge.js";
 
-function comfyImageEntryToUrl(api, entry) {
+// How a reader reads ComfyUI's results. Each flag is one place where the readers read differently today
+// (handoff refactor comfymedia D1-D5); unifying one removes its flag. Callers name a profile, they do not compose flags.
+// - editor: the old editor and the new UI (Studio editor, Preview window).
+// - nodeSurface: the legacy Stickers / Cutout and Panorama Studio node surfaces (pano_preview_runtime.js).
+// - previewNode: the Preview node's IMAGE / VIDEO and the legacy Panorama Preview (pano_preview_previewnode.js).
+// outputByExecutionId: a node's result not found by its id is looked for among the keys by executionIdMatches.
+// executionIdKeepsEmptyTail: an id ending in ":" has an empty last part. viewType "storage": /view's type is the
+// entry's storage, else its type ("comfy_image" reading as "output"). trimFilename: the filename is trimmed.
+// tupleNeedsStringName: a [filename, subfolder, type] tuple needs a string first item.
+const READ_PROFILES = Object.freeze({
+  editor: Object.freeze({ outputByExecutionId: false, executionIdKeepsEmptyTail: false, viewType: "type", trimFilename: false, tupleNeedsStringName: false }),
+  nodeSurface: Object.freeze({ outputByExecutionId: true, executionIdKeepsEmptyTail: false, viewType: "storage", trimFilename: false, tupleNeedsStringName: false }),
+  previewNode: Object.freeze({ outputByExecutionId: true, executionIdKeepsEmptyTail: true, viewType: "storage", trimFilename: true, tupleNeedsStringName: true }),
+});
+
+function readProfile(name) {
+  if (!Object.hasOwn(READ_PROFILES, name)) throw new Error(`Unknown ComfyUI read profile: ${name}`);
+  return READ_PROFILES[name];
+}
+
+function normalizeExecutionId(value, keepEmptyTail) {
+  const id = String(value ?? "").trim();
+  if (!id) return { full: "", tail: "" };
+  if (keepEmptyTail) {
+    const parts = id.split(":");
+    return { full: id, tail: String(parts[parts.length - 1] || "").trim() };
+  }
+  const parts = id.split(":").map((p) => String(p).trim()).filter(Boolean);
+  return { full: id, tail: parts.length ? parts[parts.length - 1] : id };
+}
+
+// Whether two ComfyUI ids name the same node: equal, or one's last part (after the last ":") is the other or the
+// other's last part. ComfyUI reports a run by its execution id ("12", "12:5" inside the subgraph node 12 instances)
+// and keys app.nodeOutputs by the node's locator id ("12", "<subgraph id>:5"); a node knows only its own id.
+export function executionIdMatches(value, target, { keepEmptyTail = false } = {}) {
+  const a = normalizeExecutionId(value, keepEmptyTail);
+  const b = normalizeExecutionId(target, keepEmptyTail);
+  if (!a.full || !b.full) return false;
+  return a.full === b.full || a.tail === b.full || a.full === b.tail || a.tail === b.tail;
+}
+
+function comfyImageEntryToUrl(api, entry, read = READ_PROFILES.editor) {
   if (!entry || typeof entry !== "object") return "";
-  const filename = String(entry.filename || "");
+  const filename = read.trimFilename ? String(entry.filename || "").trim() : String(entry.filename || "");
   if (!filename) return "";
   const params = new URLSearchParams();
   params.set("filename", filename);
-  params.set("type", String(entry.type || "output"));
+  const viewType = read.viewType === "storage"
+    ? String(
+      entry.storage
+      || (String(entry.type || "").trim().toLowerCase() === "comfy_image" ? "output" : entry.type)
+      || "output"
+    )
+    : String(entry.type || "output");
+  params.set("type", viewType);
   if (entry.subfolder) params.set("subfolder", String(entry.subfolder));
   const route = `/view?${params.toString()}`;
   return typeof api?.apiURL === "function" ? api.apiURL(route) : route;
@@ -71,16 +119,21 @@ function hashStringSimple(text) {
   return String(hash >>> 0);
 }
 
-export function createComfyMediaAdapter({ app, api, ImageCtor, imageState } = {}) {
+// read: the name of a read profile (above), "editor" by default.
+export function createComfyMediaAdapter({ app, api, ImageCtor, imageState, read: profileName = "editor" } = {}) {
+  const read = readProfile(profileName);
+  const entryUrl = (entry) => comfyImageEntryToUrl(api, entry, read);
   const source = (candidate) => {
     if (!candidate) return "";
     if (typeof candidate === "string") return String(candidate || "").trim();
     if (Array.isArray(candidate)) {
       if (candidate.length === 0) return "";
       if (candidate.length === 1) return source(candidate[0]);
-      const filename = String(candidate[0] || "").trim();
+      const filename = read.tupleNeedsStringName
+        ? (typeof candidate[0] === "string" ? String(candidate[0] || "").trim() : "")
+        : String(candidate[0] || "").trim();
       if (filename) {
-        return comfyImageEntryToUrl(api, {
+        return entryUrl({
           filename,
           subfolder: String(candidate[1] || "").trim(),
           type: String(candidate[2] || "output").trim() || "output",
@@ -94,7 +147,7 @@ export function createComfyMediaAdapter({ app, api, ImageCtor, imageState } = {}
     }
     if (typeof candidate?.src === "string" && candidate.src) return candidate.src;
     if (typeof candidate?.url === "string" && candidate.url) return candidate.url;
-    return comfyImageEntryToUrl(api, candidate);
+    return entryUrl(candidate);
   };
 
   const assetSource = (asset) => {
@@ -104,7 +157,7 @@ export function createComfyMediaAdapter({ app, api, ImageCtor, imageState } = {}
     if (type !== "comfy_image") return "";
     const filename = String(asset.filename || "").trim();
     if (!filename) return "";
-    return comfyImageEntryToUrl(api, {
+    return entryUrl({
       filename,
       subfolder: String(asset.subfolder || ""),
       type: String(asset.storage || "input"),
@@ -238,7 +291,7 @@ export function createComfyMediaAdapter({ app, api, ImageCtor, imageState } = {}
       if (link?.origin_id == null) continue;
       const payload = output(resolveInputOriginNode(node, inputIndex, link.origin_id)?.id ?? link.origin_id);
       const entry = (Array.isArray(payload?.images) ? payload.images : []).find(isVideoFile);
-      return entry ? `${comfyImageEntryToUrl(api, entry)}&pano_src=${outputSourceToken(payload)}` : "";
+      return entry ? `${entryUrl(entry)}&pano_src=${outputSourceToken(payload)}` : "";
     }
     return "";
   };
@@ -259,9 +312,9 @@ export function createComfyMediaAdapter({ app, api, ImageCtor, imageState } = {}
     const { filename, subfolder } = splitFilenameAndSubfolder(raw);
     if (!filename) return [raw];
     return uniqueSources([
-      comfyImageEntryToUrl(api, { filename, subfolder, type: "temp" }),
-      comfyImageEntryToUrl(api, { filename, subfolder, type: "output" }),
-      comfyImageEntryToUrl(api, { filename, subfolder, type: "input" }),
+      entryUrl({ filename, subfolder, type: "temp" }),
+      entryUrl({ filename, subfolder, type: "output" }),
+      entryUrl({ filename, subfolder, type: "input" }),
       raw,
     ]);
   };
@@ -395,6 +448,7 @@ export function createComfyMediaAdapter({ app, api, ImageCtor, imageState } = {}
     output,
     resolvePreferredExactLinkedSource,
     source,
+    sourceCandidates,
     uiImage,
     uiList,
     uiValue,

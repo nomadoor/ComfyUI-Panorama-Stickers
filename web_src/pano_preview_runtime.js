@@ -11,7 +11,7 @@ import { loadSceneState, sceneGround } from "./pano_scene_state.js";
 import { surfacePaintLayers } from "./pano_surface_paint.js";
 import { shotCamera, viewProjection, workingSkyLayers } from "./pano_editor_view.js";
 import { acquirePreviewView, previewNodeCamera } from "./pano_preview_view.js";
-import { createComfyMediaAdapter } from "./pano_comfy_media.js";
+import { createComfyMediaAdapter, executionIdMatches } from "./pano_comfy_media.js";
 import {
   isRenderableMediaReady,
   mediaPlayheadRevisionToken as getRenderableMediaRevisionToken,
@@ -118,6 +118,14 @@ setNodeOutputLookup((node) => lookupNodeOutputEntry(node.id));
 trackRunOutputs(api);
 const sharedPreviewImageCache = createSharedImageCache();
 const { linkedVideoFile, source: mediaSource, assetSource: mediaAssetSource } = createComfyMediaAdapter({ app, api });
+// The node surfaces' own reading of ComfyUI's results (pano_comfy_media.js "nodeSurface"), under the names this file
+// has used for it.
+const surfaceMedia = createComfyMediaAdapter({ app, api, read: "nodeSurface" });
+const {
+  assetSource: stickerAssetToPreviewSrc,
+  source: imageSourceFromCandidate,
+  sourceCandidates: buildImageSrcCandidates,
+} = surfaceMedia;
 // The editor files of the 3D file Stickers the node surfaces' Auto length reads (their animated files' clips, ADR 0043),
 // one registry for every surface, as the editor asks the same route; an answer draws the graph again.
 // Panorama Studio's surfaces also draw the 3D file Stickers from those files, so an answer draws them again.
@@ -505,20 +513,6 @@ export function preferredImageInputsForNode(node, preferredInputNames = []) {
   return out.length ? out : preferredInputNames;
 }
 
-function normalizeExecutionId(value) {
-  const id = String(value ?? "").trim();
-  if (!id) return { full: "", tail: "" };
-  const parts = id.split(":").map((p) => String(p).trim()).filter(Boolean);
-  return { full: id, tail: parts.length ? parts[parts.length - 1] : id };
-}
-
-function executionIdMatches(value, target) {
-  const a = normalizeExecutionId(value);
-  const b = normalizeExecutionId(target);
-  if (!a.full || !b.full) return false;
-  return a.full === b.full || a.tail === b.full || a.full === b.tail || a.tail === b.tail;
-}
-
 function originNodeOf(node, slot) {
   return resolveInputOriginNode(node, slot, node.graph ? node.getInputLink(slot)?.origin_id : null);
 }
@@ -593,87 +587,6 @@ const executedRefreshMonitor = {
   },
 };
 
-function comfyImageEntryToUrl(entry) {
-  if (!entry || typeof entry !== "object") return "";
-  const filename = String(entry.filename || "");
-  if (!filename) return "";
-  const params = new URLSearchParams();
-  params.set("filename", filename);
-  const viewType = String(
-    entry.storage
-    || (String(entry.type || "").trim().toLowerCase() === "comfy_image" ? "output" : entry.type)
-    || "output"
-  );
-  params.set("type", viewType);
-  if (entry.subfolder) params.set("subfolder", String(entry.subfolder));
-  const q = `/view?${params.toString()}`;
-  return typeof api?.apiURL === "function" ? api.apiURL(q) : q;
-}
-
-function isDirectImageUrl(src) {
-  const s = String(src || "").trim();
-  if (!s) return false;
-  return (
-    /^https?:\/\//i.test(s)
-    || s.startsWith("/")
-    || s.startsWith("blob:")
-    || s.startsWith("data:")
-  );
-}
-
-function splitFilenameAndSubfolder(pathish) {
-  const normalized = String(pathish || "").trim().replaceAll("\\", "/");
-  const trimmed = normalized.replace(/^\.\/+/, "").replace(/^\/+/, "");
-  if (!trimmed) return { filename: "", subfolder: "" };
-  const parts = trimmed.split("/").filter(Boolean);
-  if (!parts.length) return { filename: "", subfolder: "" };
-  const filename = String(parts.pop() || "").trim();
-  const subfolder = parts.join("/");
-  return { filename, subfolder };
-}
-
-function uniqStrings(values) {
-  const out = [];
-  const seen = new Set();
-  values.forEach((v) => {
-    const s = String(v || "").trim();
-    if (!s || seen.has(s)) return;
-    seen.add(s);
-    out.push(s);
-  });
-  return out;
-}
-
-function buildImageSrcCandidates(srcRaw) {
-  const src = String(srcRaw || "").trim();
-  if (!src) return [];
-  if (isDirectImageUrl(src)) return [src];
-  const { filename, subfolder } = splitFilenameAndSubfolder(src);
-  if (!filename) return [src];
-  const byView = ["temp", "output", "input"].map((type) => comfyImageEntryToUrl({
-    filename,
-    subfolder,
-    type,
-  }));
-  return uniqStrings([...byView, src]);
-}
-
-function stickerAssetToPreviewSrc(asset) {
-  if (!asset || typeof asset !== "object") return "";
-  const type = String(asset.type || "").trim().toLowerCase();
-  if (type === "dataurl") return String(asset.value || "");
-  if (type === "comfy_image") {
-    const filename = String(asset.filename || "").trim();
-    if (!filename) return "";
-    return comfyImageEntryToUrl({
-      filename,
-      subfolder: String(asset.subfolder || ""),
-      type: String(asset.storage || "input"),
-    });
-  }
-  return "";
-}
-
 function lookupNodeOutputEntry(nodeId) {
   const store = app?.nodeOutputs;
   if (!store || nodeId == null) return null;
@@ -710,31 +623,6 @@ function ownOutputUiValue(node, key, outputOverride = null) {
     ? output.ui[key]
     : output?.[key];
   return Array.isArray(value) ? value[0] : value;
-}
-
-function imageSourceFromCandidate(candidate) {
-  if (!candidate) return "";
-  if (typeof candidate === "string") {
-    return String(candidate || "").trim();
-  }
-  if (Array.isArray(candidate)) {
-    if (candidate.length === 0) return "";
-    if (candidate.length === 1) return imageSourceFromCandidate(candidate[0]);
-    const filename = String(candidate[0] || "").trim();
-    if (filename) {
-      const subfolder = String(candidate[1] || "").trim();
-      const type = String(candidate[2] || "output").trim() || "output";
-      return comfyImageEntryToUrl({ filename, subfolder, type });
-    }
-    for (const entry of candidate) {
-      const src = imageSourceFromCandidate(entry);
-      if (src) return src;
-    }
-    return "";
-  }
-  if (typeof candidate?.src === "string" && candidate.src) return candidate.src;
-  if (typeof candidate?.url === "string" && candidate.url) return candidate.url;
-  return comfyImageEntryToUrl(candidate);
 }
 
 function appendImageRevision(src, rev) {

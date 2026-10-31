@@ -24,67 +24,16 @@ import PanoPreviewNodeSurface from "./components/PanoPreviewNodeSurface.vue";
 import { localPosFromEvent } from "./pano_preview_runtime.js";
 import { isRenderableMediaReady, mediaPlayheadRevisionToken } from "./pano_media_session.js";
 import { peekPreviewNode, previewNode } from "./pano_node_bridge.js";
+import { createComfyMediaAdapter, executionIdMatches } from "./pano_comfy_media.js";
 
 const PREVIEW_MIN_HEIGHT = 140;
 const PREVIEW_MIN_WIDTH = 180;
 const LEGACY_TOP_OFFSET = 40;
 const LEGACY_MARGIN = 10;
 
-function normalizeExecutionId(value) {
-  const raw = String(value ?? "").trim();
-  if (!raw) return { full: "", tail: "" };
-  const parts = raw.split(":");
-  return { full: raw, tail: String(parts[parts.length - 1] || "").trim() };
-}
-
-function executionIdMatches(value, target) {
-  const a = normalizeExecutionId(value);
-  const b = normalizeExecutionId(target);
-  if (!a.full || !b.full) return false;
-  return a.full === b.full || a.tail === b.full || a.full === b.tail || a.tail === b.tail;
-}
-
-function comfyImageEntryToUrl(entry) {
-  if (!entry || typeof entry !== "object") return "";
-  const filename = String(entry.filename || "").trim();
-  if (!filename) return "";
-  const params = new URLSearchParams();
-  params.set("filename", filename);
-  const viewType = String(
-    entry.storage
-    || (String(entry.type || "").trim().toLowerCase() === "comfy_image" ? "output" : entry.type)
-    || "output"
-  );
-  params.set("type", viewType);
-  if (entry.subfolder) params.set("subfolder", String(entry.subfolder));
-  const q = `/view?${params.toString()}`;
-  return typeof api?.apiURL === "function" ? api.apiURL(q) : q;
-}
-
-function imageSourceFromCandidate(candidate) {
-  if (!candidate) return "";
-  if (typeof candidate === "string") return String(candidate || "").trim();
-  if (Array.isArray(candidate)) {
-    if (candidate.length === 0) return "";
-    if (candidate.length === 1) return imageSourceFromCandidate(candidate[0]);
-    const filename = typeof candidate[0] === "string" ? String(candidate[0] || "").trim() : "";
-    if (filename) {
-      return comfyImageEntryToUrl({
-        filename,
-        subfolder: String(candidate[1] || "").trim(),
-        type: String(candidate[2] || "output").trim() || "output",
-      });
-    }
-    for (const entry of candidate) {
-      const src = imageSourceFromCandidate(entry);
-      if (src) return src;
-    }
-    return "";
-  }
-  if (typeof candidate?.src === "string" && candidate.src) return candidate.src;
-  if (typeof candidate?.url === "string" && candidate.url) return candidate.url;
-  return comfyImageEntryToUrl(candidate);
-}
+// How the Preview node reads ComfyUI's results (pano_comfy_media.js "previewNode").
+const comfyMedia = createComfyMediaAdapter({ app, api, read: "previewNode" });
+const imageSourceFromCandidate = comfyMedia.source;
 
 function lookupNodeOutputEntry(nodeId) {
   const store = app?.nodeOutputs;
@@ -99,11 +48,11 @@ function lookupNodeOutputEntry(nodeId) {
   if (val) return val;
   if (store instanceof Map) {
     for (const key of store.keys()) {
-      if (executionIdMatches(key, raw)) return store.get(key);
+      if (executionIdMatches(key, raw, { keepEmptyTail: true })) return store.get(key);
     }
   } else {
     for (const key of Object.keys(store)) {
-      if (executionIdMatches(key, raw)) return store[key];
+      if (executionIdMatches(key, raw, { keepEmptyTail: true })) return store[key];
     }
   }
   return null;
