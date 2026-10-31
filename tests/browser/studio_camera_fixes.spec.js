@@ -294,7 +294,8 @@ test("the Camera tab folds the Output window, its fold button faint and inert, s
   await expect(fold).toHaveAttribute("data-tip", "Not available in the Camera view");
   // Its line as in the 3D tab; only the fold button is faint (ADR 0051).
   expect(await output.evaluate((el) => getComputedStyle(el).opacity)).toBe("1");
-  expect(await fold.evaluate((el) => getComputedStyle(el).opacity)).toBe("0.4");
+  expect(await fold.evaluate((el) => getComputedStyle(el).opacity)).toBe("1");
+  expect(await fold.evaluate((el) => getComputedStyle(el.querySelector("[data-output-chevron]")).opacity)).toBe("0.4");
   // A press does nothing; a hover does not light it.
   await fold.hover();
   // Past the hover's ease (docs/design.md "動き").
