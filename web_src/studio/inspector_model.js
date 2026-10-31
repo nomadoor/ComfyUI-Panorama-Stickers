@@ -259,7 +259,7 @@ function cameraRows(camera, playhead) {
       control: "choice",
       lanes: [],
       options: RANGE_OPTIONS,
-      value: camera.erp_range === 180 ? 180 : 360,
+      value: camera.erp_range,
       resettable: false,
       ...(erp ? {} : { disabled: true, tip: PANORAMA_ONLY_TIP }),
     },

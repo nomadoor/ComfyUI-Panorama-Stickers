@@ -108,7 +108,7 @@ const bar = computed(() => selectionBar({ state: props.view.state, row: props.vi
 const CAMERA_TAB_TIP = "Not available in the Camera view";
 const camera = computed(() => cameraOf(props.view.state));
 const panorama = computed(() => camera.value.projection === "erp");
-const frameAspect = computed(() => (panorama.value ? liveErpRatio(camera.value.erp_range === 180 ? 180 : 360) : camera.value.aspect));
+const frameAspect = computed(() => (panorama.value ? liveErpRatio(camera.value.erp_range) : camera.value.aspect));
 const rulers = computed(() => (cameraTab.value
   ? cameraRulers(buildCameraCard({ state: props.view.state, playhead: props.view.playhead, readOnly: props.view.readOnly }))
   : null));

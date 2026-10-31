@@ -12198,7 +12198,7 @@ function uD(e, t, n, r, i) {
 }
 const cD = [[16, 9], [3, 2], [4, 3], [1, 1], [3, 4], [2, 3], [9, 16]];
 function dD(e, t) {
-  if (e.projection === "erp") return `Panorama ${e.erp_range === 180 ? 180 : 360}°`;
+  if (e.projection === "erp") return `Panorama ${e.erp_range}°`;
   let n = null;
   for (const [r, i] of cD) {
     const o = Math.abs(e.aspect / (r / i) - 1);
@@ -30171,7 +30171,7 @@ function hz(e, t) {
       control: "choice",
       lanes: [],
       options: dz,
-      value: e.erp_range === 180 ? 180 : 360,
+      value: e.erp_range,
       resettable: !1,
       ...r ? {} : { disabled: !0, tip: pz }
     },
@@ -35344,7 +35344,7 @@ const FK = ["data-side", "aria-hidden"], DK = {
     const g = Ge(() => t.view.paint), h = Ge(() => {
       var z;
       return T6({ state: t.view.state, row: ((z = t.view.selection) == null ? void 0 : z.row) ?? null, mode: t.view.gizmoMode, readOnly: t.view.readOnly });
-    }), b = Ge(() => gr(t.view.state)), m = Ge(() => b.value.projection === "erp"), v = Ge(() => m.value ? c_(b.value.erp_range === 180 ? 180 : 360) : b.value.aspect), y = Ge(() => d.value ? Gz(kz({ state: t.view.state, playhead: t.view.playhead, readOnly: t.view.readOnly })) : null);
+    }), b = Ge(() => gr(t.view.state)), m = Ge(() => b.value.projection === "erp"), v = Ge(() => m.value ? c_(b.value.erp_range) : b.value.aspect), y = Ge(() => d.value ? Gz(kz({ state: t.view.state, playhead: t.view.playhead, readOnly: t.view.readOnly })) : null);
     let k = null;
     function w(z, Z, W) {
       if (!y.value) return;

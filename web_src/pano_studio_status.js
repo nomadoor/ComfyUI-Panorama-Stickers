@@ -71,7 +71,7 @@ const FRAME_PRESETS = [[16, 9], [3, 2], [4, 3], [1, 1], [3, 4], [2, 3], [9, 16]]
 // How the state's Camera shoots, as the status line names it: "Panorama 360°" / "Panorama 180°", or "Frame W:H"
 // with the preset nearest its aspect within 1%, else the output size's width and height.
 function shotName(camera, size) {
-  if (camera.projection === "erp") return `Panorama ${camera.erp_range === 180 ? 180 : 360}°`;
+  if (camera.projection === "erp") return `Panorama ${camera.erp_range}°`;
   let best = null;
   for (const [w, h] of FRAME_PRESETS) {
     const off = Math.abs(camera.aspect / (w / h) - 1);
