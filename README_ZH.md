@@ -83,6 +83,7 @@ https://github.com/user-attachments/assets/bf74e953-8ceb-4c7f-afa2-1c805f12c7af
 
 ## 更新日志
 
+- **2.0.2**：带镜头的 Camera 也可以在 Camera 标签页中移动物体；Output 小窗口可点击整个标题栏展开或收起；深度网格视频（MoGe、DA3）在慢速连接下形状与颜色保持同步，并在暂停时预先加载；以及若干修复。
 - **2.0.1**：Studio 编辑器始终显示输出尺寸，切换标签页时检查器保持不变；在 Camera 标签页中也可以移动物体；节点上显示深度网格（MoGe、DA3）和上游场景，并可播放；可以抓取并移动绘画；以及若干修复。
 - **2.0.0**：新增 Panorama Studio 和新的 Panorama Preview。
 - **1.5.0**：为 Stickers、Cutout、Preview 加入节点上的轻量 UI。
