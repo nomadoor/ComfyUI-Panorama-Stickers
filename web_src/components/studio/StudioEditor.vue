@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { createBackdropClose } from "../../studio/backdrop.js";
 import { cameraButton } from "../../studio/camera_ui.js";
-import { cameraOf } from "../../studio/defaults.js";
+import { cameraOf } from "../../studio/camera_state.js";
 import { liveErpRatio } from "../../studio/erp_preview.js";
 import { cameraRulers, rulerEdit } from "../../studio/frame_layout.js";
 import { ROTATE_SNAP_DEG } from "../../studio/view_scale.js";

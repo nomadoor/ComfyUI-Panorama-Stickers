@@ -21,7 +21,8 @@ import {
 import { EASING_PRESETS, rowLaneNames, selectedEasing } from "../pano_timeline.js";
 import { isUpstreamSticker, upstreamOverrideOf, upstreamStickerEditable } from "../pano_upstream.js";
 import { animationClipIndex } from "../pano_animation.js";
-import { cameraOf, defaultCamera, groundOf } from "./defaults.js";
+import { cameraOf } from "./camera_state.js";
+import { defaultCamera, groundOf } from "./defaults.js";
 import { objectLabel } from "./timeline_model.js";
 
 // The least height (px) left above the Easing panel for the rows (docs/design.md "大きさ" EASING_MIN_ABOVE).

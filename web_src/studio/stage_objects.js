@@ -26,7 +26,7 @@
 import { viewProjection } from "../pano_editor_view.js";
 import { lensPolylines } from "../pano_lens.js";
 import { setStickerPose, setWorldStickerTransform } from "../pano_editor_state.js";
-import { evaluateCamera, evaluateSticker } from "../pano_scene_eval.js";
+import { evaluateSticker } from "../pano_scene_eval.js";
 import { gizmoDragLanes, sceneTransform } from "../pano_space.js";
 import { hitFrameAffordance } from "../pano_sticker_affordance.js";
 import {
@@ -36,7 +36,6 @@ import {
   scaleStickerAxisFromPointer,
   scaleStickerFromPointer,
 } from "../pano_sticker_geometry.js";
-import { setLaneValue } from "../pano_timeline.js";
 import { pointInPoly } from "../pano_math.js";
 import {
   frameCornersUv, offsetRasterObject, offsetStrokeGroup, paintCornerHandle, paintObjectOf,
@@ -46,7 +45,7 @@ import {
 import {
   brushPresetIdForTool, directionOfErpPoint, erpPointOfDirection, shortestWrappedDelta, syncPaintGroups,
 } from "../pano_paint_strokes.js";
-import { cameraOf } from "./defaults.js";
+import { cameraAt, cameraOf, editableCamera, setCameraLanes } from "./camera_state.js";
 import { ROTATE_SNAP_DEG } from "./view_scale.js";
 import { shownGizmoMode, selectedKind } from "./selection_bar.js";
 import { cameraMarkerHit, cameraMarkerLength, cameraMarkerScreen, cameraMarkerShape, cameraMarkerShown } from "./camera_marker.js";
@@ -240,8 +239,7 @@ export function createStageObjects({
   }
 
   function cameraValue() {
-    const shown = cameraOf(state());
-    return { ...evaluateCamera(shown, playhead()), projection: shown.projection, visible: shown.visible !== false };
+    return cameraAt(state(), playhead());
   }
 
   // The stage's view now ({ key, projection, state, frames, paths }), with the paint's screen shapes made in it for the
@@ -450,8 +448,7 @@ export function createStageObjects({
         }
         edits.live((draft) => {
           if (row === "camera") {
-            draft.camera ??= cameraOf(draft);
-            for (const [name, value] of Object.entries(lanes)) setLaneValue(draft.camera, name, frame, value);
+            setCameraLanes(editableCamera(draft), frame, lanes);
             return true;
           }
           const sticker = draft.stickers.find((item) => item.id === row);

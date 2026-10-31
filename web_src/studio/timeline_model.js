@@ -5,7 +5,7 @@
 //
 // `ctx`, shared with timeline_actions.js, is what the shell gives the Timeline:
 //   state       the working state v2 (a snapshot; nothing here changes it). Its `camera` may be null: the Camera row
-//               then shows the default Camera (timelineCamera)
+//               then shows the default Camera (camera_state.js cameraOf)
 //   upstream    the upstream layers, farthest first: [{ key, name, sceneState, editable, record, scene, deleted,
 //               portMeta, readOnly }] (editor/upstream.js upstreamTimelineLayers, with `name` the upstream node's title,
 //               `portMeta` the media meta of its port Sticker and `readOnly` a layer shown without edits: the new
@@ -42,7 +42,7 @@ import {
   timelineSpan,
 } from "../pano_timeline.js";
 import { upstreamLayerOverridden, upstreamRowId } from "../pano_upstream.js";
-import { cameraOf } from "./defaults.js";
+import { cameraOf } from "./camera_state.js";
 
 // The name of a Sticker's row (and its inspector card): its file's name, else its id; an upstream element's own id, not
 // its working id (`upstream:<key>:<id>`).
@@ -52,12 +52,6 @@ export function objectLabel(sticker) {
 
 export const CAMERA_ROW = "camera";
 export const SCENE_ROW = "scene";
-
-// The Camera the Camera row shows and edits: the state's (a loaded state always has one, ADR 0048), or the default
-// Camera (defaults.js).
-export function timelineCamera(state) {
-  return cameraOf(state);
-}
 
 // The Timeline's span (the output's length) for ctx, `openClip` counted as a Clip range without a duration.
 export function spanOf(ctx, openClip = null) {
@@ -98,7 +92,7 @@ export function timelineEntries(ctx) {
   };
   const own = [];
   if (ctx.background) own.push({ id: BACKGROUND_ROW, kind: "background", owner: state.background, sceneState: state, layer: null, offset: clipOffset(state.background), label: "Background", icon: ICON.unwrap });
-  own.push({ id: CAMERA_ROW, kind: "camera", owner: timelineCamera(state), sceneState: state, layer: null, offset: 0, label: "Camera", icon: ICON.camera });
+  own.push({ id: CAMERA_ROW, kind: "camera", owner: cameraOf(state), sceneState: state, layer: null, offset: 0, label: "Camera", icon: ICON.camera });
   // The own `scene` (the `world` content) is drawn over the upstream layers too, so its row shows with them.
   own.push(...stateEntries(state, null, !!ctx.sceneRow || ownerTimed(state.scene)));
   return {
