@@ -256,6 +256,9 @@ test("the Lock locks the Camera as one Undo step: no gizmo, Camera tab and inspe
   for (const name of ["FOV", "Lens", "Roll"]) {
     await expect(page.locator(`[data-ruler="${name}"]`)).toHaveClass(/is-disabled/);
     await expect(page.locator(`[data-ruler="${name}"]`)).toHaveAttribute("data-tip", unlockTip);
+    // Its Keyframe dot and its reset say the same.
+    await expect(page.locator(`[data-ruler="${name}"] [data-ruler-acts] [aria-label="${name} Keyframe"]`)).toHaveAttribute("data-tip", unlockTip);
+    await expect(page.locator(`[data-ruler="${name}"] [data-ruler-acts] [aria-label="Reset ${name}"]`)).toHaveAttribute("data-tip", unlockTip);
   }
   await expect(page.locator('[data-action="frame-selected"]')).toHaveAttribute("data-tip", unlockTip);
   await expect(page.locator('[data-knob="orbit"]')).toHaveAttribute("data-tip", unlockTip);

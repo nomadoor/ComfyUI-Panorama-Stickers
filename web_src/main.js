@@ -6,7 +6,7 @@ import { api } from "../../scripts/api.js";
 import { createEditorChooser, createStudioPreloader, NEW_UI_SETTING, NEW_UI_SETTING_ID, previewUsesNewWindow } from "./editor_choice.js";
 import { createPanoEditorExtension } from "./pano_editor_extension.js";
 import { oldEditorHooks } from "./pano_editor.js";
-import { linkedInputType } from "./pano_preview_video.js";
+import { inputLinked, linkedInputType } from "./pano_preview_video.js";
 import { openStudioEditor, preloadStudioEditor } from "./studio/editor.js";
 import { openPreviewWindow } from "./studio/preview_window.js";
 
@@ -20,7 +20,7 @@ const openEditor = createEditorChooser({
   previewTakes: (node) => previewUsesNewWindow({
     type: node?.comfyClass ?? node?.type,
     sourceType: linkedInputType(node, "source"),
-    sourceLinked: (node?.inputs ?? []).find((input) => input?.name === "source")?.link != null,
+    sourceLinked: inputLinked(node, ["source"]),
   }),
 });
 

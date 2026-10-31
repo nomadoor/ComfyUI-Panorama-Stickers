@@ -206,8 +206,9 @@ onBeforeUnmount(() => {
       <b class="pano-studio-edge-ruler-value pano-studio-cap" :style="{ width: `${valueChars}ch` }" data-ruler-value>{{ valueText }}</b>
     </div>
     <div class="pano-studio-edge-ruler-acts" data-ruler-acts>
-      <StudioKeyDot v-if="keyState" :state="keyState" :disabled="disabled" :label="`${name} Keyframe`" @toggle="emit('key')" />
-      <StudioResetButton :at-default="disabled || atDefault" :label="`Reset ${name}`" @reset="emit('reset')" />
+      <!-- Grayed with the ruler, the dot and the reset say why as the ruler does (a locked Camera: where to unlock it). -->
+      <StudioKeyDot v-if="keyState" :state="keyState" :disabled="disabled" :label="`${name} Keyframe`" :tip="disabled ? tip : ''" @toggle="emit('key')" />
+      <StudioResetButton :at-default="disabled || atDefault" :label="`Reset ${name}`" :tip="disabled ? tip : ''" @reset="emit('reset')" />
     </div>
   </div>
 </template>

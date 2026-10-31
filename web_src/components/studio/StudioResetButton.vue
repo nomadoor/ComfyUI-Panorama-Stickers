@@ -8,6 +8,8 @@ defineProps({
   // Whether the row already holds its default (then the button is disabled).
   atDefault: { type: Boolean, default: false },
   label: { type: String, default: "Reset" },
+  // The tooltip in place of the label (a grayed ruler's reason).
+  tip: { type: String, default: "" },
 });
 const emit = defineEmits(["reset"]);
 </script>
@@ -16,6 +18,7 @@ const emit = defineEmits(["reset"]);
   <StudioIconButton
     :icon="ICON.reset"
     :label="label"
+    :tip="tip"
     size="sm"
     :disabled="atDefault"
     @press="emit('reset')"
