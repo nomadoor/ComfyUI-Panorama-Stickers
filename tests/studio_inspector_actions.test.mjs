@@ -315,3 +315,26 @@ test("an upstream element's field edit changes its working copy (the shell write
   assert.deepEqual(upstream[0].sceneState.stickers[0].position.value, [5, 5, 9]);
   assert.deepEqual(evaluateLane(upstream[0].sceneState.stickers[0], "position", 0), [5, 5, 9]);
 });
+
+test("a state whose Camera is null gets the default Camera from a field, a choice, a dot or a reset; an Easing edit changes nothing", () => {
+  const nulled = () => ({ ...load({}), camera: null });
+  const defaults = load({}).camera;
+  let state = nulled();
+  assert.equal(applyInspectorEdit(state, { type: "field", target: camera, field: "hFOV_deg", value: 60, phase: "commit" }, { playhead: 0 }).changed, true);
+  assert.equal(evaluateLane(state.camera, "fov", 0), 60);
+  assert.equal(state.camera.projection, defaults.projection);
+  state = nulled();
+  assert.equal(applyInspectorEdit(state, { type: "choice", target: camera, field: "erp_range", value: 180 }, { playhead: 0 }).changed, true);
+  assert.equal(state.camera.erp_range, 180);
+  state = nulled();
+  applyInspectorEdit(state, { type: "key", target: camera, row: "hfov" }, { playhead: 4 });
+  assert.deepEqual(keys(state.camera.fov), [[4, defaults.fov.value]]);
+  state = nulled();
+  applyInspectorEdit(state, { type: "reset", target: camera, row: "aspect" }, { playhead: 0 });
+  assert.deepEqual(state.camera, defaults);
+  // C-2 (handoff/refactor camera.md): the Easing panel's owner is `state.camera ?? null`, so nothing is written.
+  state = nulled();
+  const outcome = applyInspectorEdit(state, { type: "easing", keyframes: { owner: "camera", lane: null, frames: [0] }, easing: "hold", phase: "commit" }, { playhead: 0 });
+  assert.equal(outcome.changed, false);
+  assert.equal(state.camera, null);
+});
