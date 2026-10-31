@@ -304,11 +304,10 @@ test("removing the node that plays lets the others play, without touching the re
 });
 
 // docs/timeline-ui.md "どの背景を出すか" (web_src/pano_background_choice.js): what the picture shows of the background, as
-// it is now. Some pin a difference from the editor (the upstream background's picture, the color for an empty
+// it is now. Some pin a difference from the editor (the color for an empty
 // background_color, the color past a lens image's reach); aligning them is an open owner decision: change these only
 // with that decision.
 const ORANGE = [230, 140, 30];
-const MAGENTA = [255, 0, 255];
 const BLACK = [0, 0, 0];
 
 test("the node's own background image shows, and background_color outside its Clip range", async ({ page }) => {
@@ -323,10 +322,41 @@ test("the node's own background image shows, and background_color outside its Cl
   expect(problems).toEqual([]);
 });
 
-test("as it is: with the upstream Scene's background in the result, the picture shows its bg_color, not its image", async ({ page }) => {
+// docs/studio-node-surface.md "表示フレームと VIDEO": an upstream Scene's background standing in shows as in the editor.
+const YELLOW = [230, 220, 40];
+
+test("with the upstream Scene's background image in the result, the picture shows that image, as the editor does", async ({ page }) => {
   const problems = await open(page, "frame", "&case=upbg");
   await expect.poll(async () => near(await color(page, 0.5, 0.5), BLUE), { timeout: 20_000 }).toBe(true);
-  await expect.poll(async () => near(await color(page, 0.03, 0.1), MAGENTA)).toBe(true);
+  await expect.poll(async () => near(await color(page, 0.03, 0.1), YELLOW)).toBe(true);
+  expect(problems).toEqual([]);
+});
+
+test("with the upstream Scene's background VIDEO in the result, the picture shows its frame, as the editor does", async ({ page }) => {
+  const problems = await open(page, "frame", "&case=upvideo");
+  await expect.poll(async () => near(await color(page, 0.03, 0.1), YELLOW), { timeout: 20_000 }).toBe(true);
+  expect(near(await color(page, 0.5, 0.5), BLUE)).toBe(true);
+  expect(problems).toEqual([]);
+});
+
+test("while the node's editor is open, the upstream Scene's background image is let go, and read again when it closes", async ({ page }) => {
+  const problems = await open(page, "frame", "&case=upbg");
+  await expect.poll(async () => near(await color(page, 0.03, 0.1), YELLOW), { timeout: 20_000 }).toBe(true);
+  expect(await page.evaluate(() => window.__surface.upstreamBackgroundHeld())).toBe(true);
+  await page.evaluate(() => window.__surface.editor(true));
+  await expect.poll(() => page.evaluate(() => window.__surface.upstreamBackgroundHeld())).toBe(false);
+  await page.evaluate(() => window.__surface.editor(false));
+  await expect.poll(() => page.evaluate(() => window.__surface.upstreamBackgroundHeld())).toBe(true);
+  await expect.poll(async () => near(await color(page, 0.03, 0.1), YELLOW), { timeout: 20_000 }).toBe(true);
+  expect(problems).toEqual([]);
+});
+
+test("when a run leaves no upstream background, its image is let go while the node is shown, and background_color shows", async ({ page }) => {
+  const problems = await open(page, "frame", "&case=upbg");
+  await expect.poll(async () => near(await color(page, 0.03, 0.1), YELLOW), { timeout: 20_000 }).toBe(true);
+  await page.evaluate(() => window.__surface.dropUpstreamBackground());
+  await expect.poll(() => page.evaluate(() => window.__surface.upstreamBackgroundHeld())).toBe(false);
+  await expect.poll(async () => near(await color(page, 0.03, 0.1), GREEN)).toBe(true);
   expect(problems).toEqual([]);
 });
 
