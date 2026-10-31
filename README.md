@@ -83,6 +83,7 @@ If only the editor is extremely slow, open `chrome://gpu` (`edge://gpu` for Edge
 
 ## Changelog
 
+- **2.0.2**: Moving objects with a lens camera in the Camera tab; the Output window opens from the whole bar; depth-grid videos (MoGe, DA3) keep shape and color in step on slow connections and load ahead while paused; fixes.
 - **2.0.1**: The Studio editor shows the output size at all times and keeps the inspector the same across tabs; objects can be moved in the Camera tab; the node shows depth grids (MoGe, DA3) and the upstream scene, and can play; paint can be grabbed and moved; fixes.
 - **2.0.0**: Added Panorama Studio and the new Panorama Preview.
 - **1.5.0**: Added light on-node UIs to Stickers, Cutout and Preview.
