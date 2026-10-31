@@ -1134,6 +1134,8 @@ function surfaceBackground(state, bgImg) {
 // upstream Scene's while its background stands in) outside its Clip range and media, and without any background, as in
 // the output; the played VIDEO, its still or the linked image once it has a picture; null while one loads.
 function studioBackground(node, choice) {
+  // An upstream background that no longer stands in lets its image go, shown or not (the own image is kept elsewhere).
+  if (choice.from !== "upstream") nodeSurface(node).studioInputs?.releaseBackgroundImages();
   const bgImg = choice.from === "upstream" ? upstreamBackgroundMedia(node, choice) : surfaceBackgroundMedia(node);
   const ready = isRenderableMediaReady(bgImg);
   return backgroundAt(choice, {
@@ -1954,6 +1956,7 @@ function attachPanoramaPreviewImpl(node, options = {}) {
         upstream,
         depthColor: (slot, request) => depthColors.picture(slot, request, playback.advancing),
         backgroundImage: (key) => surfaceMedia.uiImage(node, key, backgroundImages, requestDraw),
+        releaseBackgroundImages,
         release() {
           depthColors.retain([]);
           upstream.dispose();

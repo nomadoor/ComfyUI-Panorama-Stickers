@@ -14887,10 +14887,11 @@ function uR(e, t) {
   return Go(t) ? { media: t, revision: Ko(t), coverage: Number(e.coverage) === 180 ? 180 : 360 } : null;
 }
 function dR(e, t) {
-  var i;
+  var i, o;
+  t.from !== "upstream" && ((i = St(e).studioInputs) == null || i.releaseBackgroundImages());
   const n = t.from === "upstream" ? fR(e, t) : tM(e), r = Go(n);
   return Qg(t, {
-    shows: ((i = St(e).playback) == null ? void 0 : i.playback.backgroundShows) !== !1,
+    shows: ((o = St(e).playback) == null ? void 0 : o.playback.backgroundShows) !== !1,
     picture: r ? { media: n, revision: Ko(n) } : null,
     pending: !!n && !r
   });
@@ -15358,6 +15359,7 @@ function _R(e, t = {}) {
         upstream: Le,
         depthColor: (at, dt) => Ce.picture(at, dt, He.advancing),
         backgroundImage: (at) => My.uiImage(e, at, qe, F),
+        releaseBackgroundImages: et,
         release() {
           Ce.retain([]), Le.dispose(), et();
         },

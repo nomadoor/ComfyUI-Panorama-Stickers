@@ -351,6 +351,15 @@ test("while the node's editor is open, the upstream Scene's background image is 
   expect(problems).toEqual([]);
 });
 
+test("when a run leaves no upstream background, its image is let go while the node is shown, and background_color shows", async ({ page }) => {
+  const problems = await open(page, "frame", "&case=upbg");
+  await expect.poll(async () => near(await color(page, 0.03, 0.1), YELLOW), { timeout: 20_000 }).toBe(true);
+  await page.evaluate(() => window.__surface.dropUpstreamBackground());
+  await expect.poll(() => page.evaluate(() => window.__surface.upstreamBackgroundHeld())).toBe(false);
+  await expect.poll(async () => near(await color(page, 0.03, 0.1), GREEN)).toBe(true);
+  expect(problems).toEqual([]);
+});
+
 test("as it is: an empty background_color draws black where nothing is", async ({ page }) => {
   const problems = await open(page, "frame", "&bgcolor=empty");
   await expect.poll(async () => near(await color(page, 0.5, 0.5), RED), { timeout: 20_000 }).toBe(true);

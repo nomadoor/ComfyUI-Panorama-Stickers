@@ -312,6 +312,12 @@ surface.depthVideosLoaded = () => videos.filter((video) => !video.isConnected &&
 surface.upstreamImagesMade = () => images.filter((image) => image.src === upstreamImageUrl).length;
 // Whether the upstream Scene's background image is held (an image made for it still has its source).
 surface.upstreamBackgroundHeld = () => images.some((image) => image.src === upstreamBackgroundUrl && !!image.getAttribute("src"));
+// A run whose result has no upstream background any more (the upstream Studio's background was taken away).
+surface.dropUpstreamBackground = () => {
+  const { pano_upstream_input_images: _image, pano_upstream_input_videos: _video, ...rest } = app.nodeOutputs[5];
+  app.nodeOutputs = { ...app.nodeOutputs, 5: rest };
+  nodeSurface(node).dom?.requestDraw?.();
+};
 // Opens or closes the node's editor as pano_node_bridge.js records it (the modal itself is not made here).
 surface.editor = (open) => {
   editorSession(node).open = open;
