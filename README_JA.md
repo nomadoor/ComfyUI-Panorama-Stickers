@@ -83,6 +83,7 @@ https://github.com/user-attachments/assets/bf74e953-8ceb-4c7f-afa2-1c805f12c7af
 
 ## 更新履歴
 
+- **2.0.1**：Studio のエディタで出力の大きさをいつも表示し、タブを切り替えてもインスペクタが変わらないようにしました。Camera タブでも物を動かせます。ノード上で深度の格子（MoGe・DA3）と上流の Scene を表示し、再生できるようにしました。ペイントをつかんで動かせます。ほか不具合の修正。
 - **2.0.0**：Panorama Studio と、新しい Panorama Preview を追加しました。
 - **1.5.0**：Stickers・Cutout・Preview に、ノード上の軽い UI を足しました。
 - **1.4.0**：Cutout のフレームの編集を、切り抜きの形のカメラエディタに作り直しました。
