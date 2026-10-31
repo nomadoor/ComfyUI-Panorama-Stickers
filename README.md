@@ -67,6 +67,7 @@ Connect a video to the background, or move stickers or the Camera with Keyframes
 |---|---|
 | [qwen-image-2.1-360-erp-outpaint.json](./example_workflows/qwen-image-2.1-360-erp-outpaint.json) | Paste images to make a panorama (Qwen-Image 2.1) |
 | [qwen-image-2.1-moge3-anyangle.json](./example_workflows/qwen-image-2.1-moge3-anyangle.json) | Turn an image into 3D with MoGe 3, shoot it from another angle, and finish it with Qwen-Image 2.1 |
+| [minimax-h3-moge3-crossview.json](./example_workflows/minimax-h3-moge3-crossview.json) | Turn a video into 3D with MoGe 3, shoot it with a new camera, and fill in what the original camera never saw with MiniMax H3 and the [CrossView-Warp](https://huggingface.co/Cseti/MiniMax-H3_Ref2VA-LoRA-CrossView-Warp_v1) LoRA by Cseti |
 | [LTX-2.3_360vr_distilled_3stage.json](./example_workflows/LTX-2.3_360vr_distilled_3stage.json) | Make a 360° video from text (LTX-2.3 and the [LTX2.3_360vr](https://civitai.com/models/2327337/360-degree-panoramic-shot-ltx-23) LoRA by the model's author) |
 
 Earlier workflows: FLUX.2 Klein [4B](./example_workflows/flux-2-klein-4B-360-erp-outpaint.json) / [9B](./example_workflows/flux-2-klein-9B-360-erp-outpaint.json) ([4B LoRA](https://huggingface.co/nomadoor/flux-2-klein-4B-360-erp-outpaint-lora) / [9B LoRA](https://huggingface.co/nomadoor/flux-2-klein-9B-360-erp-outpaint-lora))

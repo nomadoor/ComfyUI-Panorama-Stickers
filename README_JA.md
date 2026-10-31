@@ -67,6 +67,7 @@ https://github.com/user-attachments/assets/bf74e953-8ceb-4c7f-afa2-1c805f12c7af
 |---|---|
 | [qwen-image-2.1-360-erp-outpaint.json](./example_workflows/qwen-image-2.1-360-erp-outpaint.json) | 画像を貼ってパノラマを作る（Qwen-Image 2.1） |
 | [qwen-image-2.1-moge3-anyangle.json](./example_workflows/qwen-image-2.1-moge3-anyangle.json) | 画像を MoGe 3 で 3D にし、別の角度から撮って Qwen-Image 2.1 で仕上げる |
+| [minimax-h3-moge3-crossview.json](./example_workflows/minimax-h3-moge3-crossview.json) | 動画を MoGe 3 で 3D にし、新しいカメラで撮り、元のカメラに映っていなかった所を MiniMax H3 と Cseti 氏の [CrossView-Warp](https://huggingface.co/Cseti/MiniMax-H3_Ref2VA-LoRA-CrossView-Warp_v1) LoRA で埋める |
 | [LTX-2.3_360vr_distilled_3stage.json](./example_workflows/LTX-2.3_360vr_distilled_3stage.json) | テキストから 360° 動画を作る（LTX-2.3 と、モデル作者による [LTX2.3_360vr](https://civitai.com/models/2327337/360-degree-panoramic-shot-ltx-23) LoRA） |
 
 以前のワークフロー：FLUX.2 Klein [4B](./example_workflows/flux-2-klein-4B-360-erp-outpaint.json)・[9B](./example_workflows/flux-2-klein-9B-360-erp-outpaint.json)（[4B LoRA](https://huggingface.co/nomadoor/flux-2-klein-4B-360-erp-outpaint-lora)・[9B LoRA](https://huggingface.co/nomadoor/flux-2-klein-9B-360-erp-outpaint-lora)）

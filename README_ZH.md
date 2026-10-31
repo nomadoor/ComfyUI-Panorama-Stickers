@@ -67,6 +67,7 @@ https://github.com/user-attachments/assets/bf74e953-8ceb-4c7f-afa2-1c805f12c7af
 |---|---|
 | [qwen-image-2.1-360-erp-outpaint.json](./example_workflows/qwen-image-2.1-360-erp-outpaint.json) | 贴上图像，制作全景（Qwen-Image 2.1） |
 | [qwen-image-2.1-moge3-anyangle.json](./example_workflows/qwen-image-2.1-moge3-anyangle.json) | 用 MoGe 3 把图像转成 3D，从别的角度拍摄，再用 Qwen-Image 2.1 完善画面 |
+| [minimax-h3-moge3-crossview.json](./example_workflows/minimax-h3-moge3-crossview.json) | 用 MoGe 3 把视频转成 3D，用新的相机拍摄，再用 MiniMax H3 和 Cseti 制作的 [CrossView-Warp](https://huggingface.co/Cseti/MiniMax-H3_Ref2VA-LoRA-CrossView-Warp_v1) LoRA 补全原相机没有拍到的部分 |
 | [LTX-2.3_360vr_distilled_3stage.json](./example_workflows/LTX-2.3_360vr_distilled_3stage.json) | 通过文本制作 360° 视频（LTX-2.3，以及该模型作者制作的 [LTX2.3_360vr](https://civitai.com/models/2327337/360-degree-panoramic-shot-ltx-23) LoRA） |
 
 以前的 workflow：FLUX.2 Klein [4B](./example_workflows/flux-2-klein-4B-360-erp-outpaint.json)・[9B](./example_workflows/flux-2-klein-9B-360-erp-outpaint.json)（[4B LoRA](https://huggingface.co/nomadoor/flux-2-klein-4B-360-erp-outpaint-lora)・[9B LoRA](https://huggingface.co/nomadoor/flux-2-klein-9B-360-erp-outpaint-lora)）
