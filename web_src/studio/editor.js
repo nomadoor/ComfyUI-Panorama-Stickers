@@ -17,22 +17,21 @@ import { watchComfyRunning } from "../pano_comfy_running.js";
 import { createPanoCanvas, createPanoVideo, releasePanoCanvas } from "../pano_diagnostics.js";
 import { studioSizeWidgets } from "../pano_studio_status.js";
 import { queuePendingStickerOperation } from "../pano_editor_extension.js";
-import { cameraShot, normalizeCoverageValue, readableStateText, setCameraShot } from "../pano_editor_state.js";
+import { cameraShot, readableStateText, setCameraShot } from "../pano_editor_state.js";
 import { preloadEditorView } from "../pano_editor_view.js";
 import { DRAW_REASON } from "../pano_frame_scheduler.js";
 import { paintObjectRow } from "../pano_paint_objects.js";
 import { stageOwnsKey } from "../pano_key_focus.js";
 import { editorSession, noteStudioEditorOpen, peekNodeSurface } from "../pano_node_bridge.js";
 import {
-  backgroundLengthMedia,
-  backgroundVideoKeys,
   backgroundVideoMedia,
   createBackgroundVideo,
   isDecodedImageReady,
   mediaRevisionToken,
   videoMetaEntry,
 } from "../pano_media_session.js";
-import { backgroundBarEnd, backgroundPlace, backgroundShownAt, bgColorBackground } from "../pano_port_media.js";
+import { backgroundAt, backgroundLength, backgroundShowsAt, backgroundVideoCandidates, chooseBackground } from "../pano_background_choice.js";
+import { backgroundBarEnd, backgroundPlace } from "../pano_port_media.js";
 import { STUDIO_BACKGROUND_INPUT_NAMES, isNodeOutputMediaCurrent, linkedInputType, videoLinked } from "../pano_preview_video.js";
 import { evaluateCamera } from "../pano_scene_eval.js";
 import { PANO_SCENE_TYPE, ownSceneLinked } from "../pano_upstream.js";
@@ -52,7 +51,7 @@ import {
 } from "./paint_bar.js";
 import { createPortMedia } from "./port_media.js";
 import { LINE_TEXT, linkedInputNames, stageEmpty as emptyStage } from "./notice_line.js";
-import { createStudioUpstream, upstreamBackground, upstreamNodeName } from "./upstream.js";
+import { createStudioUpstream, upstreamNodeName } from "./upstream.js";
 import { loadNodeInputImage } from "./node_image.js";
 import { gizmoModeOfKey, selectedKind } from "./selection_bar.js";
 import { createStudioSession } from "./session.js";
@@ -102,13 +101,13 @@ const loaded = (image) => !!image?.complete && image.naturalWidth > 0;
 // background ({ media, revision, coverage }) once it has loaded, null before or without one; state() is "none" (no
 // input linked), "loading", "ready" or "failed". `coverage` is the background's span. A background VIDEO is
 // createBackgroundVideo's (openStudioEditor), shown in place of the image once it has a picture.
-// [inputs] `upstream` is the upstream background standing in (studio/upstream.js upstreamBackground) or null: its image
-// comes from the node's result, at its coverage.
-function nodeBackground(node, media, onChange, upstream = null) {
+// `choice` is the background chosen when the editor opens (pano_background_choice.js chooseBackground): [inputs] an
+// upstream background standing in has its image in the node's result, at its coverage.
+function nodeBackground(node, media, onChange, choice) {
   let image = null;
   let status = "none";
-  if (upstream) {
-    image = media.uiImage(node, upstream.imageKey, new Map(), (settled) => {
+  if (choice.from === "upstream") {
+    image = media.uiImage(node, choice.keys.image, new Map(), (settled) => {
       status = loaded(settled) ? "ready" : "failed";
       onChange();
     });
@@ -130,7 +129,7 @@ function nodeBackground(node, media, onChange, upstream = null) {
     image = picture.image();
     status = picture.state();
   }
-  const coverage = upstream?.coverage ?? normalizeCoverageValue(widgetOf(node, "background_range")?.value ?? widgetOf(node, "coverage")?.value);
+  const { coverage } = choice;
   return {
     get: () => (status === "ready" ? { media: image, revision: image.currentSrc || image.src, coverage } : null),
     state: () => status,
@@ -237,11 +236,16 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
   // Counts the upstream layers' pictures that loaded or changed: what the stage draws of them is made again.
   let upstreamMedia = 0;
   const upstreamLinked = () => linkedInputType(node, "scene") === PANO_SCENE_TYPE || !!upstreamList();
-  // [inputs] The upstream background standing in while the node's own background is not linked, or null.
-  const upstreamBg = () => upstreamBackground({
-    uiList: (key) => media.uiList(node, key),
-    current: isNodeOutputMediaCurrent(node, "scene"),
+  // Which background shows now (pano_background_choice.js, caller "editor"): the node's own while it is linked, [inputs]
+  // else the upstream background standing in, with its keys, span, bg_color and Clip range.
+  const uiList = (key) => media.uiList(node, key);
+  const current = (channel) => isNodeOutputMediaCurrent(node, channel);
+  const backgroundNow = () => chooseBackground("editor", {
+    uiList,
+    current,
     ownLinked: backgroundLinked,
+    widget: (name) => widgetOf(node, name),
+    clip: session.state.background.clip,
     fps: session.state.timeline.fps,
   });
   // The `scene` input's files in the node's current result (its 3D content), or null.
@@ -363,7 +367,10 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     loop: () => view.loop,
     // The node's own background is where its Clip range puts it (docs/timeline-ui.md "背景の行").
     // [inputs] An upstream background is where its Studio's Clip range puts it.
-    place: () => (backgroundLinked ? backgroundPlace(session.state.background.clip) : upstreamBg() ? backgroundPlace(upstreamBg().place) : null),
+    place: () => {
+      const { place } = backgroundNow();
+      return place ? backgroundPlace(place) : null;
+    },
     onFrame: (frame) => {
       view.playhead = frame;
       world.camera = outputView(session.state, frame).position;
@@ -389,13 +396,12 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
   // loads it; a result that came since the last call is picked up here.
   function refreshVideo() {
     // [inputs] An upstream background's VIDEO is in the result under its own keys; no file stands in for it.
-    const upstreamVideo = upstreamBg();
-    const keys = backgroundVideoKeys({ nodeName: String(node?.comfyClass || node?.type || ""), upstream: upstreamVideo, type: "stickers" });
-    const own = upstreamVideo || isNodeOutputMediaCurrent(node, "background") ? media.uiList(node, keys.videoKey)[0] || null : null;
+    const choice = backgroundNow();
+    const { own, file } = backgroundVideoCandidates(choice, { uiList, current, source: media.source, linkedVideoFile: (inputs) => media.linkedVideoFile(node, inputs) });
     const chosen = backgroundVideo.choose({
-      own: media.source(own),
-      file: upstreamVideo ? "" : media.linkedVideoFile(node, BACKGROUND_INPUTS),
-      meta: () => videoMetaEntry(media.uiValue(node, keys.metaKey)),
+      own,
+      file,
+      meta: () => videoMetaEntry(media.uiValue(node, choice.keys.meta)),
       fps: session.state.timeline.fps,
     });
     backgroundVideo.load(chosen.src, { loop: false, muted: false, volume: 1 });
@@ -405,9 +411,7 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
   // The node's own background as the Auto length reads it (pano_media_session.js).
   function backgroundMedia() {
     // [inputs] An upstream background is in the upstream length already (pano_upstream_frames).
-    if (upstreamBg()) return null;
-    const video = videoLinked(node, BACKGROUND_INPUTS);
-    return backgroundLengthMedia(backgroundVideoMedia(videoSource, video), { linked: backgroundLinked, videoLinked: video });
+    return backgroundLength(backgroundNow(), { uiList, current, videoLinked: videoLinked(node, BACKGROUND_INPUTS), loaded: videoSource }).bg;
   }
 
   // A moved, trimmed or restored background Clip range changes the VIDEO's time at the playhead: it is sought again.
@@ -419,28 +423,21 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     backgroundClipKey = key;
   }
 
-  // The node's background color (its `bg_color` setting, "#00ff00" when it is missing), as "#rrggbb".
-  const nodeBackgroundColor = () => String((widgetOf(node, "background_color") ?? widgetOf(node, "bg_color"))?.value || "#00ff00");
-
   // The background the stage draws at the playhead: bg_color outside its Clip range and media (as the node's output),
   // else the VIDEO or its still once one has a picture, else the image.
   function stageBackground() {
-    const state = session.state;
-    if (backgroundLinked && !backgroundShownAt(state.background.clip, view.playhead, state.timeline.fps, view.media.bg ?? null)) {
-      return bgColorBackground(nodeBackgroundColor());
-    }
+    const choice = backgroundNow();
     // [inputs] An upstream background shows inside its Studio's Clip range and media, its bg_color outside them (an
     // upstream VIDEO ends at its duration, docs/timeline-ui.md "背景の行").
-    const up = upstreamBg();
-    if (up && !backgroundShownAt(up.place, view.playhead, state.timeline.fps, backgroundVideoMedia(videoSource, true), true)) {
-      return bgColorBackground(up.color ?? nodeBackgroundColor());
-    }
+    const length = choice.from === "upstream" ? backgroundVideoMedia(videoSource, true) : view.media.bg ?? null;
+    const shows = backgroundShowsAt(choice, view.playhead, { length });
     const shown = backgroundVideo.displaySource();
-    if (shown && isDecodedImageReady(shown)) {
-      // The VIDEO and its still are one source, so a seek keeps the frame before (pano_three_view.js).
-      return { media: shown, revision: mediaRevisionToken(shown), coverage: background.coverage, source: backgroundVideo.source };
-    }
-    return background.get();
+    // The VIDEO and its still are one source, so a seek keeps the frame before (pano_three_view.js). The picture keeps
+    // the span the editor opened with.
+    const picture = shown && isDecodedImageReady(shown)
+      ? { media: shown, revision: mediaRevisionToken(shown), coverage: background.coverage, source: backgroundVideo.source }
+      : background.get();
+    return backgroundAt(choice, { shows, picture });
   }
 
   // Play / pause (the play button, Space), and a seek: a VIDEO that came with a result since the last one is picked up.
@@ -530,7 +527,7 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
   const background = nodeBackground(node, media, () => {
     syncBackground();
     redraw(DRAW_REASON.MEDIA);
-  }, upstreamBg());
+  }, backgroundNow());
   // What the top-center line knows of the background: the VIDEO's while one is loaded, else the image's.
   function syncBackground() {
     const image = background.state();
@@ -767,7 +764,7 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
   // The Output window's canvases while it is open ({ frame, erp }), else null.
   let outputCanvases = null;
   // [inputs] An upstream background's bg_color while it stands in.
-  const backgroundColor = () => parseInt((upstreamBg()?.color ?? nodeBackgroundColor()).replace("#", ""), 16) || 0;
+  const backgroundColor = () => parseInt(backgroundNow().color.replace("#", ""), 16) || 0;
   const cameraTab = {
     tab: () => view.tab,
     mode: () => (cameraOf(session.state).projection === "erp" ? "panorama" : "frame"),

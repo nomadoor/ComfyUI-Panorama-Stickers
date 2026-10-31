@@ -3,11 +3,11 @@
 // the node's own overrides applied in working copies (pano_upstream_layers.js createUpstreamLayers, shared with the old
 // editor and the Preview), what the stage draws of them at a frame, their groups of Timeline rows (read-only until the
 // new editor edits upstream items), the upstream length the Auto length counts, whether the editor waits for a run to
-// show them, and the upstream background that stands in while the node has no background of its own.
-import { backgroundClipAt, portMediaMeta } from "../pano_port_media.js";
+// show them. The upstream background that stands in while the node has no background of its own is
+// pano_background_choice.js's.
+import { portMediaMeta } from "../pano_port_media.js";
 import {
   layerUiList,
-  upstreamBackgroundOf,
   upstreamBaseline,
   upstreamDeletedCount,
   upstreamLayerEditable,
@@ -36,18 +36,6 @@ export function upstreamNodeName(nodes, key) {
     if (id === key) return String(node.title || "") || null;
   }
   return null;
-}
-
-// The upstream background that the stage shows in place of the node's own (docs/studio-ui.md "ノードの入力から来た物"),
-// or null: the node's own background is linked (it replaces the upstream's), the `scene` result is not current, or the
-// upstream Scene has none. upstreamBackgroundOf's fields ({ imageKey, videoKey, metaKey, coverage, color }) with
-// `place`, its Studio's Clip range in this editor's frames at `fps` (the default one when the result gives none).
-export function upstreamBackground({ uiList, current, ownLinked, fps }) {
-  if (ownLinked || !current) return null;
-  const bg = upstreamBackgroundOf(uiList);
-  if (!bg) return null;
-  const place = bg.clip ? backgroundClipAt(bg.clip.clip, bg.clip.fps, fps) : { start: 0, in: 0, duration: null };
-  return { ...bg, place };
 }
 
 // list(): the `pano_upstream_layers` value of the node's current result, or null. linkType(): the type of the link on

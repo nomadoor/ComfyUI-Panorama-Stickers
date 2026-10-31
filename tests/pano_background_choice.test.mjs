@@ -95,6 +95,23 @@ test("editor: the upstream background stands in only while its own background is
   assert.equal(choose("editor", { ui, stale: ["scene"] }).from, "none");
 });
 
+// Moved from tests/studio_upstream.test.mjs (studio/upstream.js upstreamBackground, which this module replaces).
+test("editor: the upstream background's Clip range in this editor's frames, seconds kept; the default one without", () => {
+  const ui = {
+    pano_upstream_input_images: ["/up.png"],
+    pano_upstream_coverage: [180],
+    pano_upstream_bg_color: [[1, 0, 0]],
+    pano_upstream_bg_clip: [{ clip: { start: 12, in: 0, duration: 24 }, fps: 12 }],
+  };
+  const bg = choose("editor", { ui });
+  assert.equal(bg.keys.image, "pano_upstream_input_images");
+  assert.equal(bg.coverage, 180);
+  assert.equal(bg.color, "#ff0000");
+  assert.deepEqual(bg.place, { start: 24, in: 0, duration: 48 });
+  assert.equal(choose("editor", { ui: {} }).from, "none");
+  assert.deepEqual(choose("editor", { ui: { pano_upstream_input_images: ["/up.png"] } }).place, { start: 0, in: 0, duration: null });
+});
+
 test("editor: an empty bg_color is green; an upstream background without a color takes the node's (D2)", () => {
   assert.equal(choose("editor", { widgets: { background_color: "" } }).color, "#00ff00");
   assert.equal(choose("editor", { widgets: { bg_color: "#abcdef" } }).color, "#abcdef");
