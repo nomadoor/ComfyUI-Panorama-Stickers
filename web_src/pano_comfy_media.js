@@ -1,4 +1,4 @@
-import { isVideoFile, outputSourceToken } from "./pano_preview_video.js";
+import { BACKGROUND_INPUT_NAMES, isNodeOutputMediaCurrent, isVideoFile, outputSourceToken } from "./pano_preview_video.js";
 import { mediaCache } from "./pano_node_bridge.js";
 
 // How a reader reads ComfyUI's results. Each flag is one place where the readers read differently today
@@ -67,7 +67,9 @@ function getGraphNodeById(graph, id) {
   return graph._nodes_by_id?.[id] || graph._nodes_by_id?.[String(id)] || null;
 }
 
-function resolveInputOriginNode(node, inputIndex, fallbackOriginId = null) {
+// The node a node's input comes from, through a subgraph's output to the node inside; else the graph's node of
+// fallbackOriginId.
+export function resolveInputOriginNode(node, inputIndex, fallbackOriginId = null) {
   let originNode = null;
   try {
     originNode = typeof node?.getInputNode === "function" ? node.getInputNode(inputIndex) : null;
@@ -87,6 +89,24 @@ function resolveInputOriginNode(node, inputIndex, fallbackOriginId = null) {
     originNode = getGraphNodeById(node?.graph, fallbackOriginId);
   }
   return originNode;
+}
+
+function listInputNames(node) {
+  const inputs = Array.isArray(node?.inputs) ? node.inputs : [];
+  return inputs.map((i) => String(i?.name || "")).filter(Boolean);
+}
+
+// The image inputs the node surfaces read, in order: the preferred names the node has, then its background inputs.
+export function preferredImageInputsForNode(node, preferredInputNames = []) {
+  const names = listInputNames(node);
+  const out = [];
+  preferredInputNames.forEach((name) => {
+    if (names.includes(String(name))) out.push(String(name));
+  });
+  names.forEach((name) => {
+    if (BACKGROUND_INPUT_NAMES.includes(name) && !out.includes(name)) out.push(name);
+  });
+  return out.length ? out : preferredInputNames;
 }
 
 function isDirectMediaUrl(src) {
@@ -309,6 +329,133 @@ export function createComfyMediaAdapter({ app, api, ImageCtor, imageState, read:
     return "";
   };
 
+  // Where the node surfaces (pano_preview_runtime.js) find the picture of a node's linked image input, as they have:
+  // the node's own pano_input_images while current, then each linked input's origin.
+  const nodeSurfaceLinkedSource = (node, preferredInputNames = [], { log = () => {} } = {}) => {
+    const inputs = Array.isArray(node?.inputs) ? node.inputs : [];
+    if (!inputs.length) return { src: "", sourceType: "", inputName: "" };
+    // The node's own result first (pano_input_images: the picture its run got, the only place an IMAGE made by another
+    // node is), while it is current for the inputs; then the linked inputs (docs/adr/0003-external-input-sticker-failure-
+    // boundaries.md, Amendment 2026-03-11).
+    const selfOutput = isNodeOutputMediaCurrent(node, "background") ? output(node?.id) : null;
+    const ownCandidates = [
+      ...(Array.isArray(selfOutput?.pano_input_images) ? selfOutput.pano_input_images : []),
+      ...(Array.isArray(selfOutput?.ui?.pano_input_images) ? selfOutput.ui.pano_input_images : []),
+    ];
+    for (const item of ownCandidates) {
+      const src = source(item);
+      if (src) {
+        log("image-resolve", { sourceType: "selfOutput", src, stage: "hit" });
+        return { src, sourceType: "selfOutput", inputName: "own" };
+      }
+    }
+
+    const preferredResolved = preferredImageInputsForNode(node, preferredInputNames);
+    const preferred = preferredResolved
+      .map((name) => inputs.findIndex((i) => String(i?.name || "") === String(name)))
+      .filter((idx) => idx >= 0);
+    const imageTyped = inputs
+      .map((input, idx) => ({ input, idx }))
+      .filter(({ input }) => String(input?.type || "").toUpperCase() === "IMAGE")
+      .map(({ idx }) => idx);
+    const indices = [...new Set([...preferred, ...imageTyped])];
+    log("image-resolve", {
+      inputCandidates: preferredResolved,
+      resolvedIndices: indices,
+      stage: "start",
+    });
+
+    for (const idx of indices) {
+      const input = inputs[idx];
+      const link = node.graph ? node.getInputLink(idx) : null;
+      if (link?.origin_id == null) continue;
+      const originId = link.origin_id;
+      const originNode = resolveInputOriginNode(node, idx, originId);
+      if (!originNode) continue;
+      const resolvedOriginSlot = Number(link.origin_slot ?? 0);
+
+      const outputs = output(originNode?.id ?? originId);
+      // LoadVideo shows its file here, which an <img> cannot load.
+      const outImgs = Array.isArray(outputs?.images) ? outputs.images : [];
+      if (outImgs.length) {
+        const ordered = [];
+        if (resolvedOriginSlot >= 0 && resolvedOriginSlot < outImgs.length) ordered.push(outImgs[resolvedOriginSlot]);
+        ordered.push(...outImgs);
+        for (const cand of ordered.filter((image) => !isVideoFile(image))) {
+          const src = source(cand);
+          if (src) {
+            log("image-resolve", {
+              inputName: String(input?.name || ""),
+              sourceType: "nodeOutputs",
+              stage: "hit",
+            });
+            return { src: `${src}&pano_src=${outputSourceToken(outputs)}`, sourceType: "nodeOutputs", inputName: String(input?.name || "") };
+          }
+        }
+      }
+
+      let appNodeImageUrls = [];
+      try {
+        appNodeImageUrls = typeof app?.getNodeImageUrls === "function" ? (app.getNodeImageUrls(originNode) || []) : [];
+      } catch {
+        appNodeImageUrls = [];
+      }
+      if (Array.isArray(appNodeImageUrls) && appNodeImageUrls.length) {
+        const ordered = [];
+        if (resolvedOriginSlot >= 0 && resolvedOriginSlot < appNodeImageUrls.length) ordered.push(appNodeImageUrls[resolvedOriginSlot]);
+        ordered.push(...appNodeImageUrls);
+        for (const cand of ordered) {
+          const src = source(cand);
+          if (src) {
+            log("image-resolve", {
+              inputName: String(input?.name || ""),
+              sourceType: "appNodeImageUrls",
+              stage: "hit",
+            });
+            return { src, sourceType: "appNodeImageUrls", inputName: String(input?.name || "") };
+          }
+        }
+      }
+
+      const nodeImgs = Array.isArray(originNode?.imgs) ? originNode.imgs : [];
+      if (nodeImgs.length) {
+        const ordered = [];
+        if (resolvedOriginSlot >= 0 && resolvedOriginSlot < nodeImgs.length) ordered.push(nodeImgs[resolvedOriginSlot]);
+        ordered.push(...nodeImgs);
+        for (const cand of ordered) {
+          const src = source(cand);
+          if (src) {
+            log("image-resolve", {
+              inputName: String(input?.name || ""),
+              sourceType: "nodeImgs",
+              stage: "hit",
+            });
+            return { src, sourceType: "nodeImgs", inputName: String(input?.name || "") };
+          }
+        }
+      }
+
+      const imageWidget = originNode?.widgets?.find((w) => String(w?.name || "").toLowerCase() === "image");
+      if (imageWidget) {
+        let src = source(imageWidget.value);
+        if (src && !src.includes("/") && !src.includes(":") && (originNode.comfyClass === "LoadImage" || originNode.type === "LoadImage")) {
+          src = api.apiURL(`/view?filename=${encodeURIComponent(src)}&type=input&subfolder=`);
+        }
+        if (src) {
+          log("image-resolve", {
+            inputName: String(input?.name || ""),
+            sourceType: "widget",
+            stage: "hit",
+          });
+          return { src, sourceType: "widget", inputName: String(input?.name || "") };
+        }
+      }
+    }
+
+    log("image-resolve", { stage: "miss" });
+    return { src: "", sourceType: "", inputName: "" };
+  };
+
   const resolvePreferredExactLinkedSource = (node, inputNames = []) => {
     const orderedNames = Array.isArray(inputNames) ? inputNames : [inputNames];
     for (const inputName of orderedNames) {
@@ -459,6 +606,7 @@ export function createComfyMediaAdapter({ app, api, ImageCtor, imageState, read:
     linkedVideoFile,
     loadPreferredExactLinkedImage,
     output,
+    nodeSurfaceLinkedSource,
     resolvePreferredExactLinkedSource,
     source,
     sourceCandidates,

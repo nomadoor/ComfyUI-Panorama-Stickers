@@ -11,7 +11,12 @@ import { loadSceneState, sceneGround } from "./pano_scene_state.js";
 import { surfacePaintLayers } from "./pano_surface_paint.js";
 import { shotCamera, viewProjection, workingSkyLayers } from "./pano_editor_view.js";
 import { acquirePreviewView, previewNodeCamera } from "./pano_preview_view.js";
-import { createComfyMediaAdapter, executionIdMatches } from "./pano_comfy_media.js";
+import {
+  createComfyMediaAdapter,
+  executionIdMatches,
+  preferredImageInputsForNode,
+  resolveInputOriginNode,
+} from "./pano_comfy_media.js";
 import {
   isRenderableMediaReady,
   mediaPlayheadRevisionToken as getRenderableMediaRevisionToken,
@@ -469,51 +474,6 @@ function getCachedState(node) {
 
 function getWidget(node, name) { return node.widgets?.find((w) => w.name === name) || null; }
 
-function getGraphNodeById(graph, id) {
-  if (!graph || id == null) return null;
-  if (typeof graph.getNodeById === "function") return graph.getNodeById(id);
-  return graph._nodes_by_id?.[id] || graph._nodes_by_id?.[String(id)] || null;
-}
-
-function resolveInputOriginNode(node, inputIndex, fallbackOriginId = null) {
-  let originNode = null;
-  try {
-    originNode = typeof node?.getInputNode === "function" ? node.getInputNode(inputIndex) : null;
-  } catch {
-    originNode = null;
-  }
-  if (originNode?.isSubgraphNode?.()) {
-    try {
-      const inputLink = typeof node?.getInputLink === "function" ? node.getInputLink(inputIndex) : null;
-      const resolved = inputLink ? originNode.resolveSubgraphOutputLink?.(Number(inputLink.origin_slot ?? 0)) : null;
-      if (resolved?.outputNode) originNode = resolved.outputNode;
-    } catch {
-      // ignore
-    }
-  }
-  if (!originNode && fallbackOriginId != null) {
-    originNode = getGraphNodeById(node?.graph, fallbackOriginId);
-  }
-  return originNode;
-}
-
-function listInputNames(node) {
-  const inputs = Array.isArray(node?.inputs) ? node.inputs : [];
-  return inputs.map((i) => String(i?.name || "")).filter(Boolean);
-}
-
-export function preferredImageInputsForNode(node, preferredInputNames = []) {
-  const names = listInputNames(node);
-  const out = [];
-  preferredInputNames.forEach((name) => {
-    if (names.includes(String(name))) out.push(String(name));
-  });
-  names.forEach((name) => {
-    if (BACKGROUND_INPUT_NAMES.includes(name) && !out.includes(name)) out.push(name);
-  });
-  return out.length ? out : preferredInputNames;
-}
-
 function originNodeOf(node, slot) {
   return resolveInputOriginNode(node, slot, node.graph ? node.getInputLink(slot)?.origin_id : null);
 }
@@ -692,133 +652,8 @@ function getNodeOwnOutputVideo(node, videoKeys = ["pano_videos"], onLoad = null)
   return player.video;
 }
 
-function findLinkedInputImageSource(node, preferredInputNames = []) {
-  const inputs = Array.isArray(node?.inputs) ? node.inputs : [];
-  if (!inputs.length) return { src: "", sourceType: "", inputName: "" };
-  // The node's own result first (pano_input_images: the picture its run got, the only place an IMAGE made by another
-  // node is), while it is current for the inputs; then the linked inputs (docs/adr/0003-external-input-sticker-failure-
-  // boundaries.md, Amendment 2026-03-11).
-  const selfOutput = isNodeOutputMediaCurrent(node, "background") ? lookupNodeOutputEntry(node?.id) : null;
-  const ownCandidates = [
-    ...(Array.isArray(selfOutput?.pano_input_images) ? selfOutput.pano_input_images : []),
-    ...(Array.isArray(selfOutput?.ui?.pano_input_images) ? selfOutput.ui.pano_input_images : []),
-  ];
-  for (const item of ownCandidates) {
-    const src = imageSourceFromCandidate(item);
-    if (src) {
-      panoPreviewLog(node, "image-resolve", { sourceType: "selfOutput", src, stage: "hit" });
-      return { src, sourceType: "selfOutput", inputName: "own" };
-    }
-  }
-
-  const preferredResolved = preferredImageInputsForNode(node, preferredInputNames);
-  const preferred = preferredResolved
-    .map((name) => inputs.findIndex((i) => String(i?.name || "") === String(name)))
-    .filter((idx) => idx >= 0);
-  const imageTyped = inputs
-    .map((input, idx) => ({ input, idx }))
-    .filter(({ input }) => String(input?.type || "").toUpperCase() === "IMAGE")
-    .map(({ idx }) => idx);
-  const indices = [...new Set([...preferred, ...imageTyped])];
-  panoPreviewLog(node, "image-resolve", {
-    inputCandidates: preferredResolved,
-    resolvedIndices: indices,
-    stage: "start",
-  });
-
-  for (const idx of indices) {
-    const input = inputs[idx];
-    const link = node.graph ? node.getInputLink(idx) : null;
-    if (link?.origin_id == null) continue;
-    const originId = link.origin_id;
-    const originNode = resolveInputOriginNode(node, idx, originId);
-    if (!originNode) continue;
-    const resolvedOriginSlot = Number(link.origin_slot ?? 0);
-
-    const outputs = lookupNodeOutputEntry(originNode?.id ?? originId);
-    // LoadVideo shows its file here, which an <img> cannot load.
-    const outImgs = Array.isArray(outputs?.images) ? outputs.images : [];
-    if (outImgs.length) {
-      const ordered = [];
-      if (resolvedOriginSlot >= 0 && resolvedOriginSlot < outImgs.length) ordered.push(outImgs[resolvedOriginSlot]);
-      ordered.push(...outImgs);
-      for (const cand of ordered.filter((image) => !isVideoFile(image))) {
-        const src = imageSourceFromCandidate(cand);
-        if (src) {
-          panoPreviewLog(node, "image-resolve", {
-            inputName: String(input?.name || ""),
-            sourceType: "nodeOutputs",
-            stage: "hit",
-          });
-          return { src: `${src}&pano_src=${outputSourceToken(outputs)}`, sourceType: "nodeOutputs", inputName: String(input?.name || "") };
-        }
-      }
-    }
-
-    let appNodeImageUrls = [];
-    try {
-      appNodeImageUrls = typeof app?.getNodeImageUrls === "function" ? (app.getNodeImageUrls(originNode) || []) : [];
-    } catch {
-      appNodeImageUrls = [];
-    }
-    if (Array.isArray(appNodeImageUrls) && appNodeImageUrls.length) {
-      const ordered = [];
-      if (resolvedOriginSlot >= 0 && resolvedOriginSlot < appNodeImageUrls.length) ordered.push(appNodeImageUrls[resolvedOriginSlot]);
-      ordered.push(...appNodeImageUrls);
-      for (const cand of ordered) {
-        const src = imageSourceFromCandidate(cand);
-        if (src) {
-          panoPreviewLog(node, "image-resolve", {
-            inputName: String(input?.name || ""),
-            sourceType: "appNodeImageUrls",
-            stage: "hit",
-          });
-          return { src, sourceType: "appNodeImageUrls", inputName: String(input?.name || "") };
-        }
-      }
-    }
-
-    const nodeImgs = Array.isArray(originNode?.imgs) ? originNode.imgs : [];
-    if (nodeImgs.length) {
-      const ordered = [];
-      if (resolvedOriginSlot >= 0 && resolvedOriginSlot < nodeImgs.length) ordered.push(nodeImgs[resolvedOriginSlot]);
-      ordered.push(...nodeImgs);
-      for (const cand of ordered) {
-        const src = imageSourceFromCandidate(cand);
-        if (src) {
-          panoPreviewLog(node, "image-resolve", {
-            inputName: String(input?.name || ""),
-            sourceType: "nodeImgs",
-            stage: "hit",
-          });
-          return { src, sourceType: "nodeImgs", inputName: String(input?.name || "") };
-        }
-      }
-    }
-
-    const imageWidget = originNode?.widgets?.find((w) => String(w?.name || "").toLowerCase() === "image");
-    if (imageWidget) {
-      let src = imageSourceFromCandidate(imageWidget.value);
-      if (src && !src.includes("/") && !src.includes(":") && (originNode.comfyClass === "LoadImage" || originNode.type === "LoadImage")) {
-        src = api.apiURL(`/view?filename=${encodeURIComponent(src)}&type=input&subfolder=`);
-      }
-      if (src) {
-        panoPreviewLog(node, "image-resolve", {
-          inputName: String(input?.name || ""),
-          sourceType: "widget",
-          stage: "hit",
-        });
-        return { src, sourceType: "widget", inputName: String(input?.name || "") };
-      }
-    }
-  }
-
-  panoPreviewLog(node, "image-resolve", { stage: "miss" });
-  return { src: "", sourceType: "", inputName: "" };
-}
-
 function getLinkedInputImage(node, preferredInputNames = [], options = {}) {
-  const resolved = findLinkedInputImageSource(node, preferredInputNames);
+  const resolved = surfaceMedia.nodeSurfaceLinkedSource(node, preferredInputNames, { log: (tag, payload) => panoPreviewLog(node, tag, payload) });
   const srcRaw = String(resolved?.src || "").trim();
   if (!srcRaw) return null;
   const candidates = buildImageSrcCandidates(srcRaw);

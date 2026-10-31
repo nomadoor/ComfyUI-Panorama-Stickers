@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createComfyMediaAdapter, executionIdMatches } from "../web_src/pano_comfy_media.js";
+import { createComfyMediaAdapter, executionIdMatches, preferredImageInputsForNode } from "../web_src/pano_comfy_media.js";
+import { BACKGROUND_INPUT_NAMES, setNodeOutputLookup } from "../web_src/pano_preview_video.js";
 
 // The read profiles of pano_comfy_media.js: how the old editor and the new UI ("editor"), the node surfaces of
 // pano_preview_runtime.js ("nodeSurface") and the Preview node's runtime pano_preview_previewnode.js ("previewNode")
@@ -113,4 +114,111 @@ test("a node's result: by its id in a Map or an object; the node surfaces and th
   const odd = { "7:": { images: ["odd"] } };
   assert.deepEqual(adapter("nodeSurface", { nodeOutputs: odd }).output(7), { images: ["odd"] });
   assert.equal(adapter("previewNode", { nodeOutputs: odd }).output(7), null);
+});
+
+// A node as the ComfyUI frontend exposes it (as tests/pano_comfy_media.test.mjs has it): links by slot.
+function comfyNode({ id = 40, inputs, links = [], graph = { getNodeById: () => null }, ...rest }) {
+  return {
+    ...rest,
+    id,
+    graph,
+    inputs,
+    getInputLink(slot) {
+      return links[slot] ?? null;
+    },
+    isInputConnected(slot) {
+      return !!links[slot];
+    },
+  };
+}
+
+// The node surfaces read their own result only while it is current (pano_preview_video.js isNodeOutputMediaCurrent),
+// which finds the result through setNodeOutputLookup, as pano_preview_runtime.js sets it.
+function surfaceSetup(nodeOutputs, extra = {}) {
+  const app = { nodeOutputs, ...extra };
+  const media = adapter("nodeSurface", app);
+  setNodeOutputLookup((node) => media.output(node.id));
+  return { app, media };
+}
+
+test("the node surfaces' image inputs: the preferred names the node has, then its background inputs", () => {
+  const node = comfyNode({ inputs: [{ name: "audio" }, { name: "bg_media" }, { name: "erp_image" }, { name: "source" }] });
+  assert.deepEqual(preferredImageInputsForNode(node, ["erp_image", "missing"]), ["erp_image", "bg_media", "source"]);
+  assert.deepEqual(preferredImageInputsForNode(comfyNode({ inputs: [{ name: "audio" }] }), ["x"]), ["x"]);
+  assert.ok(BACKGROUND_INPUT_NAMES.includes("erp_image"));
+});
+
+test("nodeSurfaceLinkedSource: the node's own pano_input_images first, only while current", () => {
+  const own = { pano_input_images: [{ filename: "own_bg.png", type: "temp" }] };
+  const origin = { id: 30, imgs: [{ src: "/origin.png" }] };
+  const link = { origin_id: 30, origin_slot: 0 };
+  const node = comfyNode({
+    id: 41,
+    inputs: [{ name: "erp_image", type: "IMAGE" }],
+    links: [link],
+    getInputNode: () => origin,
+  });
+  const { media } = surfaceSetup({ 41: own });
+  const logs = [];
+  assert.deepEqual(media.nodeSurfaceLinkedSource(node, ["erp_image"], { log: (tag, payload) => logs.push([tag, payload.stage]) }), {
+    src: "/api/view?filename=own_bg.png&type=temp", sourceType: "selfOutput", inputName: "own",
+  });
+  assert.deepEqual(logs, [["image-resolve", "hit"]]);
+  // Another link: the result is not the inputs' any more, the linked origin is read.
+  link.origin_id = 31;
+  const stale = media.nodeSurfaceLinkedSource(node, ["erp_image"]);
+  assert.deepEqual(stale, { src: "/origin.png", sourceType: "nodeImgs", inputName: "erp_image" });
+});
+
+test("nodeSurfaceLinkedSource: result images (no ui.images, videos skipped, slot first, pano_src) before getNodeImageUrls", () => {
+  const originOutput = {
+    images: [{ filename: "clip.mp4", type: "input" }, { filename: "zero.png", type: "temp" }, { filename: "one.png", type: "temp" }],
+    ui: { images: [{ filename: "ui.png", type: "temp" }] },
+  };
+  const origin = { id: 32 };
+  const node = comfyNode({
+    id: 42,
+    inputs: [{ name: "erp_image", type: "IMAGE" }],
+    links: [{ origin_id: 32, origin_slot: 2 }],
+    getInputNode: () => origin,
+  });
+  const { media } = surfaceSetup({ 32: originOutput }, { getNodeImageUrls: () => ["/app.png"] });
+  const resolved = media.nodeSurfaceLinkedSource(node, ["erp_image"]);
+  assert.equal(resolved.sourceType, "nodeOutputs");
+  assert.match(resolved.src, /^\/api\/view\?filename=one\.png&type=temp&pano_src=/);
+  // Only ui.images: not read; getNodeImageUrls is, without skipping videos.
+  const { media: other } = surfaceSetup({ 32: { ui: originOutput.ui } }, { getNodeImageUrls: () => ["/api/view?filename=clip.mp4&type=input", "/app.png"] });
+  assert.deepEqual(other.nodeSurfaceLinkedSource(node, ["erp_image"]), {
+    src: "/api/view?filename=clip.mp4&type=input", sourceType: "appNodeImageUrls", inputName: "erp_image",
+  });
+});
+
+test("nodeSurfaceLinkedSource: the origin's imgs, then a LoadImage widget; inputs in order, through a subgraph", () => {
+  const loadImage = { id: 33, comfyClass: "LoadImage", widgets: [{ name: "image", value: "pano file.png" }] };
+  const other = { id: 34, type: "Other", widgets: [{ name: "Image", value: "plain.png" }] };
+  const inner = { id: 35, imgs: [{ src: "/inner.png" }] };
+  const subgraph = { id: 36, isSubgraphNode: () => true, resolveSubgraphOutputLink: (slot) => (slot === 1 ? { outputNode: inner } : null) };
+  const origins = [subgraph, loadImage, other];
+  const node = (order) => comfyNode({
+    id: 43,
+    inputs: [{ name: "scene" }, { name: "bg_erp", type: "IMAGE" }, { name: "extra", type: "IMAGE" }],
+    links: order,
+    getInputNode: (slot) => origins[slot],
+  });
+  const { media } = surfaceSetup({});
+  assert.deepEqual(media.nodeSurfaceLinkedSource(node([null, { origin_id: 33, origin_slot: 0 }, null]), []), {
+    src: "/api/view?filename=pano%20file.png&type=input&subfolder=", sourceType: "widget", inputName: "bg_erp",
+  });
+  // Not LoadImage: the widget's value as it is. The background input comes before the other IMAGE input.
+  origins[1] = other;
+  assert.deepEqual(media.nodeSurfaceLinkedSource(node([null, { origin_id: 34 }, { origin_id: 33 }]), []), {
+    src: "plain.png", sourceType: "widget", inputName: "bg_erp",
+  });
+  // An IMAGE-typed input not among the names is read too; a subgraph is read through to the node inside.
+  origins[2] = subgraph;
+  assert.deepEqual(media.nodeSurfaceLinkedSource(node([null, null, { origin_id: 36, origin_slot: 1 }]), []), {
+    src: "/inner.png", sourceType: "nodeImgs", inputName: "extra",
+  });
+  assert.deepEqual(media.nodeSurfaceLinkedSource(comfyNode({ inputs: [] }), []), { src: "", sourceType: "", inputName: "" });
+  assert.deepEqual(media.nodeSurfaceLinkedSource(node([null, null, null]), []), { src: "", sourceType: "", inputName: "" });
 });
