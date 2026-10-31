@@ -26,7 +26,8 @@ inline の `style` と custom property（`--pano-segment-count`・`--pano-timeli
 | stylesheet の読み込み | — | `web_src/pano_styles.js` `installStylesheet`・`installPanoSuiteStylesheet`、新しい UI は `web_src/studio/stylesheet.js` `installStudioStylesheet` | — |
 | 共有のボタン（`.pano-btn` 系）の大きさと状態の見た目 | — | `web/pano_editor.css` の `.pano-btn`・`.pano-btn-icon`・`.pano-btn-texticon`・`.pano-btn-primary`・`.pano-btn.subtle`、`web_src/components/shared/PanoIconButton.vue` | — |
 | 共有の部品（モーダル、HUD、切り替え、サイドパネル、値の行、選択肢、ツールチップ、確認のダイアログ、ペイント）の値と、部品の中だけの custom property（`.pano-segments` の `--pano-segment-pad: 3px`、`.pano-modal` の `--pano-side-w: 300px`） | — | `web/pano_editor.css` | — |
-| 状態の class に ComfyUI の Tailwind の utility 名を使わない | — | `web_src/components/*.vue` | `tests/pano_css_class_safety.test.mjs` |
+| 状態の class に ComfyUI の Tailwind の utility 名を使わない | — | `web_src/components/*.vue` | `tests/architecture.test.mjs` |
+| Vue のコンポーネントは `<style>` を持たない。新しい UI の部品が使う `pano-studio-*` の class は `web/pano_studio.css` にある。ぼかしを使わず、新しい UI は影も使わない。`web/pano_studio.css` の括弧が閉じている | — | `web_src/components/**/*.vue`、`web/pano_studio.css`、`web/pano_editor.css` | `tests/architecture.test.mjs` |
 | アイコン（Tabler の線画、線の太さ、大きさ） | — | `web_src/icons.js` `ICON`・`ICON_PATHS`、`web_src/components/shared/SvgIcon.vue`、`web/pano_editor.css` の `.icon-tabler`・`.pano-btn-icon svg` | — |
 | 重なり順（`z-index`）とスクリム | — | `web/pano_editor.css`、`web_src/components/PanoPaintOverlays.vue`（ペイントのカーソル） | — |
 
@@ -374,7 +375,7 @@ padding `7px 10px`、地 94%、影 `0 12px 28px rgba(0,0,0,0.34)`。footer の�
 状態は `.active`・`.show`・`.open`・`.disabled`・`.selected`・`[aria-pressed]`・`[aria-disabled]`・`data-*` と、`is-` の接頭辞の class
 （`is-hidden`・`is-ready`・`is-active`・`is-loaded`・`is-pinned` など）で表す。ComfyUI のフロントエンドは同じ document に
 Tailwind の utility（`.hidden { display: none }` など）を持つので、Vue のコンポーネントは `hidden`・`block`・`flex`・`grid`・
-`invisible`・`visible`・`contents` を状態の class として `:class` に結ばない（`tests/pano_css_class_safety.test.mjs`）。
+`invisible`・`visible`・`contents` を状態の class として `:class` に結ばない（`tests/architecture.test.mjs`）。
 
 ## アイコン
 
@@ -444,7 +445,7 @@ stylesheet の読み込みは上の「この文書が owner である規則」�
   窓（ステージの窓の下だけ）。角丸 `12px`。窓に縁の線を付けない。窓どうしと枠は、地の色の段の差だけで分ける（窓の地と枠の地）。
   ステージとタイムラインの間の `8px` の間は、タイムラインの高さを変えるドラッグの場所を兼ね、真ん中に 36×3px の握り（強い線の色、
   角丸 2px）を出す。
-- インスペクタの中のセクション（カード）は線で区切らず、間の余白で分ける（カードの余白は上 `12px`・左右 `14px`・下 `8px`、次のカードは上の余白を `20px` にする）。上端の行
+- インスペクタの中のセクション（カード：Camera・Scene・選んだ物）の間には、薄い線（線の色 `--studio-line`、1px、左右はカードの余白と同じ `14px` 内側）を引く（持ち主、2026-10-31：カードが並ぶと境目が見えにくい）。カードの余白は上 `12px`・左右 `14px`・下 `8px`、次のカードは線の上に `8px`、線の下に `14px` を取る。上端の行
   （ノードの名前と ✕）の下にも線を引かない。
 - ステージの上に浮かせる部品（タブ、左の列、視点の操作のつまみの列と「?」、右下のボタンの群、Output の小窓、下の中央のバーの席、
   上端の中央の一行）は、ステージの窓の端から `16px` に置く。地は窓の地の 85% の不透明、縁の線は付けない。その上の文字とアイコンには
@@ -479,6 +480,8 @@ stylesheet の読み込みは上の「この文書が owner である規則」�
   `web/fonts/PlusJakartaSans-Latin.woff2`（27,348 bytes）：Google Fonts がラテン文字の範囲に配る可変フォント一つで、500・600・700 の
   太さをまかなう。`web/pano_studio.css` の `@font-face` が読み込み、範囲の外の文字は次の書体で出す。
 - 大きさは 4 段：11px（注記、タイムライン）、12px（欄の名前、ボタン、本文）、13px（セクションの見出し、値の数字）、15px（ダイアログの見出し）。
+  インスペクタの中だけは一段ずつ小さくする（持ち主、2026-10-31）：見出しと値の数字は 12px、欄の名前・ボタン・単位は 11px。11px より小さい段は
+  作らないので、軸の文字と種類の札は 11px のまま（軸の文字は太さ 600 で値と分ける）。
 - 太さは 500（本文）、600（見出し）、700（数字の強調だけ）。
 - 数字は `font-variant-numeric: tabular-nums`。
 - 大きさの違う文字を一行に並べるとき（値の数字・軸の文字・単位・行の名前）は、`text-box: trim-both cap alphabetic` で大文字の高さを
@@ -495,6 +498,7 @@ stylesheet の読み込みは上の「この文書が owner である規則」�
 |---|---|
 | インスペクタの幅 | 320px |
 | インスペクタの行の格子 | 名前 62px ／ 1・2・3 は等分 ／ Keyframe のポチ 16px ／ リセット 22px、列の間 4px |
+| 値の箱の中の間 | 軸の文字と値の間 6px（持ち主、2026-10-31：2px では近すぎる）、値と単位の間 2px |
 | 行の間 | 8px |
 | インスペクタのカードの見出し | 高さ 24px、一行。左からアイコン・名前（13px / 600）・種類の札（`Sky`・`World`・`Camera` など、11px / 500、二次の文字）を右寄せ。名前は残りの幅に縮み、入らない分は末尾を `…` で切る（折り返さない）。名前と札の間は 8px 以上空け、重ねない。切った名前の全文は名前の `data-tip`（ツールチップ）に出す。見出しとその下の行・札の間は 12px |
 | 値の箱の高さ | 26px（ふだん地なし、hover で値の箱の地） |
@@ -514,13 +518,14 @@ stylesheet の読み込みは上の「この文書が owner である規則」�
 | 左の列・視点の操作のつまみと「?」・右下のボタン | 34px の正円、アイコン 18px（Add のアイコンだけ 22px）。見本 `controls-2.html` の R1 |
 | Easing のグラフ | 縦横 1:1（インスペクタの幅いっぱい）。上の領域が `EASING_MIN_ABOVE` より狭くなるときは、一辺を縮めて 1:1 のまま小さくする |
 | `EASING_MIN_ABOVE` | 180px（行 5 つ分）。Easing のパネルを出している間に、上の領域に残す最小の高さ |
-| Camera タブのフレームの余白 | 左右 150px、上 88px、下 84px。上は、左上のタブ（ステージの窓の端から 16px、群の高さ 42px で下端が 58px）の下に 30px の空きを取る。左右は、辺の目盛りの数字が左の列と右の視点のつまみに隠れない幅から求める：浮かせる部品の端の余白 16px ＋ 左の列（右のつまみ）の幅 46px ＋ 間 12px ＋ 辺の目盛りの数字を含めた幅（Lens で 61px。FOV は 51px で、左右とも大きい方を使う）＋ 目盛りとフレームの間 14px ＝ 149px を、切りのよい 150px にする。左の列・つまみ・目盛りの幅を変えたら、この値を求め直す |
+| Camera タブのフレームの余白 | 左右 150px、上 88px、下 115px（ADR 0051）。下は、下の中央のバーの席（ステージの下端から 16px、高さ 44px ＝ ボタン 32px と上下の余白 6px ずつ、で上端が 60px）の上に 10px 空けて Roll の目盛りの数字（帯のすぐ下、11px）、その上に Roll の目盛りの帯（22px）を置き、帯とフレームの間 12px を足した 115px（16 ＋ 44 ＋ 10 ＋ 11 ＋ 22 ＋ 12）。バーが出ていないときも同じ余白を取る（物を選んでもフレームと目盛りを動かさない）。バーの高さを変えたら、この値を求め直す。上は、左上のタブ（ステージの窓の端から 16px、群の高さ 42px で下端が 58px）の下に 30px の空きを取る。左右は、辺の目盛りの数字が左の列と右の視点のつまみに隠れない幅から求める：浮かせる部品の端の余白 16px ＋ 左の列（右のつまみ）の幅 46px ＋ 間 12px ＋ 辺の目盛りの数字を含めた幅（Lens で 61px。FOV は 51px で、左右とも大きい方を使う）＋ 目盛りとフレームの間 14px ＝ 149px を、切りのよい 150px にする。左の列・つまみ・目盛りの幅を変えたら、この値を求め直す |
 | Camera タブの辺の目盛りの置き場所 | フレームとの間：FOV・Lens 14px、Roll 12px。目盛りの線の帯の決まった長さ：FOV・Lens 200px、Roll 320px。フレームの辺がそれより短いときは、Roll はフレームの幅、FOV・Lens はフレームの高さから頭の分 56px を上下とも除いた長さに縮める。56px は上下の頭の大きい方：上の頭 38px（名前と値 30px 以内 ＋ 間 8px）と下の頭 56px（ポチとリセット 44px ＋ 間 12px）。1440×860 の画面では、16:9 の FOV・Lens が 174px に縮み、1:1・9:16 は 200px、Roll は 16:9・1:1 で 320px、9:16 で 187px |
 | Camera タブの辺の目盛りの頭 | 名前と値を帯の一方の端に、Keyframe のポチとリセットを反対の端に置く。FOV・Lens：帯の上 8px に、名前の行と値の行を間 6px で縦に積む（名前が上。12px の文字で、二行の高さは 30px 以内）。帯の下 12px に、ポチ（幅 22px・高さ 18px の当たり）とリセット（22px 角）を間 4px で縦に積む（ポチが上。高さ 44px）。ポチの印の見える端は帯から約 16px（持ち主、2026-10-30：帯に近すぎるので間を空ける）。Roll：帯の左 10px に名前と値を間 8px で横に並べ、帯の右 16px にポチ（幅 12px・高さ 22px の当たり）とリセット（22px 角）を間 4px で横に並べる（ポチの印の見える端は帯から約 18px）。値の文字（12px・太さ 600）の幅は数字で FOV 4 字・Lens 4 字・Roll 5 字（`ch`）、FOV・Lens は真ん中、Roll は左にそろえる |
 | Camera タブの辺の目盛りの当たり | 目盛りの線の帯（22px）の両側に 12px ずつ透明な当たりを足し、太さ 46px（Roll は上下、FOV・Lens は左右）。フレームの中には入らない（フレームとの間は 12px 以上） |
 | Camera タブの辺の目盛りのキーボードのフォーカス | 上の「フォーカス」の規則で、帯（角丸 6px）の地を白 10% にする |
 | Camera タブの辺の目盛りの縮尺 | 仮：小さい目盛り 8px ごと、数値 80px ごと（FOV 2° と 20°、Lens 0.02 と 0.2、Roll 1° と 10°）。目盛りは幅 22px、数値は 11px |
-| Camera タブの Output の小窓 | 畳んだ形を不透明度 0.4 で出し、hover でも変えない |
+| Camera タブの Output の小窓 | 畳んだ形の一行は 3D タブと同じ見た目。開閉のボタンだけを不透明度 0.4 にし、hover でも変えない |
+| Output の小窓の一行 | 高さ 32px（畳んだ形のつまみと同じ）。撮り方のアイコン 20×10px、撮り方の名前 12px・600・主の文字、出る大きさ 12px・500・二次の文字、間 8px、右端に開閉のボタン。右にそろえる。見本 `camera-output-1.html` |
 | カメラの見た目 | 見本 `camera-1.html`。面は白 10% の塗り（面ごとに重ねる）。線は白 85% の 1.5px の下に黒 30% の 3.5px。奥に隠れる辺は白 35% の 1.5px と黒 12% の 3.5px。上の向きの三角は白 35% の塗り。錐の頂点と球の中心に半径 3px の白い点。選択は線を落ち着いた黄 `#e8cf74` の 2px（下の黒は同じ）、面を同じ黄の 18%（`web_src/studio/camera_marker.js` `MARKER_LOOKS`） |
 | ドロップの印 | 見本 `drop-3.html`。行き先の色（World は落ち着いた黄 `#e8cf74`、Sky は氷 `#aecedb`）の角のかぎ括弧（2.5px、端と角は丸）と、同じ色の 25% の塗り。かぎ括弧の下に黒 28% の 4.5px の線。かぎ括弧の長さは、画像の板と Sky の枠では辺の 20%（Sky の枠は曲がった辺に沿って測る）、3D ファイルの仮の箱では辺の 25%（`docs/space-and-view.md`）。箱は見える面を塗る（`web_src/studio/landing.js` `DROP_LOOK`） |
 | ドロップのラベル | 見本 `drop-3.html`。高さ 26px の丸い札、左右の余白 8px と 10px、アイコン 15px（行き先の色）と文字 12px・600 の間 6px。地は窓の地の 92%、縁は行き先の色の 1px。印の外接の矩形から `DROP_LABEL_GAP` 12px 離し、ステージの端から `DROP_LABEL_MARGIN` 8px の内に置く（置き方は `docs/space-and-view.md` の「ドラッグ中の印」、`web_src/studio/landing.js` `DROP_LOOK`） |
@@ -535,7 +540,7 @@ stylesheet の読み込みは上の「この文書が owner である規則」�
 | タイムラインのスクロールバー | 縦だけ。幅 6px、溝は透明、つまみは主の文字の色の 22%（hover で 40%）、角丸 3px。Firefox は `scrollbar-width: thin` と同じ色 |
 | タイムラインの最小の高さ | 未定 |
 | ステージの最小の高さ | 未定 |
-| Output の小窓の最小と最大の大きさ | 未定 |
+| Output の小窓の最小と最大の大きさ | 最小の幅 256px（一行の一番長い形、例 `Frame 8192:1640` と `8192 × 1640`、約 248px が収まる幅。既定の幅も 256px）。最大は未定 |
 | スライダーを付ける値の上限（Scale のように上限の無い値のスライダーの範囲） | 未定 |
 
 ### 動き
@@ -606,7 +611,8 @@ Panorama Studio のノード上の表示（構成と振る舞いは `docs/studio
 | surface の地 | 透明（`STUDIO_SURFACE_FILL`）。絵の外はノードの地をそのまま見せる。一行の文字は ComfyUI のテーマのトークンで書く（持ち主、2026-10-30） |
 | 絵 | 角丸 `STUDIO_PICTURE_RADIUS` 8px、縁の線なし。surface の上下と左右の中央（一行と合わせて） |
 | 絵の下の一行 | 高さ `STUDIO_LINE_HEIGHT` 16px、絵との間 `STUDIO_LINE_GAP` 6px、絵と同じ幅。文字 11px。左の撮り方は二次の文字の色・太さ 500、アイコン 16px（線 1.75）と文字の間 4px。右の大きさは主の文字の色・太さ 600・`tabular-nums`。surface の暗い地の上なので、文字の色はテーマにかかわらずダークの値 |
-| Open Studio のボタン | 浮かせる部品（地は窓の地の 85%、縁の線なし、影なし、角丸 999px）。高さ 30px、左の余白 10px・右の余白 14px、アイコン 16px と文字の間 6px、文字 12px・600、主の文字の色。絵の下の辺から `STUDIO_BUTTON_INSET` 8px 上、左右の中央。hover は地を hover の灰の 85%、押したときは押したときの灰の 85% |
+| 再生のボタン | `Open Studio` と同じ浮かせる部品の形（地・hover・押したとき）で、30px の正円、アイコン 16px（`web_src/icons.js` の `player-play`・`player-pause`、線 1.75）。`Open Studio` との間 `STUDIO_BUTTON_GAP` 8px（持ち主、2026-10-31） |
+| Open Studio のボタン | 浮かせる部品（地は窓の地の 85%、縁の線なし、影なし、角丸 999px）。高さ 30px、左の余白 10px・右の余白 14px、アイコン 16px と文字の間 6px、文字 12px・600、主の文字の色。絵の下の辺から `STUDIO_BUTTON_INSET` 8px 上。左右の置き方は `docs/studio-node-surface.md` の「表示の構成」（再生のボタンと一つの群）。hover は地を hover の灰の 85%、押したときは押したときの灰の 85% |
 
 値の置き場所：色と文字とボタンは `web/pano_studio.css` の `.pano-studio-node-*`、絵と一行の置き方の数値（`STUDIO_*`）は
 `web_src/pano_studio_surface.js`（canvas に描く絵の置き場所と overlay の置き場所を一つの関数 `studioSurfaceLayout` が決める）。

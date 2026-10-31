@@ -1,12 +1,13 @@
+// A finite JSON number (not a boolean, not text, not an array), else `fallback`: every number of `painting` is read
+// so (docs/scene-state-v2.md, 共通の規則), as Python's _finite_float does.
 function finiteNumber(value, fallback = null) {
-  const out = Number(value);
-  return Number.isFinite(out) ? out : fallback;
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
-// The first finite JSON number (not a boolean, not text) of `z_index`, then `zIndex`, or null.
+// The first finite JSON number of `z_index`, then `zIndex`, or null.
 function zIndexOf(item) {
   for (const value of [item.z_index, item.zIndex]) {
-    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (finiteNumber(value) !== null) return value;
   }
   return null;
 }
@@ -124,11 +125,6 @@ function normalizeGeometry(raw, targetSpace, toolKind, allowLasso) {
   };
 }
 
-// A finite JSON number (not a boolean, not text), or null.
-function jsonNumber(value) {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
 const clamp = (value, lo, hi) => Math.max(lo, Math.min(hi, value));
 
 const STAMP_KINDS = new Set(["round", "chisel", "crayon"]);
@@ -138,19 +134,19 @@ const STAMP_KINDS = new Set(["round", "chisel", "crayon"]);
 // and spacing are always kept, null (the engine's default) unless a JSON number: null is never read as 0.
 function normalizeBrush(raw) {
   const out = {
-    hardness: jsonNumber(raw.hardness),
-    flow: jsonNumber(raw.flow),
-    spacing: jsonNumber(raw.spacing),
+    hardness: finiteNumber(raw.hardness),
+    flow: finiteNumber(raw.flow),
+    spacing: finiteNumber(raw.spacing),
   };
   const stampKind = STAMP_KINDS.has(raw.stampKind) ? raw.stampKind : "round";
   if (stampKind !== "round") out.stampKind = stampKind;
-  const aspect = jsonNumber(raw.aspect);
+  const aspect = finiteNumber(raw.aspect);
   if (aspect !== null && clamp(aspect, 0.1, 10) !== 1) out.aspect = clamp(aspect, 0.1, 10);
   const angle = raw.angle && typeof raw.angle === "object" && !Array.isArray(raw.angle) ? raw.angle : null;
   if (angle?.kind === "stroke_dir") out.angle = { kind: "stroke_dir" };
-  else if (jsonNumber(angle?.value) !== null && angle.value !== 0) out.angle = { kind: "fixed", value: angle.value };
+  else if (finiteNumber(angle?.value) !== null && angle.value !== 0) out.angle = { kind: "fixed", value: angle.value };
   const keep = (key, fallback, lo, hi) => {
-    const value = jsonNumber(raw[key]);
+    const value = finiteNumber(raw[key]);
     if (value !== null && clamp(value, lo, hi) !== fallback) out[key] = clamp(value, lo, hi);
   };
   if (stampKind === "chisel") {
@@ -161,9 +157,9 @@ function normalizeBrush(raw) {
   if (stampKind === "crayon") keep("crayonGrain", 0.65, 0, 1);
   const scatter = raw.scatter;
   if (scatter && typeof scatter === "object" && !Array.isArray(scatter)) {
-    const count = jsonNumber(scatter.count);
+    const count = finiteNumber(scatter.count);
     out.scatter = {
-      radius: Math.max(0, jsonNumber(scatter.radius) ?? 1.5),
+      radius: Math.max(0, finiteNumber(scatter.radius) ?? 1.5),
       count: clamp(Math.round(count ?? 6), 1, 64),
     };
   }

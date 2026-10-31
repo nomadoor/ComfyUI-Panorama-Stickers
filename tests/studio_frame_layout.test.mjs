@@ -14,15 +14,15 @@ import {
   rulerMarks,
 } from "../web_src/studio/frame_layout.js";
 import { cameraRulers, rulerEdit } from "../web_src/studio/frame_layout.js";
-import { buildInspectorModel } from "../web_src/studio/inspector_model.js";
+import { buildCameraCard, buildInspectorModel } from "../web_src/studio/inspector_model.js";
 import { loadSceneState } from "../web_src/pano_scene_state.js";
 import { FINE_FACTOR } from "../web_src/studio/ui_drag.js";
 
-// docs/studio-ui.md "Camera タブ" and docs/design.md "大きさ": the frame in the stage less 150 / 88 / 84, the edge rulers'
+// docs/studio-ui.md "Camera タブ" and docs/design.md "大きさ": the frame in the stage less 150 / 88 / 115, the edge rulers'
 // fixed lengths centered on the frame's edges, their marks and drag.
 
 test("the margins and the rulers' lengths and value widths are the design's", () => {
-  assert.deepEqual({ ...CAMERA_FRAME_MARGIN }, { left: 150, right: 150, top: 88, bottom: 84 });
+  assert.deepEqual({ ...CAMERA_FRAME_MARGIN }, { left: 150, right: 150, top: 88, bottom: 115 });
   assert.deepEqual([CAMERA_RULERS.fov.length, CAMERA_RULERS.lens.length, CAMERA_RULERS.roll.length], [200, 200, 320]);
   assert.deepEqual([CAMERA_RULERS.fov.valueChars, CAMERA_RULERS.lens.valueChars, CAMERA_RULERS.roll.valueChars], [4, 4, 5]);
   // The heads: name and value above (30 + 8), the dot and the reset below (42 + 4); the strip leaves the larger at both ends.
@@ -31,12 +31,12 @@ test("the margins and the rulers' lengths and value widths are the design's", ()
 });
 
 test("the frame is the largest box of the ratio in the area, centered in it", () => {
-  // 1180 x 588: the area is 880 x 416.
-  assert.deepEqual(frameRect(1180, 588, 16 / 9), { x: 220, y: 88, width: 740, height: 416 });
-  assert.deepEqual(frameRect(1180, 588, 1), { x: 382, y: 88, width: 416, height: 416 });
-  assert.deepEqual(frameRect(1180, 588, 9 / 16), { x: 473, y: 88, width: 234, height: 416 });
+  // 1180 x 619: the area is 880 x 416.
+  assert.deepEqual(frameRect(1180, 619, 16 / 9), { x: 220, y: 88, width: 740, height: 416 });
+  assert.deepEqual(frameRect(1180, 619, 1), { x: 382, y: 88, width: 416, height: 416 });
+  assert.deepEqual(frameRect(1180, 619, 9 / 16), { x: 473, y: 88, width: 234, height: 416 });
   // A wide ratio fills the width and centers in the height.
-  assert.deepEqual(frameRect(1180, 588, 4), { x: 150, y: 186, width: 880, height: 220 });
+  assert.deepEqual(frameRect(1180, 619, 4), { x: 150, y: 186, width: 880, height: 220 });
 });
 
 test("each tick strip keeps its fixed length, its middle on the middle of the frame's edge", () => {
@@ -105,7 +105,7 @@ test("a drag moves the ruler under the mark: toward the end brings smaller value
 });
 
 const cameraState = (camera) => loadSceneState({ version: 2, camera: { aspect: 16 / 9, position: { value: [0, 0, 0] }, rotation: { value: { yaw_deg: 10, pitch_deg: 0, roll_deg: -4 } }, fov: { value: 60 }, ...camera } });
-const rulersOf = (state, options = {}) => cameraRulers(buildInspectorModel({ state, tab: "camera", ...options }).cards[0]);
+const rulersOf = (state, options = {}) => cameraRulers(buildCameraCard({ state, ...options }));
 
 test("the edge rulers are the Camera card's H FOV, Lens and Roll: values, ranges, dots and gray rows", () => {
   const frame = rulersOf(cameraState({ projection: "perspective", fov: { value: 60, keyframes: [{ frame: 0, value: 60 }] } }));
@@ -124,7 +124,8 @@ test("the edge rulers are the Camera card's H FOV, Lens and Roll: values, ranges
   // Read-only or a locked Camera: all three gray.
   const readOnly = rulersOf(cameraState({ projection: "perspective" }), { readOnly: true });
   assert.ok(readOnly.fov.disabled && readOnly.lens.disabled && readOnly.roll.disabled);
-  assert.equal(cameraRulers(buildInspectorModel({ state: cameraState({}), tab: "3d" }).cards[0]), null);
+  // Another card makes none.
+  assert.equal(cameraRulers(buildInspectorModel({ state: cameraState({}) }).cards[1]), null);
 });
 
 test("a ruler's events are the inspector's edits of its row: input live, change one step, cancel back, the dot keys the row", () => {

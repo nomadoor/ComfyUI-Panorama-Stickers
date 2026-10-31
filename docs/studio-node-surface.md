@@ -18,15 +18,15 @@ Panorama Studio（`PanoramaStudio`）のノード上の表示（node surface）�
 
 | 規則 | Python | JS | test |
 |---|---|---|---|
-| 表示の構成（DOM canvas、Vue overlay、Node 2.0 と Legacy renderer、標準の `Open Studio Editor` widget、絵と一行の置き方） | — | `web_src/pano_editor_extension.js` `createPanoEditorExtension`（`PanoramaStudio`）、`web_src/pano_preview_runtime.js` `attachPanoramaPreviewImpl`（`studioSurface`）、`web_src/pano_studio_surface.js` `studioSurfaceLayout`、`web_src/components/PanoStudioNodeSurface.vue` | `tests/pano_editor_extension.test.mjs`、`tests/pano_studio_node_surface_contract.test.mjs`、`tests/pano_studio_surface.test.mjs`、`tests/browser/studio_node_surface.spec.js` |
-| 撮る Camera の出力をその場で描く（描く物、描く部品、いつ描き直すか） | — | `pano_preview_runtime.js` `drawStudioPicture`、`web_src/studio/output_picture.js` `outputFrameInput`・`outputErpInput`（エディタの Output の小窓と共有）、`web_src/pano_preview_view.js` の `renderLiveErp` | `tests/output_picture.test.mjs`、`tests/browser/studio_node_surface.spec.js` |
+| 表示の構成（DOM canvas、Vue overlay、Node 2.0 と Legacy renderer、標準の `Open Studio Editor` widget、絵と一行の置き方） | — | `web_src/pano_editor_extension.js` `createPanoEditorExtension`（`PanoramaStudio`）、`web_src/pano_preview_runtime.js` `attachPanoramaPreviewImpl`（`studioSurface`）、`web_src/pano_studio_surface.js` `studioSurfaceLayout`、`web_src/components/PanoStudioNodeSurface.vue`（再生のボタンを含む） | `tests/pano_editor_extension.test.mjs`、`tests/pano_studio_node_surface_contract.test.mjs`、`tests/pano_studio_surface.test.mjs`、`tests/browser/studio_node_surface.spec.js` |
+| 撮る Camera の出力をその場で描く（描く物、描く部品、いつ描き直すか） | — | `pano_preview_runtime.js` `drawStudioPicture`、`web_src/studio/output_picture.js` `outputFrameInput`・`outputErpInput`（エディタの Output の小窓と共有）、`web_src/pano_preview_view.js` の `renderLiveErp`、深度の格子の色 `web_src/pano_depth_color.js` `createDepthColors`、上流の層の素材 `web_src/pano_upstream_layers.js` `createUpstreamLayers`（エディタと Preview の Scene のビューアと共有） | `tests/output_picture.test.mjs`、`tests/browser/studio_node_surface.spec.js` |
 | 一行の状態（撮り方、出力の大きさ、上限） | `nodes.py` `PanoramaStudioNode.execute`（`pano_output_size`）・`_studio_run_key` | `web_src/pano_studio_status.js` `studioNodeStatus`・`studioOutputSize`・`studioRunKey`・`createStudioStatus`、`pano_preview_runtime.js` `studioStatusOptions` | `tests/pano_studio_status.test.mjs`、`tests/test_studio_status_parity.py`、`tests/test_studio_node.py`、`tests/browser/studio_node_surface.spec.js` |
 | widget の変更を受けて描き直す（callback の連ね方） | — | `web_src/pano_widget_callback.js` `chainWidgetCallback` | `tests/pano_widget_callback.test.mjs`、`tests/browser/studio_node_surface.spec.js` |
-| wheel の捕捉（旧ノードと Preview の Scene のビューアが使う） | — | `web_src/pano_interaction_controller.js` `createPanoInteractionController`、`web_src/pano_wheel.js` `PANO_FOV_WHEEL_STEP_DEG`・`bindWheelCaptureRoot` | `tests/pano_stickers_node_surface_contract.test.mjs`、`tests/pano_wheel.test.mjs` |
-| 表示フレームと背景の VIDEO・`port` の素材 | — | `web_src/pano_node_playback.js` `createNodePlayback`、`web_src/pano_stickers_node_surface.js` `NODE_SURFACE_FRAME`、`pano_preview_runtime.js` `backgroundVideoSources`・`portStickerMedia`・`surfaceTimelineMedia` | `tests/pano_node_playback.test.mjs`、`tests/pano_stickers_node_surface_contract.test.mjs` |
-| 見えないときとエディタを開いている間 | — | `pano_node_playback.js` `surfaceShown`、`web_src/pano_node_bridge.js` `editorOpen`、`pano_preview_runtime.js` `attachPanoramaPreviewImpl`（`syncSurfacePlayback`） | `tests/pano_node_playback.test.mjs`、`tests/pano_stickers_node_surface_contract.test.mjs`、`tests/pano_node_bridge.test.mjs` |
-| 描画と後始末（animation frame、DOM canvas だけの再描画、revision、media の失効、teardown、raster object の大きさ） | — | `pano_preview_runtime.js` `attachPanoramaPreviewImpl`、`web_src/pano_preview_video.js` `isNodeOutputMediaCurrent`・`isTrackedMediaInputConnectionChange`、`web_src/pano_surface_paint.js` `surfacePaintLayers`、`web_src/pano_raster_object_surface.js` `resolveRasterPreviewSize`・`createRasterObjectSurfaceCache` | `tests/pano_cutout_node_surface_contract.test.mjs`、`tests/pano_stickers_node_surface_contract.test.mjs`、`tests/pano_preview_video.test.mjs`、`tests/pano_raster_object_surface.test.mjs` |
-| `port` の Sticker の素材の読み込みと実行の一致 | — | `pano_stickers_node_surface.js` `reconcilePortStickerState`、`web_src/pano_editor_ui_state.js` `stickerParamEnabled`、`web_src/editor/external_stickers.js`（素材の読み込みでインスペクタを更新） | `tests/pano_stickers_node_surface.test.mjs`、`tests/pano_editor_ui_state.test.mjs`、`tests/pano_studio_node_surface_contract.test.mjs` |
+| wheel の捕捉（旧ノードと Preview の Scene のビューアが使う） | — | `web_src/pano_interaction_controller.js` `createPanoInteractionController`、`web_src/pano_wheel.js` `PANO_FOV_WHEEL_STEP_DEG`・`bindWheelCaptureRoot` | `tests/pano_wheel.test.mjs` |
+| 表示フレームと背景の VIDEO・`port` の素材 | — | `web_src/pano_node_playback.js` `createNodePlayback`・`createSoloPlayback`（同時に再生するのは一つのノード）、`web_src/pano_stickers_node_surface.js` `NODE_SURFACE_FRAME`、`pano_preview_runtime.js` `backgroundVideoSources`・`portStickerMedia`・`surfaceTimelineMedia` | `tests/pano_node_playback.test.mjs` |
+| 見えないときとエディタを開いている間 | — | `pano_node_playback.js` `surfaceShown`、`web_src/pano_node_bridge.js` `editorOpen`、`pano_preview_runtime.js` `attachPanoramaPreviewImpl`（`syncSurfacePlayback`） | `tests/pano_node_playback.test.mjs`、`tests/pano_node_bridge.test.mjs`、`tests/browser/studio_node_surface.spec.js`（深度の格子の色の VIDEO） |
+| 描画と後始末（animation frame、DOM canvas だけの再描画、revision、media の失効、teardown、raster object の大きさ） | — | `pano_preview_runtime.js` `attachPanoramaPreviewImpl`、`web_src/pano_preview_video.js` `isNodeOutputMediaCurrent`・`isTrackedMediaInputConnectionChange`、`web_src/pano_surface_paint.js` `surfacePaintLayers`、`web_src/pano_raster_object_surface.js` `resolveRasterPreviewSize`・`createRasterObjectSurfaceCache` | `tests/pano_preview_video.test.mjs`、`tests/pano_raster_object_surface.test.mjs` |
+| `port` の Sticker の素材の読み込みと実行の一致 | — | `pano_stickers_node_surface.js` `reconcilePortStickerState`、`web_src/pano_editor_ui_state.js` `stickerParamEnabled`、`web_src/editor/external_stickers.js`（素材の読み込みでインスペクタを更新） | `tests/pano_stickers_node_surface.test.mjs`、`tests/pano_editor_ui_state.test.mjs` |
 
 ## 表示の構成
 
@@ -35,8 +35,9 @@ Panorama Studio（`PanoramaStudio`）のノード上の表示（node surface）�
 
 - Node 2.0 と Legacy node renderer で同じ DOM surface 実装を使う。
 - canvas は node の利用可能領域を満たし、縦横 resize へ追従する。surface の大きさは出力の比で変わらない。
-- 置くのは三つだけ：撮る Camera の出力の絵、絵の下の中央に浮かせた `Open Studio` のボタン、絵の下の一行（左に撮り方、右に出力の大きさ）。
-  Sticker の選択・drag・削除、画像の追加と drop、Delete / Backspace、再生ボタン、見回しは持たない（ADR 0029・0049）。
+- 置くのは四つだけ：撮る Camera の出力の絵、絵の下の中央に浮かせた `Open Studio` のボタン、再生できるときだけその左に並べる再生の
+  ボタン（下の「再生のボタン」）、絵の下の一行（左に撮り方、右に出力の大きさ）。
+  Sticker の選択・drag・削除、画像の追加と drop、Delete / Backspace、再生位置の線と頭出し、見回しは持たない（ADR 0029・0049・0052）。
 - 置き方（`web_src/pano_studio_surface.js` の `studioSurfaceLayout`、値の名前は `docs/design.md`）：surface（widget の下からノードの下の端まで）
   を一つの箱とする。絵は出力の比（Panorama 360° は 2 : 1、180° は 1 : 1、Frame は出る大きさの幅 : 高さ）のまま、箱の幅と、高さから一行の分
   （`STUDIO_LINE_HEIGHT` と `STUDIO_LINE_GAP`）を除いた高さに収まる最大の大きさにする（contain）。絵と一行をひとまとまりとして、箱の上下と
@@ -44,12 +45,15 @@ Panorama Studio（`PanoramaStudio`）のノード上の表示（node surface）�
   箱の残り（絵と一行の外）は塗らず、ノードの地をそのまま見せる（`STUDIO_SURFACE_FILL` は透明。持ち主の決定、2026-10-30：暗い地は重い）。一行の文字は ComfyUI のテーマ（ライト・ダーク）に従う。
   絵の角は丸める。ノードを縦にも横にも大きくすると、絵は箱に収まる最大の大きさに広がり、中央に留まる。
 - 一行は surface の暗い地の上に出るので、ComfyUI のテーマがライトでもダークの文字の値で書く（読めるように）。
-- ボタンは絵の下の辺から `STUDIO_BUTTON_INSET` 上、左右の中央に、いつも出す（ポインタを載せたときだけ出すことはしない）。
+- ボタンは絵の下の辺から `STUDIO_BUTTON_INSET` 上に、いつも出す（ポインタを載せたときだけ出すことはしない）。再生のボタンがあるときは、
+  再生のボタンと `Open Studio` を間 `STUDIO_BUTTON_GAP` で並べた一つの群として左右の中央に置き、無いときは `Open Studio` だけを左右の中央に置く。
+  群が絵の幅に収まらないときは、`Open Studio` の文字を外して 30px の丸いアイコンだけのボタンにする（tooltip は「Open Studio」。持ち主、2026-10-31）。
+  どちらの形にするかと群の左端は `studioSurfaceLayout` が決める（`playable` を受ける）。
   アイコン（maximize）と `Open Studio` の文字。押すとエディタを開く（先に再生を一時停止する）。
 - 一行の左は撮り方のアイコン（Panorama は 360° のアイコン、Frame は比のアイコン）と撮り方の名前、右は出力の大きさ。長いときは
   左の名前を省略記号で切り、大きさは切らない。
 - Vue mount 成功後だけ標準 `Open Studio Editor` widget を隠す。mount 失敗時は標準 widget を表示したままとし、editor への導線を失わない。
-- overlay のうちボタンと出力の大きさ（上限の tooltip を出す）以外は canvas の操作を遮らない（`pointer-events: none`）。
+- overlay のうちボタン（`Open Studio` と再生）と出力の大きさ（上限の tooltip を出す）以外は canvas の操作を遮らない（`pointer-events: none`）。
 - ノード上の表示は新しい UI の stylesheet（`web/pano_studio.css`）を読み込み、overlay の root に `.pano-studio` を付けてその値を使う。
   ライトとダークは ComfyUI のテーマに従う（`docs/design.md`）。
 
@@ -61,11 +65,16 @@ Panorama Studio（`PanoramaStudio`）のノード上の表示（node surface）�
     の「Panorama モードの ERP の表示」）。Camera の `erp_range` の範囲で、平らな ERP として描く（見回さない）。
   - Frame モード：Camera の枠の絵（`outputFrameInput`）。レンズの曲線 κ ≠ 1 の Camera はレンズの像として描く。
   - どちらも地面のグリッドは描かない（編集の印なので、出力に無い）。
-- 描く物は、エディタと同じ作り方（`web_src/studio/stage_content.js` の `stageContent`）で、表示フレームの次のものとする：背景
-  （Clip range の外と素材が終わった先は `background_color`、背景が無いときも `background_color`。出力と同じ）、sky の Sticker とペイント
-  （同じ表示順）、`world` の画像の Sticker、3D ファイルの Sticker（エディタと同じ route で読む）、`world` 入力の 3D（実行結果の
-  `pano_scene_files`）、`port` の Sticker（画像と、実行結果の 3D）。
-  上流の Scene（`scene` 入力の `PANO_SCENE`）の層と深度の格子の 3D はまだ描かない（ADR 0049。描くまでは実行の結果と違う）。
+- 描く物は、エディタの Output の小窓と同じ：エディタで見える物は、ノード上でもそのまま見える（ADR 0052。持ち主の決定、2026-10-31）。
+  作り方はエディタと同じ（`web_src/studio/stage_content.js` の `stageContent`）で、表示フレームの物を描く：背景（Clip range の外と素材が
+  終わった先は `background_color`、背景が無いときも `background_color`。出力と同じ）、sky の Sticker とペイント（同じ表示順）、`world` の
+  画像の Sticker、3D ファイルの Sticker（エディタと同じ route で読む）、`world` 入力の 3D（実行結果の `pano_scene_files`）、深度の格子
+  （`kind` が `depth_grid` の列。`docs/studio-ui.md` の「ノードの入力から来た物」と同じく、入力ごとの色のプロキシの動画を表示フレームに
+  合わせて描き、色が届くまでその要素は描かない。ノード上には一行の知らせが無いので、色を待つ間と大きすぎる要素の知らせは出さず、
+  その要素が無い絵を出す）、`port` の Sticker（画像と、実行結果の 3D）、上流の Scene（`scene` 入力の `PANO_SCENE`）の層。
+- エディタが描いてノード上が描かない物を作らない。エディタで新しく描く物を足すときは、同じ変更でノード上にも足す（足せない理由が
+  あるときは、ここにその物と理由を書く）。編集の印（地面のグリッド、選択、ギズモ、Camera の印）は出力に無いので、どちらも Output の
+  小窓とノード上には描かない。
 - 描く大きさは絵の箱の大きさ（canvas の画素）で、出力の大きさでは描かない。
 - 描き直すのは、描く物が変わりうるときだけ：`state_json` の変更、widget（`background_color`・`background_range`・`megapixels`・`multiple`）
   の変更、入力の接続の変更、実行結果（`executed`）、素材の読み込み、表示フレームの VIDEO の絵、surface の大きさの変更。それ以外の
@@ -110,7 +119,7 @@ Timeline のフレーム（表示フレーム）の背景の VIDEO と `port` �
 
 - node surfaceが表示するフレーム（表示フレーム）はノードごとの一時状態で、`state_json` にも
   `node.properties` にも保存しない。最初は frame 0 で、reloadやworkflowを開き直すと frame 0 に戻る。
-  再生ボタンが無いので（ADR 0029）、表示フレームは frame 0 のままである。
+  再生のボタンで再生すると進み、一時停止したフレームのまま残る（下の「再生のボタン」）。
 - 背景のVIDEOは、ノードの実行結果の `pano_input_videos`（`bg_media` が2フレーム以上のとき）か、上流の
   LoadVideoが読むファイルで、エディタと同じ候補順で選ぶ（`backgroundVideoSources`）。読めないVIDEOは次の候補へ進む。シークバーや時刻表示は出さない。
   読めなかったVIDEOのURLは、候補から一度消えたら（再実行や接続変更）もう一度試す。
@@ -132,17 +141,29 @@ Timeline のフレーム（表示フレーム）の背景の VIDEO と `port` �
 
 ### 再生の部品
 
-`createNodePlayback` は再生と一時停止を持つが、Panorama Studio の表示には再生ボタンが無く、表示は再生（`toggle`）を呼ばない（`follow`・`pause` は呼ぶ）。
+`createNodePlayback` は再生と一時停止を持ち、Panorama Studio の表示は再生のボタンで `toggle` を呼ぶ（`follow`・`pause` も呼ぶ）。
 部品の規則は次のとおり（`tests/pano_node_playback.test.mjs`）。
 
-- 再生できるのは、sceneが時間を持つとき（エディタのタイムラインと同じ `isTimed`）か、背景のVIDEOがあるとき、
-  `port` のStickerの素材があるときだけ。1 フレームの Timeline では再生しない。
+- 再生できるのは、エディタと同じく Timeline の長さが 1 フレームより長いときだけ（`docs/timeline-ui.md` の「再生できるか」。長さは
+  `docs/studio-node.md` の出力の長さで、この文書の上の「Timeline の長さ」と同じ入力から求める）。
 - 再生は表示フレームから Timeline fps で進み、Timeline の終わりで frame 0 に戻って繰り返す。
 - 一時停止は画面に出ているフレームで止まる（エディタの停止と同じ規則：一時停止したVIDEOが表示する
   PTS ≤ currentTime のフレームに再生ヘッドと静止画を合わせ、シークしない。ADR 0024）。もう一度再生するとそのフレームから続ける。
 - 再生していないときはrAFもvideo frame callbackも持たない。再生中は表示されたVIDEOフレーム（VIDEOがないときは
   時計）ごとに1回描く。
 - `Open Studio` を押すと、先に再生を一時停止する。
+
+### 再生のボタン
+
+- 再生できるときだけ出す。再生できないノードには出さず、席も取らない（`Open Studio` だけが真ん中に来る）。
+- 30px の丸い浮かせる部品で、`Open Studio` の左に並べる（上の「表示の構成」）。アイコンは止まっているとき再生の形、再生中は一時停止の形
+  （状態はアイコンの形で示す。`docs/agents/ux-principles.md` の例外と同じ）。tooltip は「Play」「Pause」。
+- 押すと `createNodePlayback` の `toggle`。終わりで frame 0 に戻って繰り返し、一時停止は画面に出ているフレームで止まる（上の「再生の部品」）。
+- キー（Space など）は持たない（ノードの上で ComfyUI のキーを奪わない）。再生位置の線、時刻、頭出しは出さない（持ち主の決定、2026-10-31：
+  簡単にする。頭出しはエディタで）。
+- 再生中は音を出さない（背景の VIDEO は muted のまま）。
+- 同時に再生できるのは一つのノードだけ。別の Panorama Studio のノードで再生すると、前に再生していたノードは一時停止する（持ち主、2026-10-31。
+  ノード上は three.js のビューを全ノードで共有し、深度の格子と動画を複数のノードで毎フレーム描くと重いため）。
 
 ## 見えないときとエディタを開いている間
 
@@ -152,10 +173,11 @@ Timeline のフレーム（表示フレーム）の背景の VIDEO と `port` �
   すぐに、また描画のたびに確かめる。node remove / graph clear では状態機械、VIDEO要素、
   rAF / video frame callbackを破棄する。VIDEO要素は src を外して `load()` し、デコーダをすぐ放す
   （要素そのものはGCまで残り、診断の `video.alive` に数えられるが、`video.loaded` には入らない）。
-  静止画のキャンバス2つも大きさを0にする。
+  静止画のキャンバス2つも大きさを0にする。深度の格子の色の VIDEO（入力ごとに 1 本、上流の層の分も）も同じく src を外して放し
+  （`createDepthColors` の `retain([])`）、見えるようになると読み直す。上流の層の読み込んだ素材は、背景の静止画と同じく放す。
 - そのノードのエディタを開いている間（`pano_node_bridge.js` の `editorSession(node).open`、`editorOpen(node)`）も、
   モーダルがsurfaceを覆うので見えないものとして扱う。エディタが同じ1080pのVIDEOを自分で再生するので、
-  surfaceはVIDEOのsrcを外し、静止画を放し、描かずに共有ビューのテクスチャを放す（`surfaceView.release()`）。
+  surfaceはVIDEOのsrc（背景・`port` の素材・深度の格子の色）を外し、静止画と上流の層の素材を放し、描かずに共有ビューのテクスチャを放す（`surfaceView.release()`）。
   collapse したsurfaceも描かないので、同じくテクスチャを放す。エディタを閉じると同じ表示フレームから読み直す。
   解像度や品質は落とさない（重複を持たないだけ）。
 

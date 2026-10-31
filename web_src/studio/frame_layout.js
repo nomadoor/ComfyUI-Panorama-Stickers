@@ -6,8 +6,11 @@ import { FINE_FACTOR } from "./ui_drag.js";
 
 // The stage's margins around the area the frame is fitted into, in CSS px. The top keeps 30px clear under the tabs
 // (16 + 42 + 30); left and right keep the edge rulers' numbers clear of the left column and the view knobs
-// (docs/design.md "大きさ": 16 + 46 + 12 + 61 + 14, rounded up to 150).
-export const CAMERA_FRAME_MARGIN = Object.freeze({ left: 150, right: 150, top: 88, bottom: 84 });
+// (docs/design.md "大きさ": 16 + 46 + 12 + 61 + 14, rounded up to 150); the bottom keeps the bar at the bottom center's
+// seat under the Roll ruler, shown or not, so selecting does not move the frame (docs/design.md "Camera タブのフレームの
+// 余白", ADR 0051: 16 + 44 (the bar: a 32px button and 6px above and below) + 10 + 11 (the Roll ruler's numbers, right
+// under its strip) + 22 (the strip) + 12 = 115).
+export const CAMERA_FRAME_MARGIN = Object.freeze({ left: 150, right: 150, top: 88, bottom: 115 });
 
 // The edge rulers' scales: px per unit, the units between two small ticks, between two numbered ticks, and the
 // decimals of the numbers (provisional, chosen against frame-4.html: a small tick every 8px, a number every 80px);
@@ -115,7 +118,7 @@ export function rulerSnapStep(value, dir, snap, { min = -Infinity, max = Infinit
   return Math.min(max, Math.max(min, next)) + 0;
 }
 
-// The edge rulers of the Camera tab from the Camera card (inspector_model.js buildInspectorModel with tab "camera"): the
+// The edge rulers of the Camera tab from the Camera card (inspector_model.js buildCameraCard): the
 // FOV ruler is its H FOV row, Lens its Lens row, Roll the Roll of its Rotation row, so their values, ranges, the
 // Keyframe dots' states (docs/timeline-ui.md "インスペクタの Keyframe のポチ": `fov`, `curve`, `rotation`) and what is
 // grayed (Panorama mode, a locked Camera, a read-only editor) are the card's. Each ruler: { name, row, field, value,

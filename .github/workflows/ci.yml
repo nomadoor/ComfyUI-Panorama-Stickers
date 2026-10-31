@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [dev, main]
+  push:
+    branches: [dev]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # The ComfyUI core the Python tests import. Keep it at the version the owner develops against.
+  COMFYUI_REF: v0.42.0
+  NODE_VERSION: "22"
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  node:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: node --test tests/*.test.mjs
+      - name: Bundle in web/ matches web_src/
+        run: npm run check:web
+
+  py:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: pst
+      - uses: actions/checkout@v4
+        with:
+          repository: comfyanonymous/ComfyUI
+          ref: ${{ env.COMFYUI_REF }}
+          path: ComfyUI
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: ComfyUI/requirements.txt
+      # Some tests run the editor's JS helpers through node and read three.js from node_modules.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: pst/package-lock.json
+      - run: npm ci --no-audit --no-fund
+        working-directory: pst
+      # CPU wheels first, so that ComfyUI's requirements do not pull the CUDA builds of torch and torchvision.
+      - run: pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+      - run: pip install -r ComfyUI/requirements.txt pytest
+      # Most test modules importorskip the core: fail here instead of letting them all skip quietly.
+      - name: ComfyUI core imports
+        working-directory: pst
+        env:
+          PYTHONPATH: ${{ github.workspace }}/ComfyUI:${{ github.workspace }}/pst/tests
+        run: python -c "from comfy_cpu import use_cpu_without_cuda; use_cpu_without_cuda(); import folder_paths, comfy.model_management, comfy_api.latest, comfy_extras.nodes_gaussian_splat"
+      - name: pytest
+        working-directory: pst
+        env:
+          PYTHONPATH: ${{ github.workspace }}/ComfyUI
+        run: python -m pytest -q -rs

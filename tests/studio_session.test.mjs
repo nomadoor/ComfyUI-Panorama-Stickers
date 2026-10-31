@@ -464,3 +464,117 @@ test("a painting edit is one Undo step and drops the painting layer; Clear takes
   const readOnly = createStudioSession({ state: load({}), readOnly: true });
   assert.equal(readOnly.editPainting(() => true).changed, false);
 });
+
+// --- The paint groups (docs/studio-ui.md "ペイントのまとまり"): a stroke group is selected as `paint_group:<actionGroupId>`,
+// a paint raster object as `raster:<id>`.
+
+const paintPoints = (u, v) => [{ u, v }, { u: u + 0.02, v }];
+function paintStroke(id, gid, u = 0.5, v = 0.5) {
+  const points = paintPoints(u, v);
+  return { id, actionGroupId: gid, layerKind: "paint", toolKind: "pen", size: 10, opacity: 1, color: { r: 1, g: 0, b: 0, a: 1 }, targetSpace: { kind: "ERP_GLOBAL" }, geometry: { geometryKind: "freehand_open", points, rawPoints: points, processedPoints: points } };
+}
+function paintRaster(id, extra = {}) {
+  return { id, type: "raster_frozen", layerKind: "paint", rasterDataUrl: "data:image/png;base64,AAAA", bbox: { u0: 0.2, v0: 0.2, u1: 0.3, v1: 0.3 }, ...extra };
+}
+function paintedState(extra = {}) {
+  return load({
+    stickers: [sky("s", { z_index: 1 })],
+    painting: {
+      groups: [{ id: "g1", actionGroupId: "g1", z_index: 0 }, { id: "g2", actionGroupId: "g2", z_index: 2 }],
+      paint: { strokes: [paintStroke("st1", "g1"), paintStroke("st2", "g2", 0.6)] },
+      raster_objects: [paintRaster("r1", { z_index: 3 })],
+    },
+    painting_layer: { paint: { filename: "x.png" } },
+    ...extra,
+  });
+}
+// The Sky's display list from back to front, as ids.
+function skyOrder(state) {
+  const entries = [
+    ...state.stickers.filter((item) => item.placement === "sky").map((item) => ({ id: item.id, z: item.z_index })),
+    ...state.painting.groups.map((group) => ({ id: `paint_group:${group.actionGroupId}`, z: group.z_index })),
+    ...state.painting.raster_objects.map((item) => ({ id: `raster:${item.id}`, z: item.z_index })),
+  ];
+  return entries.sort((a, b) => a.z - b.z).map((entry) => entry.id);
+}
+
+test("a paint group's row is selected while it is in the state, shows the Paint card, and goes when Undo takes it", () => {
+  const session = createStudioSession({ state: paintedState() });
+  assert.equal(session.selectObject("paint_group:g2"), true);
+  assert.equal(session.selection.row, "paint_group:g2");
+  assert.deepEqual(inspectorSelection(session.selection), { ids: [], paint: true, keyframes: null });
+  assert.equal(session.selectObject("raster:r1"), true);
+  assert.equal(session.selectObject("raster:nope"), true, "a row that is not there lets the selection go");
+  assert.equal(session.selection.row, null);
+  assert.equal(session.selectObject("paint_group:nope"), false);
+  // A stroke of no group of the painting is a group of its own (pano_paint_strokes.js syncPaintGroups): selectable, not written.
+  const loose = createStudioSession({ state: load({ painting: { paint: { strokes: [paintStroke("st9", "g9")] } } }) });
+  assert.equal(loose.selectObject("paint_group:g9"), true);
+  assert.deepEqual(loose.state.painting.groups, []);
+  // Undo takes the group away: its selection goes (keepSelection).
+  const undo = createStudioSession({ state: load({}) });
+  undo.editPainting((draft) => {
+    draft.painting.paint.strokes.push(paintStroke("st1", "g1"));
+    return true;
+  });
+  undo.selectObject("paint_group:g1");
+  undo.undo();
+  assert.equal(undo.selection.row, null);
+});
+
+test("Bring to front and Send to back order the whole Sky axis: the sky images, the stroke groups and the raster objects, numbered again", () => {
+  const session = createStudioSession({ state: paintedState() });
+  assert.deepEqual(skyOrder(session.state), ["paint_group:g1", "s", "paint_group:g2", "raster:r1"]);
+  session.selectObject("paint_group:g1");
+  let outcome = session.orderSelected("front");
+  assert.deepEqual([outcome.changed, outcome.history], [true, true]);
+  assert.deepEqual(skyOrder(session.state), ["s", "paint_group:g2", "raster:r1", "paint_group:g1"]);
+  assert.deepEqual([session.state.stickers[0].z_index, ...session.state.painting.groups.map((group) => group.z_index)].sort(), [0, 1, 3]);
+  assert.equal(session.state.painting_layer, null, "a changed painting drops its uploaded layer");
+  assert.equal(session.orderSelected("front").changed, false, "already in front: no step");
+  // A sky image's order puts it among the paint too.
+  session.selectObject("s");
+  session.orderSelected("front");
+  assert.deepEqual(skyOrder(session.state), ["paint_group:g2", "raster:r1", "paint_group:g1", "s"]);
+  session.selectObject("raster:r1");
+  session.orderSelected("back");
+  assert.deepEqual(skyOrder(session.state), ["raster:r1", "paint_group:g2", "paint_group:g1", "s"]);
+  session.undo();
+  assert.deepEqual(skyOrder(session.state), ["paint_group:g2", "raster:r1", "paint_group:g1", "s"]);
+});
+
+test("Lock turns a paint group's lock over as one step; a locked group is neither ordered nor deleted", () => {
+  const session = createStudioSession({ state: paintedState() });
+  session.selectObject("paint_group:g1");
+  assert.equal(session.toggleLock().changed, true);
+  assert.equal(session.state.painting.groups.find((group) => group.actionGroupId === "g1").locked, true);
+  assert.deepEqual(session.state.painting_layer, { paint: { filename: "x.png" } }, "the lock is the editor's own: the uploaded layer stays");
+  assert.equal(session.orderSelected("front").changed, false);
+  assert.deepEqual(session.deleteSelectedObject(), { changed: false, notice: null });
+  assert.equal(session.state.painting.paint.strokes.length, 2);
+  session.selectObject("raster:r1");
+  session.toggleLock();
+  assert.equal(session.state.painting.raster_objects[0].locked, true);
+  session.undo();
+  assert.equal(session.state.painting.raster_objects[0].locked, false);
+  // A loose stroke's group is written when its lock changes.
+  const loose = createStudioSession({ state: load({ painting: { paint: { strokes: [paintStroke("st9", "g9")] } } }) });
+  loose.selectObject("paint_group:g9");
+  loose.toggleLock();
+  assert.deepEqual(loose.state.painting.groups.map((group) => [group.actionGroupId, group.locked]), [["g9", true]]);
+});
+
+test("Delete takes a stroke group's strokes and entry, or a raster object, as one step, and lets the selection go", () => {
+  const session = createStudioSession({ state: paintedState() });
+  session.selectObject("paint_group:g2");
+  assert.deepEqual(session.deleteSelectedObject(), { changed: true, notice: null });
+  assert.deepEqual(session.state.painting.paint.strokes.map((stroke) => stroke.id), ["st1"]);
+  assert.deepEqual(session.state.painting.groups.map((group) => group.actionGroupId), ["g1"]);
+  assert.equal(session.selection.row, null);
+  assert.equal(session.state.painting_layer, null);
+  session.selectObject("raster:r1");
+  session.deleteSelectedObject();
+  assert.deepEqual(session.state.painting.raster_objects, []);
+  session.undo();
+  assert.equal(session.state.painting.raster_objects.length, 1);
+});

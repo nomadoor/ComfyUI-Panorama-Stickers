@@ -1,6 +1,6 @@
 // The new editor (web_src/studio/editor.js) on a stand-in Panorama Studio node for tests/browser/studio_camera_wired.spec.js
 // and the side-by-side with design-drafts/frame-4.html: the Camera tab wired into the stage. The state has a turned and
-// rolled Camera (?mode=frame|panorama, ?aspect=16:9|1:1|9:16, ?pitch= its pitch in degrees instead of CAMERA's, ?curve= its lens κ), four World image planes of pure colors around the Camera
+// rolled Camera (?mode=frame|panorama, ?aspect=16:9|1:1|9:16, ?mp= its megapixels widget, ?pitch= its pitch in degrees instead of CAMERA's, ?curve= its lens κ), four World image planes of pure colors around the Camera
 // (front red, right green, back blue, left yellow), a magenta sky image, and a background ERP with stripes. ComfyUI is
 // not used. The page reports through window.__studio.
 import { editorSession } from "/web_src/pano_node_bridge.js";
@@ -86,6 +86,8 @@ const STATE = {
 const studio = (window.__studio = { ready: false, error: null });
 const storage = new Map();
 const memoryStorage = { getItem: (key) => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, String(value)) };
+// ?keptOutput= an Output window width kept by an earlier version (folded).
+if (params.has("keptOutput")) storage.set("PanoramaSuite.Studio.outputWindow", JSON.stringify({ width: Number(params.get("keptOutput")), collapsed: true }));
 
 try {
   const url = await makeErp();
@@ -96,8 +98,14 @@ try {
     __panoStudio: true,
     __panoSceneStateV2: true,
     inputs: [{ name: "bg_media", link: 1 }],
-    widgets: [{ name: "state_json", value: JSON.stringify(STATE) }],
+    // ?mp= the megapixels widget (the Output window's line reads it when the editor opens).
+    widgets: [
+      { name: "state_json", value: JSON.stringify(STATE) },
+      { name: "megapixels", value: Number(params.get("mp") ?? 2) },
+      { name: "multiple", value: 8 },
+    ],
     graph: { getNodeById: (id) => (id === 7 ? origin : null) },
+    isInputConnected: (index) => index === 0,
     getInputLink: (index) => (index === 0 ? { origin_id: 7, origin_slot: 0 } : null),
     getInputNode: (index) => (index === 0 ? origin : null),
   };

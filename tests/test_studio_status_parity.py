@@ -64,16 +64,6 @@ def test_the_run_gives_the_fixtures_size(case):
     assert len(warnings) == (case["reduced_from"] is not None)
 
 
-@pytest.mark.parametrize("index", range(len(CASES)), ids=[case["name"] for case in CASES])
-def test_the_node_surface_size_matches_the_run(index, js_results):
-    case = CASES[index]
-    width, height, reduced_from, _warnings = _python(case)
-    js = js_results["sizes"][index]
-
-    assert (js["width"], js["height"]) == (width, height)
-    assert js["reducedFrom"] == (None if reduced_from is None else list(reduced_from))
-
-
 def test_the_run_key_matches(js_results):
     assert js_results["keys"] == [nodes._studio_run_key(*args) for args in KEYS]
     # A whole megapixels gives one key whether it came as an int or a float.

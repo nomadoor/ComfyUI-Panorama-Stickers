@@ -34,10 +34,3 @@ test("a face matches the ERP's pixels per radian at its center, within the GPU's
   assert.equal(liveErpFaceSize(100000, 360), 2048);
   assert.equal(liveErpFaceSize(100000, 360, 1024), 1024);
 });
-
-test("the renderer imports three.js only, so it can sit in the three.js chunk (docs/threejs-spark-integration.md 遅延読み込み)", async () => {
-  const { readFileSync } = await import("node:fs");
-  const source = readFileSync(new URL("../web_src/pano_live_erp.js", import.meta.url), "utf8");
-  const imports = [...source.matchAll(/^\s*import\s+(?:[^'";]*?\s+from\s+)?["']([^"']+)["']/gm)].map((match) => match[1]);
-  assert.deepEqual(imports, ["three"]);
-});

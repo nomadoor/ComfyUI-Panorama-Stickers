@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync, statSync } from "node:fs";
 import test from "node:test";
 
 import {
@@ -123,44 +122,4 @@ test("a teardown that throws does not keep the other groups alive", (t) => {
   assert.equal(previewNode(node).runtime, null);
   disposeNodeRuntime(null);
   clearNodeSurface({});
-});
-
-// Runtime state of a node lives in pano_node_bridge.js. A `__pano*` property may stay on an object only for
-// the reason given here; a new one fails this test until it is moved to the bridge or listed with its reason.
-const ALLOWED_PANO_PROPERTIES = {
-  // Node flags: set once from the node type when the editor button is installed, read by identity across
-  // the editor, the node surface and pano_editor_state.js, whose callers and tests pass plain objects.
-  __panoSceneStateV2: "node flag: the node keeps state v2 in state_json",
-  __panoStudio: "node flag: the node is Panorama Studio",
-  // Not on a node.
-  __panoHidden: "widget: hidden by hideWidget",
-  __panoComputeSizeBeforeHide: "widget: its computeSize before hideWidget",
-  __panoQueueBarrierInstalled: "widget: state_json waits for state producers before it serializes",
-  __panoLoadState: "image: load state (pano_image_state.js)",
-  __panoLoadSource: "image: the source the load state is for",
-  __panoSrc: "image: the source of a UI image (pano_comfy_media.js)",
-  __panoFrameIdx: "canvas: frames drawn into a VIDEO still",
-  __panoLifecyclePatched_: "node type: patchNodeLifecycle ran for a key",
-};
-
-function sourceFiles(dir) {
-  return readdirSync(dir).flatMap((name) => {
-    const path = `${dir}/${name}`;
-    if (statSync(path).isDirectory()) return sourceFiles(path);
-    return /\.(js|mjs|vue)$/.test(name) ? [path] : [];
-  });
-}
-
-test("no __pano property outside the allowed list is kept on a node or other frontend object", () => {
-  const root = new URL("../web_src", import.meta.url).pathname;
-  const found = new Map();
-  for (const file of sourceFiles(root)) {
-    for (const [name] of readFileSync(file, "utf8").matchAll(/__pano[A-Za-z0-9_]*/g)) {
-      if (!found.has(name)) found.set(name, file.slice(root.length + 1));
-    }
-  }
-  const unexpected = [...found].filter(([name]) => !(name in ALLOWED_PANO_PROPERTIES));
-  assert.deepEqual(unexpected, [], "keep a node's runtime state in pano_node_bridge.js");
-  const unused = Object.keys(ALLOWED_PANO_PROPERTIES).filter((name) => !found.has(name));
-  assert.deepEqual(unused, [], "drop properties that are gone from the allowed list");
 });

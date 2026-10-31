@@ -11,7 +11,6 @@ import { createSidePanelEvents } from "../web_src/editor/side_panel_events.js";
 import { createUpstream } from "../web_src/editor/upstream.js";
 import { setStickerPose } from "../web_src/pano_editor_state.js";
 import { loadSceneState, sceneStateText } from "../web_src/pano_scene_state.js";
-import { readEditorSource } from "./editor_source.mjs";
 
 // The browser parts the module makes: images (counted by URL), and the port VIDEO and its still.
 function browserStubs() {
@@ -810,8 +809,6 @@ test("an Undo step prunes the overrides of elements gone upstream while the resu
 });
 
 test("the editor's first Undo step at boot prunes nothing, so opening and closing writes nothing over stale overrides", () => {
-  // The boot (pano_editor.js) adds its first step as the initial one.
-  assert.match(readEditorSource(), /runBootStep\("history", \(\) => pushHistory\(\{ initial: true \}\)\)/);
   browserStubs();
   try {
     const text = sceneStateText(loadSceneState({
@@ -1399,4 +1396,15 @@ test("the Easing panel shows only for Keyframes the Timeline can change", async 
   } finally {
     restore();
   }
+});
+
+test("the old editor: a one-point stroke's dot is its body (move), though a frame corner lies within the handles' reach", () => {
+  const hit = createHitTest({ editor: { mode: "pano" }, readOnly: false, shotEditor: false, type: "stickers" });
+  hit.connect({ isStickerItem: () => false, isShotItem: () => false });
+  const corners = [{ x: 96, y: 96 }, { x: 104, y: 96 }, { x: 104, y: 104 }, { x: 96, y: 104 }];
+  const dot = { kind: "strokeGroup", visible: true, center: { x: 100, y: 100 }, corners, strokePaths: [{ points: [{ x: 100, y: 100 }], lineWidth: 20 }] };
+  assert.equal(hit.handleHit(dot, { x: 100, y: 100 }).kind, "move");
+  // A stroke with a line keeps its corner handles.
+  const line = { ...dot, strokePaths: [{ points: [{ x: 96, y: 100 }, { x: 104, y: 100 }], lineWidth: 20 }] };
+  assert.equal(hit.handleHit(line, { x: 97, y: 97 }).kind, "scale");
 });

@@ -3,7 +3,7 @@
 // (pano_space_navigation.js), and its Timeline played. Nothing is edited: no gizmo, no selection, no Camera. The node
 // surface (pano_scene_viewer_node.js) and the window (pano_scene_viewer_window.js) draw what it builds.
 import { createPanoCanvas, createPanoVideo, releasePanoCanvas } from "./pano_diagnostics.js";
-import { createDepthColors } from "./pano_depth_color.js";
+import { createDepthColors, withDepthColor } from "./pano_depth_color.js";
 import { bgColorBackground, backgroundClipAt } from "./pano_port_media.js";
 import { clipActive } from "./pano_scene_eval.js";
 import {
@@ -189,10 +189,12 @@ export function createSceneViewer({
   function input() {
     const frame = record.frame;
     const upstream = layers.viewInput(frame);
+    const slots = [];
+    const picture = (slot, video) => depthColors.picture(slot, video, record.playing);
     const items = upstream.items.map((entry) => (entry.request?.kind === "depth_grid"
-      ? { ...entry, request: { ...entry.request, color: depthColorOf(entry.slot, entry.request) } }
+      ? { ...entry, request: withDepthColor(entry.request, entry.slot, picture, slots) }
       : entry));
-    depthColors.retain(items.filter((entry) => entry.request?.kind === "depth_grid").map((entry) => entry.slot));
+    depthColors.retain(slots);
     refreshGoneUpstreamFiles(items, (key) => surface.sceneItemError(key), refreshFile);
     shownItems = items;
     const boxes = items.flatMap(({ request, value }) => {
@@ -216,11 +218,6 @@ export function createSceneViewer({
   // Whether every 3D item of the input built last has loaded or failed, so its picture is the Scene's.
   function itemsLoaded() {
     return shownItems.every(({ request }) => !request?.url || !!surface.sceneBox(request.url) || !!surface.sceneItemError(request.url));
-  }
-
-  function depthColorOf(slot, request) {
-    const color = depthColors.picture(slot, request.video, record.playing);
-    return color && { ...color, slot };
   }
 
   // The playhead and the view at time ts: playback moves on (going round at the end), a transition runs. Returns

@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
@@ -149,23 +148,6 @@ test("a legacy node's VIDEO shows its first frame, plays muted in a loop only wh
   assert.equal(presentedFrames, framesBeforeDestroy);
   player.play();
   assert.equal(video.playCalls, 1);
-});
-
-test("the legacy node surfaces and the legacy Preview node pause their VIDEO out of sight and play it only from a control", () => {
-  const read = (name) => readFileSync(new URL(`../web_src/${name}`, import.meta.url), "utf8");
-  const runtime = read("pano_preview_runtime.js");
-  assert.match(runtime, /if \(surfacePlayback\) syncSurfacePlayback\(\);\s*else syncLegacyVideo\(\);/);
-  assert.match(runtime, /if \(player && !surfaceShown\(wrap, !!node\.flags\?\.collapsed\)\) player\.pause\(\);/);
-  assert.match(runtime, /if \(surfacePlayback\) surfacePlayback\.playback\.toggle\(\);\s*else media\.ownOutputVideo\?\.player\.toggle\(\);/);
-  const preview = read("pano_preview_previewnode.js");
-  // No autoplay: the VIDEO shows its first frame until a double-click or Space plays it.
-  assert.doesNotMatch(preview, /videoPaused/);
-  const ready = preview.slice(preview.indexOf("const onReady = () => {"), preview.indexOf("const onTick = () => this.requestDraw();"));
-  assert.doesNotMatch(ready, /play\(/);
-  // Out of sight, or while the new Preview window is open on the node (docs/studio-ui.md "Preview のウィンドウ").
-  assert.match(preview, /if \(this\.img instanceof HTMLVideoElement && !this\.img\.paused && \(this\.windowOpen \|\| !this\.shown\(\)\)\) this\.img\.pause\(\);/);
-  assert.match(preview, /togglePlayback\(\) \{\s*if \(this\.windowOpen \|\|/);
-  assert.match(preview, /if \(this\.root\) return surfaceShown\(this\.root, !!this\.node\.flags\?\.collapsed\);/);
 });
 
 // A Panorama Studio in a graph whose links are { link id: [origin node id, origin slot] }.

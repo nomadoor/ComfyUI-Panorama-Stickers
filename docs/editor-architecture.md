@@ -13,20 +13,19 @@ Panorama のエディタ（Stickers、Cutout、Panorama Studio、Preview のモ�
 
 | 規則 | Python | JS | test |
 |---|---|---|---|
-| モジュールの形（`createX(deps)` の factory、`connect()` で受け取る名前と `let` の宣言、誰も渡していない名前は投げる） | — | `web_src/editor/modules.js` `createEditorModules`、`web_src/editor/*.js` の `createX` | `tests/editor_architecture.test.mjs`、`tests/editor_wiring.test.mjs`、`tests/editor_modules.test.mjs` |
-| 依存の向き（`pano_editor.js` → `editor/*.js` → ライブラリ。`editor/*.js` は `pano_editor.js`・ComfyUI の `app` / `api`・振る舞いを持つモジュールを import しない） | — | `web_src/editor/*.js` の import | `tests/editor_architecture.test.mjs` |
-| `web_src` の静的な import に循環を作らない | — | `web_src` の `*.js`・`*.vue` の import | `tests/web_src_import_cycles.test.mjs` |
-| モジュールの一覧と配線（各 factory を `createEditorModules` で一度ずつ作る、配線の名前の過不足がない） | — | `web_src/pano_editor.js` の配線の区画、`web_src/editor/*.js` | `tests/editor_architecture.test.mjs`、`tests/editor_wiring.test.mjs`（下の Module map の責任の欄そのものは test しない） |
+| モジュールの形（`createX(deps)` の factory、`connect()` で受け取る名前と `let` の宣言、誰も渡していない名前は投げる） | — | `web_src/editor/modules.js` `createEditorModules`、`web_src/editor/*.js` の `createX` | `tests/editor_wiring.test.mjs`、`tests/editor_modules.test.mjs` |
+| 依存の向き（`pano_editor.js` → `editor/*.js` → ライブラリ。`editor/*.js` は `pano_editor.js`・ComfyUI の `app` / `api`・振る舞いを持つモジュールを import しない） | — | `web_src/editor/*.js` の import | `tests/architecture.test.mjs` |
+| `web_src` の静的な import に循環を作らない | — | `web_src` の `*.js`・`*.vue` の import | `tests/architecture.test.mjs` |
+| モジュールの一覧と配線（各 factory を `createEditorModules` で一度ずつ作る、配線の名前の過不足がない） | — | `web_src/pano_editor.js` の配線の区画、`web_src/editor/*.js` | `tests/architecture.test.mjs`、`tests/editor_wiring.test.mjs`（下の Module map の責任の欄そのものは test しない） |
 | キャンバスのポインターの操作の振り分け（押したときに始める操作を決める順、`editor.interaction.kind` ごとの動き・離す・取り消す、操作ごとのモジュール） | — | `web_src/editor/pointer_input.js`、`web_src/editor/pointer_*.js` | `tests/editor_pointer_input.test.mjs` |
 | 描き直しは `requestDraw` からだけ頼む | — | `web_src/editor/render_loop.js` `requestDraw`・`tickFrame`・`drawScene` | — |
 | エディタのタイマーと閉じるときの片付け（タイマーを全部止める、閉じた後の `requestDraw` は何もしない、背景の VIDEO の `src` を放す） | — | `web_src/pano_timers.js` `createTimers`、`web_src/pano_editor.js` の閉じる処理、`editor/render_loop.js` `stopRenderLoop`、`editor/media_session.js` `disposeMediaSession` | — |
 | ストロークの記録と確定（筆の色、記録の形、点の間引きと `processedPoints`、ラスタ化、ストロークのまとまりと `z_index`、消しゴムがラスタに変えること）。古い UI と新しい UI が同じ関数で書くので、二つが書く `painting` は同じ形 | 比べ先は `core/painting.py`（同じ `painting` を描く） | `web_src/pano_paint_strokes.js`（古い UI は `editor/paint_input.js`・`paint_strokes.js`・`items.js` が、新しい UI は `studio/paint.js` が呼ぶ） | `tests/pano_paint_strokes.test.mjs`、`tests/editor_paint.test.mjs` |
-| ペイントの層をフロントで並べる部品（3 か所が同じ関数を使う、素材の渡し方、`painting` の正規化、表示が変わった矩形） | 比べ先は `core/render.py` `_sky_layers` | `web_src/pano_paint_layers.js` `skyPaintLayers`・`engineMask`、`web_src/pano_paint_damage.js`、`web_src/pano_raster_eraser.js`、`web_src/pano_paint_engine.js` `getGroupDisplay`・`getMaskDisplay`、`web_src/editor/paint_layers.js` `buildEditorViewPaintLayers`、`web_src/pano_surface_paint.js` `surfacePaintLayers`、`web_src/pano_upstream_layers.js` `paintLayers` | `tests/pano_paint_layers.test.mjs`、`tests/pano_paint_damage.test.mjs`、`tests/pano_raster_eraser.test.mjs`、`tests/test_paint_layers_parity.py`、`tests/pano_surface_paint.test.mjs`、`tests/pano_stickers_node_surface_contract.test.mjs` |
+| ペイントの層をフロントで並べる部品（3 か所が同じ関数を使う、素材の渡し方、`painting` の正規化、表示が変わった矩形） | 比べ先は `core/render.py` `_sky_layers` | `web_src/pano_paint_layers.js` `skyPaintLayers`・`engineMask`、`web_src/pano_paint_damage.js`、`web_src/pano_raster_eraser.js`、`web_src/pano_paint_engine.js` `getGroupDisplay`・`getMaskDisplay`、`web_src/editor/paint_layers.js` `buildEditorViewPaintLayers`、`web_src/pano_surface_paint.js` `surfacePaintLayers`、`web_src/pano_upstream_layers.js` `paintLayers` | `tests/pano_paint_layers.test.mjs`、`tests/pano_paint_damage.test.mjs`、`tests/pano_raster_eraser.test.mjs`、`tests/test_paint_layers_parity.py`、`tests/pano_surface_paint.test.mjs`、`tests/architecture.test.mjs`（どこも `skyPaintLayers` を `pano_paint_layers.js` から import する） |
 | ノードへ送るペイントの層のアップロード（送る画像とファイル名、置き場所、`painting_layer` の形）。古い UI と新しい UI が同じ関数で送る | 読むのは `comfy_image_resolver.py` `resolve_painting_layer_payload` | `web_src/pano_paint_upload.js`（古い UI は `editor/paint_layers.js` `syncPaintingLayerAsync`、新しい UI は `studio/paint_upload.js`） | `tests/pano_paint_upload.test.mjs` |
-| ノードごとの実行時の状態は node bridge に置く（グループ、片付け、許可する `__pano*` の一覧） | — | `web_src/pano_node_bridge.js`、`web_src/pano_editor_extension.js` の `onRemoved` | `tests/pano_node_bridge.test.mjs`、`tests/pano_editor_extension.test.mjs` |
+| ノードごとの実行時の状態は node bridge に置く（グループ、片付け、許可する `__pano*` の一覧） | — | `web_src/pano_node_bridge.js`、`web_src/pano_editor_extension.js` の `onRemoved` | `tests/pano_node_bridge.test.mjs`、`tests/pano_editor_extension.test.mjs`、`tests/architecture.test.mjs`（`__pano*` の一覧） |
 
-エディタのソースの形を確かめるテストは、`tests/editor_source.mjs`（`readEditorSource()`）・
-`tests/editor_source.py`（`editor_source()`）で `pano_editor.js` と `web_src/editor/*.js` の全部を読む。
+エディタのソースの形を確かめるテストは、`tests/editor_source.mjs`（`readEditorSource()`・`EDITOR_FILES`）で `pano_editor.js` と `web_src/editor/*.js` の全部を読む。
 
 ## Overview
 
@@ -86,7 +85,7 @@ export function createHistory(deps) {
 
 ## Dependency rules
 
-- `web_src` の静的な import に循環を作らない。`tests/web_src_import_cycles.test.mjs` が import のグラフを読み、循環があれば経路を出して落ちる（動的な `import()` と、エディタの `connect()` による結び付けは数えない）。
+- `web_src` の静的な import に循環を作らない。`tests/architecture.test.mjs` が import のグラフを読み、循環があれば経路を出して落ちる（動的な `import()` と、エディタの `connect()` による結び付けは数えない）。
 - `pano_editor.js` → `editor/*.js` → `pano_*.js`（ライブラリ）の向きだけ。
 - `editor/*.js` は `pano_editor.js` を import しない。ComfyUI の `app` / `api` も import せず、
   `deps` で受け取る（ビルドは `../../scripts/` だけを外部として扱う）。
@@ -98,7 +97,7 @@ export function createHistory(deps) {
   `media_session.js` を最初に作るモジュールにしている。
 - 配線の区画より前の文は、モジュールの関数を同期で呼ばない（ラムダやリスナーの中で後から呼ぶのはよい）。
 
-`tests/editor_architecture.test.mjs` と `tests/editor_wiring.test.mjs` が、これらの決まりと
+`tests/architecture.test.mjs` と `tests/editor_wiring.test.mjs` が、これらの決まりと
 配線の名前の過不足を確かめる。
 
 ## Module map
@@ -113,7 +112,7 @@ export function createHistory(deps) {
 | `editor/video_thumbnail_cache.js` | VIDEO のサムネイルのキャッシュ（直近 12 本） |
 | `editor/media_session.js` | 背景（ERP、VIDEO と静止画）、port の VIDEO とフレーム、Sticker の画像、3D ファイルのエディタ用ファイルの問い合わせ（`file3dEditorFile`）、旧 VIDEO トランスポートとサムネイル。背景の VIDEO（どの VIDEO を再生するか、要素への読み込み、`playback`、静止画）は下の部品 `web_src/pano_media_session.js` の `createBackgroundVideo` を使い、port の follower を作り、`disposeMediaSession()` で放す |
 | `editor/history.js` | Undo の履歴。スナップショットに残すもの（`historySnapshot`）と数（`HISTORY_LIMIT`）。段は `pano_paint_history.js` の `createSharedStringHistory` が持ち、長い文字列（ラスターの PNG の data URL など）は段ごとに写さず表に一度だけ置いて、残っている段のどれも使わなくなったら捨てる。段を積む前に上流の編集を書き戻させ（`syncUpstreamEdits`）、上流で消えた要素の上書きを捨てさせ（`pruneUpstreamRecords`。開いたときの最初の段 `pushHistory({ initial: true })` では捨てない）、戻した状態に合わせて上流の作業コピーを作り直させる（`rebuildUpstreamWorking`） |
-| `editor/items.js` | Sticker（上流の作業コピーの Sticker を含む。`stickerById`・`upstreamSkyStickers`）、shot、ストロークのグループ、ラスターの品目の検索・並び・移動 |
+| `editor/items.js` | Sticker（上流の作業コピーの Sticker を含む。`stickerById`・`upstreamSkyStickers`）、shot、ストロークのグループ、ラスターの品目の検索・並び・移動。ストロークのグループとラスターを動かす・大きさを変える式、当たり、Sky の重なり順の振り直し、消し方は新しい UI と共有の下の部品 `web_src/pano_paint_objects.js` にあり（`docs/studio-ui.md` の「ペイントのまとまり」）、`items.js`・`hit_test.js`・`paint_layers.js`・`object_geometry.js`・`pointer_transform.js`・`selection.js`・`commands.js` はそれを呼ぶ |
 | `editor/selection.js` | キャンバスの選択、world Sticker の選択、ロック、インスペクターの品目、z の順 |
 | `editor/projection.js` | ビューの射影、Unwrap の矩形、画面・方向・ERP・Frame の変換 |
 | `editor/object_geometry.js` | 品目の画面上の形（オーバーレイと当たり判定が読む） |
@@ -321,7 +320,7 @@ Stickers / Cutout ノード（状態 v2 でないもの）は widget の JSON �
 - 新しい状態はノードに `node.__panoX` と書かず、持ち主のグループに項目を足す。ノードに残すのは
   `__panoSceneStateV2` と `__panoStudio` のフラグだけ（ノード型から一度決まり、`pano_editor_state.js` と
   そのテストが素のオブジェクトで読む）。widget・画像・キャンバスに付ける `__pano*` も含めた許可の一覧は
-  `tests/pano_node_bridge.test.mjs` にあり、一覧にない名前が増えるとテストが落ちる。
+  `tests/architecture.test.mjs` にあり、一覧にない名前が増えるとテストが落ちる。
 
 ## Adding code
 

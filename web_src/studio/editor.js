@@ -14,10 +14,12 @@ import { createApp, markRaw, reactive, shallowReactive } from "vue";
 import StudioEditor from "../components/studio/StudioEditor.vue";
 import { createComfyMediaAdapter } from "../pano_comfy_media.js";
 import { createPanoCanvas, createPanoVideo, releasePanoCanvas } from "../pano_diagnostics.js";
+import { studioSizeWidgets } from "../pano_studio_status.js";
 import { queuePendingStickerOperation } from "../pano_editor_extension.js";
 import { cameraShot, normalizeCoverageValue, readableStateText, setCameraShot } from "../pano_editor_state.js";
 import { preloadEditorView } from "../pano_editor_view.js";
 import { DRAW_REASON } from "../pano_frame_scheduler.js";
+import { paintObjectRow } from "../pano_paint_objects.js";
 import { stageOwnsKey } from "../pano_key_focus.js";
 import { editorSession, noteStudioEditorOpen, peekNodeSurface } from "../pano_node_bridge.js";
 import {
@@ -48,14 +50,15 @@ import {
   setBrushSize, setCustomColor,
 } from "./paint_bar.js";
 import { createPortMedia } from "./port_media.js";
-import { LINE_TEXT, stageEmpty as emptyStage } from "./notice_line.js";
+import { LINE_TEXT, linkedInputNames, stageEmpty as emptyStage } from "./notice_line.js";
 import { createStudioUpstream, upstreamBackground, upstreamNodeName } from "./upstream.js";
 import { loadNodeInputImage } from "./node_image.js";
 import { gizmoModeOfKey, selectedKind } from "./selection_bar.js";
 import { createStudioSession } from "./session.js";
 import { editorKeyAction } from "./shortcuts.js";
 import { createStage, stageUi } from "./stage.js";
-import { createStageMedia, stageContent, stickerFrameSphere } from "./stage_content.js";
+import { createDepthColors } from "../pano_depth_color.js";
+import { createStageMedia, stageContent, stageDepthNotice, stickerFrameSphere } from "./stage_content.js";
 import { outputView } from "./stage_view.js";
 import { installStudioStylesheet } from "./stylesheet.js";
 import { readLoopSetting, writeLoopSetting } from "./timeline_actions.js";
@@ -74,7 +77,7 @@ function widgetOf(node, name) {
 }
 
 function linked(node, names) {
-  return (node?.inputs ?? []).some((input) => names.includes(input?.name) && input.link != null);
+  return linkedInputNames(node).some((name) => names.includes(name));
 }
 
 // The inputs whose VIDEO sets the Timeline fps (pano_video_fps.js timelineFpsLocked).
@@ -214,6 +217,17 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
       redraw(DRAW_REASON.MEDIA);
     },
   });
+  // The colors of the depth grids drawn (docs/threejs-spark-integration.md "DA3_GEOMETRY mono の深度のグリッド"): a
+  // proxy MP4 per input (`scene`, `sticker`, an upstream layer) following the playhead.
+  const depthColors = createDepthColors({
+    createVideo: () => createPanoVideo(document, "studio.depth-video"),
+    createCanvas: () => createPanoCanvas({ label: "studio.depth-still" }),
+    releaseCanvas: releasePanoCanvas,
+    onChange: () => {
+      if (!closed) redraw(DRAW_REASON.MEDIA);
+    },
+  });
+  const depthColor = (slot, video) => depthColors.picture(slot, video, !!backgroundVideo?.playback.advancing);
   // Counts the upstream layers' pictures that loaded or changed: what the stage draws of them is made again.
   let upstreamMedia = 0;
   const upstreamLinked = () => linkedInputType(node, "scene") === PANO_SCENE_TYPE || !!upstreamList();
@@ -254,6 +268,9 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     animations: {},
     // The stage's tab: "3d" or "camera" (docs/studio-ui.md "Camera タブ"). The 3D tab each time the editor opens.
     tab: "3d",
+    // The node's `megapixels` and `multiple` when the editor opened, for the Output window's line (docs/studio-ui.md
+    // "Output の小窓": the editor is modal, so they do not change while it is open).
+    sizeWidgets: studioSizeWidgets((name) => widgetOf(node, name)?.value),
     // The list of shortcuts is open (docs/studio-ui.md "ショートカットの一覧"): closed each time the editor opens.
     shortcuts: false,
     // [inputs] The size of the port Sticker's media (its vFOV follows it), null before it loads.
@@ -456,20 +473,25 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     // The `scene` result can arrive while the editor is open (the node ran): its files are part of the key.
     const key = [session.state, view.playhead, view.imageSizes, view.animations, files ? files.urls.join("\n") : "", stickerFiles ? stickerFiles.urls.join("\n") : "", upstreamList(), upstreamMedia, paint.revision()];
     if (contentCache && !contentCache.pending && contentCache.key.every((item, index) => item === key[index])) return contentCache.value;
-    const value = revealed(stageContent(session.state, view.playhead, { media: mediaOf, editorFile: stageMedia.editorFile, sceneFiles: files, sceneBox, stickerFiles, upstream: upstream.viewInput(view.playhead), paintLayers: paint.layers() }));
+    const value = revealed(stageContent(session.state, view.playhead, { media: mediaOf, editorFile: stageMedia.editorFile, sceneFiles: files, sceneBox, stickerFiles, upstream: upstream.viewInput(view.playhead), paintLayers: paint.layers(), depthColor }));
+    depthColors.retain(value.space.depthSlots);
+    ui.depthNotice = stageDepthNotice(value, (key) => stage?.sceneItemError(key) ?? null);
     // A World item may still be loading (no box yet): the content is made again on the next frame. [inputs] The port
     // Sticker's 3D item and the upstream items too.
     const pending = value.space.fileStickers.length > 0 || !!value.space.scene || !!value.space.sticker || value.space.upstreamItems.length > 0;
     contentCache = { key, value, pending };
     return value;
   }
-  // The stage's selection (view_camera.js orbitCenter, frameSelectedSphere) of the object of the row `row`.
+  // The stage's selection (view_camera.js orbitCenter, frameSelectedSphere) of the object of the row `row` (a Sticker
+  // id, "camera", or a paint group's `paint_group:` / `raster:` row).
   function selectionOf(row) {
     if (!row) return null;
     if (row === "camera") {
       const camera = session.state.camera;
       return { kind: "camera", position: camera ? [...evaluateCamera(camera, view.playhead).position] : [0, 0, 0] };
     }
+    // A paint group is on the Sky, as a sky image: it has no sphere of its own (docs/space-and-view.md "Frame Selected").
+    if (paintObjectRow(row)) return { kind: "object", sphere: content().sphere };
     const sphere = stickerFrameSphere(session.state, content(), row, { media: mediaOf, editorFile: stageMedia.editorFile, sceneBox });
     return { kind: "object", sphere };
   }
@@ -482,6 +504,8 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     empty: false,
     // [inputs] A Scene is linked to `scene` and the node's result does not have it yet.
     upstreamPending: false,
+    // The line of the depth grids drawn (stage_content.js stageDepthNotice): "" without one.
+    depthNotice: "",
     // [add-drop] Add and the drop (add_files.js): the Sky / World choice, the drag's mark, a placed 3D file loading,
     // and why the last file could not be placed.
     choice: null,
@@ -514,7 +538,7 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
       background: ui.background,
       stickers: session.state.stickers.length,
       paint: paintLayers().length,
-      linked: (node?.inputs ?? []).filter((input) => input?.link != null).map((input) => input.name),
+      linked: linkedInputNames(node),
       worldItems: sceneFiles()?.urls.length ?? 0,
       upstream: view.upstream.length,
     });
@@ -709,7 +733,7 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
   }
 
   const objectEdits = {
-    live: (apply) => objectOutcome(session.gesture(apply)),
+    live: (apply, copy) => objectOutcome(session.gesture(apply, copy)),
     commit: () => objectOutcome(session.commitGesture()),
     cancel: () => objectOutcome(session.cancelGesture()),
   };
@@ -896,7 +920,7 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
       releaseKeyGuard();
       releaseKeyGuard = guardEditorKeys(root);
       const output = outputView(session.state, 0);
-      const opening = openingView({ memory: nodeSession.view, output, world: { ...world, boxes: [], content: null }, frameAvailable: false });
+      const opening = openingView({ memory: nodeSession.view, output, world: { ...world, boxes: content()?.boxes ?? [], content: null }, frameAvailable: false });
       stage = createStage({
         canvas,
         overlay,
@@ -910,6 +934,7 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
           tab: () => view.tab,
           readOnly: () => readOnly,
           loading: reveal,
+          rasterAlpha: (item, u, v) => paint.rasterAlpha(item, u, v),
         },
         cameraTab,
         root,
@@ -1006,6 +1031,7 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     stage?.dispose();
     paint.dispose();
     stageMedia.dispose();
+    depthColors.dispose();
     portMedia.dispose();
     upstream.dispose();
     vueApp.unmount();

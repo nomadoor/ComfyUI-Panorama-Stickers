@@ -13,7 +13,7 @@
 | 視点のモード（3DoF・6DoF）と右下のボタン群の位置 | — | `web_src/pano_space.js` `switchSpaceMode`・`spaceModeWithContent`・`spaceModeView`、`web_src/pano_editor_ui_state.js` `floatingRightState`、`web_src/components/PanoFloatingRight.vue` | `tests/pano_space.test.mjs`、`tests/pano_editor_ui_state.test.mjs`、`tests/pano_editor_view.test.mjs` |
 | 3D view controls のプリセット（ボタンの割り当て） | — | `web_src/pano_view_controls.js` `viewDragAction`・`VIEW_CONTROLS_SETTING` | `tests/pano_view_controls.test.mjs`、`tests/pano_editor_view.test.mjs` |
 | ピボット・パン・ホイールの規則 | — | `pano_space.js` `navigationTarget`・`panDepth`・`panView`・`reuseWheelPick` | `tests/pano_space.test.mjs`、`tests/pano_editor_view.test.mjs` |
-| キーボードの移動（WASD / QE） | — | `web_src/pano_view_keys.js` `keyMoveView`・`createMoveKeys`、`web_src/pano_key_focus.js` `stageOwnsKey`・`TEXT_INPUT_TYPES`（古い UI は `web_src/editor/keyboard.js` から呼ぶ） | `tests/pano_view_keys.test.mjs`、`tests/pano_timeline.test.mjs` |
+| キーボードの移動（WASD / QE） | — | `web_src/pano_view_keys.js` `keyMoveView`・`createMoveKeys`、`web_src/pano_key_focus.js` `stageOwnsKey`・`TEXT_INPUT_TYPES`（古い UI は `web_src/editor/keyboard.js` から呼ぶ） | `tests/pano_view_keys.test.mjs`、`tests/editor_keyboard.test.mjs` |
 | Frame Selected の外接球 | — | `pano_space.js` `frameSphere`、収める距離は `frameView` が `fitDistance` と `viewFitFov` で求める | `tests/pano_space.test.mjs` |
 | 視点の遷移 | — | `web_src/pano_view_transition.js` `blendView`・`viewTransitionFrame`・`viewTransitionDuration`・`shownSpaceMode`・`spaceModeChoice` | `tests/pano_view_transition.test.mjs`、`tests/pano_editor_view.test.mjs` |
 | 視点の記憶 | — | `web_src/pano_view_memory.js` `viewMemory`・`restoredView`、`web_src/editor/space.js` `saveView`・`restoreView`、`web_src/pano_node_bridge.js` `editorSession` | `tests/pano_view_memory.test.mjs` |

@@ -3,121 +3,100 @@
 [![English](https://img.shields.io/badge/README-English-3b82f6.svg)](./README.md)
 [![日本語](https://img.shields.io/badge/README-日本語-e11d48.svg)](./README_JA.md)
 [![中文](https://img.shields.io/badge/README-中文-16a34a.svg)](./README_ZH.md)
-
-[![LoRA 4B](https://img.shields.io/badge/LoRA-4B-f0b429.svg)](https://huggingface.co/nomadoor/flux-2-klein-4B-360-erp-outpaint-lora)
-[![LoRA 9B](https://img.shields.io/badge/LoRA-9B-f59e0b.svg)](https://huggingface.co/nomadoor/flux-2-klein-9B-360-erp-outpaint-lora)
 [![指南](https://img.shields.io/badge/Guide-中文-3b82f6.svg)](https://comfyui.nomadoor.net/zh/notes/panorama-stickers/)
 
-ComfyUI Panorama Stickers 是一套小型 ComfyUI 节点与前端扩展，用于在 ComfyUI 中处理 360° 等距柱状投影（ERP）全景图，包括交互式预览、带画框的透视裁切和图像合成。
+这是一套 ComfyUI 节点，可以把图像、视频和 3D 放进 360° 全景，再从任意视角拍摄。
 
-本项目围绕 FLUX.2 Klein 全景图 workflow 开发，可用于 4B 和 9B 两种版本。
-
-此 workflow 旨在配合以下 FLUX.2 Klein 360 ERP outpaint LoRA 使用：
-
-- [nomadoor/flux-2-klein-4B-360-erp-outpaint-lora](https://huggingface.co/nomadoor/flux-2-klein-4B-360-erp-outpaint-lora)
-- [nomadoor/flux-2-klein-9B-360-erp-outpaint-lora](https://huggingface.co/nomadoor/flux-2-klein-9B-360-erp-outpaint-lora)
-
-详细使用说明：
-
-- English: [comfyui.nomadoor.net/en/notes/panorama-stickers/](https://comfyui.nomadoor.net/en/notes/panorama-stickers/)
-- 日本語: [comfyui.nomadoor.net/ja/notes/panorama-stickers/](https://comfyui.nomadoor.net/ja/notes/panorama-stickers/)
-- 中文: [comfyui.nomadoor.net/zh/notes/panorama-stickers/](https://comfyui.nomadoor.net/zh/notes/panorama-stickers/)
-
-## 安装
-
-- 通过 ComfyUI Manager 安装。
-- 需要 ComfyUI v0.35.0 或更高版本。
-
-## 演示
+用图像生成模型修改拍下的画面，再放回原来的位置。这一往返流程都可以在 ComfyUI 的 workflow 中完成。
 
 https://github.com/user-attachments/assets/bf74e953-8ceb-4c7f-afa2-1c805f12c7af
 
-- v1.2.0 demo: https://gyazo.com/d4c2517589d7c96d27942af76a1ead27
-- v1.3.0 demo: https://gyazo.com/3da5973bb661df8fb1d11dd1e71a2b1f
-- v1.4.0 demo: https://gyazo.com/26ceba6dcc3516ce6b8c461fcfde4dad
-- v1.5.0 demo: https://gyazo.com/954d9a4acee41a13e6aebfcb125b9a48
+## Panorama Studio
 
-## 节点
+这是本节点集的核心。
 
-- `Panorama Studio`：将图像、视频和 3D 文件（GLB、Gaussian splat）放入全景周围的 3D 空间，在时间轴上用关键帧制作动画，绘制和遮罩，并用 Camera 以全景或画框视图拍摄。
-- `Panorama Stickers`：在 ERP 画布上放置和调整贴图，并输出合成后的全景图。
-- `Panorama Cutout`：从 ERP 图像构建并提取带画框的透视视图。
-- `Panorama Preview`：在交互式查看器中预览静态或动态 ERP 输入，或 `Panorama Studio` 的场景。旧节点保留为 `Panorama Preview (legacy)`。
-- `Panorama Seam Prep`：将 ERP 接缝移至中心，并生成用于接缝局部 inpainting 的硬边／模糊竖向遮罩。
+它把全景当作远处的景色（Sky），把 3D 当作有纵深的空间（World），一起处理。贴在 Sky 上的东西，无论 Camera 移动到哪里，看起来都在同一个方向。放在 World 里的东西，会随 Camera 的位置不同而呈现不同的样子。
 
-### 节点内全景控制
+节点有四个输入。
 
-`Panorama Stickers`、`Panorama Cutout` 和 `Panorama Preview` 现已提供轻量级节点内 UI，无需打开 Full Editor 即可完成常用操作。Legacy canvas 和 Node 2.0 均受支持。
+- `background`：背景全景（图像、视频）
+- `world`：作为基础的 3D（网格、Gaussian splat，或用 MoGe 等估计出的形状）
+- `sticker`：放进场景的图像、视频、3D。也可以拖放到编辑器中添加
+- `scene`：继承另一个 Panorama Studio 的场景
 
-### Panorama Studio 的视频输出
+在编辑器中，可以用时间轴上的 Keyframe 让贴纸和 Camera 动起来，进行绘画、绘制遮罩，并用 Camera 拍摄。拍摄方式有全景（360°／180°）和普通相机画面（Frame）。
 
-`Panorama Studio` 的 IMAGE／MASK 输出（`first_frame`、`first_frame_mask`）只有第一帧。全部帧以及 fps 和音频都在 `video`（VIDEO）中，保存时逐帧渲染。需要以 IMAGE 使用全部帧时，请将 `video` 连接到 Get Video Components。需要为 IMAGE 批次附加 fps 或音频后再连接时，请先经过 Create Video。将 Camera 拍摄的结果连同 `sticker_state` 连接到另一个 `Panorama Studio` 的 `sticker` 时，按秒的时间对齐位置。VIDEO 请保持实际时间；IMAGE 批次仅在与拍摄它的 Studio 相同 fps 时使用（否则请先通过 Create Video 赋予该 fps 再连接）。
+## 主要用法
+
+### 贴上图像，制作全景
+
+1. 把图像拖放到 Panorama Studio 的编辑器中，贴在全景的任意位置。可以贴任意多张。
+2. 把 Camera 设为全景并拍摄，就会得到贴上的图像周围是背景色的全景。
+3. 把它交给使用全景 LoRA 的生成模型，补画周围的部分。
+
+### 修改全景的一部分
+
+1. 把 Camera 设为 Frame，拍下想修改的地方。
+2. 用生成模型修改拍下的画面。
+3. 把修改后的画面连同 `sticker_state` 一起连到下一个 Panorama Studio 的 `sticker`，就会原样回到拍摄的位置。
+
+### 从别的角度重新拍摄图像、视频
+
+1. 用 MoGe 等把图像、视频转成 3D，连到 `world`。
+2. 在编辑器中移动 Camera，从别的角度拍摄。
+3. 用生成模型补全拍下画面中缺失的部分。
+
+### 制作视频
+
+给 `background` 连接视频，或用 Keyframe 让贴纸、Camera 动起来，`video` 输出中就包含全部帧。
+
+## 其他节点
+
+- **Panorama Preview**：在单独的窗口中环视全景图像、视频，或 Studio 的 `scene`。
+- **Panorama Seam Prep**：把全景左右两端的接缝移到中央，并生成用于修复接缝的遮罩。
+- 以前的节点（Panorama Stickers、Panorama Cutout、Panorama Preview (legacy)）也可以照常使用。
+
+## 安装
+
+- 在 ComfyUI Manager 中搜索 "Panorama Stickers" 并安装。
+- 需要 ComfyUI 0.35.0 或更高版本。
 
 ## Workflow
 
-- 全景静态图 workflow
-  - [flux-2-klein-4B-360-erp-outpaint.json](./example_workflows/flux-2-klein-4B-360-erp-outpaint.json)
-  - [flux-2-klein-9B-360-erp-outpaint.json](./example_workflows/flux-2-klein-9B-360-erp-outpaint.json)
-- 360° 全景视频 workflow
-  - 使用该模型作者制作的 [LTX2.3_360vr](https://civitai.com/models/2327337/360-degree-panoramic-shot-ltx-23) LoRA，可以通过文本生成 360° 全景视频。
-  - [LTX-2.3_360vr_distilled_3stage.json](./example_workflows/LTX-2.3_360vr_distilled_3stage.json)
+| Workflow | 内容 |
+|---|---|
+| [qwen-image-2.1-360-erp-outpaint.json](./example_workflows/qwen-image-2.1-360-erp-outpaint.json) | 贴上图像，制作全景（Qwen-Image 2.1） |
+| [qwen-image-2.1-moge3-anyangle.json](./example_workflows/qwen-image-2.1-moge3-anyangle.json) | 用 MoGe 3 把图像转成 3D，从别的角度拍摄，再用 Qwen-Image 2.1 完善画面 |
+| [LTX-2.3_360vr_distilled_3stage.json](./example_workflows/LTX-2.3_360vr_distilled_3stage.json) | 通过文本制作 360° 视频（LTX-2.3，以及该模型作者制作的 [LTX2.3_360vr](https://civitai.com/models/2327337/360-degree-panoramic-shot-ltx-23) LoRA） |
+
+以前的 workflow：FLUX.2 Klein [4B](./example_workflows/flux-2-klein-4B-360-erp-outpaint.json)・[9B](./example_workflows/flux-2-klein-9B-360-erp-outpaint.json)（[4B LoRA](https://huggingface.co/nomadoor/flux-2-klein-4B-360-erp-outpaint-lora)・[9B LoRA](https://huggingface.co/nomadoor/flux-2-klein-9B-360-erp-outpaint-lora)）
+
+## 指南
+
+详细用法整理在指南中。
+
+- [日本語](https://comfyui.nomadoor.net/ja/notes/panorama-stickers/)・[English](https://comfyui.nomadoor.net/en/notes/panorama-stickers/)・[中文](https://comfyui.nomadoor.net/zh/notes/panorama-stickers/)
 
 ## 故障排除
 
-全景编辑器依赖浏览器硬件加速。如果小型节点内预览流畅，但大型编辑器异常卡顿，请打开 `chrome://gpu`（Edge 使用 `edge://gpu`），确认 Canvas、Compositing、Rasterization 和 WebGL 均显示为硬件加速。如果显示 `Software only`，请完全退出并重新启动浏览器；若问题仍然存在，请检查浏览器和 GPU 驱动设置。
+如果只有编辑器特别卡，请在浏览器中打开 `chrome://gpu`（Edge 使用 `edge://gpu`），确认 WebGL 显示为 "Hardware accelerated"。如果显示 "Software only"，请完全退出浏览器后重新打开。
 
 ## 更新日志
 
-### 2.0.0
-
-- 新增 `Panorama Studio`：将图像、视频和 3D 文件（GLB、Gaussian splat）放入 3D 空间，用关键帧制作动画，绘制和遮罩，并用 Camera（全景或画框视图）拍摄。输出首帧、其遮罩、视频和贴图状态，`scene` 输出可连接到另一个 `Panorama Studio` 或 `Panorama Preview`。
-- Panorama Studio 的新编辑器：3D / Camera 标签页、检查器、带关键帧的时间轴、图像和 3D 文件的添加与拖放、gizmo，以及 Camera 所拍画面的实时预览。节点上也会实时显示 Camera 的输出和输出尺寸。
-- `Panorama Preview` 在新窗口中打开图像、视频和 `Panorama Studio` 的场景。旧节点保留为 `Panorama Preview (legacy)`。
-- 如需使用旧编辑器，请在设置中关闭 "Panorama Studio: new editor"。
-
-### 1.5.0
-
-- 为 `Panorama Cutout`、`Panorama Preview` 和 `Panorama Stickers` 添加轻量级节点内 UI，无需打开 Full Editor 即可完成常用操作。
-- 改善了 Legacy canvas 和 Node 2.0 中预览的性能与可靠性。
-
-### 1.4.0
-
-- 将 Panorama Cutout 的 Frame view 重构为交互式裁切风格的 camera editor。
-- 在保持 Panorama view 状态独立的同时，加入直接调整 camera framing、aspect ratio、orientation 和 roll 的功能。
-
-### 1.3.0
-
-- 添加视频支持。
-- 添加 180° 全景支持。
-- 通过重构大幅提升性能。
-
-### 1.2.0
-
-- 在模态全景 editor 中加入 Paint／Mask 工具。
-
-### 1.1.0
-
-- 将全景渲染切换为 WebGL 优先 pipeline。
-- 支持通过 `Panorama Stickers` 将 `Panorama Cutout` 生成的图像重新合成至全景图。
-
-## ToDo
-
-- 添加将全景图拆分为多张图像以便外部 upscaling，并在处理后重新合并的工具。
-- 根据输入图像自动估算 camera intrinsics。
-- 添加 Hugin 集成。
+- **2.0.1**：Studio 编辑器始终显示输出尺寸，切换标签页时检查器保持不变；在 Camera 标签页中也可以移动物体；节点上显示深度网格（MoGe、DA3）和上游场景，并可播放；可以抓取并移动绘画；以及若干修复。
+- **2.0.0**：新增 Panorama Studio 和新的 Panorama Preview。
+- **1.5.0**：为 Stickers、Cutout、Preview 加入节点上的轻量 UI。
+- **1.4.0**：把 Cutout 的 Frame 编辑重做为裁切式的相机编辑器。
+- **1.3.0**：支持视频和 180° 全景。
+- **1.2.0**：新增绘画和遮罩工具。
+- **1.1.0**：渲染改用 WebGL，并支持用 Stickers 把 Cutout 生成的画面放回去。
 
 ## 致谢
 
-本项目部分受到 [ProGamerGov](https://github.com/ProGamerGov) 以下项目的启发：
+本项目受到 [ProGamerGov](https://github.com/ProGamerGov) 以下成果的启发：
 
-- [ProGamerGov/ComfyUI_pytorch360convert](https://github.com/ProGamerGov/ComfyUI_pytorch360convert)
-- [ProGamerGov/html-360-viewer](https://github.com/ProGamerGov/html-360-viewer)
-
-## 实用工具
-
-如果需要在浏览器中快速将 ERP 图像作为全景图预览，可以使用此查看器：
-
-- [html-360-viewer demo](https://progamergov.github.io/html-360-viewer/)
+- [ComfyUI_pytorch360convert](https://github.com/ProGamerGov/ComfyUI_pytorch360convert)
+- [html-360-viewer](https://github.com/ProGamerGov/html-360-viewer)（想在浏览器中快速查看 ERP 图像时也很方便：[演示](https://progamergov.github.io/html-360-viewer/)）
 
 ## 许可证
 

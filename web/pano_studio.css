@@ -150,9 +150,9 @@
 
 /* --- Panorama Studio's node surface (PanoStudioNodeSurface.vue; docs/studio-node-surface.md "表示の構成", values
    docs/design.md "Panorama Studio のノード上の表示"). The canvas under it draws the Camera's output picture; the overlay
-   places the Open Studio button and the line under the picture where pano_studio_surface.js lays them out (inline
-   left / top / bottom / width), over the node's own background (the surface is not filled: STUDIO_SURFACE_FILL is transparent). Only the button takes
-   the pointer. The line reads the theme's tokens (ComfyUI's `.dark-theme` on <html>). */
+   places the Open Studio button, the play button and the line under the picture where pano_studio_surface.js lays them
+   out (inline left / top / bottom / width), over the node's own background (the surface is not filled: STUDIO_SURFACE_FILL is transparent). Only the buttons
+   (and the output size's tooltip) take the pointer. The line reads the theme's tokens (ComfyUI's `.dark-theme` on <html>). */
 .pano-studio-node-surface {
   position: absolute;
   inset: 0;
@@ -160,11 +160,15 @@
   user-select: none;
   line-height: 1;
 }
-.pano-studio-node-open {
+/* Open Studio and the play button (docs/studio-node-surface.md "再生のボタン"): the floating part's shape, placed by their
+   left edges (studioSurfaceLayout lays the group out). Open Studio without its label (`is-compact`, a narrow node) and
+   the play button are 30px circles. */
+.pano-studio-node-open,
+.pano-studio-node-play {
   position: absolute;
-  transform: translateX(-50%);
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
   height: 30px;
   padding: 0 14px 0 10px;
@@ -180,10 +184,17 @@
   pointer-events: auto;
   transition: background-color var(--studio-motion-hover);
 }
-.pano-studio-node-open:hover {
+.pano-studio-node-play,
+.pano-studio-node-open.is-compact {
+  width: 30px;
+  padding: 0;
+}
+.pano-studio-node-open:hover,
+.pano-studio-node-play:hover {
   background: color-mix(in srgb, var(--studio-fill-hover) var(--studio-float-alpha), transparent);
 }
-.pano-studio-node-open:active {
+.pano-studio-node-open:active,
+.pano-studio-node-play:active {
   background: color-mix(in srgb, var(--studio-fill-active) var(--studio-float-alpha), transparent);
 }
 .pano-studio-node-line {
@@ -477,13 +488,26 @@
   white-space: nowrap;
 }
 
-/* Inspector card: a section with a heading and rows; sections are divided by space, not by a line. */
+/* Inspector card: a section with a heading and rows. Cards (Camera, Scene, the selected object) are divided by a thin
+   line inset like the rows, so where one ends is easy to see (docs/design.md). */
 .pano-studio-card {
   padding: 12px 14px 8px;
 }
 
 .pano-studio-card + .pano-studio-card {
-  padding-top: 20px;
+  position: relative;
+  margin-top: 8px;
+  padding-top: 14px;
+}
+
+.pano-studio-card + .pano-studio-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 14px;
+  right: 14px;
+  height: 1px;
+  background: var(--studio-line);
 }
 
 .pano-studio-card-title {
@@ -635,6 +659,7 @@
   color: var(--studio-fg-2);
   font-size: var(--studio-text-xs);
   font-weight: var(--studio-weight-head);
+  margin-right: 4px; /* 6px from the value with the field's 2px gap (docs/design.md); the unit stays 2px from it */
 }
 
 .pano-studio-field-value {
@@ -770,6 +795,9 @@
    scrollbar, and the Easing panel laid over the bottom while Keyframes are selected. It fills the column the editor
    gives it (320px wide, docs/design.md "大きさ"). */
 .pano-studio-inspector {
+  /* One step smaller type than the rest of the editor (docs/design.md "文字"); 11px is the floor. */
+  --studio-text-md: 12px;
+  --studio-text-sm: 11px;
   position: relative;
   display: flex;
   flex-direction: column;
@@ -1712,9 +1740,10 @@
   to { transform: rotate(1turn); }
 }
 
-/* The Output window: a container (12px), 85% opaque, folded to a pill with its name. Folding shrinks the window to
-   the pill by a transform anchored at the top right while it fades (no relayout of what it shows) and the pill fades
-   in; opening runs the other way (docs/design.md "動き"). The element keeps the size of the shown state. */
+/* The Output window: a container (12px), 85% opaque, folded to a pill holding its line (docs/design.md "Output の小窓の
+   一行"). Folding shrinks the window to the pill by a transform anchored at the top right while it fades (no relayout
+   of what it shows) and the pill's fill fades in; opening runs the other way (docs/design.md "動き"). The line itself
+   stays put at the top right in both forms and never fades. The element keeps the size of the shown state. */
 .pano-studio-output {
   position: relative;
   color: var(--studio-fg);
@@ -1726,6 +1755,8 @@
   right: 0;
   box-sizing: border-box;
   display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
   overflow: hidden;
   background: var(--studio-float);
   border-radius: var(--studio-r-box);
@@ -1741,11 +1772,12 @@
 
 .pano-studio-output-body {
   display: flex;
-  align-items: flex-end;
+  flex: none;
   width: 100%;
-  height: 100%;
 }
 
+/* The line: right-aligned, the fold button at its right end (8px from the size). Its fill shows folded only (open, it is
+   the window's top row). */
 .pano-studio-output-pill {
   position: absolute;
   top: 0;
@@ -1753,25 +1785,52 @@
   box-sizing: border-box;
   display: flex;
   align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
   width: max-content;
-  height: var(--studio-btn);
-  padding: 0 30px 0 12px;
+  /* OUTPUT_LINE_HEIGHT (studio/layout.js), set on the window by StudioOutputPreview.vue. */
+  height: var(--studio-output-line);
+  padding: 0 35px 0 12px;
+  isolation: isolate;
+  font-size: var(--studio-text-sm);
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.pano-studio-output-pill::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
   background: var(--studio-float);
   border-radius: var(--studio-r-part);
-  white-space: nowrap;
   opacity: 0;
-  pointer-events: none;
   transition: opacity var(--studio-motion-fold) ease-out;
 }
 
-.pano-studio-output.is-collapsed .pano-studio-output-pill {
+.pano-studio-output.is-collapsed .pano-studio-output-pill::before {
   opacity: 1;
-  pointer-events: auto;
 }
 
-.pano-studio-output-label {
+.pano-studio-output-glyph {
+  flex: none;
+  width: 20px;
+  height: 10px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  color: var(--studio-fg);
+}
+
+.pano-studio-output-shot {
+  color: var(--studio-fg);
+  font-weight: var(--studio-weight-head);
+}
+
+.pano-studio-output-size {
   color: var(--studio-fg-2);
-  font-size: var(--studio-text-sm);
+  font-weight: var(--studio-weight);
+  font-variant-numeric: tabular-nums;
 }
 
 .pano-studio-output-fold {
@@ -1789,14 +1848,13 @@
   transform: rotate(180deg);
 }
 
-/* The Camera tab: folded and faint, nothing reacts (docs/design.md "大きさ"). */
-.pano-studio-output.is-suspended {
-  opacity: 0.4;
-}
-
+/* The Camera tab: the line as in the 3D tab; only the fold button is faint, and it does not react
+   (docs/design.md "大きさ"). */
 .pano-studio-output.is-suspended .pano-studio-output-fold {
-  opacity: 1;
+  opacity: 0.4;
+  background: transparent;
   color: var(--studio-fg);
+  cursor: default;
 }
 
 /* The corner dragged for the size: faint until the pointer is over the window. */

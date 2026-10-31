@@ -36,6 +36,16 @@ WIDGET_INPUTS = {
         "fps",
     ],
     "PanoramaPreview": ["coverage", "fps"],
+    "PanoramaPreviewNode": ["background_range"],
+    # Saved order: the widgets, with the advanced ones (multiple, state_json) after; the force_input
+    # sticker_state widget slot (an empty string) follows and is not checked.
+    "PanoramaStudio": [
+        "background_color",
+        "background_range",
+        "megapixels",
+        "multiple",
+        "state_json",
+    ],
 }
 
 
@@ -106,14 +116,42 @@ def test_saved_custom_nodes_match_current_v3_schemas(workflow_path):
         for saved_input in saved_node.get("inputs", []):
             assert saved_input["name"] in inputs_by_name
             current_input = inputs_by_name[saved_input["name"]]
-            assert saved_input["type"] == current_input.io_type
+            # A MultiType input is saved by the frontend as its accepted types joined with commas.
+            accepted = getattr(current_input, "io_types", None) or getattr(current_input, "types", None)
+            # A MatchType input is saved as the types its template allows.
+            template = getattr(current_input, "template", None)
+            if template is not None:
+                accepted = template.allowed_types
+            saved_types = set(str(saved_input["type"]).split(","))
+            if template is not None:
+                # Exactly the template's types: one more would let a link the schema refuses pass.
+                assert saved_types == {getattr(t, "io_type", t) for t in accepted}
+            elif accepted and saved_input["type"] != current_input.io_type:
+                # The saved list starts with the input's own type, then the extra accepted types.
+                assert {getattr(t, "io_type", t) for t in accepted} <= saved_types
+            else:
+                assert saved_input["type"] == current_input.io_type
             saved_input_positions.append(schema_input_positions[current_input.id])
         assert saved_input_positions == sorted(saved_input_positions)
 
         assert len(saved_node.get("outputs", [])) == len(schema.outputs)
         for saved_output, current_output in zip(saved_node.get("outputs", []), schema.outputs):
             assert saved_output["name"] == (current_output.display_name or current_output.id)
-            assert saved_output["type"] == current_output.io_type
+            template = getattr(current_output, "template", None)
+            if template is not None:
+                # The output takes the type of the link into the input that shares its template.
+                link_types = {link[0]: link[5] for link in workflow["links"]}
+                linked = [
+                    link_types[i["link"]]
+                    for i in saved_node.get("inputs", [])
+                    if getattr(inputs_by_name[i["name"]], "template", None) is not None and i.get("link") is not None
+                ]
+                if linked:
+                    assert saved_output["type"] == linked[0]
+                else:
+                    assert set(str(saved_output["type"]).split(",")) <= {t.io_type for t in template.allowed_types} | {"*"}
+            else:
+                assert saved_output["type"] == current_output.io_type
 
         widget_ids = WIDGET_INPUTS[saved_node["type"]]
         widget_values = saved_node.get("widgets_values", [])

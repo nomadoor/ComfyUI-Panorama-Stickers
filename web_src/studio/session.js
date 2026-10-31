@@ -8,11 +8,14 @@
 // the inspector's edits (inspector_actions.js, which change in place) are applied to a copy, the Timeline's
 // (timeline_actions.js) are new states already.
 //
-// The selection is the Timeline's { row, keys } (timeline_model.js): `row` the selected object's row id ("camera" or a
-// Sticker id), `keys` the selected Keyframes. The inspector reads it through inspectorSelection().
+// The selection is the Timeline's { row, keys } (timeline_model.js): `row` the selected object's row id ("camera", a
+// Sticker id, or a paint group's `paint_group:<actionGroupId>` / `raster:<id>`, pano_paint_objects.js paintObjectRow),
+// `keys` the selected Keyframes. The inspector reads it through inspectorSelection().
 import { createEditorHistory, duplicateSceneSticker, editorStateWrite, restoredHistoryState, takeStickerId } from "../pano_editor_state.js";
 import { rebaseSceneState, stickerCounter } from "../pano_scene_state.js";
 import { isUpstreamSticker } from "../pano_upstream.js";
+import { deletePaintObjects, numberSkyOrder, paintObjectOf, paintObjectRow, restackSkyOrder, skyDisplayList, skyStickersOf } from "../pano_paint_objects.js";
+import { syncPaintGroups } from "../pano_paint_strokes.js";
 import { normalizePaintingState } from "../pano_paint_types.js";
 import { cameraToView as moveCameraToView } from "./camera_ui.js";
 import { defaultCamera } from "./defaults.js";
@@ -41,11 +44,19 @@ export function keyframeGroups(selection) {
   return [...groups.values()].map(({ owner, lane, frames }) => ({ owner, lane, frames: [...frames].sort((a, b) => a - b) }));
 }
 
-// The inspector's selection (inspector_model.js buildInspectorModel) for the Timeline's: the selected object, and the
-// Easing panel's Keyframes (the first group's; the panel's edit reaches every group, applyInspector).
+// The inspector's selection (inspector_model.js buildInspectorModel) for the Timeline's: the selected object (a paint
+// group shows the Paint card), and the Easing panel's Keyframes (the first group's; the panel's edit reaches every
+// group, applyInspector).
 export function inspectorSelection(selection) {
   const row = selection?.row ?? null;
-  return { ids: row ? [row] : [], keyframes: keyframeGroups(selection)[0] ?? null };
+  const keyframes = keyframeGroups(selection)[0] ?? null;
+  if (paintObjectRow(row)) return { ids: [], paint: true, keyframes };
+  return { ids: row ? [row] : [], keyframes };
+}
+
+// Whether the row `row` names an object of `state`: the Camera, a Sticker, or a paint group (pano_paint_objects.js).
+function rowInState(state, row) {
+  return row === "camera" || state.stickers.some((item) => item.id === row) || !!paintObjectOf(state, row);
 }
 
 const result = (changed, extra = {}) => ({ changed, history: false, stopPlayback: false, ...extra });
@@ -74,7 +85,7 @@ export function createStudioSession({ state: opening, readOnly = false }) {
 
   // A selection whose object is gone lets it go; its Keyframes go with any change of the state's shape.
   function keepSelection(next = selection) {
-    const row = next.row && (next.row === "camera" || state.stickers.some((item) => item.id === next.row)) ? next.row : null;
+    const row = next.row && rowInState(state, next.row) ? next.row : null;
     selection = { row, keys: next.keys ?? [] };
   }
 
@@ -141,6 +152,16 @@ export function createStudioSession({ state: opening, readOnly = false }) {
     const { row } = selection;
     if (readOnly || !row) return { changed: false, notice: null };
     if (row === "camera") return { changed: false, notice: CAMERA_UNDELETABLE };
+    const paint = paintObjectOf(state, row);
+    if (paint) {
+      if (paint.locked) return { changed: false, notice: null };
+      const outcome = editPainting((draft) => {
+        deletePaintObjects(draft.painting, paint.kind === "group" ? { groupIds: [paint.id] } : { rasterIds: [paint.id] });
+        return true;
+      });
+      if (outcome.changed) selection = EMPTY_SELECTION;
+      return { changed: outcome.changed, notice: null };
+    }
     const sticker = state.stickers.find((item) => item.id === row);
     if (!sticker || sticker.locked || sticker.source.kind === "port" || isUpstreamSticker(sticker)) return { changed: false, notice: null };
     state = { ...state, stickers: state.stickers.filter((item) => item !== sticker) };
@@ -155,11 +176,13 @@ export function createStudioSession({ state: opening, readOnly = false }) {
 
   // A drag's change: apply(draft) changes a copy of the state the drag started from (each move starts again from it,
   // so a move writes where the pointer is, not on top of the move before) and returns whether it changed anything.
-  // The first change keeps that start, which cancelGesture() puts back.
-  function gesture(apply) {
+  // The first change keeps that start, which cancelGesture() puts back. copy(base) makes the copy: a deep one by
+  // default; a drag that knows what it changes may copy only that and share the rest (a paint group's drag,
+  // stage_objects.js), since a state is never changed in place.
+  function gesture(apply, copy = structuredClone) {
     if (readOnly) return result(false);
     const base = gestureBase ?? state;
-    const draft = structuredClone(base);
+    const draft = copy(base);
     if (!apply(draft)) return result(false);
     gestureBase = base;
     state = draft;
@@ -282,8 +305,21 @@ export function createStudioSession({ state: opening, readOnly = false }) {
     return result(true, { history: true });
   }
 
-  // Lock: the selected Sticker's `locked`, or the selected Camera's `camera.locked`, turns over.
+  // Lock: the selected Sticker's `locked`, the selected Camera's `camera.locked`, or the selected paint group's (the
+  // stroke group's entry, written with the counted groups, or the raster object's) turns over. A paint group's lock is
+  // the editor's own (the node does not read it), so the uploaded `painting_layer` stays.
   function toggleLock() {
+    const paint = paintObjectOf(state, selection.row);
+    if (paint) {
+      return editPainting((draft) => {
+        const item = paint.kind === "group"
+          ? syncPaintGroups(draft.painting, skyStickersOf(draft)).find((group) => String(group.actionGroupId || "") === paint.id)
+          : draft.painting.raster_objects.find((entry) => entry.id === paint.id);
+        if (!item) return false;
+        item.locked = item.locked !== true;
+        return true;
+      }, { keepLayer: true });
+    }
     if (selection.row === "camera") {
       return editCamera((camera) => {
         camera.locked = camera.locked !== true;
@@ -324,32 +360,40 @@ export function createStudioSession({ state: opening, readOnly = false }) {
     return outcome;
   }
 
-  // Bring to front / Send to back (`where` "front" or "back"): the selected sky image's place among the sky images,
-  // which are numbered again in their order.
+  // Bring to front / Send to back (`where` "front" or "back"): the selected sky image or paint group goes to the front
+  // or the back of the node's own Sky (its sky images, stroke groups and paint raster objects on one z_index axis), and
+  // they are all numbered again from 0 in their order (pano_paint_objects.js, as the old editor). Nothing changes when
+  // it is there already. A changed painting drops the uploaded `painting_layer`.
   function orderSelected(where) {
-    return editSelected((draft, sticker) => {
-      if (sticker.placement !== "sky" || sticker.locked) return false;
-      const sky = draft.stickers.filter((item) => item.placement === "sky").sort((a, b) => Number(a.z_index || 0) - Number(b.z_index || 0));
-      const rest = sky.filter((item) => item !== sticker);
-      const order = where === "front" ? [...rest, sticker] : [sticker, ...rest];
-      const before = sky.map((item) => item.z_index);
-      order.forEach((item, index) => {
-        item.z_index = index;
-      });
-      return sky.some((item, index) => item.z_index !== before[index]);
-    });
+    const row = selection.row;
+    const paint = paintObjectOf(state, row);
+    const sticker = selectedSticker();
+    if (readOnly || gestureBase) return result(false);
+    if (paint ? paint.locked : (!sticker || sticker.placement !== "sky" || sticker.locked || isUpstreamSticker(sticker))) return result(false);
+    const draft = structuredClone(state);
+    const ordered = skyDisplayList(draft);
+    numberSkyOrder(ordered);
+    const next = restackSkyOrder(ordered, (entry) => entry.key === row, where);
+    if (!next) return result(false);
+    numberSkyOrder(next);
+    if (next.some((entry) => paintObjectRow(entry.key))) draft.painting_layer = null;
+    state = draft;
+    keepSelection();
+    record();
+    return result(true, { history: true });
   }
 
   // --- The painting (docs/studio-ui.md "ペイントの道具"): a stroke and a Clear are one Undo step each.
 
   // An edit of the painting: apply(draft) changes a copy of the state (its `painting`, made when missing) and returns
-  // whether it changed it. A changed painting drops the uploaded `painting_layer` (the node draws from `painting`).
-  function editPainting(apply) {
+  // whether it changed it. A changed painting drops the uploaded `painting_layer` (the node draws from `painting`),
+  // but with `keepLayer` (a change the node does not draw: a lock).
+  function editPainting(apply, { keepLayer = false } = {}) {
     if (readOnly || gestureBase) return result(false);
     const draft = structuredClone(state);
     draft.painting ??= normalizePaintingState(null);
     if (!apply(draft)) return result(false);
-    draft.painting_layer = null;
+    if (!keepLayer) draft.painting_layer = null;
     state = draft;
     keepSelection();
     record();
@@ -440,7 +484,7 @@ export function createStudioSession({ state: opening, readOnly = false }) {
     },
     // The stage selects an object (null lets the selection go): the Keyframes selected stay with the same object only.
     selectObject(row) {
-      const next = row && (row === "camera" || state.stickers.some((item) => item.id === row)) ? row : null;
+      const next = row && rowInState(state, row) ? row : null;
       if (next === selection.row) return false;
       selection = { row: next, keys: [] };
       return true;

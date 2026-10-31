@@ -7,6 +7,9 @@
 //   upstream-own  the same with the node's own `background` linked too
 //   upstream-world  the same with the node's own `world` linked too (its own `scene` row shows with the group)
 //   upstream-pending  a Scene linked to `scene`, the node not run yet
+//   moge      a MOGE_GEOMETRY VIDEO batch on `world` as the node writes it (a depth grid: a depth file per frame, a K per
+//             frame, a color proxy video); the `scene` clip starts at item 2, a plane across the view
+//   moge-item0  the same with the clip at item 0, whose depth is above 0 only in its left quarter
 //   world     an empty state with only `world` linked, the node not run yet
 //   empty     an empty state with nothing linked
 // The page reports through window.__studio.
@@ -15,6 +18,7 @@ import { GLTFExporter } from "three/examples/jsm/exporters/GLTFExporter.js";
 import { editorSession } from "/web_src/pano_node_bridge.js";
 import { openStudioEditor } from "/web_src/studio/editor.js";
 import { rememberView } from "/web_src/studio/view_camera.js";
+import { makeVideo } from "./media.js";
 
 const getContext = HTMLCanvasElement.prototype.getContext;
 HTMLCanvasElement.prototype.getContext = function (type, options = {}) {
@@ -54,7 +58,7 @@ const storage = new Map();
 const memoryStorage = { getItem: (key) => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, String(value)) };
 
 // The colors the spec reads back.
-export const COLORS = { port: "#d0302a", upstreamSky: "#2a9ad0", upstreamBoard: "#30b050", upstreamBg: "#40205a", ownBg: "#8a8a20" };
+export const COLORS = { depth: "#c03030", port: "#d0302a", upstreamSky: "#2a9ad0", upstreamBoard: "#30b050", upstreamBg: "#40205a", ownBg: "#8a8a20" };
 
 function portCase() {
   return {
@@ -111,6 +115,36 @@ function upstreamCase(own, world = false) {
   };
 }
 
+// A MOGE_GEOMETRY VIDEO batch on `world` (docs/studio-node.md "`MOGE_GEOMETRY` の透視投影の列のエディタ用ファイル"): the
+// meta's form as a run leaves it (`intrinsics` a K by rows per frame, the files in frame order). Item 2 is a plane 3
+// ahead across the view; item 0 only its left quarter (x < 8); the others have depth 0 everywhere. The proxy video is one
+// color.
+async function mogeCase(firstItem) {
+  const W = 33;
+  const H = 33;
+  const frames = 4;
+  const files = Array.from({ length: frames }, (_, index) => {
+    const values = new Float32Array(W * H).fill(index === 2 ? 3 : 0);
+    if (index === 0) for (let y = 0; y < H; y += 1) values.fill(3, y * W, y * W + 8);
+    return URL.createObjectURL(new Blob([values.buffer]));
+  });
+  // A K per frame (the focal length differs a little, as MoGe's does): the grid covers about ±25° at depth 3.
+  const intrinsics = files.map((_, index) => {
+    const f = (W - 1) / 2 / Math.tan((25 + index) * Math.PI / 180);
+    return [f, 0, (W - 1) / 2, 0, f, (H - 1) / 2, 0, 0, 1];
+  });
+  const video = await makeVideo({ width: 64, height: 64, seconds: 0.6, paint: fill(COLORS.depth) });
+  const meta = {
+    kind: "depth_grid", unlit: true, width: W, height: H, depth: { dtype: "float32", byte_order: "little", bytes: W * H * 4 },
+    intrinsics, video: video.src, video_fps: 24, frames,
+  };
+  return {
+    state: { version: 2, timeline: { fps: 24 }, scene: { clip: { start: 0, in: firstItem, duration: frames - firstItem } }, stickers: [] },
+    inputs: [{ name: "world", type: "MOGE_GEOMETRY" }],
+    result: { pano_scene_files: files, pano_scene_meta: [meta] },
+  };
+}
+
 // An empty state with only `world` linked (the node not run yet), or with nothing linked ("empty").
 function worldCase(linked) {
   return { state: { version: 2, timeline: { fps: 24 }, stickers: [] }, inputs: linked ? [{ name: "world", type: "MESH" }] : [], result: {} };
@@ -119,6 +153,7 @@ function worldCase(linked) {
 try {
   const setup = which === "port" ? portCase()
     : which === "port3d" ? await port3dCase()
+    : which === "moge" || which === "moge-item0" ? await mogeCase(which === "moge" ? 2 : 0)
     : which === "world" || which === "empty" ? worldCase(which === "world")
     : upstreamCase(which === "upstream-own", which === "upstream-world");
   if (which === "upstream-pending") setup.result = {};
@@ -134,6 +169,7 @@ try {
     inputs: setup.inputs.map((input, index) => ({ name: input.name, link: index + 1 })),
     widgets: [{ name: "state_json", value: JSON.stringify(setup.state) }, { name: "bg_color", value: "#000000" }],
     graph: { getNodeById: (id) => graphNodes.find((item) => item.id === id) ?? null, _nodes: graphNodes, nodes: graphNodes },
+    isInputConnected: (index) => !!origins[index],
     getInputLink: (index) => (origins[index] ? { origin_id: origins[index].id, origin_slot: 0, type: origins[index].type } : null),
     getInputNode: (index) => origins[index] ?? null,
   };

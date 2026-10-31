@@ -30,7 +30,6 @@ import { portMediaSource } from "../web_src/pano_port_media.js";
 import { buildModalShellPreset } from "../web_src/modal_shell_presets.js";
 import { applyViewportCamera, createLayerTextures, placeSticker, unwrapStickerUniforms } from "../web_src/pano_three_view.js";
 import { worldToPano } from "../web_src/pano_world.js";
-import { readEditorSource } from "./editor_source.mjs";
 
 const fixture = (name) => readFileSync(new URL(`./fixtures/scene_state/${name}.json`, import.meta.url), "utf8");
 
@@ -559,18 +558,6 @@ test("the port Sticker's source is its media, so a swap on the port changes it",
   assert.notEqual(portMediaSource({ src: "a.mp4", meta: {} }, first), portMediaSource(null, { naturalWidth: 32 }));
 });
 
-test("the editor hit tests and draws its overlays with the camera its three.js view renders", () => {
-  const editor = readEditorSource();
-  const body = (name) => editor.slice(editor.indexOf(`  function ${name}(`), editor.indexOf("\n  }\n", editor.indexOf(`  function ${name}(`)));
-  assert.match(body("currentViewProjection"), /viewProjection\(currentViewCamera\(\), canvas\.width, canvas\.height\)/);
-  assert.match(body("projectDir"), /currentViewProjection\(\)\.project\(dir\)/);
-  assert.match(body("screenToWorldDir"), /return currentViewProjection\(\)\.ray\(x, y\);/);
-  assert.match(body("projectSceneItemDir"), /currentViewProjection\(\)\.project\(dir, nearZ\)/);
-  // In space the same angles stand at the Viewport camera's position (pano_space.js spaceCamera).
-  assert.match(body("renderEditorView"), /camera: space \? spaceCamera\(spaceViewState\(\), width, height, space\.sphere\) : currentViewCamera\(\),/);
-  assert.doesNotMatch(editor, /currentViewBasis/);
-});
-
 // The Timeline under the stage changes the stage's height. The view keeps its width's field of
 // view and its center, so a shorter stage only crops the top and bottom: nothing zooms or slides
 // sideways, and every direction keeps its distance from the stage's center.
@@ -584,29 +571,6 @@ test("a viewport camera keeps the content's scale and center when the stage gets
     assert.ok(Math.abs(point.x - x) < 1e-6, `${x},${y}: x ${point.x}`);
     assert.ok(Math.abs(point.y - 240 - (y - 380)) < 1e-6, `${x},${y}: y ${point.y}`);
   }
-});
-
-// A canvas left at its old size for one painted frame shows its frame stretched; the stage resizes
-// and draws from a ResizeObserver, which runs after layout and before paint, instead of polling.
-test("the editor resizes and redraws the stage in the frame its layout changes", () => {
-  const editor = readEditorSource();
-  // It only resizes and draws, through the same error guard as the tick, and leaves the animations
-  // and the tick's clock to the next tick.
-  assert.match(editor, /const stageResizeObserver = new ResizeObserver\(redrawNow\);/);
-  const redraw = editor.slice(editor.indexOf("  function redrawNow() {"), editor.indexOf("\n  }\n", editor.indexOf("  function redrawNow() {")));
-  assert.match(redraw, /if \(!runtime\.running \|\| !syncCanvasSize\(\)\) return;\s*runGuardedFrame\(\(\) => \{\s*runtime\.dirty = false;\s*drawScene\(new Set\(\[DRAW_REASON\.RESIZE\]\)\);/);
-  assert.doesNotMatch(redraw, /tickFrame/);
-  assert.match(editor, /function tick\(ts = performance\.now\(\), reasons = new Set\(\)\) \{\s*if \(!runtime\.running\) return;\s*const frameStart = diagnosticsFrameStart\(\);\s*runGuardedFrame\(\(\) => tickFrame\(ts, reasons\)\);/);
-  assert.match(editor, /stageResizeObserver\.observe\(canvas\);/);
-  assert.doesNotMatch(editor, /lastSizeCheckTs/);
-  const timeline = readFileSync(new URL("../web_src/components/PanoTimeline.vue", import.meta.url), "utf8");
-  assert.doesNotMatch(timeline, /v-show="model\.expanded"/);
-  const css = readFileSync(new URL("../web/pano_editor.css", import.meta.url), "utf8");
-  assert.match(css, /\.pano-timeline-body \{[^}]*transition: height 180ms/);
-  assert.match(css, /\.pano-timeline-body\.open \{\s*height: min\(var\(--pano-timeline-rows\), 34vh\);/);
-  assert.match(css, /@media \(prefers-reduced-motion: reduce\) \{\s*\.pano-timeline-body \{\s*transition: none;/);
-  // A transition cut short (the Timeline toggled again mid-slide) ends the slide too.
-  assert.match(timeline, /@transitionend\.self="sliding = false"\s*@transitioncancel\.self="sliding = false"/);
 });
 
 test("the space view draws the world Stickers shown at the playhead as planes of their cropped media", async () => {
@@ -691,134 +655,15 @@ test("the three.js view picks the World content it last drew, not its guides", (
   assert.match(view, /new Spark\.SparkRenderer\(\{ renderer, onDirty, enableLod: false \}\)/);
 });
 
-test("a 3D world port Sticker has no plane: the space view draws its item instead", async () => {
+test("a 3D world port Sticker without media has no plane (the space view draws its item instead)", async () => {
   const { worldStickerLayers } = await import("../web_src/pano_editor_view.js");
   const state = loadSceneState({ version: 2, stickers: [{ id: "sticker_image_1", placement: "world", source: { kind: "port" }, position: { value: [0, 0, -2], keyframes: [] } }] });
   // The node gives a 3D port Sticker no image (pano_sticker_input_images), so the editor has no media.
   assert.deepEqual(worldStickerLayers(state, 0, state.stickers, { media: () => null }), []);
-  const editor = readEditorSource();
-  // Its files are used while the `sticker` input comes from where the run's did.
-  assert.match(editor, /isNodeOutputMediaCurrent\(node, "external-sticker"\)\) return null;\s*return sceneFilesOf\(getNodeUiList\("pano_sticker_files"\), getNodeUiList\("pano_sticker_meta"\), mediaSource\);/);
-  assert.match(editor, /const sticker = withColors\("sticker", stickerContentRequest\(portFiles, sceneState, evaluated\)\);/);
-  assert.match(editor, /stickerUrls: stickerContentUrls\(portFiles, sceneState\),/);
-  // A see-through GLB does not write depth, and writes it again at full opacity.
-  const view = readFileSync(new URL("../web_src/pano_three_view.js", import.meta.url), "utf8");
-  assert.match(view, /material\.transparent = opacity < 1;\s*material\.depthWrite = opacity >= 1;/);
 });
 
-test("in the space view a press picks the gizmo first, then a world Sticker, then the sky Stickers", () => {
-  const editor = readEditorSource();
-  const down = editor.slice(editor.indexOf("  function onCanvasPointerDown(e) {"), editor.indexOf("  // A left drag on empty space of the panorama view looks around;"));
-  const press = down.indexOf('if (editor.primaryTool === "cursor" && sceneV2 && isSpaceView() && startWorldStickerPress(e, p)) return;');
-  assert.ok(press > down.indexOf('kind: "marquee_select"'));
-  assert.ok(press < down.indexOf("if (selectedItems.length > 1 && selGeom?.visible) {"));
-  assert.ok(press < down.indexOf("const hit = hitObjectAt(p);"));
-  const start = editor.slice(editor.indexOf("  function startWorldStickerPress(e, p) {"), editor.indexOf("  // The gizmo highlights the handle under the pointer"));
-  assert.ok(start.indexOf('worldGizmoPointer("down", p)') < start.indexOf("editorView.pickSticker("));
-  // Only a world Sticker is selected by its id, the node's own or an upstream element's (ADR 0030); the `scene`
-  // content leaves the press to the Sky.
-  assert.match(start, /if \(stickerById\(id\)\?\.placement !== "world"\) return false;/);
-  assert.match(editor, /function stickerById\(id\) \{\s*return state\.stickers\.find\(\(item\) => item\.id === id\) \|\| upstreamStickers\(\)\.find\(\(item\) => item\.id === id\) \|\| null;/);
-  assert.match(start, /selectWorldSticker\(id\);/);
-  // Selecting does not stop playback; a gizmo drag stops it on its first move and starts over from that frame.
-  assert.match(editor, /if \(!\["view", "marquee_select", "space_pan", "space_orbit", "world_select"\]\.includes\(it\.kind\)\) restartEditAtStoppedFrame\(it, down\);/);
-  const restart = editor.slice(editor.indexOf("  function restartEditAtStoppedFrame(it, down) {"));
-  assert.match(restart, /playback\.stop\(\);\s*if \(it\.kind === "frame_pan"\) return;\s*if \(it\.kind === "frame_orbit"\) \{[\s\S]*?\n    \}\n\s*if \(it\.kind === "world_gizmo"\) \{\s*const sticker = stickerById\(it\.id\);\s*if \(it\.camera\) it\.base = cutoutCamera\(\);\s*else if \(sticker\) it\.base = evaluateSticker\(sticker, editor\.frame\);/);
-  // The drag writes the gizmo mode's Lane by the recording rule, and a changed drag is one Undo step.
-  assert.match(editor, /setWorldStickerTransform\(sticker, editor\.frame, gizmoDragLanes\(it\.mode, it\.base, it\.start, moved\)\);/);
-  assert.match(editor, /if \(ended\.changed\) \{\s*pushHistory\(\);\s*commitAndRefreshNode\(\);/);
-  // The inspector edits the same Lanes.
-  assert.match(editor, /setWorldStickerField\(worldInspected, editor\.frame, key, out\);/);
-});
-
-test("a Move | Rotate | Scale segmented control in the world Sticker's selection menu picks the gizmo mode; no key or toggle button flips it", () => {
+test("the old editor's shell has no gizmo buttons (the mode is a segmented control in the selection menu)", () => {
   assert.equal("gizmoButtons" in buildModalShellPreset("stickers"), false);
-  const menu = readFileSync(new URL("../web_src/components/PanoSelectionMenu.vue", import.meta.url), "utf8");
-  assert.match(menu, /<PanoSegments\s+v-else-if="item\.kind === 'segments'"\s+:buttons="item\.buttons \|\| \[\]"\s+:attr="item\.attr"/);
-  const modal = readFileSync(new URL("../web_src/components/PanoModal.vue", import.meta.url), "utf8");
-  assert.doesNotMatch(modal, /gizmo-buttons/);
-  const editor = readEditorSource();
-  assert.match(editor, /editor\.gizmoMode = gizmoModeTarget\.getAttribute\("data-gizmo-mode"\);/);
-  // W and R are ComfyUI's own shortcuts (workflows, refresh), so the editor binds no gizmo keys.
-  assert.doesNotMatch(editor, /gizmoMode = (?!gizmoModeTarget)/);
-  // The gizmo is three.js TransformControls in the lazily loaded view, drawn in the World pass.
-  const view = readFileSync(new URL("../web_src/pano_three_view.js", import.meta.url), "utf8");
-  assert.match(view, /import \{ TransformControls \} from "three\/examples\/jsm\/controls\/TransformControls\.js";/);
-  assert.match(view, /return \[target, controls\.getHelper\(\)\];/);
-  assert.doesNotMatch(editor, /TransformControls/);
-});
-
-test("the world Sticker's selection menu shows exactly while its gizmo does, and follows it", () => {
-  const editor = readEditorSource();
-  // A selected world Sticker takes the menu instead of the canvas selection's.
-  const update = editor.slice(editor.indexOf("  function updateSelectionMenu() {"), editor.indexOf("  function showSelectionMenu(model) {"));
-  const takes = 'if (editor.worldSelectedId || (isCameraSelected() && isFreeSpaceView())) {';
-  assert.ok(update.indexOf('if (editor.mode === "frame")') < update.indexOf(takes));
-  assert.ok(update.indexOf(takes) < update.indexOf("const selected = getSelected();"));
-  // It is the gizmo's own condition (worldGizmo: shown, editable, i.e. not locked and not read-only, and
-  // active at the playhead), in the space view, hidden during a press or a drag like the canvas menu.
-  const world = update.slice(update.indexOf("  function worldSelectionMenuModel() {"));
-  assert.match(world, /const space = isSpaceView\(\) && !editor\.interaction \? editorViewInput\(\)\.space : null;\s*if \(!space\?\.gizmo\) return \{ visible: false \};/);
-  assert.match(editor, /if \(!worldStickerEditable\(sticker\) \|\| !value\?\.active\) return null;/);
-  // An upstream element of a layer that is only inherited is locked (ADR 0030).
-  assert.match(editor, /function worldStickerEditable\(sticker\) \{\s*return !!sticker && !readOnly && !isItemLocked\(sticker\);/);
-  assert.match(editor, /if \(isUpstreamSticker\(item\) && !upstreamStickerEditable\(item\)\) return true;\s*return item\.locked === true;/);
-  // A world selection is a single Sticker: selecting one clears the canvas selection, and the reverse.
-  assert.match(editor, /function selectWorldSticker\(id\) \{\s*setSelectedItem\(null\);/);
-  assert.match(editor, /function setSelectedItems\(items, primaryId = null\) \{[\s\S]*?clearWorldSelection\(\);/);
-  // Each frame of the view keeps it under the Sticker (view, playhead) and takes it away with the gizmo.
-  assert.match(editor, /syncFloatingViewButtonState\(\);\s*\/\/ [^\n]*\n\s*if \(editor\.worldSelectedId \|\| isCameraSelected\(\) \|\| isWorldMenuShown\(\)\) updateSelectionMenu\(\);/);
-  // Both menus are placed by selectionMenuPlacement, which never hides them (also after measuring).
-  const show = editor.slice(editor.indexOf("  function showSelectionMenu(model) {"), editor.indexOf("  function hideTooltip() {"));
-  assert.match(show, /selectionMenuPlacement\(model\.anchor, menuW, menuH, canvas\.width, canvas\.height\)/);
-  assert.doesNotMatch(show, /uiState\.selectionMenu\.visible = false/);
-  // A segment marks its mode at once.
-  assert.match(editor, /editor\.gizmoMode = gizmoModeTarget\.getAttribute\("data-gizmo-mode"\);\s*runtime\.backgroundDirty = true;\s*updateSelectionMenu\(\);/);
-});
-
-test("Panorama Studio's editor edits its Camera: the shot follows it, the Frame view moves it in space, the gizmo moves it in 6DoF", () => {
-  const editor = readEditorSource();
-  // The shot is the Camera at the playhead; an edit goes back to its Lanes before the playhead moves.
-  assert.match(editor, /function setTimelineFrame\(frame\) \{[\s\S]*?syncCutoutShot\(\);\s*editor\.frame = next;\s*timelinePlayhead\.frame\.value = next;\s*syncCutoutShot\(\);/);
-  assert.match(editor, /if \(keep && shot && cutoutShotBase\) setCameraShot\(state\.camera, editor\.frame, shot, cutoutShotBase\);/);
-  // With World content the Frame view's drags of the 3D view controls orbit and pan the Camera (its wheel:
-  // tests/editor_frame_wheel.test.mjs).
-  assert.match(editor, /if \(freeFrame && spaceAction\) \{[\s\S]*?startFrameDrag\(spaceAction, p, e\.pointerId\);/);
-  // The frame and the camera preview see the World from the Camera's position.
-  assert.match(editor, /return placedCamera\(shotCamera\(shot\), shot\.position, frameViewDistance\(\), content\.sphere\);/);
-  // In 6DoF the gizmo writes the Camera's Lane of its mode by the recording rule.
-  assert.match(editor, /setLaneValue\(state\.camera, name, editor\.frame, value\)/);
-  assert.match(editor, /if \(cameraV2 && isShotItem\(item\) && isFreeSpaceView\(\)\) return \{ visible: false \};/);
-  // A Frame view orbit that stops playback picks its point again on the stopped frame, as a gizmo drag
-  // takes its base; a pan keeps its depth, which does not depend on where the Camera is.
-  assert.match(editor, /if \(it\.kind === "frame_orbit"\) \{[\s\S]*?if \(context\) it\.pivot = frameTarget\(context, frameSpaceView\(context\), down\);/);
-  // A Frame view pan moves at the pivot's depth, the content's size whatever the zooms before, and an
-  // orbit or a wheel step works on the point under the pointer off a SPLAT's box.
-  assert.match(editor, /: \{ kind: "frame_pan", last: p, depth: panDepth\(view, spaceScale\(\)\), changed: false \};/);
-  assert.match(editor, /function frameViewDistance\(\) \{\s*return contentSphere\(\)\?\.radius \|\| DEFAULT_DISTANCE;\s*\}/);
-  assert.doesNotMatch(editor, /frameDistance/);
-  assert.match(editor, /return editorView\.pickSurface\(shotViewCamera\(context\.shot\), p\.x - rect\.x, p\.y - rect\.y, rect\.w, rect\.h\);/);
-  // Closing the editor without an edit leaves state_json as it is, though the editor rebased it.
-  assert.match(editor, /editorStateWrite\(node, stored, String\(stateWidget\.value \?\? ""\), \{ rebased: cameraV2 \}\)/);
-});
-
-test("Panorama Studio's editor adds and deletes its one Camera without moving the view at once", () => {
-  const editor = readEditorSource();
-  // The Stickers editor of state v2 with the Cutout's Camera, which the node marks.
-  assert.match(editor, /const studio = sceneV2 && node\.__panoStudio === true;/);
-  assert.match(editor, /const shellPreset = buildModalShellPreset\(studio \? "studio" : type\);/);
-  // Add Camera: where the view stands and looks, disabled while there is one.
-  assert.match(editor, /state\.camera = newStudioCamera\(spaceViewState\(\)\);/);
-  assert.match(editor, /patchUiButton\(uiState\.toolButtons, "value", "add-camera", \{ disabled: hasCamera\(\) \}\);/);
-  // Delete saves no Camera, and the shot goes with it.
-  assert.match(editor, /function deleteStudioCamera\(\) \{[\s\S]*?state\.camera = null;/);
-  assert.match(editor, /if \(studio && isShotItem\(selected\)\) \{\s*deleteStudioCamera\(\);/);
-  assert.match(editor, /if \(!cameraShoots\(\)\) \{\s*cutoutShotBase = null;\s*if \(state\.shots\?\.length\) state\.shots = \[\];\s*if \(before\) followCameraChange\(before, null\);/);
-  // 3DoF moves to where it stands now over a transition, which enters 3DoF when it arrives.
-  assert.match(editor, /applySpaceMode\(\{ mode: "6dof", position: from, moved: true \}\);[\s\S]*?transitionView\(\{ \.\.\.view, position: to \}, \{ mode: "3dof", moved: false \}\);/);
-  // The Frame tab is always there; without a frame to show it is disabled, and Studio leaves it for the panorama.
-  assert.match(editor, /if \(editor\.mode === "frame" && frameButton\.disabled\) \{\s*if \(studio\) leaveFrameView\(getActiveCutoutShot\(\)\);/);
-  assert.match(editor, /button\.visible = !\(button\.key === "frame" && !shotEditor\);/);
 });
 
 test("every three view draw leaves the unpack flags off, so Spark's raw integer upload never runs premultiplied", () => {

@@ -1,8 +1,8 @@
 // The screen geometry of the canvas items (sky Stickers, shots, stroke groups, raster objects), cached per
 // view, which the overlay draws and the hit testing reads.
-import { BRUSH_PRESETS, DEFAULT_BRUSH_PRESET_ID } from "../pano_brush_presets.js";
 import { yawPitchToDir } from "../pano_camera_math.js";
 import { clamp } from "../pano_math.js";
+import { strokeHitLineWidth, strokePoints } from "../pano_paint_objects.js";
 import { smoothstep } from "./helpers.js";
 
 // The points of each edge of an item's outline (buildSceneItemGeom).
@@ -32,18 +32,15 @@ export function createObjectGeometry(deps) {
     const frameRect = frameShot ? getFrameViewRect(frameShot) : null;
     for (const stroke of strokes) {
       const geometry = stroke?.geometry || null;
-      const srcPoints = geometry?.geometryKind === "lasso_fill"
-        ? geometry?.points
-        : (geometry?.processedPoints || geometry?.rawPoints || geometry?.points || []);
+      const srcPoints = strokePoints(stroke);
       const pts = projectEditorPoints(srcPoints, frameShot, frameRect, unwrapRefU)
         .filter((pt) => Number.isFinite(pt?.x) && Number.isFinite(pt?.y));
       if (!pts.length) continue;
       const presetId = getBrushPresetIdForTool(String(stroke?.toolKind || "pen"));
-      const preset = BRUSH_PRESETS[presetId] || BRUSH_PRESETS[DEFAULT_BRUSH_PRESET_ID];
       strokePaths.push({
         points: pts,
         closed: String(geometry?.geometryKind || "") === "lasso_fill",
-        lineWidth: Math.max(10, Number(stroke?.size || 10) * Math.max(0.1, Number(preset?.sizeScale ?? 1)) + 10),
+        lineWidth: strokeHitLineWidth(stroke, presetId),
         layerKind: String(stroke?.layerKind || item.layerKind || "paint"),
       });
     }

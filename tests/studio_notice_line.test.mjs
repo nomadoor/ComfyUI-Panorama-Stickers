@@ -49,6 +49,15 @@ test("waiting for the upstream Scene says so with no mark, after the warnings an
   assert.deepEqual(topLine(ui({ upstreamPending: true, addWarning: "x" })), { kind: "warning", text: "x" });
 });
 
+// docs/studio-ui.md "一行の知らせの種類": a depth grid waiting for its proxy video loads after a placed 3D file; one too
+// large for the GPU is a warning after the 3D view's and before the background's.
+test("a depth grid's colors loading come after a placed 3D file; one too large is a warning before the background's", () => {
+  assert.deepEqual(topLine(ui({ depthNotice: "Loading depth video…" })), { kind: "loading", text: "Loading depth video…" });
+  assert.deepEqual(topLine(ui({ depthNotice: "Loading depth video…", adding: true })), { kind: "loading", text: LINE_TEXT.addLoading });
+  assert.deepEqual(topLine(ui({ depthNotice: "too large", background: "failed" })), { kind: "warning", text: "too large" });
+  assert.deepEqual(topLine(ui({ depthNotice: "too large", view: "failed" })), { kind: "warning", text: LINE_TEXT.viewFailed });
+});
+
 test("every line's kind is one of the five", () => {
   for (const fields of [{ notice: "x" }, { done: "x" }, { view: "loading" }, { background: "failed" }, { empty: true }, {}]) {
     assert.ok(NOTICE_KINDS.includes(topLine(ui(fields)).kind));
@@ -83,4 +92,14 @@ test("everything drawn or brought by an input counts", () => {
   assert.equal(stageEmpty({ ...nothing, paint: 1 }), false);
   assert.equal(stageEmpty({ ...nothing, worldItems: 1 }), false);
   assert.equal(stageEmpty({ ...nothing, upstream: 2 }), false);
+});
+
+test("the linked inputs come from the node's isInputConnected, not the deprecated input.link", async () => {
+  const { linkedInputNames } = await import("../web_src/studio/notice_line.js");
+  const connected = new Set([1]);
+  const inputs = [{ name: "world", link: 5 }, { name: "scene", link: null }, { name: "sticker" }];
+  const node = { inputs, isInputConnected: (slot) => connected.has(slot) };
+  assert.deepEqual(linkedInputNames(node), ["scene"]);
+  assert.deepEqual(linkedInputNames({ inputs }), []);
+  assert.deepEqual(linkedInputNames(null), []);
 });

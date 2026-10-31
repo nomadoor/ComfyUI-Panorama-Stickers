@@ -4,8 +4,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { loadSceneState } from "../web_src/pano_scene_state.js";
-import { worldStickerPlane } from "../web_src/pano_space.js";
-import { createStageMedia, stageContent, stickerFrameSphere } from "../web_src/studio/stage_content.js";
+import { DEPTH_VIDEO_LOADING } from "../web_src/pano_depth_color.js";
+import { sceneFilesOf, worldStickerPlane } from "../web_src/pano_space.js";
+import { createStageMedia, stageContent, stageDepthNotice, stickerFrameSphere } from "../web_src/studio/stage_content.js";
 
 const file = (filename) => ({ kind: "file", filename, subfolder: "", storage: "input" });
 const state = loadSceneState({
@@ -121,4 +122,68 @@ test("the upstream layers' sky lies under the node's own, and their planes and i
   assert.equal(content.space.upstreamStickers, upstream.stickers);
   assert.deepEqual(content.space.upstreamItems, upstream.items);
   assert.ok(content.sphere.center[2] < -5 && content.sphere.radius >= 2, "the upstream plane is inside");
+});
+
+// A `scene` depth grid of 3 frames as a run leaves it (docs/studio-node.md "DA3_GEOMETRY mono のエディタ用ファイル": a
+// depth file and a K per frame, a color proxy) and an upstream layer's depth grid item next to its mesh item.
+const K = [100, 0, 16, 0, 100, 16, 0, 0, 1];
+const depthMeta = {
+  kind: "depth_grid", unlit: true, width: 33, height: 33, depth: { dtype: "float32", byte_order: "little", bytes: 33 * 33 * 4 },
+  intrinsics: [K, K, K], video: "proxy.mp4", video_fps: 24, frames: 3,
+};
+const depthFiles = sceneFilesOf(["d0.f32", "d1.f32", "d2.f32"], [depthMeta], (entry) => entry);
+const upstreamDepth = {
+  sky: [],
+  stickers: [],
+  items: [
+    { slot: "up_depth", request: { kind: "depth_grid", url: "u0.f32", video: { src: "up.mp4", fps: 24, time: 0 } }, value: {} },
+    { slot: "up_mesh", request: { kind: "mesh", url: "u.glb" }, value: {} },
+  ],
+};
+const empty = loadSceneState({ version: 2, stickers: [] });
+const depthOptions = { media: () => null, sceneFiles: depthFiles, upstream: upstreamDepth };
+
+// ADR 0049: the node's surface gives no depthColor and does not draw depth grids.
+test("without depthColor the depth grids are left out: no scene request, no slots, the upstream depth item dropped", () => {
+  const content = stageContent(empty, 1, depthOptions);
+  assert.equal(content.space.scene, null);
+  assert.deepEqual(content.space.sceneUrls, []);
+  assert.deepEqual(content.space.depthSlots, []);
+  assert.deepEqual(content.space.upstreamItems.map((entry) => entry.slot), ["up_mesh"]);
+});
+
+// docs/studio-ui.md "ノードの入力から来た物": the editor draws them with their input's proxy colors.
+test("with depthColor the playhead's depth grid item carries its input's colors and slot; the line waits for them", () => {
+  const asked = [];
+  const waiting = stageContent(empty, 1, { ...depthOptions, depthColor: (slot, video) => (asked.push([slot, video.time]), null) });
+  assert.equal(waiting.space.scene.url, "d1.f32");
+  assert.deepEqual(waiting.space.scene.sources["d1.f32"].intrinsics, K);
+  assert.equal(waiting.space.scene.color, null);
+  assert.deepEqual(waiting.space.depthSlots, ["scene", "up_depth"]);
+  assert.deepEqual(asked, [["scene", 1 / 24], ["up_depth", 0]]);
+  assert.equal(stageDepthNotice(waiting, () => null), DEPTH_VIDEO_LOADING);
+
+  const picture = { media: {}, revision: "video", source: "proxy.mp4" };
+  const shown = stageContent(empty, 1, { ...depthOptions, depthColor: () => picture });
+  assert.deepEqual(shown.space.scene.color, { ...picture, slot: "scene" });
+  assert.deepEqual(shown.space.upstreamItems.map((entry) => [entry.slot, entry.request.color?.slot ?? null]), [["up_depth", "up_depth"], ["up_mesh", null]]);
+  assert.equal(stageDepthNotice(shown, () => null), "");
+});
+
+test("the loaded 3D items are the boxes the first T can hit", () => {
+  const content = stageContent(state, 0, { media, editorFile, sceneBox: (url) => (url.startsWith("file3d:") ? box : null) });
+  assert.equal(content.boxes.length, 1);
+  assert.deepEqual(content.boxes[0].box, box);
+  assert.deepEqual(content.boxes[0].transform.position, [3, 0, -3]);
+  assert.deepEqual(stageContent(state, 0, { media: () => null }).boxes, []);
+});
+
+test("the scene item's box for the first T is moved by the scene transform", () => {
+  const moved = loadSceneState({ version: 2, stickers: [], scene: { position: { value: [0, 0, -6] }, scale: { value: 2 } } });
+  const sceneFiles = { kind: "mesh", urls: ["scene.glb"] };
+  const content = stageContent(moved, 0, { media: () => null, sceneFiles, sceneBox: () => box });
+  assert.equal(content.boxes.length, 1);
+  assert.deepEqual(content.boxes[0].box, box);
+  assert.deepEqual(content.boxes[0].transform.position, [0, 0, -6]);
+  assert.equal(content.boxes[0].transform.scale, 2);
 });

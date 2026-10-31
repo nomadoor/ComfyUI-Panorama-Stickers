@@ -1,4 +1,4 @@
-// The inspector of the new UI (docs/studio-ui.md "インスペクタ"): what it shows for a tab and a selection, as plain
+// The inspector of the new UI (docs/studio-ui.md "インスペクタ"): what it shows for a selection and a tab, as plain
 // data for components/studio/StudioInspector.vue. Pure: it reads the working state v2 and never changes it. Each
 // row holds its values at the playhead, whether it is enabled, its Keyframe dot (docs/timeline-ui.md "インスペクタの
 // Keyframe のポチ"), whether it is at the value its reset returns to, and the mark of an overridden upstream value.
@@ -6,7 +6,7 @@
 import { ICON } from "../icons.js";
 import { CAMERA_ASPECT_MAX, CAMERA_ASPECT_MIN, WORLD_MIN_SCALE, skyStickerVfov, stickerVfovFromAspect } from "../pano_editor_state.js";
 import { NEW_STICKER_HFOV } from "../pano_space.js";
-import { LENS_CURVE_MAX, LENS_CURVE_MIN, lensFovLimit } from "../pano_lens.js";
+import { LENS_CURVE_DIGITS, LENS_CURVE_MAX, LENS_CURVE_MIN, lensFovLimit } from "../pano_lens.js";
 import { FRAME_EPSILON, evaluateCamera, evaluateLane, evaluateSticker } from "../pano_scene_eval.js";
 import {
   ANIMATION_DEFAULT,
@@ -289,7 +289,7 @@ function cameraRows(camera, playhead) {
       control: "slider",
       lanes: ROW_LANES.camera.lens,
       slider: { field: "curve", min: LENS_CURVE_MIN, max: LENS_CURVE_MAX, step: 0.01 },
-      fields: [{ field: "curve", value: value.curve, step: 0.005, precision: 2, min: LENS_CURVE_MIN, max: LENS_CURVE_MAX }],
+      fields: [{ field: "curve", value: value.curve, step: 0.005, precision: LENS_CURVE_DIGITS, min: LENS_CURVE_MIN, max: LENS_CURVE_MAX }],
       // The κ edit keeps the image's center scale (pano_editor_state.js setCameraCurveKeepingCenter): the edit carries
       // the lens fields where it began.
       lensStart: { hFOV_deg: value.hFOV_deg, aspect: camera.aspect, curve: value.curve },
@@ -402,9 +402,16 @@ function cameraCard(state, { playhead, readOnly }) {
   };
 }
 
-function sceneCard(state, { readOnly, upstream }) {
+const SET_GROUND_TIP = "Click a surface to make it the ground";
+
+// The Scene card's Ground (docs/studio-ui.md "種類ごとの中身"). Set ground picks on the stage, which picks nothing in the
+// Panorama mode Camera tab: off there, in its place (docs/studio-ui.md "Camera タブ").
+function sceneCard(state, { readOnly, upstream, tab }) {
   const ground = groundOf(state, upstream);
   const off = readOnly;
+  let setGround = { disabled: false, tip: SET_GROUND_TIP };
+  if (readOnly) setGround = { disabled: true, tip: "Read-only" };
+  else if (tab === "camera" && cameraOf(state).projection === "erp") setGround = { disabled: true, tip: "Not available in Panorama mode" };
   return {
     kind: "scene",
     title: "Scene",
@@ -420,6 +427,7 @@ function sceneCard(state, { readOnly, upstream }) {
       fields: [{ field: "ground", value: ground, unit: "", step: 0.01, precision: 2, min: -Infinity, max: Infinity, disabled: off }],
       // The seat for the ground's estimate button (docs/studio-ui.md "種類ごとの中身"); nothing is placed in it yet.
       seat: true,
+      setGround,
       keyState: null,
       keyDisabled: true,
       resettable: true,
@@ -458,26 +466,38 @@ function easingModel(state, upstream, keyframes) {
   };
 }
 
+// The Camera's card (docs/studio-ui.md "Camera のカード") for the working `state` at the Timeline frame `playhead`: the
+// inspector's when the Camera is selected or nothing is, and the Camera tab's edge rulers' (frame_layout.js
+// cameraRulers).
+export function buildCameraCard({ state, playhead = 0, readOnly = false }) {
+  return cameraCard(state, { playhead, readOnly });
+}
+
 // The inspector for the working `state` (state v2), the editor's `selection` ({ ids: [...], paint?: true,
 // keyframes?: { owner, lane, frames } }; ids are "camera" or Sticker ids, an upstream element's working id
-// `upstream:<key>:<id>`), the `tab` ("3d" | "camera") and the Timeline frame `playhead`. `upstream` is the working
-// layers (pano_upstream.js upstreamWorkingLayers), `animations` the clips of the 3D files by Sticker id
+// `upstream:<key>:<id>`) and the Timeline frame `playhead`. What it shows follows the selection (docs/studio-ui.md
+// "インスペクタ", ADR 0051): nothing selected shows the Scene card, the Camera's card over the Ground's. In the Camera
+// tab (`tab` "camera") the Camera's card is always on top, the selected object's under it, and Set ground is off in
+// Panorama mode. `upstream` is the
+// working layers (pano_upstream.js upstreamWorkingLayers), `animations` the clips of the 3D files by Sticker id
 // ([{ name }]), `portSize` the size of the port Sticker's media ({ width, height }), `imageSizes` the sizes of the
 // Stickers' images by Sticker id ({ width, height } px, once loaded).
 // Returns { cards: [{ kind, title, icon, note, target, rows }], easing }.
 export function buildInspectorModel({ state, selection = {}, tab = "3d", playhead = 0, readOnly = false, upstream = [], animations = {}, portSize = null, imageSizes = {} }) {
-  const options = { playhead, readOnly, upstream, animations, portSize, imageSizes };
+  const options = { playhead, readOnly, upstream, animations, portSize, imageSizes, tab };
   const ids = selection.ids ?? [];
+  const scene = () => [cameraCard(state, options), sceneCard(state, options)];
   let cards;
-  if (tab === "camera") cards = [cameraCard(state, options)];
-  else if (ids.length > 1) {
+  if (ids.length > 1) {
     const stickers = ids.filter((id) => id !== "camera").length;
     cards = [headingCard("multi", stickers === ids.length ? `${ids.length} stickers` : `${ids.length} objects`, ICON.box)];
   } else if (ids[0] === "camera") cards = [cameraCard(state, options)];
   else if (ids.length === 1) {
     const sticker = findSticker(state, upstream, ids[0]);
-    cards = sticker ? [stickerCard(state, sticker, options)] : [sceneCard(state, options)];
+    cards = sticker ? [stickerCard(state, sticker, options)] : scene();
   } else if (selection.paint) cards = [headingCard("paint", "Paint", ICON.palette_tool)];
-  else cards = [sceneCard(state, options)];
+  else cards = scene();
+  // The Camera tab: the Camera's card always on top, the selected object's under it (owner, 2026-10-31).
+  if (tab === "camera" && cards[0].kind !== "camera") cards = [cameraCard(state, options), ...cards];
   return { cards, easing: easingModel(state, upstream, selection.keyframes) };
 }

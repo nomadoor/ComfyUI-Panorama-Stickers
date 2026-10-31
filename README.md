@@ -3,121 +3,100 @@
 [![English](https://img.shields.io/badge/README-English-3b82f6.svg)](./README.md)
 [![日本語](https://img.shields.io/badge/README-日本語-e11d48.svg)](./README_JA.md)
 [![中文](https://img.shields.io/badge/README-中文-16a34a.svg)](./README_ZH.md)
-
-[![LoRA 4B](https://img.shields.io/badge/LoRA-4B-f0b429.svg)](https://huggingface.co/nomadoor/flux-2-klein-4B-360-erp-outpaint-lora)
-[![LoRA 9B](https://img.shields.io/badge/LoRA-9B-f59e0b.svg)](https://huggingface.co/nomadoor/flux-2-klein-9B-360-erp-outpaint-lora)
 [![Guide](https://img.shields.io/badge/Guide-English-3b82f6.svg)](https://comfyui.nomadoor.net/en/notes/panorama-stickers/)
 
-ComfyUI Panorama Stickers is a small node set and frontend extension for handling 360 equirectangular panoramas inside ComfyUI, including interactive preview, framed cutouts, and compositing.
+A ComfyUI node set for placing images, videos and 3D in a 360° panorama and shooting it from any viewpoint.
 
-It was built around my FLUX.2 Klein panorama workflow and can be used with both 4B and 9B variants.
-
-This workflow was built to support my FLUX.2 Klein 4B 360 ERP outpaint LoRA:
-
-- [nomadoor/flux-2-klein-4B-360-erp-outpaint-lora](https://huggingface.co/nomadoor/flux-2-klein-4B-360-erp-outpaint-lora)
-- [nomadoor/flux-2-klein-9B-360-erp-outpaint-lora](https://huggingface.co/nomadoor/flux-2-klein-9B-360-erp-outpaint-lora)
-
-Usage details are documented here:
-
-- English: [comfyui.nomadoor.net/en/notes/panorama-stickers/](https://comfyui.nomadoor.net/en/notes/panorama-stickers/)
-- 日本語: [comfyui.nomadoor.net/ja/notes/panorama-stickers/](https://comfyui.nomadoor.net/ja/notes/panorama-stickers/)
-- 中文: [comfyui.nomadoor.net/zh/notes/panorama-stickers/](https://comfyui.nomadoor.net/zh/notes/panorama-stickers/)
-
-## Installation
-
-- Install via ComfyUI Manager.
-- Requires ComfyUI v0.35.0 or later.
-
-## Demo
+Fix the shot with an image generation model, then put it back where it was. You can do this round trip inside a ComfyUI workflow.
 
 https://github.com/user-attachments/assets/bf74e953-8ceb-4c7f-afa2-1c805f12c7af
 
-- v1.2.0 demo: https://gyazo.com/d4c2517589d7c96d27942af76a1ead27
-- v1.3.0 demo: https://gyazo.com/3da5973bb661df8fb1d11dd1e71a2b1f
-- v1.4.0 demo: https://gyazo.com/26ceba6dcc3516ce6b8c461fcfde4dad
-- v1.5.0 demo: https://gyazo.com/954d9a4acee41a13e6aebfcb125b9a48
+## Panorama Studio
 
-## Nodes
+This is the core of the node set.
 
-- `Panorama Studio`: Place images, videos and 3D files (GLB, Gaussian splats) in a 3D space around a panorama, animate them with keyframes on a timeline, paint and mask, and shoot them with a Camera as a panorama or a framed view.
-- `Panorama Stickers`: Place and adjust sticker images on an ERP canvas, then output the composited panorama.
-- `Panorama Cutout`: Compose and extract a framed perspective view from an ERP image.
-- `Panorama Preview`: Inspect still or animated ERP inputs, or a `Panorama Studio` scene, in an interactive viewer. The previous node is kept as `Panorama Preview (legacy)`.
-- `Panorama Seam Prep`: Shift an ERP seam into the center and generate hard / blurred vertical seam masks for seam-focused inpainting.
+It handles a panorama as a distant view (Sky) and 3D as a space with depth (World), together. Things pasted on the Sky stay in the same direction wherever the Camera moves. Things placed in the World look different depending on the Camera's position.
 
-### On-node panorama controls
+The node has four inputs.
 
-`Panorama Stickers`, `Panorama Cutout`, and `Panorama Preview` now include lightweight on-node UIs for completing common interactions without opening the Full Editor. Both the legacy canvas and Node 2.0 are supported.
+- `background`: the background panorama (image or video)
+- `world`: the base 3D (a mesh, a Gaussian splat, or a shape estimated with MoGe or similar)
+- `sticker`: images, videos and 3D to place in the scene. You can also add them by dropping them into the editor
+- `scene`: carries over the scene of another Panorama Studio
 
-### Video output of Panorama Studio
+In the editor, you move stickers and the Camera with Keyframes on the timeline, paint and draw masks, and shoot with the Camera. You can shoot a panorama (360° / 180°) or a normal camera view (Frame).
 
-`Panorama Studio` outputs only the first frame as IMAGE / MASK (`first_frame`, `first_frame_mask`). Every frame, with the fps and audio, is in `video` (VIDEO), which is rendered frame by frame when it is saved. To get all frames as IMAGE, connect `video` to Get Video Components. To give an IMAGE batch an fps or audio before connecting it, pass it through Create Video. When a Camera's shot goes into the `sticker` input of another `Panorama Studio` with its `sticker_state`, it is placed by time in seconds: keep a VIDEO in real time, and use an IMAGE batch only at the fps of the Studio that shot it (otherwise pass it through Create Video with that fps).
+## Main uses
 
-## Workflow
+### Paste images to make a panorama
 
-- Panorama image workflows
-  - [flux-2-klein-4B-360-erp-outpaint.json](./example_workflows/flux-2-klein-4B-360-erp-outpaint.json)
-  - [flux-2-klein-9B-360-erp-outpaint.json](./example_workflows/flux-2-klein-9B-360-erp-outpaint.json)
-- 360 panoramic video workflow
-  - By using the [LTX2.3_360vr](https://civitai.com/models/2327337/360-degree-panoramic-shot-ltx-23) LoRA created by the author of that model, you can generate 360 panoramic video from text.
-  - [LTX-2.3_360vr_distilled_3stage.json](./example_workflows/LTX-2.3_360vr_distilled_3stage.json)
+1. Drop images into the Panorama Studio editor and paste them anywhere on the panorama. You can paste as many as you like.
+2. Set the Camera to panorama and shoot. You get a panorama with the pasted images surrounded by the background color.
+3. Pass it to a generation model that uses a panorama LoRA, and it fills in the surroundings.
+
+### Fix part of a panorama
+
+1. Set the Camera to Frame and shoot the part you want to fix.
+2. Fix the shot with a generation model.
+3. Connect the fixed image, together with `sticker_state`, to the `sticker` of the next Panorama Studio. It goes back to exactly where it was shot.
+
+### Re-shoot an image or video from another angle
+
+1. Turn the image or video into 3D with MoGe or similar, and connect it to `world`.
+2. In the editor, move the Camera and shoot from another angle.
+3. Finish the missing parts of the shot with a generation model.
+
+### Make a video
+
+Connect a video to the background, or move stickers or the Camera with Keyframes, and the `video` output holds all the frames.
+
+## Other nodes
+
+- **Panorama Preview**: look around panorama images and videos, or a Studio `scene`, in a separate window.
+- **Panorama Seam Prep**: moves the left-right seam of a panorama to the center, and makes a mask for fixing the seam.
+- The earlier nodes (Panorama Stickers, Panorama Cutout, Panorama Preview (legacy)) still work as before.
+
+## Installation
+
+- Search for "Panorama Stickers" in ComfyUI Manager and install it.
+- Requires ComfyUI 0.35.0 or later.
+
+## Workflows
+
+| Workflow | What it does |
+|---|---|
+| [qwen-image-2.1-360-erp-outpaint.json](./example_workflows/qwen-image-2.1-360-erp-outpaint.json) | Paste images to make a panorama (Qwen-Image 2.1) |
+| [qwen-image-2.1-moge3-anyangle.json](./example_workflows/qwen-image-2.1-moge3-anyangle.json) | Turn an image into 3D with MoGe 3, shoot it from another angle, and finish it with Qwen-Image 2.1 |
+| [LTX-2.3_360vr_distilled_3stage.json](./example_workflows/LTX-2.3_360vr_distilled_3stage.json) | Make a 360° video from text (LTX-2.3 and the [LTX2.3_360vr](https://civitai.com/models/2327337/360-degree-panoramic-shot-ltx-23) LoRA by the model's author) |
+
+Earlier workflows: FLUX.2 Klein [4B](./example_workflows/flux-2-klein-4B-360-erp-outpaint.json) / [9B](./example_workflows/flux-2-klein-9B-360-erp-outpaint.json) ([4B LoRA](https://huggingface.co/nomadoor/flux-2-klein-4B-360-erp-outpaint-lora) / [9B LoRA](https://huggingface.co/nomadoor/flux-2-klein-9B-360-erp-outpaint-lora))
+
+## Guide
+
+The guide explains how to use it in detail.
+
+- [日本語](https://comfyui.nomadoor.net/ja/notes/panorama-stickers/) / [English](https://comfyui.nomadoor.net/en/notes/panorama-stickers/) / [中文](https://comfyui.nomadoor.net/zh/notes/panorama-stickers/)
 
 ## Troubleshooting
 
-The panorama editors rely on browser hardware acceleration. If a large editor is unusually slow while the small on-node preview remains responsive, open `chrome://gpu` (or `edge://gpu`) and check that Canvas, Compositing, Rasterization, and WebGL are hardware accelerated. If they show `Software only`, fully exit and restart the browser, then check the browser and GPU-driver settings.
+If only the editor is extremely slow, open `chrome://gpu` (`edge://gpu` for Edge) in the browser and check that WebGL says "Hardware accelerated". If it says "Software only", fully quit the browser and open it again.
 
 ## Changelog
 
-### 2.0.0
-
-- Added `Panorama Studio`: lift images, videos and 3D files (GLB, Gaussian splats) into a 3D space, animate them with keyframes, paint and mask, and shoot them with a Camera (panorama or framed view). It outputs the first frame, its mask, the video and the sticker state, and its `scene` output can feed another `Panorama Studio` or `Panorama Preview`.
-- A new editor for Panorama Studio: 3D and Camera tabs, an inspector, a timeline with keyframes, Add and drag-and-drop of images and 3D files, a gizmo, and a live preview of what the Camera shoots. The node itself shows the Camera's output live, with the output size.
-- `Panorama Preview` opens images, videos and `Panorama Studio` scenes in a new window. The previous node remains as `Panorama Preview (legacy)`.
-- To use the previous editor, turn off "Panorama Studio: new editor" in the settings.
-
-### 1.5.0
-
-- Added lightweight on-node UIs to `Panorama Cutout`, `Panorama Preview`, and `Panorama Stickers`, allowing common interactions to be completed without opening the Full Editor.
-- Improved preview performance and reliability across the legacy canvas and Node 2.0.
-
-### 1.4.0
-
-- Rebuilt the Panorama Cutout Frame view as an interactive crop-style camera editor.
-- Added direct camera framing, aspect-ratio, orientation, and roll controls while keeping the Panorama view state independent.
-
-### 1.3.0
-
-- Added video support.
-- Added 180 panorama support.
-- Large performance improvements through refactoring.
-
-### 1.2.0
-
-- Added Paint / Mask tools to the modal panorama editor.
-
-### 1.1.0
-
-- Switched panorama rendering to a WebGL-first pipeline.
-- Added support for compositing images produced by `Panorama Cutout` back into the panorama through the `Panorama Stickers` node.
-
-## ToDo
-
-- Add tools to split panoramas into multiple images for external upscaling and merge them back afterward.
-- Estimate camera intrinsics automatically from input images.
-- Add integration with Hugin.
+- **2.0.1**: The Studio editor shows the output size at all times and keeps the inspector the same across tabs; objects can be moved in the Camera tab; the node shows depth grids (MoGe, DA3) and the upstream scene, and can play; paint can be grabbed and moved; fixes.
+- **2.0.0**: Added Panorama Studio and the new Panorama Preview.
+- **1.5.0**: Added light on-node UIs to Stickers, Cutout and Preview.
+- **1.4.0**: Rebuilt Cutout's Frame editing as a crop-style camera editor.
+- **1.3.0**: Added support for video and 180° panoramas.
+- **1.2.0**: Added paint and mask.
+- **1.1.0**: Moved rendering to WebGL, and made it possible to put images made with Cutout back with Stickers.
 
 ## Acknowledgements
 
-This project was partly influenced by work from [ProGamerGov](https://github.com/ProGamerGov), especially:
+This project was influenced by the work of [ProGamerGov](https://github.com/ProGamerGov):
 
-- [ProGamerGov/ComfyUI_pytorch360convert](https://github.com/ProGamerGov/ComfyUI_pytorch360convert)
-- [ProGamerGov/html-360-viewer](https://github.com/ProGamerGov/html-360-viewer)
-
-## Useful Tools
-
-If you want a quick way to preview an ERP image as a panorama in the browser, this viewer is handy:
-
-- [html-360-viewer demo](https://progamergov.github.io/html-360-viewer/)
+- [ComfyUI_pytorch360convert](https://github.com/ProGamerGov/ComfyUI_pytorch360convert)
+- [html-360-viewer](https://github.com/ProGamerGov/html-360-viewer) (also handy for quickly viewing an ERP image in the browser: [demo](https://progamergov.github.io/html-360-viewer/))
 
 ## License
 

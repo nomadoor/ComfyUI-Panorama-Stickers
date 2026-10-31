@@ -32,6 +32,8 @@ async function open(page, testInfo) {
 
 const inspector = (page) => page.locator('[data-region="inspector"]');
 const cardTitle = (page) => inspector(page).locator(".pano-studio-card-title .pano-studio-card-name").first();
+// Nothing selected: the Scene card, the Camera's card over the Ground's (ADR 0051).
+const sceneShown = (page) => expect(inspector(page).locator("[data-card]")).toHaveCount(2).then(() => expect(inspector(page).locator('[data-card="scene"]')).toHaveCount(1));
 const rowName = (page, id) => page.locator(`.pano-studio-tl-head[data-head="${id}"] [data-part="name"]`);
 const field = (page, row, name) => inspector(page).locator(`[data-row="${row}"] [data-field="${name}"]`);
 
@@ -59,7 +61,7 @@ test("the stage draws the Sky image at the playhead; the World 3D file is asked 
 
 test("a row selected in the Timeline shows in the inspector; an edit changes the state and Undo puts it back", async ({ page }, testInfo) => {
   const problems = await open(page, testInfo);
-  await expect(cardTitle(page)).toHaveText("Scene");
+  await sceneShown(page);
   await rowName(page, "sticker_1").click();
   await expect(cardTitle(page)).toHaveText("sticker_1");
   await expect(page.locator('.pano-studio-tl-head[data-head="sticker_1"]')).toHaveClass(/is-selected/);
@@ -84,6 +86,7 @@ test("a row selected in the Timeline shows in the inspector; an edit changes the
   await expect(cardTitle(page)).toHaveText("box.glb");
   await rowName(page, "camera").click();
   await expect(cardTitle(page)).toHaveText("Camera");
+  await expect(inspector(page).locator("[data-card]")).toHaveCount(1);
   // Delete on the Camera says it can't be deleted.
   // The editor takes the keys back from the field (a click on the stage's empty space would let the selection go).
   await page.locator(".pano-studio-editor").focus();
@@ -136,7 +139,7 @@ test("closing writes state_json once with the edit, and opening and closing with
   // The editor takes the keys back from the field (a click on the stage's empty space would let the selection go).
   await page.locator(".pano-studio-editor").focus();
   await page.keyboard.press("Escape");
-  await expect(cardTitle(page)).toHaveText("Scene");
+  await sceneShown(page);
   expect(await page.evaluate(() => window.__studio.writes)).toBe(0);
   await page.keyboard.press("Escape");
   await expect(page.locator(".pano-studio-editor")).toHaveCount(0);
@@ -185,7 +188,7 @@ test("the list of shortcuts opens and closes with ?, Escape closes it before the
   // next Escape lets the selection go; the editor stays open. The focus goes back to the "?" button.
   await rowName(page, "sticker_2").click();
   const selected = await cardTitle(page).textContent();
-  expect(selected).not.toBe("Scene");
+  expect(selected).toBe("box.glb");
   await help.click();
   await expect(list).toBeFocused();
   await page.keyboard.press("Escape");
@@ -193,7 +196,7 @@ test("the list of shortcuts opens and closes with ?, Escape closes it before the
   await expect(cardTitle(page)).toHaveText(selected);
   await expect(help).toBeFocused();
   await page.keyboard.press("Escape");
-  await expect(cardTitle(page)).toHaveText("Scene");
+  await sceneShown(page);
   await expect(page.locator(".pano-studio-editor")).toHaveCount(1);
 
   // A press outside the list (the inspector's empty space) closes it; the editor stays open.

@@ -13,8 +13,11 @@
 //
 // The painting comes in as its Sky layers (`paintLayers`, studio/paint.js layers()).
 //
-// Not drawn yet: a `scene` input or an upstream item that is a depth grid (its colors come from a proxy
-// video the editor does not play yet).
+// A depth grid (a `scene`, `sticker` or upstream item whose kind is `depth_grid`, docs/threejs-spark-integration.md
+// "DA3_GEOMETRY mono の深度のグリッド") draws with the colors of its input's proxy video, which the caller plays
+// (`depthColor`, pano_depth_color.js createDepthColors picture()); the editor and Panorama Studio's node surface both
+// give it (ADR 0052). Without `depthColor` depth grids are left out.
+import { depthGridNotice, withDepthColor } from "../pano_depth_color.js";
 import { skyLayers, worldStickerLayers } from "../pano_editor_view.js";
 import { skyStickerVfov, sourceAsset } from "../pano_editor_state.js";
 import { createFile3dEditorFiles, file3dEditorFileOf } from "../pano_file_3d.js";
@@ -113,12 +116,15 @@ export function createStageMedia({ assetSource, source, fetchApi = null, onChang
 // and `editorFile(sticker)` are createStageMedia's; `sceneFiles` the `scene` input's files in the node's current result
 // (pano_space.js sceneFilesOf) or null; `sceneBox(url)` the box of a loaded item (the lower view's), null while it
 // loads. `layers` are the sky layers back to front; `space` the World part of a render's space (the `scene` item, the
-// 3D file Stickers' items, the world image planes); `sphere` the sphere around the World content, null without any.
+// 3D file Stickers' items, the world image planes); `sphere` the sphere around the World content, null without any; `boxes` the loaded 3D items' boxes for the first T.
 // [inputs] `stickerFiles` is the `sticker` input's 3D media (studio/port_media.js files()) or null; `upstream` what the
 // upstream layers draw at `frame` ({ sky, stickers, items }, pano_upstream_layers.js viewInput) or null. A sky port
 // Sticker's evaluated vFOV is the one its media's aspect gives (pano_editor_state.js skyStickerVfov), as drawn.
 // `paintLayers` are the painting's Sky layers (pano_paint_layers.js skyPaintLayers' shape), put among the sky Stickers.
-export function stageContent(state, frame, { media, editorFile = () => null, sceneFiles = null, sceneBox = () => null, stickerFiles = null, upstream = null, paintLayers = [] }) {
+// `depthColor(slot, video)` is the picture of the proxy video of the depth grid input `slot` ("scene", "sticker" or an
+// upstream layer's slot) at `video` (sceneRequest's), or null while it has none; null leaves depth grids out.
+// `space.depthSlots` are the slots of the depth grids drawn, whose videos the caller keeps (retain()).
+export function stageContent(state, frame, { media, editorFile = () => null, sceneFiles = null, sceneBox = () => null, stickerFiles = null, upstream = null, paintLayers = [], depthColor = null }) {
   const evaluated = evaluateSceneState(state, frame);
   // Each Sticker's media once per content: the port Sticker's follows the playhead (one follow per frame).
   const shown = new Map();
@@ -135,11 +141,14 @@ export function stageContent(state, frame, { media, editorFile = () => null, sce
   // The upstream Scene's sky lies under the node's own (each layer keeps its own order).
   const layers = upstream ? [...upstream.sky, ...ownLayers] : ownLayers;
   const stickers = worldStickerLayers(state, frame, state.stickers, { media: mediaOnce, evaluated });
-  const files = sceneFiles && sceneFiles.kind !== "depth_grid" ? sceneFiles : null;
-  const scene = sceneRequest(files, evaluated.scene, state.scene.animation, state.timeline.fps);
+  const drawn = (files) => (files && (files.kind !== "depth_grid" || depthColor) ? files : null);
+  const depthSlots = [];
+  const withColors = (slot, request) => withDepthColor(request, slot, depthColor, depthSlots);
+  const files = drawn(sceneFiles);
+  const scene = withColors("scene", sceneRequest(files, evaluated.scene, state.scene.animation, state.timeline.fps));
   const box = scene?.url ? sceneContentBox(scene, sceneBox(scene.url)) : null;
-  const portFiles = stickerFiles && stickerFiles.kind !== "depth_grid" ? stickerFiles : null;
-  const sticker = stickerContentRequest(portFiles, state, evaluated);
+  const portFiles = drawn(stickerFiles);
+  const sticker = withColors("sticker", stickerContentRequest(portFiles, state, evaluated));
   const items = [];
   const stickerBox = sticker?.url ? sceneContentBox(sticker, sceneBox(sticker.url)) : null;
   if (stickerBox) items.push({ box: stickerBox, value: sticker.value });
@@ -148,15 +157,22 @@ export function stageContent(state, frame, { media, editorFile = () => null, sce
     const itemBox = request ? sceneContentBox(request, sceneBox(request.url)) : null;
     if (itemBox) items.push({ box: itemBox, value: request.value });
   }
-  const upstreamItems = (upstream?.items ?? []).filter((entry) => entry.request?.kind !== "depth_grid");
+  const upstreamItems = (upstream?.items ?? []).flatMap((entry) => {
+    if (entry.request?.kind !== "depth_grid") return [entry];
+    return depthColor ? [{ ...entry, request: withColors(entry.slot, entry.request) }] : [];
+  });
   for (const { request, value } of upstreamItems) {
     const itemBox = request?.url ? sceneContentBox(request, sceneBox(request.url)) : null;
     if (itemBox) items.push({ box: itemBox, value });
   }
   const upstreamStickers = upstream?.stickers ?? [];
   const sphere = boundingSphere(contentPoints(evaluated, box, [...stickers, ...upstreamStickers], items));
+  // The 3D boxes the first T can hit (view_camera.js boxDepth): each item's box with the transform it is drawn with (the
+  // `scene` item's is the `scene` transform, as contentPoints takes it).
+  const boxes = [...(box && evaluated.scene.active ? [{ box, transform: evaluated.scene }] : []), ...items.map((item) => ({ box: item.box, transform: item.value }))];
   return {
     evaluated,
+    boxes,
     layers,
     sphere,
     space: {
@@ -169,8 +185,16 @@ export function stageContent(state, frame, { media, editorFile = () => null, sce
       stickers,
       upstreamStickers,
       upstreamItems,
+      depthSlots,
     },
   };
+}
+
+// The stage's line for the depth grids `content` (stageContent()'s) draws (pano_depth_color.js depthGridNotice):
+// errorOf(key) is why an item failed to load.
+export function stageDepthNotice(content, errorOf) {
+  const { scene, sticker, upstreamItems } = content.space;
+  return depthGridNotice([scene, sticker, ...upstreamItems.map((entry) => entry.request)], errorOf);
 }
 
 // The sphere Frame Selected fits for the Sticker `id` (pano_space.js frameSphere): around it where it shows in the

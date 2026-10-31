@@ -149,7 +149,7 @@ test("Frame mode: a FOV ruler drag changes the Camera and the stage as one Undo 
   expect(problems).toEqual([]);
 });
 
-test("Frame mode: a drag on the stage turns the Camera, one Undo step; the inspector shows the Camera card", async ({ page }, testInfo) => {
+test("Frame mode: a drag on the stage turns the Camera, one Undo step; the inspector shows the Scene card", async ({ page }, testInfo) => {
   const problems = await open(page, testInfo);
   const stage = await stageBox(page);
   const frame = await frameBox(page);
@@ -169,8 +169,9 @@ test("Frame mode: a drag on the stage turns the Camera, one Undo step; the inspe
   expect(await history(page)).toEqual({ undo: true, redo: false });
   await page.keyboard.press("Control+z");
   expect((await camera(page)).yaw_deg).toBeCloseTo(start.yaw_deg, 4);
-  // The inspector holds the Camera card only.
-  await expect(page.locator('[data-region="inspector"]')).toContainText("Camera");
+  // Nothing selected: the inspector holds the Scene card (the Camera's over the Ground's).
+  await expect(page.locator('[data-region="inspector"] [data-card]')).toHaveCount(2);
+  await expect(page.locator('[data-region="inspector"] [data-card="camera"]')).toHaveCount(1);
   expect(problems).toEqual([]);
 });
 
@@ -314,7 +315,7 @@ test("Frame mode: on a lens Camera a click selects the object under the pointer,
   expect(problems).toEqual([]);
 });
 
-test("Camera tab selection: a click selects the World object, outlined in yellow, with no gizmo and no bar", async ({ page }, testInfo) => {
+test("Camera tab selection: a click selects the World object, outlined in yellow, with its bar and its card (ADR 0051)", async ({ page }, testInfo) => {
   const problems = await open(page, testInfo);
   const stage = await stageBox(page);
   // The red plane, at the left of the frame.
@@ -322,7 +323,7 @@ test("Camera tab selection: a click selects the World object, outlined in yellow
   await page.mouse.click(stage.x + red.x, stage.y + red.y);
   await page.waitForTimeout(200);
   expect(await page.evaluate(() => window.__studio.session.selection.row)).toBe("sticker_1");
-  // Its outline (the selected guide's yellow) on the overlay, no gizmo, no bar, the inspector still the Camera's.
+  // Its outline (the selected guide's yellow) on the overlay, its bar and its card, as in the 3D tab.
   const yellow = await page.evaluate(() => {
     const overlay = document.querySelector("[data-stage-overlay]");
     const data = overlay.getContext("2d").getImageData(0, 0, overlay.width, overlay.height).data;
@@ -333,18 +334,14 @@ test("Camera tab selection: a click selects the World object, outlined in yellow
     return count;
   });
   expect(yellow).toBeGreaterThan(40);
+  await expect(page.locator('[data-region="bar"] [data-kind="world-image"]')).toHaveCount(1);
+  await expect(page.locator('[data-region="inspector"]')).toContainText("Opacity");
+  // A click on nothing lets it go: back to the Scene card.
+  const frame = await frameBox(page);
+  await page.mouse.click(stage.x + frame.x + frame.width * 0.85, stage.y + frame.y + frame.height * 0.15);
+  await page.waitForTimeout(200);
+  expect(await page.evaluate(() => window.__studio.session.selection.row)).toBeNull();
   await expect(page.locator('[data-region="bar"] > *')).toHaveCount(0);
-  await expect(page.locator('[data-region="inspector"]')).not.toContainText("Opacity");
-  // A drag from the selected object moves the Camera, not the object.
-  const before = await page.evaluate(() => JSON.stringify(window.__studio.session.state.stickers[0].position));
-  await page.mouse.move(stage.x + red.x, stage.y + red.y);
-  await page.mouse.down();
-  await page.mouse.move(stage.x + red.x + 40, stage.y + red.y, { steps: 4 });
-  await page.mouse.up();
-  expect(await page.evaluate(() => JSON.stringify(window.__studio.session.state.stickers[0].position))).toBe(before);
-  // ... it looks around: the Camera's yaw changed, the object stays selected.
-  expect((await camera(page)).yaw_deg).toBeLessThan(28);
-  expect(await page.evaluate(() => window.__studio.session.selection.row)).toBe("sticker_1");
   expect(problems).toEqual([]);
 });
 

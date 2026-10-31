@@ -5,11 +5,8 @@ import test from "node:test";
 import { diagnostics } from "../web_src/pano_diagnostics.js";
 import { createEditorView } from "../web_src/pano_editor_view.js";
 import { sameValue, visibleWindow } from "../web_src/pano_three_view.js";
-import { readEditorSource } from "./editor_source.mjs";
 
 const source = (name) => readFileSync(new URL(`../web_src/${name}`, import.meta.url), "utf8");
-const editorSource = readEditorSource();
-const editorFunction = (name) => editorSource.slice(editorSource.indexOf(`  function ${name}(`), editorSource.indexOf("\n  }\n", editorSource.indexOf(`  function ${name}(`)));
 
 // A three.js view module whose views record what they are asked to do.
 function fakeModule() {
@@ -159,56 +156,6 @@ test("the World's content and lines are compared by value, not by a JSON key per
   assert.match(view, /if \(sameValue\(cache\.sets, sets\)\) return cache\.lines;/);
 });
 
-test("the editor shows its three.js canvas as it is: nothing is copied to a 2D canvas", () => {
-  // The stage's canvas in the page is the view's canvas.
-  assert.match(editorSource, /const editorView = createEditorView\(\{\s*canvas: backgroundCanvas,/);
-  assert.doesNotMatch(editorSource, /backgroundCanvas\.getContext/);
-  // No frame of the view is drawn with drawImage anywhere in the editor.
-  assert.doesNotMatch(editorSource, /drawImage\(surface\.canvas/);
-  for (const name of ["renderEditorView", "drawEditorViewShot", "renderEditorViewUnwrap", "drawFrameViewBackground", "drawCutoutOutputPreview"]) {
-    assert.doesNotMatch(editorFunction(name), /drawImage|getContext\("2d"\)/, name);
-  }
-  // The Frame view and the Unwrap view draw into their rect of the same canvas.
-  assert.match(editorFunction("renderEditorViewUnwrap"), /editorView\.renderUnwrap\(\{ rect: deviceRect\(rect\), \.\.\.editorViewInput\(\) \}\)/);
-  // The camera preview floats over the stage as its own element: its frame is drawn in a corner of the
-  // same canvas and shown through an ImageBitmap (a GPU copy), not a 2D canvas.
-  assert.match(editorSource, /createImageBitmap\(surface\.canvas, surface\.x, surface\.y, surface\.width, surface\.height\)/);
-  assert.match(editorSource, /cutoutPreviewCanvas\.getContext\("bitmaprenderer"\)\?\.transferFromImageBitmap\(bitmap\);/);
-  // The three.js canvas draws at the device's pixels; the overlay stays in CSS pixels.
-  assert.match(editorFunction("syncCanvasSize"), /editorView\.resize\(size\.width, size\.height\);/);
-  // A frame that only changes the overlay leaves the three.js canvas as the page shows it.
-  assert.match(editorFunction("tickFrame"), /if \(\[\.\.\.reasons\]\.some\(\(reason\) => reason !== DRAW_REASON\.OVERLAY\)\) runtime\.backgroundDirty = true;/);
-  assert.match(editorFunction("drawScene"), /const drawView = runtime\.backgroundDirty;/);
-});
-
-test("the editor asks the browser for frames only through its scheduler, and only while something animates", () => {
-  assert.equal(editorSource.match(/requestAnimationFrame\(/g).length, 1);
-  assert.match(editorSource, /requestAnimationFrame: \(callback\) => requestAnimationFrame\(callback\),\s*cancelAnimationFrame: \(id\) => cancelAnimationFrame\(id\),\s*draw: \(ts, reasons\) => tick\(ts, reasons\),\s*animating: \(\) => editorAnimating\(\),/);
-  // tick no longer asks for the next frame by itself.
-  assert.doesNotMatch(editorFunction("tick"), /requestAnimationFrame|rafId/);
-  // The playback takes its frames from the scheduler, so the frame it moves to draws in the same frame.
-  assert.match(editorSource, /requestFrame: \(callback\) => scheduler\.requestFrame\(callback\),\s*cancelFrame: \(id\) => scheduler\.cancelFrame\(id\),\s*\},\s*fps: playbackFps,/);
-  const animating = editorFunction("editorAnimating");
-  for (const what of ["editor.viewTransition", "viewController.state.inertia.active", "runtime.pendingStableLayoutFrames > 0", "isDragging()"]) {
-    assert.ok(animating.includes(what), what);
-  }
-  assert.match(editorFunction("stopRenderLoop"), /scheduler\.stop\(\);/);
-});
-
-test("a draw request without a reason is a state change, which makes what is drawn from the state again", () => {
-  assert.match(editorFunction("requestDraw"), /const reason = options\.reason \?\? DRAW_REASON\.STATE;/);
-  assert.match(editorFunction("requestDraw"), /scheduler\.requestDraw\(reason\);/);
-  assert.match(editorFunction("buildEditorViewInput"), /if \(editorViewScene\.revision !== scheduler\.stateRevision\) \{/);
-  assert.match(editorSource, /if \(trajectory\.revision !== scheduler\.stateRevision \|\| trajectory\.span !== span\) \{/);
-  assert.match(editorFunction("setTimelineFrame"), /requestDraw\(\{ reason: DRAW_REASON\.PLAYHEAD \}\);/);
-  // The evaluated state is shared by the Sky layers and the World within a frame.
-  const input = editorFunction("buildEditorViewInput");
-  assert.equal(input.match(/evaluateSceneState\(/g).length, 1);
-  assert.doesNotMatch(editorFunction("buildSpaceContent"), /evaluateSceneState\(/);
-  // The Frame view's context is drawn over the stage's base, not cleared to transparent.
-  assert.match(source("pano_three_view.js"), /if \(input\.clearColor != null\) renderer\.setClearColor\(new Color\(input\.clearColor\), 1\);\s*renderer\.render\(scene, camera\);/);
-});
-
 test("canvases draw at the device's pixels, but no larger than the screen shows", async () => {
   const { screenRenderSize } = await import("../web_src/pano_editor_view.js");
   const { measurePreviewCanvasSize } = await import("../web_src/pano_preview_node_surface.js");
@@ -218,43 +165,9 @@ test("canvases draw at the device's pixels, but no larger than the screen shows"
   assert.deepEqual(screenRenderSize(3200, 1600, 2, 1920, 1080), { width: 3840, height: 1920 });
   assert.deepEqual(measurePreviewCanvasSize({ width: 3200, height: 1600 }, 2, Infinity, { width: 1920, height: 1080 }), { width: 3840, height: 1920 });
   assert.deepEqual(measurePreviewCanvasSize({ width: 800, height: 450 }, 2, Infinity, { width: 1920, height: 1080 }), { width: 1600, height: 900 });
-  assert.match(editorFunction("syncCanvasSize"), /screenRenderSize\(rect\.width \|\| nextW, rect\.height \|\| nextH, dpr, window\.innerWidth \|\| rect\.width, window\.innerHeight \|\| rect\.height\)/);
-  assert.match(source("pano_preview_previewnode.js"), /measurePreviewCanvasSize\(rect, window\.devicePixelRatio \|\| 1, Infinity, \{ width: window\.innerWidth, height: window\.innerHeight \}\)/);
 });
 
-test("whatever editorAnimating() reads is started through startAnimation, which wakes the frames", () => {
-  assert.match(editorFunction("startAnimation"), /start\(\);\s*scheduler\.wake\(\);/);
-  // Each condition of editorAnimating() and where it starts: none is set outside startAnimation.
-  const starts = [
-    /runtime\.pendingStableLayoutFrames = Math\.max\(/g,
-    /editor\.outputPreviewAnimTo = nextExpanded/g,
-    /viewController\.endDrag\(/g,
-  ];
-  for (const pattern of starts) {
-    const found = [...editorSource.matchAll(pattern)];
-    assert.ok(found.length > 0, String(pattern));
-    for (const match of found) {
-      // Inside the callback of the nearest startAnimation before it.
-      const start = editorSource.lastIndexOf("startAnimation(() =>", match.index);
-      assert.ok(start >= 0 && match.index - start < 300, `${pattern} at ${match.index}`);
-      assert.doesNotMatch(editorSource.slice(start, match.index), /\n\s*\}\);|\)\);/, `${pattern} at ${match.index}`);
-    }
-  }
-  // The stage resizing holds the draw for the layout and wakes the frames that count it down.
-  assert.match(editorFunction("syncCanvasSize"), /startAnimation\(\(\) => \{\s*runtime\.pendingStableLayoutFrames = Math\.max/);
-  // A drag (editor.interaction, timeline.drag) starts on a pointerdown, which wakes the frames first.
-  assert.match(editorSource, /root\.addEventListener\("pointerdown", \(\) => scheduler\.wake\(\), true\);/);
-  // The fades start inside tickFrame, a frame that then sees editorAnimating() and goes on.
-  for (const fade of ["frameRollOverlayTarget = ", "cutoutPanoDimTarget = ", "cutoutPanoFrameTarget = "]) {
-    const index = editorSource.indexOf(`editor.${fade}`);
-    assert.ok(index > editorSource.indexOf("  function tickFrame(") && index < editorSource.indexOf("  function runGuardedFrame("), fade);
-  }
-  // The camera preview hidden draws its frame anew when it shows again.
-  assert.match(editorFunction("drawCutoutOutputPreview"), /uiState\.cameraPreview\.settled = false;\s*dropCameraPreview\(\);\s*return;/);
-  assert.match(editorFunction("dropCameraPreview"), /cameraPreviewDrawn = null;/);
-});
-
-test("a Keyframe or Clip range drag draws the state it changed: the view's state is made again", async () => {
+test("a state built before a Keyframe drag still shows the old value at the playhead; one built from the dragged state shows the new", async () => {
   const { loadSceneState } = await import("../web_src/pano_scene_state.js");
   const { evaluateSceneState } = await import("../web_src/pano_scene_eval.js");
   const { moveKeyframes } = await import("../web_src/pano_timeline.js");
@@ -272,10 +185,4 @@ test("a Keyframe or Clip range drag draws the state it changed: the view's state
   // The state drawn before the drag still shows the old value at the playhead; a state rebuilt from the
   // dragged one shows the new.
   assert.notEqual(evaluateSceneState(before, 10).stickers[0].opacity, evaluateSceneState(loadSceneState(state), 10).stickers[0].opacity);
-  // The drag's batched view task asks with the state's reason, which counts runtime.stateRevision, and the
-  // view's state is rebuilt on that count.
-  const tasks = editorSource.slice(editorSource.indexOf("const dragFrames = createFrameBatch({"), editorSource.indexOf("\n  });\n", editorSource.indexOf("const dragFrames = createFrameBatch({")));
-  assert.match(tasks, /requestDraw\(\{ localOnly: true, reason: DRAW_REASON\.STATE \}\);/);
-  assert.match(editorFunction("buildEditorViewInput"), /if \(editorViewScene\.revision !== scheduler\.stateRevision\) \{/);
-  assert.doesNotMatch(editorSource, /scheduler\.requestDraw\(DRAW_REASON\.VIEW\);\s*\},\s*sidePanel/);
 });

@@ -26,6 +26,7 @@
 import { ICON } from "../icons.js";
 import { animationCycleFrames } from "../pano_animation.js";
 import { sceneStickerLabel } from "../pano_editor_state.js";
+import { paintObjectRow } from "../pano_paint_objects.js";
 import { portMediaFrames } from "../pano_port_media.js";
 import { defaultClip } from "../pano_scene_state.js";
 import { FRAME_EPSILON } from "../pano_scene_eval.js";
@@ -37,6 +38,7 @@ import {
   ownerTimed,
   PAINTING_ROW,
   rowKeyframes,
+  timelinePlayable,
   timelineSpan,
 } from "../pano_timeline.js";
 import { upstreamLayerOverridden, upstreamRowId } from "../pano_upstream.js";
@@ -333,7 +335,8 @@ export function buildStudioTimeline(ctx, { selection = null, playhead = 0, playi
       },
       expand: keyable ? "yes" : entry.kind === "painting" ? "none" : "disabled",
       open,
-      selected: !!selection?.row && selection.row === entry.id,
+      // A selected paint group has no row: the Paint row shows selected for it (docs/studio-ui.md "ペイントのまとまり").
+      selected: !!selection?.row && (selection.row === entry.id || (entry.id === PAINTING_ROW && !!paintObjectRow(selection.row))),
       dot: keyable ? { state: rowDotState(entry, playhead), disabled: !!dotBlocked, tip: dotBlocked || "Keyframe all values here (not the lens)" } : null,
       upstream: !!entry.layer,
       overridden: overridden(entry),
@@ -370,7 +373,7 @@ export function buildStudioTimeline(ctx, { selection = null, playhead = 0, playi
   return {
     span,
     bar: {
-      playable: span > 1,
+      playable: timelinePlayable(span),
       playing,
       loop,
       timecode: timecode(playhead, fps),

@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { loadSceneState } from "../web_src/pano_scene_state.js";
-import { STUDIO_MAX_OUTPUT_SIDE, createStudioStatus, studioNodeStatus, studioOutputSize, studioRunKey } from "../web_src/pano_studio_status.js";
+import { STUDIO_MAX_OUTPUT_SIDE, createStudioStatus, studioNodeStatus, studioOutputSize, studioRunKey, studioSizeWidgets } from "../web_src/pano_studio_status.js";
 
 const TABLE = JSON.parse(readFileSync(new URL("./fixtures/studio_output_size.json", import.meta.url), "utf8"));
 
@@ -95,4 +95,18 @@ test("the status is worked out again only when its inputs change", () => {
   assert.notEqual(status({ ...options, megapixels: 2, multiple: 16 }, load), null);
   assert.notEqual(status({ ...options, megapixels: 2, multiple: 16, backgroundRange: 180 }, load), null);
   assert.equal(loads, 4);
+});
+
+test("the size widgets are read as numbers, the node's defaults (2 megapixels, multiples of 8) standing in for a missing one", () => {
+  const widgets = { megapixels: "1.5", multiple: 16 };
+  assert.deepEqual(studioSizeWidgets((name) => widgets[name]), { megapixels: 1.5, multiple: 16 });
+  assert.deepEqual(studioSizeWidgets(() => undefined), { megapixels: 2, multiple: 8 });
+});
+
+test("the editor's line is the node surface's line of the estimate: a last run's size does not count", () => {
+  const options = { stateText: "{}", megapixels: 2, multiple: 8, backgroundRange: 360, backgroundColor: "" };
+  const run = { key: studioRunKey("{}", 2, 8, "360", ""), width: 512, height: 256, reduced_from: null };
+  assert.equal(studioNodeStatus(state(), { ...options, run }).size, "512 × 256");
+  // What the editor passes: the widgets only.
+  assert.deepEqual(studioNodeStatus(state(), { megapixels: 2, multiple: 8 }), { mode: "panorama", shot: "Panorama 360°", size: "2048 × 1024", ratio: 2, cap: "" });
 });

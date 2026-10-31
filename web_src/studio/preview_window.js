@@ -18,6 +18,7 @@ import { stageOwnsKey } from "../pano_key_focus.js";
 import { isNodeOutputMediaCurrent, linkedInputType, videoLinked } from "../pano_preview_video.js";
 import { loadSceneState } from "../pano_scene_state.js";
 import { PANO_SCENE_TYPE, upstreamBgColor } from "../pano_upstream.js";
+import { createDepthColors } from "../pano_depth_color.js";
 import { createStageMedia, stageContent } from "./stage_content.js";
 import { createStudioUpstream, upstreamBackground } from "./upstream.js";
 import { loadNodeInputImage } from "./node_image.js";
@@ -111,14 +112,28 @@ export async function openPreviewWindow(node, { app = null, api = null, storage 
       onMedia: () => !closed && stage?.redraw(DRAW_REASON.MEDIA),
     })
     : null;
-  const content = () => (isScene
-    ? stageContent(sceneState, playbackView.frame, {
+  // The colors of the Scene's depth grids (docs/threejs-spark-integration.md "DA3_GEOMETRY mono の深度のグリッド"), as
+  // the Studio editor draws them.
+  const depthColors = isScene
+    ? createDepthColors({
+      createVideo: () => createPanoVideo(document, "preview-window.depth-video"),
+      createCanvas: () => createPanoCanvas({ label: "preview-window.depth-still" }),
+      releaseCanvas: releasePanoCanvas,
+      onChange: () => !closed && stage?.redraw(DRAW_REASON.MEDIA),
+    })
+    : null;
+  function content() {
+    if (!isScene) return null;
+    const value = stageContent(sceneState, playbackView.frame, {
       media: (sticker) => stageMedia.media(sticker),
       editorFile: stageMedia.editorFile,
       sceneBox: (url) => stage?.sceneBox(url) ?? null,
       upstream: upstream.viewInput(playbackView.frame),
-    })
-    : null);
+      depthColor: (slot, video) => depthColors.picture(slot, video, !!backgroundVideo?.playback.advancing),
+    });
+    depthColors.retain(value.space.depthSlots);
+    return value;
+  }
 
   let image = null;
   let status = "none";
@@ -253,6 +268,7 @@ export async function openPreviewWindow(node, { app = null, api = null, storage 
     stage?.dispose();
     stageMedia?.dispose();
     upstream?.dispose();
+    depthColors?.dispose();
     vueApp.unmount();
     mountHost.remove();
     openNodes.delete(node);

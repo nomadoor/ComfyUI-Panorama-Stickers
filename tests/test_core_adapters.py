@@ -11,6 +11,7 @@ pytest.importorskip("comfy_api.latest", reason="ComfyUI's real V3 API is require
 from comfyui_pano_suite import core_adapters, node_runtime
 
 PACKAGE = Path(__file__).resolve().parent.parent / "comfyui_pano_suite"
+TESTS = Path(__file__).resolve().parent
 COMFY_ROOT = Path(sys.modules["comfy.model_management"].__file__).resolve().parent.parent
 
 
@@ -42,8 +43,8 @@ def test_runtime_uses_the_latest_api():
 def _run_without(modules, code: str) -> subprocess.CompletedProcess:
     """Runs `code` with `modules` (a name or a list) unimportable: None in sys.modules makes their import fail."""
     blocked = "".join(f"sys.modules[{module!r}] = None\n" for module in ([modules] if isinstance(modules, str) else modules))
-    script = f"import sys\n{blocked}{code}"
-    env = {**os.environ, "PYTHONPATH": os.pathsep.join([str(COMFY_ROOT), str(PACKAGE.parent)])}
+    script = f"import sys\n{blocked}from comfy_cpu import use_cpu_without_cuda\nuse_cpu_without_cuda()\n{code}"
+    env = {**os.environ, "PYTHONPATH": os.pathsep.join([str(COMFY_ROOT), str(PACKAGE.parent), str(TESTS)])}
     return subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, env=env, cwd=PACKAGE.parent, timeout=120)
 
 

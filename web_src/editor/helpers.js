@@ -3,6 +3,8 @@ import { LASSO_CURSOR_SIZE, RAD2DEG } from "./constants.js";
 // The paint colors and ids belong to the lower paint strokes (pano_paint_strokes.js).
 export { cloneColor, colorToCss, colorsApproximatelyEqual, hsv01ToRgb, isPresetPaintColor, makePaintId, rgb01ToHsv } from "../pano_paint_strokes.js";
 import { clamp, wrapYaw } from "../pano_math.js";
+// The 2D point and polygon tests belong to the lower math (pano_math.js).
+export { dist2, distToSegment2, pointInPoly } from "../pano_math.js";
 
 export function easeInOutCubic(t) {
   return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
@@ -32,36 +34,6 @@ export function dirToYawPitch(d) {
     yaw: wrapYaw(Math.atan2(d.x, d.z) * RAD2DEG),
     pitch: clamp(Math.asin(clamp(d.y, -1, 1)) * RAD2DEG, -90, 90),
   };
-}
-export function pointInPoly(pt, poly) {
-  let inside = false;
-  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-    const xi = poly[i].x; const yi = poly[i].y;
-    const xj = poly[j].x; const yj = poly[j].y;
-    const intersect = ((yi > pt.y) !== (yj > pt.y))
-      && (pt.x < ((xj - xi) * (pt.y - yi)) / ((yj - yi) || 1e-6) + xi);
-    if (intersect) inside = !inside;
-  }
-  return inside;
-}
-export function dist2(a, b) {
-  const dx = a.x - b.x;
-  const dy = a.y - b.y;
-  return dx * dx + dy * dy;
-}
-export function distToSegment2(p, a, b) {
-  const abx = Number(b.x || 0) - Number(a.x || 0);
-  const aby = Number(b.y || 0) - Number(a.y || 0);
-  const apx = Number(p.x || 0) - Number(a.x || 0);
-  const apy = Number(p.y || 0) - Number(a.y || 0);
-  const denom = abx * abx + aby * aby;
-  if (denom <= 1e-6) return dist2(p, a);
-  const t = clamp((apx * abx + apy * aby) / denom, 0, 1);
-  const qx = Number(a.x || 0) + abx * t;
-  const qy = Number(a.y || 0) + aby * t;
-  const dx = Number(p.x || 0) - qx;
-  const dy = Number(p.y || 0) - qy;
-  return dx * dx + dy * dy;
 }
 export function lerp(a, b, t) {
   return a + (b - a) * t;
