@@ -7,6 +7,7 @@ import test from "node:test";
 
 import { setStickerOpacity, setStickerPose, setWorldStickerField, setWorldStickerTransform } from "../web_src/pano_editor_state.js";
 import { backgroundClipAt, backgroundPlace, bgMediaEnd, portMediaFrames, portMediaTime } from "../web_src/pano_port_media.js";
+import { clipFrame, clipOrigin } from "../web_src/pano_scene_eval.js";
 import { loadSceneState } from "../web_src/pano_scene_state.js";
 import { trimClipStart } from "../web_src/pano_timeline.js";
 import { ownerFrame } from "../web_src/studio/inspector_model.js";
@@ -83,5 +84,12 @@ test("trimming the head stops at the material's first frame start − in, exactl
     const origin = clip.start - clip.in;
     trimClipStart(trimmed, Math.max(0, origin - 5));
     assert.equal(trimmed.start, Math.max(origin, 0));
+  }
+});
+
+test("clipOrigin is start − in and clipFrame is frame − (start − in), to the last bit", () => {
+  for (const clip of CLIPS) {
+    assert.equal(clipOrigin(clip), clip.start - clip.in);
+    for (const frame of FRAMES) assert.equal(clipFrame(clip, frame), frame - (clip.start - clip.in));
   }
 });
