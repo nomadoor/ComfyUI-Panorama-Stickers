@@ -6,7 +6,7 @@ import {
   stepCutoutFovPairByWheel,
 } from "../pano_cutout_view_math.js";
 import { frameViewContext } from "../pano_editor_view.js";
-import { lensPickWindow } from "../pano_lens.js";
+import { lensFilm, lensPickWindow } from "../pano_lens.js";
 import { clamp, wrapYaw } from "../pano_math.js";
 import {
   DEFAULT_DISTANCE,
@@ -247,7 +247,7 @@ export function createFrameView(deps) {
   function pickFrame(context, p) {
     const { rect, lens } = context;
     if (!lens) return editorView.pickSurface(shotViewCamera(context.shot), p.x - rect.x, p.y - rect.y, rect.w, rect.h);
-    const film = { x: (p.x - rect.x - lens.centerX) / lens.focalPx, y: (lens.centerY - (p.y - rect.y)) / lens.focalPx };
+    const film = lensFilm(lens, p.x - rect.x, p.y - rect.y);
     const camera = shotViewCamera(context.shot);
     const face = lensPickWindow(film.x, film.y, lens.curve, 1024, camera.quaternion);
     if (!face) return null;
