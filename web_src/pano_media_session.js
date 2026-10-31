@@ -79,6 +79,35 @@ export function mediaRevisionToken(media) {
   ].join("|");
 }
 
+// The revision the node surfaces (pano_preview_runtime.js, pano_preview_previewnode.js) and the old editor's Scene
+// viewer give: mediaRevisionToken, with a VIDEO's playhead, readyState and pause added; "" without media.
+export function mediaPlayheadRevisionToken(media) {
+  if (!media) return "";
+  if (!isVideo(media)) return mediaRevisionToken(media);
+  return [
+    mediaRevisionToken(media),
+    Number(media.currentTime || 0).toFixed(3),
+    Number(media.readyState || 0),
+    media.paused ? "paused" : "playing",
+  ].join("|");
+}
+
+// Whether the node surfaces draw a media: a sized canvas, a VIDEO with a frame, else a complete image with a width.
+// Unlike isDecodedImageReady it does not check an image's height and wants `complete` of anything else; the media
+// the node surfaces pass (an image, a VIDEO, a canvas) read the same both ways.
+export function isRenderableMediaReady(media) {
+  if (!media) return false;
+  if (isCanvas(media)) {
+    return Number(media.width || 0) > 0 && Number(media.height || 0) > 0;
+  }
+  if (isVideo(media)) {
+    return Number(media.videoWidth || 0) > 0
+      && Number(media.videoHeight || 0) > 0
+      && Number(media.readyState || 0) >= 2;
+  }
+  return !!media.complete && Number(media.naturalWidth || media.width || 0) > 0;
+}
+
 // Whether an image, a VIDEO or a canvas has a picture to draw.
 export function isDecodedImageReady(img) {
   if (!img) return false;

@@ -11,7 +11,7 @@ const PNG = Buffer.from(
   "base64",
 );
 
-async function load(page, kind) {
+async function load(page, kind, extra = "") {
   const problems = [];
   page.on("pageerror", (error) => problems.push(`pageerror: ${error.message}`));
   // The uploaded sticker's /view has no ComfyUI to answer it here; the editor's own errors (a boot step, closing) count.
@@ -19,7 +19,7 @@ async function load(page, kind) {
     if (message.type() === "error" && !message.text().startsWith("Failed to load resource")) problems.push(`console: ${message.text()}`);
   });
   await page.setViewportSize({ width: 1440, height: 860 });
-  await page.goto(`/tests/browser/pages/legacy_editors.html?node=${kind}`);
+  await page.goto(`/tests/browser/pages/legacy_editors.html?node=${kind}${extra}`);
   await page.waitForFunction(() => window.__entry?.ready, null, { timeout: 30_000 });
   expect(await page.evaluate(() => window.__entry.error)).toBeNull();
   return problems;
@@ -73,5 +73,32 @@ test("the legacy Panorama Preview opens the old editor read-only when the browse
   await expect(modal(page).locator('[data-tool-ui-action="add"]')).toHaveCount(0);
   await expect(modal(page).locator('[data-tool-mode="paint"]')).toHaveCount(0);
   await closeEditor(page);
+  expect(problems).toEqual([]);
+});
+
+// The /view URLs the page asks for, answered with the 4×2 PNG (no ComfyUI here).
+async function recordViews(page) {
+  const views = [];
+  await page.route("**/view?*", (route) => {
+    const url = new URL(route.request().url());
+    views.push(`${url.pathname}${url.search}`);
+    return url.searchParams.get("filename")?.endsWith(".png")
+      ? route.fulfill({ status: 200, contentType: "image/png", body: PNG })
+      : route.fulfill({ status: 404, body: "" });
+  });
+  return views;
+}
+
+test("the legacy Panorama Preview reads its linked image from the origin's result, storage first", async ({ page }) => {
+  const views = await recordViews(page);
+  const problems = await load(page, "preview", "&linked");
+  await expect.poll(() => views).toContain("/view?filename=erp.png&type=output&subfolder=pano");
+  expect(problems).toEqual([]);
+});
+
+test("the legacy Panorama Preview reads the MP4 of its own result", async ({ page }) => {
+  const views = await recordViews(page);
+  const problems = await load(page, "preview", "&video");
+  await expect.poll(() => views).toContain("/view?filename=pv.mp4&type=temp");
   expect(problems).toEqual([]);
 });

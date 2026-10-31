@@ -3,12 +3,15 @@
 // open the old editor (ADR 0044 "旧ノードの UI"), and closing it writes what it edited to the node's state_json.
 // ComfyUI's app and api are the stand-ins in pages/comfy/; the upload route answers here, as ComfyUI's /upload/image.
 //
-// ?node=stickers | cutout | preview (the legacy Panorama Preview, read-only).
+// ?node=stickers | cutout | preview (the legacy Panorama Preview, read-only). With preview, ?linked: erp_image comes from
+// node 22, whose result has an image; ?video: the node's own result has an MP4 (what the node surface reads of them,
+// pano_comfy_media.js "previewNode").
 import { api } from "./comfy/api.js";
 import { app } from "./comfy/app.js";
 import "/web_src/main.js";
 
-const KIND = new URLSearchParams(location.search).get("node") || "stickers";
+const QUERY = new URLSearchParams(location.search);
+const KIND = QUERY.get("node") || "stickers";
 const CLASS = { stickers: "PanoramaStickers", cutout: "PanoramaCutout", preview: "PanoramaPreview" }[KIND];
 
 const entry = (window.__entry = { ready: false, error: null, uploads: 0 });
@@ -98,6 +101,20 @@ try {
     setDirtyCanvas() {},
     setSize(size) { this.size = size; },
   });
+  if (QUERY.has("linked")) {
+    const link = { id: 1, origin_id: 22, origin_slot: 0, target_id: 21, target_slot: 0, type: "IMAGE" };
+    const origin = { id: 22, type: "LoadImage", outputs: [{ name: "IMAGE", type: "IMAGE", links: [1] }] };
+    graph.getNodeById = (id) => (id === 21 ? node : id === 22 ? origin : null);
+    node.getInputLink = (slot) => (slot === 0 ? link : null);
+    node.isInputConnected = (slot) => slot === 0;
+    node.getInputNode = (slot) => (slot === 0 ? origin : null);
+    // storage differs from type: the Preview node reads /view's type from storage first, the editor reads type only
+    // (aligning the two is an open owner decision; docs/editor-architecture.md "ComfyUI の実行結果を読む").
+    app.nodeOutputs = { 22: { images: [{ filename: "erp.png", subfolder: "pano", type: "temp", storage: "output" }] } };
+  }
+  if (QUERY.has("video")) {
+    app.nodeOutputs = { 21: { pano_videos: [{ filename: "pv.mp4", subfolder: "", type: "temp", format: "video/mp4" }] } };
+  }
   app.graph = graph;
   app.canvas.graph = graph;
   node.onNodeCreated?.();
