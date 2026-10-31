@@ -488,13 +488,26 @@
   white-space: nowrap;
 }
 
-/* Inspector card: a section with a heading and rows; sections are divided by space, not by a line. */
+/* Inspector card: a section with a heading and rows. Cards (Camera, Scene, the selected object) are divided by a thin
+   line inset like the rows, so where one ends is easy to see (docs/design.md). */
 .pano-studio-card {
   padding: 12px 14px 8px;
 }
 
 .pano-studio-card + .pano-studio-card {
-  padding-top: 20px;
+  position: relative;
+  margin-top: 8px;
+  padding-top: 14px;
+}
+
+.pano-studio-card + .pano-studio-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 14px;
+  right: 14px;
+  height: 1px;
+  background: var(--studio-line);
 }
 
 .pano-studio-card-title {
@@ -646,6 +659,7 @@
   color: var(--studio-fg-2);
   font-size: var(--studio-text-xs);
   font-weight: var(--studio-weight-head);
+  margin-right: 4px; /* 6px from the value with the field's 2px gap (docs/design.md); the unit stays 2px from it */
 }
 
 .pano-studio-field-value {
@@ -781,6 +795,9 @@
    scrollbar, and the Easing panel laid over the bottom while Keyframes are selected. It fills the column the editor
    gives it (320px wide, docs/design.md "大きさ"). */
 .pano-studio-inspector {
+  /* One step smaller type than the rest of the editor (docs/design.md "文字"); 11px is the floor. */
+  --studio-text-md: 12px;
+  --studio-text-sm: 11px;
   position: relative;
   display: flex;
   flex-direction: column;
