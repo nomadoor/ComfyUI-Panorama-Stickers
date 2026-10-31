@@ -66,12 +66,18 @@ test("a world 3D's card: its rows, their values, the dots and resets in one colu
     const value = b.querySelector(".pano-studio-field-value").getBoundingClientRect();
     const unit = b.querySelector(".pano-studio-field-unit")?.getBoundingClientRect();
     const axis = b.querySelector(".pano-studio-field-axis")?.getBoundingClientRect();
-    return { field: b.dataset.field, value: value.left - (axis ? axis.right : box.left), unitGap: unit ? unit.left - value.right : null, right: box.right - (unit || value).right };
+    return { field: b.dataset.field, axis: !!axis, value: value.left - (axis ? axis.right : box.left), unitGap: unit ? unit.left - value.right : null, right: box.right - (unit || value).right };
   }));
   const byField = Object.fromEntries(starts.map((s) => [s.field, s]));
   // Scale has no unit, Opacity has %, Rotation has °: their values start at the same inset.
   expect(Math.abs(byField.scale.value - byField.opacity.value)).toBeLessThan(1);
-  for (const s of starts) expect(s.value).toBeLessThan(6);
+  // The axis letter sits 6px before the value (docs/design.md "値の箱の中の間"); a field without one starts at its padding.
+  for (const s of starts) {
+    if (s.axis) {
+      expect(s.value).toBeGreaterThan(5.5);
+      expect(s.value).toBeLessThan(7);
+    } else expect(s.value).toBeLessThan(6);
+  }
   expect(byField.opacity.unitGap).toBeLessThan(4);
   expect(byField.opacity.right).toBeGreaterThan(8);
   // No scrollbar takes width from the cards.
