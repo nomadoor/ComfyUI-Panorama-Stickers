@@ -152,6 +152,22 @@ test("a depth grid item is its depth texture on the shared grid, its box from th
   assert.deepEqual(item.box, { min: [0, -1, -2], max: [2, 0, -1] });
 });
 
+// docs/threejs-spark-integration.md "生成を邪魔しない": an item let go frees its GPU texture (three.js deletes the
+// uploaded texture on its dispose event) and its materials; its grid is shared and stays.
+test("a depth grid item let go disposes its depth texture and materials", async (t) => {
+  const { disposeSceneItem } = await import("../web_src/pano_scene_loaders.js");
+  const bytes = depthFile([1, 2, 0, 1, 1, 1]);
+  t.mock.method(globalThis, "fetch", async () => ({ ok: true, arrayBuffer: async () => bytes }));
+  const item = await loadSceneItem("depth_grid", depthSource(), new AbortController().signal, { unlit: true, maxTextureSize: 4096 });
+  const disposed = [];
+  item.object.material.uniforms.depthMap.value.addEventListener("dispose", () => disposed.push("texture"));
+  item.object.material.addEventListener("dispose", () => disposed.push("material"));
+  const geometry = item.object.geometry;
+  geometry.addEventListener("dispose", () => disposed.push("geometry"));
+  disposeSceneItem({ kind: "depth_grid", object: item.object });
+  assert.deepEqual(disposed, ["texture", "material"]);
+});
+
 test("a depth file of another form, or larger than the GPU's textures, does not load", async (t) => {
   t.mock.method(globalThis, "fetch", async () => ({ ok: true, arrayBuffer: async () => depthFile([1, 1, 1, 1, 1]) }));
   const signal = new AbortController().signal;

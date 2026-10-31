@@ -13,6 +13,7 @@
 import { createApp, markRaw, reactive, shallowReactive } from "vue";
 import StudioEditor from "../components/studio/StudioEditor.vue";
 import { createComfyMediaAdapter } from "../pano_comfy_media.js";
+import { watchComfyRunning } from "../pano_comfy_running.js";
 import { createPanoCanvas, createPanoVideo, releasePanoCanvas } from "../pano_diagnostics.js";
 import { studioSizeWidgets } from "../pano_studio_status.js";
 import { queuePendingStickerOperation } from "../pano_editor_extension.js";
@@ -228,6 +229,11 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     },
   });
   const depthColor = (slot, video) => depthColors.picture(slot, video, !!backgroundVideo?.playback.advancing);
+  // While ComfyUI runs a job, the stage loads nothing at rest and keeps only what it draws (docs/threejs-spark-integration.md
+  // "生成を邪魔しない"); at its end it loads on.
+  const comfyRunning = watchComfyRunning(api, () => {
+    if (!closed) redraw(DRAW_REASON.MEDIA);
+  });
   // Counts the upstream layers' pictures that loaded or changed: what the stage draws of them is made again.
   let upstreamMedia = 0;
   const upstreamLinked = () => linkedInputType(node, "scene") === PANO_SCENE_TYPE || !!upstreamList();
@@ -471,11 +477,13 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     // [inputs] The port Sticker's 3D media.
     const stickerFiles = portMedia.files();
     // The `scene` result can arrive while the editor is open (the node ran): its files are part of the key.
-    const key = [session.state, view.playhead, view.imageSizes, view.animations, files ? files.urls.join("\n") : "", stickerFiles ? stickerFiles.urls.join("\n") : "", upstreamList(), upstreamMedia, paint.revision()];
+    const playing = !!backgroundVideo?.playback.advancing;
+    const running = comfyRunning.running();
+    const key = [session.state, view.playhead, view.imageSizes, view.animations, files ? files.urls.join("\n") : "", stickerFiles ? stickerFiles.urls.join("\n") : "", upstreamList(), upstreamMedia, paint.revision(), playing, running];
     if (contentCache && !contentCache.pending && contentCache.key.every((item, index) => item === key[index])) return contentCache.value;
-    const value = revealed(stageContent(session.state, view.playhead, { media: mediaOf, editorFile: stageMedia.editorFile, sceneFiles: files, sceneBox, stickerFiles, upstream: upstream.viewInput(view.playhead), paintLayers: paint.layers(), depthColor }));
+    const value = revealed(stageContent(session.state, view.playhead, { media: mediaOf, editorFile: stageMedia.editorFile, sceneFiles: files, sceneBox, stickerFiles, upstream: upstream.viewInput(view.playhead), paintLayers: paint.layers(), depthColor, playing, idle: !playing && !running, lean: running }));
     depthColors.retain(value.space.depthSlots);
-    ui.depthNotice = stageDepthNotice(value, (key) => stage?.sceneItemError(key) ?? null);
+    ui.depthNotice = stageDepthNotice(value, (key) => stage?.sceneItemError(key) ?? null, (key) => !!sceneBox(key));
     // A World item may still be loading (no box yet): the content is made again on the next frame. [inputs] The port
     // Sticker's 3D item and the upstream items too.
     const pending = value.space.fileStickers.length > 0 || !!value.space.scene || !!value.space.sticker || value.space.upstreamItems.length > 0;
@@ -1032,6 +1040,7 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     paint.dispose();
     stageMedia.dispose();
     depthColors.dispose();
+    comfyRunning.dispose();
     portMedia.dispose();
     upstream.dispose();
     vueApp.unmount();

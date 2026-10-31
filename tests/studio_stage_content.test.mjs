@@ -136,7 +136,7 @@ const upstreamDepth = {
   sky: [],
   stickers: [],
   items: [
-    { slot: "up_depth", request: { kind: "depth_grid", url: "u0.f32", video: { src: "up.mp4", fps: 24, time: 0 } }, value: {} },
+    { slot: "up_depth", request: { kind: "depth_grid", url: "u0.f32", video: { src: "up.mp4", fps: 24, items: ["u0.f32"] } }, value: {} },
     { slot: "up_mesh", request: { kind: "mesh", url: "u.glb" }, value: {} },
   ],
 };
@@ -155,17 +155,25 @@ test("without depthColor the depth grids are left out: no scene request, no slot
 // docs/studio-ui.md "ノードの入力から来た物": the editor draws them with their input's proxy colors.
 test("with depthColor the playhead's depth grid item carries its input's colors and slot; the line waits for them", () => {
   const asked = [];
-  const waiting = stageContent(empty, 1, { ...depthOptions, depthColor: (slot, video) => (asked.push([slot, video.time]), null) });
+  const waiting = stageContent(empty, 1, { ...depthOptions, depthColor: (slot, video) => (asked.push([slot, video?.time ?? null]), null) });
   assert.equal(waiting.space.scene.url, "d1.f32");
   assert.deepEqual(waiting.space.scene.sources["d1.f32"].intrinsics, K);
-  assert.equal(waiting.space.scene.color, null);
+  assert.equal(waiting.space.scene.color.slot, "scene");
+  assert.equal(waiting.space.scene.color.ready, false);
   assert.deepEqual(waiting.space.depthSlots, ["scene", "up_depth"]);
-  assert.deepEqual(asked, [["scene", 1 / 24], ["up_depth", 0]]);
-  assert.equal(stageDepthNotice(waiting, () => null), DEPTH_VIDEO_LOADING);
+  // Before drawing, each input's video is woken at the playhead's item (it loads beside the grid); its colors then
+  // follow the item drawn (color.at).
+  assert.deepEqual(asked, [["scene", null], ["scene", 1 / 24], ["up_depth", null], ["up_depth", 0]]);
+  assert.equal(waiting.space.scene.color.at("d1.f32"), null);
+  assert.deepEqual(asked.at(-1), ["scene", 1 / 24]);
+  assert.equal(stageDepthNotice(waiting, () => null, () => true), DEPTH_VIDEO_LOADING);
+  // Before an item of the grid loaded, it waits for the grid, not the video.
+  assert.equal(stageDepthNotice(waiting, () => null, () => false), "");
 
-  const picture = { media: {}, revision: "video", source: "proxy.mp4" };
+  const picture = { media: {}, revision: "video", source: "proxy.mp4", time: 1 / 24 };
   const shown = stageContent(empty, 1, { ...depthOptions, depthColor: () => picture });
-  assert.deepEqual(shown.space.scene.color, { ...picture, slot: "scene" });
+  assert.equal(shown.space.scene.color.ready, true);
+  assert.deepEqual(shown.space.scene.color.at("d1.f32"), { media: {}, revision: "video", source: "proxy.mp4", slot: "scene", key: "d1.f32" });
   assert.deepEqual(shown.space.upstreamItems.map((entry) => [entry.slot, entry.request.color?.slot ?? null]), [["up_depth", "up_depth"], ["up_mesh", null]]);
   assert.equal(stageDepthNotice(shown, () => null), "");
 });

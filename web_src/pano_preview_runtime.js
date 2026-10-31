@@ -1536,6 +1536,7 @@ function drawStudioPicture(node, canvas, surfaceView, layout, erpCanvas) {
     paintLayers: surfacePaintLayers(surface, state),
     upstream: inputs?.upstream.viewInput(frame) ?? null,
     depthColor: inputs?.depthColor ?? null,
+    playing: !!surface.playback?.playback.advancing,
   });
   inputs?.depthColors.retain(content.space.depthSlots);
   const background = surfaceBackground(node, state, surfaceBackgroundMedia(node), { fill: true });

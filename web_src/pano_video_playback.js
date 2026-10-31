@@ -355,18 +355,29 @@ export function createVideoPlayback({ video, clock, fps, span, loop, place = () 
 // (playback.advancing) and the Timeline fps. While the playhead advances, the VIDEO plays muted and
 // is sought again only when it drifts more than a frame from the playhead. Otherwise it rests
 // on the playhead's time: one seek in flight, the latest time sought next, and onCapture() once it is
-// there, for the caller to copy the picture into its still. Pausing captures the paused picture at
-// once, so the still never shows a frame from before playback while the seek confirms the time.
+// there (judged by where the VIDEO is when a seek lands, not by the time sought), for the caller to copy the picture
+// into its still. Pausing a VIDEO that was on screen captures the paused picture at once, so the still never shows a
+// frame from before playback while the seek confirms the time; one that never presented leaves the still as it was.
 //
 // `video` has the members createVideoPlayback reads, a src, removeAttribute("src") and load(), and
 // the events loadeddata/canplay/seeked/playing/error. onChange() runs when what picture() picks may change.
-export function createVideoFollower({ video, onCapture, onChange }) {
+// `captureEachSeek` captures every seek that lands while resting, also one whose time is no longer wanted, before
+// seeking on to the latest time: for a caller that needs a still of a known time while the wanted time keeps moving
+// (the depth grids' colors, pano_depth_color.js).
+export function createVideoFollower({ video, onCapture, onChange, captureEachSeek = false }) {
+  // The VIDEO keeps its time at its own precision (Chrome reads a time back in whole microseconds), so a time is the
+  // one sought when it is within a few microseconds of it, well under the offsets the callers seek by (pano_port_media.js
+  // PTS_HAIR / fps, about 40 µs).
+  const sameTime = (a, b) => b !== null && Math.abs(a - b) < 5e-6;
   let src = "";
   let failed = false;
   let wanted = { time: null, playing: false, fps: 1 };
   // The time of the seek in flight, the time the caller's still shows (NaN for the picture a pause
   // left), and whether the playing VIDEO has presented since it started.
   let seeking = null;
+  // The wanted time a seek made at rest was for (null for one made while playing): the browser lands a seek past the
+  // VIDEO's end on its end, so the seek that landed is taken for that time even where the VIDEO is not at it.
+  let seekingFor = null;
   let still = null;
   let shown = false;
 
@@ -375,8 +386,9 @@ export function createVideoFollower({ video, onCapture, onChange }) {
     onCapture();
   }
 
-  function seek(time) {
+  function seek(time, restingFor = null) {
     seeking = time;
+    seekingFor = restingFor;
     video.currentTime = time;
   }
 
@@ -396,42 +408,55 @@ export function createVideoFollower({ video, onCapture, onChange }) {
       shown = false;
       return;
     }
+    // The meta's end can be past where the VIDEO really ends (its last frame lasts a frame at the
+    // average rate); there the VIDEO's end is the playhead's time.
+    const duration = Number(video.duration);
+    const target = Number.isFinite(duration) ? Math.min(time, duration) : time;
     if (playing) {
       if (seeking !== null) return;
-      // The meta's end can be past where the VIDEO really ends (its last frame lasts a frame at the
-      // average rate); there the VIDEO's end is the playhead's time.
-      const duration = Number(video.duration);
-      const target = Number.isFinite(duration) ? Math.min(time, duration) : time;
       // A frame, plus the half frame the playhead is rounded to.
       const off = Math.abs(Number(video.currentTime) - target) > 1.5 / fps;
       // An ended VIDEO stays on its last frame; its play() would start over from 0.
       if (video.ended && !off) return;
       if (off) seek(target);
-      if (video.paused) {
+      // A paused VIDEO plays once a seek landed (seeked runs this again): played while seeking, it could tell
+      // `playing` and be shown with its old picture for a few frames.
+      if (video.paused && seeking === null) {
         shown = false;
         Promise.resolve(video.play()).catch(() => {});
       }
       return;
     }
+    // The paused picture replaces the still only when the playing VIDEO was on screen: before it presented, the still
+    // was shown all along and stays (with the time it shows).
     if (!video.paused) {
       video.pause();
+      const presented = shown;
       shown = false;
-      capture(NaN);
+      if (presented) capture(NaN);
     }
     if (seeking !== null || still === time) return;
-    if (Number(video.currentTime) === time) capture(time);
-    else seek(time);
+    if (sameTime(Number(video.currentTime), target)) capture(time);
+    else seek(target, time);
   }
 
   const listeners = {
     loadeddata: apply,
     // The VIDEO can drop below HAVE_CURRENT_DATA (a seek, a stall) while follow() is not called.
     canplay: apply,
+    // Where the VIDEO is now, not the time sought: a seek made while it played (a resync) can land after it played
+    // on and was paused, and a still taken for the time sought would then show a later picture for good.
     seeked: () => {
-      const landed = seeking;
+      const restingFor = seekingFor;
       seeking = null;
-      if (!wanted.playing && landed === wanted.time) capture(landed);
-      else apply();
+      seekingFor = null;
+      const at = Number(video.currentTime);
+      const resting = !wanted.playing && video.paused;
+      if (resting && (sameTime(at, wanted.time) || (restingFor !== null && restingFor === wanted.time))) capture(wanted.time);
+      else {
+        if (captureEachSeek && !wanted.playing && video.paused) capture(at);
+        apply();
+      }
     },
     playing: () => {
       if (!wanted.playing || shown) return;
@@ -451,6 +476,7 @@ export function createVideoFollower({ video, onCapture, onChange }) {
     src = next;
     failed = false;
     seeking = null;
+    seekingFor = null;
     still = null;
     shown = false;
     video.pause();
@@ -476,6 +502,10 @@ export function createVideoFollower({ video, onCapture, onChange }) {
       if (wanted.time === null) return null;
       if (wanted.playing && shown) return video;
       return still === null ? fallback : stillMedia;
+    },
+    // The time the caller's still shows: null before a capture, NaN for the picture a pause left.
+    get stillTime() {
+      return still;
     },
     dispose() {
       for (const [type, listener] of Object.entries(listeners)) video.removeEventListener(type, listener);

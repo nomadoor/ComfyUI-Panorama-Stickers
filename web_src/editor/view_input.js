@@ -40,7 +40,7 @@ export function createViewInput(deps) {
   let applySpaceMode, backgroundColor, backgroundCoverage, backgroundShowsAt, buildEditorViewPaintLayers, cameraFrustumLength, cameraShoots, cancelViewTransition,
     currentViewCamera, cutoutCamera, depthColor, deviceRect, file3dEditorFile, followPortSticker, frameViewDistance, getConnectedErpImage,
     getMediaRevisionToken, getStickerImage, hasSpaceContent, isDecodedImageReady, isExternalSticker,
-    isFreeSpaceView, isSpaceView, isUploadingSticker, isWorldMenuShown, portVideo, refreshFile3d, sceneFiles,
+    isFreeSpaceView, isSpaceView, isUploadingSticker, isWorldMenuShown, playback, portVideo, refreshFile3d, sceneFiles,
     selectedWorldSticker, spaceModeState, spaceOrigin, spaceViewState, stickerFiles, stickerImageKey,
     retainDepthColors, syncFloatingViewButtonState, timelineSpanFrames, updateSelectionMenu, upstreamViewInput,
     worldStickerEditable;
@@ -160,7 +160,7 @@ export function createViewInput(deps) {
     refreshGoneFiles(sceneState, fileStickers, upstream.items);
     const upstreamItems = upstream.items.map((entry) => (entry.request?.kind === "depth_grid" ? { ...entry, request: withColors(entry.slot, entry.request) } : entry));
     retainDepthColors(depthNames);
-    depthNotice = depthGridNotice([scene, sticker, ...upstreamItems.map((entry) => entry.request)], (key) => editorView.sceneItemError(key));
+    depthNotice = depthGridNotice([scene, sticker, ...upstreamItems.map((entry) => entry.request)], (key) => editorView.sceneItemError(key), (key) => !!editorView.sceneBox(key));
     const stickers = worldStickerLayers(sceneState, editor.frame, state.stickers, { media, evaluated });
     for (const { request, value } of upstreamItems) {
       const upstreamBox = request?.url ? sceneContentBox(request, editorView.sceneBox(request.url)) : null;
@@ -179,6 +179,8 @@ export function createViewInput(deps) {
       upstreamStickers: upstream.stickers,
       upstreamItems,
       sphere,
+      // Whether the playhead advances: which loaded items go first over the budget (pano_scene_items.js overBudget).
+      playing: !!playback?.advancing,
     };
   }
 
@@ -314,7 +316,7 @@ export function createViewInput(deps) {
         applySpaceMode, backgroundColor, backgroundCoverage, backgroundShowsAt, buildEditorViewPaintLayers, cameraFrustumLength, cameraShoots, cancelViewTransition,
         currentViewCamera, cutoutCamera, depthColor, deviceRect, file3dEditorFile, followPortSticker, frameViewDistance, getConnectedErpImage,
         getMediaRevisionToken, getStickerImage, hasSpaceContent, isDecodedImageReady, isExternalSticker,
-        isFreeSpaceView, isSpaceView, isUploadingSticker, isWorldMenuShown, portVideo, refreshFile3d, sceneFiles,
+        isFreeSpaceView, isSpaceView, isUploadingSticker, isWorldMenuShown, playback, portVideo, refreshFile3d, sceneFiles,
         selectedWorldSticker, spaceModeState, spaceOrigin, spaceViewState, stickerFiles, stickerImageKey,
         retainDepthColors, syncFloatingViewButtonState, timelineSpanFrames, updateSelectionMenu, upstreamViewInput,
         worldStickerEditable,
