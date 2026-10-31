@@ -1997,8 +1997,11 @@ function attachPanoramaPreviewImpl(node, options = {}) {
       releasePanoCanvas(still);
       still.__panoFrameIdx = 0;
     }
-    // Out of sight the depth grids' color VIDEOs and the upstream layers' media are let go too.
-    if (!shown) surface.studioInputs?.release();
+    // Out of sight the depth grids' color VIDEOs, the upstream layers' media and the loaded 3D items are let go too.
+    if (!shown) {
+      surface.studioInputs?.release();
+      surfaceView.releaseWorld();
+    }
     nodeSurfaceUiModel.playable = playable;
     nodeSurfaceUiModel.playing = playback.playing;
   };
@@ -2289,8 +2292,11 @@ function attachPanoramaPreviewImpl(node, options = {}) {
           const status = studioStatus(studioStatusOptions(node), () => surfaceSceneState(node, getCachedState(node)));
           if (status) nodeSurfaceUiModel.status = status;
         }
-        // Collapsed or under the node's open editor, the surface does not draw and frees its textures.
-        if (node.flags?.collapsed || editorOpen(node)) surfaceView.release();
+        // Collapsed or under the node's open editor, the surface does not draw and frees its textures and loaded 3D items.
+        if (node.flags?.collapsed || editorOpen(node)) {
+          surfaceView.release();
+          surfaceView.releaseWorld();
+        }
         else if (studioSurface) {
           // Open Studio's width with its label, from the button while it shows it.
           if (studioStyled && studioOpenButton?.offsetWidth > 0 && !studioOpenButton.classList.contains("is-compact")) studioOpenWidth = studioOpenButton.offsetWidth;

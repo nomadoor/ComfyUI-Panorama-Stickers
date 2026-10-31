@@ -75,4 +75,4 @@ Python のファイルは `comfyui_pano_suite/` の下にある。
 
 規則の owner は `docs/threejs-spark-integration.md`（「空間の表示」の大きさの上限と「`DA3_GEOMETRY` mono の深度のグリッド」）。ここには量の目安だけを書く。
 
-- `scene` と 3D の Sticker のキューは、それぞれ読み込んだ要素を `SCENE_ITEM_BUDGET`（1.5 GiB）まで持つ。深度のグリッドの要素（`DA3_GEOMETRY` mono と `MOGE_GEOMETRY` の透視投影の列）は GPU のテクスチャ（R32F の深度、1 画素 4 バイト）として持ち、ほかの要素と同じ `SCENE_ITEM_BUDGET` で数える。1080p で 1 要素約 8.3 MB、上限まで約 190 要素（約 1.5 GiB の VRAM）になる。グリッドのジオメトリは頂点ごとの値を持たず、同じ大きさの要素で共有する。色のプロキシは動画 1 本と、止めたときの静止画 1 枚。
+- `scene` と 3D の Sticker のキューは、それぞれ読み込んだ要素を `SCENE_ITEM_BUDGET`（1.5 GiB）まで持つ（ノード上の共有のビューではノードごと）。深度のグリッドの要素（`DA3_GEOMETRY` mono と `MOGE_GEOMETRY` の透視投影の列）は GPU のテクスチャ（R32F の深度、1 画素 4 バイト）として持ち、ほかの要素と同じ `SCENE_ITEM_BUDGET` で数える。1080p で 1 要素約 8.3 MB、上限まで約 190 要素（約 1.5 GiB の VRAM）になる。グリッドのジオメトリは頂点ごとの値を持たず、同じ大きさの要素で共有する。色のプロキシは動画 1 本と、止めたときの静止画 1 枚。
