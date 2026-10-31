@@ -1,7 +1,7 @@
 // Painting on the new UI's stage (docs/studio-ui.md "ペイントの道具"): a stroke of the Paint or Mask tool drawn on
 // the Sky, recorded and committed by the lower paint strokes (pano_paint_strokes.js, as the old editor), its pixels drawn
-// by a paint engine (pano_paint_engine.js), and the painting as the Sky layers the stage draws (pano_paint_layers.js
-// skyPaintLayers), the live stroke included. Also the brush ring the overlay draws at the pointer.
+// by a paint engine (pano_paint_engine.js), and the painting as the Sky layers the stage draws (a paint display,
+// pano_paint_display.js, with the new UI's rules), the live stroke included. Also the brush ring the overlay draws at the pointer.
 //
 // Directions come in the panorama convention (pano_editor_view.js viewProjection's rays): the Sky lies at infinity,
 // so only the direction of the pointer decides where it paints, wherever the viewpoint is (CONTEXT.md "Sky").
@@ -11,8 +11,9 @@
 // onChange(): what the stage draws of the painting changed (draw again). nodeLayer() gives the canvases the node's paint
 // layer is uploaded from when the editor closes (paint_upload.js).
 import { createPanoCanvas, releasePanoCanvas } from "../pano_diagnostics.js";
+import { createPaintDisplay, PAINT_DISPLAY_PLACES } from "../pano_paint_display.js";
 import { createPaintEngineManager } from "../pano_paint_engine.js";
-import { drawRasterObjectErp, engineMask, skyPaintLayers } from "../pano_paint_layers.js";
+import { engineMask } from "../pano_paint_layers.js";
 import { groupStrokes, skyStickersOf } from "../pano_paint_objects.js";
 import {
   brushPresetIdForTool, brushStrokeSize, colorToCss, commitPaintStroke, ensurePaintGroup, erpPointOfDirection,
@@ -69,8 +70,6 @@ export function createStudioPaint({ state, tools, edit, onStart = () => {}, onCh
   let active = null;
   // Counts what changed in the drawn painting (the stage's content is made again on a change).
   let revision = 0;
-  // The raster objects on ERP canvases: id -> { key, canvas, image }.
-  const rasters = new Map();
   let disposed = false;
 
   const bump = () => {
@@ -96,44 +95,23 @@ export function createStudioPaint({ state, tools, edit, onStart = () => {}, onCh
     bump();
   }
 
-  // A raster object on an ERP canvas of the paint's size, once its image has loaded (null before).
-  function rasterCanvas(item) {
-    const tf = item.transform || {};
-    const key = [item.rasterDataUrl.length, item.rasterDataUrl.slice(-32), item.bbox.u0, item.bbox.v0, item.bbox.u1, item.bbox.v1, tf.du, tf.dv, tf.rot_deg, tf.scale].join(":");
-    let entry = rasters.get(item.id);
-    if (entry && entry.key !== key) {
-      if (entry.canvas) releasePanoCanvas(entry.canvas);
-      entry = null;
-    }
-    if (!entry) {
-      const image = new Image();
-      entry = { key, canvas: null, image };
-      image.onload = () => {
-        if (disposed) return;
-        bump();
-        onChange();
-      };
-      image.src = item.rasterDataUrl;
-      rasters.set(item.id, entry);
-    }
-    if (!entry.canvas && entry.image.complete && entry.image.naturalWidth) {
-      const canvas = createPanoCanvas({ label: "studio.paint-raster" });
-      canvas.width = descriptor.width;
-      canvas.height = descriptor.height;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return null;
-      drawRasterObjectErp(ctx, entry.image, item, descriptor.width, descriptor.height);
-      entry.canvas = canvas;
-    }
-    return entry.canvas;
-  }
+  // The raster objects on ERP canvases of the paint's size, once their images have loaded: a draw again when one has.
+  const display = createPaintDisplay({
+    ...PAINT_DISPLAY_PLACES.studio,
+    rasterSize: () => descriptor,
+    onReady: () => {
+      bump();
+      onChange();
+    },
+    label: "studio.paint-raster",
+  });
 
   // The alpha (0..255) of the raster object `item`'s image at (u, v) of its box (0..1 across), for the Cursor's hit
   // (stage_objects.js), or null while its image has not loaded. Its pixels are read once per image (by its data URL,
   // kept while a raster object of the state has it).
   const rasterPixels = new Map();
   function rasterAlpha(item, u, v) {
-    const image = rasters.get(item.id)?.image;
+    const image = display.rasterImage(item);
     if (!image?.complete || !image.naturalWidth) return null;
     let pixels = rasterPixels.get(item.rasterDataUrl);
     if (!pixels) {
@@ -166,21 +144,11 @@ export function createStudioPaint({ state, tools, edit, onStart = () => {}, onCh
     if (gid && !groups.some((group) => String(group.actionGroupId || group.id || "") === gid)) {
       groups = [...groups, { id: gid, actionGroupId: gid, z_index: nextPaintZIndex(current, skyStickersOf(scene)) }];
     }
-    const kept = new Set(current.raster_objects.map((item) => item.id));
-    for (const [id, entry] of [...rasters]) {
-      if (kept.has(id)) continue;
-      if (entry.canvas) releasePanoCanvas(entry.canvas);
-      rasters.delete(id);
-    }
     const urls = new Set(current.raster_objects.map((item) => item.rasterDataUrl));
     for (const url of [...rasterPixels.keys()]) if (!urls.has(url)) rasterPixels.delete(url);
     const shown = engine;
-    return skyPaintLayers({ ...scene, painting: { ...current, groups } }, {
+    return display.layers({ ...scene, painting: { ...current, groups } }, {
       group: (id) => shown?.getGroupDisplay(id) ?? null,
-      raster: (item) => {
-        const media = rasterCanvas(item);
-        return media && { media, revision: rasters.get(item.id).key };
-      },
       mask: () => engineMask(shown),
     });
   }
@@ -197,7 +165,7 @@ export function createStudioPaint({ state, tools, edit, onStart = () => {}, onCh
         return group.frame;
       },
       groupCanvas: (gid) => engine?.getGroupTarget(gid)?.committedPaint?.canvas || null,
-      rasterCanvas: (item) => rasterCanvas(item),
+      rasterCanvas: (item) => display.rasterCanvas(item),
       topZ: () => topDisplayZIndex(draft.painting, skyStickersOf(draft)),
     };
   }
@@ -323,11 +291,7 @@ export function createStudioPaint({ state, tools, edit, onStart = () => {}, onCh
     dispose() {
       disposed = true;
       active = null;
-      for (const entry of rasters.values()) {
-        if (entry.canvas) releasePanoCanvas(entry.canvas);
-        entry.image.onload = null;
-      }
-      rasters.clear();
+      display.dispose();
       rasterPixels.clear();
       engine = null;
     },
