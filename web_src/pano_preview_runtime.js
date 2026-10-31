@@ -995,10 +995,10 @@ function surfaceBackgroundChoice(node, state) {
   });
 }
 
-// Panorama Studio's background VIDEO, best first (backgroundVideoCandidates): the node's current result, else the file
-// LoadVideo loads into the background input.
-function backgroundVideoSources(node, state) {
-  const { own, file } = backgroundVideoCandidates(surfaceBackgroundChoice(node, state), {
+// Panorama Studio's background VIDEO, best first (backgroundVideoCandidates of `choice`, surfaceBackgroundChoice's): the
+// node's current result, else the file LoadVideo loads into the background input.
+function backgroundVideoSources(node, choice) {
+  const { own, file } = backgroundVideoCandidates(choice, {
     uiList: (key) => ownOutputUiList(node, key),
     current: (channel) => isNodeOutputMediaCurrent(node, channel),
     sourceOf: (key) => resolvePreviewVideoSource(lookupNodeOutputEntry(node.id), [key], imageSourceFromCandidate),
@@ -1033,14 +1033,14 @@ function ownOutputUiList(node, key) {
 // in, which its length holds already, with its Clip range as `upstreamClip` and its MP4's meta as
 // `upstreamMedia`), the port Sticker's media, the `scene` items, and the upstream Scene's
 // length with the ends of the Clip ranges the node overrides in it (the surface's upstream layers', as in the editor).
-// `state` is the node's working state v2.
-function surfaceTimelineMedia(node, state) {
+// `state` is the node's working state v2, `choice` its background (surfaceBackgroundChoice).
+function surfaceTimelineMedia(node, state, choice) {
   const list = (key) => ownOutputUiList(node, key);
   const scene = isNodeOutputMediaCurrent(node, "scene");
   const layers = scene ? list("pano_upstream_layers") : [];
   // The background (pano_background_choice.js backgroundLength): an upstream one is placed by the Clip range of the
   // Studio it came from and ends with its media, as in the editor (pano_node_playback.js).
-  const media = backgroundLength(surfaceBackgroundChoice(node, state), {
+  const media = backgroundLength(choice, {
     uiList: list,
     current: (channel) => isNodeOutputMediaCurrent(node, channel),
     videoLinked: videoLinked(node, BACKGROUND_INPUT_NAMES),
@@ -1133,10 +1133,10 @@ function surfaceBackground(state, bgImg) {
 // Panorama Studio's background at the display frame (pano_background_choice.js backgroundAt): background_color (an
 // upstream Scene's while its background stands in) outside its Clip range and media, and without any background, as in
 // the output; the played VIDEO, its still or the linked image once it has a picture; null while one loads.
-function studioBackground(node, state) {
+function studioBackground(node, choice) {
   const bgImg = surfaceBackgroundMedia(node);
   const ready = isRenderableMediaReady(bgImg);
-  return backgroundAt(surfaceBackgroundChoice(node, state), {
+  return backgroundAt(choice, {
     shows: nodeSurface(node).playback?.playback.backgroundShows !== false,
     picture: ready ? { media: bgImg, revision: getRenderableMediaRevisionToken(bgImg) } : null,
     pending: !!bgImg && !ready,
@@ -1213,7 +1213,7 @@ function drawStudioPicture(node, canvas, surfaceView, layout, erpCanvas) {
     playing: !!surface.playback?.playback.advancing,
   });
   inputs?.depthColors.retain(content.space.depthSlots);
-  const background = studioBackground(node, state);
+  const background = studioBackground(node, surfaceBackgroundChoice(node, state));
   const radius = worldBoundRadius({ eye: eyeHeight(ground), content: content.sphere, camera: shot.position });
   let drawn = false;
   // A change of mode lets go of what the other mode held (the live ERP and its canvas, or the lens faces), as the
@@ -1950,12 +1950,14 @@ function attachPanoramaPreviewImpl(node, options = {}) {
     const source = playback.source;
     const sticker = shown ? portStickerMedia(node) : null;
     const state = getCachedState(node);
+    // The background chosen once for this follow (pano_background_choice.js): its VIDEO candidates and its length.
+    const choice = shown ? surfaceBackgroundChoice(node, state) : null;
     const playable = playback.follow({
       shown,
-      sources: shown ? backgroundVideoSources(node, state) : [],
+      sources: shown ? backgroundVideoSources(node, choice) : [],
       state,
       sticker,
-      media: shown ? surfaceTimelineMedia(node, state) : {},
+      media: shown ? surfaceTimelineMedia(node, state, choice) : {},
     });
     // The still of the port Sticker's MP4 is released with its source.
     if ((sticker?.src || "") !== surfacePlayback.stickerSource) {

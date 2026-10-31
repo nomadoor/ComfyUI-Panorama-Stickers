@@ -106,11 +106,13 @@ export function chooseBackground(caller, {
   const keys = upstreamPicture
     ? { image: upstream.imageKey, video: upstream.videoKey, meta: upstream.metaKey }
     : ownKeys && { image: ownKeys.image, video: ownKeys.video, meta: ownKeys.meta };
+  // No node has both widgets (nodes.py: Panorama Studio, the Preview and the Preview Scene have background_range; the
+  // legacy Stickers and Cutout have coverage), so which one is read first never changes the span.
   const rangeWidget = widget("background_range") ?? widget("coverage");
   const coverage = upstreamPicture ? upstream.coverage : normalizeCoverageValue(rangeWidget?.value);
   let color;
   if (row.colorFrom === "scene") {
-    color = upstreamBgColor(uiList) ?? row.colorFallback;
+    color = upstream?.color ?? upstreamBgColor(uiList) ?? row.colorFallback;
   } else {
     const own = String((widget("background_color") ?? widget("bg_color"))?.value || row.colorFallback);
     color = upstream?.color || own;

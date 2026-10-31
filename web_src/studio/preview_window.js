@@ -95,6 +95,8 @@ export async function openPreviewWindow(node, { app = null, api = null, storage 
     fps: sceneFps,
   });
   const opened = chooseBackground("window", choiceInputs());
+  // The color stays the open-time Scene background's own while it has one, else this draw's (as before a result that
+  // came while the window is open).
   const drawChoice = () => {
     const now = chooseBackground("window", choiceInputs());
     return {
