@@ -83,6 +83,7 @@ https://github.com/user-attachments/assets/bf74e953-8ceb-4c7f-afa2-1c805f12c7af
 
 ## 更新日志
 
+- **2.0.1**：Studio 编辑器始终显示输出尺寸，切换标签页时检查器保持不变；在 Camera 标签页中也可以移动物体；节点上显示深度网格（MoGe、DA3）和上游场景，并可播放；可以抓取并移动绘画；以及若干修复。
 - **2.0.0**：新增 Panorama Studio 和新的 Panorama Preview。
 - **1.5.0**：为 Stickers、Cutout、Preview 加入节点上的轻量 UI。
 - **1.4.0**：把 Cutout 的 Frame 编辑重做为裁切式的相机编辑器。
