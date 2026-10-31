@@ -34,7 +34,8 @@ import { isUpstreamSticker, upstreamRevertedRecords, upstreamStickerEditable } f
 import { revertHandoffLane } from "../pano_port_handoff.js";
 import { editableCamera } from "./camera_state.js";
 import { defaultCamera } from "./defaults.js";
-import { ROW_LANES, findSticker, inheritedSticker, keyframeOwner, ownerFrame, skyPlacedSize } from "./inspector_model.js";
+import { ROW_LANES, inheritedSticker, ownerFrame, skyPlacedSize } from "./inspector_model.js";
+import { findSticker, keyframeOwner } from "./row_object.js";
 
 const SKY_POSE_FIELDS = new Set(["yaw_deg", "pitch_deg", "rot_deg", "hFOV_deg", "vFOV_deg"]);
 

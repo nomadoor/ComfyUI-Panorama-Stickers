@@ -9,8 +9,6 @@ import {
   buildCameraCard,
   buildInspectorModel,
   easingGraphSide,
-  findSticker,
-  keyframeOwner,
   formatBezier,
   parseBezier,
 } from "../web_src/studio/inspector_model.js";
@@ -411,16 +409,11 @@ test("the Camera card's Range row shows the Camera's erp_range, 360 or 180", () 
   assert.equal(rangeOf({ camera: { projection: "erp", erp_range: 360 } }), 360);
 });
 
-test("the Keyframe owner \"camera\" of a state whose Camera is null is a default Camera; an upstream element's row is found in its layer", () => {
-  assert.deepEqual(keyframeOwner({ ...load(), camera: null }, [], "camera"), load().camera);
+test("an upstream element's row shows its card in the inspector (found in its layer)", () => {
   const state = load();
-  assert.equal(keyframeOwner(state, [], "scene"), state.scene);
   const layers = [{ sceneState: load({ id: "up", stickers: [world("st_1")] }), ui: {} }];
   const upstream = upstreamWorkingLayers(layers, [], state.timeline.fps);
   const id = upstream[0].sceneState.stickers[0].id;
-  assert.ok(id.startsWith("upstream:"));
-  assert.equal(findSticker(state, upstream, id), upstream[0].sceneState.stickers[0]);
-  assert.equal(findSticker(state, [], id), null);
   const m = model(state, { upstream, selection: { ids: [id] } });
   assert.deepEqual(m.cards.map((card) => card.target?.id), [id], "an upstream element's row shows its card");
 });

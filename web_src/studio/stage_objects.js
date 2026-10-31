@@ -46,6 +46,7 @@ import {
   brushPresetIdForTool, directionOfErpPoint, erpPointOfDirection, shortestWrappedDelta, syncPaintGroups,
 } from "../pano_paint_strokes.js";
 import { cameraAt, cameraOf, editableCamera, setCameraLanes } from "./camera_state.js";
+import { findSticker } from "./row_object.js";
 import { ROTATE_SNAP_DEG } from "./view_scale.js";
 import { shownGizmoMode, selectedKind } from "./selection_bar.js";
 import { cameraMarkerHit, cameraMarkerLength, cameraMarkerScreen, cameraMarkerShape, cameraMarkerShown } from "./camera_marker.js";
@@ -234,10 +235,6 @@ export function createStageObjects({
   // The objects can be edited on the stage: not read-only.
   const editable = () => !readOnly();
 
-  function stickerOf(id) {
-    return state().stickers.find((item) => item.id === id) ?? null;
-  }
-
   function cameraValue() {
     return cameraAt(state(), playhead());
   }
@@ -290,7 +287,8 @@ export function createStageObjects({
       return { mode: shownGizmoMode(kind, mode()), transform: sceneTransform({ ...value, scale: 1 }) };
     }
     if (kind !== "world-image" && kind !== "world-3d") return null;
-    const sticker = stickerOf(row);
+    // Own Stickers only: upstream elements are read-only on the stage (docs/studio-ui.md "ノードの入力から来た物").
+    const sticker = findSticker(state(), [], row);
     const value = content()?.evaluated.stickers.find((item) => item.id === row);
     if (!sticker || sticker.locked || !value?.active) return null;
     const guide = guides().find((item) => item.id === row);
@@ -431,7 +429,7 @@ export function createStageObjects({
     if (!grab) return null;
     const row = selection();
     const frame = playhead();
-    const base = row === "camera" ? cameraValue() : evaluateSticker(stickerOf(row), frame);
+    const base = row === "camera" ? cameraValue() : evaluateSticker(findSticker(state(), [], row), frame);
     draggedAxis = axis;
     dragGuides = grab.guides ?? [];
     return {

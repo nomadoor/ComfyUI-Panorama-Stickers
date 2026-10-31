@@ -22,6 +22,7 @@ import { EASING_PRESETS, rowLaneNames, selectedEasing } from "../pano_timeline.j
 import { isUpstreamSticker, upstreamOverrideOf, upstreamStickerEditable } from "../pano_upstream.js";
 import { animationClipIndex } from "../pano_animation.js";
 import { cameraOf } from "./camera_state.js";
+import { findSticker, keyframeOwner } from "./row_object.js";
 import { defaultCamera, groundOf } from "./defaults.js";
 import { objectLabel } from "./timeline_model.js";
 
@@ -98,26 +99,12 @@ export function keyState(owner, names, frame) {
   return has ? "has" : "none";
 }
 
-// The working Sticker, own or upstream (pano_upstream.js upstreamWorkingLayers), with the id `id`.
-export function findSticker(state, upstream, id) {
-  return state.stickers.find((item) => item.id === id)
-    ?? upstream.flatMap((layer) => layer.sceneState.stickers).find((item) => item.id === id)
-    ?? null;
-}
-
 // The Sticker an upstream element `sticker` (a working copy) is without this node's overrides, at the editor's fps.
 export function inheritedSticker(upstream, sticker, fps) {
   const layer = upstream.find((item) => item.key === sticker.origin.layer);
   if (!layer) return null;
   const received = layer.received.timeline.fps === fps ? layer.received : rebaseSceneState(layer.received, fps);
   return received.stickers.find((item) => item.id === sticker.origin.id) ?? null;
-}
-
-// The owner of a Keyframe selection's Lanes (selection.keyframes.owner): "camera", "scene", or a Sticker's id.
-export function keyframeOwner(state, upstream, id) {
-  if (id === "camera") return cameraOf(state);
-  if (id === "scene") return state.scene;
-  return findSticker(state, upstream, id);
 }
 
 // The Lanes of each row of each card (docs/timeline-ui.md "インスペクタの Keyframe のポチ"): its dot keys them, its
