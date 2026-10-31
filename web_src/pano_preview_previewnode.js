@@ -33,85 +33,6 @@ const LEGACY_MARGIN = 10;
 
 // How the Preview node reads ComfyUI's results (pano_comfy_media.js "previewNode").
 const comfyMedia = createComfyMediaAdapter({ app, api, read: "previewNode" });
-const imageSourceFromCandidate = comfyMedia.source;
-const lookupNodeOutputEntry = comfyMedia.output;
-
-function getSelfVideoUrl(node) {
-  const outputs = lookupNodeOutputEntry(node?.id);
-  const groups = [
-    outputs?.ui?.pano_videos,
-    outputs?.pano_videos,
-    outputs?.ui?.images,
-    outputs?.images,
-  ];
-  for (const group of groups) {
-    if (!Array.isArray(group)) continue;
-    for (const cand of group) {
-      const src = imageSourceFromCandidate(cand);
-      if (src && /\.mp4(\?|$)/i.test(src)) return src;
-      if (src && String(cand?.format || "").toLowerCase() === "video/mp4") return src;
-    }
-  }
-  return "";
-}
-
-function getLinkedImageUrl(node, imageInputName = "erp_image") {
-  const inputs = Array.isArray(node?.inputs) ? node.inputs : [];
-  let slot = inputs.findIndex((input) => String(input?.name || "") === String(imageInputName));
-  if (slot < 0 || !node.isInputConnected(slot)) {
-    slot = inputs.findIndex((input, index) => String(input?.type || "").toUpperCase() === "IMAGE" && node.isInputConnected(index));
-  }
-  if (slot < 0) return "";
-
-  const link = node.getInputLink(slot);
-  if (!link) return "";
-  const originId = Number(link.origin_id);
-  if (!Number.isFinite(originId)) return "";
-  const originNode = app?.graph?.getNodeById?.(originId);
-
-  const outputs = lookupNodeOutputEntry(originId);
-  const selfOutput = lookupNodeOutputEntry(node?.id);
-  const candidateGroups = [
-    selfOutput?.ui?.pano_input_images,
-    selfOutput?.pano_input_images,
-    outputs?.images,
-    outputs?.ui?.pano_input_images,
-    outputs?.pano_input_images,
-  ];
-  for (const group of candidateGroups) {
-    if (!Array.isArray(group)) continue;
-    for (const cand of group) {
-      const src = imageSourceFromCandidate(cand);
-      if (src) return src;
-    }
-  }
-
-  let appNodeImageUrls = [];
-  try {
-    appNodeImageUrls = typeof app?.getNodeImageUrls === "function" ? (app.getNodeImageUrls(originNode) || []) : [];
-  } catch {
-    appNodeImageUrls = [];
-  }
-  if (Array.isArray(appNodeImageUrls) && appNodeImageUrls.length > 0) {
-    for (const cand of appNodeImageUrls) {
-      const src = imageSourceFromCandidate(cand);
-      if (src) return src;
-    }
-  }
-
-  if (originNode) {
-    const nodeImgs = Array.isArray(originNode?.imgs) ? originNode.imgs : [];
-    for (const cand of nodeImgs) {
-      const src = imageSourceFromCandidate(cand);
-      if (src) return src;
-    }
-  }
-
-  const imageWidget = originNode?.widgets?.find((widget) => String(widget?.name || "").toLowerCase() === "image");
-  const imageName = String(imageWidget?.value || "").trim();
-  if (!imageName) return "";
-  return api.apiURL(`/view?filename=${encodeURIComponent(imageName)}&type=input&subfolder=`);
-}
 
 function drawGrid(ctx, width, height) {
   ctx.strokeStyle = "rgba(255,255,255,0.16)";
@@ -590,7 +511,7 @@ class PreviewNodeRuntime {
   }
 
   refreshImage() {
-    const nextVideoSrc = getSelfVideoUrl(this.node);
+    const nextVideoSrc = comfyMedia.previewNodeOwnVideoUrl(this.node);
     if (nextVideoSrc) {
       if (nextVideoSrc === this.imgSrc && this.img instanceof HTMLVideoElement) return;
       this.mediaCleanup?.();
@@ -628,7 +549,7 @@ class PreviewNodeRuntime {
       };
       return;
     }
-    const nextSrc = getLinkedImageUrl(this.node, this.imageInputName);
+    const nextSrc = comfyMedia.previewNodeLinkedImageUrl(this.node, this.imageInputName);
     if (!nextSrc) {
       this.mediaCleanup?.();
       this.mediaCleanup = null;

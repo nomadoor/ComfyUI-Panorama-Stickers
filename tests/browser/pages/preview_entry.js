@@ -7,7 +7,8 @@
 // template and the allowed types) while the link takes the concrete type of the output it comes from.
 //
 // ?video / ?scene: the source is a VIDEO or a PANO_SCENE (an IMAGE without either). ?off: the setting
-// PanoramaSuite.Editor.NewUI is off.
+// PanoramaSuite.Editor.NewUI is off. ?result: the IMAGE's origin has a result with an image, which the node surface
+// reads (pano_comfy_media.js "previewNode").
 import { app } from "./comfy/app.js";
 import "/web_src/main.js";
 
@@ -77,6 +78,7 @@ try {
     setDirtyCanvas() {},
     setSize(size) { this.size = size; },
   });
+  if (query.has("result")) app.nodeOutputs = { 7: { images: [{ filename: "bg.png", subfolder: "", type: "temp" }] } };
   app.canvas.graph = graph;
   node.onNodeCreated?.();
   extension.nodeCreated(node);

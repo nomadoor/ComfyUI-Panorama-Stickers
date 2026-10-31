@@ -222,3 +222,66 @@ test("nodeSurfaceLinkedSource: the origin's imgs, then a LoadImage widget; input
   assert.deepEqual(media.nodeSurfaceLinkedSource(comfyNode({ inputs: [] }), []), { src: "", sourceType: "", inputName: "" });
   assert.deepEqual(media.nodeSurfaceLinkedSource(node([null, null, null]), []), { src: "", sourceType: "", inputName: "" });
 });
+
+test("previewNodeLinkedImageUrl: own pano_input_images (current or not), then the origin's results in group order", () => {
+  const origin = { id: 50, imgs: [{ src: "/imgs.png" }], widgets: [{ name: "image", value: " typed.png " }] };
+  const app = {
+    graph: { getNodeById: (id) => (id === 50 ? origin : null) },
+    getNodeImageUrls: () => [],
+    nodeOutputs: {},
+  };
+  const media = adapter("previewNode", app);
+  setNodeOutputLookup(() => null);
+  const node = comfyNode({
+    id: 51,
+    inputs: [{ name: "erp_image", type: "IMAGE" }, { name: "audio", type: "AUDIO" }],
+    links: [{ origin_id: "50", origin_slot: 1 }],
+  });
+  // The node's own result, ui first, without asking whether it is current.
+  app.nodeOutputs = { 51: { ui: { pano_input_images: [{ filename: "own_ui.png", type: "temp" }] }, pano_input_images: ["/own_flat.png"] } };
+  assert.equal(media.previewNodeLinkedImageUrl(node), "/api/view?filename=own_ui.png&type=temp");
+  // The origin's images, videos not skipped, no slot preference, no pano_src.
+  app.nodeOutputs = { 50: { images: [{ filename: "clip.mp4", type: "input" }, { filename: "b.png", type: "temp" }] } };
+  assert.equal(media.previewNodeLinkedImageUrl(node), "/api/view?filename=clip.mp4&type=input");
+  app.nodeOutputs = { 50: { pano_input_images: ["/origin_flat.png"], ui: { pano_input_images: ["/origin_ui.png"] } } };
+  assert.equal(media.previewNodeLinkedImageUrl(node), "/origin_ui.png");
+  // Then getNodeImageUrls, imgs, and the image widget's value of any node, trimmed, as an input file.
+  app.nodeOutputs = {};
+  app.getNodeImageUrls = () => ["/app.png"];
+  assert.equal(media.previewNodeLinkedImageUrl(node), "/app.png");
+  app.getNodeImageUrls = () => [];
+  assert.equal(media.previewNodeLinkedImageUrl(node), "/imgs.png");
+  origin.imgs = [];
+  assert.equal(media.previewNodeLinkedImageUrl(node), "/api/view?filename=typed.png&type=input&subfolder=");
+  origin.widgets = [];
+  assert.equal(media.previewNodeLinkedImageUrl(node), "");
+});
+
+test("previewNodeLinkedImageUrl: the named input, else the first connected IMAGE input; a missing link reads nothing", () => {
+  const first = { id: 60, imgs: [{ src: "/first.png" }] };
+  const second = { id: 61, imgs: [{ src: "/second.png" }] };
+  const app = { graph: { getNodeById: (id) => ({ 60: first, 61: second })[id] ?? null }, nodeOutputs: {} };
+  const media = adapter("previewNode", app);
+  setNodeOutputLookup(() => null);
+  const inputs = [{ name: "other", type: "IMAGE" }, { name: "erp_image", type: "IMAGE" }];
+  assert.equal(media.previewNodeLinkedImageUrl(comfyNode({ inputs, links: [{ origin_id: 60 }, { origin_id: 61 }] })), "/second.png");
+  assert.equal(media.previewNodeLinkedImageUrl(comfyNode({ inputs, links: [{ origin_id: 60 }, null] })), "/first.png");
+  assert.equal(media.previewNodeLinkedImageUrl(comfyNode({ inputs, links: [] })), "");
+  assert.equal(media.previewNodeLinkedImageUrl(comfyNode({ inputs, links: [{ origin_id: "x" }] })), "");
+});
+
+test("previewNodeOwnVideoUrl: the first MP4 of pano_videos then images, ui before flat, by extension or format", () => {
+  const app = { nodeOutputs: {} };
+  const media = adapter("previewNode", app);
+  const node = { id: 70 };
+  // The extension is read off the URL's end, so an entry counts by its format (as the node writes it).
+  app.nodeOutputs = { 70: { images: ["/x/a.mp4"], pano_videos: [{ filename: "v.mp4", type: "temp" }, { filename: "w.mp4", type: "temp", format: "video/mp4" }] } };
+  assert.equal(media.previewNodeOwnVideoUrl(node), "/api/view?filename=w.mp4&type=temp");
+  app.nodeOutputs = { 70: { images: ["/x/a.mp4?r=1"], pano_videos: [{ filename: "v.mp4", type: "temp" }] } };
+  assert.equal(media.previewNodeOwnVideoUrl(node), "/x/a.mp4?r=1");
+  app.nodeOutputs = { 70: { ui: { images: [{ filename: "clip", type: "temp", format: "video/mp4" }] }, images: [{ filename: "b.mp4" }] } };
+  assert.equal(media.previewNodeOwnVideoUrl(node), "/api/view?filename=clip&type=temp");
+  app.nodeOutputs = { 70: { images: [{ filename: "a.png" }] } };
+  assert.equal(media.previewNodeOwnVideoUrl(node), "");
+  assert.equal(media.previewNodeOwnVideoUrl({ id: 71 }), "");
+});

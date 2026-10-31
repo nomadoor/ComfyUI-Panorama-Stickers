@@ -5,6 +5,12 @@ import { expect, test } from "@playwright/test";
 // PANO_SCENE, through web_src/main.js as ComfyUI loads it (tests/browser/pages/preview_entry.html: the node has the
 // MatchType `source` the real frontend builds). With the setting off, IMAGE and VIDEO keep the browser's fullscreen.
 
+// A 4×2 PNG for the /view the node surface asks for.
+const PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAQAAAACCAYAAAB/qH1jAAAAEklEQVR4nGP4z8DwHxkzoAsAAA8hD/EEN8afAAAAAElFTkSuQmCC",
+  "base64",
+);
+
 async function load(page, query) {
   const problems = [];
   page.on("pageerror", (error) => problems.push(`pageerror: ${error.message}`));
@@ -40,4 +46,16 @@ test("with the setting off, the IMAGE node surface's top-right button is the bro
   await button.click();
   await expect.poll(() => page.evaluate(() => window.__entry.fullscreenAsked)).toBe(1);
   await expect(page.locator("[data-preview-window]")).toHaveCount(0);
+});
+
+test("the IMAGE node surface reads the picture of its origin's result", async ({ page }) => {
+  const views = [];
+  await page.route("**/view?*", (route) => {
+    const url = new URL(route.request().url());
+    views.push(`${url.pathname}${url.search}`);
+    return route.fulfill({ status: 200, contentType: "image/png", body: PNG });
+  });
+  const problems = await load(page, "?result");
+  await expect.poll(() => views).toContain("/view?filename=bg.png&type=temp");
+  expect(problems).toEqual([]);
 });

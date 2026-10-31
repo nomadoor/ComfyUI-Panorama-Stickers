@@ -1,4 +1,10 @@
-import { BACKGROUND_INPUT_NAMES, isNodeOutputMediaCurrent, isVideoFile, outputSourceToken } from "./pano_preview_video.js";
+import {
+  BACKGROUND_INPUT_NAMES,
+  isNodeOutputMediaCurrent,
+  isVideoFile,
+  outputSourceToken,
+  resolvePreviewVideoSource,
+} from "./pano_preview_video.js";
 import { mediaCache } from "./pano_node_bridge.js";
 
 // How a reader reads ComfyUI's results. Each flag is one place where the readers read differently today
@@ -456,6 +462,69 @@ export function createComfyMediaAdapter({ app, api, ImageCtor, imageState, read:
     return { src: "", sourceType: "", inputName: "" };
   };
 
+  // The URL the Preview node's runtime (pano_preview_previewnode.js) shows of its linked image: the node's own
+  // pano_input_images, then the origin's (app.graph's node; no subgraph) result, getNodeImageUrls, imgs, its image widget.
+  const previewNodeLinkedImageUrl = (node, imageInputName = "erp_image") => {
+    const inputs = Array.isArray(node?.inputs) ? node.inputs : [];
+    let slot = inputs.findIndex((input) => String(input?.name || "") === String(imageInputName));
+    if (slot < 0 || !node.isInputConnected(slot)) {
+      slot = inputs.findIndex((input, index) => String(input?.type || "").toUpperCase() === "IMAGE" && node.isInputConnected(index));
+    }
+    if (slot < 0) return "";
+
+    const link = node.getInputLink(slot);
+    if (!link) return "";
+    const originId = Number(link.origin_id);
+    if (!Number.isFinite(originId)) return "";
+    const originNode = app?.graph?.getNodeById?.(originId);
+
+    const outputs = output(originId);
+    const selfOutput = output(node?.id);
+    const candidateGroups = [
+      selfOutput?.ui?.pano_input_images,
+      selfOutput?.pano_input_images,
+      outputs?.images,
+      outputs?.ui?.pano_input_images,
+      outputs?.pano_input_images,
+    ];
+    for (const group of candidateGroups) {
+      if (!Array.isArray(group)) continue;
+      for (const cand of group) {
+        const src = source(cand);
+        if (src) return src;
+      }
+    }
+
+    let appNodeImageUrls = [];
+    try {
+      appNodeImageUrls = typeof app?.getNodeImageUrls === "function" ? (app.getNodeImageUrls(originNode) || []) : [];
+    } catch {
+      appNodeImageUrls = [];
+    }
+    if (Array.isArray(appNodeImageUrls) && appNodeImageUrls.length > 0) {
+      for (const cand of appNodeImageUrls) {
+        const src = source(cand);
+        if (src) return src;
+      }
+    }
+
+    if (originNode) {
+      const nodeImgs = Array.isArray(originNode?.imgs) ? originNode.imgs : [];
+      for (const cand of nodeImgs) {
+        const src = source(cand);
+        if (src) return src;
+      }
+    }
+
+    const imageWidget = originNode?.widgets?.find((widget) => String(widget?.name || "").toLowerCase() === "image");
+    const imageName = String(imageWidget?.value || "").trim();
+    if (!imageName) return "";
+    return api.apiURL(`/view?filename=${encodeURIComponent(imageName)}&type=input&subfolder=`);
+  };
+
+  // The MP4 of the Preview node's own result (pano_videos, then images).
+  const previewNodeOwnVideoUrl = (node) => resolvePreviewVideoSource(output(node?.id), ["pano_videos", "images"], source);
+
   const resolvePreferredExactLinkedSource = (node, inputNames = []) => {
     const orderedNames = Array.isArray(inputNames) ? inputNames : [inputNames];
     for (const inputName of orderedNames) {
@@ -607,6 +676,8 @@ export function createComfyMediaAdapter({ app, api, ImageCtor, imageState, read:
     loadPreferredExactLinkedImage,
     output,
     nodeSurfaceLinkedSource,
+    previewNodeLinkedImageUrl,
+    previewNodeOwnVideoUrl,
     resolvePreferredExactLinkedSource,
     source,
     sourceCandidates,
