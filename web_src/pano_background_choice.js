@@ -38,8 +38,9 @@ export const BACKGROUND_UI_KEYS = Object.freeze({
 //   source is a PANO_SCENE).
 // - ownWhen: when the node's own background is the one shown otherwise: "linked" (its input is linked), "always"
 //   (the node surface does not look at the link: it shows what the result and the inputs give, placed by its Clip range).
-// - upstreamPicture: whether the upstream background's picture and VIDEO show; false shows only its bg_color,
-//   and reads the picture, the VIDEO and the span from the node's own keys and inputs even while it stands in.
+// - upstreamPicture: whether the upstream background's picture and VIDEO show; false would show only its bg_color and
+//   read the picture, the VIDEO and the span from the node's own keys and inputs. Every caller shows them now
+//   (the node surface since docs/studio-node-surface.md "表示フレームと VIDEO").
 // - colorFrom: where bg_color comes from besides an upstream background's own: "node" (the background_color / bg_color
 //   widget), "scene" (the Scene's pano_upstream_bg_color).
 // - colorFallback: the color when that has none.
@@ -60,7 +61,7 @@ export const BACKGROUND_CALLERS = Object.freeze({
     colorFallback: "#000000", ownUnder: "never", lengthFrom: "loaded", endsWithMedia: true, fill: "scene",
   }),
   surface: Object.freeze({
-    keys: "studio", inputs: BACKGROUND_INPUT_NAMES, upstreamWhen: "result", ownWhen: "always", upstreamPicture: false, colorFrom: "node",
+    keys: "studio", inputs: BACKGROUND_INPUT_NAMES, upstreamWhen: "result", ownWhen: "always", upstreamPicture: true, colorFrom: "node",
     colorFallback: "#000000", ownUnder: "upstream-layers", lengthFrom: "result", endsWithMedia: true, fill: "always",
   }),
   viewer: Object.freeze({

@@ -8,7 +8,8 @@
 // node's state hides that image, an upstream override); `?nodes=2` puts a second Studio node
 // with the same inputs in #node2. The background (docs/timeline-ui.md "どの背景を出すか"): `?bg=own` links `background` with an
 // orange ERP in the node's own result (`&clip=10`: its Clip range starts at frame 10); `?case=upbg` is `?case=upstream`
-// with the upstream Scene's yellow background and magenta bg_color in the result; `?bgcolor=empty` leaves background_color
+// with the upstream Scene's yellow background image and magenta bg_color in the result, `?case=upvideo` the same with a
+// yellow background VIDEO in place of the image; `?bgcolor=empty` leaves background_color
 // empty; `?lens=1` gives the Camera a fisheye lens (κ 0, hFOV 350°), whose corners are past 180° off its axis. The page
 // reports through window.__surface.
 import { app } from "./comfy/app.js";
@@ -24,7 +25,7 @@ HTMLCanvasElement.prototype.getContext = function (type, options = {}) {
 const params = new URLSearchParams(location.search);
 const mode = params.get("mode") || "frame";
 const which = params.get("case") || "";
-const upstreamCase = which === "upstream" || which === "upbg";
+const upstreamCase = which === "upstream" || which === "upbg" || which === "upvideo";
 const ownBackground = params.get("bg") === "own";
 const surface = (window.__surface = { ready: false, error: null, opened: 0 });
 
@@ -130,7 +131,9 @@ async function mogeResult() {
 
 // Another Studio's Scene on `scene` as a run leaves it (docs/studio-node.md "上流の Scene"): one layer with a blue sky image.
 let upstreamImageUrl = "";
-function upstreamResult() {
+// The upstream Scene's background image (`?case=upbg`), to see when it holds its source.
+let upstreamBackgroundUrl = "";
+async function upstreamResult() {
   upstreamImageUrl = solid(`rgb(${BLUE.join(",")})`);
   const layer = {
     version: 2,
@@ -149,7 +152,22 @@ function upstreamResult() {
     pano_upstream_layers: [{ state: layer, ui: {} }],
     pano_upstream_frames: [1],
     pano_timeline_fps: [24],
-    ...(which === "upbg" ? { pano_upstream_input_images: [solid(`rgb(${YELLOW.join(",")})`, 128, 64)], pano_upstream_coverage: [360], pano_upstream_bg_color: [MAGENTA.map((value) => value / 255)] } : {}),
+    ...(which === "upbg" || which === "upvideo" ? { pano_upstream_coverage: [360], pano_upstream_bg_color: [MAGENTA.map((value) => value / 255)] } : {}),
+    ...(which === "upbg" ? { pano_upstream_input_images: [(upstreamBackgroundUrl = solid(`rgb(${YELLOW.join(",")})`, 128, 64))] } : {}),
+    ...(which === "upvideo" ? await upstreamVideo() : {}),
+  };
+}
+
+// The upstream Scene's yellow background VIDEO as a run leaves it: an MP4 by its name (the page records a WebM; the
+// `#…mp4` fragment is how the surface knows an MP4 among the result's files) and its meta.
+async function upstreamVideo() {
+  const video = await makeVideo({ width: 128, height: 64, seconds: 0.6, paint: (g) => {
+    g.fillStyle = `rgb(${YELLOW.join(",")})`;
+    g.fillRect(0, 0, 128, 64);
+  } });
+  return {
+    pano_upstream_input_videos: [`${video.src}#upstream.mp4`],
+    pano_upstream_input_video_meta: [{ frames: 14, duration: 14 / 24, fps: 24 }],
   };
 }
 
@@ -291,6 +309,8 @@ surface.depthRow = (v = 0.5, index = 0) => {
 surface.depthVideosLoaded = () => videos.filter((video) => !video.isConnected && !!video.getAttribute("src")).length;
 // How many images were made for the upstream layer's sky image (one more each time its layers are read again).
 surface.upstreamImagesMade = () => images.filter((image) => image.src === upstreamImageUrl).length;
+// Whether the upstream Scene's background image is held (an image made for it still has its source).
+surface.upstreamBackgroundHeld = () => images.some((image) => image.src === upstreamBackgroundUrl && !!image.getAttribute("src"));
 // Opens or closes the node's editor as pano_node_bridge.js records it (the modal itself is not made here).
 surface.editor = (open) => {
   editorSession(node).open = open;
@@ -306,7 +326,7 @@ surface.collapse = (collapsed) => {
 
 try {
   if (which === "moge") app.nodeOutputs = { 5: await mogeResult(), 6: null };
-  if (upstreamCase) app.nodeOutputs = { 5: upstreamResult() };
+  if (upstreamCase) app.nodeOutputs = { 5: await upstreamResult() };
   if (ownBackground) app.nodeOutputs = { 5: { pano_input_images: [solid(`rgb(${ORANGE.join(",")})`, 128, 64)] } };
   if (node2 && which === "moge") app.nodeOutputs[6] = app.nodeOutputs[5];
   recording = true;

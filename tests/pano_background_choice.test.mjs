@@ -205,22 +205,25 @@ test("window: a Scene shows its background, its span and its color; without one,
 });
 
 // pano_preview_runtime.js (Panorama Studio): studio_node_surface.spec.js "the node's own background image shows ...",
-// "as it is: with the upstream Scene's background ...", "as it is: an empty background_color ...".
-test("surface: the result decides the upstream background, whose bg_color alone shows; picture, VIDEO and span stay its own", () => {
+// "with the upstream Scene's background image ...", "... background VIDEO ...", "as it is: an empty background_color ...".
+test("surface: the result decides the upstream background, whose picture, VIDEO, span and bg_color show, as in the editor", () => {
   const ui = { ...UPSTREAM_UI, ...OWN_UI };
-  // Linked or not, the result's upstream background stands in.
+  // Linked or not, the result's upstream background stands in (docs/studio-node-surface.md "表示フレームと VIDEO").
   for (const ownLinked of [false, true]) {
     const choice = choose("surface", { ui, ownLinked });
     assert.equal(choice.from, "upstream");
-    assert.deepEqual(choice.keys, BACKGROUND_UI_KEYS.studio);
-    assert.deepEqual(choice.fileInputs, ["erp_image", "bg_erp", "background", "bg_media", "source"]);
-    assert.equal(choice.coverage, 360);
+    assert.deepEqual(choice.keys, { image: "pano_upstream_input_images", video: "pano_upstream_input_videos", meta: "pano_upstream_input_video_meta" });
+    assert.deepEqual(choice.fileInputs, []);
+    assert.equal(choice.coverage, 180);
     assert.equal(choice.color, "#ff00ff");
   }
-  const choice = choose("surface", { ui });
-  const candidates = backgroundVideoCandidates(choice, { uiList: uiListOf(ui), current: currentOf(["background"]), source: (entry) => entry, linkedVideoFile: () => "linked.mp4" });
-  assert.deepEqual(candidates, { own: "", file: "linked.mp4" });
-  // Without a picture of its own, the upstream bg_color fills the picture.
+  // Its VIDEO only: neither the node's own VIDEO nor the file its background input loads, even while those are current.
+  const choice = choose("surface", { ui, ownLinked: true });
+  const candidates = backgroundVideoCandidates(choice, { uiList: uiListOf(ui), current: currentOf(), source: (entry) => entry, linkedVideoFile: () => "linked.mp4" });
+  assert.deepEqual(candidates, { own: "up.mp4", file: "" });
+  // Its picture at its span once ready; nothing while it loads; its bg_color without one.
+  assert.deepEqual(backgroundAt(choice, { picture: { media: "up", revision: 1 } }), { media: "up", revision: 1, coverage: 180 });
+  assert.equal(backgroundAt(choice, { pending: true }), null);
   assert.deepEqual(backgroundAt(choice, {}), { color: "#ff00ff" });
 });
 
