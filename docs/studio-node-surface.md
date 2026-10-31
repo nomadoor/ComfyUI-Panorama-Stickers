@@ -191,9 +191,10 @@ Timeline のフレーム（表示フレーム）の背景の VIDEO と `port` �
   静止画のキャンバス2つも大きさを0にする。深度の格子の色の VIDEO（入力ごとに 1 本、上流の層の分も）も同じく src を外して放し
   （`createDepthColors` の `retain([])`）、見えるようになると読み直す。上流の層の読み込んだ素材は、背景の静止画と同じく放す。
   上流の Scene の背景の画像も放す（上の「表示フレームと VIDEO」）。
+  読み込んだ 3D の要素（`scene`・3D の Sticker・上流の層の要素。共有ビューのそのノードの World のキュー）も放し（`surfaceView.releaseWorld()`）、見えるようになると読み直す。
 - そのノードのエディタを開いている間（`pano_node_bridge.js` の `editorSession(node).open`、`editorOpen(node)`）も、
   モーダルがsurfaceを覆うので見えないものとして扱う。エディタが同じ1080pのVIDEOを自分で再生するので、
-  surfaceはVIDEOのsrc（背景・`port` の素材・深度の格子の色）を外し、静止画と上流の層の素材を放し、描かずに共有ビューのテクスチャを放す（`surfaceView.release()`）。
+  surfaceはVIDEOのsrc（背景・`port` の素材・深度の格子の色）を外し、静止画と上流の層の素材を放し、描かずに共有ビューのテクスチャと読み込んだ 3D の要素を放す（`surfaceView.release()`・`surfaceView.releaseWorld()`。エディタは自分の要素を読むので、持てば重複になる）。
   collapse したsurfaceも描かないので、同じくテクスチャを放す。エディタを閉じると同じ表示フレームから読み直す。
   解像度や品質は落とさない（重複を持たないだけ）。
 
