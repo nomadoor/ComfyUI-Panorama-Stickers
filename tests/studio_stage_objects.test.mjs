@@ -24,7 +24,7 @@ const H = 500;
 const file = (filename) => ({ kind: "file", filename, subfolder: "", storage: "input" });
 const image = { naturalWidth: 100, naturalHeight: 100, complete: true };
 
-function setup({ tab = "3d", lens = false, readOnly = false, stickers = null, sceneBox = () => null, editorFile = () => null, mode = "translate", painting = undefined, paintingVisible = true, rasterAlpha = undefined, view = { width: W, height: H }, cameraAt = [0, -1, -6] } = {}) {
+function setup({ tab = "3d", camera: viewCamera = null, readOnly = false, stickers = null, sceneBox = () => null, editorFile = () => null, mode = "translate", painting = undefined, paintingVisible = true, rasterAlpha = undefined, view = { width: W, height: H }, cameraAt = [0, -1, -6] } = {}) {
   const session = createStudioSession({
     state: loadSceneState({
       version: 2,
@@ -38,7 +38,7 @@ function setup({ tab = "3d", lens = false, readOnly = false, stickers = null, sc
     }),
   });
   const pose = { position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0, roll_deg: 0, target: [0, 0, -5] };
-  const camera = stageCamera(pose, view.width, view.height, 50);
+  const camera = viewCamera ?? stageCamera(pose, view.width, view.height, 50);
   // The GPU pick is not used to select: a call to it fails the test.
   const editorView = {
     sceneBox,
@@ -61,7 +61,6 @@ function setup({ tab = "3d", lens = false, readOnly = false, stickers = null, sc
     select: (row) => session.selectObject(row),
     edits: { live: (apply, copy) => session.gesture(apply, copy), commit: () => session.commitGesture(), cancel: () => session.cancelGesture() },
     tab: () => tab,
-    lens: () => lens,
     readOnly: () => readOnly,
     mode: () => gizmoMode.value,
     rasterAlpha,
@@ -144,7 +143,8 @@ test("the selected World object's gizmo shows on the overlay and is pressed firs
   const guides = objects.overlay().gizmo.guides;
   assert.deepEqual(guides.map((line) => line.name), ["x"], "the X guide line shows while it is dragged");
   const [guide] = guides;
-  assert.ok(Math.abs(guide.a.y - guide.b.y) < 1e-6 && Math.abs(guide.a.y - H / 2) < 1e-6, "level through the grabbed center");
+  const [a, b] = [guide.points[0], guide.points[guide.points.length - 1]];
+  assert.ok(Math.abs(a.y - b.y) < 1e-6 && Math.abs(a.y - H / 2) < 1e-6, "level through the grabbed center");
   drag.end();
   assert.deepEqual(objects.overlay().gizmo.guides, [], "and goes when it is let go");
   const position = evaluateLane(session.state.stickers[1], "position", 0);
@@ -327,32 +327,80 @@ test("the Camera carried into the Camera tab shows no gizmo (the view is inside 
   assert.equal(objects.overlay().camera, null);
 });
 
-test("on a lens Camera's Frame view no gizmo or handle shows and every press only selects, the drag left to the Camera", () => {
-  const { session, objects } = setup({ tab: "camera", lens: true });
-  session.selectObject("board");
-  assert.equal(objects.overlay().gizmo, null);
-  session.selectObject("sky");
-  assert.equal(objects.overlay().sky.handles, false);
-  const before = session.state;
-  const drag = objects.press(onSky);
-  assert.equal(drag.passes, true);
-  drag.move({ x: 900, y: 250 });
+test("on a lens Camera's Frame view the guides, the hover, the gizmo and the handles map onto its bent picture", async () => {
+  // docs/space-and-view.md "レンズの Camera の当たり": the camera carries the picture (pano_lens.js withLensImage).
+  const { withLensImage, lensProjectPoint } = await import("../web_src/pano_lens.js");
+  const pose = { position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0, roll_deg: 0, target: [0, 0, -5] };
+  const lensCamera = withLensImage(stageCamera(pose, W, H, 50), { curve: 0.8, focalPx: W / 2 / Math.tan(50 * Math.PI / 180), centerX: W / 2, centerY: H / 2 });
+  const { session, objects } = setup({ tab: "camera", camera: lensCamera });
+  // The board at (3, 0, -5): its center where the lens maps it, not where the pinhole would.
+  const board = lensProjectPoint(lensCamera, [3, 0, -5]);
+  const pinholeX = W / 2 * (1 + (3 / 5) / Math.tan(50 * Math.PI / 180));
+  assert.ok(Math.abs(board.x - pinholeX) > 5, "the lens moves it");
+  assert.equal(objects.hover(board).cursor, "default");
+  assert.deepEqual(objects.overlay().guides.map((guide) => guide.look), ["hover"]);
+  // Its outline is bent: a guide edge maps to more than two points.
+  const guide = objects.overlay().guides[0];
+  assert.ok(guide.segments.length >= 4);
+  objects.press(board);
+  assert.equal(session.selection.row, "board");
+  const shown = objects.overlay().gizmo;
+  assert.ok(shown, "the gizmo shows");
+  assert.ok(Math.hypot(shown.handles.center.x - board.x, shown.handles.center.y - board.y) < 1e-6, "on the mapped center");
+  // Drag its X ball: the board moves along X, and the grabbed point stays under the pointer on the bent picture.
+  const ball = shown.handles.axes.find((axis) => axis.name === "x").end;
+  const drag = objects.press(ball);
+  const to = { x: ball.x + 40, y: ball.y };
+  drag.move(to);
   drag.end();
-  assert.equal(session.state, before);
+  const moved = evaluateLane(session.state.stickers[1], "position", 0);
+  assert.ok(moved[0] > 3, "moved along +X");
+  const length = shown.handles.length;
+  const grabbed = lensProjectPoint(lensCamera, [moved[0] + length, moved[1], moved[2]]);
+  assert.ok(Math.abs(grabbed.x - to.x) < 2, `the grabbed ball follows the pointer (${grabbed.x} vs ${to.x})`);
+  // The sky image's handles show, on its mapped frame.
+  session.selectObject("sky");
+  assert.equal(objects.overlay().sky.handles, true);
 });
 
-test("a press through another view (a lens Camera's cube face) tests the World objects and the sky images in that view", () => {
-  // docs/space-and-view.md "レンズの Camera の当たり": the stage hands the face's pinhole and its pixel.
-  const { session, objects } = setup({ tab: "camera" });
-  const turned = stageCamera({ position: [0, 0, 0], yaw_deg: 90, pitch_deg: 0, roll_deg: 0, target: [5, 0, 0] }, 64, 64, 50);
-  assert.equal(objects.press({ x: 32, y: 32 }, { camera: turned, width: 64, height: 64 }), null, "the sky image at yaw 0 is not under the face's center");
-  const ahead = stageCamera({ position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0, roll_deg: 0, target: [0, 0, -5] }, 64, 64, 50);
-  assert.ok(objects.press({ x: 32, y: 32 }, { camera: ahead, width: 64, height: 64 }));
+test("on a lens Camera's picture a drag past the lens's limit keeps the last value: the gizmo's and the sky image's", async () => {
+  // docs/space-and-view.md "レンズの Camera の当たり": there is no ray past lens_fov_limit ÷ 2.
+  const { withLensImage, lensProjectPoint } = await import("../web_src/pano_lens.js");
+  const pose = { position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0, roll_deg: 0, target: [0, 0, -5] };
+  const lensCamera = withLensImage(stageCamera(pose, W, H, 50), { curve: 0.8, focalPx: W / 2 / Math.tan(50 * Math.PI / 180), centerX: W / 2, centerY: H / 2 });
+  assert.equal(viewProjection(lensCamera, W, H).ray(1e7, H / 2), null, "no ray far out on the picture");
+  const { session, objects } = setup({ tab: "camera", camera: lensCamera });
+  objects.press(lensProjectPoint(lensCamera, [3, 0, -5]));
+  const ball = objects.overlay().gizmo.handles.axes.find((axis) => axis.name === "x").end;
+  const drag = objects.press(ball);
+  drag.move({ x: ball.x + 30, y: ball.y });
+  const moved = evaluateLane(session.state.stickers[1], "position", 0);
+  drag.move({ x: 1e7, y: ball.y });
+  assert.deepEqual(evaluateLane(session.state.stickers[1], "position", 0), moved, "the gizmo's drag keeps its last value");
+  drag.end();
+  const sky = objects.press(onSky);
   assert.equal(session.selection.row, "sky");
-  // The board at (3, 0, -5) under the center of a face turned to it: selected by the same test as the hover.
-  const toBoard = stageCamera({ position: [0, 0, 0], yaw_deg: Math.atan2(3, 5) * 180 / Math.PI, pitch_deg: 0, roll_deg: 0, target: [3, 0, -5] }, 64, 64, 50);
-  objects.press({ x: 32, y: 32 }, { camera: toBoard, width: 64, height: 64 });
-  assert.equal(session.selection.row, "board");
+  sky.move({ x: onSky.x + 20, y: onSky.y });
+  const turned = evaluateLane(session.state.stickers[0], "direction", 0);
+  sky.move({ x: 1e7, y: onSky.y });
+  assert.deepEqual(evaluateLane(session.state.stickers[0], "direction", 0), turned, "the sky image's move keeps its last value");
+  sky.end();
+});
+
+test("on a lens Camera's picture the selected paint group's frame bends between its corners", async () => {
+  const { withLensImage } = await import("../web_src/pano_lens.js");
+  const pose = { position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0, roll_deg: 0, target: [0, 0, -5] };
+  const lensCamera = withLensImage(stageCamera(pose, W, H, 50), { curve: 0.5, focalPx: W / 2 / Math.tan(50 * Math.PI / 180), centerX: W / 2, centerY: H / 2 });
+  const flat = setup({ tab: "camera", painting: painted() });
+  flat.session.selectObject("paint_group:g1");
+  const pinhole = flat.objects.overlay().paint;
+  assert.equal(pinhole.outline.length, 4, "a pinhole's frame is its four corners");
+  const { session, objects } = setup({ tab: "camera", camera: lensCamera, painting: painted() });
+  session.selectObject("paint_group:g1");
+  const bent = objects.overlay().paint;
+  assert.ok(bent.outline.length > 16, `bent into many points (${bent.outline.length})`);
+  // Its corners lie on its outline.
+  for (const corner of bent.corners) assert.ok(bent.outline.some((p) => Math.hypot(p.x - corner.x, p.y - corner.y) < 1e-6));
 });
 
 test("the overlay draws every World guide, the hovered one bright and the selected one yellow; Alt keeps it from lighting up", () => {

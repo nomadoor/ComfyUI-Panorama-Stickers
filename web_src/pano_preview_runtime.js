@@ -2812,7 +2812,7 @@ function attachPanoramaPreviewImpl(node, options = {}) {
             y: stickerDrag.startCenter.y + point.y - stickerDrag.startPoint.y,
           },
           stickerDrag.projection,
-        );
+        ) ?? next;
       } else if (stickerDrag.kind === "scale") {
         const distance = Math.hypot(point.x - stickerDrag.startCenter.x, point.y - stickerDrag.startCenter.y);
         next = scaleStickerFromPointer(stickerDrag.startSticker, stickerDrag.startDistance, distance);

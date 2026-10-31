@@ -360,3 +360,14 @@ for (const [name, grid, want] of [
     }
   });
 }
+
+test("on a lens Camera's picture the hit ray goes back through the lens to the point it maps", async () => {
+  const { lensProjectPoint, withLensImage } = await import("../web_src/pano_lens.js");
+  const view = stageCamera({ position: [0, 0, 0], yaw_deg: 20, pitch_deg: 5, roll_deg: 0, target: [0, 0, -5] }, 800, 400, 50);
+  const lens = withLensImage(view, { curve: 0.5, focalPx: 300, centerX: 400, centerY: 200 });
+  const point = [2, -1, -1];
+  const at = lensProjectPoint(lens, point);
+  const ray = cameraRay(lens, at, 800, 400);
+  const along = point.map((value, axis) => ray.origin[axis] + ray.direction[axis] * at.z);
+  along.forEach((value, axis) => assert.ok(Math.abs(value - point[axis]) < 1e-9));
+});
