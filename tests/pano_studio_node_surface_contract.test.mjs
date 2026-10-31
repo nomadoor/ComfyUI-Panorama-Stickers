@@ -78,8 +78,6 @@ test("the Studio picture is the editor's Output window picture: the live ERP in 
   assert.match(picture, /surfaceView\.renderLiveErp\(outputErpInput\(\{/);
   assert.match(picture, /const input = outputFrameInput\(\{/);
   assert.match(picture, /const rendered = surfaceView\.render\(input\);/);
-  // Without a background, background_color shows, as in the output.
-  assert.match(picture, /surfaceBackground\(node, state, surfaceBackgroundMedia\(node\), \{ fill: true \}\)/);
   // No run output image.
   assert.doesNotMatch(runtime, /pano_output_erp|pano_output_frame|studioRunPicture|studioRunQuaternion/);
   // The live ERP's canvas goes with the surface.

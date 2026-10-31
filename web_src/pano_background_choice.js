@@ -165,12 +165,19 @@ export function backgroundAt(choice, { shows = true, picture = null, pending = f
 // (read while the result is current for the background, or from an upstream background standing in), `file` the
 // video file the background input loads directly (none for an upstream background or a Scene). uiList(key) and
 // current(channel) as chooseBackground's; source(entry) the URL of a result's file entry; linkedVideoFile(inputs) the
-// URL of the video file the first linked of `inputs` loads, or "".
-export function backgroundVideoCandidates(choice, { uiList, current = () => true, source, linkedVideoFile = () => "" }) {
+// URL of the video file the first linked of `inputs` loads, or "". `sourceOf(key)`, when given, reads the URL of the
+// result's VIDEO under `key` in place of source(uiList(key)[0]) (the node surface finds the first MP4 among them).
+export function backgroundVideoCandidates(choice, { uiList, current = () => true, source, sourceOf = null, linkedVideoFile = () => "" }) {
   const upstreamPicture = choice.from === "upstream" && callerRow(choice.caller).upstreamPicture;
-  const entry = choice.keys && (upstreamPicture || current("background")) ? uiList(choice.keys.video)[0] || null : null;
+  const read = choice.keys && (upstreamPicture || current("background"));
+  let own = "";
+  if (read && sourceOf) own = sourceOf(choice.keys.video);
+  else if (read) {
+    const entry = uiList(choice.keys.video)[0] || null;
+    own = entry && source(entry);
+  }
   return {
-    own: String((entry && source(entry)) || ""),
+    own: String(own || ""),
     file: choice.fileInputs.length ? String(linkedVideoFile(choice.fileInputs) || "") : "",
   };
 }

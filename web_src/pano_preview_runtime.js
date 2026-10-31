@@ -23,8 +23,8 @@ import {
 } from "./pano_media_session.js";
 import { createNodePlayback, createSoloPlayback, surfaceShown } from "./pano_node_playback.js";
 import { createDepthColors } from "./pano_depth_color.js";
-import { backgroundClipAt, bgColorBackground, portMediaMeta, portMediaSource } from "./pano_port_media.js";
-import { upstreamBackgroundOf } from "./pano_upstream.js";
+import { portMediaMeta, portMediaSource } from "./pano_port_media.js";
+import { backgroundAt, backgroundLength, backgroundVideoCandidates, chooseBackground } from "./pano_background_choice.js";
 import {
   beginCutoutRollGesture,
   buildCutoutAddFrameAction,
@@ -983,13 +983,28 @@ function surfaceFrame(node) {
   return nodeSurface(node).playback?.playback.frame ?? NODE_SURFACE_FRAME;
 }
 
-// Panorama Studio's background VIDEO, best first, as the editor picks it: the node's current
-// result, else the file LoadVideo loads into the background input.
-function backgroundVideoSources(node) {
-  const own = isNodeOutputMediaCurrent(node, "background")
-    ? resolvePreviewVideoSource(lookupNodeOutputEntry(node.id), ["pano_input_videos"], imageSourceFromCandidate)
-    : "";
-  return [own, linkedVideoFile(node, BACKGROUND_INPUT_NAMES)];
+// Which background Panorama Studio's surface shows (pano_background_choice.js, caller "surface"), from the node's
+// result, its widgets and its working state (`state`, getCachedState's).
+function surfaceBackgroundChoice(node, state) {
+  return chooseBackground("surface", {
+    uiList: (key) => ownOutputUiList(node, key),
+    current: (channel) => isNodeOutputMediaCurrent(node, channel),
+    widget: (name) => getWidget(node, name),
+    clip: state.background?.clip ?? null,
+    fps: state.timeline.fps,
+  });
+}
+
+// Panorama Studio's background VIDEO, best first (backgroundVideoCandidates): the node's current result, else the file
+// LoadVideo loads into the background input.
+function backgroundVideoSources(node, state) {
+  const { own, file } = backgroundVideoCandidates(surfaceBackgroundChoice(node, state), {
+    uiList: (key) => ownOutputUiList(node, key),
+    current: (channel) => isNodeOutputMediaCurrent(node, channel),
+    sourceOf: (key) => resolvePreviewVideoSource(lookupNodeOutputEntry(node.id), [key], imageSourceFromCandidate),
+    linkedVideoFile: (inputs) => linkedVideoFile(node, inputs),
+  });
+  return [own, file];
 }
 
 // The port Sticker's MP4 ({ src, meta }) or the PNGs of an RGBA IMAGE batch ({ frames, meta }) in the
@@ -1020,23 +1035,16 @@ function ownOutputUiList(node, key) {
 // length with the ends of the Clip ranges the node overrides in it (the surface's upstream layers', as in the editor).
 // `state` is the node's working state v2.
 function surfaceTimelineMedia(node, state) {
-  const media = {};
   const list = (key) => ownOutputUiList(node, key);
   const scene = isNodeOutputMediaCurrent(node, "scene");
   const layers = scene ? list("pano_upstream_layers") : [];
-  const upstreamBackground = scene ? upstreamBackgroundOf(list) : null;
-  if (upstreamBackground) {
-    media.bg = null;
-    // The upstream background is placed by the Clip range of the Studio it came from (pano_node_playback.js).
-    const { clip } = upstreamBackground;
-    media.upstreamClip = clip && backgroundClipAt(clip.clip, clip.fps, state.timeline.fps);
-    // Its media ends it as in the editor (an upstream background counts as a VIDEO ending at its `duration`).
-    const meta = list(upstreamBackground.metaKey)[0];
-    if (meta && typeof meta === "object") media.upstreamMedia = { video: true, frames: Number(meta.frames), duration: Number(meta.duration) };
-  } else if (isNodeOutputMediaCurrent(node, "background")) {
-    const meta = list("pano_input_video_meta")[0];
-    if (meta && typeof meta === "object") media.bg = { video: videoLinked(node, BACKGROUND_INPUT_NAMES), frames: Number(meta.frames), duration: Number(meta.duration) };
-  }
+  // The background (pano_background_choice.js backgroundLength): an upstream one is placed by the Clip range of the
+  // Studio it came from and ends with its media, as in the editor (pano_node_playback.js).
+  const media = backgroundLength(surfaceBackgroundChoice(node, state), {
+    uiList: list,
+    current: (channel) => isNodeOutputMediaCurrent(node, channel),
+    videoLinked: videoLinked(node, BACKGROUND_INPUT_NAMES),
+  });
   if (isNodeOutputMediaCurrent(node, "external-sticker")) media.port = portMediaMeta(list);
   if (layers.length) {
     // The upstream Scene's length as the editor counts it (studio/upstream.js output()), from the layers the picture draws.
@@ -1116,14 +1124,23 @@ function surfaceStickerMedia(node, state, item) {
   return isRenderableMediaReady(img) ? { media: img, revision: getRenderableMediaRevisionToken(img) } : null;
 }
 
-// The background the on-node surface draws (`bgImg`, the played VIDEO, its still or the linked image): outside its Clip
-// range and media (Panorama Studio) the node's background_color (an upstream Scene's while it stands in), as in the
-// output; null while it loads. `fill` (Panorama Studio) draws background_color without any background, as the output.
-function surfaceBackground(node, state, bgImg, { fill = false } = {}) {
-  const upstreamColor = isNodeOutputMediaCurrent(node, "scene") ? upstreamBackgroundOf((key) => ownOutputUiList(node, key))?.color : null;
-  if (nodeSurface(node).playback?.playback.backgroundShows === false) return bgColorBackground(upstreamColor || surfaceBackgroundColor(node));
-  if (isRenderableMediaReady(bgImg)) return { media: bgImg, revision: getRenderableMediaRevisionToken(bgImg), coverage: Number(state.coverage) === 180 ? 180 : 360 };
-  return fill && !bgImg ? bgColorBackground(upstreamColor || surfaceBackgroundColor(node)) : null;
+// The background a legacy on-node surface draws (`bgImg`, its looping VIDEO or the linked image) once it has a picture,
+// over the node's coverage; null while it loads or without one.
+function surfaceBackground(state, bgImg) {
+  return isRenderableMediaReady(bgImg) ? { media: bgImg, revision: getRenderableMediaRevisionToken(bgImg), coverage: Number(state.coverage) === 180 ? 180 : 360 } : null;
+}
+
+// Panorama Studio's background at the display frame (pano_background_choice.js backgroundAt): background_color (an
+// upstream Scene's while its background stands in) outside its Clip range and media, and without any background, as in
+// the output; the played VIDEO, its still or the linked image once it has a picture; null while one loads.
+function studioBackground(node, state) {
+  const bgImg = surfaceBackgroundMedia(node);
+  const ready = isRenderableMediaReady(bgImg);
+  return backgroundAt(surfaceBackgroundChoice(node, state), {
+    shows: nodeSurface(node).playback?.playback.backgroundShows !== false,
+    picture: ready ? { media: bgImg, revision: getRenderableMediaRevisionToken(bgImg) } : null,
+    pending: !!bgImg && !ready,
+  });
 }
 
 // The background media the on-node surface draws: Panorama Studio's played background VIDEO (its Timeline), the legacy
@@ -1196,7 +1213,7 @@ function drawStudioPicture(node, canvas, surfaceView, layout, erpCanvas) {
     playing: !!surface.playback?.playback.advancing,
   });
   inputs?.depthColors.retain(content.space.depthSlots);
-  const background = surfaceBackground(node, state, surfaceBackgroundMedia(node), { fill: true });
+  const background = studioBackground(node, state);
   const radius = worldBoundRadius({ eye: eyeHeight(ground), content: content.sphere, camera: shot.position });
   let drawn = false;
   // A change of mode lets go of what the other mode held (the live ERP and its canvas, or the lens faces), as the
@@ -1256,7 +1273,7 @@ function surfaceViewInput(node, state, bgImg) {
   const sceneState = surfaceSceneState(node, state);
   const paintLayers = surfacePaintLayers(nodeSurface(node), state);
   return {
-    background: surfaceBackground(node, state, bgImg),
+    background: surfaceBackground(state, bgImg),
     layers: workingSkyLayers(sceneState, surfaceFrame(node), state.stickers, { media: (item) => surfaceStickerMedia(node, state, item), paintLayers }),
   };
 }
@@ -1935,7 +1952,7 @@ function attachPanoramaPreviewImpl(node, options = {}) {
     const state = getCachedState(node);
     const playable = playback.follow({
       shown,
-      sources: shown ? backgroundVideoSources(node) : [],
+      sources: shown ? backgroundVideoSources(node, state) : [],
       state,
       sticker,
       media: shown ? surfaceTimelineMedia(node, state) : {},

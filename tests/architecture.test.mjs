@@ -136,6 +136,15 @@ test("every place that lays paint on the Sky imports skyPaintLayers from pano_pa
   }
 });
 
+// docs/timeline-ui.md "どの背景を出すか": the new editor, the Preview window and Panorama Studio's node surface choose the
+// background they show with the one chooseBackground of pano_background_choice.js.
+test("every new-UI view that shows a node's background imports chooseBackground from pano_background_choice.js", () => {
+  for (const file of ["studio/editor.js", "studio/preview_window.js", "pano_preview_runtime.js"]) {
+    const from = IMPORTS.get(file).find(({ names }) => names.includes("chooseBackground"));
+    assert.equal(from?.target, "pano_background_choice.js", file);
+  }
+});
+
 // AGENTS.md Non-negotiables 6 and docs/vue-ui-boundary.md: the editors' JS (old: pano_editor.js, editor/*.js;
 // new: studio/*.js) builds no DOM UI. It may make the host Vue mounts into and hand a VIDEO element to the page.
 const UI_JS = [...IMPORTS.keys()].filter((name) => /^(pano_editor\.js|editor\/[^/]+\.js|studio\/[^/]+\.js)$/.test(name));

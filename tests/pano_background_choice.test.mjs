@@ -287,6 +287,19 @@ test("viewer: a Scene's background inside its Clip range even past its media (D8
   assert.deepEqual(backgroundVideoCandidates(bare, { uiList: uiListOf({}), source: (entry) => entry }), { own: "", file: "" });
 });
 
+test("surface: sourceOf reads the result's VIDEO URL by key, under the same gate", () => {
+  const choice = choose("surface", { ui: OWN_UI });
+  const asked = [];
+  const sourceOf = (key) => {
+    asked.push(key);
+    return "/first.mp4";
+  };
+  assert.deepEqual(backgroundVideoCandidates(choice, { uiList: uiListOf({}), current: currentOf(), sourceOf, linkedVideoFile: () => "" }), { own: "/first.mp4", file: "" });
+  assert.deepEqual(asked, ["pano_input_videos"]);
+  assert.deepEqual(backgroundVideoCandidates(choice, { uiList: uiListOf({}), current: currentOf(["background"]), sourceOf, linkedVideoFile: () => "" }), { own: "", file: "" });
+  assert.equal(asked.length, 1);
+});
+
 test("a null candidate counts as none, as choose() and follow({ sources }) skip empty ones", () => {
   const choice = choose("editor", { ui: OWN_UI, ownLinked: true });
   const nulls = backgroundVideoCandidates(choice, { uiList: uiListOf(OWN_UI), current: currentOf(), source: () => null, linkedVideoFile: () => null });
