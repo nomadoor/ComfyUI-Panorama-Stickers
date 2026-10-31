@@ -1,0 +1,13 @@
+{
+  "description": "The run result `ui` keys of a background (docs/timeline-ui.md \"どの背景を出すか\"). Python writes them (node_runtime.py PREVIEW_UI_KEYS, nodes.py _upstream_ui); web_src/pano_background_choice.js BACKGROUND_UI_KEYS reads them. tests/test_background_ui_keys_parity.py and tests/pano_background_choice.test.mjs both check against this table.",
+  "studio": { "image": "pano_input_images", "video": "pano_input_videos", "meta": "pano_input_video_meta" },
+  "preview": { "image": "pano_input_images", "video": "pano_videos", "meta": "pano_video_meta" },
+  "upstream": {
+    "image": "pano_upstream_input_images",
+    "video": "pano_upstream_input_videos",
+    "meta": "pano_upstream_input_video_meta",
+    "coverage": "pano_upstream_coverage",
+    "color": "pano_upstream_bg_color",
+    "clip": "pano_upstream_bg_clip"
+  }
+}

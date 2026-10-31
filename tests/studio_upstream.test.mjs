@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { loadSceneState } from "../web_src/pano_scene_state.js";
-import { createStudioUpstream, upstreamBackground, upstreamNodeName } from "../web_src/studio/upstream.js";
+import { createStudioUpstream, upstreamNodeName } from "../web_src/studio/upstream.js";
 
 class FakeImage {}
 globalThis.Image ??= FakeImage;
@@ -71,22 +71,3 @@ test("the upstream Studio's name is the title of the Panorama Studio on the grap
   assert.equal(upstreamNodeName(nodes, "#0"), null);
 });
 
-test("the upstream background stands in only while the node's own background is not linked", () => {
-  const ui = {
-    pano_upstream_input_images: ["/up.png"],
-    pano_upstream_coverage: [180],
-    pano_upstream_bg_color: [[1, 0, 0]],
-    pano_upstream_bg_clip: [{ clip: { start: 12, in: 0, duration: 24 }, fps: 12 }],
-  };
-  const uiList = (key) => ui[key] ?? [];
-  const bg = upstreamBackground({ uiList, current: true, ownLinked: false, fps: 24 });
-  assert.equal(bg.imageKey, "pano_upstream_input_images");
-  assert.equal(bg.coverage, 180);
-  assert.equal(bg.color, "#ff0000");
-  // Its Studio's Clip range, in this editor's frames (seconds kept).
-  assert.deepEqual(bg.place, { start: 24, in: 0, duration: 48 });
-  assert.equal(upstreamBackground({ uiList, current: true, ownLinked: true, fps: 24 }), null, "the node's own background replaces it");
-  assert.equal(upstreamBackground({ uiList, current: false, ownLinked: false, fps: 24 }), null);
-  assert.equal(upstreamBackground({ uiList: () => [], current: true, ownLinked: false, fps: 24 }), null);
-  assert.deepEqual(upstreamBackground({ uiList: (key) => (key === "pano_upstream_input_images" ? ["/up.png"] : []), current: true, ownLinked: false, fps: 24 }).place, { start: 0, in: 0, duration: null });
-});

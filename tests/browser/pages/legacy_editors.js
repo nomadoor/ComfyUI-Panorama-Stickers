@@ -6,6 +6,8 @@
 // ?node=stickers | cutout | preview (the legacy Panorama Preview, read-only). With preview, ?linked: erp_image comes from
 // node 22, whose result has an image; ?video: the node's own result has an MP4 (what the node surface reads of them,
 // pano_comfy_media.js "previewNode").
+// ?bg (Stickers): the node's own result has an orange background ERP (pano_input_images), which its node
+// surface draws (window.__entry.surfaceColor()).
 import { api } from "./comfy/api.js";
 import { app } from "./comfy/app.js";
 import "/web_src/main.js";
@@ -15,6 +17,12 @@ const KIND = QUERY.get("node") || "stickers";
 const CLASS = { stickers: "PanoramaStickers", cutout: "PanoramaCutout", preview: "PanoramaPreview" }[KIND];
 
 const entry = (window.__entry = { ready: false, error: null, uploads: 0 });
+const BACKGROUND = QUERY.has("bg");
+
+const getContext = HTMLCanvasElement.prototype.getContext;
+HTMLCanvasElement.prototype.getContext = function (type, options = {}) {
+  return getContext.call(this, type, type.startsWith("webgl") ? { ...options, preserveDrawingBuffer: true } : options);
+};
 
 api.fetchApi = (route, options = {}) => {
   if (route === "/upload/image" && options.method === "POST") {
@@ -115,6 +123,15 @@ try {
   if (QUERY.has("video")) {
     app.nodeOutputs = { 21: { pano_videos: [{ filename: "pv.mp4", subfolder: "", type: "temp", format: "video/mp4" }] } };
   }
+  if (BACKGROUND) {
+    const canvas = document.createElement("canvas");
+    canvas.width = 256;
+    canvas.height = 128;
+    const g = canvas.getContext("2d");
+    g.fillStyle = "rgb(230, 140, 30)";
+    g.fillRect(0, 0, 256, 128);
+    app.nodeOutputs = { 21: { pano_input_images: [canvas.toDataURL("image/png")] } };
+  }
   app.graph = graph;
   app.canvas.graph = graph;
   node.onNodeCreated?.();
@@ -122,6 +139,12 @@ try {
   node.onAdded?.(graph);
   entry.node = node;
   entry.state = () => node.widgets.find((widget) => widget.name === "state_json")?.value ?? null;
+  // The [r, g, b] at (u, v) in 0..1 of the node surface's canvas.
+  entry.surfaceColor = (u, v) => {
+    const canvas = host.querySelector("canvas");
+    const data = canvas.getContext("2d").getImageData(Math.round(u * (canvas.width - 1)), Math.round(v * (canvas.height - 1)), 1, 1).data;
+    return [data[0], data[1], data[2]];
+  };
   entry.ready = true;
 } catch (error) {
   entry.error = String(error?.stack || error);

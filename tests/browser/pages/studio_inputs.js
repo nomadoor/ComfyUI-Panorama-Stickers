@@ -7,6 +7,10 @@
 //   upstream-own  the same with the node's own `background` linked too
 //   upstream-world  the same with the node's own `world` linked too (its own `scene` row shows with the group)
 //   upstream-pending  a Scene linked to `scene`, the node not run yet
+//   upstream-clip  `upstream` whose background's Clip range starts at frame 24 (its bg_color magenta shows at frame 0)
+//   upstream-clip-nocolor  the same without the upstream bg_color, and the node's bg_color empty
+//   upstream-late  `upstream` whose result comes after the editor opened (window.__studio.arrive())
+//   upstream-late-clip  `upstream-clip` whose result comes after the editor opened
 //   moge      a MOGE_GEOMETRY VIDEO batch on `world` as the node writes it (a depth grid: a depth file per frame, a K per
 //             frame, a color proxy video); the `scene` clip starts at item 2, a plane across the view
 //   moge-item0  the same with the clip at item 0, whose depth is above 0 only in its left quarter
@@ -58,7 +62,7 @@ const storage = new Map();
 const memoryStorage = { getItem: (key) => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, String(value)) };
 
 // The colors the spec reads back.
-export const COLORS = { depth: "#c03030", port: "#d0302a", upstreamSky: "#2a9ad0", upstreamBoard: "#30b050", upstreamBg: "#40205a", ownBg: "#8a8a20" };
+export const COLORS = { depth: "#c03030", port: "#d0302a", upstreamSky: "#2a9ad0", upstreamBoard: "#30b050", upstreamBg: "#40205a", ownBg: "#8a8a20", upstreamColor: "#ff00ff", empty: "#00ff00" };
 
 function portCase() {
   return {
@@ -157,6 +161,12 @@ try {
     : which === "world" || which === "empty" ? worldCase(which === "world")
     : upstreamCase(which === "upstream-own", which === "upstream-world");
   if (which === "upstream-pending") setup.result = {};
+  if (which.startsWith("upstream-clip") || which === "upstream-late-clip") setup.result.pano_upstream_bg_clip = [{ clip: { start: 24, in: 0, duration: null }, fps: 24 }];
+  if (which === "upstream-clip" || which === "upstream-late-clip") setup.result.pano_upstream_bg_color = [[1, 0, 1]];
+  if (which === "upstream-clip-nocolor") delete setup.result.pano_upstream_bg_color;
+  // The run's result comes later (studio.arrive()).
+  const late = which.startsWith("upstream-late") ? setup.result : null;
+  if (late) setup.result = {};
   // Each input comes from a node of its own: ids 100, 101, ...
   const origins = setup.inputs.map((input, index) => ({ id: 100 + index, title: input.name, type: input.type, image: input.image ?? null }));
   const graphNodes = [...origins, ...(setup.upstreamNode ? [setup.upstreamNode] : [])];
@@ -167,7 +177,7 @@ try {
     __panoStudio: true,
     __panoSceneStateV2: true,
     inputs: setup.inputs.map((input, index) => ({ name: input.name, link: index + 1 })),
-    widgets: [{ name: "state_json", value: JSON.stringify(setup.state) }, { name: "bg_color", value: "#000000" }],
+    widgets: [{ name: "state_json", value: JSON.stringify(setup.state) }, { name: "bg_color", value: which === "upstream-clip-nocolor" ? "" : "#000000" }],
     graph: { getNodeById: (id) => graphNodes.find((item) => item.id === id) ?? null, _nodes: graphNodes, nodes: graphNodes },
     isInputConnected: (index) => !!origins[index],
     getInputLink: (index) => (origins[index] ? { origin_id: origins[index].id, origin_slot: 0, type: origins[index].type } : null),
@@ -198,6 +208,10 @@ try {
     return Array.from(probe.getContext("2d").getImageData(0, 0, 1, 1).data.slice(0, 3));
   };
   studio.colors = COLORS;
+  // The run's result arrives in ComfyUI's store (the editor reads it on its next draw).
+  studio.arrive = () => {
+    if (late) app.nodeOutputs[31] = late;
+  };
   studio.ready = true;
 } catch (error) {
   studio.error = String(error?.stack || error);

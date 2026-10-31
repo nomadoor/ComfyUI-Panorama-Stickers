@@ -195,3 +195,39 @@ test("the upstream background shows while the node has no background of its own,
   await shot(page, "background-own");
   expect(problems).toEqual([]);
 });
+
+// docs/timeline-ui.md \"どの背景を出すか\" (web_src/pano_background_choice.js): the editor's background as it is now. Where it differs
+// from another view's, aligning them is an open owner decision; change these only with that decision.
+test("the upstream background outside its Clip range shows its bg_color, else the node's, green when that is empty", async ({ page }, testInfo) => {
+  let problems = await open(page, testInfo, "upstream-clip");
+  const colors = await page.evaluate(() => window.__studio.colors);
+  const { sky: [above] } = await places(page, { sky: [[0, 30]] });
+  await expect.poll(() => stageAt(page, above).then((rgb) => near(rgb, colors.upstreamColor, 30)), { timeout: 10_000 }).toBe(true);
+  expect(problems).toEqual([]);
+
+  problems = await open(page, testInfo, "upstream-clip-nocolor");
+  await expect.poll(() => stageAt(page, above).then((rgb) => near(rgb, colors.empty, 30)), { timeout: 10_000 }).toBe(true);
+  expect(problems).toEqual([]);
+});
+
+test("as it is: a result that comes after opening brings the upstream bg_color at once, but not the upstream image", async ({ page }, testInfo) => {
+  let problems = await open(page, testInfo, "upstream-late-clip");
+  const colors = await page.evaluate(() => window.__studio.colors);
+  const { sky: [above] } = await places(page, { sky: [[0, 30]] });
+  await page.evaluate(() => window.__studio.arrive());
+  await page.setViewportSize({ width: 1400, height: 860 });
+  // The colour is decided on each draw: outside the upstream Clip range its bg_color shows.
+  await expect.poll(() => stageAt(page, above).then((rgb) => near(rgb, colors.upstreamColor, 30)), { timeout: 10_000 }).toBe(true);
+  expect(problems).toEqual([]);
+
+  problems = await open(page, testInfo, "upstream-late");
+  await page.evaluate(() => window.__studio.arrive());
+  await page.setViewportSize({ width: 1400, height: 860 });
+  // The upstream layers are read on each draw: their sky image shows, so the stage drew the new result.
+  const { sky: [later, ahead] } = await places(page, { sky: [[0, 30], [0, 0]] });
+  await expect.poll(() => stageAt(page, ahead).then((rgb) => near(rgb, colors.upstreamSky, 30)), { timeout: 10_000 }).toBe(true);
+  // The background image was chosen when the editor opened, without the result: the upstream image does not show.
+  await page.waitForTimeout(500);
+  expect(near(await stageAt(page, later), colors.upstreamBg, 30)).toBe(false);
+  expect(problems).toEqual([]);
+});
