@@ -1,5 +1,5 @@
 // web_src/pano_background_choice.js (docs/timeline-ui.md "どの背景を出すか"): which background each of its callers shows,
-// with each caller's current behaviour (BACKGROUND_CALLERS; handoff/refactor/surface.md D1-D13). The rows are read from
+// with each caller's current behaviour (BACKGROUND_CALLERS; where the callers differ, aligning them is an open owner decision). The rows are read from
 // the code the module replaces (studio/editor.js nodeBackground / stageBackground / refreshVideo / backgroundMedia,
 // studio/preview_window.js background / refreshVideo, pano_preview_runtime.js surfaceBackground / backgroundVideoSources /
 // surfaceTimelineMedia with pano_node_playback.js backgroundShows, pano_scene_viewer.js backgroundAt); the browser
@@ -79,7 +79,7 @@ test("editor: its own linked background, its keys, span, color, Clip range and V
   assert.deepEqual(stale, { own: "", file: "" });
 });
 
-test("editor: the upstream background stands in only while its own background is not linked (D5)", () => {
+test("editor: the upstream background stands in only while its own background is not linked", () => {
   const ui = { ...UPSTREAM_UI, ...OWN_UI };
   assert.equal(choose("editor", { ui, ownLinked: true }).from, "own");
   const up = choose("editor", { ui });
@@ -113,7 +113,7 @@ test("editor: the upstream background's Clip range in this editor's frames, seco
   assert.deepEqual(choose("editor", { ui: { pano_upstream_input_images: ["/up.png"] } }).place, { start: 0, in: 0, duration: null });
 });
 
-test("editor: an empty bg_color is green; an upstream background without a color takes the node's (D2)", () => {
+test("editor: an empty bg_color is green; an upstream background without a color takes the node's", () => {
   assert.equal(choose("editor", { widgets: { background_color: "" } }).color, "#00ff00");
   assert.equal(choose("editor", { widgets: { bg_color: "#abcdef" } }).color, "#abcdef");
   // background_color is there but empty: bg_color is not read.
@@ -123,7 +123,7 @@ test("editor: an empty bg_color is green; an upstream background without a color
   assert.equal(choose("editor", { ui: noColor }).color, "#123456");
 });
 
-test("editor: bg_color outside its own Clip range and past its media, never past an upstream Scene (D4)", () => {
+test("editor: bg_color outside its own Clip range and past its media, never past an upstream Scene", () => {
   const choice = choose("editor", { ui: OWN_UI, ownLinked: true });
   const video = { video: true, frames: 30, duration: 1.25 };
   assert.equal(backgroundShowsAt(choice, 5, { length: video }), false);
@@ -146,16 +146,16 @@ test("editor: an upstream background shows inside its Clip range and until its V
   assert.deepEqual(backgroundAt(choice, { shows: false }), { color: "#ff00ff" });
 });
 
-test("editor: the picture shown, at the span it gives or the choice's, and nothing without one (D13)", () => {
+test("editor: the picture shown, at the span it gives or the choice's, and nothing without one", () => {
   const choice = choose("editor", { ui: OWN_UI, ownLinked: true });
   assert.deepEqual(backgroundAt(choice, { picture: { media: "video", revision: "r", source: "s" } }), { media: "video", revision: "r", source: "s", coverage: 360 });
-  // The editor's image background keeps the span it was opened with (D6, D11).
+  // The editor's image background keeps the span it was opened with.
   assert.deepEqual(backgroundAt(choice, { picture: { media: "image", revision: "r", coverage: 180 } }), { media: "image", revision: "r", coverage: 180 });
   assert.equal(backgroundAt(choice, {}), null);
   assert.equal(backgroundAt(choose("editor"), {}), null);
 });
 
-test("editor: the Auto length counts the VIDEO it loaded, a linked IMAGE as one frame, none for an upstream background (D7)", () => {
+test("editor: the Auto length counts the VIDEO it loaded, a linked IMAGE as one frame, none for an upstream background", () => {
   const loaded = { ready: true, frameCount: 30, duration: 1.25 };
   const own = choose("editor", { ownLinked: true });
   assert.deepEqual(backgroundLength(own, { uiList: uiListOf({}), videoLinked: true, loaded }), { bg: { video: true, frames: 30, duration: 1.25 } });
@@ -167,7 +167,8 @@ test("editor: the Auto length counts the VIDEO it loaded, a linked IMAGE as one 
 });
 
 // studio/preview_window.js: preview_window.spec.js "a PANO_SCENE source ...", "a Scene's background outside its Clip
-// range ...", "D2 as it is", "an IMAGE covers the node's background_range", "D11 as it is", "a VIDEO source ...".
+// range ...", "as it is: a Scene without a background ...", "an IMAGE covers the node's background_range", "as it is:
+// background_range changed ...", "a VIDEO source ...".
 test("window: an IMAGE or VIDEO source is its own background, read from the Preview's keys, with no Clip range", () => {
   const ui = { pano_videos: ["p.mp4"], pano_video_meta: [{ frames: 60 }] };
   const choice = choose("window", { ui, ownLinked: true, widgets: { background_range: "180" }, clip: null });
@@ -182,7 +183,7 @@ test("window: an IMAGE or VIDEO source is its own background, read from the Prev
   assert.equal(backgroundAt(choice, {}), null);
 });
 
-test("window: a Scene shows its background, its span and its color; without one, its color all over, black without a color (D2)", () => {
+test("window: a Scene shows its background, its span and its color; without one, its color all over, black without a color", () => {
   const choice = choose("window", { ui: UPSTREAM_UI, scene: true, ownLinked: true, widgets: { background_range: "360" } });
   assert.equal(choice.from, "upstream");
   assert.equal(choice.coverage, 180);
@@ -204,8 +205,8 @@ test("window: a Scene shows its background, its span and its color; without one,
 });
 
 // pano_preview_runtime.js (Panorama Studio): studio_node_surface.spec.js "the node's own background image shows ...",
-// "D1 as it is", "D2 as it is".
-test("surface: the result decides the upstream background, whose bg_color alone shows; picture, VIDEO and span stay its own (D1, D5, D12)", () => {
+// "as it is: with the upstream Scene's background ...", "as it is: an empty background_color ...".
+test("surface: the result decides the upstream background, whose bg_color alone shows; picture, VIDEO and span stay its own", () => {
   const ui = { ...UPSTREAM_UI, ...OWN_UI };
   // Linked or not, the result's upstream background stands in.
   for (const ownLinked of [false, true]) {
@@ -223,7 +224,7 @@ test("surface: the result decides the upstream background, whose bg_color alone 
   assert.deepEqual(backgroundAt(choice, {}), { color: "#ff00ff" });
 });
 
-test("surface: its own background, placed by its Clip range whether linked or not, black for an empty color (D2)", () => {
+test("surface: its own background, placed by its Clip range whether linked or not, black for an empty color", () => {
   const choice = choose("surface", { ui: OWN_UI });
   assert.equal(choice.from, "own");
   assert.deepEqual(choice.place, OWN_CLIP);
@@ -234,7 +235,7 @@ test("surface: its own background, placed by its Clip range whether linked or no
   assert.deepEqual(candidates, { own: "/own.mp4", file: "" });
 });
 
-test("surface: a picture still loading draws nothing, none draws bg_color, a ready one draws at its span (D13)", () => {
+test("surface: a picture still loading draws nothing, none draws bg_color, a ready one draws at its span", () => {
   const choice = choose("surface", { ui: OWN_UI, widgets: { background_color: "#00ff00", background_range: "180" } });
   assert.equal(backgroundAt(choice, { pending: true }), null);
   assert.deepEqual(backgroundAt(choice, {}), { color: "#00ff00" });
@@ -242,7 +243,7 @@ test("surface: a picture still loading draws nothing, none draws bg_color, a rea
   assert.deepEqual(backgroundAt(choice, { shows: false, picture: { media: "m", revision: "r" } }), { color: "#00ff00" });
 });
 
-test("surface: its own VIDEO ends at its frames, or at its duration while upstream layers set the Timeline (D4)", () => {
+test("surface: its own VIDEO ends at its frames, or at its duration while upstream layers set the Timeline", () => {
   const choice = choose("surface", { ui: OWN_UI, clip: { start: 0, in: 0, duration: null }, fps: 48 });
   // 30 frames, 1.25 s = 60 frames at 48 fps.
   const length = { video: true, frames: 30, duration: 1.25 };
@@ -251,7 +252,7 @@ test("surface: its own VIDEO ends at its frames, or at its duration while upstre
   assert.equal(backgroundShowsAt(choice, 60, { length, upstreamLayers: true }), false);
 });
 
-test("surface: the Auto length reads the result's meta, and the upstream background's Clip range and VIDEO (D7)", () => {
+test("surface: the Auto length reads the result's meta, and the upstream background's Clip range and VIDEO", () => {
   const own = choose("surface", { ui: OWN_UI });
   assert.deepEqual(backgroundLength(own, { uiList: uiListOf(OWN_UI), current: currentOf(), videoLinked: true }), { bg: { video: true, frames: 30, duration: 1.25 } });
   // A single IMAGE has no meta: left out (the playback then counts the VIDEO it plays, none here).
@@ -269,7 +270,7 @@ test("surface: the Auto length reads the result's meta, and the upstream backgro
 });
 
 // pano_scene_viewer.js backgroundAt.
-test("viewer: a Scene's background inside its Clip range even past its media (D8), its color outside and without one", () => {
+test("viewer: a Scene's background inside its Clip range even past its media, its color outside and without one", () => {
   const choice = choose("viewer", { ui: UPSTREAM_UI, scene: true });
   assert.equal(choice.from, "upstream");
   assert.equal(choice.coverage, 180);
@@ -309,7 +310,7 @@ test("a null candidate counts as none, as choose() and follow({ sources }) skip 
   assert.deepEqual(empties, nulls);
 });
 
-test("the span is 180 only for 180, as normalizeCoverageValue, from background_range or the legacy coverage (D9)", () => {
+test("the span is 180 only for 180, as normalizeCoverageValue, from background_range or the legacy coverage", () => {
   for (const [widgets, expected] of [[{ background_range: "180" }, 180], [{ background_range: 180 }, 180], [{ background_range: "360" }, 360], [{ coverage: "180" }, 180], [{}, 360], [{ background_range: "" }, 360]]) {
     assert.equal(choose("editor", { widgets, ownLinked: true }).coverage, expected, JSON.stringify(widgets));
     assert.equal(choose("surface", { widgets }).coverage, expected, JSON.stringify(widgets));

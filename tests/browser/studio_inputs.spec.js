@@ -196,8 +196,8 @@ test("the upstream background shows while the node has no background of its own,
   expect(problems).toEqual([]);
 });
 
-// docs/timeline-ui.md "どの背景を出すか" (refactor lane `surface`, commit 0): the editor's background as it is now, before
-// the choice moves to web_src/pano_background_choice.js (handoff/refactor/surface.md D2, D6).
+// docs/timeline-ui.md \"どの背景を出すか\" (web_src/pano_background_choice.js): the editor's background as it is now. Where it differs
+// from another view's, aligning them is an open owner decision; change these only with that decision.
 test("the upstream background outside its Clip range shows its bg_color, else the node's, green when that is empty", async ({ page }, testInfo) => {
   let problems = await open(page, testInfo, "upstream-clip");
   const colors = await page.evaluate(() => window.__studio.colors);
@@ -210,7 +210,7 @@ test("the upstream background outside its Clip range shows its bg_color, else th
   expect(problems).toEqual([]);
 });
 
-test("D6 as it is: a result that comes after opening brings the upstream bg_color at once, but not the upstream image", async ({ page }, testInfo) => {
+test("as it is: a result that comes after opening brings the upstream bg_color at once, but not the upstream image", async ({ page }, testInfo) => {
   let problems = await open(page, testInfo, "upstream-late-clip");
   const colors = await page.evaluate(() => window.__studio.colors);
   const { sky: [above] } = await places(page, { sky: [[0, 30]] });

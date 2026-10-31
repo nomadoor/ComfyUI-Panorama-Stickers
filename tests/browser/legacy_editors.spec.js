@@ -104,7 +104,7 @@ test("the legacy Panorama Preview reads the MP4 of its own result", async ({ pag
 });
 
 // docs/legacy-node-surfaces.md: the legacy Stickers node surface draws the background image of the node's own result
-// (pano_preview_runtime.js surfaceBackground, which refactor lane `surface` narrows to the legacy nodes' part).
+// (pano_preview_runtime.js surfaceBackground).
 test("the legacy Stickers node surface draws the background image of its own result", async ({ page }) => {
   const problems = await load(page, "stickers", "&bg");
   const orange = (rgb) => Math.abs(rgb[0] - 230) <= 40 && Math.abs(rgb[1] - 140) <= 40 && Math.abs(rgb[2] - 30) <= 40;

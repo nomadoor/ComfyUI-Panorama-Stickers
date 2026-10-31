@@ -7,8 +7,8 @@
 // stay with the callers (docs/studio-node-surface.md "見えないときとエディタを開いている間").
 //
 // The callers do not all show the same background yet: BACKGROUND_CALLERS keeps each one's current behaviour, one row
-// per caller and one column per difference (handoff/refactor/surface.md D1, D2, D4, D5, D7, D8, D13). Making two callers
-// agree is a behaviour change: it edits a cell of the table, after the owner decides it.
+// per caller and one column per difference (docs/timeline-ui.md "どの背景を出すか").
+// Making two callers agree is a behaviour change the owner has not decided yet: when decided, it edits a cell of the table.
 import { normalizeCoverageValue } from "./pano_editor_state.js";
 import { backgroundClipAt, backgroundShownAt, bgColorBackground } from "./pano_port_media.js";
 import { STUDIO_BACKGROUND_INPUT_NAMES, BACKGROUND_INPUT_NAMES } from "./pano_preview_video.js";
@@ -33,22 +33,22 @@ export const BACKGROUND_UI_KEYS = Object.freeze({
 // Each caller's current behaviour where they differ.
 // - keys: the BACKGROUND_UI_KEYS entry of the node's own background (null: the caller has none).
 // - inputs: the inputs whose file stands in for the own background before a run.
-// - upstreamWhen (D5): when the upstream Scene's background stands in: "own-unlinked" (the node's own background input
+// - upstreamWhen: when the upstream Scene's background stands in: "own-unlinked" (the node's own background input
 //   is not linked and the `scene` result is current), "result" (the current `scene` result has one), "scene" (the
 //   source is a PANO_SCENE).
-// - ownWhen (D5): when the node's own background is the one shown otherwise: "linked" (its input is linked), "always"
+// - ownWhen: when the node's own background is the one shown otherwise: "linked" (its input is linked), "always"
 //   (the node surface does not look at the link: it shows what the result and the inputs give, placed by its Clip range).
-// - upstreamPicture (D1, D12): whether the upstream background's picture and VIDEO show; false shows only its bg_color,
+// - upstreamPicture: whether the upstream background's picture and VIDEO show; false shows only its bg_color,
 //   and reads the picture, the VIDEO and the span from the node's own keys and inputs even while it stands in.
 // - colorFrom: where bg_color comes from besides an upstream background's own: "node" (the background_color / bg_color
 //   widget), "scene" (the Scene's pano_upstream_bg_color).
-// - colorFallback (D2): the color when that has none.
-// - ownUnder (D4): bgMediaEnd's `under` for the node's own background: "never", or "upstream-layers" (when the node
+// - colorFallback: the color when that has none.
+// - ownUnder: bgMediaEnd's `under` for the node's own background: "never", or "upstream-layers" (when the node
 //   has upstream layers).
-// - lengthFrom (D7): what the Auto length counts of the background: "loaded" (the VIDEO the caller loaded), "result"
+// - lengthFrom: what the Auto length counts of the background: "loaded" (the VIDEO the caller loaded), "result"
 //   (the meta in the run result).
-// - endsWithMedia (D8): whether an upstream background gives way to bg_color past the end of its media.
-// - fill (D13): when bg_color shows without a background picture: "never", "scene" (a Scene without a background),
+// - endsWithMedia: whether an upstream background gives way to bg_color past the end of its media.
+// - fill: when bg_color shows without a background picture: "never", "scene" (a Scene without a background),
 //   "always" (unless one is loading).
 export const BACKGROUND_CALLERS = Object.freeze({
   editor: Object.freeze({

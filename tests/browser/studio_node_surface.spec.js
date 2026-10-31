@@ -303,9 +303,10 @@ test("removing the node that plays lets the others play, without touching the re
   expect(problems).toEqual([]);
 });
 
-// docs/timeline-ui.md "どの背景を出すか" (refactor lane `surface`, commit 0): what the picture shows of the background,
-// pinned as it is now, before the choice moves to web_src/pano_background_choice.js. Some pin a difference from the
-// editor that the owner has not decided on yet (handoff/refactor/surface.md D1, D2, D3): change them only with that answer.
+// docs/timeline-ui.md "どの背景を出すか" (web_src/pano_background_choice.js): what the picture shows of the background, as
+// it is now. Some pin a difference from the editor (the upstream background's picture, the color for an empty
+// background_color, the color past a lens image's reach); aligning them is an open owner decision: change these only
+// with that decision.
 const ORANGE = [230, 140, 30];
 const MAGENTA = [255, 0, 255];
 const BLACK = [0, 0, 0];
@@ -322,14 +323,14 @@ test("the node's own background image shows, and background_color outside its Cl
   expect(problems).toEqual([]);
 });
 
-test("D1 as it is: with the upstream Scene's background in the result, the picture shows its bg_color, not its image", async ({ page }) => {
+test("as it is: with the upstream Scene's background in the result, the picture shows its bg_color, not its image", async ({ page }) => {
   const problems = await open(page, "frame", "&case=upbg");
   await expect.poll(async () => near(await color(page, 0.5, 0.5), BLUE), { timeout: 20_000 }).toBe(true);
   await expect.poll(async () => near(await color(page, 0.03, 0.1), MAGENTA)).toBe(true);
   expect(problems).toEqual([]);
 });
 
-test("D2 as it is: an empty background_color draws black where nothing is", async ({ page }) => {
+test("as it is: an empty background_color draws black where nothing is", async ({ page }) => {
   const problems = await open(page, "frame", "&bgcolor=empty");
   await expect.poll(async () => near(await color(page, 0.5, 0.5), RED), { timeout: 20_000 }).toBe(true);
   await expect.poll(async () => near(await color(page, 0.03, 0.1), BLACK)).toBe(true);
@@ -337,7 +338,7 @@ test("D2 as it is: an empty background_color draws black where nothing is", asyn
   expect(problems).toEqual([]);
 });
 
-test("D3 as it is: in Frame mode a lens Camera shows black past its picture's reach, not background_color", async ({ page }) => {
+test("as it is: in Frame mode a lens Camera shows black past its picture's reach, not background_color", async ({ page }) => {
   const problems = await open(page, "frame", "&lens=1");
   // Inside its reach the background (green) shows; the corners are past it.
   await expect.poll(async () => near(await color(page, 0.5, 0.3), GREEN), { timeout: 20_000 }).toBe(true);
