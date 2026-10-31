@@ -6,6 +6,8 @@ import {
   backgroundVideoKeys,
   backgroundVideoMedia,
   createBackgroundVideo,
+  isRenderableMediaReady,
+  mediaPlayheadRevisionToken,
   mediaRevisionToken,
   videoMetaEntry,
 } from "../web_src/pano_media_session.js";
@@ -264,4 +266,44 @@ test("a still's revision counts its frames; a VIDEO's is its source and size", (
   Object.assign(video, { currentSrc: "a.mp4", videoWidth: 4, videoHeight: 2 });
   assert.equal(mediaRevisionToken(video), "a.mp4|4|2");
   assert.equal(mediaRevisionToken(null), "none");
+}));
+
+// The node surfaces' revision (pano_preview_runtime.js, pano_preview_previewnode.js, the old editor's Scene viewer)
+// adds a VIDEO's playhead to mediaRevisionToken; null is "".
+test("the playhead revision adds a VIDEO's time, readyState and pause to its revision; others keep theirs", () => withElements(() => {
+  const video = new FakeVideo();
+  Object.assign(video, { currentSrc: "a.mp4", videoWidth: 4, videoHeight: 2, currentTime: 1.23456, readyState: 4, paused: false });
+  assert.equal(mediaPlayheadRevisionToken(video), "a.mp4|4|2|1.235|4|playing");
+  const loading = new FakeVideo();
+  Object.assign(loading, { src: "b.mp4", videoWidth: 4, videoHeight: 2, readyState: 1 });
+  assert.equal(mediaPlayheadRevisionToken(loading), "b.mp4|4|2|0.000|1|paused");
+  const canvas = new FakeCanvas();
+  Object.assign(canvas, { width: 4, height: 2, __panoFrameIdx: 5 });
+  assert.equal(mediaPlayheadRevisionToken(canvas), "canvas|4|2|5");
+  const blank = new FakeCanvas();
+  Object.assign(blank, { width: 4, height: 2 });
+  assert.equal(mediaPlayheadRevisionToken(blank), "canvas|4|2|0");
+  assert.equal(mediaPlayheadRevisionToken({ currentSrc: "b.png", naturalWidth: 8, naturalHeight: 4, complete: true }), "b.png|8|4");
+  assert.equal(mediaPlayheadRevisionToken({ complete: true, naturalWidth: 0, width: 3 }), "|3|0");
+  assert.equal(mediaPlayheadRevisionToken(null), "");
+}));
+
+// The node surfaces' readiness (docs/comfymedia: differs from isDecodedImageReady only for media they never get).
+test("renderable media: a sized canvas, a VIDEO with a frame, or a complete image with a width", () => withElements(() => {
+  const canvas = new FakeCanvas();
+  Object.assign(canvas, { width: 4, height: 2 });
+  assert.equal(isRenderableMediaReady(canvas), true);
+  canvas.width = 0;
+  assert.equal(isRenderableMediaReady(canvas), false);
+  const video = new FakeVideo();
+  Object.assign(video, { videoWidth: 4, videoHeight: 2, readyState: 2 });
+  assert.equal(isRenderableMediaReady(video), true);
+  video.readyState = 1;
+  assert.equal(isRenderableMediaReady(video), false);
+  assert.equal(isRenderableMediaReady({ complete: true, naturalWidth: 8, naturalHeight: 4 }), true);
+  assert.equal(isRenderableMediaReady({ complete: false, naturalWidth: 8 }), false);
+  // No height check, and anything else needs `complete`.
+  assert.equal(isRenderableMediaReady({ complete: true, naturalWidth: 0, width: 3 }), true);
+  assert.equal(isRenderableMediaReady({ width: 3, height: 3 }), false);
+  assert.equal(isRenderableMediaReady(null), false);
 }));

@@ -12,6 +12,10 @@ import { surfacePaintLayers } from "./pano_surface_paint.js";
 import { shotCamera, viewProjection, workingSkyLayers } from "./pano_editor_view.js";
 import { acquirePreviewView, previewNodeCamera } from "./pano_preview_view.js";
 import { createComfyMediaAdapter } from "./pano_comfy_media.js";
+import {
+  isRenderableMediaReady,
+  mediaPlayheadRevisionToken as getRenderableMediaRevisionToken,
+} from "./pano_media_session.js";
 import { createNodePlayback, createSoloPlayback, surfaceShown } from "./pano_node_playback.js";
 import { createDepthColors } from "./pano_depth_color.js";
 import { backgroundClipAt, bgColorBackground, portMediaMeta, portMediaSource } from "./pano_port_media.js";
@@ -731,41 +735,6 @@ function imageSourceFromCandidate(candidate) {
   if (typeof candidate?.src === "string" && candidate.src) return candidate.src;
   if (typeof candidate?.url === "string" && candidate.url) return candidate.url;
   return comfyImageEntryToUrl(candidate);
-}
-
-function isRenderableMediaReady(media) {
-  if (!media) return false;
-  if (typeof HTMLCanvasElement !== "undefined" && media instanceof HTMLCanvasElement) {
-    return Number(media.width || 0) > 0 && Number(media.height || 0) > 0;
-  }
-  if (media instanceof HTMLVideoElement) {
-    return Number(media.videoWidth || 0) > 0
-      && Number(media.videoHeight || 0) > 0
-      && Number(media.readyState || 0) >= 2;
-  }
-  return !!media.complete && Number(media.naturalWidth || media.width || 0) > 0;
-}
-
-export function getRenderableMediaRevisionToken(media) {
-  if (!media) return "";
-  if (media instanceof HTMLVideoElement) {
-    return [
-      String(media.currentSrc || media.src || ""),
-      Number(media.videoWidth || 0),
-      Number(media.videoHeight || 0),
-      Number(media.currentTime || 0).toFixed(3),
-      Number(media.readyState || 0),
-      media.paused ? "paused" : "playing",
-    ].join("|");
-  }
-  if (typeof HTMLCanvasElement !== "undefined" && media instanceof HTMLCanvasElement) {
-    return ["canvas", media.width, media.height, Number(media.__panoFrameIdx || 0)].join("|");
-  }
-  return [
-    String(media.currentSrc || media.src || ""),
-    Number(media.naturalWidth || media.width || 0),
-    Number(media.naturalHeight || media.height || 0),
-  ].join("|");
 }
 
 function appendImageRevision(src, rev) {

@@ -22,6 +22,7 @@ import {
 } from "./pano_dom_widget_lifecycle.js";
 import PanoPreviewNodeSurface from "./components/PanoPreviewNodeSurface.vue";
 import { localPosFromEvent } from "./pano_preview_runtime.js";
+import { isRenderableMediaReady, mediaPlayheadRevisionToken } from "./pano_media_session.js";
 import { peekPreviewNode, previewNode } from "./pano_node_bridge.js";
 
 const PREVIEW_MIN_HEIGHT = 140;
@@ -83,34 +84,6 @@ function imageSourceFromCandidate(candidate) {
   if (typeof candidate?.src === "string" && candidate.src) return candidate.src;
   if (typeof candidate?.url === "string" && candidate.url) return candidate.url;
   return comfyImageEntryToUrl(candidate);
-}
-
-function isRenderableMediaReady(media) {
-  if (!media) return false;
-  if (media instanceof HTMLVideoElement) {
-    return Number(media.videoWidth || 0) > 0
-      && Number(media.videoHeight || 0) > 0
-      && Number(media.readyState || 0) >= 2;
-  }
-  return !!media.complete && Number(media.naturalWidth || media.width || 0) > 0;
-}
-
-function getRenderableMediaRevisionToken(media) {
-  if (media instanceof HTMLVideoElement) {
-    return [
-      String(media.currentSrc || media.src || ""),
-      Number(media.videoWidth || 0),
-      Number(media.videoHeight || 0),
-      Number(media.currentTime || 0).toFixed(3),
-      Number(media.readyState || 0),
-      media.paused ? "paused" : "playing",
-    ].join("|");
-  }
-  return [
-    String(media?.currentSrc || media?.src || ""),
-    Number(media?.naturalWidth || media?.width || 0),
-    Number(media?.naturalHeight || media?.height || 0),
-  ].join("|");
 }
 
 function lookupNodeOutputEntry(nodeId) {
@@ -243,7 +216,7 @@ function drawPreview(node, ctx, width, height, view, img, previewView) {
     width,
     height,
     camera: previewNodeCamera(view, width, height),
-    background: { media: img, revision: getRenderableMediaRevisionToken(img), coverage: coverageDeg },
+    background: { media: img, revision: mediaPlayheadRevisionToken(img), coverage: coverageDeg },
     layers: [],
   });
   // The grid stays until the view has loaded.
