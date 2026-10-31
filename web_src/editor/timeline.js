@@ -6,7 +6,7 @@ import { DRAW_REASON } from "../pano_frame_scheduler.js";
 import { backgroundLengthMedia, backgroundVideoMedia } from "../pano_media_session.js";
 import { backgroundBarEnd, backgroundClipAt, backgroundPlace, backgroundShownAt, portMediaFrames } from "../pano_port_media.js";
 import { STUDIO_BACKGROUND_INPUT_NAMES, inputLinked, videoLinked } from "../pano_preview_video.js";
-import { clipActive } from "../pano_scene_eval.js";
+import { clipActive, clipOrigin } from "../pano_scene_eval.js";
 import { stateAnimationClips } from "../pano_space.js";
 import { timelineFps } from "../pano_scene_state.js";
 import { timelineFpsLocked } from "../pano_video_fps.js";
@@ -180,13 +180,13 @@ export function createTimeline(deps) {
     if (owner === "camera") return 0;
     // A row without an owner (a painting's) has no Keyframes.
     const clip = timelineOwner(owner)?.clip;
-    return clip ? clip.start - clip.in : 0;
+    return clip ? clipOrigin(clip) : 0;
   }
 
   // What the view shows of a Clip range's content: whether it is on at the playhead, and the time of
   // its content there (moving the range moves its content; trimming keeps it).
   function clipView(clip) {
-    return `${clipActive(clip, editor.frame)}:${clip.start - clip.in}`;
+    return `${clipActive(clip, editor.frame)}:${clipOrigin(clip)}`;
   }
 
   // Whether the Keyframes of a row can change: not locked, and not an upstream layer's `scene`, whose Lanes no

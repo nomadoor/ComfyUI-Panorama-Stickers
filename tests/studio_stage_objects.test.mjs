@@ -727,3 +727,70 @@ test("a one-point stroke's dot moves it when pressed, though its frame's corners
   const moved = session.state.painting.paint.strokes[0].geometry.points[0];
   assert.ok(Math.abs(moved.u - want.u) < 1e-9 && Math.abs(moved.v - want.v) < 1e-9);
 });
+
+// A stage with the Camera's rotation as `rotation`, the view at `viewAt` looking down -Z, and the selection `row`.
+function cameraSetup({ camera, row = "camera", mode = "rotate", viewAt = [0, 0, 0] } = {}) {
+  const raw = loadSceneState({ version: 2, stickers: [{ id: "board", placement: "world", source: file("board.png"), position: { value: [3, 0, -5] } }] });
+  const session = createStudioSession({ state: camera === null ? { ...raw, camera: null } : loadSceneState({ version: 2, camera, stickers: raw.stickers }) });
+  const view = stageCamera({ position: viewAt, yaw_deg: 0, pitch_deg: 0, roll_deg: 0, target: [viewAt[0], viewAt[1], viewAt[2] - 5] }, W, H, 50);
+  const selected = { row };
+  const objects = createStageObjects({
+    editorView: { sceneBox: () => null, pickSticker: () => assert.fail("the GPU pick is read") },
+    camera: () => view,
+    size: () => ({ width: W, height: H }),
+    state: () => session.state,
+    content: () => stageContent(session.state, 0, { media: () => ({ media: image, revision: "r" }), editorFile: () => null, sceneBox: () => null }),
+    playhead: () => 0,
+    selection: () => selected.row,
+    select: (next) => { selected.row = next; },
+    edits: { live: (apply, copy) => session.gesture(apply, copy), commit: () => session.commitGesture(), cancel: () => session.cancelGesture() },
+    tab: () => "3d",
+    readOnly: () => false,
+    mode: () => mode,
+  });
+  return { session, objects };
+}
+
+// The gizmo writes the whole rotation as gizmoDragLanes reads it (yaw in -180..180), not the nearest turn of its base
+// as the Camera tab and the Camera button do (camera_state.js moveCameraPose). Whether the gizmo should keep the
+// nearest turn too is an open decision of the owner; this test intentionally changes if they are aligned.
+test("a Rotate drag of the Camera's gizmo writes all three angles at the frame, the yaw wrapped across 180°", () => {
+  const { session, objects } = cameraSetup({
+    camera: {
+      projection: "perspective",
+      position: { value: [0, -1, -6] },
+      rotation: { value: { yaw_deg: 0, pitch_deg: 0, roll_deg: 0 }, keyframes: [{ frame: 0, value: { yaw_deg: 175, pitch_deg: 0, roll_deg: 0 } }, { frame: 10, value: { yaw_deg: 170, pitch_deg: 0, roll_deg: 0 } }] },
+    },
+  });
+  const ring = handlesOf(objects).rings.find((item) => item.name === "y");
+  const grip = ring.points.find((p) => p && p.front);
+  const drag = objects.press(grip);
+  assert.ok(drag, "the Y ring is grabbed");
+  drag.move({ x: grip.x + 40, y: grip.y });
+  drag.end();
+  const [first, second] = session.state.camera.rotation.keyframes;
+  assert.deepEqual(Object.keys(first.value).sort(), ["pitch_deg", "roll_deg", "yaw_deg"]);
+  assert.ok(Math.abs(first.value.yaw_deg - -178.19374595652172) < 1e-9, `the yaw is written as ${first.value.yaw_deg}, not past 180`);
+  assert.equal(first.value.pitch_deg, 0);
+  assert.equal(first.value.roll_deg, 0);
+  assert.deepEqual(second, { frame: 10, value: { yaw_deg: 170, pitch_deg: 0, roll_deg: 0 }, easing: second.easing });
+});
+
+test("a gizmo drag of a state whose Camera is null puts the default Camera there first and writes its Lane", () => {
+  const { session, objects } = cameraSetup({ camera: null, mode: "translate", viewAt: [0, 0, 6] });
+  const ball = ballOf(objects, "y");
+  const drag = objects.press(ball);
+  assert.ok(drag, "the Y ball is grabbed");
+  drag.move({ x: ball.x, y: ball.y - 30 });
+  drag.end();
+  const camera = session.state.camera;
+  assert.ok(camera, "the Camera is written");
+  assert.equal(camera.projection, "erp", "the default Camera's mode");
+  const position = evaluateLane(camera, "position", 0);
+  assert.ok(position[1] > 0.05 && Math.abs(position[0]) < 1e-9 && Math.abs(position[2]) < 1e-9);
+});
+
+test("an upstream element's row selected on the stage shows no gizmo (upstream elements are read-only here)", () => {
+  const { objects } = cameraSetup({ camera: { projection: "perspective" }, row: "upstream:scene_up:board", mode: "translate" });
+  assert.equal(objects.overlay().gizmo, null);
+});

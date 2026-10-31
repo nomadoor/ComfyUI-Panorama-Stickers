@@ -3,6 +3,7 @@
 // stored value, the others follow the handoff, and its placement follows the handoff (nodes.py
 // `_inherit_handoff`). The state keeps the stored Lanes: showing the handoff never changes state_json, and an
 // edit of an inherited Lane makes it an override (docs/editor-interaction.md).
+import { clipOrigin } from "./pano_scene_eval.js";
 import { loadSceneState, SKY_STICKER_LANES, timelineFps, WORLD_STICKER_LANES } from "./pano_scene_state.js";
 
 // The Lanes a handoff of each placement hands: with a lens (ADR 0042) a sky Sticker's `curve`, and a world
@@ -42,7 +43,7 @@ function sameValue(a, b) {
 function handoffLanes(handoff, fps, clip) {
   const from = handoff.fps ?? fps;
   if (from === fps) return handoff.lanes;
-  const origin = clip.start - clip.in;
+  const origin = clipOrigin(clip);
   const runOrigin = Math.floor(origin * from / fps + 0.5);
   return Object.fromEntries(Object.entries(handoff.lanes).map(([name, lane]) => [name, {
     value: lane.value,

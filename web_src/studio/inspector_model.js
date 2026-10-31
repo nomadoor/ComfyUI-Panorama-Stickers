@@ -7,7 +7,7 @@ import { ICON } from "../icons.js";
 import { CAMERA_ASPECT_MAX, CAMERA_ASPECT_MIN, WORLD_MIN_SCALE, skyStickerVfov, stickerVfovFromAspect } from "../pano_editor_state.js";
 import { NEW_STICKER_HFOV } from "../pano_space.js";
 import { LENS_CURVE_DIGITS, LENS_CURVE_MAX, LENS_CURVE_MIN, lensFovLimit } from "../pano_lens.js";
-import { FRAME_EPSILON, evaluateCamera, evaluateLane, evaluateSticker } from "../pano_scene_eval.js";
+import { FRAME_EPSILON, clipFrame, evaluateCamera, evaluateLane, evaluateSticker } from "../pano_scene_eval.js";
 import {
   ANIMATION_DEFAULT,
   ANIMATION_SPEED_MAX,
@@ -21,7 +21,9 @@ import {
 import { EASING_PRESETS, rowLaneNames, selectedEasing } from "../pano_timeline.js";
 import { isUpstreamSticker, upstreamOverrideOf, upstreamStickerEditable } from "../pano_upstream.js";
 import { animationClipIndex } from "../pano_animation.js";
-import { cameraOf, defaultCamera, groundOf } from "./defaults.js";
+import { cameraOf } from "./camera_state.js";
+import { findSticker, keyframeOwner } from "./row_object.js";
+import { defaultCamera, groundOf } from "./defaults.js";
 import { objectLabel } from "./timeline_model.js";
 
 // The least height (px) left above the Easing panel for the rows (docs/design.md "大きさ" EASING_MIN_ABOVE).
@@ -83,7 +85,7 @@ function laneDefault(owner, name) {
 
 // The frame of an owner's own time base at a Timeline frame: a Sticker's material starts at start - in.
 export function ownerFrame(owner, playhead) {
-  return owner.clip ? playhead - (owner.clip.start - owner.clip.in) : playhead;
+  return owner.clip ? clipFrame(owner.clip, playhead) : playhead;
 }
 
 // The Keyframe dot of a row over the Lanes `names` at the owner's frame: "none", "has" or "now".
@@ -97,26 +99,12 @@ export function keyState(owner, names, frame) {
   return has ? "has" : "none";
 }
 
-// The working Sticker, own or upstream (pano_upstream.js upstreamWorkingLayers), with the id `id`.
-export function findSticker(state, upstream, id) {
-  return state.stickers.find((item) => item.id === id)
-    ?? upstream.flatMap((layer) => layer.sceneState.stickers).find((item) => item.id === id)
-    ?? null;
-}
-
 // The Sticker an upstream element `sticker` (a working copy) is without this node's overrides, at the editor's fps.
 export function inheritedSticker(upstream, sticker, fps) {
   const layer = upstream.find((item) => item.key === sticker.origin.layer);
   if (!layer) return null;
   const received = layer.received.timeline.fps === fps ? layer.received : rebaseSceneState(layer.received, fps);
   return received.stickers.find((item) => item.id === sticker.origin.id) ?? null;
-}
-
-// The owner of a Keyframe selection's Lanes (selection.keyframes.owner): "camera", "scene", or a Sticker's id.
-export function keyframeOwner(state, upstream, id) {
-  if (id === "camera") return cameraOf(state);
-  if (id === "scene") return state.scene;
-  return findSticker(state, upstream, id);
 }
 
 // The Lanes of each row of each card (docs/timeline-ui.md "インスペクタの Keyframe のポチ"): its dot keys them, its
@@ -258,7 +246,7 @@ function cameraRows(camera, playhead) {
       control: "choice",
       lanes: [],
       options: RANGE_OPTIONS,
-      value: camera.erp_range === 180 ? 180 : 360,
+      value: camera.erp_range,
       resettable: false,
       ...(erp ? {} : { disabled: true, tip: PANORAMA_ONLY_TIP }),
     },

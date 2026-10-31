@@ -5,7 +5,7 @@
 // scene and the Stickers.
 import { animationCycleFrames } from "./pano_animation.js";
 import { portMediaFrames } from "./pano_port_media.js";
-import { evaluateLane, FRAME_EPSILON } from "./pano_scene_eval.js";
+import { clipOrigin, evaluateLane, FRAME_EPSILON } from "./pano_scene_eval.js";
 import {
   CAMERA_LANES,
   DEFAULT_EASING,
@@ -186,7 +186,7 @@ export function moveClip(clip, delta) {
 // Keyframes on it stay where they are. The head stops at that first frame and one frame before the end.
 export function trimClipStart(clip, start) {
   const end = clip.duration === null ? Infinity : clip.start + clip.duration;
-  const next = Math.min(Math.max(start, clip.start - clip.in, 0), end - 1);
+  const next = Math.min(Math.max(start, clipOrigin(clip), 0), end - 1);
   const delta = next - clip.start;
   clip.start = next;
   clip.in += delta;
@@ -262,11 +262,11 @@ export function autoTimelineLength(state, { bg = null, port = null, sceneItems =
   const portSticker = state.stickers.find((sticker) => sticker.source.kind === "port");
   if (port && portSticker && open(portSticker.clip)) ends.push(portMediaFrames({ ...portSticker.clip, duration: null }, fps, port));
   const sceneClip = state.scene.clip;
-  if (sceneItems > 1 && open(sceneClip)) ends.push(sceneClip.start - sceneClip.in + sceneItems);
+  if (sceneItems > 1 && open(sceneClip)) ends.push(clipOrigin(sceneClip) + sceneItems);
   // An animated 3D file without a duration ends with one cycle of its clip (ADR 0043).
   const cycleEnd = (owner, clips) => {
     const frames = animationCycleFrames(clips, owner.animation, fps);
-    if (frames !== null && open(owner.clip)) ends.push(owner.clip.start - owner.clip.in + frames);
+    if (frames !== null && open(owner.clip)) ends.push(clipOrigin(owner.clip) + frames);
   };
   if (animations?.scene) cycleEnd(state.scene, animations.scene);
   for (const sticker of state.stickers) {

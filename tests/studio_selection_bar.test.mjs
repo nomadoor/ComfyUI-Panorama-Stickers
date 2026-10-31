@@ -110,3 +110,9 @@ test("a paint group (a stroke group or a paint raster object) has the bar Bring 
   assert.equal(locked.groups[1][0].icon, ICON.lock_closed);
   assert.ok(selectionBar({ state: painted, row: "raster:r1", readOnly: true }).groups.flat().every((button) => button.disabled));
 });
+
+test("an upstream element's row (its working id) has no kind and no bar: upstream elements are read-only here", () => {
+  const row = "upstream:scene_up:sky_1";
+  assert.equal(selectedKind(state, row), null);
+  assert.equal(selectionBar({ state, row }), null);
+});

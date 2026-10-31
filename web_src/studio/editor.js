@@ -17,7 +17,7 @@ import { watchComfyRunning } from "../pano_comfy_running.js";
 import { createPanoCanvas, createPanoVideo, releasePanoCanvas } from "../pano_diagnostics.js";
 import { studioSizeWidgets } from "../pano_studio_status.js";
 import { queuePendingStickerOperation } from "../pano_editor_extension.js";
-import { cameraShot, normalizeCoverageValue, readableStateText, setCameraShot } from "../pano_editor_state.js";
+import { cameraShot, normalizeCoverageValue, readableStateText } from "../pano_editor_state.js";
 import { preloadEditorView } from "../pano_editor_view.js";
 import { DRAW_REASON } from "../pano_frame_scheduler.js";
 import { paintObjectRow } from "../pano_paint_objects.js";
@@ -34,7 +34,6 @@ import {
 } from "../pano_media_session.js";
 import { backgroundBarEnd, backgroundPlace, backgroundShownAt, bgColorBackground } from "../pano_port_media.js";
 import { STUDIO_BACKGROUND_INPUT_NAMES, isNodeOutputMediaCurrent, linkedInputType, videoLinked } from "../pano_preview_video.js";
-import { evaluateCamera } from "../pano_scene_eval.js";
 import { PANO_SCENE_TYPE, ownSceneLinked } from "../pano_upstream.js";
 import { loadSceneState } from "../pano_scene_state.js";
 import { sceneFilesOf, stateAnimationClips } from "../pano_space.js";
@@ -42,7 +41,8 @@ import { sceneAtVideoFps, timelineFpsLocked, videoTimelineFps } from "../pano_vi
 import { createAddFiles } from "./add_files.js";
 import { needsPaintLayer, textWithPaintLayer, uploadPaintLayer } from "./paint_upload.js";
 import { createLoadReveal } from "./load_reveal.js";
-import { cameraOf, defaultCamera, groundOf } from "./defaults.js";
+import { cameraAt, cameraOf, editableCamera, moveCameraPose } from "./camera_state.js";
+import { groundOf } from "./defaults.js";
 import { createDropInput } from "./drop_input.js";
 import { guardEditorKeys } from "./key_guard.js";
 import { createStudioPaint, brushRing } from "./paint.js";
@@ -495,8 +495,7 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
   function selectionOf(row) {
     if (!row) return null;
     if (row === "camera") {
-      const camera = session.state.camera;
-      return { kind: "camera", position: camera ? [...evaluateCamera(camera, view.playhead).position] : [0, 0, 0] };
+      return { kind: "camera", position: [...cameraAt(session.state, view.playhead).position] };
     }
     // A paint group is on the Sky, as a sky image: it has no sphere of its own (docs/space-and-view.md "Frame Selected").
     if (paintObjectRow(row)) return { kind: "object", sphere: content().sphere };
@@ -747,14 +746,13 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
   };
 
   // --- The Camera tab (docs/studio-ui.md "Camera タブ"): the Frame view's moves of the Camera, written to its Lanes by
-  // the recording rule (pano_editor_state.js setCameraShot) as one drag of the session (one Undo step at its end).
+  // the recording rule (camera_state.js moveCameraPose) as one drag of the session (one Undo step at its end).
   const cameraEdits = {
     live: (pose) => objectOutcome(session.gesture((draft) => {
-      draft.camera ??= defaultCamera();
-      if (draft.camera.locked === true) return false;
-      const base = cameraShot(draft.camera, view.playhead);
+      const camera = editableCamera(draft);
+      if (camera.locked === true) return false;
       // A move back onto the start writes nothing, and the state is the start again (each move starts from it).
-      setCameraShot(draft.camera, view.playhead, { ...base, position: [...pose.position], yaw_deg: pose.yaw_deg, pitch_deg: pose.pitch_deg }, base);
+      moveCameraPose(camera, view.playhead, pose);
       return true;
     })),
     commit: () => objectOutcome(session.commitGesture()),
@@ -772,7 +770,7 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     tab: () => view.tab,
     mode: () => (cameraOf(session.state).projection === "erp" ? "panorama" : "frame"),
     shot: () => cameraShot(cameraOf(session.state), view.playhead),
-    erpRange: () => (cameraOf(session.state).erp_range === 180 ? 180 : 360),
+    erpRange: () => cameraOf(session.state).erp_range,
     frame: () => frameRect,
     erpCanvas: () => erpCanvas,
     movable: () => !readOnly && cameraOf(session.state).locked !== true,
