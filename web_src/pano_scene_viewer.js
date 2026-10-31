@@ -210,7 +210,7 @@ export function createSceneViewer({
       space: {
         grid: record.showGrid ? gridSpec(sphere?.radius || DEFAULT_DISTANCE) : null,
         sceneUrls: [], scene: null, stickerUrls: [], sticker: null, fileStickers: [], fileStickerKeys: [], stickers: [],
-        lines: [], upstreamItems: items, upstreamStickers: upstream.stickers, gizmo: null, sphere,
+        lines: [], upstreamItems: items, upstreamStickers: upstream.stickers, gizmo: null, sphere, playing: !!record.playing,
       },
     };
   }

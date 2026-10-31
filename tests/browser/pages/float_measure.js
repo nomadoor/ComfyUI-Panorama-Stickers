@@ -73,9 +73,9 @@ export function measureFloats() {
     const column = style.flexDirection === "column" && style.display.includes("flex");
     for (const button of float.querySelectorAll("button")) if (shown(button)) add(float, float, button, column);
   }
-  // The Output window's fold button sits over the folded pill (not inside it).
+  // The Output window's folded pill is one button; its chevron at the right end is measured as the button.
   const pill = document.querySelector(".pano-studio-output.is-collapsed .pano-studio-output-pill");
-  const fold = document.querySelector(".pano-studio-output.is-collapsed .pano-studio-output-fold");
+  const fold = pill?.querySelector(".pano-studio-output-chevron");
   if (pill && fold && shown(fold)) add(pill.closest(".pano-studio-output"), pill, fold, false);
   return rows;
 }

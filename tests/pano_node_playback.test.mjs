@@ -502,10 +502,10 @@ test("the port Sticker's VIDEO makes the node playable, spans the Timeline and p
   clock.framesAhead(10);
   follow([], true, STICKER);
   assert.equal(playback.frame, 10);
-  // Frame 10 is 16 frames into the media, which starts at start - in = frame -6.
-  assert.equal(stickerVideo.paused, false);
+  // Frame 10 is 16 frames into the media, which starts at start - in = frame -6. It plays once the seek landed.
   assert.ok(Math.abs(stickerVideo.seeks.at(-1) - 16 / FPS) < 1e-4);
   stickerVideo.land();
+  assert.equal(stickerVideo.paused, false);
   stickerVideo.dispatchEvent(new Event("playing"));
   assert.equal(playback.stickerPicture("still", "first"), stickerVideo);
   // Pause: the VIDEO pauses with the playhead and rests on its frame.

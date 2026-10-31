@@ -1536,6 +1536,7 @@ function drawStudioPicture(node, canvas, surfaceView, layout, erpCanvas) {
     paintLayers: surfacePaintLayers(surface, state),
     upstream: inputs?.upstream.viewInput(frame) ?? null,
     depthColor: inputs?.depthColor ?? null,
+    playing: !!surface.playback?.playback.advancing,
   });
   inputs?.depthColors.retain(content.space.depthSlots);
   const background = surfaceBackground(node, state, surfaceBackgroundMedia(node), { fill: true });
@@ -2812,7 +2813,7 @@ function attachPanoramaPreviewImpl(node, options = {}) {
             y: stickerDrag.startCenter.y + point.y - stickerDrag.startPoint.y,
           },
           stickerDrag.projection,
-        );
+        ) ?? next;
       } else if (stickerDrag.kind === "scale") {
         const distance = Math.hypot(point.x - stickerDrag.startCenter.x, point.y - stickerDrag.startCenter.y);
         next = scaleStickerFromPointer(stickerDrag.startSticker, stickerDrag.startDistance, distance);

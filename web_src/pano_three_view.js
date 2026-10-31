@@ -1103,7 +1103,7 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
   // The item of `items` for input (a `scene` or 3D Sticker request), or the one shown before while it
   // loads (an item of the same input), in a group with the input's transform. `item` is what
   // items.request(input) gave, when the caller asked for several inputs at once.
-  function contentGroup(items, input, item = items.request(input)) {
+  function contentGroup(items, input, item) {
     const { transform, itemQuaternion } = input;
     if (!item) return null;
     item.object.quaternion.set(itemQuaternion.x, itemQuaternion.y, itemQuaternion.z, itemQuaternion.w);
@@ -1117,7 +1117,8 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     group.quaternion.set(transform.quaternion.x, transform.quaternion.y, transform.quaternion.z, transform.quaternion.w);
     group.scale.setScalar(transform.scale);
     // A 3D Sticker is picked as that Sticker.
-    return { group, splat: item.kind === "splat", depthGrid: item.kind === "depth_grid", object: item.object, box: item.box, transform, stickerId: input.id ?? null };
+    // A depth grid draws with the colors its queue asked for at the item drawn (pano_scene_items.js pick).
+    return { group, splat: item.kind === "splat", depthGrid: item.kind === "depth_grid", color: items.colorOf(input), object: item.object, box: item.box, transform, stickerId: input.id ?? null };
   }
 
   // A 3D Sticker's opacity: a SPLAT's own, a GLB's on its unlit materials. A see-through GLB does not
@@ -1191,9 +1192,14 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     sceneItems.retain(space.sceneUrls ?? []);
     // Each content with its opacity, which the `scene` item's materials keep as they are (opaque).
     const contents = [];
-    if (space.scene) contents.push({ content: contentGroup(sceneItems, space.scene), input: space.scene, opacity: 1, keepMaterials: true });
+    // Whether the playhead advances (which loaded items go first over the budget, pano_scene_items.js overBudget),
+    // whether the editor at rest loads the `scene` and upstream items on (`idle`), and whether ComfyUI runs a job
+    // (`lean`: only the items drawn and prefetched stay).
+    const playback = { playing: !!space.playing, lean: !!space.lean };
+    const atRest = { ...playback, idle: !!space.idle };
+    if (space.scene) contents.push({ content: contentGroup(sceneItems, space.scene, sceneItems.request(space.scene, atRest)), input: space.scene, opacity: 1, keepMaterials: true });
     const stickerInputs = stickerItemInputs(space);
-    const stickerShown = stickerItems.requestMany(stickerInputs.inputs);
+    const stickerShown = stickerItems.requestMany(stickerInputs.inputs, playback);
     stickerInputs.drawn.forEach((input, index) => {
       // A World 3D Sticker asks for its hit grid at its first item's first draw, before an animation poses it.
       if (input.id != null && stickerShown[index]) {
@@ -1208,7 +1214,7 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
       slots.add(entry.slot);
       const items = upstreamItemsOf(entry.slot);
       items.retain(entry.urls);
-      if (entry.request) contents.push({ content: contentGroup(items, entry.request), input: entry.request, opacity: entry.opacity });
+      if (entry.request) contents.push({ content: contentGroup(items, entry.request, items.request(entry.request, atRest)), input: entry.request, opacity: entry.opacity });
     }
     for (const [slot, items] of upstreamItems) {
       if (slots.has(slot)) continue;
@@ -1229,11 +1235,12 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     const colorSlots = [];
     for (const { content, input, opacity, keepMaterials } of contents) {
       if (!content) continue;
-      // A depth grid draws only with its colors (the proxy's picture, which the editor gives as input.color).
+      // A depth grid draws only with its colors (the proxy's picture at the item drawn, from the input's `color`).
       if (content.depthGrid) {
-        if (!input.color) continue;
-        content.object.material.uniforms.colorMap.value = depthColors.texture(owned.owner, input.color.slot ?? input.color.source, input.color);
-        colorSlots.push(input.color.slot ?? input.color.source);
+        const { color } = content;
+        if (!color) continue;
+        content.object.material.uniforms.colorMap.value = depthColors.texture(owned.owner, color.slot ?? color.source, color);
+        colorSlots.push(color.slot ?? color.source);
       }
       if (!keepMaterials) setContentOpacity(content, opacity);
       // An animated 3D file shows its clip's pose at the playhead (ADR 0043).

@@ -19,6 +19,9 @@ const LOAD_MS = 20000;
 const f = (W - 1) / 2 / Math.tan(Math.PI / 6);
 const intrinsics = [f, 0, (W - 1) / 2, 0, f, (H - 1) / 2, 0, 0, 1];
 
+// A request's `color` (pano_depth_color.js withDepthColor's shape) that always gives `picture`.
+const pictureColor = (picture) => ({ ready: true, at: () => picture });
+
 function depthFile() {
   const values = new Float32Array(W * H).fill(2);
   for (let y = 28; y <= 36; y += 1) for (let x = 28; x <= 36; x += 1) values[y * W + x] = 0;
@@ -43,7 +46,7 @@ try {
   };
   const files = sceneFilesOf([{ filename: "depth" }], [meta], (entry) => (entry.filename === "depth" ? url : "proxy.mp4"));
   const scene = { active: true, clip_frame: 0, position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0, roll_deg: 0, scale: 1 };
-  const request = { ...sceneRequest(files, scene), color: { media: video, revision: "video", source: "proxy.mp4" } };
+  const request = { ...sceneRequest(files, scene), color: pictureColor({ media: video, revision: "video", source: "proxy.mp4" }) };
   let raf = 0;
   const ask = () => (raf ||= requestAnimationFrame(frame));
   const view = createThreeView({ createCanvas: () => document.body.appendChild(document.createElement("canvas")), onUpdate: ask, onSplats: ask });
@@ -112,7 +115,7 @@ try {
     await halvesVideo.play();
     const pictures = { canvas: still, bitmap: await createImageBitmap(still), video: halvesVideo };
     for (const [name, media] of Object.entries(pictures)) {
-      const drawn = { ...space, scene: { ...request, color: { media, revision: name, source: name } } };
+      const drawn = { ...space, scene: { ...request, color: pictureColor({ media, revision: name, source: name }) } };
       await showSettled(drawn, media);
       check.orientation[name] = { top: sample(probe2d, SIZE / 2, SIZE / 8), bottom: sample(probe2d, SIZE / 2, (SIZE * 7) / 8) };
     }
@@ -130,7 +133,7 @@ try {
     toneStill.getContext("2d").drawImage(tone, 0, 0);
     check.tone = {};
     for (const [name, media] of [["video", tone], ["still", toneStill]]) {
-      const drawn = { ...space, scene: { ...request, color: { media, revision: name, source: name } } };
+      const drawn = { ...space, scene: { ...request, color: pictureColor({ media, revision: name, source: name }) } };
       await showSettled(drawn, media);
       check.tone[name] = sample(probe2d, SIZE / 4, SIZE / 4);
     }
@@ -150,7 +153,7 @@ try {
     edgeStill.getContext("2d").drawImage(edge, 0, 0);
     check.edge = {};
     for (const [name, media] of [["video", edge], ["still", edgeStill]]) {
-      const drawn = { ...space, scene: { ...request, color: { media, revision: name, source: name } } };
+      const drawn = { ...space, scene: { ...request, color: pictureColor({ media, revision: name, source: name }) } };
       await showSettled(drawn, media);
       // The red of a row across the edge, away from the hole in the middle.
       check.edge[name] = Array.from(probe2d.getImageData(SIZE / 2 - 24, SIZE / 8, 48, 1).data).filter((_, index) => index % 4 === 0);

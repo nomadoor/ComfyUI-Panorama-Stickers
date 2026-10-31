@@ -23,7 +23,7 @@ import {
   saveTimelineHeight,
   timelineHeight,
 } from "../web_src/studio/layout.js";
-import { LENS_PAN_MAX_DEG, STAGE_CLEAR_COLOR, STAGE_RENDER_MAX_SIDE, STAGE_RENDER_SCALE, cameraFrameView, frameViewFov, groundDepth, lensPickView, lensPinholePoint, outputView, stageCamera, stageRay, stageRenderInput, stageRenderSize, surfaceHit } from "../web_src/studio/stage_view.js";
+import { LENS_PAN_MAX_DEG, STAGE_CLEAR_COLOR, STAGE_RENDER_MAX_SIDE, STAGE_RENDER_SCALE, cameraFrameHit, cameraFrameView, frameViewFov, groundDepth, lensPickView, lensPinholePoint, outputView, stageCamera, stageRay, stageRenderInput, stageRenderSize, surfaceHit } from "../web_src/studio/stage_view.js";
 import { eyeHeight, eyeLengths } from "../web_src/studio/view_scale.js";
 
 const close = (actual, expected, eps = 1e-9) => assert.ok(Math.abs(actual - expected) <= eps, `${actual} != ${expected}`);
@@ -132,17 +132,18 @@ test("the timeline keeps its least height and leaves the stage its least height;
   assert.equal(loadTimelineHeight(null), TIMELINE_DEFAULT_HEIGHT);
 });
 
-test("the Output window's picture keeps the output's ratio within its least and largest width under the 32px line, and its fold, per browser", () => {
-  // Open: as wide as the picture, as high as the picture and the line (docs/studio-ui.md "Output の小窓").
+test("the Output window's picture fills it at the output's ratio within its least and largest width, and its fold, per browser", () => {
+  // The line (the folded pill, and open, laid over the picture's top) is 32px high (docs/design.md "Output の小窓の一行").
   assert.equal(OUTPUT_LINE_HEIGHT, 32);
-  assert.deepEqual(outputWindowSize(300, 2), { width: 300, height: 182, picture: { width: 300, height: 150 } });
-  assert.deepEqual(outputWindowSize(300, 16 / 9), { width: 300, height: 201, picture: { width: 300, height: 169 } });
+  // Open: the picture fills the window, no header row above it (docs/studio-ui.md "Output の小窓").
+  assert.deepEqual(outputWindowSize(300, 2), { width: 300, height: 150 });
+  assert.deepEqual(outputWindowSize(300, 16 / 9), { width: 300, height: 169 });
   // The width kept does not change with the mode or the ratio; only the height does.
   assert.equal(outputWindowSize(300, 9 / 16).width, 300);
-  assert.equal(outputWindowSize(300, 9 / 16).height, 533 + 32);
+  assert.equal(outputWindowSize(300, 9 / 16).height, 533);
   // The least and largest sizes are the picture's.
   assert.equal(outputWindowSize(1, 2).width, OUTPUT_MIN_WIDTH);
-  assert.equal(outputWindowSize(1, 2).picture.height, OUTPUT_MIN_WIDTH / 2);
+  assert.equal(outputWindowSize(1, 2).height, OUTPUT_MIN_WIDTH / 2);
   assert.equal(outputWindowSize(1e6, 2).width, OUTPUT_MAX_WIDTH);
   // A width kept before the least grew (168px) opens at the least (256px, docs/design.md "Output の小窓の最小と最大の大きさ").
   assert.equal(OUTPUT_MIN_WIDTH, 256);
@@ -253,4 +254,19 @@ test("the Frame view's H FOV for its amounts is the pinhole of the image center'
   // The frame's half width is f · lens_radius(H FOV / 2): tan(fov / 2) is that in units of f.
   close(Math.tan(fov * Math.PI / 360), Math.tan(0.5 * 100 * Math.PI / 180) / 0.5, 1e-9);
   assert.ok(fov < 180);
+});
+
+test("the Frame view's hits go by the lens picture only for a κ not shown as 1.00", async () => {
+  // docs/space-and-view.md "レンズの Camera の当たり" (pano_lens.js lensCurveBent).
+  const { cameraShot } = await import("../web_src/pano_editor_state.js");
+  const fit = { frame: { x: 120, y: 61, width: 568, height: 320 }, width: 808, height: 505, distance: 2, radius: 40 };
+  const shotAt = (curve) => cameraShot(loadSceneState({ version: 2, camera: { aspect: 16 / 9, fov: { value: 60 }, curve: { value: curve } } }).camera, 0);
+  const shown = cameraFrameHit(shotAt(0.998), fit);
+  assert.ok(shown.view.lens, "the picture keeps its κ");
+  assert.equal(shown.hitLens, null);
+  assert.equal(shown.objectCamera.lensImage, undefined, "a κ shown as 1.00 is a pinhole for the hits");
+  const bent = cameraFrameHit(shotAt(0.8), fit);
+  assert.equal(bent.hitLens.curve, 0.8);
+  assert.equal(bent.objectCamera.lensImage, bent.view.lens);
+  assert.equal(cameraFrameHit(shotAt(1), fit).objectCamera.lensImage, undefined);
 });
