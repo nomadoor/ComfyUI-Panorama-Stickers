@@ -6,7 +6,7 @@ import { cameraOf } from "../../studio/defaults.js";
 import { liveErpRatio } from "../../studio/erp_preview.js";
 import { cameraRulers, rulerEdit } from "../../studio/frame_layout.js";
 import { ROTATE_SNAP_DEG } from "../../studio/view_scale.js";
-import { buildInspectorModel } from "../../studio/inspector_model.js";
+import { buildCameraCard } from "../../studio/inspector_model.js";
 import { TIMELINE_BAR_HEIGHT, loadTimelineHeight, saveTimelineHeight, timelineHeight } from "../../studio/layout.js";
 import { topLine } from "../../studio/notice_line.js";
 import { selectionBar } from "../../studio/selection_bar.js";
@@ -14,6 +14,7 @@ import { shortcutGroups } from "../../studio/shortcuts.js";
 import { trackInputMode } from "../../studio/input_modality.js";
 import { inspectorSelection } from "../../studio/session.js";
 import { WORLD_FILE_ACCEPT } from "../../pano_sticker_file_import.js";
+import { STUDIO_SIZE_DEFAULTS, studioNodeStatus } from "../../pano_studio_status.js";
 import StudioDropMarker from "./StudioDropMarker.vue";
 import StudioCameraCue from "./StudioCameraCue.vue";
 import StudioCameraFrame from "./StudioCameraFrame.vue";
@@ -97,9 +98,9 @@ function onBackdropUp(event) {
 }
 
 // --- The bar at the bottom center: the paint tools while Paint or Mask is chosen, else the selected object's (none
-// while nothing is selected, nor in the Camera tab).
-const paintModel = computed(() => (cameraTab.value ? null : props.view.paint));
-const bar = computed(() => (cameraTab.value ? null : selectionBar({ state: props.view.state, row: props.view.selection?.row ?? null, mode: props.view.gizmoMode, readOnly: props.view.readOnly })));
+// while nothing is selected). The Camera tab shows it as the 3D tab does (ADR 0051; its tool is always Cursor).
+const paintModel = computed(() => props.view.paint);
+const bar = computed(() => selectionBar({ state: props.view.state, row: props.view.selection?.row ?? null, mode: props.view.gizmoMode, readOnly: props.view.readOnly }));
 
 // --- The Camera tab (docs/studio-ui.md "Camera タブ"): the frame of the output's ratio (the ERP's in Panorama mode)
 // with the edge rulers, which are the Camera card's rows and send the inspector's edits. Each tick strip has its fixed
@@ -109,7 +110,7 @@ const camera = computed(() => cameraOf(props.view.state));
 const panorama = computed(() => camera.value.projection === "erp");
 const frameAspect = computed(() => (panorama.value ? liveErpRatio(camera.value.erp_range === 180 ? 180 : 360) : camera.value.aspect));
 const rulers = computed(() => (cameraTab.value
-  ? cameraRulers(buildInspectorModel({ state: props.view.state, tab: "camera", playhead: props.view.playhead, readOnly: props.view.readOnly }).cards[0])
+  ? cameraRulers(buildCameraCard({ state: props.view.state, playhead: props.view.playhead, readOnly: props.view.readOnly }))
   : null));
 // The Lens row's lensStart where a Lens drag began (a κ edit keeps the image's center scale from there).
 let lensStart = null;
@@ -145,7 +146,11 @@ watch(erpCanvas, (element) => props.controller.erpCanvas?.(element ?? null));
 // --- The Output window's picture (docs/studio-ui.md "Output の小窓"): the stage draws the Camera's output on these
 // canvases while the window is open (a "bitmaprenderer" one in Frame mode, the live ERP's 2D one in Panorama mode).
 // The window stays in the page while folded (it shrinks by a transform), so it says itself whether it is open. The
-// Camera tab folds it and keeps it folded (its picture is the stage's), without changing what it keeps.
+// Camera tab folds it and keeps it folded (its picture is the stage's; its line stays), without changing what it keeps.
+// The line of the output's shape: the node surface's line (pano_studio_status.js studioNodeStatus) of the estimate from
+// the Camera and the node's size widgets as the editor opened with them; a last run's size does not count (it stops
+// matching at the first edit).
+const outputLine = computed(() => studioNodeStatus({ camera: camera.value }, props.view.sizeWidgets ?? STUDIO_SIZE_DEFAULTS));
 const outputFrame = ref(null);
 const outputErp = ref(null);
 const outputOpen = ref(false);
@@ -362,7 +367,7 @@ function setCollapsed(value) {
             <StudioNotice :text="line.text" :kind="line.kind" />
           </div>
           <div class="pano-studio-at-output">
-            <StudioOutputPreview :storage="storage" :ratio="frameAspect" :suspended="cameraTab" :suspended-tip="CAMERA_TAB_TIP" @open="(open) => (outputOpen = open)">
+            <StudioOutputPreview :storage="storage" :ratio="frameAspect" :line="outputLine" :suspended="cameraTab" :suspended-tip="CAMERA_TAB_TIP" @open="(open) => (outputOpen = open)">
               <canvas v-if="!panorama" ref="outputFrame" class="pano-studio-output-picture" data-output-picture="frame" aria-hidden="true" />
               <canvas v-else ref="outputErp" class="pano-studio-output-picture" data-output-picture="erp" aria-hidden="true" />
             </StudioOutputPreview>

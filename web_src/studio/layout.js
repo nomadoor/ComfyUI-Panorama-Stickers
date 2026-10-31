@@ -10,11 +10,15 @@ export const STAGE_MIN_HEIGHT = 240;
 // The timeline folded shows its bar only.
 export const TIMELINE_BAR_HEIGHT = 40;
 
-// The Output window's width when nothing is remembered, and its least and largest widths; its height follows the
-// output's ratio (width / height).
-export const OUTPUT_DEFAULT_WIDTH = 168;
-export const OUTPUT_MIN_WIDTH = 160;
+// The Output window's width when nothing is remembered, and its least and largest widths (the picture's); the
+// picture's height follows the output's ratio (width / height), and the line of the output's shape sits above it,
+// OUTPUT_LINE_HEIGHT high (docs/design.md "Output の小窓の一行": the folded pill's height too).
+// The least width holds the widest line (about 248px: "Frame 8192:1640  8192 × 1640" with the glyph and the fold button),
+// so the open window never cuts its line and its width need not follow the mode (ADR 0051).
+export const OUTPUT_DEFAULT_WIDTH = 256;
+export const OUTPUT_MIN_WIDTH = 256;
 export const OUTPUT_MAX_WIDTH = 520;
+export const OUTPUT_LINE_HEIGHT = 32;
 
 const KEYS = Object.freeze({
   timeline: "PanoramaSuite.Studio.timelineHeight",
@@ -31,11 +35,14 @@ export function timelineHeight(wanted, total) {
   return Math.round(clamp(Number.isFinite(wanted) ? wanted : TIMELINE_DEFAULT_HEIGHT, TIMELINE_MIN_HEIGHT, most));
 }
 
-// The Output window's size for a wish of `wanted` px wide and an output of `ratio` (width / height).
+// The open Output window's size for a wish of `wanted` px wide and an output of `ratio` (width / height): { width,
+// height, picture: { width, height } }. The width is what is kept: the mode and the ratio change the height only
+// (docs/studio-ui.md "Output の小窓": the line at the top does not move), which is the picture's and the line's.
 export function outputWindowSize(wanted, ratio) {
   const width = Math.round(clamp(Number.isFinite(wanted) ? wanted : OUTPUT_DEFAULT_WIDTH, OUTPUT_MIN_WIDTH, OUTPUT_MAX_WIDTH));
   const shape = ratio > 0 ? ratio : 2;
-  return { width, height: Math.round(width / shape) };
+  const picture = { width, height: Math.round(width / shape) };
+  return { width, height: picture.height + OUTPUT_LINE_HEIGHT, picture };
 }
 
 // --- Kept per browser. Storage may be missing or refuse (a private window); then nothing is kept.
@@ -81,9 +88,9 @@ export function saveOutputWindow(storage, { width, collapsed }) {
 }
 
 // How the Output window shows (docs/studio-ui.md "Output の小窓"): `collapsed` is what the viewer chose and the browser
-// keeps; `suspended` is the Camera tab, which folds it, makes its fold button inert and stops its picture, without
-// touching `collapsed`, so leaving the tab brings back the viewer's choice. { folded, open (its picture is drawn),
-// foldable }.
+// keeps; `suspended` is the Camera tab, which folds it (its line still shown as in the 3D tab), makes its fold button
+// inert and stops its picture, without touching `collapsed`, so leaving the tab brings back the viewer's choice.
+// { folded, open (its picture is drawn), foldable }.
 export function outputWindowView({ collapsed, suspended = false }) {
   return { folded: !!collapsed || !!suspended, open: !collapsed && !suspended, foldable: !suspended };
 }

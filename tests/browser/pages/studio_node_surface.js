@@ -183,6 +183,12 @@ surface.setWidget = (name, value) => {
   target.value = value;
   target.callback?.call(target, value, { graph: null }, node);
 };
+// A widget the node does not have (an older graph): taken away, and the surface drawn again.
+surface.removeWidget = (name) => {
+  node.widgets = node.widgets.filter((entry) => entry.name !== name);
+  const text = node.widgets.find((entry) => entry.name === "state_json");
+  text.callback?.call(text, text.value, { graph: null }, node);
+};
 surface.turnCamera = (yaw) => surface.setWidget("state_json", JSON.stringify(state(yaw)));
 surface.setMode = (next) => {
   const raw = JSON.parse(node.widgets.find((entry) => entry.name === "state_json").value);

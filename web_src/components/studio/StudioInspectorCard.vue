@@ -99,9 +99,9 @@ function boxProps(row, field) {
             type="button"
             class="pano-studio-text-btn"
             data-action="set-ground"
-            data-tip="Click a surface to make it the ground"
-            :aria-disabled="row.disabled ? 'true' : null"
-            @click="row.disabled || send({ type: 'set-ground' })"
+            :data-tip="row.setGround.tip"
+            :aria-disabled="row.setGround.disabled ? 'true' : null"
+            @click="row.setGround.disabled || send({ type: 'set-ground' })"
           >Set ground</button>
         </template>
 

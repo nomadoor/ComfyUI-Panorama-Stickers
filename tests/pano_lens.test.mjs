@@ -130,3 +130,17 @@ test("a pointer on the bent image picks through a cube face pixel on the same ra
     }
   }
 });
+
+test("a Camera is a lens Camera for the Camera tab's hits, guides and gizmo when its κ at the inspector's 0.01 is not 1", async () => {
+  const { LENS_CURVE_DIGITS, lensCurveBent } = await import("../web_src/pano_lens.js");
+  assert.equal(LENS_CURVE_DIGITS, 2);
+  // Shown as 1.00: a pinhole.
+  assert.equal(lensCurveBent(1), false);
+  assert.equal(lensCurveBent(0.998), false);
+  assert.equal(lensCurveBent(1.004), false);
+  // Shown as 0.99 or less: a lens.
+  assert.equal(lensCurveBent(0.99), true);
+  assert.equal(lensCurveBent(0.994), true);
+  assert.equal(lensCurveBent(0.5), true);
+  assert.equal(lensCurveBent(0), true);
+});

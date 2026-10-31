@@ -32,7 +32,7 @@ import { fitFocalPx, getCutoutCameraParams } from "./pano_cutout_view_math.js";
 import PanoCutoutNodeSurface from "./components/PanoCutoutNodeSurface.vue";
 import PanoStickersNodeSurface from "./components/PanoStickersNodeSurface.vue";
 import PanoStudioNodeSurface from "./components/PanoStudioNodeSurface.vue";
-import { createStudioStatus } from "./pano_studio_status.js";
+import { createStudioStatus, studioSizeWidgets } from "./pano_studio_status.js";
 import { STUDIO_PICTURE_RADIUS, STUDIO_SURFACE_FILL, studioSurfaceLayout } from "./pano_studio_surface.js";
 import { outputErpInput, outputFrameInput } from "./studio/output_picture.js";
 import { groundOf } from "./studio/defaults.js";
@@ -1422,8 +1422,7 @@ function studioStatusOptions(node) {
   const current = ["background", "external-sticker", "scene"].every((channel) => isNodeOutputMediaCurrent(node, channel));
   return {
     stateText: String(getWidget(node, "state_json")?.value ?? ""),
-    megapixels: Number(getWidget(node, "megapixels")?.value ?? 2),
-    multiple: Number(getWidget(node, "multiple")?.value ?? 8),
+    ...studioSizeWidgets((name) => getWidget(node, name)?.value),
     backgroundRange: Number(getWidget(node, "background_range")?.value) === 180 ? 180 : 360,
     backgroundColor: String(getWidget(node, "background_color")?.value ?? ""),
     run: (current && ownOutputUiValue(node, "pano_output_size")) || null,

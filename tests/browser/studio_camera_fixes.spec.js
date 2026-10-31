@@ -3,7 +3,7 @@ import { expect, test } from "@playwright/test";
 // The Camera tab's edge rulers and the parts around them in the new editor (tests/browser/pages/studio_camera_wired.html,
 // a real browser engine): docs/studio-ui.md "Camera タブ" (the tick strips' fixed length centered on the frame's edges,
 // the heads outside the strip's two ends with a fixed-width value, the reset, the hit band, the focus) and "Output の小窓" (folded
-// and inert in the Camera tab), and no timecode at the top center.
+// in the Camera tab, its fold button inert), and no timecode at the top center.
 
 function watch(page) {
   const problems = [];
@@ -274,7 +274,7 @@ const outputPixels = (page) => page.evaluate(() => {
 });
 const differ = (a, b) => a.reduce((sum, value, index) => sum + Math.abs(value - b[index]), 0) / a.length;
 
-test("the Camera tab folds the Output window, faint and inert, stops its picture, and the 3D tab brings it back", async ({ page }) => {
+test("the Camera tab folds the Output window, its fold button faint and inert, stops its picture, and the 3D tab brings it back", async ({ page }) => {
   const problems = await load(page, "aspect=16:9&mode=frame");
   const output = page.locator('[data-region="output"]');
   const fold = page.locator('[data-action="output-fold"]');
@@ -292,7 +292,9 @@ test("the Camera tab folds the Output window, faint and inert, stops its picture
   await expect(output).toHaveClass(/is-suspended/);
   await expect(fold).toHaveAttribute("aria-disabled", "true");
   await expect(fold).toHaveAttribute("data-tip", "Not available in the Camera view");
-  expect(await output.evaluate((el) => getComputedStyle(el).opacity)).toBe("0.4");
+  // Its line as in the 3D tab; only the fold button is faint (ADR 0051).
+  expect(await output.evaluate((el) => getComputedStyle(el).opacity)).toBe("1");
+  expect(await fold.evaluate((el) => getComputedStyle(el).opacity)).toBe("0.4");
   // A press does nothing; a hover does not light it.
   await fold.hover();
   // Past the hover's ease (docs/design.md "動き").
