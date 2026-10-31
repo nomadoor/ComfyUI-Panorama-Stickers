@@ -105,7 +105,7 @@ async function editorHashes(width) {
   const state = { painting: PAINTING, painting_visible: true, stickers: [] };
   const editor = { interaction: null, paintEngine: { descriptor: { width, height: width / 2 }, getGroupDisplay: () => null, getMaskDisplay: () => null } };
   const layers = createPaintLayers({
-    api: {}, editor, node: { id: 1 }, rasterErpCanvasCache: new Map(), rasterImageAlphaCache: new Map(), rasterImageCache: new Map(), state,
+    api: {}, editor, node: { id: 1 }, rasterImageAlphaCache: new Map(), rasterImageCache: new Map(), state,
   });
   layers.connect({
     commitState() {}, createRasterSurface: () => null, getActivePaintTargetDescriptor: () => ({ width, height: width / 2 }),

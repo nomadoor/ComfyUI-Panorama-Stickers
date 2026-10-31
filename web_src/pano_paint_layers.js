@@ -1,6 +1,6 @@
 // The paint of a state as its Sky layers, in the order the node draws them (core/render.py `_sky_layers`,
-// docs/scene-state-v2.md "Sky の重なり順"). The editor, the on-node surfaces and the upstream layers each draw
-// the pixels with a paint engine of their own; this decides which layers there are and where they go.
+// docs/scene-state-v2.md "Sky の重なり順"). The places that show paint draw the pixels through a paint display
+// (pano_paint_display.js createPaintDisplay, the one caller); this decides which layers there are and where they go.
 
 // The id of a paint object's Sky layer, which the new editor also selects it by (pano_paint_objects.js paintObjectRow):
 // `kind` "group" (a stroke group, `id` its actionGroupId) gives `paint_group:<id>`, "raster" (a raster object) `raster:<id>`.
@@ -54,27 +54,4 @@ function groupId(item) {
 // As the node's display list reads it (core/display_list.py `_safe_int`): a raster object's z_index may be fractional.
 function zIndexOf(item) {
   return Math.trunc(Number(item.z_index) || 0);
-}
-
-// Draws the raster object `item` (its image `img`, its bbox in ERP uv and its transform) on the ERP canvas context `ctx`
-// of width x height, wrapped across the seam.
-export function drawRasterObjectErp(ctx, img, item, width, height) {
-  const bbox = item.bbox;
-  const tf = item.transform || {};
-  const px = Number(bbox.u0 || 0) * width;
-  const py = Number(bbox.v0 || 0) * height;
-  const pw = Math.max(1, (Number(bbox.u1 || 0) - Number(bbox.u0 || 0)) * width);
-  const ph = Math.max(1, (Number(bbox.v1 || 0) - Number(bbox.v0 || 0)) * height);
-  const cx = px + pw * 0.5 + (Number(tf.du || 0) * width);
-  const cy = py + ph * 0.5 + (Number(tf.dv || 0) * height);
-  const rot = Number(tf.rot_deg || 0) * (Math.PI / 180);
-  const scale = Math.max(0.01, Number(tf.scale || 1));
-  for (const wrapOffset of [-width, 0, width]) {
-    ctx.save();
-    ctx.translate(cx + wrapOffset, cy);
-    ctx.rotate(rot);
-    ctx.scale(scale, scale);
-    ctx.drawImage(img, -pw * 0.5, -ph * 0.5, pw, ph);
-    ctx.restore();
-  }
 }

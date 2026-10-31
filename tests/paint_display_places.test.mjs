@@ -263,7 +263,7 @@ function editorTrace() {
       },
     };
     const layers = createPaintLayers({
-      api: {}, editor, node: { id: 1 }, rasterErpCanvasCache: new Map(), rasterImageAlphaCache: new Map(), rasterImageCache: new Map(), state,
+      api: {}, editor, node: { id: 1 }, rasterImageAlphaCache: new Map(), rasterImageCache: new Map(), state,
     });
     layers.connect({
       commitState() {}, createRasterSurface: () => null, getActivePaintTargetDescriptor: () => ({ width: size, height: size / 2 }),
