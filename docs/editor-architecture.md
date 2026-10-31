@@ -21,7 +21,8 @@ Panorama のエディタ（Stickers、Cutout、Panorama Studio、Preview のモ�
 | 描き直しは `requestDraw` からだけ頼む | — | `web_src/editor/render_loop.js` `requestDraw`・`tickFrame`・`drawScene` | — |
 | エディタのタイマーと閉じるときの片付け（タイマーを全部止める、閉じた後の `requestDraw` は何もしない、背景の VIDEO の `src` を放す） | — | `web_src/pano_timers.js` `createTimers`、`web_src/pano_editor.js` の閉じる処理、`editor/render_loop.js` `stopRenderLoop`、`editor/media_session.js` `disposeMediaSession` | — |
 | ストロークの記録と確定（筆の色、記録の形、点の間引きと `processedPoints`、ラスタ化、ストロークのまとまりと `z_index`、消しゴムがラスタに変えること）。古い UI と新しい UI が同じ関数で書くので、二つが書く `painting` は同じ形 | 比べ先は `core/painting.py`（同じ `painting` を描く） | `web_src/pano_paint_strokes.js`（古い UI は `editor/paint_input.js`・`paint_strokes.js`・`items.js` が、新しい UI は `studio/paint.js` が呼ぶ） | `tests/pano_paint_strokes.test.mjs`、`tests/editor_paint.test.mjs` |
-| ペイントの層をフロントで並べる部品（3 か所が同じ関数を使う、素材の渡し方、`painting` の正規化、表示が変わった矩形） | 比べ先は `core/render.py` `_sky_layers` | `web_src/pano_paint_layers.js` `skyPaintLayers`・`engineMask`、`web_src/pano_paint_damage.js`、`web_src/pano_raster_eraser.js`、`web_src/pano_paint_engine.js` `getGroupDisplay`・`getMaskDisplay`、`web_src/editor/paint_layers.js` `buildEditorViewPaintLayers`、`web_src/pano_surface_paint.js` `surfacePaintLayers`、`web_src/pano_upstream_layers.js` `paintLayers` | `tests/pano_paint_layers.test.mjs`、`tests/pano_paint_damage.test.mjs`、`tests/pano_raster_eraser.test.mjs`、`tests/test_paint_layers_parity.py`、`tests/pano_surface_paint.test.mjs`、`tests/architecture.test.mjs`（どこも `skyPaintLayers` を `pano_paint_layers.js` から import する） |
+| ペイントの層をフロントで並べる部品（4 か所が同じ関数を使う、素材の渡し方、`painting` の正規化、表示が変わった矩形） | 比べ先は `core/render.py` `_sky_layers` | `web_src/pano_paint_layers.js` `skyPaintLayers`・`engineMask`、`web_src/pano_paint_damage.js`、`web_src/pano_raster_eraser.js`、`web_src/pano_paint_engine.js` `getGroupDisplay`・`getMaskDisplay`。`skyPaintLayers` を呼ぶのは下の行の `web_src/pano_paint_display.js` `createPaintDisplay` だけ | `tests/pano_paint_layers.test.mjs`、`tests/pano_paint_damage.test.mjs`、`tests/pano_raster_eraser.test.mjs`、`tests/test_paint_layers_parity.py`、`tests/architecture.test.mjs`（`skyPaintLayers` を import するのは `pano_paint_display.js` だけ） |
+| ペイントを Sky の層にして見せる場所ごとの持ち物（ラスタオブジェクトを ERP のキャンバスに置く式、そのキャンバスを作り直す時と手放す時、その画像の読み込み、読むだけの場所のペイントエンジンと `revision`）。新しい UI、古い UI、ノード上の面、上流の Scene の層の 4 か所が同じ module を通り、場所ごとの違いは module の中の一つの表に置く | — | `web_src/pano_paint_display.js` `createPaintDisplay`・`placeRasterObjectErp`・`drawRasterObjectErp`・`PAINT_DISPLAY_PLACES`。呼ぶのは `web_src/studio/paint.js` `createStudioPaint`、`web_src/editor/paint_layers.js` `buildEditorViewPaintLayers`・`buildRasterObjectEditCanvas`、`web_src/pano_surface_paint.js` `surfacePaintLayers`、`web_src/pano_upstream_layers.js` `paintLayers` | `tests/pano_paint_display.test.mjs`、`tests/paint_display_places.test.mjs`、`tests/pano_surface_paint.test.mjs`、`tests/browser/paint_rasters.spec.js` |
 | ノードへ送るペイントの層のアップロード（送る画像とファイル名、置き場所、`painting_layer` の形）。古い UI と新しい UI が同じ関数で送る | 読むのは `comfy_image_resolver.py` `resolve_painting_layer_payload` | `web_src/pano_paint_upload.js`（古い UI は `editor/paint_layers.js` `syncPaintingLayerAsync`、新しい UI は `studio/paint_upload.js`） | `tests/pano_paint_upload.test.mjs` |
 | ノードごとの実行時の状態は node bridge に置く（グループ、片付け、許可する `__pano*` の一覧） | — | `web_src/pano_node_bridge.js`、`web_src/pano_editor_extension.js` の `onRemoved` | `tests/pano_node_bridge.test.mjs`、`tests/pano_editor_extension.test.mjs`、`tests/architecture.test.mjs`（`__pano*` の一覧） |
 
@@ -229,8 +230,8 @@ Undo の段を積まず、`state_json` にも書かない。
 
 ## Paint layers
 
-ペイントを Sky の層（ERP のキャンバス）に並べるのは、エディタ、ノード上の面、上流の Scene の層の 3 か所で、
-どれも `web_src/pano_paint_layers.js` の `skyPaintLayers(state, { group, raster, mask })` を使う。
+ペイントを Sky の層（ERP のキャンバス）に並べるのは、新しい UI、古い UI、ノード上の面、上流の Scene の層の 4 か所で、
+どれも `web_src/pano_paint_display.js` の `createPaintDisplay` を通して `web_src/pano_paint_layers.js` の `skyPaintLayers(state, { group, raster, mask })` を使う。
 どの層があり、どの順と `z_index` で並ぶかはこの関数だけが決め、ノードの描画（`core/render.py` の
 `_sky_layers`、`docs/scene-state-v2.md` の「Sky の重なり順」）と同じにする。
 
@@ -242,9 +243,12 @@ Undo の段を積まず、`state_json` にも書かない。
 - `painting_visible` が `false` なら何もなく、素材も求めない。
 - 戻り値の `zIndex` で、`skyLayers`（`pano_editor_view.js`）が `sky` の Sticker の間に入れる（同じ値なら Sticker が下）。
 
-画素は呼び出し側が自分のペイントエンジン（`pano_paint_engine.js`）とラスタのキャッシュで描き、
+画素は場所ごとの `createPaintDisplay` がペイントエンジン（`pano_paint_engine.js`）とラスタのキャッシュで描き、
 `{ media, revision, changed? }` を返す関数で渡す（描くものがなければ `null`。エンジンにそのグループの画素がない、
-画像が読み込み中など）。エンジンとキャッシュの持ち主と寿命は呼び出し側のまま。
+画像が読み込み中など）。ラスタのキャンバスは `createPaintDisplay` が持つ。その画像を誰が持つかは場所ごとに違い、`PAINT_DISPLAY_PLACES` の表に書く。エンジンは、描く場所（新しい UI、
+古い UI）では呼び出し側が持って渡し、読むだけの場所（ノード上の面、上流の Scene の層）では `createPaintDisplay` が持つ。
+場所ごとの違い（キャンバスを作り直す時と手放す時、画像の持ち方、置く式の 1 px への引き上げ、マスクを見せるか）は `pano_paint_display.js` の
+`PAINT_DISPLAY_PLACES` の表だけに書く。
 
 `changed(revision)` は、前の `revision` から `media` が変わった矩形（`pano_paint_damage.js` の矩形の並び）を返し、
 知らないときは `null`（全体）を返す。どれだけ多くの変更が二つの読み出しの間にあっても（速いストロークは 1 フレームに
@@ -275,10 +279,10 @@ Undo の段を積まず、`state_json` にも書かない。
 `skyPaintLayers` は正規化した状態（`normalizePaintingState` の `painting`）を受け取る。ノード上の面のうち旧
 Stickers / Cutout ノード（状態 v2 でないもの）は widget の JSON をそのまま読む（`parseState`）ので、`painting` が
 無いか欠けていることがある。`surfacePaintLayers` は `painting` を正規化してから渡し、同じ `painting` の間は
-正規化の結果を面のレコード（`nodeSurface(node).paintState`）に持つ。面のエンジンは `painting` が変わるたびに
-描き直し、`paintRevisionKey` にその回数を数えるので、同じグループにストロークを足しても（キャンバスも数も同じでも）
+正規化の結果を面のレコード（`nodeSurface(node).paintState`）に持つ。面のエンジン（面のレコードの `paintDisplay` が持つ）は `painting` が変わるたびに
+描き直し、その回数を `revision` に数えるので、同じグループにストロークを足しても（キャンバスも数も同じでも）
 ビューはキャンバスを上げ直す。ノード上の面でペイントを隠すと、ラスタオブジェクトのキャンバスを手放し
-（`rasterCache.retain([])`）、見せたときに作り直す。
+（`paintDisplay` が尋ねられなかったラスタを手放す）、見せたときに作り直す。
 
 既知の問題：
 
