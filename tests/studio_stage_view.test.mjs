@@ -23,7 +23,7 @@ import {
   saveTimelineHeight,
   timelineHeight,
 } from "../web_src/studio/layout.js";
-import { LENS_PAN_MAX_DEG, STAGE_CLEAR_COLOR, STAGE_RENDER_MAX_SIDE, STAGE_RENDER_SCALE, cameraFrameView, frameViewFov, groundDepth, lensPickView, lensPinholePoint, outputView, stageCamera, stageRay, stageRenderInput, stageRenderSize, surfaceHit } from "../web_src/studio/stage_view.js";
+import { LENS_PAN_MAX_DEG, STAGE_CLEAR_COLOR, STAGE_RENDER_MAX_SIDE, STAGE_RENDER_SCALE, cameraFrameHit, cameraFrameView, frameViewFov, groundDepth, lensPickView, lensPinholePoint, outputView, stageCamera, stageRay, stageRenderInput, stageRenderSize, surfaceHit } from "../web_src/studio/stage_view.js";
 import { eyeHeight, eyeLengths } from "../web_src/studio/view_scale.js";
 
 const close = (actual, expected, eps = 1e-9) => assert.ok(Math.abs(actual - expected) <= eps, `${actual} != ${expected}`);
@@ -254,4 +254,19 @@ test("the Frame view's H FOV for its amounts is the pinhole of the image center'
   // The frame's half width is f · lens_radius(H FOV / 2): tan(fov / 2) is that in units of f.
   close(Math.tan(fov * Math.PI / 360), Math.tan(0.5 * 100 * Math.PI / 180) / 0.5, 1e-9);
   assert.ok(fov < 180);
+});
+
+test("the Frame view's hits go by the lens picture only for a κ not shown as 1.00", async () => {
+  // docs/space-and-view.md "レンズの Camera の当たり" (pano_lens.js lensCurveBent).
+  const { cameraShot } = await import("../web_src/pano_editor_state.js");
+  const fit = { frame: { x: 120, y: 61, width: 568, height: 320 }, width: 808, height: 505, distance: 2, radius: 40 };
+  const shotAt = (curve) => cameraShot(loadSceneState({ version: 2, camera: { aspect: 16 / 9, fov: { value: 60 }, curve: { value: curve } } }).camera, 0);
+  const shown = cameraFrameHit(shotAt(0.998), fit);
+  assert.ok(shown.view.lens, "the picture keeps its κ");
+  assert.equal(shown.hitLens, null);
+  assert.equal(shown.objectCamera.lensImage, undefined, "a κ shown as 1.00 is a pinhole for the hits");
+  const bent = cameraFrameHit(shotAt(0.8), fit);
+  assert.equal(bent.hitLens.curve, 0.8);
+  assert.equal(bent.objectCamera.lensImage, bent.view.lens);
+  assert.equal(cameraFrameHit(shotAt(1), fit).objectCamera.lensImage, undefined);
 });

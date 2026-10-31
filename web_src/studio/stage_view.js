@@ -4,7 +4,7 @@
 // lower three.js view (pano_three_view.js render). Pure: the GPU pick comes in as a point.
 import { getCutoutCameraParams, shotCurve } from "../pano_cutout_view_math.js";
 import { frameViewContext, placeDirection, screenRenderSize, shotCamera } from "../pano_editor_view.js";
-import { lensAngle, lensPickWindow } from "../pano_lens.js";
+import { lensAngle, lensCurveBent, lensFilm, lensPickWindow, withLensImage } from "../pano_lens.js";
 import { evaluateCamera } from "../pano_scene_eval.js";
 import { DEFAULT_VIEW_HFOV, placedCamera, spaceCamera } from "../pano_space.js";
 import { groundGrid } from "./grid.js";
@@ -73,6 +73,17 @@ export function cameraFrameView({ shot, frame, width, height, distance, radius }
   return { camera, rect: context.rect, lens: context.lens ?? null, shot: context.shot };
 }
 
+// The Frame view of the Camera `shot` as cameraFrameView() takes it (`fit`: { frame, width, height, distance, radius }),
+// with what its hits, guides and gizmo go by (docs/space-and-view.md "レンズの Camera の当たり"): { view (the picture's,
+// cameraFrameView()), hit (the same at κ 1 for a κ shown as 1.00, pano_lens.js lensCurveBent; else `view`), hitLens
+// (a lens Camera's picture, or null), objectCamera (hit's camera, carrying hitLens: pano_lens.js withLensImage) }.
+export function cameraFrameHit(shot, fit) {
+  const view = cameraFrameView({ shot, ...fit });
+  const bent = !!view.lens && lensCurveBent(view.lens.curve);
+  const hit = view.lens && !bent ? cameraFrameView({ shot: { ...shot, curve: 1 }, ...fit }) : view;
+  return { view, hit, hitLens: bent ? view.lens : null, objectCamera: bent ? withLensImage(hit.camera, view.lens) : hit.camera };
+}
+
 // The H FOV (degrees) the Frame view's amounts take of `shot` (docs/space-and-view.md "レンズの Camera の当たり"): its own
 // for a pinhole; for a lens Camera (κ ≠ 1) the pinhole of its image center's scale over the frame, 2·atan(W ÷ 2f), under
 // 180° even where the lens's H FOV is past it.
@@ -85,12 +96,6 @@ export function frameViewFov(shot) {
 export const LENS_PAN_MAX_DEG = 89;
 // The side (px) of the cube face a lens pick draws its pixel in (pano_lens.js lensPickWindow).
 const LENS_PICK_SIZE = 1024;
-
-// The film point (units of f, x right and y up) of the point (x, y) of a lens Camera's Frame view, in the px of `lens`
-// (cameraFrameView()'s: { curve, focalPx, centerX, centerY }).
-function lensFilm(lens, x, y) {
-  return { x: (x - lens.centerX) / lens.focalPx, y: (lens.centerY - y) / lens.focalPx };
-}
 
 // Where a lens Camera's Frame view (cameraFrameView()'s { camera, lens }) picks the point (x, y) of its rect: the World-
 // aligned cube face the pointer's ray crosses, as a pinhole camera of a square view, and that ray's pixel in it —

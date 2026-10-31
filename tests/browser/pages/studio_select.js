@@ -1,5 +1,5 @@
 // The new editor (web_src/studio/editor.js) on a stand-in Panorama Studio node whose state has a sky image, a world
-// image plane and a Frame mode Camera, over an ERP made in the page, for tests/browser/studio_select.spec.js (selecting,
+// image plane and a Frame mode Camera (?curve= its lens κ, ?sky=yaw,pitch its sky image's direction), over an ERP made in the page, for tests/browser/studio_select.spec.js (selecting,
 // the guides, the gizmo, the sky image's handles and the bar at the bottom center). ComfyUI is not used. The page
 // reports through window.__studio.
 import { editorSession } from "/web_src/pano_node_bridge.js";
@@ -51,6 +51,8 @@ const board = canvasUrl(128, 128, (g) => {
   g.fillRect(16, 16, 96, 96);
 });
 
+const skyAt = new URLSearchParams(location.search).get("sky")?.split(",").map(Number) ?? null;
+
 export const STATE = {
   version: 2,
   timeline: { fps: 24, length: 48 },
@@ -60,13 +62,16 @@ export const STATE = {
     position: { value: [-1.3, -0.5, -1.6] },
     rotation: { value: { yaw_deg: 25, pitch_deg: 0, roll_deg: 0 } },
     fov: { value: 60 },
+    // ?curve= the Camera's lens κ (studio_camera_select.spec.js's lens Camera).
+    ...(new URLSearchParams(location.search).has("curve") ? { curve: { value: Number(new URLSearchParams(location.search).get("curve")) } } : {}),
   },
   stickers: [
     {
       id: "sticker_1",
       placement: "sky",
       source: { kind: "file", data_url: poster },
-      direction: { value: { yaw_deg: -38, pitch_deg: 6 } },
+      // ?sky=yaw,pitch places it elsewhere (studio_camera_select.spec.js: in front of the Camera).
+      direction: { value: skyAt ? { yaw_deg: skyAt[0], pitch_deg: skyAt[1] } : { yaw_deg: -38, pitch_deg: 6 } },
       size: { value: { hFOV_deg: 24, vFOV_deg: 18 } },
       z_index: 1,
     },

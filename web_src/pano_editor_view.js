@@ -7,7 +7,7 @@ import { is3dFileSource } from "./pano_scene_state.js";
 import { watchThreeView } from "./pano_diagnostics.js";
 import { DEG2RAD, RAD2DEG, norm } from "./pano_camera_math.js";
 import { contextHalfExtentsPx, getCutoutCameraParams, shotCurve } from "./pano_cutout_view_math.js";
-import { lensRadius, lensRenderPlan } from "./pano_lens.js";
+import { lensImagePoint, lensRadius, lensRenderPlan, lensStageRay, rotateByQuaternion } from "./pano_lens.js";
 import { worldStickerPlane } from "./pano_space.js";
 import { panoToWorld, quaternionToRotation, rotationToQuaternion, worldRotation, worldToPano } from "./pano_world.js";
 
@@ -103,17 +103,24 @@ export function shotLensImage(shot, width, height, background, lens = null, prev
 
 // The direction, a World [x, y, z] of length 1, a new 3D Sticker is placed along from the view `camera` (a
 // spaceCamera()) of width x height pixels: the ray through `point` (a drop, in those pixels), or through the view's
-// center (the button). It is the direction of pano_pick.js pickRay, which the three.js chunk keeps to itself.
+// center (the button). It is the direction of pano_pick.js pickRay, which the three.js chunk keeps to itself. null on a
+// lens Camera's picture past the lens's limit (viewProjection's `ray`).
 export function placeDirection(camera, point, width, height) {
   const at = point ?? { x: width / 2, y: height / 2 };
-  const { x, y, z } = panoToWorld(viewProjection(camera, width, height).ray(at.x, at.y));
+  const ray = viewProjection(camera, width, height).ray(at.x, at.y);
+  if (!ray) return null;
+  const { x, y, z } = panoToWorld(ray);
   return [x, y, z];
 }
 
 // The screen mapping of a width x height view drawn with camera (a viewportCamera() or shotCamera()
 // setup), the same projection the three.js camera renders with. Hit testing and the 2D overlays
 // use it so they line up with the drawn frame. Directions are in the panorama convention.
+// A camera carrying a lens picture (pano_lens.js withLensImage) maps through the lens (pano_lens.js lensImagePoint,
+// lensStageRay): `project` gives z 1 for a direction the lens images and NaN past its limit; `ray` gives null past
+// the limit (there is no ray there: a drag through such a point keeps its last value).
 export function viewProjection(camera, width, height) {
+  if (camera.lensImage) return lensViewProjection(camera, width, height);
   const [[m11, m12, m13], [m21, m22, m23], [m31, m32, m33]] = quaternionToRotation(camera.quaternion);
   const tanY = Math.tan(camera.fovY_deg * 0.5 * DEG2RAD);
   const tanX = tanY * camera.aspect;
@@ -143,6 +150,27 @@ export function viewProjection(camera, width, height) {
         y: m21 * px + m22 * py - m23,
         z: m31 * px + m32 * py - m33,
       }));
+    },
+  };
+}
+
+function lensViewProjection(camera, width, height) {
+  const back = { x: -camera.quaternion.x, y: -camera.quaternion.y, z: -camera.quaternion.z, w: camera.quaternion.w };
+  return {
+    width,
+    height,
+    // The picture is bent: a straight line between two directions is not straight on it (pano_lens.js lensPolylines).
+    bent: true,
+    project(dir) {
+      const world = panoToWorld(dir);
+      const at = lensImagePoint(camera.lensImage, rotateByQuaternion(back, [world.x, world.y, world.z]));
+      return at ? { x: at.x, y: at.y, z: 1 } : { x: NaN, y: NaN, z: NaN };
+    },
+    ray(x, y) {
+      const hit = lensStageRay(camera, x, y);
+      if (!hit) return null;
+      const [dx, dy, dz] = hit.direction;
+      return norm(worldToPano({ x: dx, y: dy, z: dz }));
     },
   };
 }

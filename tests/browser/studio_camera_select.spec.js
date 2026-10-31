@@ -283,19 +283,164 @@ test("Camera tab on a Camera whose κ shows as 1.00 (0.998): taken as a pinhole,
   expect(problems).toEqual([]);
 });
 
-test("Camera tab on a lens Camera: a selected object shows its card and its bar, but no gizmo and nothing on the overlay", async ({ page }) => {
-  const problems = await load(page, "aspect=16:9&mode=frame&curve=0.5");
+// The share of the red plane's edge pixels on the stage (its lens image) that have an overlay pixel within `reach` CSS px:
+// the guide drawn on the bent picture lies along it.
+const guideAlongRed = (page, reach = 3) => page.evaluate(({ reach }) => {
+  const stage = document.querySelector("[data-stage-canvas]");
+  const overlay = document.querySelector("[data-stage-overlay]");
+  const box = stage.getBoundingClientRect();
+  const w = Math.round(box.width);
+  const h = Math.round(box.height);
+  const probe = document.createElement("canvas");
+  probe.width = w;
+  probe.height = h;
+  const g = probe.getContext("2d", { willReadFrequently: true });
+  g.drawImage(stage, 0, 0, w, h);
+  const pixels = g.getImageData(0, 0, w, h).data;
+  const red = (x, y) => {
+    const i = (y * w + x) * 4;
+    return pixels[i] > 150 && pixels[i + 1] < 90 && pixels[i + 2] < 90;
+  };
+  const ratio = overlay.width / box.width;
+  const lines = overlay.getContext("2d").getImageData(0, 0, overlay.width, overlay.height).data;
+  const drawn = (x, y) => {
+    for (let dy = -reach; dy <= reach; dy += 1) {
+      for (let dx = -reach; dx <= reach; dx += 1) {
+        const ox = Math.round((x + dx) * ratio);
+        const oy = Math.round((y + dy) * ratio);
+        if (ox < 0 || oy < 0 || ox >= overlay.width || oy >= overlay.height) continue;
+        if (lines[(oy * overlay.width + ox) * 4 + 3] > 40) return true;
+      }
+    }
+    return false;
+  };
+  let edge = 0;
+  let near = 0;
+  for (let y = 1; y < h - 1; y += 1) {
+    for (let x = 1; x < w - 1; x += 1) {
+      if (!red(x, y) || (red(x - 1, y) && red(x + 1, y) && red(x, y - 1) && red(x, y + 1))) continue;
+      edge += 1;
+      if (drawn(x, y)) near += 1;
+    }
+  }
+  return { edge, near, share: edge ? near / edge : 0 };
+}, { reach });
+
+const cursorAt = async (page, p) => {
+  await page.mouse.move(p.x, p.y);
+  return page.locator("[data-stage-canvas]").evaluate((el) => el.style.cursor);
+};
+
+// docs/space-and-view.md "レンズの Camera の当たり": a lens Camera (κ 0.8) draws the guides, the gizmo and the sky image's
+// handles on its bent picture, and they are hit and dragged there as on a pinhole.
+test("Camera tab on a lens Camera: the guides lie on the bent picture, nothing selected", async ({ page }) => {
+  const problems = await load(page, "aspect=16:9&mode=frame&curve=0.8", { width: 1920, height: 1080 });
   await toTab(page, "Camera");
+  await page.mouse.move(5, 5);
   await page.waitForTimeout(200);
-  expect((await overlayPixels(page)).any, "no guide on a lens Camera").toBe(0);
+  const shown = await overlayPixels(page);
+  expect(shown.any, "the guides are drawn").toBeGreaterThan(40);
+  expect(shown.yellow).toBe(0);
+  const along = await guideAlongRed(page);
+  console.log(`red edge pixels ${along.edge}, with a guide within 3px ${along.near} (${(along.share * 100).toFixed(1)}%)`);
+  expect(along.edge).toBeGreaterThan(100);
+  expect(along.share).toBeGreaterThan(0.8);
+  // The hover lights the red plane's guide where the lens shows it.
   const red = await redOnPage(page);
-  expect(red).not.toBeNull();
+  expect(await cursorAt(page, red)).toBe("default");
+  expect(problems).toEqual([]);
+});
+
+test("Camera tab on a lens Camera: a selected object's gizmo sits on it and its drag keeps the grabbed point under the pointer; an empty drag moves the Camera", async ({ page }) => {
+  const problems = await load(page, "aspect=16:9&mode=frame&curve=0.8", { width: 1920, height: 1080 });
+  await toTab(page, "Camera");
+  const red = await redOnPage(page);
   await page.mouse.click(red.x, red.y);
   await expect.poll(() => selected(page)).toBe("sticker_1");
-  expect(await cards(page)).toEqual(["camera", "world"]);
-  await expect(page.locator('.pano-studio-at-bar [data-kind="world-image"]')).toHaveCount(1);
   await page.waitForTimeout(200);
-  expect((await overlayPixels(page)).any).toBe(0);
+  expect((await overlayPixels(page)).yellow).toBeGreaterThan(40);
+  expect((await guideAlongRed(page)).share, "the selected guide on the bent outline").toBeGreaterThan(0.8);
+  // Move's center dot sits on the plane's middle as the lens shows it.
+  const body = await redOnPage(page);
+  const grip = await grabNear(page, body, 30);
+  expect(grip, "the gizmo's center dot on the object").not.toBeNull();
+  const startPosition = await position(page, 0);
+  const startCamera = await camera(page);
+  await dragBy(page, grip, 60, 30);
+  expect(await position(page, 0)).not.toBe(startPosition);
+  expect((await camera(page)).yaw_deg).toBeCloseTo(startCamera.yaw_deg, 6);
+  const after = await redOnPage(page);
+  console.log(`red moved by (${(after.x - body.x).toFixed(1)}, ${(after.y - body.y).toFixed(1)}) for a drag of (60, 30)`);
+  expect(Math.abs(after.x - body.x - 60)).toBeLessThan(6);
+  expect(Math.abs(after.y - body.y - 30)).toBeLessThan(6);
+  // The grabbed handle is still under the pointer where the drag let go.
+  expect(await cursorAt(page, { x: grip.x + 60, y: grip.y + 30 })).toBe("grab");
+  await page.keyboard.press("Control+z");
+  expect(await position(page, 0)).toBe(startPosition);
+  // A drag on empty space looks around with the Camera; the object stays.
+  const frame = await rectOf(page, "[data-frame-box]");
+  await dragBy(page, { x: frame.x + frame.width * 0.85, y: frame.y + frame.height * 0.15 }, 60, 0);
+  expect((await camera(page)).yaw_deg).toBeLessThan(startCamera.yaw_deg - 3);
+  expect(await position(page, 0)).toBe(startPosition);
+  expect(problems).toEqual([]);
+});
+
+test("Camera tab on a lens Camera: the selected sky image's handles sit on its bent frame and a corner scales it", async ({ page }) => {
+  // tests/browser/pages/studio_select.html draws its sky image (this page's sky image does not load as a layer).
+  const problems = watch(page);
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  // The sky image 14° right of and 10° above the Camera's axis (its yaw 25, pitch 0).
+  await page.goto("/tests/browser/pages/studio_select.html?curve=0.8&sky=39,10");
+  await page.waitForFunction(() => window.__studio?.ready, null, { timeout: 30_000 });
+  expect(await page.evaluate(() => window.__studio.error)).toBeNull();
+  await page.waitForTimeout(400);
+  await toTab(page, "Camera");
+  // Its frame: the poster's orange on the stage.
+  const stage = await stageBox(page);
+  const poster = await page.evaluate((rgb) => {
+    const canvas = document.querySelector("[data-stage-canvas]");
+    const box = canvas.getBoundingClientRect();
+    const probe = document.createElement("canvas");
+    probe.width = Math.round(box.width);
+    probe.height = Math.round(box.height);
+    const g = probe.getContext("2d", { willReadFrequently: true });
+    g.drawImage(canvas, 0, 0, probe.width, probe.height);
+    const data = g.getImageData(0, 0, probe.width, probe.height).data;
+    let sx = 0;
+    let sy = 0;
+    let n = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      if (Math.abs(data[i] - rgb[0]) < 40 && Math.abs(data[i + 1] - rgb[1]) < 40 && Math.abs(data[i + 2] - rgb[2]) < 40) {
+        sx += (i / 4) % probe.width;
+        sy += Math.floor(i / 4 / probe.width);
+        n += 1;
+      }
+    }
+    return n > 50 ? { x: sx / n, y: sy / n } : null;
+  }, [0xd9, 0x57, 0x3f]);
+  const at = poster ? { x: stage.x + poster.x, y: stage.y + poster.y } : null;
+  console.log(`sky image at ${JSON.stringify(at)}`);
+  expect(at, "the sky image shows").not.toBeNull();
+  await page.mouse.click(at.x, at.y);
+  await expect.poll(() => selected(page)).toBe("sticker_1");
+  await page.waitForTimeout(200);
+  // A corner handle: the cursor turns into a diagonal resize near the image's corners.
+  let corner = null;
+  for (let r = 20; r <= 260 && !corner; r += 3) {
+    for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+      const p = { x: at.x + sx * r * 1.3, y: at.y + sy * r };
+      if (/nwse|nesw/.test(await cursorAt(page, p))) {
+        corner = { ...p, sx, sy };
+        break;
+      }
+    }
+  }
+  expect(corner, "a corner handle of the sky image").not.toBeNull();
+  const size = () => page.evaluate(() => window.__studio.session.state.stickers.find((item) => item.id === "sticker_1").size.value.hFOV_deg);
+  const before = await size();
+  await dragBy(page, corner, corner.sx * 50, corner.sy * 40);
+  expect(await size()).toBeGreaterThan(before * 1.2);
+  expect(await selected(page)).toBe("sticker_1");
   expect(problems).toEqual([]);
 });
 
