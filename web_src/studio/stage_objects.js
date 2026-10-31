@@ -15,15 +15,16 @@
 //   6. nothing: the stage looks around, and a press let go without moving lets the selection go.
 // The Camera tab's Frame view does the same for the selected object (its gizmo, its handles, its body: docs/studio-ui.md
 // "Camera タブ", ADR 0051); a press on any other object, or on a locked one, selects it and its drag is the stage's,
-// which moves the Camera (the handler says `passes`). The Camera selected there shows no gizmo (the view is inside it), and on a lens Camera
-// (`lens()`, whose bent picture the gizmo and the handles cannot be drawn on) no gizmo or handle shows and every press
-// passes.
+// which moves the Camera (the handler says `passes`). The Camera selected there shows no gizmo (the view is inside it).
+// On a lens Camera's Frame view `camera()` carries the bent picture (pano_lens.js withLensImage): the guides, the hover,
+// the gizmo, the handles and the drags all map through it (docs/space-and-view.md "レンズの Camera の当たり").
 //
 // A drag writes through `edits`: edits.live(apply) on each move (apply(draft) changes a copy of the state the drag
 // started from), edits.commit() at the end (one Undo step when it changed something), edits.cancel() when it is given
 // up. An object's drag writes its Lanes by the recording rule (docs/timeline-ui.md "記録の規則"); a paint group's writes
 // the painting as it is (it has no Lanes).
 import { viewProjection } from "../pano_editor_view.js";
+import { lensPolylines } from "../pano_lens.js";
 import { setStickerPose, setWorldStickerTransform } from "../pano_editor_state.js";
 import { evaluateCamera, evaluateSticker } from "../pano_scene_eval.js";
 import { gizmoDragLanes, sceneTransform } from "../pano_space.js";
@@ -50,7 +51,7 @@ import { ROTATE_SNAP_DEG } from "./view_scale.js";
 import { shownGizmoMode, selectedKind } from "./selection_bar.js";
 import { cameraMarkerHit, cameraMarkerLength, cameraMarkerScreen, cameraMarkerShape, cameraMarkerShown } from "./camera_marker.js";
 import { gizmoDrag as startGizmoDrag, gizmoGuideSegment, gizmoHandles, gizmoHit } from "./gizmo_overlay.js";
-import { guideLook, pointInPolygon, screenSegment, worldGuideItems } from "./world_guides.js";
+import { guideLook, pointInPolygon, screenLines, worldGuideItems } from "./world_guides.js";
 import { coarseUnder } from "./hit_test.js";
 
 // The cursor over an object's body (hit_test.js's rule: the default arrow; handles bring their own).
@@ -113,15 +114,19 @@ function screenOfErp(projection, point) {
   return at.z > 1e-4 ? { x: at.x, y: at.y } : null;
 }
 
-// The ERP point under the screen point `point` of `projection`.
+// The ERP point under the screen point `point` of `projection`, or null where it has no ray (past a lens Camera's
+// limit).
 function erpUnder(projection, point) {
-  return erpPointOfDirection(projection.ray(point.x, point.y));
+  const direction = projection.ray(point.x, point.y);
+  return direction ? erpPointOfDirection(direction) : null;
 }
 
-// A paint group's frame on the screen of `projection`: { visible, center, corners } (a stroke group's frame is its
-// strokeGroupFrame, a raster object's its transformed box), as the old editor's editor/object_geometry.js. Not visible
-// when its center or a corner is behind the view: the frame and its handles are not drawn then (its strokes are still
-// hit, paintPaths).
+// A paint group's frame on the screen of `projection`: { visible, center, corners, outline } (a stroke group's frame is
+// its strokeGroupFrame, a raster object's its transformed box), as the old editor's editor/object_geometry.js. Not
+// visible when its center or a corner is behind the view: the frame and its handles are not drawn then (its strokes
+// are still hit, paintPaths). `outline` is the frame's edge through its corners: the corners themselves on a pinhole,
+// each edge bent on a lens Camera's picture (`projection.bent`; pano_lens.js lensPolylines, as the guides), or not
+// visible when an edge leaves what the lens images.
 function paintFrame(state, object, projection) {
   let center = null;
   let cornersUv;
@@ -137,7 +142,22 @@ function paintFrame(state, object, projection) {
   if (corners.length < 4 || corners.some((corner) => !corner)) return { visible: false };
   if (object.kind === "raster") center = { x: corners.reduce((sum, p) => sum + p.x, 0) / 4, y: corners.reduce((sum, p) => sum + p.y, 0) / 4 };
   if (!center) return { visible: false };
-  return { visible: true, center, corners };
+  if (!projection.bent) return { visible: true, center, corners, outline: corners };
+  const directions = cornersUv.map((point) => {
+    const { x, y, z } = directionOfErpPoint(point);
+    return [x, y, z];
+  });
+  const project = ([x, y, z]) => {
+    const at = projection.project({ x, y, z });
+    return at.z > 1e-4 ? at : null;
+  };
+  const outline = [];
+  for (let index = 0; index < directions.length; index += 1) {
+    const runs = lensPolylines(project, directions[index], directions[(index + 1) % directions.length]);
+    if (runs.length !== 1) return { visible: false };
+    outline.push(...runs[0].slice(0, -1).map(({ x, y }) => ({ x, y })));
+  }
+  return { visible: true, center, corners, outline };
 }
 
 // A stroke group's strokes on the screen of `projection`, as pano_paint_objects.js strokePathsHit takes them: each
@@ -174,13 +194,16 @@ function paintDraft(base, object) {
 // The key of a view (a three.js camera setup seen at width x height px) for the caches of the paint's screen shapes.
 function viewKey(camera, width, height) {
   const q = camera.quaternion;
-  return `${q.x},${q.y},${q.z},${q.w}|${camera.fovY_deg}|${camera.aspect}|${width}|${height}`;
+  const lens = camera.lensImage;
+  const bent = lens ? `|${lens.curve},${lens.focalPx},${lens.centerX},${lens.centerY}` : "";
+  return `${q.x},${q.y},${q.z},${q.w}|${camera.fovY_deg}|${camera.aspect}|${width}|${height}${bent}`;
 }
 
 // state(), content() (stage_content.js stageContent()), playhead(): the working state, what is drawn of it and the
-// Timeline frame. camera() and size(): the stage's three.js camera (stage_view.js stageCamera()) and its CSS size.
+// Timeline frame. camera() and size(): the stage's three.js camera (stage_view.js stageCamera(); on a lens Camera's
+// Frame view one carrying its picture, pano_lens.js withLensImage) and its CSS size.
 // selection(): the selected row ("camera", a Sticker id, a paint group's `paint_group:` / `raster:` row, or null); select(row) selects (null lets go). mode(): the
-// gizmo's mode. tab(): "3d" or "camera". lens(): the Camera tab shows a lens Camera's Frame view. ground(): the ground
+// gizmo's mode. tab(): "3d" or "camera". ground(): the ground
 // height. readOnly(): no edits. loading: load_reveal.js
 // createLoadReveal()'s for the guides of 3D files just placed (their stand-in box and band), or null.
 // rasterAlpha(item, u, v): the alpha (0..255) of a paint raster object's image at a point of its box (0..1 across), or
@@ -197,7 +220,6 @@ export function createStageObjects({
   edits,
   mode = () => "translate",
   tab = () => "3d",
-  lens = () => false,
   ground = () => -1.6,
   readOnly = () => false,
   loading = null,
@@ -210,8 +232,8 @@ export function createStageObjects({
   // The axis guide lines of the gizmo drag under way (gizmo_overlay.js gizmoDrag's `guides`), or none.
   let dragGuides = [];
 
-  // The objects can be edited on the stage: not read-only, and not on a lens Camera's Frame view.
-  const editable = () => !readOnly() && !(tab() === "camera" && lens());
+  // The objects can be edited on the stage: not read-only.
+  const editable = () => !readOnly();
 
   function stickerOf(id) {
     return state().stickers.find((item) => item.id === id) ?? null;
@@ -222,29 +244,21 @@ export function createStageObjects({
     return { ...evaluateCamera(shown, playhead()), projection: shown.projection, visible: shown.visible !== false };
   }
 
-  // The views seen lately ({ key, projection, state, frames, paths }: the stage's, and a lens Camera's cube face), with
-  // the paint's screen shapes made in them for the state they were made for: a hover does not project the paint again
-  // until the view or the state changes.
-  const views = [];
-  function viewOf(view, width, height) {
+  // The stage's view now ({ key, projection, state, frames, paths }), with the paint's screen shapes made in it for the
+  // state they were made for: a hover does not project the paint again until the view or the state changes.
+  let seen = null;
+  function stageView() {
+    const { width, height } = size();
+    const view = camera();
     const key = viewKey(view, width, height);
-    let entry = views.find((item) => item.key === key);
-    if (!entry) {
-      entry = { key, projection: viewProjection(view, width, height), state: null, frames: new Map(), paths: new Map() };
-      views.unshift(entry);
-      views.length = Math.min(views.length, 2);
-    }
+    if (seen?.key !== key) seen = { key, projection: viewProjection(view, width, height), state: null, frames: new Map(), paths: new Map() };
+    const entry = seen;
     if (entry.state !== state()) {
       entry.state = state();
       entry.frames.clear();
       entry.paths.clear();
     }
     return entry;
-  }
-
-  function stageView() {
-    const { width, height } = size();
-    return viewOf(camera(), width, height);
   }
 
   function projection() {
@@ -321,11 +335,12 @@ export function createStageObjects({
     return ordered.objects;
   }
 
-  // The node's own Sky object under `point` in `view` (viewOf: the stage's by default), front to back (skyObjects):
+  // The node's own Sky object under `point`, front to back (skyObjects):
   // { object, geometry } or null (geometry: a sky image's, or a paint group's frame). A sky image is hit inside its
   // edge, a stroke group along its strokes wherever its frame is (pano_paint_objects.js strokePathsHit), a raster
   // object inside its box on the screen where its pixels show (rasterAlphaHits).
-  function skyObjectUnder(point, view = stageView()) {
+  function skyObjectUnder(point) {
+    const view = stageView();
     for (const object of skyObjectsNow()) {
       if (object.kind === "sky") {
         const geometry = buildStickerGeometry(object.item, view.projection);
@@ -337,8 +352,10 @@ export function createStageObjects({
         continue;
       }
       const geometry = frameIn(view, object);
-      if (!geometry.visible || !pointInPoly(point, geometry.corners)) continue;
-      const alpha = rasterObjectAlphaAt(object.item, erpUnder(view.projection, point), (u, v) => rasterAlpha(object.item, u, v));
+      if (!geometry.visible || !pointInPoly(point, geometry.outline)) continue;
+      const under = erpUnder(view.projection, point);
+      if (!under) continue;
+      const alpha = rasterObjectAlphaAt(object.item, under, (u, v) => rasterAlpha(object.item, u, v));
       if (rasterAlphaHits(alpha)) return { object, geometry };
     }
     return null;
@@ -364,11 +381,10 @@ export function createStageObjects({
   // "ホバーの判定"): the coarse grid of each 3D item (hit_test.js coarseUnder; a box whose grid is not built yet by its
   // guide), a plane by its outline. No GPU read.
 
-  // The id of the World object under `point`, or null. `through` ({ camera, width, height }) is the view a lens
-  // Camera's press tests in instead of the stage's (press()).
-  function objectUnder(point, through = null) {
-    const { width, height } = through ?? size();
-    return coarseUnder(guides(), (url) => editorView.sceneGrid?.(url) ?? null, through?.camera ?? camera(), point, width, height);
+  // The id of the World object under `point`, or null.
+  function objectUnder(point) {
+    const { width, height } = size();
+    return coarseUnder(guides(), (url) => editorView.sceneGrid?.(url) ?? null, camera(), point, width, height);
   }
 
   // --- The hover.
@@ -475,6 +491,8 @@ export function createStageObjects({
       move(next, event = {}) {
         if (kind === "move") {
           const moved = moveStickerToScreenPoint(item, { x: next.x - offset.x, y: next.y - offset.y }, projection());
+          // Past a lens Camera's limit there is no ray: the image stays where it was last.
+          if (!moved) return;
           write({ yaw_deg: moved.yaw_deg, pitch_deg: moved.pitch_deg });
           return;
         }
@@ -508,6 +526,7 @@ export function createStageObjects({
     return {
       move(next) {
         const at = erpUnder(projection(), next);
+        if (!start || !at) return;
         edits.live((draft) => {
           const painting = draft.painting;
           if (!painting) return false;
@@ -541,10 +560,7 @@ export function createStageObjects({
 
   // What a left press without Alt at `point` does: a drag handler { move(point, event), end(), cancel() }, or null
   // when it touches nothing (the stage looks around; its click without a move lets the selection go).
-  // `through` ({ camera, width, height }, with `point` in its px) is the view a lens Camera's Frame view picks in (stage_view.js
-  // lensPickView: a cube face's pinhole): the World objects (objectUnder) and the sky images are tested there (docs/space-and-view.md
-  // "レンズの Camera の当たり"). The stage hands it on a lens Camera's Frame view only, where a press only selects.
-  function press(point, through = null) {
+  function press(point) {
     const canEdit = editable();
     // In the Camera tab only the selected object that can be edited takes the drag; a press on another one, or on a
     // locked one, selects it and passes (the drag moves the Camera).
@@ -562,8 +578,7 @@ export function createStageObjects({
       const paint = selectedPaint();
       if (paint && !paint.object.locked && paintHandleAt(paint, point)) return paintDrag("scale", paint.object, paint.geometry, point);
     }
-    const view = through ?? { camera: camera(), ...size() };
-    const picked = objectUnder(point, through);
+    const picked = objectUnder(point);
     if (picked) {
       const pass = passes(picked, !!guides().find((item) => item.id === picked)?.locked);
       select(picked);
@@ -573,7 +588,7 @@ export function createStageObjects({
       select("camera");
       return selectOnly();
     }
-    const under = skyObjectUnder(point, through ? viewOf(view.camera, view.width, view.height) : stageView());
+    const under = skyObjectUnder(point);
     if (under) {
       const { object, geometry } = under;
       const pass = passes(object.row, object.kind === "sky" ? !!object.item.locked : !!object.locked);
@@ -605,10 +620,8 @@ export function createStageObjects({
     const paint = selectedPaint();
     const shownHandles = handles();
     const { width, height } = size();
-    const guideLines = shownHandles ? dragGuides.map((guide) => {
-      const line = screenSegment(camera(), gizmoGuideSegment(guide, camera()), width, height);
-      return line ? { name: guide.name, a: line[0], b: line[1] } : null;
-    }).filter(Boolean) : [];
+    const guideLines = shownHandles ? dragGuides.flatMap((guide) => screenLines(camera(), gizmoGuideSegment(guide, camera()), width, height)
+      .map((points) => ({ name: guide.name, points }))) : [];
     return {
       guides: items,
       // A guide's band runs now (StudioEditor.vue marks the overlay: data-loading-guide).
@@ -623,9 +636,9 @@ export function createStageObjects({
         guides: guideLines,
       } : null,
       sky: sky ? { geometry: sky.geometry, handles: editable() && !sky.item.locked } : null,
-      // The selected paint group's frame (its corners and screen center in CSS px), with its corner handles unless it is
-      // locked or on a lens Camera's Frame view.
-      paint: paint ? { corners: paint.geometry.corners, center: paint.geometry.center, handles: editable() && !paint.object.locked } : null,
+      // The selected paint group's frame (its corners, its edge `outline` (bent on a lens Camera's picture) and screen
+      // center in CSS px), with its corner handles unless it is locked.
+      paint: paint ? { corners: paint.geometry.corners, outline: paint.geometry.outline, center: paint.geometry.center, handles: editable() && !paint.object.locked } : null,
     };
   }
 

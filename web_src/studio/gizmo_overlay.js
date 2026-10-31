@@ -89,15 +89,29 @@ function pivotOf(gizmo) {
   return gizmo.center ? [...gizmo.center] : [...gizmo.transform.position];
 }
 
-// How many World units one CSS px spans at depth `depth` of a `height` px stage seen from `camera`.
-function unitsPerPixel(camera, depth, height) {
-  return depth / focalPixels(camera, height);
+// How many World units one CSS px spans at the World point `at` (seen at depth `depth`) of a width x height px stage
+// seen from `camera`. On a lens Camera's picture (pano_lens.js withLensImage) the scale changes across the image: it
+// is the lens's there, from where a short step across the line of sight lands (projectPoint), so the gizmo keeps its
+// screen size on the bent picture.
+function unitsPerPixel(camera, at, depth, width, height) {
+  if (!camera.lensImage) return depth / focalPixels(camera, height);
+  const sight = unit(sub(at, camera.position));
+  const across = unit(cross(sight, Math.abs(sight[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0]));
+  const step = depth * 1e-3;
+  const center = projectPoint(camera, at, width, height);
+  const pixels = [across, cross(sight, across)].map((dir) => {
+    const p = projectPoint(camera, add(at, scale(dir, step)), width, height);
+    return p && center ? Math.hypot(p.x - center.x, p.y - center.y) : 0;
+  });
+  const mean = (pixels[0] + pixels[1]) / 2;
+  return mean > 0 ? step / mean : depth / focalPixels(camera, height);
 }
 
 // The handles of the gizmo `gizmo` ({ mode ("translate", "rotate", "scale"), transform (pano_space.js sceneTransform's
 // { position, quaternion, scale }), center (the World point it sits on: the object's guide's center, world_guides.js
 // worldGuideItems; the transform's position without one) }) on a width x height CSS px stage seen from `camera` (a
-// stageCamera()), or null when its center is not in front: { mode, center: { x, y }, length (World units of the reach), axes: [{ name, dir,
+// stageCamera(), or one carrying a lens Camera's picture: pano_lens.js withLensImage, whose handles are mapped onto
+// the bent picture point by point), or null when its center is not in front: { mode, center: { x, y }, length (World units of the reach), axes: [{ name, dir,
 // end: { x, y }, depth, shown }], rings: [{ name, dir, points: [{ x, y, world, front }] }], planes (Move only):
 // [{ name ("xy" | "yz" | "xz"), normal (the name of the axis across it), points (its 4 screen corners), shown }] }.
 // Move and Rotate use the World axes, Scale the object's own.
@@ -106,7 +120,7 @@ export function gizmoHandles(gizmo, camera, width, height) {
   const centerWorld = pivotOf(gizmo);
   const center = projectPoint(camera, centerWorld, width, height);
   if (!center) return null;
-  const length = GIZMO_LOOK.reach * unitsPerPixel(camera, center.z, height);
+  const length = GIZMO_LOOK.reach * unitsPerPixel(camera, centerWorld, center.z, width, height);
   const rotation = quaternionToRotation(gizmo.transform.quaternion);
   const dirs = gizmo.mode === "scale" ? [0, 1, 2].map((index) => unit(column(rotation, index))) : WORLD_AXES;
   const eye = camera.position;
@@ -183,14 +197,18 @@ export function gizmoHit(handles, point) {
   return best?.name ?? null;
 }
 
+// The ray through `point`, or null where there is none (past a lens Camera's limit: the drag keeps its last value).
 function ray(camera, point, width, height) {
-  return { origin: camera.position, direction: placeDirection(camera, point, width, height) };
+  const direction = placeDirection(camera, point, width, height);
+  return direction ? { origin: camera.position, direction } : null;
 }
 
 // The parameter t of the point on the line `origin` + t `dir` (dir one unit long) nearest to the ray, or null when
 // they run nearly parallel or that point is not in front of the view (nearer than `near` along the ray: the pointer is
 // past the axis's vanishing point).
-function lineParameter(origin, dir, { origin: from, direction }, near) {
+function lineParameter(origin, dir, line, near) {
+  if (!line) return null;
+  const { origin: from, direction } = line;
   const d = unit(direction);
   const w = sub(origin, from);
   const b = dot(dir, d);
@@ -203,7 +221,9 @@ function lineParameter(origin, dir, { origin: from, direction }, near) {
 
 // Where the ray meets the plane through `origin` across `normal` (one unit long), or null when it runs nearly along
 // the plane or meets it nearer than `near` along the ray.
-export function planeHit({ origin: from, direction }, origin, normal, near = 0) {
+export function planeHit(line, origin, normal, near = 0) {
+  if (!line) return null;
+  const { origin: from, direction } = line;
   const d = unit(direction);
   const along = dot(d, normal);
   if (Math.abs(along) < 1e-6) return null;
@@ -254,6 +274,7 @@ export function gizmoDrag(gizmo, name, camera, point, width, height) {
     // Across the line of sight where it was grabbed.
     const normal = viewForward(camera);
     const hitPlane = (r) => {
+      if (!r) return null;
       const along = dot(r.direction, normal);
       if (Math.abs(along) < 1e-9) return null;
       const t = dot(sub(pivot, r.origin), normal) / along;

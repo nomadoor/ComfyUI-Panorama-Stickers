@@ -150,8 +150,10 @@ export function pickStickerAtPoint(items, selectedId, point, projection) {
   return null;
 }
 
+// null where the projection has no ray (past a lens Camera's limit, pano_editor_view.js viewProjection).
 export function moveStickerToScreenPoint(item, point, projection) {
   const direction = projection.ray(point.x, point.y);
+  if (!direction) return null;
   return {
     ...item,
     yaw_deg: wrapYaw(Math.atan2(direction.x, direction.z) * RAD2DEG),

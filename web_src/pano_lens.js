@@ -71,13 +71,14 @@ export function lensFilmDirection(x, y, kappa) {
   return [x * s, y * s, -Math.cos(theta)];
 }
 
-// The film point of a direction (any length) at κ, or null where the lens does not reach (κθ of 90° or more).
+// The film point of a direction (any length) at κ, or null where the lens does not reach (κθ of 90° or more) and
+// straight behind the axis (θ = 180°, imaged at κ < 0.5 as the whole ring at ρ = π·tan(κπ)/(κπ), not one point).
 export function lensDirectionFilm(direction, kappa) {
   const [x, y, z] = direction;
   const side = Math.hypot(x, y);
   const theta = Math.atan2(side, -z);
   if (!(kappa * theta < Math.PI / 2)) return null;
-  if (side === 0) return { x: 0, y: 0 };
+  if (side === 0) return z > 0 ? null : { x: 0, y: 0 };
   const rho = lensRadius(theta, kappa);
   return { x: (x / side) * rho, y: (y / side) * rho };
 }
@@ -263,4 +264,108 @@ export function lensAxesDirection(axes, x, y, kappa) {
 export function lensAxesFilm(axes, direction, kappa) {
   const on = (axis) => direction.x * axis.x + direction.y * axis.y + direction.z * axis.z;
   return lensDirectionFilm([on(axes.right), on(axes.up), -on(axes.fwd)], kappa);
+}
+
+// The Camera tab's Frame view of a lens Camera (docs/space-and-view.md "レンズの Camera の当たり"): the guides, the CPU
+// hover, the gizmo and the sky images' handles map 3D points onto the bent picture with lensProjectPoint, the one
+// function for it, and take the pointer back to a ray with lensStageRay. A camera (a three.js setup: position,
+// quaternion, near) carries the picture's placement as `lensImage` ({ curve, focalPx, centerX, centerY }: f and the
+// image center in the view's CSS px, pano_editor_view.js frameViewContext's `lens`); pano_space.js projectPoint,
+// pano_editor_view.js viewProjection and studio/hit_test.js cameraRay go through these for such a camera.
+
+// `camera` carrying the lens picture `lens`.
+export function withLensImage(camera, lens) {
+  return { ...camera, lensImage: lens };
+}
+
+// The half angle (radians) a lens of κ `curve` images in the Camera tab: half of lensFovLimit. Points farther off the
+// axis are not drawn and not hit.
+function lensHalfLimit(curve) {
+  return lensFovLimit(curve) * 0.5 * DEG2RAD;
+}
+
+// Where a direction in the camera's own axes (x right, y up, looking down -z; any length) lands on the picture `lens`
+// ({ x, y } in its CSS px), or null past its half limit.
+export function lensImagePoint(lens, direction) {
+  const [x, y, z] = direction;
+  if (!(Math.atan2(Math.hypot(x, y), -z) <= lensHalfLimit(lens.curve))) return null;
+  const film = lensDirectionFilm(direction, lens.curve);
+  if (!film) return null;
+  return { x: lens.centerX + film.x * lens.focalPx, y: lens.centerY - film.y * lens.focalPx };
+}
+
+// Where the World point `p` lands on the lens picture of `camera` (withLensImage): { x, y, z } with z its distance
+// from the eye (the depth the hits and the gizmo's size go by), or null nearer than camera.near or past the half limit.
+export function lensProjectPoint(camera, p) {
+  const d = [p[0] - camera.position[0], p[1] - camera.position[1], p[2] - camera.position[2]];
+  const distance = Math.hypot(...d);
+  if (!(distance > camera.near)) return null;
+  const at = lensImagePoint(camera.lensImage, rotateByQuaternion(conjugate(camera.quaternion), d));
+  return at && { x: at.x, y: at.y, z: distance };
+}
+
+// The film point (units of f, x right and y up) of the point (x, y) of the lens picture `lens` ({ curve, focalPx,
+// centerX, centerY }, in its px): the one rule for the picture's px and its film, which lensImagePoint inverts.
+export function lensFilm(lens, x, y) {
+  return { x: (x - lens.centerX) / lens.focalPx, y: (lens.centerY - y) / lens.focalPx };
+}
+
+// The ray from `camera` (withLensImage) through the point (x, y) of its picture: { origin, direction } with the
+// direction one unit long in the World, or null past its half limit (lens_angle, pano_lens.js lensFilmDirection).
+export function lensStageRay(camera, x, y) {
+  const lens = camera.lensImage;
+  const at = lensFilm(lens, x, y);
+  const film = lensFilmDirection(at.x, at.y, lens.curve);
+  if (!film || !(Math.acos(Math.max(-1, Math.min(1, -film[2]))) <= lensHalfLimit(lens.curve))) return null;
+  return { origin: [...camera.position], direction: rotateByQuaternion(camera.quaternion, film) };
+}
+
+// Below this the curve of a mapped straight line is taken as drawn (CSS px between a piece's mapped middle and its
+// chord's middle), and how many times a piece is halved at least and at most.
+const LENS_LINE_TOLERANCE = 0.25;
+const LENS_LINE_MIN_DEPTH = 3;
+const LENS_LINE_MAX_DEPTH = 10;
+
+// The 3D segment a-b on a lens picture: `project` (a World point -> { x, y } or null; lensProjectPoint) maps it piece
+// by piece, each piece halved until its mapped middle lies within LENS_LINE_TOLERANCE px of its chord (at least
+// 2^LENS_LINE_MIN_DEPTH pieces), so the curve does not look angular at any size. Returns the runs of mapped points
+// ([[{ x, y, world }]], each of 2 or more), cut where the line leaves what the lens images (found by halving too).
+export function lensPolylines(project, a, b) {
+  const runs = [];
+  let run = null;
+  const emit = (point) => {
+    if (!point) {
+      run = null;
+      return;
+    }
+    if (!run) {
+      run = [point];
+      runs.push(run);
+    } else run.push(point);
+  };
+  const at = (world) => {
+    const p = project(world);
+    return p ? { x: p.x, y: p.y, world } : null;
+  };
+  const mid = (u, v) => u.map((value, axis) => (value + v[axis]) / 2);
+  // Adds the points after `pa` up to `pb` of the piece u-v.
+  const piece = (u, v, pa, pb, depth) => {
+    const m = mid(u, v);
+    const pm = at(m);
+    const flat = pa && pb && pm && Math.hypot(pm.x - (pa.x + pb.x) / 2, pm.y - (pa.y + pb.y) / 2) <= LENS_LINE_TOLERANCE;
+    if (depth >= LENS_LINE_MAX_DEPTH || (depth >= LENS_LINE_MIN_DEPTH && flat) || (!pa && !pb && !pm && depth >= LENS_LINE_MIN_DEPTH)) {
+      if (pa && !pb) emit(null);
+      else if (pb) {
+        if (!pa) emit(null);
+        emit(pb);
+      }
+      return;
+    }
+    piece(u, m, pa, pm, depth + 1);
+    piece(m, v, pm, pb, depth + 1);
+  };
+  const first = at(a);
+  if (first) emit(first);
+  piece(a, b, first, at(b), 0);
+  return runs.filter((points) => points.length >= 2);
 }

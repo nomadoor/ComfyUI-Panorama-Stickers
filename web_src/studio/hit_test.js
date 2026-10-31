@@ -2,6 +2,7 @@
 // "ホバーの判定"; stage_objects.js objectUnder calls it): the ray through the pointer marched on the CPU through the
 // coarse occupancy grid of each 3D item (pano_coarse_grid.js; marchCoarseGrid), a box whose item has no grid yet by its
 // guide (world_guides.js hoverGuide), a plane by its outline. The shallowest hit wins.
+import { lensStageRay } from "../pano_lens.js";
 import { projectPoint } from "../pano_space.js";
 import { quaternionToRotation, worldRotation } from "../pano_world.js";
 import { hoverGuide } from "./world_guides.js";
@@ -9,8 +10,11 @@ import { hoverGuide } from "./world_guides.js";
 const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 
 // The ray through `point` (CSS px of a width x height stage seen from `camera`): its origin and a direction whose part
-// along the view axis is 1, so origin + direction * t lies at depth t.
+// along the view axis is 1, so origin + direction * t lies at depth t. On a camera carrying a lens picture
+// (pano_lens.js withLensImage) the direction is one unit long, so t is the distance from the eye (the depth
+// projectPoint gives there), or null past the lens's limit.
 export function cameraRay(camera, point, width, height) {
+  if (camera.lensImage) return lensStageRay(camera, point.x, point.y);
   const rotation = quaternionToRotation(camera.quaternion);
   const column = (index) => [rotation[0][index], rotation[1][index], rotation[2][index]];
   const right = column(0);
@@ -76,6 +80,7 @@ export function marchCoarseGrid(grid, origin, direction) {
 // rectangle, a plane by its outline, both at their center's depth (as hoverGuide). The shallowest hit wins.
 export function coarseUnder(items, gridOf, camera, point, width, height) {
   const ray = cameraRay(camera, point, width, height);
+  if (!ray) return null;
   let best = null;
   for (const item of items) {
     let depth = null;
