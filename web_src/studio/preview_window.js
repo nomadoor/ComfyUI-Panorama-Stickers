@@ -11,18 +11,18 @@ import { createApp, reactive } from "vue";
 import StudioPreviewWindow from "../components/studio/StudioPreviewWindow.vue";
 import { createComfyMediaAdapter } from "../pano_comfy_media.js";
 import { createPanoCanvas, createPanoVideo, releasePanoCanvas } from "../pano_diagnostics.js";
+import { backgroundAt, backgroundShowsAt, backgroundVideoCandidates, chooseBackground } from "../pano_background_choice.js";
 import { backgroundVideoMedia, createBackgroundVideo, isDecodedImageReady, mediaRevisionToken, videoMetaEntry } from "../pano_media_session.js";
 import { peekPreviewNode, peekSceneViewer, sceneViewerWindowClosed, sceneViewerWindowOpened } from "../pano_node_bridge.js";
-import { backgroundPlace, backgroundShownAt, bgColorBackground } from "../pano_port_media.js";
+import { backgroundPlace } from "../pano_port_media.js";
 import { stageOwnsKey } from "../pano_key_focus.js";
 import { isNodeOutputMediaCurrent, linkedInputType, videoLinked } from "../pano_preview_video.js";
 import { loadSceneState } from "../pano_scene_state.js";
-import { PANO_SCENE_TYPE, upstreamBgColor } from "../pano_upstream.js";
+import { PANO_SCENE_TYPE } from "../pano_upstream.js";
 import { createDepthColors } from "../pano_depth_color.js";
 import { createStageMedia, stageContent } from "./stage_content.js";
-import { createStudioUpstream, upstreamBackground } from "./upstream.js";
+import { createStudioUpstream } from "./upstream.js";
 import { loadNodeInputImage } from "./node_image.js";
-import { normalizeCoverageValue } from "../pano_editor_state.js";
 import { DRAW_REASON } from "../pano_frame_scheduler.js";
 import { frameShownAt } from "../pano_video_playback.js";
 import { guardEditorKeys } from "./key_guard.js";
@@ -34,14 +34,8 @@ import { readLoopSetting, writeLoopSetting } from "./timeline_actions.js";
 
 // The Preview node's input that carries what it shows.
 const SOURCE_INPUTS = ["source"];
-// Where the node's result has its VIDEO (Python's "default" preview contract, node_runtime.py PREVIEW_UI_KEYS, which
-// nodes.py _video_preview_ui writes for PanoramaPreviewNode).
-const PREVIEW_VIDEO_KEYS = { videoKey: "pano_videos", metaKey: "pano_video_meta" };
 // The fps a VIDEO plays at when its result does not say (the Timeline's default).
 const DEFAULT_FPS = 24;
-// The color a Scene's background shows outside its Clip range when its result gives none (pano_upstream_bg_color is
-// always there, docs/preview-node.md "`ui`（Python）").
-const SCENE_BG_FALLBACK = "#000000";
 
 const openNodes = new WeakSet();
 const loaded = (image) => !!image?.complete && image.naturalWidth > 0;
@@ -89,7 +83,26 @@ export async function openPreviewWindow(node, { app = null, api = null, storage 
     const empty = loadSceneState(null);
     return { ...empty, timeline: { ...empty.timeline, fps: sceneFps } };
   })();
-  const sceneBg = isScene ? upstreamBackground({ uiList: (key) => media.uiList(node, key), current: true, ownLinked: false, fps: sceneFps }) : null;
+  // Which background shows (pano_background_choice.js, caller "window"): a Scene's own, chosen when the window opens; an
+  // IMAGE or a VIDEO source's, read from the Preview's keys. Its span (the node's background_range) and a Scene's
+  // bg_color are read again on each draw.
+  const choiceInputs = () => ({
+    uiList: (key) => media.uiList(node, key),
+    current: (channel) => isNodeOutputMediaCurrent(node, channel),
+    ownLinked: true,
+    scene: isScene,
+    widget: (name) => node.widgets?.find?.((widget) => widget?.name === name) ?? null,
+    fps: sceneFps,
+  });
+  const opened = chooseBackground("window", choiceInputs());
+  const drawChoice = () => {
+    const now = chooseBackground("window", choiceInputs());
+    return {
+      ...opened,
+      coverage: opened.from === "upstream" ? opened.coverage : now.coverage,
+      color: opened.upstream?.color ?? now.color,
+    };
+  };
   const stageMedia = isScene
     ? createStageMedia({ assetSource: media.assetSource, source: media.source, fetchApi: api?.fetchApi ? (path, options) => api.fetchApi(path, options) : null, onChange: () => !closed && stage?.redraw(DRAW_REASON.MEDIA) })
     : null;
@@ -138,8 +151,8 @@ export async function openPreviewWindow(node, { app = null, api = null, storage 
 
   let image = null;
   let status = "none";
-  if (sceneBg?.imageKey) {
-    image = media.uiImage(node, sceneBg.imageKey, new Map(), (settled) => {
+  if (opened.from === "upstream") {
+    image = media.uiImage(node, opened.keys.image, new Map(), (settled) => {
       status = loaded(settled) ? "ready" : "failed";
       stage?.redraw(DRAW_REASON.MEDIA);
     });
@@ -161,10 +174,7 @@ export async function openPreviewWindow(node, { app = null, api = null, storage 
     image = picture.image();
     status = picture.state();
   }
-  // A Scene carries its range; an IMAGE or a VIDEO covers the node's background_range (360 or 180).
-  const rangeWidget = () => node.widgets?.find?.((widget) => widget?.name === "background_range") ?? node.widgets?.find?.((widget) => widget?.name === "coverage");
-  const coverageNow = () => sceneBg?.coverage ?? normalizeCoverageValue(rangeWidget()?.value);
-  const imageBackground = () => (status === "ready" ? { media: image, revision: image.currentSrc || image.src, coverage: coverageNow() } : null);
+  const imagePicture = () => (status === "ready" ? { media: image, revision: image.currentSrc || image.src } : null);
 
   // --- The VIDEO source: the node's own result first, then the file its source loads directly.
   let videoElement = null;
@@ -175,12 +185,16 @@ export async function openPreviewWindow(node, { app = null, api = null, storage 
   const redraw = (reason) => stage?.redraw(reason);
   function refreshVideo() {
     if (!backgroundVideo) return;
-    const keys = sceneBg ?? PREVIEW_VIDEO_KEYS;
-    const own = sceneBg || isNodeOutputMediaCurrent(node, "background") ? media.uiList(node, keys.videoKey)[0] || null : null;
+    const { own, file } = backgroundVideoCandidates(opened, {
+      uiList: (key) => media.uiList(node, key),
+      current: (channel) => isNodeOutputMediaCurrent(node, channel),
+      source: media.source,
+      linkedVideoFile: (inputs) => media.linkedVideoFile(node, inputs),
+    });
     const chosen = backgroundVideo.choose({
-      own: media.source(own),
-      file: isScene ? "" : media.linkedVideoFile(node, SOURCE_INPUTS),
-      meta: () => videoMetaEntry(media.uiValue(node, keys.metaKey)),
+      own,
+      file,
+      meta: () => videoMetaEntry(media.uiValue(node, opened.keys.meta)),
       fps: playbackView.fps,
     });
     backgroundVideo.load(chosen.src, { loop: false, muted: false, volume: 1 });
@@ -213,7 +227,7 @@ export async function openPreviewWindow(node, { app = null, api = null, storage 
       fps: () => playbackView.fps,
       span: () => Math.max(1, playbackView.frames),
       loop: () => playbackView.loop,
-      place: () => (sceneBg ? backgroundPlace(sceneBg.place) : null),
+      place: () => (opened.place ? backgroundPlace(opened.place) : null),
       onFrame: (frame) => {
         playbackView.frame = frame;
         redraw(DRAW_REASON.PLAYHEAD);
@@ -228,16 +242,16 @@ export async function openPreviewWindow(node, { app = null, api = null, storage 
     });
     refreshVideo();
   }
-  // A Scene's bg_color ("#rrggbb"): where its background does not show, and all over without one.
-  const sceneColor = () => upstreamBgColor((key) => media.uiList(node, key)) ?? SCENE_BG_FALLBACK;
+  // The background at the playhead: a Scene's bg_color where its background does not show and all over without one,
+  // else the VIDEO or its still once one has a picture, else the image.
   const background = () => {
-    if (isScene && !sceneBg) return bgColorBackground(sceneColor());
-    if (sceneBg && !backgroundShownAt(sceneBg.place, playbackView.frame, playbackView.fps, backgroundVideoMedia(videoSource, true), true)) {
-      return bgColorBackground(sceneBg.color ?? sceneColor());
-    }
+    const choice = drawChoice();
+    const shows = backgroundShowsAt(choice, playbackView.frame, { length: backgroundVideoMedia(videoSource, true) });
     const shown = backgroundVideo?.displaySource();
-    if (shown && isDecodedImageReady(shown)) return { media: shown, revision: mediaRevisionToken(shown), coverage: coverageNow(), source: backgroundVideo.source };
-    return imageBackground();
+    const picture = shown && isDecodedImageReady(shown)
+      ? { media: shown, revision: mediaRevisionToken(shown), source: backgroundVideo.source }
+      : imagePicture();
+    return backgroundAt(choice, { shows, picture });
   };
 
   // Reset View goes to the origin; the window opens at the node's view (docs/space-and-view.md "Preview のウィンドウ").
