@@ -3112,13 +3112,11 @@ function attachPanoramaPreviewImpl(node, options = {}) {
     if (studioErpCanvas) releasePanoCanvas(studioErpCanvas);
     studioSurfaceDraws.delete(requestDraw);
     surface.scene = null;
-    surface.rasterCache?.dispose?.();
-    surface.rasterCache = null;
-    surface.rasterReady = null;
-    // The paint engine and the painting it drew go with the surface; a surface attached again rebuilds them.
-    surface.paintEngine = null;
+    // The paint display (its engine and raster canvases) goes with the surface; a surface attached again makes it again.
+    surface.paintDisplay?.dispose?.();
+    surface.paintDisplay = null;
+    surface.paintInput = null;
     surface.paintState = null;
-    surface.paintRevision = null;
     unregisterExternalStickerSync();
     viewportRestoreScheduler.dispose();
     if (dropCueTimer) clearTimeout(dropCueTimer);

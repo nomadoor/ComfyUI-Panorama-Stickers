@@ -320,7 +320,6 @@ function surfaceTrace({ mask = false } = {}) {
       env.flush();
     }
     surface.paintDisplay?.dispose?.();
-    surface.rasterCache?.dispose?.();
     return { rows: rec.rows, draws: rasterDraws(env) };
   } finally {
     env.restore();
