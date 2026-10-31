@@ -24,7 +24,7 @@ Panorama Studio（`PanoramaStudio`）のノード上の表示（node surface）�
 | widget の変更を受けて描き直す（callback の連ね方） | — | `web_src/pano_widget_callback.js` `chainWidgetCallback` | `tests/pano_widget_callback.test.mjs`、`tests/browser/studio_node_surface.spec.js` |
 | wheel の捕捉（旧ノードと Preview の Scene のビューアが使う） | — | `web_src/pano_interaction_controller.js` `createPanoInteractionController`、`web_src/pano_wheel.js` `PANO_FOV_WHEEL_STEP_DEG`・`bindWheelCaptureRoot` | `tests/pano_wheel.test.mjs` |
 | 表示フレームと背景の VIDEO・`port` の素材 | — | `web_src/pano_node_playback.js` `createNodePlayback`・`createSoloPlayback`（同時に再生するのは一つのノード）、`web_src/pano_stickers_node_surface.js` `NODE_SURFACE_FRAME`、どの背景を出すか・背景の VIDEO の候補・Auto の長さに数える背景は `web_src/pano_background_choice.js` `chooseBackground`・`backgroundShowsAt`・`backgroundAt`・`backgroundVideoCandidates`・`backgroundLength`（規則は `docs/timeline-ui.md` の「どの背景を出すか」の行）、上流の背景の画像は `pano_preview_runtime.js` `upstreamBackgroundMedia`、背景以外の入力は `pano_preview_runtime.js` `portStickerMedia`・`surfaceTimelineMedia` | `tests/pano_node_playback.test.mjs`、`tests/pano_background_choice.test.mjs`、`tests/browser/studio_node_surface.spec.js` |
-| 見えないときとエディタを開いている間 | — | `pano_node_playback.js` `surfaceShown`、`web_src/pano_node_bridge.js` `editorOpen`、`pano_preview_runtime.js` `attachPanoramaPreviewImpl`（`syncSurfacePlayback`） | `tests/pano_node_playback.test.mjs`、`tests/pano_node_bridge.test.mjs`、`tests/browser/studio_node_surface.spec.js`（深度の格子の色の VIDEO） |
+| 見えないときとエディタを開いている間 | — | `pano_node_playback.js` `surfaceShown`、`web_src/pano_node_bridge.js` `editorOpen`、`pano_preview_runtime.js` `attachPanoramaPreviewImpl`（`syncSurfacePlayback`） | `tests/pano_node_playback.test.mjs`、`tests/pano_node_bridge.test.mjs`、`tests/browser/studio_node_surface.spec.js`（深度の格子の色の VIDEO、上流の層の素材、上流の Scene の背景の画像） |
 | 描画と後始末（animation frame、DOM canvas だけの再描画、revision、media の失効、teardown、raster object の大きさ） | — | `pano_preview_runtime.js` `attachPanoramaPreviewImpl`、`web_src/pano_preview_video.js` `isNodeOutputMediaCurrent`・`isTrackedMediaInputConnectionChange`、`web_src/pano_surface_paint.js` `surfacePaintLayers`・`resolveRasterPreviewSize`（ラスタのキャンバスとその寿命は `web_src/pano_paint_display.js` `createPaintDisplay`、`docs/editor-architecture.md` の「Paint layers」） | `tests/pano_preview_video.test.mjs`、`tests/pano_surface_paint.test.mjs`、`tests/pano_paint_display.test.mjs` |
 | `port` の Sticker の素材の読み込みと実行の一致 | — | `pano_stickers_node_surface.js` `reconcilePortStickerState`、`web_src/pano_editor_ui_state.js` `stickerParamEnabled`、`web_src/editor/external_stickers.js`（素材の読み込みでインスペクタを更新） | `tests/pano_stickers_node_surface.test.mjs`、`tests/pano_editor_ui_state.test.mjs` |
 
@@ -128,7 +128,7 @@ Timeline のフレーム（表示フレーム）の背景の VIDEO と `port` �
   無ければ背景の入力につないだ先がそのまま読むファイルを読む（`pano_comfy_media.js` の `nodeSurfaceLinkedSource`）。
 - 上流の Scene の背景が代わりに立つ間（`scene` の今の実行結果に `pano_upstream_input_images` か `pano_upstream_input_videos` が
   あるとき。何で決めるかは `docs/timeline-ui.md` の「どの背景を出すか」の行）は、エディタと同じくその背景を出す（`pano_background_choice.js`
-  の `BACKGROUND_CALLERS` の surface の `upstreamPicture`）。VIDEO の候補は実行結果の
+  の `chooseBackground`。エディタと Preview のウィンドウと同じ）。VIDEO の候補は実行結果の
   `pano_upstream_input_videos` だけで、自分の `pano_input_videos` と背景の入力が読むファイルは候補にしない。VIDEO が無いときは
   実行結果の `pano_upstream_input_images` の最初の物の画像を出す（URL はノード自身の実行結果の画像と同じく作る。`pano_comfy_media.js` の
   `nodeSurface` の読み方）。読み込み中は背景を描かない（`backgroundAt` の `pending`）。範囲は `pano_upstream_coverage`、`bg_color` は上流の `pano_upstream_bg_color`。
@@ -189,6 +189,7 @@ Timeline のフレーム（表示フレーム）の背景の VIDEO と `port` �
   （要素そのものはGCまで残り、診断の `video.alive` に数えられるが、`video.loaded` には入らない）。
   静止画のキャンバス2つも大きさを0にする。深度の格子の色の VIDEO（入力ごとに 1 本、上流の層の分も）も同じく src を外して放し
   （`createDepthColors` の `retain([])`）、見えるようになると読み直す。上流の層の読み込んだ素材は、背景の静止画と同じく放す。
+  上流の Scene の背景の画像も放す（上の「表示フレームと VIDEO」）。
 - そのノードのエディタを開いている間（`pano_node_bridge.js` の `editorSession(node).open`、`editorOpen(node)`）も、
   モーダルがsurfaceを覆うので見えないものとして扱う。エディタが同じ1080pのVIDEOを自分で再生するので、
   surfaceはVIDEOのsrc（背景・`port` の素材・深度の格子の色）を外し、静止画と上流の層の素材を放し、描かずに共有ビューのテクスチャを放す（`surfaceView.release()`）。

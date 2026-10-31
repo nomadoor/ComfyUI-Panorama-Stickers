@@ -131,7 +131,8 @@ async function mogeResult() {
 
 // Another Studio's Scene on `scene` as a run leaves it (docs/studio-node.md "上流の Scene"): one layer with a blue sky image.
 let upstreamImageUrl = "";
-// The upstream Scene's background image (`?case=upbg`), to see when it holds its source.
+// The upstream Scene's background image (`?case=upbg`; none for `?case=upvideo`, whose background is a VIDEO), to see
+// when it holds its source.
 let upstreamBackgroundUrl = "";
 async function upstreamResult() {
   upstreamImageUrl = solid(`rgb(${BLUE.join(",")})`);
