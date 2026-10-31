@@ -19,6 +19,7 @@ Panorama Studio の `state_json`（状態 v2）、Camera を持つ Panorama Stud
 | Timeline の上限の定数 | `scene_state.py` の `TIMELINE_FPS_MIN`・`TIMELINE_FPS_MAX`・`TIMELINE_LENGTH_MAX`・`TIMELINE_FRAME_MAX` | `pano_scene_state.js` の同名の定数 | フィクスチャ `v2_timeline_limits` |
 | `sticker_state` の読み込み | `scene_state.py` `load_sticker_state` | `pano_scene_state.js` `loadStickerState` | `test_scene_state.py`、`pano_scene_state.test.mjs`、`test_scene_state_parity.py` |
 | 評価関数と補間 | `core/scene_eval.py` `evaluate_scene_state` | `web_src/pano_scene_eval.js` `evaluateSceneState` | `tests/test_scene_eval.py`、`test_scene_state_parity.py` |
+| 素材の先頭（`start − in`）と、Timeline frame から素材の先頭からのフレームへの直し方（`frame − (start − in)`） | `scene_eval.py` `_clip_frame` | `pano_scene_eval.js` `clipOrigin`・`clipFrame`（エディタ・タイムライン・`port` の素材の時刻も呼ぶ） | `tests/pano_scene_eval.test.mjs`、評価の `clip_frame` を比べる `test_scene_state_parity.py` |
 | fps の再基準化 | `scene_state.py` `rebase_scene_state` | `pano_scene_state.js` `rebaseSceneState` | `test_scene_state.py`、`pano_scene_state.test.mjs`、`test_scene_state_parity.py` |
 | 上書きの記録の再基準化 | `scene_state.py` `rebase_upstream_record` | `pano_scene_state.js` `rebaseUpstreamRecord` | `tests/test_scene_inherit.py`、`tests/pano_scene_inherit.test.mjs`、`tests/test_upstream_editor_parity.py` |
 | 上書きを当てる | `core/scene_inherit.py` `apply_upstream_overrides` | `web_src/pano_scene_inherit.js` `applyUpstreamOverrides` | `test_scene_inherit.py`、`pano_scene_inherit.test.mjs` |
