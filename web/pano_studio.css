@@ -1671,14 +1671,18 @@
   100% { opacity: 0; }
 }
 
-/* The selected object's name on the bar at the bottom center: the same width for every name, left aligned, one line,
-   cut with an ellipsis (docs/studio-ui.md "下の中央のバー"). */
+/* The selected object's name on the bar at the bottom center: the same width for every name users give, left aligned,
+   one line, cut with an ellipsis; a name fixed by the kind (the Camera, a paint group) fits its text
+   (docs/studio-ui.md "下の中央のバー", docs/design.md "下の中央のバーの名前の欄"). */
 .pano-studio-bar-name {
   flex: none;
   width: var(--studio-bar-name-width);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.pano-studio-bar-name.is-fixed {
+  width: max-content;
 }
 .pano-studio-at-buttons { position: absolute; right: var(--studio-float-inset); bottom: var(--studio-float-inset); }
 

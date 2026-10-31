@@ -116,3 +116,22 @@ test("an upstream element's row (its working id) has no kind and no bar: upstrea
   assert.equal(selectedKind(state, row), null);
   assert.equal(selectionBar({ state, row }), null);
 });
+
+test("the name field: a fixed name (the Camera's, a paint group's) fits its text, a name the user gives keeps the one width", () => {
+  const points = [{ u: 0.5, v: 0.5 }];
+  const painted = loadSceneState({
+    version: 2,
+    painting: { paint: { strokes: [{ id: "st1", actionGroupId: "g1", layerKind: "paint", toolKind: "pen", size: 10, opacity: 1, color: { r: 1, g: 0, b: 0, a: 1 }, targetSpace: { kind: "ERP_GLOBAL" }, geometry: { geometryKind: "freehand_open", points, rawPoints: points } }] } },
+  });
+  assert.equal(selectionBar({ state, row: "camera" }).fixedName, true);
+  assert.equal(selectionBar({ state: painted, row: "paint_group:g1" }).fixedName, true);
+  for (const row of ["sky_1", "plane_1", "chair_1", "port_1"]) assert.equal(selectionBar({ state, row }).fixedName, false, row);
+});
+
+test("the Camera tab shows no bar for the Camera (ADR 0055), and the other objects' bars as in the 3D tab", () => {
+  assert.equal(selectionBar({ state, row: "camera", tab: "camera" }), null);
+  assert.equal(selectionBar({ state, row: "camera", tab: "3d" }).kind, "camera");
+  assert.equal(selectionBar({ state, row: "camera" }).kind, "camera", "the 3D tab by default");
+  assert.deepEqual(keys(selectionBar({ state, row: "plane_1", tab: "camera" })), keys(selectionBar({ state, row: "plane_1" })));
+  assert.equal(selectionBar({ state, row: "sky_1", tab: "camera" }).kind, "sky");
+});

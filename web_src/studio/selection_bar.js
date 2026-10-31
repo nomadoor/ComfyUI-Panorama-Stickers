@@ -49,14 +49,18 @@ export function gizmoModeOfKey(kind, key) {
 
 const LATER = "in development";
 
-// The bar for the row `row` of `state` with the gizmo in `mode`: null when it is not shown (nothing selected), else
-// { kind, icon, name, groups: [[{ key, icon, label, tip, active, disabled }]] }. `readOnly` disables the edits.
+// The bar for the row `row` of `state` with the gizmo in `mode`, in the tab `tab` ("3d" or "camera"): null when it is
+// not shown (nothing selected; the Camera in the Camera tab, ADR 0055), else
+// { kind, icon, name, fixedName, groups: [[{ key, icon, label, tip, active, disabled }]] }. `fixedName`: the name is the
+// kind's (the Camera, a paint group), and its field fits the text instead of the one width of the names users give
+// (docs/design.md "下の中央のバーの名前の欄"). `readOnly` disables the edits.
 // The Lock of the Camera turns `camera.locked` over (docs/scene-state-v2.md). A paint group has Bring to front / Send to
 // back and Lock / Delete (docs/studio-ui.md "ペイントのまとまり"). Not yet here: the multi-selection; Replace waits for a
 // file picker below the old UI.
-export function selectionBar({ state, row, mode = "translate", readOnly = false }) {
+export function selectionBar({ state, row, mode = "translate", readOnly = false, tab = "3d" }) {
   const kind = selectedKind(state, row);
   if (!kind) return null;
+  if (kind === "camera" && tab === "camera") return null;
   const button = (key, icon, label, extra = {}) => ({ key, icon, label, tip: extra.tip ?? label, active: !!extra.active, disabled: !!extra.disabled });
   const shown = shownGizmoMode(kind, mode);
   const gizmo = gizmoModes(kind).map((entry) => button(`gizmo:${entry.mode}`, entry.icon, entry.label, {
@@ -65,7 +69,7 @@ export function selectionBar({ state, row, mode = "translate", readOnly = false 
   }));
   const lockButton = (locked) => button("lock", locked ? ICON.lock_closed : ICON.lock_open, locked ? "Unlock" : "Lock", { disabled: readOnly });
   if (kind === "camera") {
-    return { kind, icon: ICON.camera, name: "Camera", groups: [gizmo, [lockButton(state.camera?.locked === true)]] };
+    return { kind, icon: ICON.camera, name: "Camera", fixedName: true, groups: [gizmo, [lockButton(state.camera?.locked === true)]] };
   }
   if (kind === "paint") {
     const { locked } = paintObjectOf(state, row);
@@ -74,6 +78,7 @@ export function selectionBar({ state, row, mode = "translate", readOnly = false 
       kind,
       icon: ICON.palette_tool,
       name: "Paint",
+      fixedName: true,
       groups: [
         [button("front", ICON.order_front, "Bring to front", { disabled }), button("back", ICON.order_back, "Send to back", { disabled })],
         [lockButton(locked), button("delete", ICON.delete, "Delete", { disabled, tip: "Delete (Del)" })],
@@ -100,5 +105,5 @@ export function selectionBar({ state, row, mode = "translate", readOnly = false 
   ];
   const groups = [first, copy, keep];
   if (fromSource) groups.push([button("revert", ICON.back_initial, "Back to source", { disabled: edits, tip: "Back to source · every value back to the input's or the upstream's" })]);
-  return { kind, icon: kind === "sky" ? ICON.pano : ICON.box, name: sceneStickerLabel(sticker), groups };
+  return { kind, icon: kind === "sky" ? ICON.pano : ICON.box, name: sceneStickerLabel(sticker), fixedName: false, groups };
 }

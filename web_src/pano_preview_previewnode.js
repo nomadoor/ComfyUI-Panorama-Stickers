@@ -583,7 +583,7 @@ class PreviewNodeRuntime {
   }
 
   // Whether the surface's top-right button opens the new Preview window rather than the browser's fullscreen
-  // (options.opensWindow, given for Panorama Preview's IMAGE and VIDEO; docs/preview-node.md "ノード上").
+  // (options.opensWindow, given for Panorama Preview's IMAGE, VIDEO and unlinked source; docs/preview-node.md "ノード上").
   opensWindow() {
     return typeof this.options.opensWindow === "function" && this.options.opensWindow() === true;
   }

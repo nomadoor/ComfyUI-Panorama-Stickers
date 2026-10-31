@@ -185,3 +185,15 @@ test("a locked paint group is selected but does not move", async ({ page }) => {
   expect(await strokes(page)).toEqual(before);
   expect(problems).toEqual([]);
 });
+
+test("a paint group's bar fits its fixed name Paint (docs/design.md \"下の中央のバーの名前の欄\")", async ({ page }) => {
+  const problems = await open(page);
+  await paintStroke(page, [[0.4, 0.4], [0.55, 0.45]]);
+  await page.mouse.click(...(await at(page, 0.475, 0.425)));
+  await expect.poll(() => row(page)).toMatch(/^paint_group:/);
+  const name = await page.locator(".pano-studio-at-bar .pano-studio-bar-name").evaluate((el) => ({ width: el.getBoundingClientRect().width, text: el.scrollWidth, name: el.textContent }));
+  expect(name.name).toBe("Paint");
+  expect(name.width).toBeLessThan(60);
+  expect(Math.abs(name.width - name.text)).toBeLessThanOrEqual(1);
+  expect(problems).toEqual([]);
+});

@@ -17,7 +17,11 @@ const openEditor = createEditorChooser({
   openOld: oldEditorHooks.openEditor,
   openStudio: (node) => openStudioEditor(node, { app, api }),
   openPreview: (node) => openPreviewWindow(node, { app, api }),
-  previewTakes: (node) => previewUsesNewWindow({ type: node?.comfyClass ?? node?.type, sourceType: linkedInputType(node, "source") }),
+  previewTakes: (node) => previewUsesNewWindow({
+    type: node?.comfyClass ?? node?.type,
+    sourceType: linkedInputType(node, "source"),
+    sourceLinked: (node?.inputs ?? []).find((input) => input?.name === "source")?.link != null,
+  }),
 });
 
 // With the setting on, the Preview's Scene opens in the new window too (docs/studio-ui.md "Preview のウィンドウ").

@@ -314,3 +314,21 @@ test("dragging the gizmo's XZ square draws the X and Z guide lines through the g
   await expect.poll(async () => (await page.evaluate(({ x, y }) => window.__studio.overlayAt(x, y), off))[3]).toBeLessThan(40);
   expect(problems).toEqual([]);
 });
+
+// docs/design.md "下の中央のバーの名前の欄": the name's box of the bar now shown (its width and its text's).
+const barName = (page) => page.locator(".pano-studio-at-bar .pano-studio-bar-name").evaluate((el) => ({ width: el.getBoundingClientRect().width, text: el.scrollWidth, name: el.textContent }));
+
+test("the bar's name field: the Camera's fixed name fits its text, a World image's name keeps 140px", async ({ page }, testInfo) => {
+  const problems = await open(page, testInfo);
+  const at = await places(page);
+  await click(page, at.camera);
+  expect(await selected(page)).toBe("camera");
+  const camera = await barName(page);
+  expect(camera.name).toBe("Camera");
+  expect(camera.width).toBeLessThan(80);
+  expect(Math.abs(camera.width - camera.text)).toBeLessThanOrEqual(1);
+  await click(page, at.board);
+  expect(await selected(page)).toBe("sticker_2");
+  expect((await barName(page)).width).toBeCloseTo(140, 0);
+  expect(problems).toEqual([]);
+});

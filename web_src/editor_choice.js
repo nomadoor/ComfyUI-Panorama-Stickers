@@ -3,12 +3,16 @@
 // new UI has them.
 // web_src/main.js puts this together with the two editors.
 
-// The Preview's read-only opening of an IMAGE or a VIDEO source goes to the new window (a PANO_SCENE source opens
-// through the Scene viewer's opener instead, which web_src/main.js hands to the new window: pano_editor.js
-// oldEditorHooks.takeSceneViewer).
-// type: the class of the node, sourceType: the type linked to its `source` input.
-export function previewUsesNewWindow({ type, sourceType }) {
-  return type === "PanoramaPreviewNode" && (sourceType === "IMAGE" || sourceType === "VIDEO");
+// The Preview's read-only opening of an IMAGE or a VIDEO source, or of a `source` with nothing linked (an empty black
+// stage), goes to the new window (a PANO_SCENE source opens through the Scene viewer's opener instead, which
+// web_src/main.js hands to the new window: pano_editor.js oldEditorHooks.takeSceneViewer). A link whose type is not
+// known (an untyped Reroute) keeps the old opening (docs/preview-node.md "ノード上").
+// type: the class of the node, sourceType: the type linked to its `source` input, sourceLinked: whether its slot has a
+// link.
+export function previewUsesNewWindow({ type, sourceType, sourceLinked = true }) {
+  if (type !== "PanoramaPreviewNode") return false;
+  if (sourceLinked === false) return true;
+  return sourceType === "IMAGE" || sourceType === "VIDEO";
 }
 
 export const NEW_UI_SETTING_ID = "PanoramaSuite.Editor.NewUI";
