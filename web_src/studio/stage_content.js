@@ -124,7 +124,11 @@ export function createStageMedia({ assetSource, source, fetchApi = null, onChang
 // `depthColor(slot, video)` is the picture of the proxy video of the depth grid input `slot` ("scene", "sticker" or an
 // upstream layer's slot) at `video` (sceneRequest's), or null while it has none; null leaves depth grids out.
 // `space.depthSlots` are the slots of the depth grids drawn, whose videos the caller keeps (retain()).
-export function stageContent(state, frame, { media, editorFile = () => null, sceneFiles = null, sceneBox = () => null, stickerFiles = null, upstream = null, paintLayers = [], depthColor = null }) {
+// `playing`: whether the playhead advances (space.playing: which loaded items go first over the budget,
+// pano_scene_items.js overBudget); `idle`: the editor at rest loads the `scene` and upstream items on (space.idle,
+// docs/threejs-spark-integration.md "止まっている間の先読み"); `lean`: ComfyUI runs a job, so only the items drawn and
+// prefetched stay (space.lean, "生成を邪魔しない").
+export function stageContent(state, frame, { media, editorFile = () => null, sceneFiles = null, sceneBox = () => null, stickerFiles = null, upstream = null, paintLayers = [], depthColor = null, playing = false, idle = false, lean = false }) {
   const evaluated = evaluateSceneState(state, frame);
   // Each Sticker's media once per content: the port Sticker's follows the playhead (one follow per frame).
   const shown = new Map();
@@ -186,15 +190,18 @@ export function stageContent(state, frame, { media, editorFile = () => null, sce
       upstreamStickers,
       upstreamItems,
       depthSlots,
+      playing,
+      idle,
+      lean,
     },
   };
 }
 
 // The stage's line for the depth grids `content` (stageContent()'s) draws (pano_depth_color.js depthGridNotice):
-// errorOf(key) is why an item failed to load.
-export function stageDepthNotice(content, errorOf) {
+// errorOf(key) is why an item failed to load, loaded(key) whether it loaded.
+export function stageDepthNotice(content, errorOf, loaded) {
   const { scene, sticker, upstreamItems } = content.space;
-  return depthGridNotice([scene, sticker, ...upstreamItems.map((entry) => entry.request)], errorOf);
+  return depthGridNotice([scene, sticker, ...upstreamItems.map((entry) => entry.request)], errorOf, loaded);
 }
 
 // The sphere Frame Selected fits for the Sticker `id` (pano_space.js frameSphere): around it where it shows in the

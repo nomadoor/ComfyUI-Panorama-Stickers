@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { aheadFits, createSceneItems, overBudget, SCENE_ITEM_BUDGET } from "../web_src/pano_scene_items.js";
+import { aheadFits, createSceneItems, nextUse, overBudget, SCENE_ITEM_BUDGET } from "../web_src/pano_scene_items.js";
 
 // Loads that end when the test says so: each call is { kind, url, signal, resolve(size), reject }.
 function harness(options = {}) {
@@ -136,20 +136,24 @@ test("an item loads ahead only while it fits beside the kept and running ones, a
   assert.ok(SCENE_ITEM_BUDGET >= 1024 ** 3);
 });
 
-test("loaded items over the budget go least recently used first, never the shown or wanted ones", async () => {
+test("loaded items over the budget at rest go farthest in time from the playhead first, never the shown or wanted ones", async () => {
   const { items, calls, disposed } = harness({ concurrency: 4, budget: 3 });
+  // Each load that ends draws again (onUpdate), which trims.
   for (const url of ["f0", "f1", "f2", "f3"]) {
     ask(items, url);
     calls.at(-1).resolve();
     await settle();
+    ask(items, url);
   }
   assert.deepEqual(disposed, ["f0"]);
   ask(items, "f1");
   ask(items, "f4");
   calls.at(-1).resolve();
   await settle();
-  assert.deepEqual(disposed, ["f0", "f2"]);
-  assert.deepEqual([...items.items.keys()], ["f3", "f1", "f4"]);
+  ask(items, "f4");
+  // At f4, f1 is the farthest in time (f2 the least recently used).
+  assert.deepEqual(disposed, ["f0", "f1"]);
+  assert.deepEqual([...items.items.keys()], ["f2", "f3", "f4"]);
 });
 
 test("an item over the budget on its own is shown, loads nothing ahead, and the one before it goes once it shows", async () => {
@@ -350,4 +354,190 @@ test("a depth grid item's source, made anew each render, is the same source and 
   assert.equal(calls.length, 1);
   // The budget counts what the loader gives: W × H × 4.
   assert.equal([...items.items.values()][0].size, 48);
+});
+
+// docs/threejs-spark-integration.md "読み込み中・再生中の表示": a depth grid draws its shape and its colors from one item.
+// The queue picks the nearest loaded item once, asks the input's colors for that item (color.at), and while the colors
+// still show another loaded item of the input, draws that one (kept, not dropped) until they show the picked one.
+test("a depth grid asks its colors for the item it draws and draws the item its colors show", async () => {
+  const { items, calls } = harness({ concurrency: 4 });
+  let shows = null;
+  const asked = [];
+  const color = { at: (key) => (asked.push(key), shows && { media: {}, key: shows }) };
+  const grid = (url, prefetch = []) => ({ kind: "depth_grid", urls, url, prefetch, color });
+  assert.equal(items.request(grid("f2", ["f3", "f5"])), null);
+  // Nothing loaded: no item, so its colors are not asked for.
+  assert.deepEqual(asked, []);
+  calls.find((call) => call.url === "f2").resolve();
+  await settle();
+  // f5 is not loaded: f2 is drawn, its colors are asked at f2 (none yet), and it draws with them once they show it.
+  const input = grid("f5");
+  assert.deepEqual(items.request(input).object, { url: "f2" });
+  assert.deepEqual(asked, ["f2"]);
+  assert.equal(items.colorOf(input), null);
+  shows = "f2";
+  const shown = grid("f5");
+  assert.deepEqual(items.request(shown).object, { url: "f2" });
+  assert.deepEqual(items.colorOf(shown), { media: {}, key: "f2" });
+  // f3 arrives: the colors are asked at f3, but f2 stays drawn while they still show f2.
+  calls.find((call) => call.url === "f3").resolve();
+  await settle();
+  asked.length = 0;
+  assert.deepEqual(items.request(grid("f5")).object, { url: "f2" });
+  assert.deepEqual(asked, ["f3"]);
+  shows = "f3";
+  assert.deepEqual(items.request(grid("f5")).object, { url: "f3" });
+  // Colors that show an item not loaded (or not of the input) leave the picked item drawn.
+  shows = "f9";
+  assert.deepEqual(items.request(grid("f5")).object, { url: "f3" });
+  // An input without colors draws the nearest loaded item, as before.
+  assert.deepEqual(items.request({ kind: "depth_grid", urls, url: "f5", prefetch: [] }).object, { url: "f3" });
+});
+
+test("the item its colors still show stays kept while another item is drawn in its place", async () => {
+  const { items, calls, disposed } = harness({ concurrency: 4, budget: 1 });
+  let shows = "f0";
+  const color = { at: () => ({ media: {}, key: shows }) };
+  const grid = (url) => ({ kind: "depth_grid", urls, url, prefetch: [], color });
+  items.request(grid("f0"));
+  calls[0].resolve();
+  await settle();
+  items.request(grid("f1"));
+  calls[1].resolve();
+  await settle();
+  // f1 is loaded and over the budget beside f0, but the colors still show f0: f0 is drawn and kept.
+  assert.deepEqual(items.request(grid("f1")).object, { url: "f0" });
+  assert.deepEqual(disposed, []);
+  shows = "f1";
+  assert.deepEqual(items.request(grid("f1")).object, { url: "f1" });
+  assert.deepEqual(disposed, ["f0"]);
+});
+
+// docs/threejs-spark-integration.md "読み込んだ要素は…": over the budget, the loaded item used next the farthest goes
+// first. While it plays that is in play order around the loop, so a loop longer than the budget keeps the first items
+// of the next lap and drops the ones just behind the playhead; at rest it is the farthest in time.
+test("the item used next the farthest goes first: around the loop while playing, in time at rest", () => {
+  assert.equal(nextUse(9, 7, 10, true), 2);
+  assert.equal(nextUse(0, 7, 10, true), 3);
+  assert.equal(nextUse(6, 7, 10, true), 9);
+  assert.equal(nextUse(0, 7, 10, false), 7);
+  assert.equal(nextUse(9, 7, 10, false), 2);
+  const loaded = (size) => ({ state: "loaded", size });
+  const entries = ["f0", "f1", "f5", "f6", "f7", "f8"].map((url) => [url, loaded(1)]);
+  const place = (playing) => (url) => (url === "x" ? null : { index: Number(url.slice(1)), at: 7, count: 10, playing });
+  // Playing at f7 (kept): f6 and f5, just behind, go before the next lap's f0 and f1.
+  assert.deepEqual(overBudget(entries, new Set(["f7"]), 3, place(true)), ["f6", "f5", "f1"]);
+  // At rest: f0, f1 are the farthest in time.
+  assert.deepEqual(overBudget(entries, new Set(["f7"]), 3, place(false)), ["f0", "f1", "f5"]);
+  // An item without a place goes first; equals go least recently used first.
+  assert.deepEqual(overBudget([["x", loaded(1)], ...entries], new Set(["f7"]), 6, place(true)), ["x"]);
+  assert.deepEqual(overBudget([["a", loaded(1)], ["b", loaded(1)]], new Set(), 1), ["a"]);
+});
+
+// A load that ends after the playhead passed it is not dropped before it is drawn: trimming waits for the next
+// request, where it is the nearest loaded item.
+test("an item that loads after the playhead passed it is drawn before the budget can drop it", async () => {
+  const { items, calls, disposed } = harness({ concurrency: 4, budget: 2 });
+  const play = (url, prefetch = []) => items.request({ kind: "mesh", urls, url, prefetch }, { playing: true });
+  play("f0", ["f1"]);
+  calls[0].resolve();
+  await settle();
+  play("f0", ["f1"]);
+  play("f3");
+  // f1 arrives with the playhead on f3: the next request draws it.
+  calls.find((call) => call.url === "f1").resolve();
+  await settle();
+  assert.deepEqual(disposed, []);
+  assert.deepEqual(play("f3").object, { url: "f1" });
+});
+
+// A hidden tab draws nothing, so no request follows the loads that end: each load trims as it ends (keeping the item
+// that arrived), and the loaded items never go over the budget.
+test("loads that end with no request after them never keep more than the budget", async () => {
+  const { items, calls, disposed } = harness({ concurrency: 4, budget: 2 });
+  for (const url of ["f0", "f1", "f2", "f3"]) items.request({ kind: "mesh", urls, url, prefetch: [] }, { playing: true });
+  assert.equal(calls.length, 4);
+  const loaded = () => [...items.items.values()].filter((item) => item.state === "loaded").reduce((total, item) => total + item.size, 0);
+  for (const call of calls) {
+    call.resolve();
+    await settle();
+    assert.ok(loaded() <= 2, `${loaded()} loaded after ${call.url}`);
+  }
+  // The shown item (f3) and the last to arrive stay; the ones used next the farthest went.
+  assert.ok(items.items.get("f3")?.state === "loaded");
+  assert.equal(disposed.length, 2);
+});
+
+test("playing a loop longer than the budget keeps the first items of the next lap", async () => {
+  const { items, calls, disposed } = harness({ concurrency: 4, budget: 4 });
+  const play = (url) => items.request({ kind: "mesh", urls, url, prefetch: [] }, { playing: true });
+  for (const url of ["f0", "f1", "f2", "f3", "f4", "f5", "f6", "f7"]) {
+    play(url);
+    calls.at(-1).resolve();
+    await settle();
+    play(url);
+  }
+  // Each item just behind the playhead went (f3..f6); f0..f2 come next after f9 on the next lap. The least recently
+  // used order would have kept f4..f7 and dropped the next lap's first items.
+  assert.deepEqual([...items.items.keys()].sort(), ["f0", "f1", "f2", "f7"]);
+  assert.deepEqual(disposed, ["f3", "f4", "f5", "f6"]);
+  assert.ok(!disposed.includes("f0") && !disposed.includes("f1"));
+});
+
+// docs/threejs-spark-integration.md "止まっている間の先読み" and "生成を邪魔しない": at rest the queue keeps loading the
+// input's items from the playhead in play order while they fit the budget; playing goes back to the prefetch; while
+// ComfyUI runs (lean) nothing more loads and only the shown, drawn and prefetched items stay.
+test("at rest the items load on from the playhead in play order while they fit the budget", async () => {
+  const { items, calls } = harness({ concurrency: 2, budget: 6 });
+  const rest = (url, prefetch = []) => items.request({ kind: "mesh", urls, url, prefetch }, { idle: true });
+  rest("f7");
+  assert.deepEqual(calls.map((call) => call.url), ["f7"]);
+  // Nothing loads ahead before an item's size is known.
+  for (let round = 0; round < 6; round += 1) {
+    for (const call of calls) call.resolve();
+    await settle();
+  }
+  // f7, then f8, f9 and round the loop to f0..f2: six items, the budget.
+  assert.deepEqual(calls.map((call) => call.url), ["f7", "f8", "f9", "f0", "f1", "f2"]);
+  assert.equal([...items.items.values()].filter((item) => item.state === "loaded").length, 6);
+  // Playing: back to the prefetch only.
+  items.request({ kind: "mesh", urls, url: "f8", prefetch: ["f9"] }, { playing: true });
+  await settle();
+  assert.equal(calls.length, 6);
+});
+
+test("the shown and prefetched items load before the ones at rest", async () => {
+  const { items, calls } = harness({ concurrency: 1, budget: 100 });
+  items.request({ kind: "mesh", urls, url: "f0", prefetch: [] }, { idle: true });
+  calls[0].resolve();
+  await settle();
+  // f1 loads at rest; meanwhile the playhead moves to f5 with f6 ahead: those come next, then f7 on.
+  items.request({ kind: "mesh", urls, url: "f5", prefetch: ["f6"] }, { idle: true });
+  calls[1].resolve();
+  await settle();
+  calls[2].resolve();
+  await settle();
+  assert.deepEqual(calls.map((call) => call.url).slice(0, 4), ["f0", "f1", "f5", "f6"]);
+  calls[3].resolve();
+  await settle();
+  assert.equal(calls[4].url, "f7");
+});
+
+test("while ComfyUI runs nothing loads at rest and only the shown, drawn and prefetched items stay; then it goes on", async () => {
+  const { items, calls, disposed } = harness({ concurrency: 2, budget: 100 });
+  const ask = (options, url = "f3") => items.request({ kind: "mesh", urls, url, prefetch: ["f4"] }, options);
+  ask({ idle: true });
+  for (let round = 0; round < 6; round += 1) {
+    for (const call of calls) call.resolve();
+    await settle();
+  }
+  assert.equal(calls.length, 10);
+  ask({ lean: true });
+  assert.deepEqual([...items.items.keys()].sort(), ["f3", "f4"]);
+  assert.equal(disposed.length, 8);
+  await settle();
+  assert.equal(calls.length, 10);
+  // Done: it loads on at rest again.
+  ask({ idle: true });
+  assert.equal(calls.length, 12);
 });

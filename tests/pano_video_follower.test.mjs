@@ -12,8 +12,10 @@ const FIRST = { first: true };
 
 // A <video> that loads, seeks and plays only when the test says so.
 class FakeVideo extends EventTarget {
-  constructor() {
+  // clampSeeks: a seek lands no later than `duration`, as a browser's does.
+  constructor({ clampSeeks = false } = {}) {
     super();
+    this.clampSeeks = clampSeeks;
     this.attributes = new Map();
     this.readyState = 0;
     this.paused = true;
@@ -43,7 +45,8 @@ class FakeVideo extends EventTarget {
 
   set currentTime(value) {
     this.seeks.push(value);
-    this.time = value;
+    const duration = Number(this.duration);
+    this.time = this.clampSeeks && Number.isFinite(duration) ? Math.min(value, duration) : value;
     this.ended = false;
   }
 
@@ -261,9 +264,10 @@ test("the follower is hidden and paused outside the Clip range and the media, an
   clock.framesAhead(30);
   assert.equal(playback.frame, 30);
   picture();
-  assert.equal(video.paused, false);
   assert.ok(Math.abs(video.seeks.at(-1) - 6 / FPS) < 1e-4);
+  // It plays once the seek landed.
   video.land();
+  assert.equal(video.paused, false);
   video.started();
   assert.equal(picture(), video);
   clock.framesAhead(20);
@@ -409,3 +413,124 @@ test("an RGBA IMAGE batch shows the PNG of the playhead's image once loaded, loa
   // Other PNGs (another run) start over.
   assert.equal(sequence.picture(urls.map((url) => `${url}?2`), 3 / FPS + 0.5 / FPS, meta, FIRST), FIRST);
 });
+
+// A seek made while the VIDEO plays (a resync) can land after it played on and was paused: its `seeked` then comes with
+// the VIDEO at a later time than the one sought. The still is the picture at the VIDEO's own time, and the follower
+// seeks on to the wanted time, instead of taking the still for the time sought and resting on the wrong picture.
+// (tests/browser/depth_color_sync.spec.js caught this: a depth grid's colors stayed on a later item.)
+for (const captureEachSeek of [false, true]) {
+  test(`a resync seek that lands after the VIDEO played on and paused is not taken for its time${captureEachSeek ? " (each seek captured)" : ""}`, () => {
+    const video = new FakeVideo();
+    const captures = [];
+    const follower = createVideoFollower({ video, onCapture: () => captures.push(video.currentTime), onChange: () => {}, captureEachSeek });
+    follower.follow({ src: "a.mp4", time: 0, playing: true, fps: 24 });
+    video.loaded();
+    video.started();
+    // Playing drifted ahead: the follower seeks back to 2/24 and plays on.
+    video.time = 0.15;
+    follower.follow({ src: "a.mp4", time: 2 / 24, playing: true, fps: 24 });
+    assert.equal(video.seeks.at(-1), 2 / 24);
+    // The VIDEO plays on past it and the follower rests on 2/24 (it pauses, the paused picture shown) before `seeked`.
+    video.time = 0.1138;
+    follower.follow({ src: "a.mp4", time: 2 / 24, playing: false, fps: 24 });
+    assert.equal(video.paused, true);
+    video.land();
+    // Not at 2/24: it seeks there again, and the still is taken once it is.
+    assert.equal(follower.stillTime === 2 / 24, false);
+    assert.equal(video.seeks.at(-1), 2 / 24);
+    assert.equal(video.time, 2 / 24);
+    video.land();
+    assert.equal(follower.stillTime, 2 / 24);
+    assert.equal(captures.at(-1), 2 / 24);
+  });
+}
+
+// A VIDEO told to play that rests again before it presented a frame left its still on screen all along: pausing keeps
+// that still (and the time it shows) instead of taking the VIDEO's picture, which was never shown, for an unknown time.
+test("resting before the playing VIDEO presented keeps the still that was shown", () => {
+  const video = new FakeVideo();
+  let captures = 0;
+  const follower = createVideoFollower({ video, onCapture: () => (captures += 1), onChange: () => {} });
+  follower.follow({ src: "a.mp4", time: 2 / 24, playing: false, fps: 24 });
+  video.loaded();
+  video.land();
+  assert.equal(follower.stillTime, 2 / 24);
+  const before = captures;
+  // Told to play from 4/24; it seeks there and plays, but has not presented when it is told to rest on 4/24.
+  follower.follow({ src: "a.mp4", time: 4 / 24, playing: true, fps: 24 });
+  video.land();
+  assert.equal(video.paused, false);
+  video.time = 0.2;
+  follower.follow({ src: "a.mp4", time: 4 / 24, playing: false, fps: 24 });
+  assert.equal(video.paused, true);
+  assert.equal(captures, before);
+  assert.equal(follower.stillTime, 2 / 24);
+  // It seeks back to 4/24 and takes that still once there.
+  assert.equal(video.seeks.at(-1), 4 / 24);
+  video.land();
+  assert.equal(follower.stillTime, 4 / 24);
+});
+
+// Chrome reads a time sought back at its own precision (not the same double): the seek has still landed there.
+test("a seek that lands at the time sought read back at another precision is that time", () => {
+  const video = new FakeVideo();
+  const follower = createVideoFollower({ video, onCapture: () => {}, onChange: () => {}, captureEachSeek: true });
+  follower.follow({ src: "a.mp4", time: 1 / 6, playing: false, fps: 24 });
+  video.loaded();
+  const seeks = video.seeks.length;
+  video.time = 0.166667;
+  video.land();
+  assert.equal(follower.stillTime, 1 / 6);
+  follower.follow({ src: "a.mp4", time: 1 / 6, playing: false, fps: 24 });
+  assert.equal(video.seeks.length, seeks);
+});
+
+// Starting to play from a still at another time seeks first and plays once the seek landed: played while seeking, the
+// VIDEO could tell `playing` and be shown with its old picture (the time it was at) for a few frames.
+test("a paused VIDEO that must seek before it plays plays only once the seek landed", () => {
+  const video = new FakeVideo();
+  const follower = createVideoFollower({ video, onCapture: () => {}, onChange: () => {} });
+  follower.follow({ src: "a.mp4", time: 0, playing: false, fps: 24 });
+  video.loaded();
+  video.land();
+  follower.follow({ src: "a.mp4", time: 4 / 24, playing: true, fps: 24 });
+  assert.equal(video.seeks.at(-1), 4 / 24);
+  assert.equal(video.paused, true);
+  assert.equal(video.plays, 0);
+  video.land();
+  assert.equal(video.paused, false);
+  assert.equal(video.plays, 1);
+});
+
+// A browser lands a seek past the VIDEO's end on its end. Resting there seeks once and shows that still, instead of
+// seeking again for a time the VIDEO never reaches and leaving the first frame on screen.
+for (const captureEachSeek of [false, true]) {
+  test(`resting past the VIDEO's end seeks once and shows the still${captureEachSeek ? " (each seek captured)" : ""}`, () => {
+    const video = new FakeVideo({ clampSeeks: true });
+    video.duration = 1.95;
+    const follower = createVideoFollower({ video, onCapture: () => {}, onChange: () => {}, captureEachSeek });
+    follower.follow({ src: "a.mp4", time: 2.05, playing: false, fps: 24 });
+    video.loaded();
+    assert.equal(video.seeks.length, 1);
+    assert.equal(video.seeks[0], 1.95);
+    video.land();
+    assert.equal(follower.stillTime, 2.05);
+    assert.equal(follower.picture(STILL, FIRST), STILL);
+    follower.follow({ src: "a.mp4", time: 2.05, playing: false, fps: 24 });
+    assert.equal(video.seeks.length, 1);
+  });
+
+  test(`a seek that lands past the VIDEO's end with no duration known yet is taken and not sought again${captureEachSeek ? " (each seek captured)" : ""}`, () => {
+    const video = new FakeVideo();
+    const follower = createVideoFollower({ video, onCapture: () => {}, onChange: () => {}, captureEachSeek });
+    follower.follow({ src: "a.mp4", time: 2.05, playing: false, fps: 24 });
+    video.loaded();
+    assert.equal(video.seeks.length, 1);
+    video.time = 1.95;
+    video.land();
+    assert.equal(follower.stillTime, 2.05);
+    assert.equal(video.seeks.length, 1);
+    follower.follow({ src: "a.mp4", time: 2.05, playing: false, fps: 24 });
+    assert.equal(video.seeks.length, 1);
+  });
+}

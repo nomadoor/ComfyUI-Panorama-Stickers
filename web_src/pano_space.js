@@ -388,8 +388,9 @@ export function sceneRequest(files, evaluatedScene, animation = undefined, fps =
     url: index === null ? null : files.urls[index],
     urls: files.urls.filter(Boolean),
     prefetch: ahead.filter(Boolean),
-    // A depth grid's colors: its proxy MP4 at the item's time (i / video_fps).
-    video: depthGrid && files.video && index !== null ? { ...files.video, time: index / files.video.fps } : null,
+    // A depth grid's colors: its proxy MP4 with the input's item keys, at the time of the item drawn (pano_depth_color.js
+    // withDepthColor, depthItemTime).
+    video: depthGrid && files.video && index !== null ? { ...files.video, items: files.urls } : null,
     transform: sceneTransform(evaluatedScene),
     itemQuaternion: files.kind === "splat" ? SPLAT_TO_SCENE : { x: 0, y: 0, z: 0, w: 1 },
     unlit: files.unlit !== false,

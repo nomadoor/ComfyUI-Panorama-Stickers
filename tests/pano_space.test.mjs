@@ -4,6 +4,7 @@ import test from "node:test";
 
 import { BufferAttribute, BufferGeometry, Color, DoubleSide, Group, Mesh, MeshBasicMaterial, MeshStandardMaterial, PerspectiveCamera, Quaternion, Scene, Texture, Vector3 } from "three";
 
+import { depthItemTime } from "../web_src/pano_depth_color.js";
 import { placeDirection } from "../web_src/pano_editor_view.js";
 import { makeUnlit } from "../web_src/pano_scene_loaders.js";
 import { applyViewportCamera, createGizmo } from "../web_src/pano_three_view.js";
@@ -1167,7 +1168,10 @@ test("a depth grid loads DEPTH_GRID_PREFETCH items ahead, and its color comes fr
   assert.equal(request.url, "/view?filename=d2.f32");
   // The next 8 items, an empty one left out.
   assert.deepEqual(request.prefetch, [3, 4, 6, 7, 8, 9, 10].map((index) => `/view?filename=d${index}.f32`));
-  assert.deepEqual(request.video, { src: "/view?filename=proxy.mp4", fps: 24, time: 2 / 24 });
+  // The colors are at the time of the item drawn (pano_depth_color.js depthItemTime), from all the input's item keys.
+  assert.deepEqual(request.video, { src: "/view?filename=proxy.mp4", fps: 24, items: files.urls });
+  assert.equal(depthItemTime(request.video, request.url), 2 / 24);
+  assert.equal(depthItemTime(request.video, "/view?filename=d6.f32"), 6 / 24);
   assert.equal(request.unlit, true);
   assert.deepEqual(request.itemQuaternion, { x: 0, y: 0, z: 0, w: 1 });
   // Other items still load one ahead.
