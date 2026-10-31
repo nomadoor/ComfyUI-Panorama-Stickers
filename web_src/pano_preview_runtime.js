@@ -652,22 +652,18 @@ function getNodeOwnOutputVideo(node, videoKeys = ["pano_videos"], onLoad = null)
   return player.video;
 }
 
-function getLinkedInputImage(node, preferredInputNames = [], options = {}) {
+// The image of the node's linked image input (a new source returns its loading image, not the one shown before).
+function getLinkedInputImage(node, preferredInputNames = []) {
   const resolved = surfaceMedia.nodeSurfaceLinkedSource(node, preferredInputNames, { log: (tag, payload) => panoPreviewLog(node, tag, payload) });
   const srcRaw = String(resolved?.src || "").trim();
   if (!srcRaw) return null;
   const candidates = buildImageSrcCandidates(srcRaw);
   if (!candidates.length) return null;
-  const preserveReadyWhilePending = options?.preserveReadyWhilePending !== false;
   const linkedImages = mediaCache(node).linkedImages;
   const key = preferredInputNames.join("|") || "image";
   const cached = linkedImages.get(key);
   if (cached && cached.srcRaw === srcRaw && cached.img) return cached.img;
-  if (cached && cached.pendingSrcRaw === srcRaw && cached.pendingImg) {
-    return (preserveReadyWhilePending && cached.img && (cached.img.complete || cached.img.naturalWidth || cached.img.width))
-      ? cached.img
-      : cached.pendingImg;
-  }
+  if (cached && cached.pendingSrcRaw === srcRaw && cached.pendingImg) return cached.pendingImg;
 
   const img = new Image();
   const cacheEntry = cached || { srcRaw: "", resolvedSrc: "", img: null, pendingSrcRaw: "", pendingResolvedSrc: "", pendingImg: null };
@@ -745,13 +741,12 @@ function getLinkedInputImage(node, preferredInputNames = [], options = {}) {
     });
   };
   tryLoadNext();
-  return (preserveReadyWhilePending && cacheEntry.img && (cacheEntry.img.complete || cacheEntry.img.naturalWidth || cacheEntry.img.width))
-    ? cacheEntry.img
-    : img;
+  return img;
 }
 
-export function getLinkedInputImageForPreview(node, preferredInputNames = [], onLoad = null, options = {}) {
-  const img = getLinkedInputImage(node, preferredInputNames, options);
+// getLinkedInputImage, with onLoad() run once when the image loads (the node surface draws its DOM canvas again).
+function getLinkedInputImageForPreview(node, preferredInputNames = [], onLoad = null) {
+  const img = getLinkedInputImage(node, preferredInputNames);
   if (!img) return null;
   if (typeof onLoad === "function") {
     if (!(img.complete && (img.naturalWidth || img.width))) {
@@ -1142,7 +1137,6 @@ function surfaceBackgroundMedia(node) {
     node,
     BACKGROUND_INPUT_NAMES,
     () => surface.dom?.requestDraw?.(),
-    { preserveReadyWhilePending: false },
   );
 }
 
