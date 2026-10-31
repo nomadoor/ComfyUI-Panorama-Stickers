@@ -24,7 +24,7 @@ import PanoPreviewNodeSurface from "./components/PanoPreviewNodeSurface.vue";
 import { localPosFromEvent } from "./pano_preview_runtime.js";
 import { isRenderableMediaReady, mediaPlayheadRevisionToken } from "./pano_media_session.js";
 import { peekPreviewNode, previewNode } from "./pano_node_bridge.js";
-import { createComfyMediaAdapter, executionIdMatches } from "./pano_comfy_media.js";
+import { createComfyMediaAdapter } from "./pano_comfy_media.js";
 
 const PREVIEW_MIN_HEIGHT = 140;
 const PREVIEW_MIN_WIDTH = 180;
@@ -34,29 +34,7 @@ const LEGACY_MARGIN = 10;
 // How the Preview node reads ComfyUI's results (pano_comfy_media.js "previewNode").
 const comfyMedia = createComfyMediaAdapter({ app, api, read: "previewNode" });
 const imageSourceFromCandidate = comfyMedia.source;
-
-function lookupNodeOutputEntry(nodeId) {
-  const store = app?.nodeOutputs;
-  if (!store || nodeId == null) return null;
-  const raw = String(nodeId);
-  let val = null;
-  if (store instanceof Map) {
-    val = store.get(nodeId) || store.get(raw) || store.get(Number(raw)) || null;
-  } else {
-    val = store[nodeId] || store[raw] || null;
-  }
-  if (val) return val;
-  if (store instanceof Map) {
-    for (const key of store.keys()) {
-      if (executionIdMatches(key, raw, { keepEmptyTail: true })) return store.get(key);
-    }
-  } else {
-    for (const key of Object.keys(store)) {
-      if (executionIdMatches(key, raw, { keepEmptyTail: true })) return store[key];
-    }
-  }
-  return null;
-}
+const lookupNodeOutputEntry = comfyMedia.output;
 
 function getSelfVideoUrl(node) {
   const outputs = lookupNodeOutputEntry(node?.id);

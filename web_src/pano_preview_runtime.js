@@ -114,7 +114,6 @@ import { createFile3dEditorFiles, file3dEditorFileOf } from "./pano_file_3d.js";
 import { createViewportRestoreScheduler } from "./pano_viewport_restore.js";
 import { editorOpen, mediaCache, nodeSurface, stateSync } from "./pano_node_bridge.js";
 const { app } = appModule;
-setNodeOutputLookup((node) => lookupNodeOutputEntry(node.id));
 trackRunOutputs(api);
 const sharedPreviewImageCache = createSharedImageCache();
 const { linkedVideoFile, source: mediaSource, assetSource: mediaAssetSource } = createComfyMediaAdapter({ app, api });
@@ -123,9 +122,11 @@ const { linkedVideoFile, source: mediaSource, assetSource: mediaAssetSource } = 
 const surfaceMedia = createComfyMediaAdapter({ app, api, read: "nodeSurface" });
 const {
   assetSource: stickerAssetToPreviewSrc,
+  output: lookupNodeOutputEntry,
   source: imageSourceFromCandidate,
   sourceCandidates: buildImageSrcCandidates,
 } = surfaceMedia;
+setNodeOutputLookup((node) => lookupNodeOutputEntry(node.id));
 // The editor files of the 3D file Stickers the node surfaces' Auto length reads (their animated files' clips, ADR 0043),
 // one registry for every surface, as the editor asks the same route; an answer draws the graph again.
 // Panorama Studio's surfaces also draw the 3D file Stickers from those files, so an answer draws them again.
@@ -586,36 +587,6 @@ const executedRefreshMonitor = {
     if (!this.nodes.size) this.ensureUnbound();
   },
 };
-
-function lookupNodeOutputEntry(nodeId) {
-  const store = app?.nodeOutputs;
-  if (!store || nodeId == null) return null;
-  // Performance fix: Prefer strictly direct lookup.
-  // Iterating all outputs every frame causes massive lag when many nodes are present.
-  const raw = String(nodeId);
-  let val = null;
-  if (store instanceof Map) {
-    val = store.get(nodeId) || store.get(raw) || store.get(Number(raw)) || null;
-  } else {
-    val = store[nodeId] || store[raw] || null;
-  }
-  if (val) return val;
-
-  // Compatibility Fallback: Direct lookup failed, possibly due to execution-scoped keys (e.g. "promptId:nodeId").
-  // We iterate keys ONLY if direct lookup misses.
-  const targetId = raw;
-  if (store instanceof Map) {
-    for (const key of store.keys()) {
-      if (executionIdMatches(key, targetId)) return store.get(key);
-    }
-  } else {
-    const keys = Object.keys(store);
-    for (const key of keys) {
-      if (executionIdMatches(key, targetId)) return store[key];
-    }
-  }
-  return null;
-}
 
 function ownOutputUiValue(node, key, outputOverride = null) {
   const output = outputOverride || lookupNodeOutputEntry(node?.id);

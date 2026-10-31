@@ -92,3 +92,25 @@ test("a profile is named; an unknown name throws", () => {
   assert.throws(() => adapter("nodeSurface ".trim() + "x"), /Unknown ComfyUI read profile/);
   assert.throws(() => adapter("toString"), /Unknown ComfyUI read profile/);
 });
+
+test("a node's result: by its id in a Map or an object; the node surfaces and the Preview node also by a key naming it", () => {
+  const own = { images: ["own"] };
+  const inner = { images: ["inner"] };
+  const store = { 12: own, [`${SUBGRAPH}:5`]: inner, "12:": { images: ["odd"] } };
+  for (const read of ["editor", "nodeSurface", "previewNode"]) {
+    assert.equal(adapter(read, { nodeOutputs: store }).output(12), own, read);
+    assert.equal(adapter(read, { nodeOutputs: new Map([["12", own]]) }).output(12), own, read);
+    assert.equal(adapter(read, { nodeOutputs: new Map([[12, own]]) }).output("12"), own, read);
+    assert.equal(adapter(read, { nodeOutputs: store }).output(null), null, read);
+    assert.equal(adapter(read, { nodeOutputs: store }).output(99), null, read);
+  }
+  // A node in a subgraph knows only its own id (5); app.nodeOutputs keys it by its locator id.
+  assert.equal(adapter("editor", { nodeOutputs: store }).output(5), null);
+  assert.equal(adapter("nodeSurface", { nodeOutputs: store }).output(5), inner);
+  assert.equal(adapter("previewNode", { nodeOutputs: store }).output(5), inner);
+  assert.equal(adapter("nodeSurface", { nodeOutputs: new Map(Object.entries(store)) }).output(5), inner);
+  // A key ending in ":" names its last part only for the node surfaces.
+  const odd = { "7:": { images: ["odd"] } };
+  assert.deepEqual(adapter("nodeSurface", { nodeOutputs: odd }).output(7), { images: ["odd"] });
+  assert.equal(adapter("previewNode", { nodeOutputs: odd }).output(7), null);
+});

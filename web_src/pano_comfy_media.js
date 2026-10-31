@@ -164,14 +164,27 @@ export function createComfyMediaAdapter({ app, api, ImageCtor, imageState, read:
     });
   };
 
+  // A node's result in app.nodeOutputs by its id; with outputByExecutionId, else the first key that names it
+  // (executionIdMatches), such as a node's in a subgraph ("<subgraph id>:5").
   const output = (nodeId) => {
     const store = app?.nodeOutputs;
     if (!store || nodeId == null) return null;
     const raw = String(nodeId);
+    const direct = store instanceof Map
+      ? store.get(nodeId) || store.get(raw) || store.get(Number(raw)) || null
+      : store[nodeId] || store[raw] || null;
+    if (direct || !read.outputByExecutionId) return direct;
+    const names = (key) => executionIdMatches(key, raw, { keepEmptyTail: read.executionIdKeepsEmptyTail });
     if (store instanceof Map) {
-      return store.get(nodeId) || store.get(raw) || store.get(Number(raw)) || null;
+      for (const key of store.keys()) {
+        if (names(key)) return store.get(key);
+      }
+    } else {
+      for (const key of Object.keys(store)) {
+        if (names(key)) return store[key];
+      }
     }
-    return store[nodeId] || store[raw] || null;
+    return null;
   };
 
   const uiList = (node, key) => {
