@@ -304,11 +304,10 @@ test("removing the node that plays lets the others play, without touching the re
 });
 
 // docs/timeline-ui.md "どの背景を出すか" (web_src/pano_background_choice.js): what the picture shows of the background, as
-// it is now. Some pin a difference from the editor (the upstream background's picture, the color for an empty
+// it is now. Some pin a difference from the editor (the color for an empty
 // background_color, the color past a lens image's reach); aligning them is an open owner decision: change these only
 // with that decision.
 const ORANGE = [230, 140, 30];
-const MAGENTA = [255, 0, 255];
 const BLACK = [0, 0, 0];
 
 test("the node's own background image shows, and background_color outside its Clip range", async ({ page }) => {
@@ -323,10 +322,41 @@ test("the node's own background image shows, and background_color outside its Cl
   expect(problems).toEqual([]);
 });
 
-test("as it is: with the upstream Scene's background in the result, the picture shows its bg_color, not its image", async ({ page }) => {
+// docs/studio-node-surface.md "表示フレームと VIDEO": an upstream Scene's background standing in shows as in the editor.
+const YELLOW = [230, 220, 40];
+
+test("with the upstream Scene's background image in the result, the picture shows that image, as the editor does", async ({ page }) => {
   const problems = await open(page, "frame", "&case=upbg");
   await expect.poll(async () => near(await color(page, 0.5, 0.5), BLUE), { timeout: 20_000 }).toBe(true);
-  await expect.poll(async () => near(await color(page, 0.03, 0.1), MAGENTA)).toBe(true);
+  await expect.poll(async () => near(await color(page, 0.03, 0.1), YELLOW)).toBe(true);
+  expect(problems).toEqual([]);
+});
+
+test("with the upstream Scene's background VIDEO in the result, the picture shows its frame, as the editor does", async ({ page }) => {
+  const problems = await open(page, "frame", "&case=upvideo");
+  await expect.poll(async () => near(await color(page, 0.03, 0.1), YELLOW), { timeout: 20_000 }).toBe(true);
+  expect(near(await color(page, 0.5, 0.5), BLUE)).toBe(true);
+  expect(problems).toEqual([]);
+});
+
+test("while the node's editor is open, the upstream Scene's background image is let go, and read again when it closes", async ({ page }) => {
+  const problems = await open(page, "frame", "&case=upbg");
+  await expect.poll(async () => near(await color(page, 0.03, 0.1), YELLOW), { timeout: 20_000 }).toBe(true);
+  expect(await page.evaluate(() => window.__surface.upstreamBackgroundHeld())).toBe(true);
+  await page.evaluate(() => window.__surface.editor(true));
+  await expect.poll(() => page.evaluate(() => window.__surface.upstreamBackgroundHeld())).toBe(false);
+  await page.evaluate(() => window.__surface.editor(false));
+  await expect.poll(() => page.evaluate(() => window.__surface.upstreamBackgroundHeld())).toBe(true);
+  await expect.poll(async () => near(await color(page, 0.03, 0.1), YELLOW), { timeout: 20_000 }).toBe(true);
+  expect(problems).toEqual([]);
+});
+
+test("when a run leaves no upstream background, its image is let go while the node is shown, and background_color shows", async ({ page }) => {
+  const problems = await open(page, "frame", "&case=upbg");
+  await expect.poll(async () => near(await color(page, 0.03, 0.1), YELLOW), { timeout: 20_000 }).toBe(true);
+  await page.evaluate(() => window.__surface.dropUpstreamBackground());
+  await expect.poll(() => page.evaluate(() => window.__surface.upstreamBackgroundHeld())).toBe(false);
+  await expect.poll(async () => near(await color(page, 0.03, 0.1), GREEN)).toBe(true);
   expect(problems).toEqual([]);
 });
 
@@ -345,5 +375,72 @@ test("as it is: in Frame mode a lens Camera shows black past its picture's reach
   await expect.poll(async () => near(await color(page, 0.01, 0.02), BLACK)).toBe(true);
   expect(await page.evaluate(() => window.__surface.pictureAlpha(0.01, 0.02))).toBe(255);
   await page.screenshot({ path: test.info().outputPath("lens.png") });
+  expect(problems).toEqual([]);
+});
+
+// Two Studio node surfaces draw through one shared three.js view (pano_preview_view.js), each its own World: what one
+// node draws (its `scene` items, or none) never drops the items of the other (docs/threejs-spark-integration.md
+// "空間の表示"). Each picture is the whole 3DGS ball the Camera stands in, so one swap to the background shows at once.
+const SPLAT_RED = [235, 56, 56];
+const SPLAT_BLUE = [56, 56, 235];
+const sample = (page, frames) => page.evaluate((n) => window.__surface.sample(n), frames);
+// Waits until the shared view draws nothing for 30 frames running (the loads and Spark's sorts, which end in a worker, are done).
+const settled = (page) => expect.poll(async () => (await sample(page, 30)).reduce((total, s) => total + s.draws, 0), { timeout: 20_000 }).toBe(0);
+const steady = (samples, index, color) => ({
+  off: samples.filter((s) => !near(s.color[index], color)).length,
+  changes: samples.filter((s, i) => i > 0 && s.hash[index] !== samples[i - 1].hash[index]).length,
+});
+
+test("two Studio node surfaces with 3DGS stay stable, also while the editor of one is open and after it closes", async ({ page }) => {
+  const problems = await open(page, "frame", "&case=splat&nodes=2&other=splat");
+  await expect.poll(async () => near(await color(page, 0.1, 0.2), SPLAT_RED), { timeout: 30_000 }).toBe(true);
+  await expect.poll(async () => near(await page.evaluate(() => window.__surface.pictureColor(0.1, 0.2, 1)), SPLAT_BLUE), { timeout: 30_000 }).toBe(true);
+  // At rest, once the sorts are done: each picture keeps its 3DGS, nothing is drawn or uploaded again.
+  await settled(page);
+  const idle = await sample(page, 60);
+  expect(steady(idle, 0, SPLAT_RED)).toEqual({ off: 0, changes: 0 });
+  expect(steady(idle, 1, SPLAT_BLUE)).toEqual({ off: 0, changes: 0 });
+  expect(idle.reduce((total, s) => total + s.uploads, 0)).toBe(0);
+  expect(idle.reduce((total, s) => total + s.draws, 0)).toBe(0);
+  // Each PLY loaded once: neither node's render dropped the other's.
+  expect(await page.evaluate(() => [window.__surface.splatLoads(0), window.__surface.splatLoads(1)])).toEqual([1, 1]);
+
+  // The editor of the first node open: that node stops drawing, the other keeps its 3DGS.
+  await page.evaluate(() => window.__surface.editor(true, 0));
+  await page.waitForTimeout(500);
+  expect(steady(await sample(page, 30), 1, SPLAT_BLUE).off).toBe(0);
+  // Closed: the first node loads its 3DGS again (it let its items go under the editor, as the editor loads its own) and
+  // draws it, and both stay.
+  const loads = await page.evaluate(() => [window.__surface.splatLoads(0), window.__surface.splatLoads(1)]);
+  await page.evaluate(() => window.__surface.editor(false, 0));
+  await expect.poll(() => page.evaluate(() => [window.__surface.splatLoads(0), window.__surface.splatLoads(1)]), { timeout: 30_000 }).toEqual([loads[0] + 1, loads[1]]);
+  await expect.poll(async () => near(await color(page, 0.1, 0.2), SPLAT_RED), { timeout: 30_000 }).toBe(true);
+  await settled(page);
+  const after = await sample(page, 60);
+  expect(steady(after, 0, SPLAT_RED)).toEqual({ off: 0, changes: 0 });
+  expect(steady(after, 1, SPLAT_BLUE)).toEqual({ off: 0, changes: 0 });
+  expect(after.reduce((total, s) => total + s.uploads, 0)).toBe(0);
+  await page.screenshot({ path: test.info().outputPath("two-splats.png") });
+  expect(problems).toEqual([]);
+});
+
+test("a Studio node that plays leaves the 3DGS of another Studio node drawn", async ({ page }) => {
+  const problems = await open(page, "frame", "&case=splat&nodes=2&other=moge");
+  await expect.poll(async () => near(await color(page, 0.1, 0.2), SPLAT_RED), { timeout: 30_000 }).toBe(true);
+  await expect.poll(async () => (await depthRow(page, 1)).share, { timeout: 20_000 }).toBeGreaterThan(0.02);
+  await page.locator("#node2 .pano-studio-node-play").click();
+  await expect.poll(async () => (await playbackOf(page, 1)).frame, { timeout: 10_000 }).toBeGreaterThan(0);
+  // While the other node plays (it draws every frame), the 3DGS stays on every frame and is not uploaded again.
+  const playing = await sample(page, 60);
+  expect(steady(playing, 0, SPLAT_RED)).toEqual({ off: 0, changes: 0 });
+  expect((await playbackOf(page, 1)).playing).toBe(true);
+  // The editor of the playing node open and closed: the 3DGS stays.
+  await page.locator("#node2 .pano-studio-node-play").click();
+  await page.evaluate(() => window.__surface.editor(true, 1));
+  await page.waitForTimeout(500);
+  expect(steady(await sample(page, 30), 0, SPLAT_RED).off).toBe(0);
+  await page.evaluate(() => window.__surface.editor(false, 1));
+  await expect.poll(async () => (await depthRow(page, 1)).share, { timeout: 20_000 }).toBeGreaterThan(0.02);
+  expect(steady(await sample(page, 30), 0, SPLAT_RED).off).toBe(0);
   expect(problems).toEqual([]);
 });

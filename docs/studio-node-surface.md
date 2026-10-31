@@ -23,8 +23,8 @@ Panorama Studio（`PanoramaStudio`）のノード上の表示（node surface）�
 | 一行の状態（撮り方、出力の大きさ、上限） | `nodes.py` `PanoramaStudioNode.execute`（`pano_output_size`）・`_studio_run_key` | `web_src/pano_studio_status.js` `studioNodeStatus`・`studioOutputSize`・`studioRunKey`・`createStudioStatus`、`pano_preview_runtime.js` `studioStatusOptions` | `tests/pano_studio_status.test.mjs`、`tests/test_studio_status_parity.py`、`tests/test_studio_node.py`、`tests/browser/studio_node_surface.spec.js` |
 | widget の変更を受けて描き直す（callback の連ね方） | — | `web_src/pano_widget_callback.js` `chainWidgetCallback` | `tests/pano_widget_callback.test.mjs`、`tests/browser/studio_node_surface.spec.js` |
 | wheel の捕捉（旧ノードと Preview の Scene のビューアが使う） | — | `web_src/pano_interaction_controller.js` `createPanoInteractionController`、`web_src/pano_wheel.js` `PANO_FOV_WHEEL_STEP_DEG`・`bindWheelCaptureRoot` | `tests/pano_wheel.test.mjs` |
-| 表示フレームと背景の VIDEO・`port` の素材 | — | `web_src/pano_node_playback.js` `createNodePlayback`・`createSoloPlayback`（同時に再生するのは一つのノード）、`web_src/pano_stickers_node_surface.js` `NODE_SURFACE_FRAME`、どの背景を出すか・背景の VIDEO の候補・Auto の長さに数える背景は `web_src/pano_background_choice.js` `chooseBackground`・`backgroundShowsAt`・`backgroundAt`・`backgroundVideoCandidates`・`backgroundLength`（規則は `docs/timeline-ui.md` の「どの背景を出すか」の行）、背景以外の入力は `pano_preview_runtime.js` `portStickerMedia`・`surfaceTimelineMedia` | `tests/pano_node_playback.test.mjs`、`tests/pano_background_choice.test.mjs`、`tests/browser/studio_node_surface.spec.js` |
-| 見えないときとエディタを開いている間 | — | `pano_node_playback.js` `surfaceShown`、`web_src/pano_node_bridge.js` `editorOpen`、`pano_preview_runtime.js` `attachPanoramaPreviewImpl`（`syncSurfacePlayback`） | `tests/pano_node_playback.test.mjs`、`tests/pano_node_bridge.test.mjs`、`tests/browser/studio_node_surface.spec.js`（深度の格子の色の VIDEO） |
+| 表示フレームと背景の VIDEO・`port` の素材 | — | `web_src/pano_node_playback.js` `createNodePlayback`・`createSoloPlayback`（同時に再生するのは一つのノード）、`web_src/pano_stickers_node_surface.js` `NODE_SURFACE_FRAME`、どの背景を出すか・背景の VIDEO の候補・Auto の長さに数える背景は `web_src/pano_background_choice.js` `chooseBackground`・`backgroundShowsAt`・`backgroundAt`・`backgroundVideoCandidates`・`backgroundLength`（規則は `docs/timeline-ui.md` の「どの背景を出すか」の行）、上流の背景の画像は `pano_preview_runtime.js` `upstreamBackgroundMedia`、背景以外の入力は `pano_preview_runtime.js` `portStickerMedia`・`surfaceTimelineMedia` | `tests/pano_node_playback.test.mjs`、`tests/pano_background_choice.test.mjs`、`tests/browser/studio_node_surface.spec.js` |
+| 見えないときとエディタを開いている間 | — | `pano_node_playback.js` `surfaceShown`、`web_src/pano_node_bridge.js` `editorOpen`、`pano_preview_runtime.js` `attachPanoramaPreviewImpl`（`syncSurfacePlayback`） | `tests/pano_node_playback.test.mjs`、`tests/pano_node_bridge.test.mjs`、`tests/browser/studio_node_surface.spec.js`（深度の格子の色の VIDEO、上流の層の素材、上流の Scene の背景の画像） |
 | 描画と後始末（animation frame、DOM canvas だけの再描画、revision、media の失効、teardown、raster object の大きさ） | — | `pano_preview_runtime.js` `attachPanoramaPreviewImpl`、`web_src/pano_preview_video.js` `isNodeOutputMediaCurrent`・`isTrackedMediaInputConnectionChange`、`web_src/pano_surface_paint.js` `surfacePaintLayers`・`resolveRasterPreviewSize`（ラスタのキャンバスとその寿命は `web_src/pano_paint_display.js` `createPaintDisplay`、`docs/editor-architecture.md` の「Paint layers」） | `tests/pano_preview_video.test.mjs`、`tests/pano_surface_paint.test.mjs`、`tests/pano_paint_display.test.mjs` |
 | `port` の Sticker の素材の読み込みと実行の一致 | — | `pano_stickers_node_surface.js` `reconcilePortStickerState`、`web_src/pano_editor_ui_state.js` `stickerParamEnabled`、`web_src/editor/external_stickers.js`（素材の読み込みでインスペクタを更新） | `tests/pano_stickers_node_surface.test.mjs`、`tests/pano_editor_ui_state.test.mjs` |
 
@@ -66,7 +66,8 @@ Panorama Studio（`PanoramaStudio`）のノード上の表示（node surface）�
   - Frame モード：Camera の枠の絵（`outputFrameInput`）。レンズの曲線 κ ≠ 1 の Camera はレンズの像として描く。
   - どちらも地面のグリッドは描かない（編集の印なので、出力に無い）。
 - 描く物は、エディタの Output の小窓と同じ：エディタで見える物は、ノード上でもそのまま見える（ADR 0052。持ち主の決定、2026-10-31）。
-  作り方はエディタと同じ（`web_src/studio/stage_content.js` の `stageContent`）で、表示フレームの物を描く：背景（Clip range の外と素材が
+  作り方はエディタと同じ（`web_src/studio/stage_content.js` の `stageContent`）で、表示フレームの物を描く：背景（上流の Scene の背景が
+  代わりに立つときはその画像・VIDEO。下の「表示フレームと VIDEO」。Clip range の外と素材が
   終わった先は `background_color`、背景が無いときも `background_color`。出力と同じ）、sky の Sticker とペイント（同じ表示順）、`world` の
   画像の Sticker、3D ファイルの Sticker（エディタと同じ route で読む）、`world` 入力の 3D（実行結果の `pano_scene_files`）、深度の格子
   （`kind` が `depth_grid` の列。`docs/studio-ui.md` の「ノードの入力から来た物」と同じく、入力ごとの色のプロキシの動画を表示フレームに
@@ -120,9 +121,23 @@ Timeline のフレーム（表示フレーム）の背景の VIDEO と `port` �
 - node surfaceが表示するフレーム（表示フレーム）はノードごとの一時状態で、`state_json` にも
   `node.properties` にも保存しない。最初は frame 0 で、reloadやworkflowを開き直すと frame 0 に戻る。
   再生のボタンで再生すると進み、一時停止したフレームのまま残る（下の「再生のボタン」）。
-- 背景のVIDEOは、ノードの実行結果の `pano_input_videos`（`bg_media` が2フレーム以上のとき）か、上流の
-  LoadVideoが読むファイルで、エディタと同じ候補順で選ぶ（`backgroundVideoSources`）。読めないVIDEOは次の候補へ進む。シークバーや時刻表示は出さない。
+- 自分の背景のとき：背景のVIDEOは、ノードの実行結果の `pano_input_videos`（`bg_media` が2フレーム以上のとき）か、背景の入力に
+  つないだ LoadVideoが読むファイルで、エディタと同じ候補順で選ぶ（`backgroundVideoSources`）。読めないVIDEOは次の候補へ進む。シークバーや時刻表示は出さない。
   読めなかったVIDEOのURLは、候補から一度消えたら（再実行や接続変更）もう一度試す。
+  VIDEO が無いときの背景の画像は、ノード自身の実行結果の `pano_input_images`（背景のつなぎ先が実行の時と同じ間）の最初の物を先に、
+  無ければ背景の入力につないだ先がそのまま読むファイルを読む（`pano_comfy_media.js` の `nodeSurfaceLinkedSource`）。
+- 上流の Scene の背景が代わりに立つ間（`scene` の今の実行結果に `pano_upstream_input_images` か `pano_upstream_input_videos` が
+  あるとき。何で決めるかは `docs/timeline-ui.md` の「どの背景を出すか」の行）は、エディタと同じくその背景を出す（`pano_background_choice.js`
+  の `chooseBackground`。エディタと Preview のウィンドウと同じ）。VIDEO の候補は実行結果の
+  `pano_upstream_input_videos` だけで、自分の `pano_input_videos` と背景の入力が読むファイルは候補にしない。VIDEO が無いときは
+  実行結果の `pano_upstream_input_images` の最初の物の画像を出す（URL はノード自身の実行結果の画像と同じく作る。`pano_comfy_media.js` の
+  `nodeSurface` の読み方）。読み込み中は背景を描かない（`backgroundAt` の `pending`）。範囲は `pano_upstream_coverage`、`bg_color` は上流の `pano_upstream_bg_color`。
+  ノード上は実行結果で決めるので、背景の入力をつなぎ直しても、実行し直すまでは上流の背景のまま出す（エディタはつながりで決める。揃えるかは持ち主が未決。`BACKGROUND_CALLERS` の `upstreamWhen`）。
+- 上流の背景の VIDEO も、自分の背景の VIDEO と同じ一本の VIDEO 要素と状態機械で表示フレームに合わせる：再生のボタンで動き
+  （下の「再生のボタン」）、音は出さず、同時に再生するのは一つのノードだけ。見えないときとエディタを開いている間の扱い（src を外す、
+  静止画を放す）も自分の背景の VIDEO と同じ（下の「見えないときとエディタを開いている間」）。上流の背景の画像は、見えないときとエディタを開いている間は放し
+  （上流の層の素材と同じ）、見えるようになると読み直す。上流の背景が立たなくなったとき（実行し直して実行結果に
+  上流の背景が無くなったとき）は、見えていてもその画像を放す。
 - 背景のVIDEOはエディタと同じ状態機械 `pano_video_playback.js` で表示フレームに合わせ、音は出さない（muted）。
   表示フレームの背景は、そのフレームのVIDEOの静止画（最大幅2048）を描く。
 - 各フレームのStickerは共有evaluator（エディタの `workingSkyLayers` / `surfacePoseStickers` と同じ）で評価する。
@@ -175,9 +190,11 @@ Timeline のフレーム（表示フレーム）の背景の VIDEO と `port` �
   （要素そのものはGCまで残り、診断の `video.alive` に数えられるが、`video.loaded` には入らない）。
   静止画のキャンバス2つも大きさを0にする。深度の格子の色の VIDEO（入力ごとに 1 本、上流の層の分も）も同じく src を外して放し
   （`createDepthColors` の `retain([])`）、見えるようになると読み直す。上流の層の読み込んだ素材は、背景の静止画と同じく放す。
+  上流の Scene の背景の画像も放す（上の「表示フレームと VIDEO」）。
+  読み込んだ 3D の要素（`scene`・3D の Sticker・上流の層の要素。共有ビューのそのノードの World のキュー）も放し（`surfaceView.releaseWorld()`）、見えるようになると読み直す。
 - そのノードのエディタを開いている間（`pano_node_bridge.js` の `editorSession(node).open`、`editorOpen(node)`）も、
   モーダルがsurfaceを覆うので見えないものとして扱う。エディタが同じ1080pのVIDEOを自分で再生するので、
-  surfaceはVIDEOのsrc（背景・`port` の素材・深度の格子の色）を外し、静止画と上流の層の素材を放し、描かずに共有ビューのテクスチャを放す（`surfaceView.release()`）。
+  surfaceはVIDEOのsrc（背景・`port` の素材・深度の格子の色）を外し、静止画と上流の層の素材を放し、描かずに共有ビューのテクスチャと読み込んだ 3D の要素を放す（`surfaceView.release()`・`surfaceView.releaseWorld()`。エディタは自分の要素を読むので、持てば重複になる）。
   collapse したsurfaceも描かないので、同じくテクスチャを放す。エディタを閉じると同じ表示フレームから読み直す。
   解像度や品質は落とさない（重複を持たないだけ）。
 

@@ -38,8 +38,6 @@ export const BACKGROUND_UI_KEYS = Object.freeze({
 //   source is a PANO_SCENE).
 // - ownWhen: when the node's own background is the one shown otherwise: "linked" (its input is linked), "always"
 //   (the node surface does not look at the link: it shows what the result and the inputs give, placed by its Clip range).
-// - upstreamPicture: whether the upstream background's picture and VIDEO show; false shows only its bg_color,
-//   and reads the picture, the VIDEO and the span from the node's own keys and inputs even while it stands in.
 // - colorFrom: where bg_color comes from besides an upstream background's own: "node" (the background_color / bg_color
 //   widget), "scene" (the Scene's pano_upstream_bg_color).
 // - colorFallback: the color when that has none.
@@ -52,19 +50,19 @@ export const BACKGROUND_UI_KEYS = Object.freeze({
 //   "always" (unless one is loading).
 export const BACKGROUND_CALLERS = Object.freeze({
   editor: Object.freeze({
-    keys: "studio", inputs: STUDIO_BACKGROUND_INPUT_NAMES, upstreamWhen: "own-unlinked", ownWhen: "linked", upstreamPicture: true, colorFrom: "node",
+    keys: "studio", inputs: STUDIO_BACKGROUND_INPUT_NAMES, upstreamWhen: "own-unlinked", ownWhen: "linked", colorFrom: "node",
     colorFallback: "#00ff00", ownUnder: "never", lengthFrom: "loaded", endsWithMedia: true, fill: "never",
   }),
   window: Object.freeze({
-    keys: "preview", inputs: ["source"], upstreamWhen: "scene", ownWhen: "linked", upstreamPicture: true, colorFrom: "scene",
+    keys: "preview", inputs: ["source"], upstreamWhen: "scene", ownWhen: "linked", colorFrom: "scene",
     colorFallback: "#000000", ownUnder: "never", lengthFrom: "loaded", endsWithMedia: true, fill: "scene",
   }),
   surface: Object.freeze({
-    keys: "studio", inputs: BACKGROUND_INPUT_NAMES, upstreamWhen: "result", ownWhen: "always", upstreamPicture: false, colorFrom: "node",
+    keys: "studio", inputs: BACKGROUND_INPUT_NAMES, upstreamWhen: "result", ownWhen: "always", colorFrom: "node",
     colorFallback: "#000000", ownUnder: "upstream-layers", lengthFrom: "result", endsWithMedia: true, fill: "always",
   }),
   viewer: Object.freeze({
-    keys: null, inputs: [], upstreamWhen: "scene", ownWhen: "linked", upstreamPicture: true, colorFrom: "scene",
+    keys: null, inputs: [], upstreamWhen: "scene", ownWhen: "linked", colorFrom: "scene",
     colorFallback: "#000000", ownUnder: "never", lengthFrom: "result", endsWithMedia: false, fill: "always",
   }),
 });
@@ -101,15 +99,14 @@ export function chooseBackground(caller, {
   let from = "none";
   if (upstream) from = "upstream";
   else if (!(row.upstreamWhen === "scene" && scene) && (row.ownWhen === "always" || ownLinked)) from = "own";
-  const upstreamPicture = !!upstream && row.upstreamPicture;
   const ownKeys = row.keys ? BACKGROUND_UI_KEYS[row.keys] : null;
-  const keys = upstreamPicture
+  const keys = upstream
     ? { image: upstream.imageKey, video: upstream.videoKey, meta: upstream.metaKey }
     : ownKeys && { image: ownKeys.image, video: ownKeys.video, meta: ownKeys.meta };
   // No node has both widgets (nodes.py: Panorama Studio, the Preview and the Preview Scene have background_range; the
   // legacy Stickers and Cutout have coverage), so which one is read first never changes the span.
   const rangeWidget = widget("background_range") ?? widget("coverage");
-  const coverage = upstreamPicture ? upstream.coverage : normalizeCoverageValue(rangeWidget?.value);
+  const coverage = upstream ? upstream.coverage : normalizeCoverageValue(rangeWidget?.value);
   let color;
   if (row.colorFrom === "scene") {
     color = upstream?.color ?? upstreamBgColor(uiList) ?? row.colorFallback;
@@ -125,7 +122,7 @@ export function chooseBackground(caller, {
     from,
     upstream,
     keys,
-    fileInputs: upstreamPicture || scene ? [] : [...row.inputs],
+    fileInputs: upstream || scene ? [] : [...row.inputs],
     coverage,
     color,
     place,
@@ -170,8 +167,7 @@ export function backgroundAt(choice, { shows = true, picture = null, pending = f
 // URL of the video file the first linked of `inputs` loads, or "". `sourceOf(key)`, when given, reads the URL of the
 // result's VIDEO under `key` in place of source(uiList(key)[0]) (the node surface finds the first MP4 among them).
 export function backgroundVideoCandidates(choice, { uiList, current = () => true, source, sourceOf = null, linkedVideoFile = () => "" }) {
-  const upstreamPicture = choice.from === "upstream" && callerRow(choice.caller).upstreamPicture;
-  const read = choice.keys && (upstreamPicture || current("background"));
+  const read = choice.keys && (choice.from === "upstream" || current("background"));
   let own = "";
   if (read && sourceOf) own = sourceOf(choice.keys.video);
   else if (read) {

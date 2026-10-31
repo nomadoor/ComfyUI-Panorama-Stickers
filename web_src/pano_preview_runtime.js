@@ -1134,13 +1134,27 @@ function surfaceBackground(state, bgImg) {
 // upstream Scene's while its background stands in) outside its Clip range and media, and without any background, as in
 // the output; the played VIDEO, its still or the linked image once it has a picture; null while one loads.
 function studioBackground(node, choice) {
-  const bgImg = surfaceBackgroundMedia(node);
+  // An upstream background that no longer stands in lets its image go, shown or not (the own image is kept elsewhere).
+  if (choice.from !== "upstream") nodeSurface(node).studioInputs?.releaseBackgroundImages();
+  const bgImg = choice.from === "upstream" ? upstreamBackgroundMedia(node, choice) : surfaceBackgroundMedia(node);
   const ready = isRenderableMediaReady(bgImg);
   return backgroundAt(choice, {
     shows: nodeSurface(node).playback?.playback.backgroundShows !== false,
     picture: ready ? { media: bgImg, revision: getRenderableMediaRevisionToken(bgImg) } : null,
     pending: !!bgImg && !ready,
   });
+}
+
+// The upstream Scene's background standing in on Panorama Studio's surface (docs/studio-node-surface.md "表示フレームと
+// VIDEO"): its played VIDEO (the playback's candidates are its VIDEO only), else the first image of the result's
+// pano_upstream_input_images, which the surface's studioInputs hold and let go out of sight; null for an image that
+// did not load (its bg_color shows).
+function upstreamBackgroundMedia(node, choice) {
+  const surface = nodeSurface(node);
+  const played = surface.playback ? playbackBackground(surface.playback) : null;
+  if (played) return played;
+  const image = surface.studioInputs?.backgroundImage(choice.keys.image) ?? null;
+  return image?.complete && !image.naturalWidth ? null : image;
 }
 
 // The background media the on-node surface draws: Panorama Studio's played background VIDEO (its Timeline), the legacy
@@ -1927,17 +1941,31 @@ function attachPanoramaPreviewImpl(node, options = {}) {
         editorFile: (sticker) => file3dEditorFileOf(surfaceFile3dFiles, sticker, mediaSource),
         onMedia: requestDraw,
       });
+      // The upstream Scene's background image (upstreamBackgroundMedia), loaded from the result once per source.
+      const backgroundImages = new Map();
+      const releaseBackgroundImages = () => {
+        backgroundImages.forEach((image) => {
+          image.onload = null;
+          image.onerror = null;
+          image.removeAttribute("src");
+        });
+        backgroundImages.clear();
+      };
       surface.studioInputs = {
         depthColors,
         upstream,
         depthColor: (slot, request) => depthColors.picture(slot, request, playback.advancing),
+        backgroundImage: (key) => surfaceMedia.uiImage(node, key, backgroundImages, requestDraw),
+        releaseBackgroundImages,
         release() {
           depthColors.retain([]);
           upstream.dispose();
+          releaseBackgroundImages();
         },
         dispose() {
           depthColors.dispose();
           upstream.dispose();
+          releaseBackgroundImages();
         },
       };
     }
@@ -1969,8 +1997,11 @@ function attachPanoramaPreviewImpl(node, options = {}) {
       releasePanoCanvas(still);
       still.__panoFrameIdx = 0;
     }
-    // Out of sight the depth grids' color VIDEOs and the upstream layers' media are let go too.
-    if (!shown) surface.studioInputs?.release();
+    // Out of sight the depth grids' color VIDEOs, the upstream layers' media and the loaded 3D items are let go too.
+    if (!shown) {
+      surface.studioInputs?.release();
+      surfaceView.releaseWorld();
+    }
     nodeSurfaceUiModel.playable = playable;
     nodeSurfaceUiModel.playing = playback.playing;
   };
@@ -2261,8 +2292,11 @@ function attachPanoramaPreviewImpl(node, options = {}) {
           const status = studioStatus(studioStatusOptions(node), () => surfaceSceneState(node, getCachedState(node)));
           if (status) nodeSurfaceUiModel.status = status;
         }
-        // Collapsed or under the node's open editor, the surface does not draw and frees its textures.
-        if (node.flags?.collapsed || editorOpen(node)) surfaceView.release();
+        // Collapsed or under the node's open editor, the surface does not draw and frees its textures and loaded 3D items.
+        if (node.flags?.collapsed || editorOpen(node)) {
+          surfaceView.release();
+          surfaceView.releaseWorld();
+        }
         else if (studioSurface) {
           // Open Studio's width with its label, from the button while it shows it.
           if (studioStyled && studioOpenButton?.offsetWidth > 0 && !studioOpenButton.classList.contains("is-compact")) studioOpenWidth = studioOpenButton.offsetWidth;

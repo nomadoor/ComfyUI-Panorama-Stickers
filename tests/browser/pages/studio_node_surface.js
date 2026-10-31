@@ -8,11 +8,14 @@
 // node's state hides that image, an upstream override); `?nodes=2` puts a second Studio node
 // with the same inputs in #node2. The background (docs/timeline-ui.md "どの背景を出すか"): `?bg=own` links `background` with an
 // orange ERP in the node's own result (`&clip=10`: its Clip range starts at frame 10); `?case=upbg` is `?case=upstream`
-// with the upstream Scene's yellow background and magenta bg_color in the result; `?bgcolor=empty` leaves background_color
-// empty; `?lens=1` gives the Camera a fisheye lens (κ 0, hFOV 350°), whose corners are past 180° off its axis. The page
-// reports through window.__surface.
+// with the upstream Scene's yellow background image and magenta bg_color in the result, `?case=upvideo` the same with a
+// yellow background VIDEO in place of the image; `?bgcolor=empty` leaves background_color
+// empty; `?lens=1` gives the Camera a fisheye lens (κ 0, hFOV 350°), whose corners are past 180° off its axis.
+// `?case=splat` links a 3DGS PLY (a red ball the Camera stands in) to `world`; with `nodes=2`, `&other=splat` links another
+// PLY (blue) to the second node's `world` and `&other=moge` the depth grid sequence of `case=moge`. The page reports
+// through window.__surface.
 import { app } from "./comfy/app.js";
-import { makeVideo } from "./media.js";
+import { makeSplatPly, makeVideo } from "./media.js";
 import { editorSession, nodeSurface } from "/web_src/pano_node_bridge.js";
 import { attachPanoramaPreview } from "/web_src/pano_preview_runtime.js";
 
@@ -24,9 +27,25 @@ HTMLCanvasElement.prototype.getContext = function (type, options = {}) {
 const params = new URLSearchParams(location.search);
 const mode = params.get("mode") || "frame";
 const which = params.get("case") || "";
-const upstreamCase = which === "upstream" || which === "upbg";
+const upstreamCase = which === "upstream" || which === "upbg" || which === "upvideo";
 const ownBackground = params.get("bg") === "own";
+const other = params.get("other") || "";
 const surface = (window.__surface = { ready: false, error: null, opened: 0 });
+
+// The WebGL texture uploads and draw calls so far (every context of the page: the nodes' shared view is the only one).
+const gl = { uploads: 0, draws: 0 };
+for (const Context of [WebGLRenderingContext, WebGL2RenderingContext]) {
+  const count = (names, key) => names.forEach((name) => {
+    const original = Context.prototype[name];
+    if (!original) return;
+    Context.prototype[name] = function (...args) {
+      gl[key] += 1;
+      return original.apply(this, args);
+    };
+  });
+  count(["texImage2D", "texSubImage2D", "texImage3D", "texSubImage3D"], "uploads");
+  count(["drawArrays", "drawElements", "drawArraysInstanced", "drawElementsInstanced"], "draws");
+}
 
 // The VIDEO elements made once the nodes attach (the depth grids' color VIDEOs among them), to see which hold a source,
 // and the images made (the upstream layer's among them), to see when they are made again.
@@ -82,7 +101,7 @@ function state(yaw = 0) {
       fov: { value: params.get("lens") ? 350 : 60 },
       ...(params.get("lens") ? { curve: { value: 0 } } : {}),
     },
-    stickers: which === "moge" || upstreamCase || ownBackground ? [] : [{
+    stickers: which === "moge" || which === "splat" || upstreamCase || ownBackground ? [] : [{
       id: "sticker_1",
       placement: "sky",
       source: { kind: "file", data_url: solid(`rgb(${RED.join(",")})`) },
@@ -130,7 +149,10 @@ async function mogeResult() {
 
 // Another Studio's Scene on `scene` as a run leaves it (docs/studio-node.md "上流の Scene"): one layer with a blue sky image.
 let upstreamImageUrl = "";
-function upstreamResult() {
+// The upstream Scene's background image (`?case=upbg`; none for `?case=upvideo`, whose background is a VIDEO), to see
+// when it holds its source.
+let upstreamBackgroundUrl = "";
+async function upstreamResult() {
   upstreamImageUrl = solid(`rgb(${BLUE.join(",")})`);
   const layer = {
     version: 2,
@@ -149,11 +171,43 @@ function upstreamResult() {
     pano_upstream_layers: [{ state: layer, ui: {} }],
     pano_upstream_frames: [1],
     pano_timeline_fps: [24],
-    ...(which === "upbg" ? { pano_upstream_input_images: [solid(`rgb(${YELLOW.join(",")})`, 128, 64)], pano_upstream_coverage: [360], pano_upstream_bg_color: [MAGENTA.map((value) => value / 255)] } : {}),
+    ...(which === "upbg" || which === "upvideo" ? { pano_upstream_coverage: [360], pano_upstream_bg_color: [MAGENTA.map((value) => value / 255)] } : {}),
+    ...(which === "upbg" ? { pano_upstream_input_images: [(upstreamBackgroundUrl = solid(`rgb(${YELLOW.join(",")})`, 128, 64))] } : {}),
+    ...(which === "upvideo" ? await upstreamVideo() : {}),
   };
 }
 
-function makeNode(id, host) {
+// The upstream Scene's yellow background VIDEO as a run leaves it: an MP4 by its name (the page records a WebM; the
+// `#…mp4` fragment is how the surface knows an MP4 among the result's files) and its meta.
+async function upstreamVideo() {
+  const video = await makeVideo({ width: 128, height: 64, seconds: 0.6, paint: (g) => {
+    g.fillStyle = `rgb(${YELLOW.join(",")})`;
+    g.fillRect(0, 0, 128, 64);
+  } });
+  return {
+    pano_upstream_input_videos: [`${video.src}#upstream.mp4`],
+    pano_upstream_input_video_meta: [{ frames: 14, duration: 14 / 24, fps: 24 }],
+  };
+}
+
+// A 3DGS PLY on `world` as a run leaves it: a ball of radius 0.5 around the Camera, in one color. Each node's PLY URL
+// (`index` 0 is #node, 1 is #node2), and how many times each URL was fetched (each load of its item fetches it).
+const splatUrls = [];
+const fetched = new Map();
+const nativeFetch = window.fetch.bind(window);
+window.fetch = (input, init) => {
+  const url = String(input?.url ?? input);
+  fetched.set(url, (fetched.get(url) ?? 0) + 1);
+  return nativeFetch(input, init);
+};
+surface.splatLoads = (index = 0) => fetched.get(splatUrls[index]) ?? 0;
+function splatResult(color, index) {
+  const url = URL.createObjectURL(new Blob([makeSplatPly({ count: 20000, radius: 0.5, color })]));
+  splatUrls[index] = url;
+  return { pano_scene_files: [url], pano_scene_meta: [{ kind: "splat" }] };
+}
+
+function makeNode(id, host, world = which) {
   return {
     id,
     type: "PanoramaStudio",
@@ -163,7 +217,7 @@ function makeNode(id, host) {
     __panoSceneStateV2: true,
     size: [360, 400],
     flags: {},
-    inputs: [{ name: "background", link: ownBackground ? 3 : null }, { name: "world", link: which === "moge" ? 1 : null }, { name: "sticker", link: null }, { name: "scene", link: upstreamCase ? 2 : null }],
+    inputs: [{ name: "background", link: ownBackground ? 3 : null }, { name: "world", link: world === "moge" || world === "splat" ? 1 : null }, { name: "sticker", link: null }, { name: "scene", link: upstreamCase ? 2 : null }],
     widgets: [
       widget("background_color", params.get("bgcolor") === "empty" ? "" : "#00ff00"),
       widget("background_range", "360"),
@@ -191,7 +245,7 @@ function makeNode(id, host) {
 const host = document.getElementById("node");
 const node = makeNode(5, host);
 const host2 = document.getElementById("node2");
-const node2 = params.get("nodes") === "2" ? makeNode(6, host2) : null;
+const node2 = params.get("nodes") === "2" ? makeNode(6, host2, other || which) : null;
 if (!node2) host2.remove();
 
 // What ComfyUI does when a widget changes (createWidgetUpdateHandler): set the value, call back with the frontend's args.
@@ -214,17 +268,18 @@ surface.setMode = (next) => {
 };
 // The picture's box in CSS px of the surface: as wide as the line and right above it (6px), and centered up and down
 // with it (as much room above the picture as below the line).
-surface.pictureBox = () => {
-  const line = host.querySelector(".pano-studio-node-line");
-  const frame = host.querySelector(".pano-studio-node-frame");
+surface.pictureBox = (index = 0) => {
+  const target = index ? host2 : host;
+  const line = target.querySelector(".pano-studio-node-line");
+  const frame = target.querySelector(".pano-studio-node-frame");
   const top = frame.clientHeight - (line.offsetTop + line.offsetHeight);
   return { x: line.offsetLeft, y: top, w: line.offsetWidth, h: line.offsetTop - 6 - top };
 };
 // The color at a point of the picture, (u, v) in 0..1 of the picture's box (the layout the overlay reads).
-surface.pictureColor = (u, v) => {
-  const canvas = host.querySelector("canvas");
+surface.pictureColor = (u, v, index = 0) => {
+  const canvas = (index ? host2 : host).querySelector("canvas");
   const ratio = window.devicePixelRatio || 1;
-  const box = surface.pictureBox();
+  const box = surface.pictureBox(index);
   const g = canvas.getContext("2d");
   const [r, gg, b] = g.getImageData(Math.round((box.x + u * box.w) * ratio), Math.round((box.y + v * box.h) * ratio), 1, 1).data;
   return [r, gg, b];
@@ -291,11 +346,48 @@ surface.depthRow = (v = 0.5, index = 0) => {
 surface.depthVideosLoaded = () => videos.filter((video) => !video.isConnected && !!video.getAttribute("src")).length;
 // How many images were made for the upstream layer's sky image (one more each time its layers are read again).
 surface.upstreamImagesMade = () => images.filter((image) => image.src === upstreamImageUrl).length;
-// Opens or closes the node's editor as pano_node_bridge.js records it (the modal itself is not made here).
-surface.editor = (open) => {
-  editorSession(node).open = open;
+// Whether the upstream Scene's background image is held (an image made for it still has its source).
+surface.upstreamBackgroundHeld = () => images.some((image) => image.src === upstreamBackgroundUrl && !!image.getAttribute("src"));
+// A run whose result has no upstream background any more (the upstream Studio's background was taken away).
+surface.dropUpstreamBackground = () => {
+  const { pano_upstream_input_images: _image, pano_upstream_input_videos: _video, ...rest } = app.nodeOutputs[5];
+  app.nodeOutputs = { ...app.nodeOutputs, 5: rest };
   nodeSurface(node).dom?.requestDraw?.();
 };
+// Opens or closes the node's editor as pano_node_bridge.js records it (the modal itself is not made here).
+surface.editor = (open, index = 0) => {
+  const target = index ? node2 : node;
+  editorSession(target).open = open;
+  nodeSurface(target).dom?.requestDraw?.();
+};
+// Per animation frame for `frames` frames: a hash of each node's canvas, the color at (u, v) of each picture, and the
+// texture uploads and draw calls since the frame before.
+function canvasHash(target) {
+  const canvas = target.querySelector("canvas");
+  if (!canvas?.width) return 0;
+  const data = canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height).data;
+  let hash = 2166136261;
+  for (let i = 0; i < data.length; i += 4) hash = Math.imul(hash ^ data[i] ^ (data[i + 1] << 8) ^ (data[i + 2] << 16) ^ (data[i + 3] << 24), 16777619) >>> 0;
+  return hash;
+}
+surface.sample = (frames, u = 0.1, v = 0.2) => new Promise((resolve) => {
+  const out = [];
+  let uploads = gl.uploads;
+  let draws = gl.draws;
+  const step = () => {
+    out.push({
+      hash: [canvasHash(host), node2 ? canvasHash(host2) : 0],
+      color: [surface.pictureColor(u, v, 0), node2 ? surface.pictureColor(u, v, 1) : null],
+      uploads: gl.uploads - uploads,
+      draws: gl.draws - draws,
+    });
+    uploads = gl.uploads;
+    draws = gl.draws;
+    if (out.length < frames) requestAnimationFrame(step);
+    else resolve(out);
+  };
+  requestAnimationFrame(step);
+});
 // Removes the node (ComfyUI calls onRemoved).
 surface.remove = (index = 0) => (index ? node2 : node).onRemoved?.();
 // Collapses or expands the node (a draw follows, as ComfyUI's canvas draws the node again).
@@ -306,9 +398,12 @@ surface.collapse = (collapsed) => {
 
 try {
   if (which === "moge") app.nodeOutputs = { 5: await mogeResult(), 6: null };
-  if (upstreamCase) app.nodeOutputs = { 5: upstreamResult() };
+  if (upstreamCase) app.nodeOutputs = { 5: await upstreamResult() };
   if (ownBackground) app.nodeOutputs = { 5: { pano_input_images: [solid(`rgb(${ORANGE.join(",")})`, 128, 64)] } };
+  if (which === "splat") app.nodeOutputs = { 5: splatResult([1.5, -1, -1], 0) };
   if (node2 && which === "moge") app.nodeOutputs[6] = app.nodeOutputs[5];
+  if (node2 && other === "splat") app.nodeOutputs[6] = splatResult([-1, -1, 1.5], 1);
+  if (node2 && other === "moge") app.nodeOutputs[6] = await mogeResult();
   recording = true;
   attachPanoramaPreview(node, { mode: "stickers", onOpen: () => { surface.opened += 1; } });
   if (node2) attachPanoramaPreview(node2, { mode: "stickers", onOpen: () => {} });

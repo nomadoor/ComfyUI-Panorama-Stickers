@@ -296,7 +296,7 @@ Panorama Studio の自分の `bg_media` は、タイムラインの自分の行�
 - 行の id は `background`（`pano_timeline.js` の `BACKGROUND_ROW`）。エディタが振る Sticker の id は常に `sticker_<番号>`（`docs/scene-state-v2.md` の `next_sticker_id`）なので、Sticker の行の id と重ならない（`scene`・`painting` と同じ前提）。
 - 可変フレームレートの背景 VIDEO の Clip range が既定値でないとき、`duration` の無い Clip range の終わり（バーの終わりと、`bg_color` に替わるフレーム）は、エディタがメタ情報の `duration`（フレーム数 ÷ 平均 fps）から、ノードが最後のフレームの時刻 + 平均 fps の 1 フレームから求めるので、±1 フレームずれうる（CFR では一致する。既定の Clip range では、どちらもフレーム数を使うので一致する）。
 - 上流の Scene の背景には自分の Clip range は当たらない。上流の背景は、その背景を持つ Studio の Clip range（実行結果の `pano_upstream_bg_clip`、自分の Timeline fps に秒で直す。`backgroundClipAt`）で置き、`bg_color` もその Studio のもの（`pano_upstream_bg_color`）を出す。上流の背景の行は無い。
-- ノード上の表示の表示フレーム（`pano_node_playback.js`）も同じ `place` と `backgroundShows` を使う。上流の背景は、実行結果の `pano_upstream_input_video_meta`（`upstreamMedia`）で素材の終わりを知り、その後は `bg_color` を出す（エディタ・出力と同じ）。
+- ノード上の表示の表示フレーム（`pano_node_playback.js`）も同じ `place` と `backgroundShows` を使う。ノード上の表示もエディタと同じく上流の背景の画像と VIDEO を出す（`docs/studio-node-surface.md` の「表示フレームと VIDEO」）。上流の背景は、実行結果の `pano_upstream_input_video_meta`（`upstreamMedia`）で素材の終わりを知り、その後は `bg_color` を出す（エディタ・出力と同じ）。
 
 ## `port` の Sticker の素材
 
