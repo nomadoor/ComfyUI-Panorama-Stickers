@@ -6,13 +6,14 @@ import { loadSceneState } from "../web_src/pano_scene_state.js";
 import { upstreamWorkingLayers } from "../web_src/pano_upstream.js";
 import {
   EASING_MIN_ABOVE,
+  buildCameraCard,
   buildInspectorModel,
   easingGraphSide,
   formatBezier,
   parseBezier,
 } from "../web_src/studio/inspector_model.js";
 
-// docs/studio-ui.md "インスペクタ" (what each tab and selection shows, the rows of each kind, the Camera card, reset,
+// docs/studio-ui.md "インスペクタ" (what each selection shows, the same in both tabs, the rows of each kind, the Camera card, reset,
 // the override mark, the Easing panel) and docs/timeline-ui.md "インスペクタの Keyframe のポチ" (which Lanes a row's dot
 // covers and its three states), on web_src/studio/inspector_model.js.
 
@@ -53,13 +54,14 @@ function model(state, options = {}) {
 }
 
 const row = (card, id) => card.rows.find((item) => item.id === id);
+// The Scene card's Ground part (nothing selected: the Camera's card over it).
+const sceneOf = (m) => m.cards.find((card) => card.kind === "scene");
 const values = (r) => r.fields.map((field) => field.value);
 
-test("nothing selected on the 3D tab shows the Scene card: Ground at -1.6 by default, its Set ground and a reserved seat", () => {
+test("nothing selected shows the Scene card: the Camera's card over Ground at -1.6 by default, its Set ground and a reserved seat", () => {
   const m = model(load());
-  assert.equal(m.cards.length, 1);
-  const [card] = m.cards;
-  assert.equal(card.kind, "scene");
+  assert.deepEqual(m.cards.map((card) => card.kind), ["camera", "scene"]);
+  const card = sceneOf(m);
   assert.equal(card.title, "Scene");
   assert.deepEqual(card.rows.map((item) => item.id), ["ground"]);
   const ground = row(card, "ground");
@@ -74,7 +76,7 @@ test("nothing selected on the 3D tab shows the Scene card: Ground at -1.6 by def
 test("a Ground the state holds is shown and is not at its default", () => {
   const state = load();
   state.ground = -0.8;
-  const ground = row(model(state).cards[0], "ground");
+  const ground = row(sceneOf(model(state)), "ground");
   assert.deepEqual(values(ground), [-0.8]);
   assert.equal(ground.atDefault, false);
 });
@@ -83,15 +85,15 @@ test("without a Ground of its own, the Scene card shows the most downstream upst
   const state = load();
   const layers = [load({ ground: -3 }), load({ ground: -0.5 }), load()].map((sceneState) => ({ sceneState, ui: {} }));
   const upstream = upstreamWorkingLayers(layers, [], state.timeline.fps);
-  const inherited = row(model(state, { upstream }).cards[0], "ground");
+  const inherited = row(sceneOf(model(state, { upstream })), "ground");
   assert.deepEqual(values(inherited), [-0.5]);
   assert.equal(inherited.atDefault, true, "the state holds none: reset has nothing to remove");
   state.ground = -0.8;
-  assert.deepEqual(values(row(model(state, { upstream }).cards[0], "ground")), [-0.8], "its own Ground wins");
+  assert.deepEqual(values(row(sceneOf(model(state, { upstream })), "ground")), [-0.8], "its own Ground wins");
 });
 
 test("the Ground row takes edits (the state keeps `ground`), its seat kept", () => {
-  const ground = row(model(load()).cards[0], "ground");
+  const ground = row(sceneOf(model(load())), "ground");
   assert.equal(ground.disabled, false);
   assert.equal(ground.fields[0].disabled, false);
   assert.equal(ground.tip, "");
@@ -246,12 +248,51 @@ test("the Camera's rows without a Lane have no dot; its H FOV, Lens, Position an
   assert.equal(row(card, "mode").resettable, false);
 });
 
-test("the Camera tab shows only the Camera card, whatever is selected", () => {
-  const state = load({ stickers: [world("sticker_1")] });
-  for (const ids of [[], ["sticker_1"], ["camera"]]) {
-    const m = model(state, { tab: "camera", selection: { ids } });
-    assert.deepEqual(m.cards.map((card) => card.kind), ["camera"]);
+test("the inspector follows the selection; the Camera tab keeps the Camera's card on top over the selected object's (ADR 0051)", () => {
+  const state = load({ stickers: [world("sticker_1"), sky("sticker_2")] });
+  const cases = [
+    [[], ["camera", "scene"], ["camera", "scene"]],
+    [["sticker_1"], ["world"], ["camera", "world"]],
+    [["sticker_2"], ["sky"], ["camera", "sky"]],
+    [["camera"], ["camera"], ["camera"]],
+    [["sticker_1", "sticker_2"], ["multi"], ["camera", "multi"]],
+  ];
+  for (const [ids, inSpace, inCamera] of cases) {
+    assert.deepEqual(model(state, { tab: "3d", selection: { ids } }).cards.map((card) => card.kind), inSpace, `3d ${ids}`);
+    assert.deepEqual(model(state, { tab: "camera", selection: { ids } }).cards.map((card) => card.kind), inCamera, `camera ${ids}`);
   }
+  assert.deepEqual(model(state, { tab: "camera", selection: { ids: [], paint: true } }).cards.map((card) => card.kind), ["camera", "paint"]);
+  // The Camera's card is the same everywhere it shows.
+  const alone = model(state, { selection: { ids: ["camera"] } }).cards[0];
+  for (const tab of ["3d", "camera"]) assert.deepEqual(model(state, { tab }).cards[0], alone);
+  assert.deepEqual(model(state, { tab: "camera", selection: { ids: ["sticker_1"] } }).cards[0], alone);
+  assert.deepEqual(model(state, { tab: "camera", selection: { ids: ["sticker_1"] } }).cards[1], model(state, { selection: { ids: ["sticker_1"] } }).cards[0]);
+  assert.deepEqual(buildCameraCard({ state, playhead: 0 }), alone);
+});
+
+test("a locked Camera and a read-only editor gray the Camera rows in the Scene card too, Mode included", () => {
+  const locked = load({ camera: { locked: true } });
+  const camera = model(locked).cards[0];
+  assert.ok(camera.rows.every((item) => item.disabled), "every Camera row is off");
+  assert.equal(row(camera, "mode").tip, "Locked");
+  assert.equal(row(sceneOf(model(locked)), "ground").disabled, false, "Ground is not the Camera's");
+  const readOnly = model(load(), { readOnly: true });
+  assert.ok(readOnly.cards[0].rows.every((item) => item.disabled));
+  assert.equal(row(readOnly.cards[0], "mode").tip, "Read-only");
+  assert.equal(row(sceneOf(readOnly), "ground").disabled, true);
+});
+
+test("Set ground works in the 3D tab and the Frame mode Camera tab, and is off in the Panorama mode Camera tab", () => {
+  const setGround = (raw, tab) => row(sceneOf(model(load(raw), { tab })), "ground").setGround;
+  const frame = { camera: { projection: "perspective" } };
+  const panorama = { camera: { projection: "erp" } };
+  assert.deepEqual(setGround(frame, "3d"), { disabled: false, tip: "Click a surface to make it the ground" });
+  assert.deepEqual(setGround(panorama, "3d"), { disabled: false, tip: "Click a surface to make it the ground" });
+  assert.deepEqual(setGround(frame, "camera"), { disabled: false, tip: "Click a surface to make it the ground" });
+  assert.deepEqual(setGround(panorama, "camera"), { disabled: true, tip: "Not available in Panorama mode" });
+  // The value itself still takes edits there.
+  assert.equal(row(sceneOf(model(load(panorama), { tab: "camera" })), "ground").fields[0].disabled, false);
+  assert.deepEqual(row(sceneOf(model(load(), { readOnly: true })), "ground").setGround, { disabled: true, tip: "Read-only" });
 });
 
 test("a multiple selection and a paint selection show a heading only", () => {

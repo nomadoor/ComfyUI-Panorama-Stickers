@@ -7,6 +7,16 @@ export const LENS_CURVE_DEFAULT = 1;
 export const LENS_CURVE_MIN = 0;
 export const LENS_CURVE_MAX = 1;
 
+// The decimals the inspector shows κ with (its Lens row and the Camera tab's Lens ruler).
+export const LENS_CURVE_DIGITS = 2;
+// Whether the Camera tab treats a Camera of κ `curve` as a lens Camera for its hits, guides, gizmo and pan
+// (docs/space-and-view.md "レンズの Camera の当たり"): κ rounded to LENS_CURVE_DIGITS is not 1, so a κ shown as 1.00 is a
+// pinhole there. What is drawn (the stage, the output, the Output window) keeps κ as it is.
+export function lensCurveBent(curve) {
+  const scale = 10 ** LENS_CURVE_DIGITS;
+  return Math.round(Number(curve) * scale) / scale !== LENS_CURVE_DEFAULT;
+}
+
 const DEG2RAD = Math.PI / 180;
 
 // Below this |κθ| (or |κρ|) the ratios take their series, as core/math.py's do (`_LENS_SERIES`).

@@ -201,8 +201,9 @@ test("a long name stays on one line, cut with an ellipsis, never touching the ki
   expect(problems).toEqual([]);
 });
 
-test("the Camera tab shows only the Camera card; Panorama grays Aspect, H FOV and Lens, Frame turns them on", async ({ page }, testInfo) => {
+test("the selected Camera shows the Camera card alone, in either tab; Panorama grays Aspect, H FOV and Lens, Frame turns them on", async ({ page }, testInfo) => {
   const problems = await open(page);
+  await scene(page, "select", { ids: ["camera"] });
   await scene(page, "tab", "camera");
   await expect(page.locator(".pano-studio-inspector .pano-studio-card")).toHaveCount(1);
   await expect(page.locator('[data-card="camera"]')).toHaveCount(1);
@@ -240,10 +241,11 @@ test("the Camera tab shows only the Camera card; Panorama grays Aspect, H FOV an
   expect(problems).toEqual([]);
 });
 
-test("nothing selected shows the Scene card: Ground at -1.6, Set ground asks the editor, and an edited ground resets", async ({ page }) => {
+test("nothing selected shows the Scene card: the Camera's card over Ground at -1.6, Set ground asks the editor, and an edited ground resets", async ({ page }) => {
   const problems = await open(page);
   await scene(page, "select", { ids: [] });
   await expect(page.locator('[data-card="scene"]')).toHaveCount(1);
+  expect(await page.locator(".pano-studio-inspector [data-card]").evaluateAll((els) => els.map((el) => el.dataset.card))).toEqual(["camera", "scene"]);
   await expect(row(page, "Ground").locator(".pano-studio-field-value")).toHaveText("-1.60");
   await expect(reset(page, "Ground")).toHaveAttribute("aria-disabled", "true");
   await page.locator('[data-action="set-ground"]').click();

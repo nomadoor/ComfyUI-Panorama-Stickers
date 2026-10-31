@@ -54,14 +54,12 @@ test("of overlapping guides the shallowest center wins, and an object with a cor
   assert.equal(hoverGuide([far, behind], camera, { x: W / 2, y: H / 2 }, W, H), "far");
 });
 
-test("a guide is thin normally, bright under the pointer, yellow when selected; the Camera tab and Hide Grid draw only the selected one", () => {
+test("a guide is thin normally, bright under the pointer, yellow when selected; Hide Grid draws only the selected one (the Camera tab draws as the 3D tab)", () => {
   assert.equal(guideLook({}), "normal");
   assert.equal(guideLook({ hovered: true }), "hover");
   assert.equal(guideLook({ hovered: true, selected: true }), "selected");
   assert.equal(guideLook({ hovered: true, locked: true }), "normal", "a locked object does not light up");
   assert.equal(guideLook({ hovered: true, altHeld: true }), "normal", "nothing lights up while Alt is held");
-  assert.equal(guideLook({ tab: "camera" }), null);
-  assert.equal(guideLook({ tab: "camera", selected: true }), "selected");
   assert.equal(guideLook({ gridHidden: true, hovered: true }), null);
   assert.equal(guideLook({ gridHidden: true, selected: true }), "selected");
 });

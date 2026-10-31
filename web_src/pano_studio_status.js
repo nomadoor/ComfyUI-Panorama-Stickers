@@ -3,6 +3,17 @@
 // over tests/fixtures/studio_output_size.json.
 export const STUDIO_MAX_OUTPUT_SIDE = 8192;
 
+// The `megapixels` and `multiple` widgets as numbers, `read(name)` giving a widget's value (or undefined without one),
+// with the node's defaults (nodes.py PanoramaStudioNode: 2.0 and 8) for a missing one. The node surface reads them on
+// each draw; the editor once, when it opens (docs/studio-ui.md "Output の小窓").
+export const STUDIO_SIZE_DEFAULTS = Object.freeze({ megapixels: 2, multiple: 8 });
+export function studioSizeWidgets(read) {
+  return {
+    megapixels: Number(read("megapixels") ?? STUDIO_SIZE_DEFAULTS.megapixels),
+    multiple: Number(read("multiple") ?? STUDIO_SIZE_DEFAULTS.multiple),
+  };
+}
+
 // Python's round(): to the nearest integer, a half to the even one (ComfyUI's Resolution Selector rounds so).
 function roundHalfEven(value) {
   const floor = Math.floor(value);

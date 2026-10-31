@@ -128,12 +128,12 @@ export function hoverGuide(items, camera, point, width, height) {
   return best?.id ?? null;
 }
 
-// How a guide is drawn now: "selected", "hover", "normal", or null (not drawn). In the Camera tab (`tab` "camera") and
-// while the grid is hidden only the selected one is drawn. A locked object does not light up under the pointer, and
-// nothing does while Alt is held (an Alt drag always orbits).
-export function guideLook({ selected = false, hovered = false, locked = false, altHeld = false, gridHidden = false, tab = "3d" }) {
+// How a guide is drawn now: "selected", "hover", "normal", or null (not drawn). While the grid is hidden only the
+// selected one is drawn. A locked object does not light up under the pointer, and nothing does while Alt is held (an Alt
+// drag always orbits). The Camera tab's Frame view draws them the same (ADR 0051; a lens Camera's draws none, stage.js).
+export function guideLook({ selected = false, hovered = false, locked = false, altHeld = false, gridHidden = false }) {
   if (selected) return "selected";
-  if (tab === "camera" || gridHidden) return null;
+  if (gridHidden) return null;
   if (hovered && !locked && !altHeld) return "hover";
   return "normal";
 }

@@ -9,6 +9,7 @@ import { projectPoint } from "../web_src/pano_space.js";
 import { GROUND_DEFAULT as DEFAULT_GROUND } from "../web_src/studio/defaults.js";
 import { GRID_COLORS, groundGrid } from "../web_src/studio/grid.js";
 import {
+  OUTPUT_LINE_HEIGHT,
   OUTPUT_MAX_WIDTH,
   OUTPUT_MIN_WIDTH,
   STAGE_MIN_HEIGHT,
@@ -131,11 +132,21 @@ test("the timeline keeps its least height and leaves the stage its least height;
   assert.equal(loadTimelineHeight(null), TIMELINE_DEFAULT_HEIGHT);
 });
 
-test("the Output window keeps the output's ratio within its least and largest width, and its fold, per browser", () => {
-  assert.deepEqual(outputWindowSize(300, 2), { width: 300, height: 150 });
-  assert.deepEqual(outputWindowSize(300, 16 / 9), { width: 300, height: 169 });
+test("the Output window's picture keeps the output's ratio within its least and largest width under the 32px line, and its fold, per browser", () => {
+  // Open: as wide as the picture, as high as the picture and the line (docs/studio-ui.md "Output の小窓").
+  assert.equal(OUTPUT_LINE_HEIGHT, 32);
+  assert.deepEqual(outputWindowSize(300, 2), { width: 300, height: 182, picture: { width: 300, height: 150 } });
+  assert.deepEqual(outputWindowSize(300, 16 / 9), { width: 300, height: 201, picture: { width: 300, height: 169 } });
+  // The width kept does not change with the mode or the ratio; only the height does.
+  assert.equal(outputWindowSize(300, 9 / 16).width, 300);
+  assert.equal(outputWindowSize(300, 9 / 16).height, 533 + 32);
+  // The least and largest sizes are the picture's.
   assert.equal(outputWindowSize(1, 2).width, OUTPUT_MIN_WIDTH);
+  assert.equal(outputWindowSize(1, 2).picture.height, OUTPUT_MIN_WIDTH / 2);
   assert.equal(outputWindowSize(1e6, 2).width, OUTPUT_MAX_WIDTH);
+  // A width kept before the least grew (168px) opens at the least (256px, docs/design.md "Output の小窓の最小と最大の大きさ").
+  assert.equal(OUTPUT_MIN_WIDTH, 256);
+  assert.equal(outputWindowSize(168, 2).width, 256);
   const storage = memoryStorage();
   saveOutputWindow(storage, { width: 280, collapsed: true });
   assert.deepEqual(loadOutputWindow(storage), { width: 280, collapsed: true });
