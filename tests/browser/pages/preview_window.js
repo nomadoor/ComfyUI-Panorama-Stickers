@@ -12,6 +12,8 @@ const VIDEO = new URLSearchParams(location.search).has("video");
 const SCENE = new URLSearchParams(location.search).has("scene");
 // ?clip (with ?scene): the Scene's background shows from frame 10 for 10 frames, its bg_color (green) outside.
 const CLIP = new URLSearchParams(location.search).has("clip");
+// ?nocolor (with ?scene): the Scene's result has neither a background nor a bg_color.
+const NO_COLOR = new URLSearchParams(location.search).has("nocolor");
 // ?range180: the node's background_range is 180.
 const RANGE_180 = new URLSearchParams(location.search).has("range180");
 // ?handoff: the node's view (a Scene viewer's record, or the IMAGE runtime's view) is set before the window opens.
@@ -102,8 +104,7 @@ try {
       21: {
         pano_upstream_layers: [{ state: layer, ui: {} }],
         pano_upstream_coverage: [360],
-        pano_upstream_bg_color: [CLIP ? [0, 1, 0] : [0, 0, 0]],
-        pano_upstream_input_images: [solid(512, 256, "#2040c0")],
+        ...(NO_COLOR ? {} : { pano_upstream_bg_color: [CLIP ? [0, 1, 0] : [0, 0, 0]], pano_upstream_input_images: [solid(512, 256, "#2040c0")] }),
         ...(CLIP ? { pano_upstream_bg_clip: [{ clip: { start: 10, in: 0, duration: 10 }, fps: 24 }] } : {}),
         pano_timeline_fps: [24],
         pano_timeline_frames: [48],
@@ -157,6 +158,10 @@ try {
     return !!win;
   };
   preview.close = () => win?.close();
+  // Sets the node's background_range while the window is open (as ComfyUI's widget would).
+  preview.setRange = (value) => {
+    node.widgets.find((widget) => widget.name === "background_range").value = value;
+  };
   preview.playback = () => ({ ...win.playback });
   // The mean [r, g, b] of the stage's center (a tenth of its width and height) and of its top band.
   preview.colors = () => {

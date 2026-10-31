@@ -302,3 +302,47 @@ test("removing the node that plays lets the others play, without touching the re
   await expect.poll(async () => (await playbackOf(page, 1)).playing).toBe(true);
   expect(problems).toEqual([]);
 });
+
+// docs/timeline-ui.md "どの背景を出すか" (refactor lane `surface`, commit 0): what the picture shows of the background,
+// pinned as it is now, before the choice moves to web_src/pano_background_choice.js. Some pin a difference from the
+// editor that the owner has not decided on yet (handoff/refactor/surface.md D1, D2, D3): change them only with that answer.
+const ORANGE = [230, 140, 30];
+const MAGENTA = [255, 0, 255];
+const BLACK = [0, 0, 0];
+
+test("the node's own background image shows, and background_color outside its Clip range", async ({ page }) => {
+  let problems = await open(page, "frame", "&bg=own");
+  await expect.poll(async () => near(await color(page, 0.5, 0.5), ORANGE), { timeout: 20_000 }).toBe(true);
+  expect(problems).toEqual([]);
+  // The Clip range starts at frame 10; the display frame is 0.
+  problems = await open(page, "frame", "&bg=own&clip=10");
+  await expect.poll(async () => near(await color(page, 0.5, 0.5), GREEN), { timeout: 20_000 }).toBe(true);
+  await page.waitForTimeout(300);
+  expect(near(await color(page, 0.5, 0.5), GREEN)).toBe(true);
+  expect(problems).toEqual([]);
+});
+
+test("D1 as it is: with the upstream Scene's background in the result, the picture shows its bg_color, not its image", async ({ page }) => {
+  const problems = await open(page, "frame", "&case=upbg");
+  await expect.poll(async () => near(await color(page, 0.5, 0.5), BLUE), { timeout: 20_000 }).toBe(true);
+  await expect.poll(async () => near(await color(page, 0.03, 0.1), MAGENTA)).toBe(true);
+  expect(problems).toEqual([]);
+});
+
+test("D2 as it is: an empty background_color draws black where nothing is", async ({ page }) => {
+  const problems = await open(page, "frame", "&bgcolor=empty");
+  await expect.poll(async () => near(await color(page, 0.5, 0.5), RED), { timeout: 20_000 }).toBe(true);
+  await expect.poll(async () => near(await color(page, 0.03, 0.1), BLACK)).toBe(true);
+  expect(await page.evaluate(() => window.__surface.pictureAlpha(0.03, 0.1))).toBe(255);
+  expect(problems).toEqual([]);
+});
+
+test("D3 as it is: in Frame mode a lens Camera shows black past its picture's reach, not background_color", async ({ page }) => {
+  const problems = await open(page, "frame", "&lens=1");
+  // Inside its reach the background (green) shows; the corners are past it.
+  await expect.poll(async () => near(await color(page, 0.5, 0.3), GREEN), { timeout: 20_000 }).toBe(true);
+  await expect.poll(async () => near(await color(page, 0.01, 0.02), BLACK)).toBe(true);
+  expect(await page.evaluate(() => window.__surface.pictureAlpha(0.01, 0.02))).toBe(255);
+  await page.screenshot({ path: test.info().outputPath("lens.png") });
+  expect(problems).toEqual([]);
+});

@@ -102,3 +102,20 @@ test("the legacy Panorama Preview reads the MP4 of its own result", async ({ pag
   await expect.poll(() => views).toContain("/view?filename=pv.mp4&type=temp");
   expect(problems).toEqual([]);
 });
+
+// docs/legacy-node-surfaces.md: the legacy Stickers node surface draws the background image of the node's own result
+// (pano_preview_runtime.js surfaceBackground, which refactor lane `surface` narrows to the legacy nodes' part).
+test("the legacy Stickers node surface draws the background image of its own result", async ({ page }) => {
+  const problems = await load(page, "stickers", "&bg");
+  const orange = (rgb) => Math.abs(rgb[0] - 230) <= 40 && Math.abs(rgb[1] - 140) <= 40 && Math.abs(rgb[2] - 30) <= 40;
+  await expect.poll(async () => orange(await page.evaluate(() => window.__entry.surfaceColor(0.5, 0.5))), { timeout: 20_000 }).toBe(true);
+  expect(problems).toEqual([]);
+});
+
+test("the legacy Stickers node surface without a background draws no orange there", async ({ page }) => {
+  const problems = await load(page, "stickers");
+  await page.waitForTimeout(1500);
+  const rgb = await page.evaluate(() => window.__entry.surfaceColor(0.5, 0.5));
+  expect(Math.abs(rgb[0] - 230) <= 40 && Math.abs(rgb[1] - 140) <= 40 && Math.abs(rgb[2] - 30) <= 40).toBe(false);
+  expect(problems).toEqual([]);
+});

@@ -6,7 +6,11 @@
 // depth grid sequence, docs/studio-node.md "実行結果の `ui`"), without the sky image; `?case=upstream` links another
 // Studio's Scene to `scene` whose layer has a blue sky image straight ahead, without the node's own (`&override=hide`: the
 // node's state hides that image, an upstream override); `?nodes=2` puts a second Studio node
-// with the same inputs in #node2. The page reports through window.__surface.
+// with the same inputs in #node2. The background (docs/timeline-ui.md "どの背景を出すか"): `?bg=own` links `background` with an
+// orange ERP in the node's own result (`&clip=10`: its Clip range starts at frame 10); `?case=upbg` is `?case=upstream`
+// with the upstream Scene's yellow background and magenta bg_color in the result; `?bgcolor=empty` leaves background_color
+// empty; `?lens=1` gives the Camera a fisheye lens (κ 0, hFOV 350°), whose corners are past 180° off its axis. The page
+// reports through window.__surface.
 import { app } from "./comfy/app.js";
 import { makeVideo } from "./media.js";
 import { editorSession, nodeSurface } from "/web_src/pano_node_bridge.js";
@@ -20,6 +24,8 @@ HTMLCanvasElement.prototype.getContext = function (type, options = {}) {
 const params = new URLSearchParams(location.search);
 const mode = params.get("mode") || "frame";
 const which = params.get("case") || "";
+const upstreamCase = which === "upstream" || which === "upbg";
+const ownBackground = params.get("bg") === "own";
 const surface = (window.__surface = { ready: false, error: null, opened: 0 });
 
 // The VIDEO elements made once the nodes attach (the depth grids' color VIDEOs among them), to see which hold a source,
@@ -57,6 +63,10 @@ export const GREEN = [0, 255, 0];
 export const DEPTH = [192, 48, 48];
 // The upstream layer's sky image.
 export const BLUE = [40, 150, 210];
+// The node's own background ERP, the upstream Scene's background ERP and its bg_color.
+export const ORANGE = [230, 140, 30];
+export const YELLOW = [230, 220, 40];
+export const MAGENTA = [255, 0, 255];
 function state(yaw = 0) {
   return {
     version: 2,
@@ -64,13 +74,15 @@ function state(yaw = 0) {
     ...(params.get("override") === "hide"
       ? { upstream: [{ layer: "scene_up", fps: 24, stickers: [{ id: "sticker_1", placement: "sky", visible: false }] }] }
       : {}),
+    ...(params.get("clip") ? { background: { clip: { start: Number(params.get("clip")), in: 0, duration: null } } } : {}),
     camera: {
       projection: mode === "panorama" ? "erp" : "perspective",
       aspect: 16 / 9,
       rotation: { value: { yaw_deg: yaw, pitch_deg: 0, roll_deg: 0 } },
-      fov: { value: 60 },
+      fov: { value: params.get("lens") ? 350 : 60 },
+      ...(params.get("lens") ? { curve: { value: 0 } } : {}),
     },
-    stickers: which === "moge" || which === "upstream" ? [] : [{
+    stickers: which === "moge" || upstreamCase || ownBackground ? [] : [{
       id: "sticker_1",
       placement: "sky",
       source: { kind: "file", data_url: solid(`rgb(${RED.join(",")})`) },
@@ -133,7 +145,12 @@ function upstreamResult() {
       size: { value: { hFOV_deg: 40, vFOV_deg: 40 } },
     }],
   };
-  return { pano_upstream_layers: [{ state: layer, ui: {} }], pano_upstream_frames: [1], pano_timeline_fps: [24] };
+  return {
+    pano_upstream_layers: [{ state: layer, ui: {} }],
+    pano_upstream_frames: [1],
+    pano_timeline_fps: [24],
+    ...(which === "upbg" ? { pano_upstream_input_images: [solid(`rgb(${YELLOW.join(",")})`, 128, 64)], pano_upstream_coverage: [360], pano_upstream_bg_color: [MAGENTA.map((value) => value / 255)] } : {}),
+  };
 }
 
 function makeNode(id, host) {
@@ -146,9 +163,9 @@ function makeNode(id, host) {
     __panoSceneStateV2: true,
     size: [360, 400],
     flags: {},
-    inputs: [{ name: "background", link: null }, { name: "world", link: which === "moge" ? 1 : null }, { name: "sticker", link: null }, { name: "scene", link: which === "upstream" ? 2 : null }],
+    inputs: [{ name: "background", link: ownBackground ? 3 : null }, { name: "world", link: which === "moge" ? 1 : null }, { name: "sticker", link: null }, { name: "scene", link: upstreamCase ? 2 : null }],
     widgets: [
-      widget("background_color", "#00ff00"),
+      widget("background_color", params.get("bgcolor") === "empty" ? "" : "#00ff00"),
       widget("background_range", "360"),
       widget("megapixels", 2.0, { round: 0.01 }),
       widget("multiple", 8, { round: 1 }),
@@ -211,6 +228,13 @@ surface.pictureColor = (u, v) => {
   const g = canvas.getContext("2d");
   const [r, gg, b] = g.getImageData(Math.round((box.x + u * box.w) * ratio), Math.round((box.y + v * box.h) * ratio), 1, 1).data;
   return [r, gg, b];
+};
+// The alpha at a point of the picture (0 where nothing was drawn: black there is not a drawn black).
+surface.pictureAlpha = (u, v) => {
+  const canvas = host.querySelector("canvas");
+  const ratio = window.devicePixelRatio || 1;
+  const box = surface.pictureBox();
+  return canvas.getContext("2d").getImageData(Math.round((box.x + u * box.w) * ratio), Math.round((box.y + v * box.h) * ratio), 1, 1).data[3];
 };
 // Resizes the stand-in node's DOM widget area, as a node resize does in either renderer.
 surface.resize = (width, height) => {
@@ -282,7 +306,8 @@ surface.collapse = (collapsed) => {
 
 try {
   if (which === "moge") app.nodeOutputs = { 5: await mogeResult(), 6: null };
-  if (which === "upstream") app.nodeOutputs = { 5: upstreamResult() };
+  if (upstreamCase) app.nodeOutputs = { 5: upstreamResult() };
+  if (ownBackground) app.nodeOutputs = { 5: { pano_input_images: [solid(`rgb(${ORANGE.join(",")})`, 128, 64)] } };
   if (node2 && which === "moge") app.nodeOutputs[6] = app.nodeOutputs[5];
   recording = true;
   attachPanoramaPreview(node, { mode: "stickers", onOpen: () => { surface.opened += 1; } });

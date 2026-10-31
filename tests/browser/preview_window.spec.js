@@ -276,3 +276,23 @@ test("an IMAGE covers the node's background_range: with 180 the back shows no pi
   const half = await page.evaluate(() => window.__preview.sample());
   expect(Math.abs(full - half)).toBeGreaterThan(10);
 });
+
+// docs/timeline-ui.md "どの背景を出すか" (refactor lane `surface`, commit 0): the window's background as it is now, before
+// the choice moves to web_src/pano_background_choice.js (handoff/refactor/surface.md D2, D11).
+test("D2 as it is: a Scene without a background or a bg_color shows black", async ({ page }) => {
+  const problems = await open(page, "?scene&nocolor");
+  // Black, not the stage's clear color (0x070707), which shows where nothing is drawn.
+  const black = ({ top }) => top.every((value) => value <= 2);
+  await page.waitForTimeout(1000);
+  await expect.poll(async () => black(await page.evaluate(() => window.__preview.colors())), { timeout: 20_000 }).toBe(true);
+  expect(problems).toEqual([]);
+});
+
+test("D11 as it is: background_range changed while the window is open applies on the next draw", async ({ page }) => {
+  await open(page, "?handoff&back");
+  await expect.poll(() => page.evaluate(() => window.__preview.sample()), { timeout: 20_000 }).toBeGreaterThan(20);
+  const full = await page.evaluate(() => window.__preview.sample());
+  await page.evaluate(() => window.__preview.setRange("180"));
+  await page.setViewportSize({ width: 1400, height: 860 });
+  await expect.poll(async () => Math.abs(full - await page.evaluate(() => window.__preview.sample())), { timeout: 20_000 }).toBeGreaterThan(10);
+});
