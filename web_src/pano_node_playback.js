@@ -13,7 +13,7 @@
 // The Timeline is exactly the output's length (pano_timeline.js timelineSpan), as in the editor.
 import { backgroundPlace, backgroundShownAt, createFrameSequence, portMediaTime } from "./pano_port_media.js";
 import { NODE_SURFACE_FRAME } from "./pano_stickers_node_surface.js";
-import { isTimed, timelineSpan } from "./pano_timeline.js";
+import { timelinePlayable, timelineSpan } from "./pano_timeline.js";
 import { createVideoFollower, createVideoPlayback } from "./pano_video_playback.js";
 
 // Whether the node surface is on screen: not collapsed, not covered (by the node's open editor), and its
@@ -22,7 +22,22 @@ export function surfaceShown(element, collapsed, covered = false) {
   return !collapsed && !covered && element.isConnected && element.clientWidth > 0;
 }
 
-export function createNodePlayback({ video, stickerVideo, createImage, clock, readState, onFrame, onCapture, onStickerCapture, onChange, camera = false }) {
+// Only one node plays at a time (docs/studio-node-surface.md "再生のボタン"; the nodes share one three.js view): the
+// playbacks made with the same solo pause the one playing before when one starts.
+export function createSoloPlayback() {
+  let current = null;
+  return {
+    start(owner) {
+      if (current && current !== owner) current.pause();
+      current = owner;
+    },
+    forget(owner) {
+      if (current === owner) current = null;
+    },
+  };
+}
+
+export function createNodePlayback({ video, stickerVideo, createImage, clock, readState, onFrame, onCapture, onStickerCapture, onChange, camera = false, solo = null }) {
   // The background VIDEO chosen for the node, and the one the element loads: none while out of sight.
   let chosen = "";
   let loaded = "";
@@ -106,12 +121,16 @@ export function createNodePlayback({ video, stickerVideo, createImage, clock, re
     });
   }
 
-  return {
+  const api = {
     get frame() {
       return playback.frame;
     },
     get playing() {
       return playback.playing;
+    },
+    // Whether the playhead moves: the followers (the depth grids' color VIDEOs) play only then.
+    get advancing() {
+      return playback.advancing;
     },
     get showsVideo() {
       return playback.showsVideo;
@@ -137,9 +156,14 @@ export function createNodePlayback({ video, stickerVideo, createImage, clock, re
       if (sticker?.frames) return frames.picture(sticker.frames, stickerTime, sticker.meta, fallback);
       return follower.picture(still, fallback);
     },
+    // Play (pausing the node that played before, with `solo`) or pause.
     toggle() {
-      if (playback.playing) playback.stop();
-      else playback.play();
+      if (playback.playing) {
+        playback.stop();
+        return;
+      }
+      solo?.start(api);
+      playback.play();
     },
     // Follows the node on each draw and returns whether the play button shows. `sources` are its
     // background VIDEO URLs, best first; one that failed is skipped until it leaves them. `sticker`
@@ -167,7 +191,8 @@ export function createNodePlayback({ video, stickerVideo, createImage, clock, re
         duration = 0;
       }
       load(chosen);
-      const playable = isTimed(state, { camera }) || (!!chosen && playback.state !== "error") || !!sticker;
+      // As in the editor (docs/timeline-ui.md "再生できるか"): a Timeline longer than one frame plays.
+      const playable = timelinePlayable(span());
       if (!playable) pause();
       const reset = changed || !playable || (!playback.playing && playback.frame >= span());
       if (reset && playback.frame !== NODE_SURFACE_FRAME) playback.seek(NODE_SURFACE_FRAME);
@@ -175,6 +200,7 @@ export function createNodePlayback({ video, stickerVideo, createImage, clock, re
       return playable;
     },
     dispose() {
+      solo?.forget(api);
       playback.dispose();
       follower.dispose();
       video.removeEventListener("loadedmetadata", onMetadata);
@@ -185,4 +211,5 @@ export function createNodePlayback({ video, stickerVideo, createImage, clock, re
       loaded = "";
     },
   };
+  return api;
 }

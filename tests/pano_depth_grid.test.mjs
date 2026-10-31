@@ -165,27 +165,63 @@ test("the colors are one texture per input, shared by its items and freed when t
     return texture;
   });
   const still = { width: 4, height: 3 };
-  const first = textures.texture("scene", { media: still, revision: "still:1" });
+  const first = textures.texture("stage", "scene", { media: still, revision: "still:1" });
   // Another item of the same input, and a new still of the same picture: the same texture, uploaded again.
-  assert.equal(textures.texture("scene", { media: still, revision: "still:1" }), first);
-  assert.equal(textures.texture("scene", { media: still, revision: "still:2" }), first);
+  assert.equal(textures.texture("stage", "scene", { media: still, revision: "still:1" }), first);
+  assert.equal(textures.texture("stage", "scene", { media: still, revision: "still:2" }), first);
   assert.equal(first.needsUpdate, true);
   assert.equal(made.length, 1);
   // Another input has its own.
-  const sticker = textures.texture("sticker", { media: { width: 4, height: 3 }, revision: 1 });
+  const sticker = textures.texture("stage", "sticker", { media: { width: 4, height: 3 }, revision: 1 });
   assert.notEqual(sticker, first);
   assert.equal(textures.size, 2);
   // The playing VIDEO in place of the still, or a still of another size: a new texture, the old one freed.
   const video = { videoWidth: 4, videoHeight: 3 };
-  const playing = textures.texture("scene", { media: video, revision: "video" });
+  const playing = textures.texture("stage", "scene", { media: video, revision: "video" });
   assert.notEqual(playing, first);
   assert.equal(first.disposed, true);
   // An input no render asks for any more lets its texture go.
-  textures.retain(["scene"]);
+  textures.retain("stage", ["scene"]);
   assert.equal(sticker.disposed, true);
   assert.equal(textures.size, 1);
   textures.dispose();
   assert.equal(playing.disposed, true);
+  assert.equal(textures.size, 0);
+});
+
+// Review P2-1 (ADR 0052): the node surfaces share one view and each has its own `scene` slot with its own proxy; drawing
+// them in turn must not make their textures again, and one owner's retain must not free the other's.
+test("owners with their own pictures under one slot name keep a texture each; owners with the same picture share one", async () => {
+  const { createDepthColorTextures } = await import("../web_src/pano_three_view.js");
+  const made = [];
+  const textures = createDepthColorTextures((media) => {
+    const texture = { media, disposed: false, needsUpdate: false, dispose() { this.disposed = true; } };
+    made.push(texture);
+    return texture;
+  });
+  const a = { width: 4, height: 3 };
+  const b = { width: 4, height: 3 };
+  for (let round = 0; round < 3; round += 1) {
+    textures.texture("node A", "scene", { media: a, revision: "still:1" });
+    textures.retain("node A", ["scene"]);
+    textures.texture("node B", "scene", { media: b, revision: "still:1" });
+    textures.retain("node B", ["scene"]);
+  }
+  assert.equal(made.length, 2, "drawn in turn, nothing is made again");
+  assert.equal(made.some((texture) => texture.disposed), false);
+  // A node that draws no depth grid lets go of its own only.
+  textures.retain("node B", []);
+  assert.equal(made[1].disposed, true);
+  assert.equal(made[0].disposed, false);
+  // The editor's stage and Output window show the same picture: one texture, freed when both let go.
+  const still = { width: 8, height: 8 };
+  const stage = textures.texture("stage", "scene", { media: still, revision: 1 });
+  assert.equal(textures.texture("output", "scene", { media: still, revision: 1 }), stage);
+  textures.release("stage");
+  assert.equal(stage.disposed, false);
+  textures.release("output");
+  assert.equal(stage.disposed, true);
+  textures.release("node A");
   assert.equal(textures.size, 0);
 });
 

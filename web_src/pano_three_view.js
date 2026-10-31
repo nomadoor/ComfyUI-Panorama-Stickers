@@ -395,42 +395,71 @@ function depthColorTexture(media) {
   return texture;
 }
 
-// The color textures of the depth grids: one per input (`slot`: the `scene`, a 3D Sticker, an upstream layer's),
-// which every item of that input draws with, made by make(media). texture(slot, { media, revision }) gives the
-// slot's texture for its picture: uploaded again for a new revision, made anew (the old one freed) for another
-// picture (the playing VIDEO in place of the still) or another size. retain(slots) frees the textures of the other
-// slots. They are not counted against SCENE_ITEM_BUDGET: one picture per input.
+// The color textures of the depth grids: one per input (`slot`: the `scene`, a 3D Sticker, an upstream layer's) and
+// picture, which every item of that input draws with, made by make(media). Each owner of the view (the editor's stage
+// and Output window, each node surface on the shared view) holds its own slots: texture(owner, slot, { media, revision })
+// gives the texture of the owner's slot for its picture, uploaded again for a new revision; another picture (the
+// playing VIDEO in place of the still) or another size moves the owner to that picture's texture. Owners showing the
+// same picture under the same slot (the editor's stage and Output window) share one texture; owners with different
+// pictures under the same slot name (two Studio nodes' `scene`) have one each, so drawing them in turn makes nothing
+// again. retain(owner, slots) lets go of the owner's other slots, release(owner) of all of its; a texture no owner
+// holds is freed. They are not counted against SCENE_ITEM_BUDGET: one picture per input.
 export function createDepthColorTextures(make) {
-  const slots = new Map();
+  // slot -> the entries of that slot ({ slot, media, revision, texture, width, height, owners })
+  const bySlot = new Map();
+  // owner -> slot -> the entry it holds
+  const held = new Map();
+
+  function drop(owner, slot) {
+    const slots = held.get(owner);
+    const entry = slots?.get(slot);
+    if (!entry) return;
+    slots.delete(slot);
+    if (!slots.size) held.delete(owner);
+    entry.owners.delete(owner);
+    if (entry.owners.size) return;
+    entry.texture.dispose();
+    const list = bySlot.get(slot).filter((item) => item !== entry);
+    if (list.length) bySlot.set(slot, list);
+    else bySlot.delete(slot);
+  }
+
   return {
-    texture(slot, { media, revision }) {
-      let entry = slots.get(slot);
+    texture(owner, slot, { media, revision }) {
       const size = mediaSize(media);
-      if (entry && (entry.media !== media || entry.width !== size.width || entry.height !== size.height)) {
-        entry.texture.dispose();
-        entry = null;
-      }
+      const fits = (entry) => entry.media === media && entry.width === size.width && entry.height === size.height;
+      const current = held.get(owner)?.get(slot);
+      let entry = current && fits(current) ? current : (bySlot.get(slot) ?? []).find(fits);
+      if (current && current !== entry) drop(owner, slot);
       if (!entry) {
-        entry = { media, revision, texture: make(media), ...size };
-        slots.set(slot, entry);
+        entry = { slot, media, revision, texture: make(media), ...size, owners: new Set() };
+        bySlot.set(slot, [...(bySlot.get(slot) ?? []), entry]);
       } else if (entry.revision !== revision) {
         entry.revision = revision;
         entry.texture.needsUpdate = true;
       }
+      entry.owners.add(owner);
+      if (!held.has(owner)) held.set(owner, new Map());
+      held.get(owner).set(slot, entry);
       return entry.texture;
     },
-    retain(keep) {
-      for (const [slot, entry] of [...slots]) {
-        if (keep.includes(slot)) continue;
-        entry.texture.dispose();
-        slots.delete(slot);
-      }
+    retain(owner, keep) {
+      for (const slot of [...(held.get(owner)?.keys() ?? [])]) if (!keep.includes(slot)) drop(owner, slot);
+    },
+    release(owner) {
+      this.retain(owner, []);
     },
     get size() {
-      return slots.size;
+      let count = 0;
+      bySlot.forEach((list) => {
+        count += list.length;
+      });
+      return count;
     },
     dispose() {
-      this.retain([]);
+      bySlot.forEach((list) => list.forEach((entry) => entry.texture.dispose()));
+      bySlot.clear();
+      held.clear();
     },
   };
 }
@@ -545,6 +574,8 @@ export function createLayerTextures({ uploadRegions = null } = {}) {
       const previous = shown.get(owner) ?? new Map();
       const used = new Map();
       return {
+        // The owner drawing (the depth grids' color textures are held by it too).
+        owner,
         // Whether a layer draws: once its media has a picture, or with the texture its source had in the
         // owner's draw before while the new media has none.
         drawable: ({ id, media, source }) => hasContent(media) || previous.get(id)?.source === (source ?? media),
@@ -1201,7 +1232,7 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
       // A depth grid draws only with its colors (the proxy's picture, which the editor gives as input.color).
       if (content.depthGrid) {
         if (!input.color) continue;
-        content.object.material.uniforms.colorMap.value = depthColors.texture(input.color.slot ?? input.color.source, input.color);
+        content.object.material.uniforms.colorMap.value = depthColors.texture(owned.owner, input.color.slot ?? input.color.source, input.color);
         colorSlots.push(input.color.slot ?? input.color.source);
       }
       if (!keepMaterials) setContentOpacity(content, opacity);
@@ -1215,7 +1246,7 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
       else pickable.push({ object: content.group, stickerId: content.stickerId, plane: false });
       parts.push([content.object.uuid, content.transform, input.animation ? [input.animation.clip, input.animation.speed, input.animation.time] : null]);
     }
-    depthColors.retain(colorSlots);
+    depthColors.retain(owned.owner, colorSlots);
     if (splat && Spark) children.push(sparkViews.renderer(owner));
     let index = 0;
     let lensIndex = 0;
@@ -1850,6 +1881,7 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     releaseLensFaces(owner);
     sparkViews.release(owner);
     layerTextures.release(owner);
+    depthColors.release(owner);
   }
 
   // input: render()'s input without camera; the frame is the layers laid out as an ERP. Its rect, if any,
@@ -1864,6 +1896,7 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     releaseLiveErp(owner);
     releaseLensFaces(owner);
     layerTextures.release(owner);
+    depthColors.release(owner);
     owners.delete(owner);
     sparkViews.release(owner);
   }

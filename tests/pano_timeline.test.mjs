@@ -25,6 +25,7 @@ import {
   MAX_TICKS,
   autoTimelineLength,
   timelineSpan,
+  timelinePlayable,
   timelineTicks,
   trimClipEnd,
   trimClipStart,
@@ -466,4 +467,14 @@ test("the Auto length counts one cycle of an animated 3D file's clip", () => {
   assert.equal(autoTimelineLength(state(), { bg: { video: true, frames: 200, duration: 200 / 24 }, animations: { stickers: { robot: clips } } }), 200);
   // Without the clips (before the file is read) nothing is counted.
   assert.equal(autoTimelineLength(state()), 1);
+});
+
+// docs/timeline-ui.md "再生できるか": the editor's bar and Panorama Studio's node surface play the same Timelines.
+test("the Timeline plays when its span is longer than one frame", () => {
+  assert.equal(timelinePlayable(1), false);
+  assert.equal(timelinePlayable(2), true);
+  const state = loadSceneState({ version: 2, timeline: { fps: 24 } });
+  assert.equal(timelinePlayable(timelineSpan(state, {})), false);
+  // A depth grid sequence on `world` (four items) is as long as its items.
+  assert.equal(timelinePlayable(timelineSpan(state, { sceneItems: 4 })), true);
 });

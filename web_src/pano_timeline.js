@@ -228,6 +228,13 @@ export function timelineSpan(state, media = {}) {
   return Number.isFinite(span) ? span : BROKEN_SPAN;
 }
 
+// Whether the Timeline plays (docs/timeline-ui.md "再生できるか"): its span (timelineSpan) is longer than one frame. The
+// editor's Timeline bar (studio/timeline_model.js) and Panorama Studio's node surface (pano_node_playback.js) both ask
+// this, so a node plays on its surface exactly when its editor plays.
+export function timelinePlayable(span) {
+  return span > 1;
+}
+
 // The Auto length: the output length `_decide_timeline` decides without `timeline.length`, by the same rule,
 // from the state and what is known of the inputs. Each input is null (or 0) while it is not known, as before a
 // run: then the rule goes on to the next step, as if the input had a single frame.

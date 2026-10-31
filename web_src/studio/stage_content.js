@@ -15,8 +15,8 @@
 //
 // A depth grid (a `scene`, `sticker` or upstream item whose kind is `depth_grid`, docs/threejs-spark-integration.md
 // "DA3_GEOMETRY mono の深度のグリッド") draws with the colors of its input's proxy video, which the caller plays
-// (`depthColor`, pano_depth_color.js createDepthColors picture()). Without `depthColor` (the node's surface, ADR
-// 0049) depth grids are left out.
+// (`depthColor`, pano_depth_color.js createDepthColors picture()); the editor and Panorama Studio's node surface both
+// give it (ADR 0052). Without `depthColor` depth grids are left out.
 import { depthGridNotice, withDepthColor } from "../pano_depth_color.js";
 import { skyLayers, worldStickerLayers } from "../pano_editor_view.js";
 import { skyStickerVfov, sourceAsset } from "../pano_editor_state.js";

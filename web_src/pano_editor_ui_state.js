@@ -2,7 +2,7 @@ import { ICON } from "./icons.js";
 import { sceneStickerLabel } from "./pano_editor_state.js";
 import { is3dFileSource } from "./pano_scene_state.js";
 import {
-  BACKGROUND_ROW, LANE_LABELS, PAINTING_ROW, hasPainting, laneNames, ownerTimed, rowKeyframes, selectedEasing,
+  BACKGROUND_ROW, LANE_LABELS, PAINTING_ROW, hasPainting, laneNames, ownerTimed, rowKeyframes, selectedEasing, timelinePlayable,
 } from "./pano_timeline.js";
 
 // The row ids live with the Timeline rules (pano_timeline.js); the old UI's importers keep reading them here.
@@ -578,7 +578,7 @@ export function buildTimelineModel(state, { span, portBarEnd = () => null, selec
     muted: !!audio?.muted,
     span,
     // A Timeline of one frame has nothing to play.
-    playable: span > 1,
+    playable: timelinePlayable(span),
     fps: state.timeline.fps,
     fpsLocked,
     length: state.timeline.length,
