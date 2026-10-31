@@ -5,19 +5,19 @@ import { createPanoCanvas } from "../pano_diagnostics.js";
 import { paintingLayerNeedsSync } from "../pano_editor_state.js";
 import { paintingCompositeCount, uploadPaintingLayer } from "../pano_paint_upload.js";
 import { createDamageLog } from "../pano_paint_damage.js";
-import { engineMask, skyPaintLayers } from "../pano_paint_layers.js";
+import { createPaintDisplay, PAINT_DISPLAY_PLACES } from "../pano_paint_display.js";
+import { engineMask } from "../pano_paint_layers.js";
 import { rasterAlphaHits, rasterObjectAlphaAt } from "../pano_paint_objects.js";
 import { rasterEraserDisplay } from "../pano_raster_eraser.js";
 import { clamp } from "../pano_math.js";
-import { cloneJson, drawRasterObjectErp, pointInPoly } from "./helpers.js";
+import { cloneJson, pointInPoly } from "./helpers.js";
 
 // Global registry: nodeId → Promise for in-flight paint layer uploads.
 const _paintLayerUploadRegistry = new Map();
 
 export function createPaintLayers(deps) {
   const {
-    api, editor, node, rasterErpCanvasCache, rasterImageAlphaCache,
-    rasterImageCache, state,
+    api, editor, node, rasterImageAlphaCache, rasterImageCache, state,
   } = deps;
   // Bound by connect() to the other modules and showEditor.
   let commitState, createRasterSurface, getActivePaintTargetDescriptor,
@@ -206,48 +206,26 @@ export function createPaintLayers(deps) {
     editor._activePaintEraserPreviewInfo = null;
   }
 
-  const imageIds = new WeakMap();
-  let nextImageId = 1;
-  function imageIdOf(img) {
-    if (!imageIds.has(img)) imageIds.set(img, nextImageId++);
-    return imageIds.get(img);
+  // The raster objects on ERP canvases of the paint engine's size (pano_paint_display.js, the old editor's rules), their
+  // images from rasterImageCache (getRasterObjectImage).
+  let display = null;
+  function paintDisplay() {
+    display ??= createPaintDisplay({
+      ...PAINT_DISPLAY_PLACES.editor,
+      rasterSize: () => getRasterCompositeErpSize(),
+      image: (item, onLoad) => getRasterObjectImage(item, onLoad),
+      onReady: () => requestDraw(),
+      label: "editor.raster-erp",
+    });
+    return display;
   }
 
+  // A raster object on an ERP canvas of the paint's size, null while its image loads. `item` may name it by its
+  // selection id (`raster:<id>`, as the eraser and the selection do); onLoad is told when the image it loads has loaded.
   function buildRasterObjectEditCanvas(item, onLoad = null) {
     const rid = parseRasterObjectSelectionId(item?.rasterObjectId || item?.id || "");
-    const bbox = item?.bbox || null;
-    if (!rid || !bbox) return null;
-    const img = getRasterObjectImage(item, onLoad);
-    if (!img || !(img.complete || img.width || img.naturalWidth)) return null;
-    const { width, height } = getRasterCompositeErpSize();
-    const tf = item?.transform || {};
-    const key = [
-      rid,
-      width,
-      height,
-      bbox.u0,
-      bbox.v0,
-      bbox.u1,
-      bbox.v1,
-      tf.du,
-      tf.dv,
-      tf.rot_deg,
-      tf.scale,
-      // The image it draws (a new data URL is another image), rather than the painting's revision, so a stroke
-      // elsewhere does not draw it again.
-      imageIdOf(img),
-    ].join(":");
-    const cached = rasterErpCanvasCache.get(key);
-    if (cached) return cached;
-    if (rasterErpCanvasCache.size > 64) rasterErpCanvasCache.clear();
-    const erpCanvas = createPanoCanvas({ label: "editor.raster-erp" });
-    erpCanvas.width = width;
-    erpCanvas.height = height;
-    const erpCtx = erpCanvas.getContext("2d");
-    if (!erpCtx) return null;
-    drawRasterObjectErp(erpCtx, img, item, width, height);
-    rasterErpCanvasCache.set(key, erpCanvas);
-    return erpCanvas;
+    if (!rid || !item?.bbox) return null;
+    return paintDisplay().rasterCanvas(rid === item.id ? item : { ...item, id: rid }, onLoad);
   }
 
   let _paintLayerSyncRevision = null;
@@ -325,7 +303,7 @@ export function createPaintLayers(deps) {
     return promise;
   }
 
-  // The paint the views draw (skyPaintLayers): the engine's stroke groups with the live stroke (the engine's
+  // The paint the views draw (the paint display's layers): the engine's stroke groups with the live stroke (the engine's
   // display of each group, whose revision moves only when that group's display changes), the group being drawn
   // at the z_index it takes (getOrderedDisplayListObjects), the raster objects with the live eraser, and the mask.
   function buildEditorViewPaintLayers() {
@@ -337,11 +315,9 @@ export function createPaintLayers(deps) {
     let eraserInfo;
     const eraserPreview = () => (eraserInfo === undefined ? (eraserInfo = getActivePaintEraserPreviewInfo()) : eraserInfo);
     const shownRasters = new Set();
-    const layers = skyPaintLayers({ ...state, painting: { ...state.painting, groups } }, {
+    const layers = paintDisplay().layers({ ...state, painting: { ...state.painting, groups } }, {
       group: (id) => engine?.getGroupDisplay(id) ?? null,
-      raster: (item) => {
-        const baseSource = buildRasterObjectEditCanvas(item, () => requestDraw());
-        if (!baseSource) return null;
+      raster: (item, baseSource) => {
         const id = String(item.id);
         shownRasters.add(id);
         if (!rasterDisplays.has(id)) rasterDisplays.set(id, { log: createDamageLog(), base: null });

@@ -1,13 +1,69 @@
-import { isVideoFile, outputSourceToken } from "./pano_preview_video.js";
+import {
+  BACKGROUND_INPUT_NAMES,
+  isNodeOutputMediaCurrent,
+  isVideoFile,
+  outputSourceToken,
+  resolvePreviewVideoSource,
+} from "./pano_preview_video.js";
 import { mediaCache } from "./pano_node_bridge.js";
 
-function comfyImageEntryToUrl(api, entry) {
+// How a reader reads ComfyUI's results (the rule's owner: docs/editor-architecture.md, the owner-table row
+// "ComfyUI の実行結果を読む"). Each flag is one place where the readers read differently today, kept as it was; whether
+// to align each one is an open owner decision, and aligning one removes its flag. Callers name a profile, they do not
+// compose flags.
+// - editor: the old editor and the new UI (Studio editor, Preview window).
+// - nodeSurface: the legacy Stickers / Cutout and Panorama Studio node surfaces (pano_preview_runtime.js).
+// - previewNode: the Preview node's IMAGE / VIDEO and the legacy Panorama Preview (pano_preview_previewnode.js).
+// outputByExecutionId: a node's result not found by its id is looked for among the keys by executionIdMatches.
+// executionIdKeepsEmptyTail: an id ending in ":" has an empty last part. viewType "storage": /view's type is the
+// entry's storage, else its type ("comfy_image" reading as "output"). trimFilename: the filename is trimmed.
+// tupleNeedsStringName: a [filename, subfolder, type] tuple needs a string first item.
+const READ_PROFILES = Object.freeze({
+  editor: Object.freeze({ outputByExecutionId: false, executionIdKeepsEmptyTail: false, viewType: "type", trimFilename: false, tupleNeedsStringName: false }),
+  nodeSurface: Object.freeze({ outputByExecutionId: true, executionIdKeepsEmptyTail: false, viewType: "storage", trimFilename: false, tupleNeedsStringName: false }),
+  previewNode: Object.freeze({ outputByExecutionId: true, executionIdKeepsEmptyTail: true, viewType: "storage", trimFilename: true, tupleNeedsStringName: true }),
+});
+
+function readProfile(name) {
+  if (!Object.hasOwn(READ_PROFILES, name)) throw new Error(`Unknown ComfyUI read profile: ${name}`);
+  return READ_PROFILES[name];
+}
+
+function normalizeExecutionId(value, keepEmptyTail) {
+  const id = String(value ?? "").trim();
+  if (!id) return { full: "", tail: "" };
+  if (keepEmptyTail) {
+    const parts = id.split(":");
+    return { full: id, tail: String(parts[parts.length - 1] || "").trim() };
+  }
+  const parts = id.split(":").map((p) => String(p).trim()).filter(Boolean);
+  return { full: id, tail: parts.length ? parts[parts.length - 1] : id };
+}
+
+// Whether two ComfyUI ids name the same node: equal, or one's last part (after the last ":") is the other or the
+// other's last part. ComfyUI reports a run by its execution id ("12", "12:5" inside the subgraph node 12 instances)
+// and keys app.nodeOutputs by the node's locator id ("12", "<subgraph id>:5"); a node knows only its own id.
+export function executionIdMatches(value, target, { keepEmptyTail = false } = {}) {
+  const a = normalizeExecutionId(value, keepEmptyTail);
+  const b = normalizeExecutionId(target, keepEmptyTail);
+  if (!a.full || !b.full) return false;
+  return a.full === b.full || a.tail === b.full || a.full === b.tail || a.tail === b.tail;
+}
+
+function comfyImageEntryToUrl(api, entry, read = READ_PROFILES.editor) {
   if (!entry || typeof entry !== "object") return "";
-  const filename = String(entry.filename || "");
+  const filename = read.trimFilename ? String(entry.filename || "").trim() : String(entry.filename || "");
   if (!filename) return "";
   const params = new URLSearchParams();
   params.set("filename", filename);
-  params.set("type", String(entry.type || "output"));
+  const viewType = read.viewType === "storage"
+    ? String(
+      entry.storage
+      || (String(entry.type || "").trim().toLowerCase() === "comfy_image" ? "output" : entry.type)
+      || "output"
+    )
+    : String(entry.type || "output");
+  params.set("type", viewType);
   if (entry.subfolder) params.set("subfolder", String(entry.subfolder));
   const route = `/view?${params.toString()}`;
   return typeof api?.apiURL === "function" ? api.apiURL(route) : route;
@@ -19,7 +75,9 @@ function getGraphNodeById(graph, id) {
   return graph._nodes_by_id?.[id] || graph._nodes_by_id?.[String(id)] || null;
 }
 
-function resolveInputOriginNode(node, inputIndex, fallbackOriginId = null) {
+// The node a node's input comes from, through a subgraph's output to the node inside; else the graph's node of
+// fallbackOriginId.
+export function resolveInputOriginNode(node, inputIndex, fallbackOriginId = null) {
   let originNode = null;
   try {
     originNode = typeof node?.getInputNode === "function" ? node.getInputNode(inputIndex) : null;
@@ -39,6 +97,24 @@ function resolveInputOriginNode(node, inputIndex, fallbackOriginId = null) {
     originNode = getGraphNodeById(node?.graph, fallbackOriginId);
   }
   return originNode;
+}
+
+function listInputNames(node) {
+  const inputs = Array.isArray(node?.inputs) ? node.inputs : [];
+  return inputs.map((i) => String(i?.name || "")).filter(Boolean);
+}
+
+// The image inputs the node surfaces read, in order: the preferred names the node has, then its background inputs.
+export function preferredImageInputsForNode(node, preferredInputNames = []) {
+  const names = listInputNames(node);
+  const out = [];
+  preferredInputNames.forEach((name) => {
+    if (names.includes(String(name))) out.push(String(name));
+  });
+  names.forEach((name) => {
+    if (BACKGROUND_INPUT_NAMES.includes(name) && !out.includes(name)) out.push(name);
+  });
+  return out.length ? out : preferredInputNames;
 }
 
 function isDirectMediaUrl(src) {
@@ -71,16 +147,21 @@ function hashStringSimple(text) {
   return String(hash >>> 0);
 }
 
-export function createComfyMediaAdapter({ app, api, ImageCtor, imageState } = {}) {
+// read: the name of a read profile (above), "editor" by default.
+export function createComfyMediaAdapter({ app, api, ImageCtor, imageState, read: profileName = "editor" } = {}) {
+  const read = readProfile(profileName);
+  const entryUrl = (entry) => comfyImageEntryToUrl(api, entry, read);
   const source = (candidate) => {
     if (!candidate) return "";
     if (typeof candidate === "string") return String(candidate || "").trim();
     if (Array.isArray(candidate)) {
       if (candidate.length === 0) return "";
       if (candidate.length === 1) return source(candidate[0]);
-      const filename = String(candidate[0] || "").trim();
+      const filename = read.tupleNeedsStringName
+        ? (typeof candidate[0] === "string" ? String(candidate[0] || "").trim() : "")
+        : String(candidate[0] || "").trim();
       if (filename) {
-        return comfyImageEntryToUrl(api, {
+        return entryUrl({
           filename,
           subfolder: String(candidate[1] || "").trim(),
           type: String(candidate[2] || "output").trim() || "output",
@@ -94,7 +175,7 @@ export function createComfyMediaAdapter({ app, api, ImageCtor, imageState } = {}
     }
     if (typeof candidate?.src === "string" && candidate.src) return candidate.src;
     if (typeof candidate?.url === "string" && candidate.url) return candidate.url;
-    return comfyImageEntryToUrl(api, candidate);
+    return entryUrl(candidate);
   };
 
   const assetSource = (asset) => {
@@ -104,21 +185,34 @@ export function createComfyMediaAdapter({ app, api, ImageCtor, imageState } = {}
     if (type !== "comfy_image") return "";
     const filename = String(asset.filename || "").trim();
     if (!filename) return "";
-    return comfyImageEntryToUrl(api, {
+    return entryUrl({
       filename,
       subfolder: String(asset.subfolder || ""),
       type: String(asset.storage || "input"),
     });
   };
 
+  // A node's result in app.nodeOutputs by its id; with outputByExecutionId, else the first key that names it
+  // (executionIdMatches), such as a node's in a subgraph ("<subgraph id>:5").
   const output = (nodeId) => {
     const store = app?.nodeOutputs;
     if (!store || nodeId == null) return null;
     const raw = String(nodeId);
+    const direct = store instanceof Map
+      ? store.get(nodeId) || store.get(raw) || store.get(Number(raw)) || null
+      : store[nodeId] || store[raw] || null;
+    if (direct || !read.outputByExecutionId) return direct;
+    const names = (key) => executionIdMatches(key, raw, { keepEmptyTail: read.executionIdKeepsEmptyTail });
     if (store instanceof Map) {
-      return store.get(nodeId) || store.get(raw) || store.get(Number(raw)) || null;
+      for (const key of store.keys()) {
+        if (names(key)) return store.get(key);
+      }
+    } else {
+      for (const key of Object.keys(store)) {
+        if (names(key)) return store[key];
+      }
     }
-    return store[nodeId] || store[raw] || null;
+    return null;
   };
 
   const uiList = (node, key) => {
@@ -238,10 +332,200 @@ export function createComfyMediaAdapter({ app, api, ImageCtor, imageState } = {}
       if (link?.origin_id == null) continue;
       const payload = output(resolveInputOriginNode(node, inputIndex, link.origin_id)?.id ?? link.origin_id);
       const entry = (Array.isArray(payload?.images) ? payload.images : []).find(isVideoFile);
-      return entry ? `${comfyImageEntryToUrl(api, entry)}&pano_src=${outputSourceToken(payload)}` : "";
+      return entry ? `${entryUrl(entry)}&pano_src=${outputSourceToken(payload)}` : "";
     }
     return "";
   };
+
+  // Where the node surfaces (pano_preview_runtime.js) find the picture of a node's linked image input, as they have:
+  // the node's own pano_input_images while current, then each linked input's origin.
+  const nodeSurfaceLinkedSource = (node, preferredInputNames = [], { log = () => {} } = {}) => {
+    const inputs = Array.isArray(node?.inputs) ? node.inputs : [];
+    if (!inputs.length) return { src: "", sourceType: "", inputName: "" };
+    // The node's own result first (pano_input_images: the picture its run got, the only place an IMAGE made by another
+    // node is), while it is current for the inputs; then the linked inputs (docs/adr/0003-external-input-sticker-failure-
+    // boundaries.md, Amendment 2026-03-11).
+    const selfOutput = isNodeOutputMediaCurrent(node, "background") ? output(node?.id) : null;
+    const ownCandidates = [
+      ...(Array.isArray(selfOutput?.pano_input_images) ? selfOutput.pano_input_images : []),
+      ...(Array.isArray(selfOutput?.ui?.pano_input_images) ? selfOutput.ui.pano_input_images : []),
+    ];
+    for (const item of ownCandidates) {
+      const src = source(item);
+      if (src) {
+        log("image-resolve", { sourceType: "selfOutput", src, stage: "hit" });
+        return { src, sourceType: "selfOutput", inputName: "own" };
+      }
+    }
+
+    const preferredResolved = preferredImageInputsForNode(node, preferredInputNames);
+    const preferred = preferredResolved
+      .map((name) => inputs.findIndex((i) => String(i?.name || "") === String(name)))
+      .filter((idx) => idx >= 0);
+    const imageTyped = inputs
+      .map((input, idx) => ({ input, idx }))
+      .filter(({ input }) => String(input?.type || "").toUpperCase() === "IMAGE")
+      .map(({ idx }) => idx);
+    const indices = [...new Set([...preferred, ...imageTyped])];
+    log("image-resolve", {
+      inputCandidates: preferredResolved,
+      resolvedIndices: indices,
+      stage: "start",
+    });
+
+    for (const idx of indices) {
+      const input = inputs[idx];
+      const link = node.graph ? node.getInputLink(idx) : null;
+      if (link?.origin_id == null) continue;
+      const originId = link.origin_id;
+      const originNode = resolveInputOriginNode(node, idx, originId);
+      if (!originNode) continue;
+      const resolvedOriginSlot = Number(link.origin_slot ?? 0);
+
+      const outputs = output(originNode?.id ?? originId);
+      // LoadVideo shows its file here, which an <img> cannot load.
+      const outImgs = Array.isArray(outputs?.images) ? outputs.images : [];
+      if (outImgs.length) {
+        const ordered = [];
+        if (resolvedOriginSlot >= 0 && resolvedOriginSlot < outImgs.length) ordered.push(outImgs[resolvedOriginSlot]);
+        ordered.push(...outImgs);
+        for (const cand of ordered.filter((image) => !isVideoFile(image))) {
+          const src = source(cand);
+          if (src) {
+            log("image-resolve", {
+              inputName: String(input?.name || ""),
+              sourceType: "nodeOutputs",
+              stage: "hit",
+            });
+            return { src: `${src}&pano_src=${outputSourceToken(outputs)}`, sourceType: "nodeOutputs", inputName: String(input?.name || "") };
+          }
+        }
+      }
+
+      let appNodeImageUrls = [];
+      try {
+        appNodeImageUrls = typeof app?.getNodeImageUrls === "function" ? (app.getNodeImageUrls(originNode) || []) : [];
+      } catch {
+        appNodeImageUrls = [];
+      }
+      if (Array.isArray(appNodeImageUrls) && appNodeImageUrls.length) {
+        const ordered = [];
+        if (resolvedOriginSlot >= 0 && resolvedOriginSlot < appNodeImageUrls.length) ordered.push(appNodeImageUrls[resolvedOriginSlot]);
+        ordered.push(...appNodeImageUrls);
+        for (const cand of ordered) {
+          const src = source(cand);
+          if (src) {
+            log("image-resolve", {
+              inputName: String(input?.name || ""),
+              sourceType: "appNodeImageUrls",
+              stage: "hit",
+            });
+            return { src, sourceType: "appNodeImageUrls", inputName: String(input?.name || "") };
+          }
+        }
+      }
+
+      const nodeImgs = Array.isArray(originNode?.imgs) ? originNode.imgs : [];
+      if (nodeImgs.length) {
+        const ordered = [];
+        if (resolvedOriginSlot >= 0 && resolvedOriginSlot < nodeImgs.length) ordered.push(nodeImgs[resolvedOriginSlot]);
+        ordered.push(...nodeImgs);
+        for (const cand of ordered) {
+          const src = source(cand);
+          if (src) {
+            log("image-resolve", {
+              inputName: String(input?.name || ""),
+              sourceType: "nodeImgs",
+              stage: "hit",
+            });
+            return { src, sourceType: "nodeImgs", inputName: String(input?.name || "") };
+          }
+        }
+      }
+
+      const imageWidget = originNode?.widgets?.find((w) => String(w?.name || "").toLowerCase() === "image");
+      if (imageWidget) {
+        let src = source(imageWidget.value);
+        if (src && !src.includes("/") && !src.includes(":") && (originNode.comfyClass === "LoadImage" || originNode.type === "LoadImage")) {
+          src = api.apiURL(`/view?filename=${encodeURIComponent(src)}&type=input&subfolder=`);
+        }
+        if (src) {
+          log("image-resolve", {
+            inputName: String(input?.name || ""),
+            sourceType: "widget",
+            stage: "hit",
+          });
+          return { src, sourceType: "widget", inputName: String(input?.name || "") };
+        }
+      }
+    }
+
+    log("image-resolve", { stage: "miss" });
+    return { src: "", sourceType: "", inputName: "" };
+  };
+
+  // The URL the Preview node's runtime (pano_preview_previewnode.js) shows of its linked image: the node's own
+  // pano_input_images, then the origin's (app.graph's node; no subgraph) result, getNodeImageUrls, imgs, its image widget.
+  const previewNodeLinkedImageUrl = (node, imageInputName = "erp_image") => {
+    const inputs = Array.isArray(node?.inputs) ? node.inputs : [];
+    let slot = inputs.findIndex((input) => String(input?.name || "") === String(imageInputName));
+    if (slot < 0 || !node.isInputConnected(slot)) {
+      slot = inputs.findIndex((input, index) => String(input?.type || "").toUpperCase() === "IMAGE" && node.isInputConnected(index));
+    }
+    if (slot < 0) return "";
+
+    const link = node.getInputLink(slot);
+    if (!link) return "";
+    const originId = Number(link.origin_id);
+    if (!Number.isFinite(originId)) return "";
+    const originNode = app?.graph?.getNodeById?.(originId);
+
+    const outputs = output(originId);
+    const selfOutput = output(node?.id);
+    const candidateGroups = [
+      selfOutput?.ui?.pano_input_images,
+      selfOutput?.pano_input_images,
+      outputs?.images,
+      outputs?.ui?.pano_input_images,
+      outputs?.pano_input_images,
+    ];
+    for (const group of candidateGroups) {
+      if (!Array.isArray(group)) continue;
+      for (const cand of group) {
+        const src = source(cand);
+        if (src) return src;
+      }
+    }
+
+    let appNodeImageUrls = [];
+    try {
+      appNodeImageUrls = typeof app?.getNodeImageUrls === "function" ? (app.getNodeImageUrls(originNode) || []) : [];
+    } catch {
+      appNodeImageUrls = [];
+    }
+    if (Array.isArray(appNodeImageUrls) && appNodeImageUrls.length > 0) {
+      for (const cand of appNodeImageUrls) {
+        const src = source(cand);
+        if (src) return src;
+      }
+    }
+
+    if (originNode) {
+      const nodeImgs = Array.isArray(originNode?.imgs) ? originNode.imgs : [];
+      for (const cand of nodeImgs) {
+        const src = source(cand);
+        if (src) return src;
+      }
+    }
+
+    const imageWidget = originNode?.widgets?.find((widget) => String(widget?.name || "").toLowerCase() === "image");
+    const imageName = String(imageWidget?.value || "").trim();
+    if (!imageName) return "";
+    return api.apiURL(`/view?filename=${encodeURIComponent(imageName)}&type=input&subfolder=`);
+  };
+
+  // The MP4 of the Preview node's own result (pano_videos, then images).
+  const previewNodeOwnVideoUrl = (node) => resolvePreviewVideoSource(output(node?.id), ["pano_videos", "images"], source);
 
   const resolvePreferredExactLinkedSource = (node, inputNames = []) => {
     const orderedNames = Array.isArray(inputNames) ? inputNames : [inputNames];
@@ -259,9 +543,9 @@ export function createComfyMediaAdapter({ app, api, ImageCtor, imageState } = {}
     const { filename, subfolder } = splitFilenameAndSubfolder(raw);
     if (!filename) return [raw];
     return uniqueSources([
-      comfyImageEntryToUrl(api, { filename, subfolder, type: "temp" }),
-      comfyImageEntryToUrl(api, { filename, subfolder, type: "output" }),
-      comfyImageEntryToUrl(api, { filename, subfolder, type: "input" }),
+      entryUrl({ filename, subfolder, type: "temp" }),
+      entryUrl({ filename, subfolder, type: "output" }),
+      entryUrl({ filename, subfolder, type: "input" }),
       raw,
     ]);
   };
@@ -393,8 +677,12 @@ export function createComfyMediaAdapter({ app, api, ImageCtor, imageState } = {}
     linkedVideoFile,
     loadPreferredExactLinkedImage,
     output,
+    nodeSurfaceLinkedSource,
+    previewNodeLinkedImageUrl,
+    previewNodeOwnVideoUrl,
     resolvePreferredExactLinkedSource,
     source,
+    sourceCandidates,
     uiImage,
     uiList,
     uiValue,

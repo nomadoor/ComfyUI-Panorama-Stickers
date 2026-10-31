@@ -22,196 +22,17 @@ import {
 } from "./pano_dom_widget_lifecycle.js";
 import PanoPreviewNodeSurface from "./components/PanoPreviewNodeSurface.vue";
 import { localPosFromEvent } from "./pano_preview_runtime.js";
+import { isRenderableMediaReady, mediaPlayheadRevisionToken } from "./pano_media_session.js";
 import { peekPreviewNode, previewNode } from "./pano_node_bridge.js";
+import { createComfyMediaAdapter } from "./pano_comfy_media.js";
 
 const PREVIEW_MIN_HEIGHT = 140;
 const PREVIEW_MIN_WIDTH = 180;
 const LEGACY_TOP_OFFSET = 40;
 const LEGACY_MARGIN = 10;
 
-function normalizeExecutionId(value) {
-  const raw = String(value ?? "").trim();
-  if (!raw) return { full: "", tail: "" };
-  const parts = raw.split(":");
-  return { full: raw, tail: String(parts[parts.length - 1] || "").trim() };
-}
-
-function executionIdMatches(value, target) {
-  const a = normalizeExecutionId(value);
-  const b = normalizeExecutionId(target);
-  if (!a.full || !b.full) return false;
-  return a.full === b.full || a.tail === b.full || a.full === b.tail || a.tail === b.tail;
-}
-
-function comfyImageEntryToUrl(entry) {
-  if (!entry || typeof entry !== "object") return "";
-  const filename = String(entry.filename || "").trim();
-  if (!filename) return "";
-  const params = new URLSearchParams();
-  params.set("filename", filename);
-  const viewType = String(
-    entry.storage
-    || (String(entry.type || "").trim().toLowerCase() === "comfy_image" ? "output" : entry.type)
-    || "output"
-  );
-  params.set("type", viewType);
-  if (entry.subfolder) params.set("subfolder", String(entry.subfolder));
-  const q = `/view?${params.toString()}`;
-  return typeof api?.apiURL === "function" ? api.apiURL(q) : q;
-}
-
-function imageSourceFromCandidate(candidate) {
-  if (!candidate) return "";
-  if (typeof candidate === "string") return String(candidate || "").trim();
-  if (Array.isArray(candidate)) {
-    if (candidate.length === 0) return "";
-    if (candidate.length === 1) return imageSourceFromCandidate(candidate[0]);
-    const filename = typeof candidate[0] === "string" ? String(candidate[0] || "").trim() : "";
-    if (filename) {
-      return comfyImageEntryToUrl({
-        filename,
-        subfolder: String(candidate[1] || "").trim(),
-        type: String(candidate[2] || "output").trim() || "output",
-      });
-    }
-    for (const entry of candidate) {
-      const src = imageSourceFromCandidate(entry);
-      if (src) return src;
-    }
-    return "";
-  }
-  if (typeof candidate?.src === "string" && candidate.src) return candidate.src;
-  if (typeof candidate?.url === "string" && candidate.url) return candidate.url;
-  return comfyImageEntryToUrl(candidate);
-}
-
-function isRenderableMediaReady(media) {
-  if (!media) return false;
-  if (media instanceof HTMLVideoElement) {
-    return Number(media.videoWidth || 0) > 0
-      && Number(media.videoHeight || 0) > 0
-      && Number(media.readyState || 0) >= 2;
-  }
-  return !!media.complete && Number(media.naturalWidth || media.width || 0) > 0;
-}
-
-function getRenderableMediaRevisionToken(media) {
-  if (media instanceof HTMLVideoElement) {
-    return [
-      String(media.currentSrc || media.src || ""),
-      Number(media.videoWidth || 0),
-      Number(media.videoHeight || 0),
-      Number(media.currentTime || 0).toFixed(3),
-      Number(media.readyState || 0),
-      media.paused ? "paused" : "playing",
-    ].join("|");
-  }
-  return [
-    String(media?.currentSrc || media?.src || ""),
-    Number(media?.naturalWidth || media?.width || 0),
-    Number(media?.naturalHeight || media?.height || 0),
-  ].join("|");
-}
-
-function lookupNodeOutputEntry(nodeId) {
-  const store = app?.nodeOutputs;
-  if (!store || nodeId == null) return null;
-  const raw = String(nodeId);
-  let val = null;
-  if (store instanceof Map) {
-    val = store.get(nodeId) || store.get(raw) || store.get(Number(raw)) || null;
-  } else {
-    val = store[nodeId] || store[raw] || null;
-  }
-  if (val) return val;
-  if (store instanceof Map) {
-    for (const key of store.keys()) {
-      if (executionIdMatches(key, raw)) return store.get(key);
-    }
-  } else {
-    for (const key of Object.keys(store)) {
-      if (executionIdMatches(key, raw)) return store[key];
-    }
-  }
-  return null;
-}
-
-function getSelfVideoUrl(node) {
-  const outputs = lookupNodeOutputEntry(node?.id);
-  const groups = [
-    outputs?.ui?.pano_videos,
-    outputs?.pano_videos,
-    outputs?.ui?.images,
-    outputs?.images,
-  ];
-  for (const group of groups) {
-    if (!Array.isArray(group)) continue;
-    for (const cand of group) {
-      const src = imageSourceFromCandidate(cand);
-      if (src && /\.mp4(\?|$)/i.test(src)) return src;
-      if (src && String(cand?.format || "").toLowerCase() === "video/mp4") return src;
-    }
-  }
-  return "";
-}
-
-function getLinkedImageUrl(node, imageInputName = "erp_image") {
-  const inputs = Array.isArray(node?.inputs) ? node.inputs : [];
-  let slot = inputs.findIndex((input) => String(input?.name || "") === String(imageInputName));
-  if (slot < 0 || !node.isInputConnected(slot)) {
-    slot = inputs.findIndex((input, index) => String(input?.type || "").toUpperCase() === "IMAGE" && node.isInputConnected(index));
-  }
-  if (slot < 0) return "";
-
-  const link = node.getInputLink(slot);
-  if (!link) return "";
-  const originId = Number(link.origin_id);
-  if (!Number.isFinite(originId)) return "";
-  const originNode = app?.graph?.getNodeById?.(originId);
-
-  const outputs = lookupNodeOutputEntry(originId);
-  const selfOutput = lookupNodeOutputEntry(node?.id);
-  const candidateGroups = [
-    selfOutput?.ui?.pano_input_images,
-    selfOutput?.pano_input_images,
-    outputs?.images,
-    outputs?.ui?.pano_input_images,
-    outputs?.pano_input_images,
-  ];
-  for (const group of candidateGroups) {
-    if (!Array.isArray(group)) continue;
-    for (const cand of group) {
-      const src = imageSourceFromCandidate(cand);
-      if (src) return src;
-    }
-  }
-
-  let appNodeImageUrls = [];
-  try {
-    appNodeImageUrls = typeof app?.getNodeImageUrls === "function" ? (app.getNodeImageUrls(originNode) || []) : [];
-  } catch {
-    appNodeImageUrls = [];
-  }
-  if (Array.isArray(appNodeImageUrls) && appNodeImageUrls.length > 0) {
-    for (const cand of appNodeImageUrls) {
-      const src = imageSourceFromCandidate(cand);
-      if (src) return src;
-    }
-  }
-
-  if (originNode) {
-    const nodeImgs = Array.isArray(originNode?.imgs) ? originNode.imgs : [];
-    for (const cand of nodeImgs) {
-      const src = imageSourceFromCandidate(cand);
-      if (src) return src;
-    }
-  }
-
-  const imageWidget = originNode?.widgets?.find((widget) => String(widget?.name || "").toLowerCase() === "image");
-  const imageName = String(imageWidget?.value || "").trim();
-  if (!imageName) return "";
-  return api.apiURL(`/view?filename=${encodeURIComponent(imageName)}&type=input&subfolder=`);
-}
+// How the Preview node reads ComfyUI's results (pano_comfy_media.js "previewNode").
+const comfyMedia = createComfyMediaAdapter({ app, api, read: "previewNode" });
 
 function drawGrid(ctx, width, height) {
   ctx.strokeStyle = "rgba(255,255,255,0.16)";
@@ -243,7 +64,7 @@ function drawPreview(node, ctx, width, height, view, img, previewView) {
     width,
     height,
     camera: previewNodeCamera(view, width, height),
-    background: { media: img, revision: getRenderableMediaRevisionToken(img), coverage: coverageDeg },
+    background: { media: img, revision: mediaPlayheadRevisionToken(img), coverage: coverageDeg },
     layers: [],
   });
   // The grid stays until the view has loaded.
@@ -690,7 +511,7 @@ class PreviewNodeRuntime {
   }
 
   refreshImage() {
-    const nextVideoSrc = getSelfVideoUrl(this.node);
+    const nextVideoSrc = comfyMedia.previewNodeOwnVideoUrl(this.node);
     if (nextVideoSrc) {
       if (nextVideoSrc === this.imgSrc && this.img instanceof HTMLVideoElement) return;
       this.mediaCleanup?.();
@@ -728,7 +549,7 @@ class PreviewNodeRuntime {
       };
       return;
     }
-    const nextSrc = getLinkedImageUrl(this.node, this.imageInputName);
+    const nextSrc = comfyMedia.previewNodeLinkedImageUrl(this.node, this.imageInputName);
     if (!nextSrc) {
       this.mediaCleanup?.();
       this.mediaCleanup = null;
