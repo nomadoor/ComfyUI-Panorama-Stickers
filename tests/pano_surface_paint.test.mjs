@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { surfacePaintLayers } from "../web_src/pano_surface_paint.js";
+import { resolveRasterPreviewSize, surfacePaintLayers } from "../web_src/pano_surface_paint.js";
 
 const stroke = (id, actionGroupId, u = 0.5) => ({
   id,
@@ -87,12 +87,41 @@ test("a stroke added to a group changes the group's revision, so its canvas is u
   assert.notEqual(after[0].revision, before[0].revision);
 });
 
-test("a hidden painting draws nothing and lets go of the raster objects' canvases", () => {
-  const { made, create } = engines();
-  const retained = [];
-  const surface = { rasterCache: { retain: (ids) => retained.push(ids) } };
-  const state = legacyState({ painting_visible: false, painting: { paint: { strokes: [stroke("a", "g0")] } } });
-  assert.deepEqual(surfacePaintLayers(surface, state, create), []);
-  assert.equal(made.length, 0);
-  assert.deepEqual(retained, [[]]);
+test("a hidden painting draws nothing and lets go of the raster objects' canvases, drawn again when it shows", () => {
+  const previous = { Image: globalThis.Image, document: globalThis.document };
+  const canvases = [];
+  globalThis.Image = class ReadyImage {
+    complete = true;
+    naturalWidth = 64;
+    naturalHeight = 32;
+  };
+  globalThis.document = {
+    createElement() {
+      const canvas = { width: 0, height: 0, getContext: () => new Proxy({}, { get: () => () => {} }) };
+      canvases.push(canvas);
+      return canvas;
+    },
+  };
+  try {
+    const { made, create } = engines();
+    const surface = {};
+    const raster = { id: "r0", type: "raster_frozen", layerKind: "paint", rasterDataUrl: "data:image/png;base64,AA", bbox: { u0: 0, v0: 0, u1: 0.5, v1: 0.5 } };
+    const painting = { paint: { strokes: [stroke("a", "g0")] }, raster_objects: [raster] };
+    const shown = surfacePaintLayers(surface, legacyState({ painting }), create);
+    assert.deepEqual(shown.map((layer) => layer.id), ["raster:r0", "paint_group:g0"]);
+    assert.deepEqual(surfacePaintLayers(surface, legacyState({ painting, painting_visible: false }), create), []);
+    const again = surfacePaintLayers(surface, legacyState({ painting }), create);
+    assert.notEqual(again[0].media, shown[0].media);
+    assert.equal(canvases.length, 2);
+    assert.equal(made.length, 1);
+  } finally {
+    globalThis.Image = previous.Image;
+    globalThis.document = previous.document;
+  }
+});
+
+test("node preview raster surfaces are capped independently from output resolution", () => {
+  assert.deepEqual(resolveRasterPreviewSize(512), { width: 512, height: 256 });
+  assert.deepEqual(resolveRasterPreviewSize(2048), { width: 1024, height: 512 });
+  assert.deepEqual(resolveRasterPreviewSize(4096), { width: 1024, height: 512 });
 });
