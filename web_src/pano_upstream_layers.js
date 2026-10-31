@@ -10,10 +10,8 @@
 // { width, height } of the paint. playing(): whether the playhead advances. editorFile(sticker): the editor file of a
 // 3D file Sticker (or null). onMedia(): a picture changed (draw again). onRebuild(working): the working copies were
 // made again.
-import { createPanoCanvas, releasePanoCanvas } from "./pano_diagnostics.js";
 import { sourceAsset } from "./pano_editor_state.js";
-import { createPaintEngineManager } from "./pano_paint_engine.js";
-import { drawRasterObjectErp, engineMask, skyPaintLayers } from "./pano_paint_layers.js";
+import { createPaintDisplay, PAINT_DISPLAY_PLACES } from "./pano_paint_display.js";
 import { EXTERNAL_STICKER_PREVIEW_KEY, portMediaMeta } from "./pano_port_media.js";
 import { createPortPicture } from "./pano_port_picture.js";
 import { layerUiList, upstreamLayersOf, upstreamLayerView, upstreamWorkingLayers } from "./pano_upstream.js";
@@ -112,8 +110,9 @@ export function createUpstreamLayers({
     return img ? { media: img, revision: revisionOf(img) } : null;
   }
 
-  // A layer's paint as Sky layers (skyPaintLayers of its working copy), drawn by a paint engine of its own at the
-  // paint's size.
+  // A layer's paint as Sky layers of its working copy, drawn by a paint display of its own (pano_paint_display.js,
+  // the upstream layer's rules) at the paint's size, made again when the size changes. Its raster objects' images
+  // are the layers' images (image()).
   function paintLayers(entry) {
     const { sceneState } = entry.working;
     const { painting } = sceneState;
@@ -124,42 +123,19 @@ export function createUpstreamLayers({
     if (entry.paintSize !== size) {
       releasePaint(entry);
       entry.paintSize = size;
-      entry.paintEngine = strokes ? createPaintEngineManager(descriptor) : null;
-      entry.paintEngine?.rebuildCommitted({ painting });
-      entry.rasters = new Map();
+      entry.paint = createPaintDisplay({
+        ...PAINT_DISPLAY_PLACES.upstream,
+        size: () => descriptor,
+        image: (item) => image(item.rasterDataUrl),
+        label: "editor.upstream-raster-erp",
+      });
     }
-    const engine = entry.paintEngine;
-    return skyPaintLayers(sceneState, {
-      // A painting with groups but no strokes has no engine, and its groups show nothing.
-      group: (id) => {
-        const media = engine?.getGroupDisplayCanvas(id);
-        return media && { media, revision: size };
-      },
-      raster: (item) => {
-        const media = rasterCanvas(entry, item, descriptor);
-        return media && { media, revision: size };
-      },
-      mask: () => engineMask(engine),
-    });
-  }
-
-  // A raster object of a layer on an ERP canvas of the paint's size, once its image has loaded.
-  function rasterCanvas(entry, item, { width, height }) {
-    if (entry.rasters.has(item.id)) return entry.rasters.get(item.id);
-    const img = image(item.rasterDataUrl);
-    if (!img.complete || !img.naturalWidth) return null;
-    const canvas = createPanoCanvas({ label: "editor.upstream-raster-erp", width, height });
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return null;
-    drawRasterObjectErp(ctx, img, item, width, height);
-    entry.rasters.set(item.id, canvas);
-    return canvas;
+    return entry.paint.layers(sceneState);
   }
 
   function releasePaint(entry) {
-    entry.rasters?.forEach((canvas) => releasePanoCanvas(canvas));
-    entry.rasters = null;
-    entry.paintEngine = null;
+    entry.paint?.dispose();
+    entry.paint = null;
     entry.paintSize = null;
   }
 
