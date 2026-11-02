@@ -95,3 +95,22 @@ test("a raster object shows the live eraser where it takes its pixels, uploading
   });
   assert.deepEqual(shown, ["base", "base", "erased", "erased", "erased", "base", "erased", "base", "erased", "base", "erased", "erased", "erased", "base"]);
 }));
+
+test("the live eraser reaches the part of a scaled or turned raster object outside its untransformed box", () => withRasterCanvas(() => {
+  // Scaled 2 about its box's center (130, 60): it covers x 38..222 and y 0..120.
+  const canvas = createRasterCanvas(W, H);
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "rgba(40,160,220,0.8)";
+  ctx.fillRect(40, 10, 180, 100);
+  const scaled = { ...item(), transform: { du: 0, dv: 0, rot_deg: 0, scale: 2 } };
+  const layer = rasterEraserDisplay({ log: createDamageLog(), base: null }, canvas, scaled, previewer()([[200, 60], [204, 60]]), surface);
+  assert.notEqual(layer.media, canvas, "the eraser right of x 176 takes its pixels");
+  // Turned 90°: its box of 92 x 60 px stands 60 x 92 px, over y 14..106.
+  const tall = createRasterCanvas(W, H);
+  const tallCtx = tall.getContext("2d");
+  tallCtx.fillStyle = "rgba(40,160,220,0.8)";
+  tallCtx.fillRect(100, 14, 60, 92);
+  const turned = { ...item(), transform: { du: 0, dv: 0, rot_deg: 90, scale: 1 } };
+  const tallLayer = rasterEraserDisplay({ log: createDamageLog(), base: null }, tall, turned, previewer()([[130, 100], [134, 100]]), surface);
+  assert.notEqual(tallLayer.media, tall, "the eraser below y 90 takes its pixels");
+}));

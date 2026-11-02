@@ -7,6 +7,7 @@
 import { BRUSH_PRESETS, DEFAULT_BRUSH_PRESET_ID, applyPresetToStroke } from "./pano_brush_presets.js";
 import { createPanoCanvas, releasePanoCanvas } from "./pano_diagnostics.js";
 import { clamp } from "./pano_math.js";
+import { pixelRangesMeet, rasterObjectPixelRanges } from "./pano_paint_display.js";
 import { normalizePaintingState } from "./pano_paint_types.js";
 
 const DEG2RAD = Math.PI / 180;
@@ -964,25 +965,6 @@ export function erasePaint(painting, eraserStroke, { descriptor: erpDesc, groupS
     };
   }
 
-  function getRasterApproxBoundsPx(item) {
-    const bbox = item?.bbox || null;
-    if (!bbox) return null;
-    const tf = item?.transform || {};
-    const width = erpDesc.width;
-    const height = erpDesc.height;
-    const u0 = Number(bbox.u0 || 0) + Number(tf.du || 0);
-    const u1 = Number(bbox.u1 || 0) + Number(tf.du || 0);
-    const v0 = Number(bbox.v0 || 0) + Number(tf.dv || 0);
-    const v1 = Number(bbox.v1 || 0) + Number(tf.dv || 0);
-    return {
-      minX: Math.floor((((u0 % 1) + 1) % 1) * width),
-      maxX: Math.ceil((((u1 % 1) + 1) % 1) * width),
-      minY: Math.floor(clamp(v0, 0, 1) * height),
-      maxY: Math.ceil(clamp(v1, 0, 1) * height),
-      wraps: (u1 - u0) >= 1 || u0 < 0 || u1 > 1,
-    };
-  }
-
   function approxBoundsHit(bounds) {
     if (!bounds) return true;
     if (bounds.wraps) {
@@ -1053,7 +1035,8 @@ export function erasePaint(painting, eraserStroke, { descriptor: erpDesc, groupS
   }
 
   for (const rasterObject of rasterList().filter((item) => String(item?.layerKind || "paint") === "paint")) {
-    if (!approxBoundsHit(getRasterApproxBoundsPx(rasterObject))) {
+    // The pixels it covers (pano_paint_display.js rasterObjectPixelRanges); one without a box is tried whole.
+    if (rasterObject?.bbox && !pixelRangesMeet(rasterObjectPixelRanges(rasterObject, erpDesc.width, erpDesc.height), eraserBoundsPx)) {
       nextRasterObjects.push(rasterObject);
       continue;
     }

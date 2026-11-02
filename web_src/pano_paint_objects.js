@@ -11,17 +11,18 @@
 import { BRUSH_PRESETS, DEFAULT_BRUSH_PRESET_ID } from "./pano_brush_presets.js";
 import { clamp, dist2, distToSegment2, pointInPoly } from "./pano_math.js";
 import { PAINT_GROUP_ROW, PAINT_RASTER_ROW, paintObjectRowOf } from "./pano_paint_layers.js";
+import { rasterObjectCornersUv, turnPaintOffset, unturnPaintOffset } from "./pano_paint_display.js";
 import { shortestWrappedDelta, strokeGroupFrame, strokePoints, syncPaintGroups } from "./pano_paint_strokes.js";
 import { isUpstreamSticker } from "./pano_upstream.js";
 
-export { paintObjectRowOf, strokePoints };
-
-const DEG2RAD = Math.PI / 180;
+export { paintObjectRowOf, rasterObjectCornersUv, strokePoints };
 
 // How near (px) a corner handle of a selected paint object is hit.
 export const PAINT_CORNER_HIT_PX = 11;
 // A raster object is hit where its pixel's alpha (0..255) is over this.
 export const RASTER_HIT_ALPHA = 8;
+// The least ratio a stroke group is scaled by (docs/studio-ui.md "ペイントのまとまり" "大きさを変える").
+export const STROKE_GROUP_MIN_SCALE = 0.02;
 
 // --- ERP points.
 
@@ -35,23 +36,17 @@ export function translateErpPoint(point, du, dv) {
   };
 }
 
-// `point` turned by rotationDeg and scaled by `scale` (at least 0.02) about `center`, in ERP u and v.
+// `point` turned by rotationDeg and scaled by `scale` about `center` on the paint plane (pano_paint_display.js
+// turnPaintOffset; docs/render-contract.md "ペイントのラスタの置き方"): u wraps, v stays in 0..1 (a stroke's point).
 export function transformErpPointAround(point, center, scale = 1, rotationDeg = 0) {
   if (!point || typeof point !== "object") return point;
   const cu = Number(center?.u || 0);
   const cv = Number(center?.v || 0);
-  const dx = shortestWrappedDelta(Number(point.u || 0), cu);
-  const dy = Number(point.v || 0) - cv;
-  const rad = Number(rotationDeg || 0) * DEG2RAD;
-  const cos = Math.cos(rad);
-  const sin = Math.sin(rad);
-  const s = Math.max(0.02, Number(scale || 1));
-  const rx = (dx * cos - dy * sin) * s;
-  const ry = (dx * sin + dy * cos) * s;
+  const [du, dv] = turnPaintOffset(shortestWrappedDelta(Number(point.u || 0), cu), Number(point.v || 0) - cv, Number(scale || 1), rotationDeg);
   return {
     ...point,
-    u: ((cu + rx) % 1 + 1) % 1,
-    v: clamp(cv + ry, 0, 1),
+    u: ((cu + du) % 1 + 1) % 1,
+    v: clamp(cv + dv, 0, 1),
   };
 }
 
@@ -60,20 +55,11 @@ export function inverseTransformErpPointAround(point, center, scale = 1, rotatio
   if (!point || typeof point !== "object") return point;
   const cu = Number(center?.u || 0);
   const cv = Number(center?.v || 0);
-  const dx = shortestWrappedDelta(Number(point.u || 0), cu);
-  const dy = Number(point.v || 0) - cv;
-  const s = Math.max(0.02, Number(scale || 1));
-  const rad = Number(rotationDeg || 0) * DEG2RAD;
-  const cos = Math.cos(rad);
-  const sin = Math.sin(rad);
-  const sx = dx / s;
-  const sy = dy / s;
-  const rx = sx * cos + sy * sin;
-  const ry = -sx * sin + sy * cos;
+  const [du, dv] = unturnPaintOffset(shortestWrappedDelta(Number(point.u || 0), cu), Number(point.v || 0) - cv, Number(scale || 1), rotationDeg);
   return {
     ...point,
-    u: ((cu + rx) % 1 + 1) % 1,
-    v: cv + ry,
+    u: ((cu + du) % 1 + 1) % 1,
+    v: cv + dv,
   };
 }
 
@@ -133,10 +119,12 @@ export function offsetStrokeGroup(strokes, gid, du, dv, snapshots = null) {
   return mapStrokeGroupPoints(strokes, gid, snapshots, (pt) => translateErpPoint(pt, du, dv));
 }
 
-// Scales the stroke group `gid` of `strokes` by `scale` and turns it by rotationDeg about `centerUv`, from
-// `sources` (its strokes as a drag started; null transforms them where they are). Returns whether it changed a point.
+// Scales the stroke group `gid` of `strokes` by `scale` (at least STROKE_GROUP_MIN_SCALE) and turns it by rotationDeg
+// about `centerUv`, from `sources` (its strokes as a drag started; null transforms them where they are). Returns
+// whether it changed a point.
 export function transformStrokeGroup(strokes, gid, scale, rotationDeg, sources, centerUv) {
-  return mapStrokeGroupPoints(strokes, gid, sources, (pt) => transformErpPointAround(pt, centerUv, scale, rotationDeg));
+  const ratio = Math.max(STROKE_GROUP_MIN_SCALE, Number(scale || 1));
+  return mapStrokeGroupPoints(strokes, gid, sources, (pt) => transformErpPointAround(pt, centerUv, ratio, rotationDeg));
 }
 
 // The four ERP corners (top left, top right, bottom right, bottom left) of a stroke group's frame (strokeGroupFrame),
@@ -239,50 +227,24 @@ export function rasterObjectCenterUv(item) {
   };
 }
 
-// The four ERP corners of a raster object's transformed box (top left, top right, bottom right, bottom left), none
-// without a bbox.
-export function rasterObjectCornersUv(item) {
-  const bbox = item?.bbox || null;
-  if (!bbox) return [];
-  const center = {
-    u: (Number(bbox.u0 || 0) + Number(bbox.u1 || 0)) * 0.5,
-    v: (Number(bbox.v0 || 0) + Number(bbox.v1 || 0)) * 0.5,
-  };
-  const scale = Math.max(0.01, Number(item?.transform?.scale || 1));
-  const rotationDeg = Number(item?.transform?.rot_deg || 0);
-  const du = Number(item?.transform?.du || 0);
-  const dv = Number(item?.transform?.dv || 0);
-  const base = [
-    { u: Number(bbox.u0 || 0), v: Number(bbox.v0 || 0) },
-    { u: Number(bbox.u1 || 0), v: Number(bbox.v0 || 0) },
-    { u: Number(bbox.u1 || 0), v: Number(bbox.v1 || 0) },
-    { u: Number(bbox.u0 || 0), v: Number(bbox.v1 || 0) },
-  ];
-  return base.map((pt) => translateErpPoint(transformErpPointAround(pt, center, scale, rotationDeg), du, dv));
-}
-
-// The alpha (0..255) of the raster object `item` at the ERP point `erpPoint`: 0 outside its box, null when it cannot
-// be read (no point or box, a box with no size, or alphaAt(localU, localV) — its image's alpha at a point of the box,
-// 0..1 across — gives null while the image cannot be read).
+// The alpha (0..255) of the raster object `item` at the ERP point `erpPoint`: 0 outside its transformed box (the
+// inverse of rasterObjectCornersUv's turn), null when it cannot be read (no point or box, a box with no size, or
+// alphaAt(localU, localV) — its image's alpha at a point of the box, 0..1 across — gives null while the image cannot
+// be read).
 export function rasterObjectAlphaAt(item, erpPoint, alphaAt) {
   if (!item || !erpPoint) return null;
   const bbox = item?.bbox || null;
   if (!bbox) return null;
   const tf = item?.transform || {};
-  const center = {
-    u: (Number(bbox.u0 || 0) + Number(bbox.u1 || 0)) * 0.5,
-    v: (Number(bbox.v0 || 0) + Number(bbox.v1 || 0)) * 0.5,
-  };
-  const untranslated = {
-    u: ((Number(erpPoint.u || 0) - Number(tf.du || 0)) % 1 + 1) % 1,
-    v: Number(erpPoint.v || 0) - Number(tf.dv || 0),
-  };
-  const basePoint = inverseTransformErpPointAround(untranslated, center, Number(tf.scale || 1), Number(tf.rot_deg || 0));
   const bw = Number(bbox.u1 || 0) - Number(bbox.u0 || 0);
   const bh = Number(bbox.v1 || 0) - Number(bbox.v0 || 0);
   if (!(bw > 1e-6) || !(bh > 1e-6)) return null;
-  const localU = shortestWrappedDelta(Number(basePoint.u || 0), Number(bbox.u0 || 0)) / bw;
-  const localV = (Number(basePoint.v || 0) - Number(bbox.v0 || 0)) / bh;
+  const centerU = Number(bbox.u0 || 0) + bw * 0.5 + Number(tf.du || 0);
+  const centerV = Number(bbox.v0 || 0) + bh * 0.5 + Number(tf.dv || 0);
+  const scale = Math.max(0.01, Number.isFinite(Number(tf.scale)) ? Number(tf.scale) : 1);
+  const base = inverseTransformErpPointAround(erpPoint, { u: centerU, v: centerV }, scale, Number(tf.rot_deg || 0));
+  const localU = shortestWrappedDelta(base.u, centerU) / bw + 0.5;
+  const localV = (base.v - centerV) / bh + 0.5;
   if (localU < 0 || localU > 1 || localV < 0 || localV > 1) return 0;
   return alphaAt(localU, localV);
 }

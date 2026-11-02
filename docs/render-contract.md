@@ -16,7 +16,7 @@ Panorama Studio のバックエンドの描画関数（`render_frame`、重な�
 | 描画の入口、層、`cache` の使い回し | `core/render.py` `render_frame`・`RenderLayer`・`Projection` | — | `tests/test_render.py`、`tests/test_memory_cache.py`、`tests/test_studio_scene.py` |
 | 重なり順と合成 | `render.py` `composite_frame`、`core/world_render.py` `over_by_depth` | — | `tests/test_render.py`、`tests/test_world_render.py` |
 | Sky の標本化（直接の標本化、縮めるときの平均、Sky の幅） | `render.py` `_sky_layers`・`_shoot_sky`・`_sample_filtered`・`_shrink`・`_sky_size` | — | `tests/test_render.py`、`tests/test_studio_node.py`、`tests/test_studio_scene.py` |
-| ペイントのラスタの置き方（ラスタオブジェクトを ERP に置く中心・大きさ・`scale`・`rot_deg`・継ぎ目、回す平面と向き、ラスタの占める画素の範囲。ストロークのまとまりを回す式も同じ平面と向き） | `core/painting.py` `_composite_one_raster_object`（置き方を求める関数は未実装。今の `_uv_bbox_to_pixels` は `du`・`dv` だけを使い、`scale` と `rot_deg` を使わない） | `web_src/pano_paint_display.js` `placeRasterObjectErp`・`drawRasterObjectErp`、`web_src/pano_paint_objects.js` `transformErpPointAround`・`inverseTransformErpPointAround`・`rasterObjectCornersUv`・`rasterObjectAlphaAt`、範囲を使う所は `web_src/pano_paint_strokes.js` `erasePaint` の `getRasterApproxBoundsPx`・`web_src/pano_raster_eraser.js` `rasterObjectErpBounds`（今はどちらも `du`・`dv` だけを使う） | フィクスチャ `tests/fixtures/paint_raster_place.json` を `tests/test_paint_raster_place_parity.py` と `tests/pano_paint_raster_place_parity.test.mjs` が読む（未実装）。エディタの絵は `tests/browser/paint_rasters.spec.js` |
+| ペイントのラスタの置き方（ラスタオブジェクトを ERP に置く中心・大きさ・`scale`・`rot_deg`・継ぎ目、回す平面と向き、ラスタの占める画素の範囲。ストロークのまとまりを回す式も同じ平面と向き） | `core/painting.py` `_composite_one_raster_object`（置き方を求める関数は未実装。今の `_uv_bbox_to_pixels` は `du`・`dv` だけを使い、`scale` と `rot_deg` を使わない） | `web_src/pano_paint_display.js` `turnPaintOffset`・`unturnPaintOffset`（回す平面の式）・`placeRasterObjectErp`・`drawRasterObjectErp`・`rasterObjectCornersUv`・`rasterObjectPixelRanges`・`pixelRangesMeet`、`web_src/pano_paint_objects.js` `transformErpPointAround`・`inverseTransformErpPointAround`・`rasterObjectAlphaAt`（`rasterObjectCornersUv` もここから読める）、範囲を使う所は `web_src/pano_paint_strokes.js` `erasePaint`・`web_src/pano_raster_eraser.js` `rasterEraserDisplay` | フィクスチャ `tests/fixtures/paint_raster_place.json` を `tests/test_paint_raster_place_parity.py`（未実装）と `tests/pano_paint_raster_place_parity.test.mjs` が読む。平面の上の回し方は `tests/pano_paint_objects.test.mjs`、消しゴムの届く範囲は `tests/pano_raster_eraser.test.mjs`。エディタの絵は `tests/browser/paint_rasters.spec.js` |
 | World の層と `world` の Sticker の板 | `world_render.py` `world_layer` | — | `tests/test_world_render.py`、`tests/test_stickers_world.py`、`tests/test_studio_upstream.py` |
 | 3D の `world` の Sticker | `world_render.py` `ContentSource`、`nodes.py` `_port_media`・`_resolve_sources`（3D ファイルの `file` の Source） | — | `tests/test_stickers_3d.py` |
 | `scene` の共通処理 | `world_render.py` `SceneContent`、`nodes.py` `_scene_content` | — | `tests/test_world_render.py`、`tests/test_scene_mesh.py` |
@@ -229,7 +229,7 @@ RTX 4070 Ti、1 フレーム、κ = 0.5・hFOV 140°（4K は 4096 × 2048 相�
   （`stage_objects.js`・`editor/items.js` の呼び方を変えない）。そのため、1px に満たない枠では、四隅と描いた画素は一致しない。ラスタの
   四隅の v は 0〜1 に寄せない（寄せると、極を越えた枠の形が描いた絵と変わる）。
 - ラスタの占める画素の範囲：四隅を囲む範囲を描く ERP の画素に写し、上下は ERP の中に切り詰めたもの（継ぎ目をまたげば二つ）。
-  消しゴムがラスタに届くかの判定（`erasePaint` の `getRasterApproxBoundsPx`、ドラッグの間の見せ方の `rasterObjectErpBounds`）と、
+  消しゴムがラスタに届くかの判定（`erasePaint`、ドラッグの間の見せ方の `rasterEraserDisplay`）と、
   Python が描く範囲はこの範囲を使う（`du`・`dv` だけで求めると、大きくしたり回したりしたラスタのはみ出た所に消しゴムが届かない）。
 - 継ぎ目：経度の継ぎ目をまたぐラスタは、反対の側にも続けて描く（`placeRasterObjectErp` の `wrapOffsets`、−360°・0・+360° の写し）。
   緯度は回さず、ERP の上下の外にはみ出た所は描かない。
