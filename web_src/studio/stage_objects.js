@@ -24,6 +24,7 @@
 // up. An object's drag writes its Lanes by the recording rule (docs/timeline-ui.md "記録の規則"); a paint group's writes
 // the painting as it is (it has no Lanes).
 import { viewProjection } from "../pano_editor_view.js";
+import { rasterObjectTurnCenterUv } from "../pano_paint_display.js";
 import { lensPolylines } from "../pano_lens.js";
 import { setStickerPose, setWorldStickerTransform } from "../pano_editor_state.js";
 import { evaluateSticker } from "../pano_scene_eval.js";
@@ -120,15 +121,6 @@ function screenOfErp(projection, point) {
 function erpUnder(projection, point) {
   const direction = projection.ray(point.x, point.y);
   return direction ? erpPointOfDirection(direction) : null;
-}
-
-// The center a raster object turns about: its box's center moved by du and dv, as it is drawn (v not clamped, unlike
-// pano_paint_objects.js rasterObjectCenterUv).
-function rasterTurnCenter(item) {
-  const bbox = item.bbox;
-  const tf = item.transform || {};
-  const u = (Number(bbox.u0 || 0) + Number(bbox.u1 || 0)) * 0.5 + Number(tf.du || 0);
-  return { u: ((u % 1) + 1) % 1, v: (Number(bbox.v0 || 0) + Number(bbox.v1 || 0)) * 0.5 + Number(tf.dv || 0) };
 }
 
 // The rotate handle of a paint group's frame on screen (docs/studio-ui.md "ペイントのまとまり" "回転のハンドル"):
@@ -580,7 +572,7 @@ export function createStageObjects({
   function paintTurn(object, point) {
     const pivot = object.kind === "group"
       ? strokeGroupCenterUv(paintIndex(state()).groups.get(object.id)?.strokes ?? [])
-      : rasterTurnCenter(object.item);
+      : rasterObjectTurnCenterUv(object.item);
     const center = screenOfErp(projection(), pivot);
     const startAngle = center ? Math.atan2(point.y - center.y, point.x - center.x) : 0;
     return {

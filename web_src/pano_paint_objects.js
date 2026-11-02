@@ -11,7 +11,7 @@
 import { BRUSH_PRESETS, DEFAULT_BRUSH_PRESET_ID } from "./pano_brush_presets.js";
 import { clamp, dist2, distToSegment2, pointInPoly } from "./pano_math.js";
 import { PAINT_GROUP_ROW, PAINT_RASTER_ROW, paintObjectRowOf } from "./pano_paint_layers.js";
-import { rasterObjectCornersUv, turnPaintOffset, unturnPaintOffset } from "./pano_paint_display.js";
+import { rasterObjectCornersUv, rasterObjectTurnCenterUv, turnPaintOffset, unturnPaintOffset } from "./pano_paint_display.js";
 import { shortestWrappedDelta, strokeGroupFrame, strokePoints, syncPaintGroups } from "./pano_paint_strokes.js";
 import { isUpstreamSticker } from "./pano_upstream.js";
 
@@ -250,12 +250,11 @@ export function rasterObjectAlphaAt(item, erpPoint, alphaAt) {
   const bw = Number(bbox.u1 || 0) - Number(bbox.u0 || 0);
   const bh = Number(bbox.v1 || 0) - Number(bbox.v0 || 0);
   if (!(bw > 1e-6) || !(bh > 1e-6)) return null;
-  const centerU = Number(bbox.u0 || 0) + bw * 0.5 + Number(tf.du || 0);
-  const centerV = Number(bbox.v0 || 0) + bh * 0.5 + Number(tf.dv || 0);
+  const center = rasterObjectTurnCenterUv(item);
   const scale = Math.max(0.01, Number.isFinite(Number(tf.scale)) ? Number(tf.scale) : 1);
-  const base = inverseTransformErpPointAround(erpPoint, { u: centerU, v: centerV }, scale, Number(tf.rot_deg || 0));
-  const localU = shortestWrappedDelta(base.u, centerU) / bw + 0.5;
-  const localV = (base.v - centerV) / bh + 0.5;
+  const base = inverseTransformErpPointAround(erpPoint, center, scale, Number(tf.rot_deg || 0));
+  const localU = shortestWrappedDelta(base.u, center.u) / bw + 0.5;
+  const localV = (base.v - center.v) / bh + 0.5;
   if (localU < 0 || localU > 1 || localV < 0 || localV > 1) return 0;
   return alphaAt(localU, localV);
 }

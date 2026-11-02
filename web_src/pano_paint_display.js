@@ -81,18 +81,29 @@ function rasterBox(item) {
   };
 }
 
+// The center a raster object turns and scales about, as it is drawn: its box's center moved by du and dv ({ u, v },
+// neither wrapped nor clamped), or null without a box.
+export function rasterObjectTurnCenterUv(item) {
+  const bbox = item?.bbox;
+  if (!bbox) return null;
+  const transform = item.transform || {};
+  return {
+    u: (finite(bbox.u0) + finite(bbox.u1)) * 0.5 + finite(transform.du),
+    v: (finite(bbox.v0) + finite(bbox.v1)) * 0.5 + finite(transform.dv),
+  };
+}
+
 // The four corners of a raster object's transformed box (top left, top right, bottom right, bottom left) with u not
-// wrapped, about its box's center moved by du and dv; none without a box.
+// wrapped, about its turn center (rasterObjectTurnCenterUv); none without a box.
 function rasterCornersUnwrapped(item) {
   const box = rasterBox(item);
   if (!box) return [];
   const halfW = (box.u1 - box.u0) * 0.5;
   const halfH = (box.v1 - box.v0) * 0.5;
-  const centerU = box.u0 + halfW + box.du;
-  const centerV = box.v0 + halfH + box.dv;
+  const center = rasterObjectTurnCenterUv(item);
   return [[-halfW, -halfH], [halfW, -halfH], [halfW, halfH], [-halfW, halfH]].map(([du, dv]) => {
     const [tu, tv] = turnPaintOffset(du, dv, box.scale, box.rotationDeg);
-    return { u: centerU + tu, v: centerV + tv };
+    return { u: center.u + tu, v: center.v + tv };
   });
 }
 
