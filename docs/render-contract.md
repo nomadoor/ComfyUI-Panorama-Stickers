@@ -16,6 +16,7 @@ Panorama Studio のバックエンドの描画関数（`render_frame`、重な�
 | 描画の入口、層、`cache` の使い回し | `core/render.py` `render_frame`・`RenderLayer`・`Projection` | — | `tests/test_render.py`、`tests/test_memory_cache.py`、`tests/test_studio_scene.py` |
 | 重なり順と合成 | `render.py` `composite_frame`、`core/world_render.py` `over_by_depth` | — | `tests/test_render.py`、`tests/test_world_render.py` |
 | Sky の標本化（直接の標本化、縮めるときの平均、Sky の幅） | `render.py` `_sky_layers`・`_shoot_sky`・`_sample_filtered`・`_shrink`・`_sky_size` | — | `tests/test_render.py`、`tests/test_studio_node.py`、`tests/test_studio_scene.py` |
+| ペイントのラスタの置き方（ラスタオブジェクトを ERP に置く中心・大きさ・`scale`・`rot_deg`・継ぎ目、回す平面と向き、ラスタの占める画素の範囲。ストロークのまとまりを回す式も同じ平面と向き） | `core/painting.py` `_composite_one_raster_object`（置き方を求める関数は未実装。今の `_uv_bbox_to_pixels` は `du`・`dv` だけを使い、`scale` と `rot_deg` を使わない） | `web_src/pano_paint_display.js` `placeRasterObjectErp`・`drawRasterObjectErp`、`web_src/pano_paint_objects.js` `transformErpPointAround`・`inverseTransformErpPointAround`・`rasterObjectCornersUv`・`rasterObjectAlphaAt`、範囲を使う所は `web_src/pano_paint_strokes.js` `erasePaint` の `getRasterApproxBoundsPx`・`web_src/pano_raster_eraser.js` `rasterObjectErpBounds`（今はどちらも `du`・`dv` だけを使う） | フィクスチャ `tests/fixtures/paint_raster_place.json` を `tests/test_paint_raster_place_parity.py` と `tests/pano_paint_raster_place_parity.test.mjs` が読む（未実装）。エディタの絵は `tests/browser/paint_rasters.spec.js` |
 | World の層と `world` の Sticker の板 | `world_render.py` `world_layer` | — | `tests/test_world_render.py`、`tests/test_stickers_world.py`、`tests/test_studio_upstream.py` |
 | 3D の `world` の Sticker | `world_render.py` `ContentSource`、`nodes.py` `_port_media`・`_resolve_sources`（3D ファイルの `file` の Source） | — | `tests/test_stickers_3d.py` |
 | `scene` の共通処理 | `world_render.py` `SceneContent`、`nodes.py` `_scene_content` | — | `tests/test_world_render.py`、`tests/test_scene_mesh.py` |
@@ -178,7 +179,7 @@ RTX 4070 Ti、1 フレーム、κ = 0.5・hFOV 140°（4K は 4096 × 2048 相�
 - 背景と Sky は無限遠にあるので、Camera の位置では変わらない（ADR 0023）。MASK もペイントと同じく Camera の回転に従う。
 - Sky（`sky` の Sticker とペイント）と MASK は全方向にあり、どの向きの Camera でも写す。
 - 360 の出力で Camera の回転が 0 のときは、背景の向きの計算と標本化を飛ばし、背景をそのまま使う（Sky は回転が 0 でも出力の画素の向きから標本化する）。背景は出力と大きさが違えば大きさを合わせる（`_resize`）。どちらかの向きに縮めるときは、三角形のフィルターで出力の画素の範囲を平均し（`antialias=True`。経度の継ぎ目の向こうの列も使う）、拡大だけのときは双線形にする。
-- 状態だけが持つペイントを ERP に描くのは、`core/display_layers.py` と `core/painting.py` の既存の処理を使う。
+- 状態だけが持つペイントを ERP に描くのは、`core/display_layers.py` と `core/painting.py` の既存の処理を使う。ラスタオブジェクトの置き方は下の「ペイントのラスタの置き方」。
 - Sky の層（`_sky_layers`）は、旧ノードの `core/display_layers.py` の `compose_display_list_to_overlay_rgba` と同じ並べ方（`build_display_entries`）と同じ規則（どの層もなければ、アップロード済みのペイントを一枚で使う、など）で並べる。Sticker とペイントを交互に重ねた場面は、基準画像 `stickers_paint_interleaved`（Studio は `studio_paint_interleaved`）で固定している。
 - `z_index` は Sticker の Source ではないが、`crop` と同じく描画に要る静的な値なので、`StickerSource` に入れて渡す（評価関数の戻り値は変えない）。
 - Sky の直接の標本化：中間の ERP は、透視投影の狭い画角では巨大になる（画角 5°・幅 1024 の出力で幅数万）か、上限で粗くなる（狭い画角の透視投影で Sticker やペイントがぼける）ので経由しない。各層を出力の画素の向きから直接、その層の画素で標本化し（`_sky_layers` で層を用意し、`_shoot_sky` で写す）、`compose_display_list_to_overlay_rgba` と同じ順に、同じストレートアルファの「上に重ねる」規則で重ねる（アルファを掛けた状態で重ね、最後に戻す）。
@@ -193,6 +194,63 @@ RTX 4070 Ti、1 フレーム、κ = 0.5・hFOV 140°（4K は 4096 × 2048 相�
   - Sky のキー（`_sky_key`）は、この大きさと、`sky` の Sticker の値と素材のフレーム。Camera の向きのキーに Projection を入れる。キーが変われば層の並びを組み直し（ペイントの層と MASK は、`device` に置いたものを `cache` の `sky_paint` に大きさごとに持ち、大きさが変わるまで使い回す）、向きのキーが変われば写し直す。
 - 旧 Cutout は ERP の画素 i を `u = i`（画素の中心ではなく端）とみなして標本化していたので、Panorama Studio の透視投影の出力は旧 Cutout から ERP の半画素ずれる（`docs/legacy-baselines.md`）。
 - `bg_media` は `coverage` の範囲の ERP とみなし、Sky と同じく Camera の向きで写す。360 では 360 の ERP、180 では旧ノード・Cutout と同じく Scene の前方（経度 −90°〜90°）の半球の ERP とする。180 の出力で、Camera を回して `bg_media` の半球の外が見える画素は、`bg_media` がない画素として `bg_color` になる。Sky と MASK はその上にも描く。出力の範囲が Camera の前方の半球だけであることは変わらない。
+
+### ペイントのラスタの置き方
+
+ペイントのラスタオブジェクト（`painting.raster_objects[]`。形は `docs/scene-state-v2.md` の `painting`）を ERP に置く式。ノード（Python）と、
+エディタ・ノード上の面・上流の Scene の層（JS。4 か所とも `pano_paint_display.js` を通る。`docs/editor-architecture.md`）が同じ式で描き、
+エディタの選んだ枠・当たり（`docs/studio-ui.md` の「ペイントのまとまり」）と消しゴムの届く範囲も同じ式から求める。`layerKind` が
+`paint` のラスタにも `mask` のラスタにも使う。
+
+- 描く所：ノードはラスタを、`painting_layer` の有無によらずいつも状態から描く。Panorama Studio は `_sky_layers`（`render_raster_layer_from_state`）、
+  旧ノードの PanoramaStickers・PanoramaCutout は `nodes.py` から `compose_display_list_to_overlay_rgba`（`core/display_layers.py` の
+  `render_raster_layer_from_state`）と `render_painting_to_erp` を通る。どれも `core/painting.py` `_composite_one_raster_object` に行き着く。
+  MASK は、アップロードされた `mask` が無いときだけ状態から描く。
+- 回す平面：経度と緯度を同じ度で測る平面（ERP の u を 360°、v を 180° として測る）で回し、拡大する。点 `p` を中心 `c` のまわりに
+  `rot_deg` 回して `scale` 倍するとき、`x = 2 · Δu`（`Δu` は `p.u − c.u` の継ぎ目をまたぐ短い向き）、`y = p.v − c.v` とし、
+  `x' = scale · (x cos θ − y sin θ)`、`y' = scale · (x sin θ + y cos θ)`、`u' = c.u + x' / 2`（0〜1 で回る）、`v' = c.v + y'` とする
+  （θ は `rot_deg` のラジアン）。逆の向き（当たりで画素を読むとき、Python が画素を読むとき）はこの逆の式。`rot_deg` が 0 のときは今の
+  拡大の式と同じ値になる。ストロークのまとまりを回すとき（`transformErpPointAround`）も同じ式で、ストロークの点の v だけは 0〜1 に寄せる。
+- 描く ERP の画素への写し方：上の平面の度から、描く ERP の画素へ、横は幅 ÷ 360、縦は高さ ÷ 180 を掛けて写す（JS も Python も、この写し方を
+  明示して使う）。エディタのペイントのキャンバスの高さは幅の半分を丸めた値（`paintTargetDescriptor` の `round(width · 0.5)`）で、奇数の幅
+  では 2:1 から 1px 未満ずれ、Python の ERP の出力の大きさは使う人が決める。どちらも、canvas の `rotate`・`scale` を画素の上でそのまま掛ける
+  のではなく、この写し方を通すことで同じ置き方になる。
+- 向き：v は下向きに増えるので、正の `rot_deg` は ERP の画像の上で時計回り（2:1 の画素の上の canvas の `rotate` と同じ向き）。`rot_deg` は
+  範囲に丸めない。
+- `scale` の下限：ラスタの `scale` は読み込み（`core/paint_state.py` `_normalize_raster_transform`・`web_src/pano_paint_types.js`
+  `normalizeRasterTransform`。`docs/scene-state-v2.md` の「ペイントの数値」）が 0.01 以上にした値を、この式はそのまま使う。点を写す式
+  （`transformErpPointAround`・`inverseTransformErpPointAround`）は下限を持たない（今の 0.02 の下限は、ストロークのまとまりの大きさを変える
+  比の規則として `docs/studio-ui.md` の「ペイントのまとまり」に移す。ラスタの当たりが 0.01〜0.02 の `scale` で絵とずれないように）。
+- 中心：ラスタの枠（`bbox`）の中心に `transform.du`・`dv` を足した所。描くときは、描く ERP の画素で枠の幅と高さをそれぞれ 1px 以上とし
+  （Python と、`placeRasterObjectErp` の `minPixel` 1。ノード上の面だけは `PAINT_DISPLAY_PLACES` の `surface` の `minPixel` 0 のまま）、
+  1px に満たない枠は左上から広げる（中心はその広げた枠の中心）。
+- 変形した枠の四隅（`rasterObjectCornersUv`）：`bbox` の四隅を、上の中心（広げない枠の中心）のまわりに上の式で写したもの。ERP の大きさを
+  受け取らず、`minPixel` で広げた枠は使わない。四隅は uv で持ち、ステージの枠と当たりは画面の px で見るので、1px 未満の差は見えないため
+  （`stage_objects.js`・`editor/items.js` の呼び方を変えない）。そのため、1px に満たない枠では、四隅と描いた画素は一致しない。ラスタの
+  四隅の v は 0〜1 に寄せない（寄せると、極を越えた枠の形が描いた絵と変わる）。
+- ラスタの占める画素の範囲：四隅を囲む範囲を描く ERP の画素に写し、上下は ERP の中に切り詰めたもの（継ぎ目をまたげば二つ）。
+  消しゴムがラスタに届くかの判定（`erasePaint` の `getRasterApproxBoundsPx`、ドラッグの間の見せ方の `rasterObjectErpBounds`）と、
+  Python が描く範囲はこの範囲を使う（`du`・`dv` だけで求めると、大きくしたり回したりしたラスタのはみ出た所に消しゴムが届かない）。
+- 継ぎ目：経度の継ぎ目をまたぐラスタは、反対の側にも続けて描く（`placeRasterObjectErp` の `wrapOffsets`、−360°・0・+360° の写し）。
+  緯度は回さず、ERP の上下の外にはみ出た所は描かない。
+- 画素の中心（Python）：描く ERP の画素 (i, j) は、その中心 `((i + 0.5) ÷ 幅, (j + 0.5) ÷ 高さ)` の uv で、逆の式で枠の中の位置を求めて
+  読む。枠は端の座標（`u0`・`u1` は枠の左右の端）で、ラスタの画像の画素 k の中心は枠の幅の `(k + 0.5) ÷ 画像の幅` の所。双線形に補間する
+  （上の「Sky の描き方」と同じ画素の中心の取り方、`align_corners=False`。旧 Cutout の端の取り方（この節の上の項）にはしない）。
+  `rot_deg` が 0 でも同じ読み方にする（今の LANCZOS の縮小はやめる）。ブラウザの `drawImage` と補間が違うので、縁の画素の濃さは揃わない。
+  一致を守るのは置き方の数（中心・枠の大きさ・`rot_deg`・`scale`）、四隅、占める範囲。
+- 一致を守る test：`tests/fixtures/paint_raster_place.json`（枠・変形・描く ERP の大きさごとに、置き方の数、四隅の uv、占める範囲の画素。
+  回したもの、大きくしたもの、継ぎ目をまたぐもの、極を越えて四隅の v が 0〜1 の外に出るもの（範囲は切り詰める）、1px に満たない枠、
+  2:1 でない ERP と奇数の幅を含む）を Python と JS の両方が読む（許容差は状態の parity と同じ 1e-4）。Python の test は、90° 回したラスタの
+  不透明な画素が、四隅から求めた枠の中（1px の余裕）に収まることも確かめる。
+- 出力が変わるもの（意図した変更。同じ原因）：`scale` が 1 でないラスタ（古い UI でも新しい UI でも四隅で作れる）は、Panorama Studio と
+  旧ノード（PanoramaStickers・PanoramaCutout）の出力で、これまでの元の大きさからエディタと同じ大きさに変わる。`rot_deg` が 0 でないラスタも
+  回って描かれる。縁の画素は補間の変更で少し変わる。基準画像：旧ノードと Studio の基準画像（`tests/test_legacy_goldens.py`、
+  `stickers_paint_interleaved`・`studio_paint_interleaved` を含む）の場面はラスタオブジェクトを持たない（`tools/bake_legacy_goldens.py`）ので
+  変わらないはずで、実装のときに確かめる。エディタの `tests/fixtures/paint_rasters_golden.json`（回して大きくしたラスタを含む。キャンバスは
+  どれも偶数の幅の 2:1）も、写し方を明示しても同じ画素のはず。どれかが変わったら、変わった理由を確かめてから焼き直す。ラスタの画素を
+  見る Python の test（`tests/test_cutout_paint.py` の `_uv_bbox_to_pixels`、`tests/test_stickers_paint.py`、`tests/test_display_layers_core.py`）は
+  新しい式に合わせて直す。
+- 決めた理由：ADR 0056。
 
 ## World の描き方
 
