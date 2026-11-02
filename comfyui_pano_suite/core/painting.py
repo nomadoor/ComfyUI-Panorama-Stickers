@@ -386,94 +386,217 @@ def _decode_raster_data_url(data_url: str) -> np.ndarray | None:
         return None
 
 
-def _blend_rgba_band(paint: np.ndarray, src: np.ndarray, src_alpha: np.ndarray,
-                     y0: int, y1: int, x0: int, x1: int, sx0: int, sx1: int) -> None:
-    sh, sw = y1 - y0, x1 - x0
-    if sh <= 0 or sw <= 0:
+def _finite(value, fallback: float = 0.0) -> float:
+    """A finite float of `value`, else `fallback` (the editor's `finite`)."""
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return fallback
+    return number if math.isfinite(number) else fallback
+
+
+# --- Where a raster object lies (docs/render-contract.md "ペイントのラスタの置き方"; JS: web_src/pano_paint_display.js
+# placeRasterObjectErp, rasterObjectCornersUv, rasterObjectPixelRanges, held together by
+# tests/fixtures/paint_raster_place.json).
+#
+# The paint turns and scales on the plane that measures longitude and latitude in the same degrees: an ERP offset
+# (du, dv) is the point (2 du, dv) there. Positive degrees turn clockwise on the ERP picture (v grows downwards).
+
+# A pixel bound within this much of a whole pixel counts as on it, so Python's and the browser's last bits of a sine
+# take the same pixels.
+_PIXEL_EDGE_EPS = 1e-6
+
+
+def _raster_box(obj: dict) -> dict | None:
+    """The raster object's box and transform as the placement reads them, or None without a box or with an empty one:
+    the scale at least 0.01 (the floor the painting is read with)."""
+    bbox = obj.get("bbox") if isinstance(obj, dict) else None
+    if not isinstance(bbox, dict):
+        return None
+    u0, v0 = _finite(bbox.get("u0")), _finite(bbox.get("v0"))
+    u1, v1 = _finite(bbox.get("u1")), _finite(bbox.get("v1"))
+    if u1 <= u0 or v1 <= v0:
+        return None
+    tf = obj.get("transform") if isinstance(obj.get("transform"), dict) else {}
+    return {
+        "u0": u0, "v0": v0, "u1": u1, "v1": v1,
+        "du": _finite(tf.get("du")),
+        "dv": _finite(tf.get("dv")),
+        "rotation_deg": _finite(tf.get("rot_deg")),
+        "scale": max(0.01, _finite(tf.get("scale"), 1.0)),
+    }
+
+
+def _turn_paint_offset(du: float, dv: float, scale: float, rotation_deg: float) -> tuple[float, float]:
+    """The ERP offset (du, dv) turned by rotation_deg and scaled by `scale` on the paint plane."""
+    rad = rotation_deg * (math.pi / 180)
+    cos, sin = math.cos(rad), math.sin(rad)
+    x = 2 * du
+    return (scale * (x * cos - dv * sin)) / 2, scale * (x * sin + dv * cos)
+
+
+def _raster_corners_unwrapped(obj: dict) -> list[tuple[float, float]]:
+    """The four corners of the raster object's transformed box (top left, top right, bottom right, bottom left) with u
+    not wrapped, about its box's center moved by du and dv; none without a box."""
+    box = _raster_box(obj)
+    if box is None:
+        return []
+    half_w = (box["u1"] - box["u0"]) * 0.5
+    half_h = (box["v1"] - box["v0"]) * 0.5
+    center_u = box["u0"] + half_w + box["du"]
+    center_v = box["v0"] + half_h + box["dv"]
+    corners = []
+    for du, dv in ((-half_w, -half_h), (half_w, -half_h), (half_w, half_h), (-half_w, half_h)):
+        tu, tv = _turn_paint_offset(du, dv, box["scale"], box["rotation_deg"])
+        corners.append((center_u + tu, center_v + tv))
+    return corners
+
+
+def raster_object_corners_uv(obj: dict) -> list[tuple[float, float]]:
+    """The four ERP corners (u, v) of the raster object's transformed box (top left, top right, bottom right, bottom
+    left; u in 0..1, v not clamped), none without a box. The box is not grown to a pixel."""
+    return [(u % 1.0, v) for u, v in _raster_corners_unwrapped(obj)]
+
+
+def _raster_pixel_span(obj: dict, width: int, height: int) -> tuple[int, int, int, int] | None:
+    """(x0, x1, y0, y1) of the pixels the raster object covers, ends exclusive, x not wrapped and y cut to the ERP, or
+    None when it covers none."""
+    corners = _raster_corners_unwrapped(obj)
+    if not corners or width < 1 or height < 1:
+        return None
+    xs = [u * width for u, _ in corners]
+    ys = [v * height for _, v in corners]
+    x0 = math.floor(min(xs) + _PIXEL_EDGE_EPS)
+    x1 = math.ceil(max(xs) - _PIXEL_EDGE_EPS)
+    y0 = max(0, math.floor(min(ys) + _PIXEL_EDGE_EPS))
+    y1 = min(height, math.ceil(max(ys) - _PIXEL_EDGE_EPS))
+    if x1 <= x0 or y1 <= y0:
+        return None
+    return x0, x1, y0, y1
+
+
+def raster_object_pixel_ranges(obj: dict, width: int, height: int) -> list[tuple[int, int, int, int]]:
+    """The pixels the raster object covers on a width x height ERP: the box around its transformed corners, cut to the
+    ERP's top and bottom, as (x0, y0, x1, y1) (ends exclusive): one, or two across the seam (the whole width when it is
+    as wide)."""
+    span = _raster_pixel_span(obj, width, height)
+    if span is None:
+        return []
+    x0, x1, y0, y1 = span
+    turns = x0 // width
+    x0, x1 = x0 - turns * width, x1 - turns * width
+    if x1 - x0 >= width:
+        return [(0, y0, width, y1)]
+    if x1 > width:
+        return [(x0, y0, width, y1), (0, y0, x1 - width, y1)]
+    return [(x0, y0, x1, y1)]
+
+
+def raster_object_placement(obj: dict, width: int, height: int, min_pixel: float = 1.0) -> dict | None:
+    """Where the raster object lies on a width x height ERP: its center and box size in pixels (at least `min_pixel`
+    each way, grown from its top left), rotation, scale and `matrix` (a, b, c, d): a pixel offset (x, y) of the box from
+    its center lands at (a x + c y, b x + d y), the paint plane's turn and scale mapped to the ERP's pixels (width / 360
+    across, height / 180 down). None without a box, with an empty one, or on an ERP with no size."""
+    box = _raster_box(obj)
+    if box is None or width < 1 or height < 1:
+        return None
+    box_width = max(min_pixel, (box["u1"] - box["u0"]) * width)
+    box_height = max(min_pixel, (box["v1"] - box["v0"]) * height)
+    rad = box["rotation_deg"] * (math.pi / 180)
+    cos = box["scale"] * math.cos(rad)
+    sin = box["scale"] * math.sin(rad)
+    # Pixels per degree down over across.
+    aspect = (height / 180) / (width / 360)
+    return {
+        "center_x": box["u0"] * width + box_width * 0.5 + box["du"] * width,
+        "center_y": box["v0"] * height + box_height * 0.5 + box["dv"] * height,
+        "width": box_width,
+        "height": box_height,
+        "rotation_deg": box["rotation_deg"],
+        "scale": box["scale"],
+        "matrix": (cos, sin * aspect, -sin / aspect, cos),
+    }
+
+
+def _sample_box(image: np.ndarray, local_u: np.ndarray, local_v: np.ndarray) -> np.ndarray:
+    """The straight RGBA `image` (H, W, 4) read at the points (local_u, local_v) of its box (0..1 across, an image
+    pixel k's center at (k + 0.5) / its size): bilinearly with alpha multiplied in while it is mixed, the edge pixels
+    held out to the box's edge, and transparent outside the box."""
+    h, w = image.shape[:2]
+    premultiplied = np.concatenate([image[..., :3] * image[..., 3:4], image[..., 3:4]], axis=-1).astype(np.float32)
+    local_u = local_u.astype(np.float32)
+    local_v = local_v.astype(np.float32)
+    sx = np.clip(local_u * w - 0.5, 0.0, w - 1.0)
+    sy = np.clip(local_v * h - 0.5, 0.0, h - 1.0)
+    x0 = np.floor(sx).astype(np.int64)
+    y0 = np.floor(sy).astype(np.int64)
+    x1 = np.minimum(x0 + 1, w - 1)
+    y1 = np.minimum(y0 + 1, h - 1)
+    fx = (sx - x0)[..., None]
+    fy = (sy - y0)[..., None]
+    texels = premultiplied.reshape(-1, 4)
+
+    def texel(y, x):
+        return np.take(texels, (y * w + x).ravel(), axis=0).reshape(x.shape + (4,))
+
+    top = texel(y0, x0) * (1.0 - fx) + texel(y0, x1) * fx
+    bottom = texel(y1, x0) * (1.0 - fx) + texel(y1, x1) * fx
+    out = top * (1.0 - fy) + bottom * fy
+    inside = (local_u >= 0.0) & (local_u <= 1.0) & (local_v >= 0.0) & (local_v <= 1.0)
+    out *= inside[..., None]
+    alpha = out[..., 3:4]
+    out[..., :3] = np.where(alpha > 1e-6, out[..., :3] / np.maximum(alpha, 1e-6), 0.0)
+    return out
+
+
+def _composite_raster_patch(paint: np.ndarray, mask: np.ndarray, patch: np.ndarray, layer_kind: str,
+                            y0: int, y1: int, x0: int, x1: int) -> None:
+    """Lays the straight RGBA `patch` over paint[y0:y1, x0:x1] (or its alpha over the mask)."""
+    src_alpha = patch[..., 3:4]
+    if layer_kind == "mask":
+        dst = mask[y0:y1, x0:x1]
+        mask[y0:y1, x0:x1] = np.clip(dst + src_alpha[..., 0] * (1.0 - dst), 0.0, 1.0)
         return
-    sc = src[:sh, sx0:sx1]
-    sa = src_alpha[:sh, sx0:sx1]
     dst = paint[y0:y1, x0:x1]
     da = dst[..., 3:4]
-    out_a = sa + da * (1.0 - sa)
+    out_a = src_alpha + da * (1.0 - src_alpha)
     safe = np.where(out_a > 0, out_a, 1.0)
-    paint[y0:y1, x0:x1, :3] = (sc[..., :3] * sa + dst[..., :3] * da * (1.0 - sa)) / safe
+    paint[y0:y1, x0:x1, :3] = (patch[..., :3] * src_alpha + dst[..., :3] * da * (1.0 - src_alpha)) / safe
     paint[y0:y1, x0:x1, 3:4] = out_a
-
-
-def _blend_mask_band(mask: np.ndarray, src_alpha: np.ndarray,
-                     y0: int, y1: int, x0: int, x1: int, sx0: int, sx1: int) -> None:
-    sh, sw = y1 - y0, x1 - x0
-    if sh <= 0 or sw <= 0:
-        return
-    sa = src_alpha[:sh, sx0:sx1, 0]
-    mask[y0:y1, x0:x1] = np.clip(mask[y0:y1, x0:x1] + sa * (1.0 - mask[y0:y1, x0:x1]), 0.0, 1.0)
-
-
-def _composite_raster_band(paint: np.ndarray, mask: np.ndarray, src: np.ndarray, src_alpha: np.ndarray,
-                            layer_kind: str, y0: int, y1: int, x0: int, x1: int, sx0: int, sx1: int) -> None:
-    if layer_kind == "mask":
-        _blend_mask_band(mask, src_alpha, y0, y1, x0, x1, sx0, sx1)
-    else:
-        _blend_rgba_band(paint, src, src_alpha, y0, y1, x0, x1, sx0, sx1)
-
-
-def _place_raster_object(paint: np.ndarray, mask: np.ndarray, src: np.ndarray,
-                         layer_kind: str, x0: int, y0: int, x1: int, y1: int,
-                         dst_w: int, width: int, height: int) -> None:
-    y0c = max(0, min(height, y0))
-    y1c = max(0, min(height, y1))
-    if y1c <= y0c:
-        return
-    sy0 = max(0, y0c - y0)
-    sy1 = sy0 + (y1c - y0c)
-    src = src[sy0:sy1, ...]
-    src_alpha = src[..., 3:4]
-    if x1 > x0:
-        # No horizontal wrap.
-        _composite_raster_band(paint, mask, src, src_alpha, layer_kind,
-                                y0c, y1c, max(0, x0), min(width, x1), 0, min(width, x1) - max(0, x0))
-    else:
-        # Horizontal wrap: right band then left band.
-        right_w = width - x0
-        _composite_raster_band(paint, mask, src, src_alpha, layer_kind,
-                                y0c, y1c, x0, width, 0, right_w)
-        _composite_raster_band(paint, mask, src, src_alpha, layer_kind,
-                                y0c, y1c, 0, x1, right_w, dst_w)
-
-
-def _uv_bbox_to_pixels(bbox: dict, tf: dict, width: int, height: int) -> tuple[int, int, int, int, int, int]:
-    """Return (x0, y0, x1, y1, dst_w, dst_h) after applying translation transform."""
-    du = float(tf.get("du") or 0.0)
-    dv = float(tf.get("dv") or 0.0)
-    u0 = ((float(bbox.get("u0", 0.0)) + du) % 1.0 + 1.0) % 1.0
-    v0 = float(bbox.get("v0", 0.0)) + dv
-    u1 = ((float(bbox.get("u1", 1.0)) + du) % 1.0 + 1.0) % 1.0
-    v1 = float(bbox.get("v1", 1.0)) + dv
-    wraps = u1 <= u0
-    x0, y0 = int(round(u0 * width)), int(round(v0 * height))
-    x1, y1 = int(round(u1 * width)), int(round(v1 * height))
-    dst_w = (width - x0 + x1) if wraps else max(1, x1 - x0)
-    dst_w = max(1, dst_w)
-    dst_h = max(1, y1 - y0)
-    return x0, y0, x1, y1, dst_w, dst_h
 
 
 def _composite_one_raster_object(
     paint: np.ndarray, mask: np.ndarray, obj: dict, width: int, height: int
 ) -> None:
+    """Draws the raster object over paint (or the mask) as the editor places it: each pixel of the ERP it covers
+    (raster_object_pixel_ranges, with the seam's copies at -width, 0 and +width) reads its image (_sample_box) at the
+    point of its box under the pixel's center, through the inverse of the placement's matrix."""
+    placement = raster_object_placement(obj, width, height)
+    span = _raster_pixel_span(obj, width, height)
+    if placement is None or span is None:
+        return
     raster = _decode_raster_data_url(obj.get("rasterDataUrl") or "")
     if raster is None:
         return
-    x0, y0, x1, y1, dst_w, dst_h = _uv_bbox_to_pixels(
-        obj.get("bbox") or {}, obj.get("transform") or {}, width, height
-    )
-    if dst_h <= 0:
-        return
-    src_img = Image.fromarray((np.clip(raster, 0.0, 1.0) * 255).astype(np.uint8), "RGBA")
-    src = np.asarray(src_img.resize((dst_w, dst_h), Image.LANCZOS), dtype=np.float32) / 255.0
-    _place_raster_object(paint, mask, src, str(obj.get("layerKind") or "paint"),
-                         x0, y0, x1, y1, dst_w, width, height)
+    image = np.clip(raster, 0.0, 1.0)
+    a, b, c, d = placement["matrix"]
+    det = a * d - b * c
+    box_w, box_h = placement["width"], placement["height"]
+    x0, x1, y0, y1 = span
+    layer_kind = str(obj.get("layerKind") or "paint")
+    ys = np.arange(y0, y1, dtype=np.float64) + 0.5 - placement["center_y"]
+    for offset in (-width, 0, width):
+        left = max(0, x0 + offset)
+        right = min(width, x1 + offset)
+        if right <= left:
+            continue
+        xs = np.arange(left, right, dtype=np.float64) + 0.5 - (placement["center_x"] + offset)
+        px, py = np.meshgrid(xs, ys)
+        # The box's pixel offset from its center at each ERP pixel's center.
+        lx = (d * px - c * py) / det
+        ly = (-b * px + a * py) / det
+        patch = _sample_box(image, lx / box_w + 0.5, ly / box_h + 0.5)
+        _composite_raster_patch(paint, mask, patch, layer_kind, y0, y1, left, right)
 
 
 def _composite_raster_objects(

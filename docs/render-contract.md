@@ -16,7 +16,7 @@ Panorama Studio のバックエンドの描画関数（`render_frame`、重な�
 | 描画の入口、層、`cache` の使い回し | `core/render.py` `render_frame`・`RenderLayer`・`Projection` | — | `tests/test_render.py`、`tests/test_memory_cache.py`、`tests/test_studio_scene.py` |
 | 重なり順と合成 | `render.py` `composite_frame`、`core/world_render.py` `over_by_depth` | — | `tests/test_render.py`、`tests/test_world_render.py` |
 | Sky の標本化（直接の標本化、縮めるときの平均、Sky の幅） | `render.py` `_sky_layers`・`_shoot_sky`・`_sample_filtered`・`_shrink`・`_sky_size` | — | `tests/test_render.py`、`tests/test_studio_node.py`、`tests/test_studio_scene.py` |
-| ペイントのラスタの置き方（ラスタオブジェクトを ERP に置く中心・大きさ・`scale`・`rot_deg`・継ぎ目、回す平面と向き、ラスタの占める画素の範囲。ストロークのまとまりを回す式も同じ平面と向き） | `core/painting.py` `_composite_one_raster_object`（置き方を求める関数は未実装。今の `_uv_bbox_to_pixels` は `du`・`dv` だけを使い、`scale` と `rot_deg` を使わない） | `web_src/pano_paint_display.js` `turnPaintOffset`・`unturnPaintOffset`（回す平面の式）・`placeRasterObjectErp`・`drawRasterObjectErp`・`rasterObjectCornersUv`・`rasterObjectPixelRanges`・`pixelRangesMeet`、`web_src/pano_paint_objects.js` `transformErpPointAround`・`inverseTransformErpPointAround`・`rasterObjectAlphaAt`（`rasterObjectCornersUv` もここから読める）、範囲を使う所は `web_src/pano_paint_strokes.js` `erasePaint`・`web_src/pano_raster_eraser.js` `rasterEraserDisplay` | フィクスチャ `tests/fixtures/paint_raster_place.json` を `tests/test_paint_raster_place_parity.py`（未実装）と `tests/pano_paint_raster_place_parity.test.mjs` が読む。平面の上の回し方は `tests/pano_paint_objects.test.mjs`、消しゴムの届く範囲は `tests/pano_raster_eraser.test.mjs`。エディタの絵は `tests/browser/paint_rasters.spec.js` |
+| ペイントのラスタの置き方（ラスタオブジェクトを ERP に置く中心・大きさ・`scale`・`rot_deg`・継ぎ目、回す平面と向き、ラスタの占める画素の範囲。ストロークのまとまりを回す式も同じ平面と向き） | `core/painting.py` `raster_object_placement`・`raster_object_corners_uv`・`raster_object_pixel_ranges`、描くのは `_composite_one_raster_object`（画素を読むのは `_sample_box`） | `web_src/pano_paint_display.js` `turnPaintOffset`・`unturnPaintOffset`（回す平面の式）・`placeRasterObjectErp`・`drawRasterObjectErp`・`rasterObjectCornersUv`・`rasterObjectPixelRanges`・`pixelRangesMeet`、`web_src/pano_paint_objects.js` `transformErpPointAround`・`inverseTransformErpPointAround`・`rasterObjectAlphaAt`（`rasterObjectCornersUv` もここから読める）、範囲を使う所は `web_src/pano_paint_strokes.js` `erasePaint`・`web_src/pano_raster_eraser.js` `rasterEraserDisplay` | フィクスチャ `tests/fixtures/paint_raster_place.json` を `tests/test_paint_raster_place_parity.py`（回したラスタ・大きくしたラスタ・継ぎ目をまたぐラスタの描いた画素も見る）と `tests/pano_paint_raster_place_parity.test.mjs` が読む。平面の上の回し方は `tests/pano_paint_objects.test.mjs`、消しゴムの届く範囲は `tests/pano_raster_eraser.test.mjs`。エディタの絵は `tests/browser/paint_rasters.spec.js` |
 | World の層と `world` の Sticker の板 | `world_render.py` `world_layer` | — | `tests/test_world_render.py`、`tests/test_stickers_world.py`、`tests/test_studio_upstream.py` |
 | 3D の `world` の Sticker | `world_render.py` `ContentSource`、`nodes.py` `_port_media`・`_resolve_sources`（3D ファイルの `file` の Source） | — | `tests/test_stickers_3d.py` |
 | `scene` の共通処理 | `world_render.py` `SceneContent`、`nodes.py` `_scene_content` | — | `tests/test_world_render.py`、`tests/test_scene_mesh.py` |
@@ -236,7 +236,7 @@ RTX 4070 Ti、1 フレーム、κ = 0.5・hFOV 140°（4K は 4096 × 2048 相�
 - 画素の中心（Python）：描く ERP の画素 (i, j) は、その中心 `((i + 0.5) ÷ 幅, (j + 0.5) ÷ 高さ)` の uv で、逆の式で枠の中の位置を求めて
   読む。枠は端の座標（`u0`・`u1` は枠の左右の端）で、ラスタの画像の画素 k の中心は枠の幅の `(k + 0.5) ÷ 画像の幅` の所。双線形に補間する
   （上の「Sky の描き方」と同じ画素の中心の取り方、`align_corners=False`。旧 Cutout の端の取り方（この節の上の項）にはしない）。
-  `rot_deg` が 0 でも同じ読み方にする（今の LANCZOS の縮小はやめる）。ブラウザの `drawImage` と補間が違うので、縁の画素の濃さは揃わない。
+  `rot_deg` が 0 でも同じ読み方にする（LANCZOS の縮小は使わない）。ブラウザの `drawImage` と補間が違うので、縁の画素の濃さは揃わない。
   一致を守るのは置き方の数（中心・枠の大きさ・`rot_deg`・`scale`）、四隅、占める範囲。
 - 一致を守る test：`tests/fixtures/paint_raster_place.json`（枠・変形・描く ERP の大きさごとに、置き方の数、四隅の uv、占める範囲の画素。
   回したもの、大きくしたもの、継ぎ目をまたぐもの、極を越えて四隅の v が 0〜1 の外に出るもの（範囲は切り詰める）、1px に満たない枠、
@@ -246,10 +246,10 @@ RTX 4070 Ti、1 フレーム、κ = 0.5・hFOV 140°（4K は 4096 × 2048 相�
   旧ノード（PanoramaStickers・PanoramaCutout）の出力で、これまでの元の大きさからエディタと同じ大きさに変わる。`rot_deg` が 0 でないラスタも
   回って描かれる。縁の画素は補間の変更で少し変わる。基準画像：旧ノードと Studio の基準画像（`tests/test_legacy_goldens.py`、
   `stickers_paint_interleaved`・`studio_paint_interleaved` を含む）の場面はラスタオブジェクトを持たない（`tools/bake_legacy_goldens.py`）ので
-  変わらないはずで、実装のときに確かめる。エディタの `tests/fixtures/paint_rasters_golden.json`（回して大きくしたラスタを含む。キャンバスは
-  どれも偶数の幅の 2:1）も、写し方を明示しても同じ画素のはず。どれかが変わったら、変わった理由を確かめてから焼き直す。ラスタの画素を
-  見る Python の test（`tests/test_cutout_paint.py` の `_uv_bbox_to_pixels`、`tests/test_stickers_paint.py`、`tests/test_display_layers_core.py`）は
-  新しい式に合わせて直す。
+  変わらない。エディタの `tests/fixtures/paint_rasters_golden.json`（回して大きくしたラスタを含む。キャンバスは
+  どれも偶数の幅の 2:1）も、写し方を明示しても同じ画素（2:1 では縦横の写し方が同じなので、`drawRasterObjectErp` は canvas の回転と拡大を
+  これまでと同じ値で掛ける）。どれかが変わったら、変わった理由を確かめてから焼き直す。`tests/test_cutout_paint.py` の `_uv_bbox_to_pixels` の
+  test は、細い枠の占める範囲の test に替えた。
 - 決めた理由：ADR 0056。
 
 ## World の描き方
