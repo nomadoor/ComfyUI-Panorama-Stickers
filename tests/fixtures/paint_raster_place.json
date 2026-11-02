@@ -1,5 +1,5 @@
 {
- "_doc": "Where a paint raster object lies on an ERP (docs/render-contract.md \"ペイントのラスタの置き方\"), read by tests/test_paint_raster_place_parity.py (core/painting.py) and tests/pano_paint_raster_place_parity.test.mjs (web_src/pano_paint_display.js). placement: its center and box in pixels of the width x height ERP (the box at least 1 px each way, grown from its top left), rotationDeg, scale and matrix [a, b, c, d] (a box pixel offset (x, y) from the center lands at (a x + c y, b x + d y)); corners: [u, v] of its transformed box (top left, top right, bottom right, bottom left; u in 0..1, v not clamped); ranges: [x0, y0, x1, y1] (end exclusive) of the pixels it covers, two across the seam. Numbers within 1e-4.",
+ "_doc": "Where a paint raster object lies on an ERP (docs/render-contract.md \"ペイントのラスタの置き方\"), read by tests/test_paint_raster_place_parity.py (core/painting.py) and tests/pano_paint_raster_place_parity.test.mjs (web_src/pano_paint_display.js). placement: its center and box in pixels of the width x height ERP (the box at least 1 px each way, grown from its top left), rotationDeg, scale, matrix [a, b, c, d] (a box pixel offset (x, y) from the center lands at (a x + c y, b x + d y)) and wrapOffsets (the x offsets of the seam's three copies, one of them putting the center in 0..width)); corners: [u, v] of its transformed box (top left, top right, bottom right, bottom left; u in 0..1, v not clamped); ranges: [x0, y0, x1, y1] (end exclusive) of the pixels it covers, two across the seam. Numbers within 1e-4.",
  "cases": {
   "moved": {
    "item": {
@@ -30,6 +30,11 @@
      0.0,
      -0.0,
      1.0
+    ],
+    "wrapOffsets": [
+     -1000,
+     0,
+     1000
     ]
    },
    "corners": [
@@ -88,6 +93,11 @@
      1.4999999999999998,
      -1.4999999999999998,
      9.184850993605148e-17
+    ],
+    "wrapOffsets": [
+     -1000,
+     0,
+     1000
     ]
    },
    "corners": [
@@ -146,6 +156,11 @@
      0.0,
      -0.0,
      2.0
+    ],
+    "wrapOffsets": [
+     -2048,
+     0,
+     2048
     ]
    },
    "corners": [
@@ -204,6 +219,11 @@
      -0.4139527389840436,
      0.4139527389840436,
      0.6254143665503762
+    ],
+    "wrapOffsets": [
+     -2048,
+     0,
+     2048
     ]
    },
    "corners": [
@@ -262,6 +282,11 @@
      0.49999999999999994,
      -0.49999999999999994,
      0.8660254037844387
+    ],
+    "wrapOffsets": [
+     -2048,
+     -1024,
+     0
     ]
    },
    "corners": [
@@ -326,6 +351,11 @@
      1.0606601717798212,
      -1.0606601717798212,
      1.0606601717798214
+    ],
+    "wrapOffsets": [
+     -1000,
+     0,
+     1000
     ]
    },
    "corners": [
@@ -384,6 +414,11 @@
      0.0,
      -0.0,
      1.0
+    ],
+    "wrapOffsets": [
+     -1000,
+     0,
+     1000
     ]
    },
    "corners": [
@@ -442,6 +477,11 @@
      0.7,
      -0.3571428571428571,
      0.8660254037844387
+    ],
+    "wrapOffsets": [
+     -1000,
+     0,
+     1000
     ]
    },
    "corners": [
@@ -500,6 +540,11 @@
      0.43344528201398974,
      -0.43258055348713725,
      0.25000000000000006
+    ],
+    "wrapOffsets": [
+     -1001,
+     0,
+     1001
     ]
    },
    "corners": [
@@ -526,6 +571,138 @@
      191,
      685,
      260
+    ]
+   ]
+  },
+  "moved_past_a_turn": {
+   "item": {
+    "bbox": {
+     "u0": 0.0,
+     "v0": 0.4,
+     "u1": 0.1,
+     "v1": 0.5
+    },
+    "transform": {
+     "du": 1.95,
+     "dv": 0,
+     "rot_deg": 20,
+     "scale": 1
+    }
+   },
+   "width": 400,
+   "height": 200,
+   "placement": {
+    "centerX": 800.0,
+    "centerY": 90.0,
+    "width": 40.0,
+    "height": 19.999999999999996,
+    "rotationDeg": 20,
+    "scale": 1,
+    "matrix": [
+     0.9396926207859084,
+     0.3420201433256687,
+     -0.3420201433256687,
+     0.9396926207859084
+    ],
+    "wrapOffsets": [
+     -1200,
+     -800,
+     -400
+    ]
+   },
+   "corners": [
+    [
+     0.9615658725438463,
+     0.3688133546281377
+    ],
+    [
+     0.05553513462243709,
+     0.4372173832932715
+    ],
+    [
+     0.03843412745615371,
+     0.5311866453718623
+    ],
+    [
+     0.9444648653775629,
+     0.46278261670672854
+    ]
+   ],
+   "ranges": [
+    [
+     377,
+     73,
+     400,
+     107
+    ],
+    [
+     0,
+     73,
+     23,
+     107
+    ]
+   ]
+  },
+  "moved_back_past_a_turn": {
+   "item": {
+    "bbox": {
+     "u0": 0.2,
+     "v0": 0.4,
+     "u1": 0.3,
+     "v1": 0.5
+    },
+    "transform": {
+     "du": -1.05,
+     "dv": 0,
+     "rot_deg": 0,
+     "scale": 1.5
+    }
+   },
+   "width": 400,
+   "height": 200,
+   "placement": {
+    "centerX": -320.0,
+    "centerY": 90.0,
+    "width": 39.99999999999999,
+    "height": 19.999999999999996,
+    "rotationDeg": 0,
+    "scale": 1.5,
+    "matrix": [
+     1.5,
+     0.0,
+     -0.0,
+     1.5
+    ],
+    "wrapOffsets": [
+     0,
+     400,
+     800
+    ]
+   },
+   "corners": [
+    [
+     0.125,
+     0.375
+    ],
+    [
+     0.2749999999999999,
+     0.375
+    ],
+    [
+     0.2749999999999999,
+     0.525
+    ],
+    [
+     0.125,
+     0.525
+    ]
+   ],
+   "ranges": [
+    [
+     50,
+     75,
+     110,
+     105
     ]
    ]
   },
@@ -558,6 +735,11 @@
      0.0,
      -0.0,
      3.0
+    ],
+    "wrapOffsets": [
+     -1000,
+     0,
+     1000
     ]
    },
    "corners": [

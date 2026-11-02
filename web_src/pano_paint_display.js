@@ -137,7 +137,8 @@ export function pixelRangesMeet(ranges, box) {
 // box size (at least `minPixel` pixels each way, grown from its top left), rotation, scale, `aspect` (the ERP's pixels
 // per degree down over across: 1 on 2:1), `matrix` [a, b, c, d] (a pixel offset (x, y) of the box from its center lands
 // at (a x + c y, b x + d y): the paint plane's turn and scale mapped to the ERP's pixels, width / 360 across and
-// height / 180 down, so an ERP not 2:1 places it the same) and the seam's copies. Null when it has no box, an empty
+// height / 180 down, so an ERP not 2:1 places it the same) and the seam's copies (`wrapOffsets`: three x offsets
+// a turn apart, one of them putting the center on the ERP however many turns du has gathered). Null when it has no box, an empty
 // box, or the ERP has no size.
 export function placeRasterObjectErp(item, width, height, { minPixel = 1 } = {}) {
   const erpWidth = finite(width);
@@ -151,8 +152,11 @@ export function placeRasterObjectErp(item, width, height, { minPixel = 1 } = {})
   const sin = box.scale * Math.sin(rad);
   // Pixels per degree down over across.
   const aspect = (erpHeight / 180) / (erpWidth / 360);
+  const centerX = box.u0 * erpWidth + boxWidth * 0.5 + box.du * erpWidth;
+  // The whole turns du has gathered: the copies sit around the one whose center is on the ERP.
+  const turns = Math.floor(centerX / erpWidth);
   return {
-    centerX: box.u0 * erpWidth + boxWidth * 0.5 + box.du * erpWidth,
+    centerX,
     centerY: box.v0 * erpHeight + boxHeight * 0.5 + box.dv * erpHeight,
     width: boxWidth,
     height: boxHeight,
@@ -160,7 +164,7 @@ export function placeRasterObjectErp(item, width, height, { minPixel = 1 } = {})
     scale: box.scale,
     aspect,
     matrix: [cos, sin * aspect, -sin / aspect, cos],
-    wrapOffsets: [-erpWidth, 0, erpWidth],
+    wrapOffsets: [-erpWidth, 0, erpWidth].map((offset) => offset - turns * erpWidth),
   };
 }
 

@@ -16,6 +16,7 @@ for (const [name, { item, width, height, placement, corners, ranges }] of Object
     const placed = placeRasterObjectErp(item, width, height);
     for (const key of ["centerX", "centerY", "width", "height", "rotationDeg", "scale"]) near(placed[key], placement[key], key);
     placement.matrix.forEach((value, index) => near(placed.matrix[index], value, `matrix[${index}]`));
+    assert.deepEqual(placed.wrapOffsets, placement.wrapOffsets);
     const framed = rasterObjectCornersUv(item);
     assert.equal(framed.length, 4);
     corners.forEach(([u, v], index) => {

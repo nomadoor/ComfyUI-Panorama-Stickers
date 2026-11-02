@@ -31,6 +31,7 @@ def test_raster_object_is_placed_as_the_editor_places_it(name):
                        ("rotationDeg", "rotation_deg"), ("scale", "scale")):
         assert placement[field] == pytest.approx(expected[key], abs=1e-4), key
     assert placement["matrix"] == pytest.approx(expected["matrix"], abs=1e-4)
+    assert list(placement["wrap_offsets"]) == expected["wrapOffsets"]
     corners = raster_object_corners_uv(item)
     assert len(corners) == 4
     assert [value for corner in corners for value in corner] == pytest.approx([value for corner in case["corners"] for value in corner], abs=1e-4)
@@ -105,3 +106,16 @@ def test_a_quarter_turn_is_clockwise_on_the_erp_picture():
     # Turned clockwise about (140, 90), the mark's middle (122, 82) goes to (148, 72), at the top right of the 20 x 40 px
     # it stands in (pixel i's center is at i + 0.5).
     assert (cols.mean() + 0.5, rows.mean() + 0.5) == pytest.approx((148, 72), abs=0.5)
+
+
+@pytest.mark.parametrize("du", [1.95, 2.4, -1.05])
+def test_a_raster_moved_past_a_turn_draws_where_it_lies_within_one(du):
+    width, height = 400, 200
+    item = _raster({"u0": 0.0, "v0": 0.4, "u1": 0.1, "v1": 0.5}, {"du": du, "dv": 0, "rot_deg": 0, "scale": 1}, _png(40, 20))
+    once = _raster({"u0": 0.0, "v0": 0.4, "u1": 0.1, "v1": 0.5}, {"du": du % 1.0, "dv": 0, "rot_deg": 0, "scale": 1}, _png(40, 20))
+
+    paint, _mask = render_painting_to_erp({"paint": {"strokes": []}, "raster_objects": [item]}, width, height)
+    want, _ = render_painting_to_erp({"paint": {"strokes": []}, "raster_objects": [once]}, width, height)
+
+    assert (paint[..., 3] > 0.5).sum() == 40 * 20
+    assert np.array_equal(paint[..., 3] > 0.5, want[..., 3] > 0.5)

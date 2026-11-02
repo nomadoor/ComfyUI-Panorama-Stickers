@@ -496,7 +496,8 @@ def raster_object_placement(obj: dict, width: int, height: int, min_pixel: float
     """Where the raster object lies on a width x height ERP: its center and box size in pixels (at least `min_pixel`
     each way, grown from its top left), rotation, scale and `matrix` (a, b, c, d): a pixel offset (x, y) of the box from
     its center lands at (a x + c y, b x + d y), the paint plane's turn and scale mapped to the ERP's pixels (width / 360
-    across, height / 180 down). None without a box, with an empty one, or on an ERP with no size."""
+    across, height / 180 down), and `wrap_offsets`: the seam's three copies a turn apart, one of them putting the center
+    on the ERP however many turns du has gathered. None without a box, with an empty one, or on an ERP with no size."""
     box = _raster_box(obj)
     if box is None or width < 1 or height < 1:
         return None
@@ -507,14 +508,18 @@ def raster_object_placement(obj: dict, width: int, height: int, min_pixel: float
     sin = box["scale"] * math.sin(rad)
     # Pixels per degree down over across.
     aspect = (height / 180) / (width / 360)
+    center_x = box["u0"] * width + box_width * 0.5 + box["du"] * width
+    # The whole turns du has gathered: the copies sit around the one whose center is on the ERP.
+    turns = math.floor(center_x / width)
     return {
-        "center_x": box["u0"] * width + box_width * 0.5 + box["du"] * width,
+        "center_x": center_x,
         "center_y": box["v0"] * height + box_height * 0.5 + box["dv"] * height,
         "width": box_width,
         "height": box_height,
         "rotation_deg": box["rotation_deg"],
         "scale": box["scale"],
         "matrix": (cos, sin * aspect, -sin / aspect, cos),
+        "wrap_offsets": tuple(offset - turns * width for offset in (-width, 0, width)),
     }
 
 
@@ -569,7 +574,7 @@ def _composite_one_raster_object(
     paint: np.ndarray, mask: np.ndarray, obj: dict, width: int, height: int
 ) -> None:
     """Draws the raster object over paint (or the mask) as the editor places it: each pixel of the ERP it covers
-    (raster_object_pixel_ranges, with the seam's copies at -width, 0 and +width) reads its image (_sample_box) at the
+    (raster_object_pixel_ranges, with the seam's copies at the placement's wrap_offsets) reads its image (_sample_box) at the
     point of its box under the pixel's center, through the inverse of the placement's matrix."""
     placement = raster_object_placement(obj, width, height)
     span = _raster_pixel_span(obj, width, height)
@@ -585,7 +590,7 @@ def _composite_one_raster_object(
     x0, x1, y0, y1 = span
     layer_kind = str(obj.get("layerKind") or "paint")
     ys = np.arange(y0, y1, dtype=np.float64) + 0.5 - placement["center_y"]
-    for offset in (-width, 0, width):
+    for offset in placement["wrap_offsets"]:
         left = max(0, x0 + offset)
         right = min(width, x1 + offset)
         if right <= left:

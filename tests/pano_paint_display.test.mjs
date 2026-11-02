@@ -63,6 +63,18 @@ test("a raster object is drawn by its placement's matrix: on an ERP not 2:1 the 
   ]);
 });
 
+test("a raster object moved past a whole turn is drawn where it lies within one, by a copy whose center is on the ERP", () => {
+  for (const du of [1.95, 2.4, -1.05]) {
+    const item = { bbox: { u0: 0, v0: 0.4, u1: 0.1, v1: 0.5 }, transform: { du, dv: 0, rot_deg: 0, scale: 1 } };
+    const ctx = matrixContext();
+    drawRasterObjectErp(ctx, {}, item, 400, 200);
+    const centers = ctx.drawn.map((m) => m[4]);
+    const within = (((0.05 + du) % 1) + 1) % 1 * 400;
+    assert.ok(centers.some((x) => Math.abs(x - within) < 1e-9), `du ${du}: copies at ${centers}`);
+    assert.deepEqual(centers.map((x) => x - centers[0]), [0, 400, 800], "three copies a turn apart");
+  }
+});
+
 test("invalid raster bounds are rejected before allocating a surface", () => {
   assert.equal(placeRasterObjectErp({ bbox: { u0: 0.5, v0: 0.2, u1: 0.5, v1: 0.6 } }, 1000, 500), null);
   assert.equal(placeRasterObjectErp({ bbox: { u0: 0, v0: 0, u1: 1, v1: 1 } }, 0, 500), null);

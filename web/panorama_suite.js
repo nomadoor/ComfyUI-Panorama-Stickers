@@ -9534,9 +9534,9 @@ function jx(e, t) {
 function GT(e, t, n, { minPixel: r = 1 } = {}) {
   const i = ur(t), o = ur(n), a = Rx(e);
   if (!a || i < 1 || o < 1) return null;
-  const s = Math.max(r, (a.u1 - a.u0) * i), l = Math.max(r, (a.v1 - a.v0) * o), c = a.rotationDeg * (Math.PI / 180), d = a.scale * Math.cos(c), u = a.scale * Math.sin(c), f = o / 180 / (i / 360);
+  const s = Math.max(r, (a.u1 - a.u0) * i), l = Math.max(r, (a.v1 - a.v0) * o), c = a.rotationDeg * (Math.PI / 180), d = a.scale * Math.cos(c), u = a.scale * Math.sin(c), f = o / 180 / (i / 360), p = a.u0 * i + s * 0.5 + a.du * i, g = Math.floor(p / i);
   return {
-    centerX: a.u0 * i + s * 0.5 + a.du * i,
+    centerX: p,
     centerY: a.v0 * o + l * 0.5 + a.dv * o,
     width: s,
     height: l,
@@ -9544,7 +9544,7 @@ function GT(e, t, n, { minPixel: r = 1 } = {}) {
     scale: a.scale,
     aspect: f,
     matrix: [d, u * f, -u / f, d],
-    wrapOffsets: [-i, 0, i]
+    wrapOffsets: [-i, 0, i].map((m) => m - g * i)
   };
 }
 function UT(e, t, n, r, i, { minPixel: o = 1 } = {}) {
