@@ -87,3 +87,21 @@ def test_a_raster_across_the_seam_draws_on_both_sides():
 
     _rows, cols = np.nonzero(paint[..., 3] > 0.5)
     assert sorted(set(cols.tolist())) == list(range(0, 20)) + list(range(380, 400))
+
+
+def test_a_quarter_turn_is_clockwise_on_the_erp_picture():
+    width, height = 400, 200
+    image = np.zeros((20, 40, 4), dtype=np.uint8)
+    image[..., 3] = 255
+    image[:4, :4] = (255, 0, 0, 255)  # A red mark at its top left; the rest black.
+    buffer = io.BytesIO()
+    Image.fromarray(image, "RGBA").save(buffer, format="PNG")
+    url = "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode("ascii")
+    item = _raster({"u0": 0.3, "v0": 0.4, "u1": 0.4, "v1": 0.5}, {"du": 0, "dv": 0, "rot_deg": 90, "scale": 1}, url)
+
+    paint, _mask = render_painting_to_erp({"paint": {"strokes": []}, "raster_objects": [item]}, width, height)
+
+    rows, cols = np.nonzero((paint[..., 0] > 0.5) & (paint[..., 3] > 0.5))
+    # Turned clockwise about (140, 90), the mark's middle (122, 82) goes to (148, 72), at the top right of the 20 x 40 px
+    # it stands in (pixel i's center is at i + 0.5).
+    assert (cols.mean() + 0.5, rows.mean() + 0.5) == pytest.approx((148, 72), abs=0.5)

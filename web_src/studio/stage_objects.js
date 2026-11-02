@@ -39,7 +39,7 @@ import {
 import { dist2, pointInPoly } from "../pano_math.js";
 import {
   frameCornersUv, offsetRasterObject, offsetStrokeGroup, paintCornerHandle, paintObjectOf,
-  paintIndexOf, paintObjectRowOf, pointerDistance, pointerScaleRatio, rasterAlphaHits, rasterObjectAlphaAt, rasterObjectCenterUv,
+  paintIndexOf, paintObjectRowOf, pointerDistance, pointerScaleRatio, rasterAlphaHits, rasterObjectAlphaAt,
   rasterObjectCornersUv, rotateRasterObject, scaleRasterObject, skyStickersOf, strokeDotHit, strokeGroupCenterUv,
   strokeHitLineWidth, strokePathsHit, strokePoints, transformStrokeGroup,
 } from "../pano_paint_objects.js";
@@ -120,6 +120,15 @@ function screenOfErp(projection, point) {
 function erpUnder(projection, point) {
   const direction = projection.ray(point.x, point.y);
   return direction ? erpPointOfDirection(direction) : null;
+}
+
+// The center a raster object turns about: its box's center moved by du and dv, as it is drawn (v not clamped, unlike
+// pano_paint_objects.js rasterObjectCenterUv).
+function rasterTurnCenter(item) {
+  const bbox = item.bbox;
+  const tf = item.transform || {};
+  const u = (Number(bbox.u0 || 0) + Number(bbox.u1 || 0)) * 0.5 + Number(tf.du || 0);
+  return { u: ((u % 1) + 1) % 1, v: (Number(bbox.v0 || 0) + Number(bbox.v1 || 0)) * 0.5 + Number(tf.dv || 0) };
 }
 
 // The rotate handle of a paint group's frame on screen (docs/studio-ui.md "ペイントのまとまり" "回転のハンドル"):
@@ -571,7 +580,7 @@ export function createStageObjects({
   function paintTurn(object, point) {
     const pivot = object.kind === "group"
       ? strokeGroupCenterUv(paintIndex(state()).groups.get(object.id)?.strokes ?? [])
-      : rasterObjectCenterUv(object.item);
+      : rasterTurnCenter(object.item);
     const center = screenOfErp(projection(), pivot);
     const startAngle = center ? Math.atan2(point.y - center.y, point.x - center.x) : 0;
     return {
