@@ -7,7 +7,7 @@
 import { BRUSH_PRESETS, DEFAULT_BRUSH_PRESET_ID, applyPresetToStroke } from "./pano_brush_presets.js";
 import { createPanoCanvas, releasePanoCanvas } from "./pano_diagnostics.js";
 import { clamp } from "./pano_math.js";
-import { pixelRangesMeet, rasterObjectPixelRanges } from "./pano_paint_display.js";
+import { pixelRangesMeet, rasterObjectPixelRanges, turnPaintOffset } from "./pano_paint_display.js";
 import { normalizePaintingState } from "./pano_paint_types.js";
 
 const DEG2RAD = Math.PI / 180;
@@ -897,6 +897,17 @@ export function strokeGroupFrame(strokes, presetIdOf = (toolKind) => brushPreset
   };
 }
 
+// The four corners of a stroke group's frame (strokeGroupFrame) as ERP offsets [du, dv] from its center (top left, top
+// right, bottom right, bottom left in its own axes): its half sizes turned by its rot_deg on the paint plane
+// (pano_paint_display.js turnPaintOffset; at 0° the half sizes themselves).
+export function frameCornerOffsets(frame) {
+  const halfW = Number(frame.halfW || 0);
+  const halfH = Number(frame.halfH || 0);
+  const rotationDeg = Number(frame.rot_deg || 0);
+  return [[-halfW, -halfH], [halfW, -halfH], [halfW, halfH], [-halfW, halfH]]
+    .map(([du, dv]) => turnPaintOffset(du, dv, 1, rotationDeg));
+}
+
 // --- The paint eraser.
 
 // The paint eraser's stroke `eraserStroke` over `painting`: every stroke group and paint raster object whose pixels
@@ -950,10 +961,12 @@ export function erasePaint(painting, eraserStroke, { descriptor: erpDesc, groupS
   function getGroupApproxBoundsPx(group, strokes) {
     const frame = groupFrame(group, strokes);
     if (!frame) return null;
-    const minU = frame.centerUv.u - frame.halfW;
-    const maxU = frame.centerUv.u + frame.halfW;
-    const minV = frame.centerUv.v - frame.halfH;
-    const maxV = frame.centerUv.v + frame.halfH;
+    // The box around the frame's corners (frameCornerOffsets).
+    const offsets = frameCornerOffsets(frame);
+    const minU = frame.centerUv.u + Math.min(...offsets.map(([du]) => du));
+    const maxU = frame.centerUv.u + Math.max(...offsets.map(([du]) => du));
+    const minV = frame.centerUv.v + Math.min(...offsets.map(([, dv]) => dv));
+    const maxV = frame.centerUv.v + Math.max(...offsets.map(([, dv]) => dv));
     const width = erpDesc.width;
     const height = erpDesc.height;
     return {

@@ -12,7 +12,7 @@ import { BRUSH_PRESETS, DEFAULT_BRUSH_PRESET_ID } from "./pano_brush_presets.js"
 import { clamp, dist2, distToSegment2, pointInPoly } from "./pano_math.js";
 import { PAINT_GROUP_ROW, PAINT_RASTER_ROW, paintObjectRowOf } from "./pano_paint_layers.js";
 import { rasterObjectCornersUv, rasterObjectTurnCenterUv, turnPaintOffset, unturnPaintOffset } from "./pano_paint_display.js";
-import { shortestWrappedDelta, strokeGroupFrame, strokePoints, syncPaintGroups } from "./pano_paint_strokes.js";
+import { frameCornerOffsets, shortestWrappedDelta, strokeGroupFrame, strokePoints, syncPaintGroups } from "./pano_paint_strokes.js";
 import { isUpstreamSticker } from "./pano_upstream.js";
 
 export { paintObjectRowOf, rasterObjectCornersUv, strokePoints };
@@ -127,20 +127,13 @@ export function transformStrokeGroup(strokes, gid, scale, rotationDeg, sources, 
   return mapStrokeGroupPoints(strokes, gid, sources, (pt) => transformErpPointAround(pt, centerUv, ratio, rotationDeg));
 }
 
-// The four ERP corners (top left, top right, bottom right, bottom left) of a stroke group's frame (strokeGroupFrame),
-// none without one.
+// The four ERP corners (top left, top right, bottom right, bottom left) of a stroke group's frame (strokeGroupFrame,
+// turned by its rot_deg: frameCornerOffsets), u wrapped and v kept in 0..1; none without one.
 export function frameCornersUv(frame) {
   if (!frame?.centerUv) return [];
   const centerU = Number(frame.centerUv.u || 0);
   const centerV = Number(frame.centerUv.v || 0);
-  const halfW = Number(frame.halfW || 0);
-  const halfH = Number(frame.halfH || 0);
-  return [
-    { u: ((centerU - halfW) % 1 + 1) % 1, v: clamp(centerV - halfH, 0, 1) },
-    { u: ((centerU + halfW) % 1 + 1) % 1, v: clamp(centerV - halfH, 0, 1) },
-    { u: ((centerU + halfW) % 1 + 1) % 1, v: clamp(centerV + halfH, 0, 1) },
-    { u: ((centerU - halfW) % 1 + 1) % 1, v: clamp(centerV + halfH, 0, 1) },
-  ];
+  return frameCornerOffsets(frame).map(([du, dv]) => ({ u: ((centerU + du) % 1 + 1) % 1, v: clamp(centerV + dv, 0, 1) }));
 }
 
 // The width (px) a stroke is hit within on screen, from its size and its brush preset `presetId`.
