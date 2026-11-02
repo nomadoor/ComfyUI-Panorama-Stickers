@@ -522,31 +522,36 @@ export function createStageObjects({
       move(next) {
         const at = erpUnder(projection(), next);
         if (!start || !at) return;
-        edits.live((draft) => {
-          const painting = draft.painting;
-          if (!painting) return false;
-          syncPaintGroups(painting, skyStickersOf(draft));
-          let changed;
+        editPaint(object, (painting) => {
           if (object.kind === "group") {
             const strokes = painting.paint.strokes;
-            changed = kind === "move"
+            return kind === "move"
               ? offsetStrokeGroup(strokes, object.id, shortestWrappedDelta(at.u, start.u), at.v - start.v)
               : transformStrokeGroup(strokes, object.id, pointerScaleRatio(center, startDistance, next), 0, null, pivot);
-          } else {
-            const item = painting.raster_objects.find((entry) => entry.id === object.id);
-            if (!item) return false;
-            changed = kind === "move"
-              ? offsetRasterObject(item, shortestWrappedDelta(at.u, start.u), at.v - start.v)
-              : scaleRasterObject(item, pointerScaleRatio(center, startDistance, next));
           }
-          if (!changed) return false;
-          draft.painting_layer = null;
-          return true;
-        }, (base) => paintDraft(base, object));
+          const item = painting.raster_objects.find((entry) => entry.id === object.id);
+          if (!item) return false;
+          return kind === "move"
+            ? offsetRasterObject(item, shortestWrappedDelta(at.u, start.u), at.v - start.v)
+            : scaleRasterObject(item, pointerScaleRatio(center, startDistance, next));
+        });
       },
       end: () => edits.commit(),
       cancel: () => edits.cancel(),
     };
+  }
+
+  // A paint drag's change: change(painting) writes the copy of the painting the drag started from (its counted groups
+  // written: syncPaintGroups) and returns whether it changed; a change drops the uploaded `painting_layer`.
+  function editPaint(object, change) {
+    edits.live((draft) => {
+      const painting = draft.painting;
+      if (!painting) return false;
+      syncPaintGroups(painting, skyStickersOf(draft));
+      if (!change(painting)) return false;
+      draft.painting_layer = null;
+      return true;
+    }, (base) => paintDraft(base, object));
   }
 
   // A press that selects and whose drag does nothing; and one whose drag the stage takes (it moves the Camera).
