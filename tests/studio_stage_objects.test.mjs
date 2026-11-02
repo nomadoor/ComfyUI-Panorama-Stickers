@@ -837,6 +837,23 @@ test("the rotate handle adds the pointer's turn to a raster object's rot_deg, an
   assert.ok(after.rotateHandle.x > rotateHandle.x + 5, "turned clockwise, the handle on top moves right");
 });
 
+test("in the Camera tab's Frame view the selected paint group's rotate handle turns it, not the Camera", () => {
+  const { session, objects } = setup({ tab: "camera", painting: painted() });
+  session.selectObject("paint_group:g1");
+  const before = structuredClone(groupPoints(session));
+  const camera = structuredClone(session.state.camera);
+  const { rotateHandle, handles } = objects.overlay().paint;
+  assert.equal(handles, true);
+  const drag = objects.press(rotateHandle);
+  assert.notEqual(drag.passes, true);
+  const pivot = strokeGroupCenterUv(session.state.painting.paint.strokes);
+  drag.move(turnedAbout(rotateHandle, screenAt(pivot), 45));
+  drag.end();
+  assert.notDeepEqual(groupPoints(session), before);
+  assert.deepEqual(session.state.camera, camera);
+  assert.equal(session.canUndo, true);
+});
+
 test("no rotate handle on a locked paint group or in a read-only editor; a group of dots turns from its handle before its dot moves it", () => {
   let { session, objects } = setup({ painting: painted([{ id: "g1", actionGroupId: "g1", z_index: 3, locked: true }]) });
   session.selectObject("paint_group:g1");
