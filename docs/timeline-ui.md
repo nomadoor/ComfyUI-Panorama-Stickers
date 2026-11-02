@@ -330,7 +330,7 @@ Panorama Studio の `scene` 入力に上流の Scene があるとき、タイム
   - 「Revert」：その層の記録から、層の `scene` の上書き（`visible`・`clip`）と `painting_visible` を外し、`scene` とペイントを上流の値に戻す（`pano_upstream.js` の `upstreamLayerRevertedRecords`）。要素の上書きと消した記録は残す。要素の上書きを外すのはインスペクタの「Revert to upstream」。
   - 「Restore deleted (n)」：その層の記録の `deleted` を空にし、下流で消した要素をもう一度出す。n は消した記録のうち、上書きを当てる前の層にまだある要素の数（`upstreamDeletedCount`。上流で消えた id は数えない）。消した要素は選べないので、層の操作として見出しに置く（インスペクタには置かない）。
 - Delete キーは、Keyframe を選んでいればその Keyframe を消し（「記録の規則」）、そうでなければ選んだ上流の要素を消す（`docs/editor-interaction.md` の「上流の Scene の表示と編集」の「消す」）。
-- （新しい UI）上流の層の行は、編集ができるまで読み取り専用で出す（`docs/studio-ui.md` の「ノードの入力から来た物」）。
+- （新しい UI）上流の層の行の操作と見出しの「Revert」「Restore deleted (n)」は、上と同じ規則で働き、同じ部品で記録に書き戻す（書き戻す時と取り消しは `docs/studio-ui.md` の「上流の物の編集」）。
 - 自分の `scene` の行（自分の `world` の内容）は、上流の Scene があるときも、上流が無いときと同じ規則（「Panorama Studio のタイムライン」の `scene` の行）で出す。上流の層と自分の `world` は重ねて描く（ADR 0048、`docs/studio-node.md` の「上流の Scene」の土台の 3D）ので、自分の行の最後（ペイントの後）に置き、上流の層のまとまりはその下に続く。
 - タイムラインの範囲は、自分の行と同じく出力の長さちょうど（「タイムラインの長さ」）。Auto の長さに上流の Scene の長さ（実行結果の `pano_upstream_frames`）と上書きした Clip range の終わりを入れる規則は、`docs/studio-node.md` の「上流の Scene」の長さにある（`editor/upstream.js` の `upstreamOutput`、`pano_upstream.js` の `upstreamOverriddenEnds`）。エディタだけの扱いとして、まだ書き戻していない編集で変えた Clip range（ドラッグ中を含む）も上書きとして数え、ドラッグ中の Clip range は `duration` の無いものとして数える。上流の行の Clip range と Keyframe のドラッグも、自分の行と同じ規則（「タイムラインの長さ」。Clip range の移動は始まりが出力の中にある限り終わりより先へ出てよく、トリムと Keyframe は終わりで止まり、どのドラッグでも出力は延びない）。
 
