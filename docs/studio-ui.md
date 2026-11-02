@@ -35,7 +35,7 @@ Python はこの文書の規則を持たない（列は `—`）。「（新し�
 | インスペクタの組み立て（選択で何を出すか）、行の格子、欄、スライダー、リセット、Keyframe のポチの置き場所、Easing のパネル、種類ごとの中身 | — | データは `web_src/studio/inspector_model.js` `buildInspectorModel`、編集を状態に当てるのは `web_src/studio/inspector_actions.js` `applyInspectorEdit`、画面は `web_src/components/studio/StudioInspector.vue`・`StudioInspectorCard.vue`・`StudioInspectorRow.vue`・`StudioEasingPanel.vue`（欄とスライダーの部品は `StudioNumberField.vue`・`StudioSlider.vue`・`StudioAspectSlider.vue`・`StudioResetButton.vue`・`StudioKeyDot.vue`、Camera のカードの撮り方の札は `StudioModeTiles.vue`）。Aspect のスライダーが止まる既定の比は `web_src/studio/ui_aspect.js` `ASPECT_PRESETS`・`snapAspectPos`、矢印キーの移り先は `stepAspect`。Sky の画像の FOV の行のリセット先は `inspector_model.js` `skyPlacedSize`。エディタの中でインスペクタとタイムラインが共有する選択は `web_src/studio/session.js` `inspectorSelection` | `tests/studio_inspector_model.test.mjs`、`tests/studio_inspector_actions.test.mjs`、`tests/studio_ui_helpers.test.mjs`（Aspect のスライダーの止まる所）、`tests/browser/studio_inspector.spec.js`、`tests/browser/studio_ui.spec.js`、`tests/studio_session.test.mjs`、`tests/browser/studio_session.spec.js`、`tests/browser/studio_camera_select.spec.js`（タブを切り替えても同じカード） |
 | 右の中央の列（視点の操作のつまみ）と右下のボタン群（Frame Selected、Reset View、グリッドのボタン）の並び | — | `web_src/components/studio/StudioNavWidget.vue`、`StudioViewButtons.vue`（つまみの働きは `docs/space-and-view.md`） | `tests/browser/studio_editor.spec.js` |
 | 下の中央のバーの中身（名前の欄の幅を種類で決めること、Camera タブで Camera のバーを出さないこと） | — | `web_src/studio/selection_bar.js` `selectionBar`（`fixedName`、タブを受け取る `tab`）・`gizmoModeOfKey`、`web_src/components/studio/StudioSelectionBar.vue`、ボタンの働きは `web_src/studio/session.js`（`toggleLock`・`duplicateSelected`・`orderSelected`・`revertSelected`・`deleteSelectedObject`）、ステージの選択とギズモと Sky の画像のハンドルは `web_src/studio/stage_objects.js`（ギズモの形・当たり・ドラッグの動きは `web_src/studio/gizmo_overlay.js`、ギズモの中心はガイドの中心 `web_src/studio/world_guides.js` `worldGuideItems`、描くのは `web_src/studio/stage_overlay.js`）。Camera の Lock は `camera.locked`（`docs/scene-state-v2.md`）を `session.js` `toggleLock` で切り替える。前面へ・背面へが Sky の層の全体を並べ替えるのは `session.js` `orderSelected`（全体の並びは `web_src/pano_paint_objects.js` `skyDisplayList`、振り直しは `restackSkyOrder`・`numberSkyOrder`。古い UI と同じ関数）。ペイントのまとまりのバーは次の行。未実装：Replace（古い UI の下にファイルを選ぶ部品が無い）、複数選択のバー | `tests/studio_selection_bar.test.mjs`、`tests/studio_session.test.mjs`、`tests/studio_stage_objects.test.mjs`、`tests/studio_gizmo_overlay.test.mjs`、`tests/browser/studio_select.spec.js`、`tests/browser/studio_camera_button.spec.js`、`tests/browser/studio_camera_select.spec.js` |
-| ペイントのまとまりをつかむこと（つかむ単位、押したときの順と当たり、選んだ枠とハンドル、回転のハンドルの席、動かす・大きさを変える・回す式、前面へ・背面へ・Lock・Delete、Undo） | — | 押したときの順（Sky の物を描く順の逆に並べる `skyObjects`）・当たり・ハンドル（回転のハンドルの席 `rotateSeat` と当たり `paintHandleAt`、回すドラッグ `paintTurn` を含む）・選んだ枠とカーソルは `web_src/studio/stage_objects.js`（描くのは `stage_overlay.js`、ラスタの画素の不透明度は `web_src/studio/paint.js` `rasterAlpha`）、ドラッグは `stage_objects.js` `paintDrag` の `edits` から `web_src/studio/session.js` `gesture`・`commitGesture`・`cancelGesture`、一回の操作は `session.js`（`orderSelected`・`toggleLock`・`deleteSelectedObject`）、選択の形（`paint_group:`・`raster:`）の読み方は `web_src/pano_paint_objects.js` `paintObjectRow`・`paintObjectOf`（まとまりの数え方 `countedPaintGroups`、状態ごとの索引 `paintIndexOf`）で、読む所は `session.js` `keepSelection`・`selectObject`・`inspectorSelection`、`selection_bar.js` `selectedKind`・`selectionBar`、`editor.js` `selectionOf`、`timeline_actions.js` `toggleVisible`、タイムラインのペイントの行の選んだ形は `timeline_model.js` `buildStudioTimeline`。当たり・動かす式・大きさを変える式・回す式・重なり順の振り直し・消し方は二つの UI が共有する下の部品 `web_src/pano_paint_objects.js`（`strokePathsHit`・`strokeHitLineWidth`・`paintCornerHandle`・`strokeDotHit`・`rasterObjectAlphaAt`・`rasterAlphaHits`・`offsetStrokeGroup`・`transformStrokeGroup`・`offsetRasterObject`・`scaleRasterObject`・ラスタを回す `rotateRasterObject`・`pointerDistance`・`pointerScaleRatio`・`restackSkyOrder`・`numberSkyOrder`・`deletePaintObjects`。古い UI は `web_src/editor/hit_test.js`・`paint_layers.js`・`object_geometry.js`・`items.js`・`pointer_transform.js`・`selection.js`・`commands.js` から呼ぶ）。ストロークのまとまりの枠は共有の `web_src/pano_paint_strokes.js` `strokeGroupFrame`、ERP の点と向きは `erpPointOfDirection`・`directionOfErpPoint`。回す平面と向き（点を回す `transformErpPointAround`、ラスタの四隅と当たりの `rasterObjectCornersUv`・`rasterObjectAlphaAt`）は `docs/render-contract.md` の「ペイントのラスタの置き方」が持つ。ドラッグの間の描き直しは `paint.js` の `layers`（ドラッグは動かす物だけを写し（`stage_objects.js` `paintDraft`、`session.js` `gesture` の `copy`）、ほかのストロークは同じ物のまま。ペイントのエンジンの `rebuildCommitted` は `immutableStrokes` で、読んだことのあるストロークを読み直さず、ストロークの変わったまとまりだけを描き直す。ラスタは変形が変わった一つだけを重ね直す）。選択の行の id を作るのは `web_src/pano_paint_layers.js` `paintObjectRowOf`（層の id と同じ） | `tests/studio_stage_objects.test.mjs`、`tests/pano_paint_objects.test.mjs`、`tests/studio_session.test.mjs`、`tests/studio_selection_bar.test.mjs`、`tests/studio_timeline_model.test.mjs`、`tests/studio_timeline_actions.test.mjs`、`tests/pano_paint_engine.test.mjs`（`immutableStrokes`）、`tests/browser/studio_paint_grab.spec.js`（回転のハンドルを含む。古い UI の同じ関数は `tests/editor_pointer_input.test.mjs`、`tests/browser/paint_regions.spec.js`） |
+| ペイントのまとまりをつかむこと（つかむ単位、押したときの順と当たり、選んだ枠とハンドル、回転のハンドルの席、動かす・大きさを変える・回す式、前面へ・背面へ・Lock・Delete、Undo） | — | 押したときの順（Sky の物を描く順の逆に並べる `skyObjects`）・当たり・ハンドル（回転のハンドルの席 `rotateSeat` と当たり `paintHandleAt`、回すドラッグ `paintTurn` を含む）・選んだ枠とカーソルは `web_src/studio/stage_objects.js`（描くのは `stage_overlay.js`、ラスタの画素の不透明度は `web_src/studio/paint.js` `rasterAlpha`）、ドラッグは `stage_objects.js` `paintDrag` の `edits` から `web_src/studio/session.js` `gesture`・`commitGesture`・`cancelGesture`、一回の操作は `session.js`（`orderSelected`・`toggleLock`・`deleteSelectedObject`）、選択の形（`paint_group:`・`raster:`）の読み方は `web_src/pano_paint_objects.js` `paintObjectRow`・`paintObjectOf`（まとまりの数え方 `countedPaintGroups`、状態ごとの索引 `paintIndexOf`）で、読む所は `session.js` `keepSelection`・`selectObject`・`inspectorSelection`、`selection_bar.js` `selectedKind`・`selectionBar`、`editor.js` `selectionOf`、`timeline_actions.js` `toggleVisible`、タイムラインのペイントの行の選んだ形は `timeline_model.js` `buildStudioTimeline`。当たり・動かす式・大きさを変える式・回す式・重なり順の振り直し・消し方は二つの UI が共有する下の部品 `web_src/pano_paint_objects.js`（`strokePathsHit`・`strokeHitLineWidth`・`paintCornerHandle`・`strokeDotHit`・`rasterObjectAlphaAt`・`rasterAlphaHits`・`offsetStrokeGroup`・`transformStrokeGroup`・`offsetRasterObject`・`scaleRasterObject`・ラスタを回す `rotateRasterObject`・`pointerDistance`・`pointerScaleRatio`・`restackSkyOrder`・`numberSkyOrder`・`deletePaintObjects`。古い UI は `web_src/editor/hit_test.js`・`paint_layers.js`・`object_geometry.js`・`items.js`・`pointer_transform.js`・`selection.js`・`commands.js` から呼ぶ）。ストロークのまとまりの枠（group の `rot_deg` の軸で点を囲む枠。未実装：今は ERP の軸にそろえた枠）は共有の `web_src/pano_paint_strokes.js` `strokeGroupFrame`、四隅は `pano_paint_objects.js` `frameCornersUv`、ERP の点と向きは `erpPointOfDirection`・`directionOfErpPoint`。回す平面と向き（点を回す `transformErpPointAround`、ラスタの四隅と当たりの `rasterObjectCornersUv`・`rasterObjectAlphaAt`）は `docs/render-contract.md` の「ペイントのラスタの置き方」が持つ。ドラッグの間の描き直しは `paint.js` の `layers`（ドラッグは動かす物だけを写し（`stage_objects.js` `paintDraft`、`session.js` `gesture` の `copy`）、ほかのストロークは同じ物のまま。ペイントのエンジンの `rebuildCommitted` は `immutableStrokes` で、読んだことのあるストロークを読み直さず、ストロークの変わったまとまりだけを描き直す。ラスタは変形が変わった一つだけを重ね直す）。選択の行の id を作るのは `web_src/pano_paint_layers.js` `paintObjectRowOf`（層の id と同じ） | `tests/studio_stage_objects.test.mjs`、`tests/pano_paint_objects.test.mjs`、`tests/studio_session.test.mjs`、`tests/studio_selection_bar.test.mjs`、`tests/studio_timeline_model.test.mjs`、`tests/studio_timeline_actions.test.mjs`、`tests/pano_paint_engine.test.mjs`（`immutableStrokes`）、`tests/browser/studio_paint_grab.spec.js`（回転のハンドルを含む。古い UI の同じ関数は `tests/editor_pointer_input.test.mjs`、`tests/browser/paint_regions.spec.js`） |
 | エディタの中の Camera の見せ方（Camera のボタン、Camera のカード、3D の見た目） | — | 3D の見た目は `web_src/studio/camera_marker.js`（形・塗り・見え方）、描くのは `web_src/studio/stage_overlay.js`。Camera のボタンの押せる・押せないと tooltip、Camera を視点へ持ってくる書き方は `web_src/studio/camera_ui.js`（`cameraButton`・`cameraToView`。Lane への書き込みは `web_src/studio/camera_state.js` `moveCameraPose`）、Undo の 1 段にするのは `web_src/studio/session.js` `cameraToView`、今の視点を渡すのは `web_src/studio/editor.js`（`stage.pose()`）、ボタンは `StudioToolRail.vue`。打った瞬間の知らせは（未実装） | `tests/studio_camera_marker.test.mjs`、`tests/browser/studio_select.spec.js`、`tests/studio_camera_ui.test.mjs`、`tests/studio_session.test.mjs`、`tests/browser/studio_camera_button.spec.js` |
 | 新しい UI が状態の Camera を読む所と書く所（Camera の無い状態を既定の Camera として読むこと、Timeline frame での値、書くときに既定の Camera を置くこと、Frame 表示・Camera のボタン・ギズモからの書き込み） | — | `web_src/studio/camera_state.js` `cameraOf`・`cameraAt`・`editableCamera`・`moveCameraPose`・`setCameraLanes`（既定の Camera の値は `docs/scene-state-v2.md` が持ち、記録の規則は `pano_editor_state.js` `setCameraShot`・`pano_timeline.js` `setLaneValue` が持つ） | `tests/studio_camera_state.test.mjs`、`tests/studio_camera_ui.test.mjs`、`tests/studio_stage_objects.test.mjs`、`tests/studio_inspector_actions.test.mjs`、`tests/browser/studio_camera_tab.spec.js` |
 | 選んだ行が何の物か（`"camera"`・`"scene"`・自分の Sticker の id・上流の作業コピーの id から、その物を探すこと） | — | `web_src/studio/row_object.js` `findSticker`・`keyframeOwner`。下の中央のバー（`selection_bar.js`）とステージ（`stage_objects.js`）は自分の Sticker だけを探し、インスペクタは上流の作業コピーも探す（上流の物は今は読み取り専用：「ノードの入力から来た物」） | `tests/studio_row_object.test.mjs`、`tests/studio_selection_bar.test.mjs`、`tests/studio_inspector_model.test.mjs` |
@@ -348,15 +348,20 @@ Cursor の道具で、自分のペイントを古い UI と同じ単位でつか
 - 選ぶ：まとまりを選ぶと、インスペクタは「種類ごとの中身」の「ペイントのまとまり」のカード、下の中央のバーは上の表の「ペイントのまとまり」の
   行（左端は筆のアイコンと `Paint`）を出す。選択は状態に書かない。Frame モードの Camera タブでも、ほかの物と同じく 3D タブと同じに扱う
   （ハンドルと本体のドラッグで動かす。下の「Camera タブ」、ADR 0051）。
-- 選んだ形：まとまりの枠を画面に写して描く。ストロークのまとまりの枠は、点を囲む ERP の軸にそろえた枠（`strokeGroupFrame`）、ラスタの枠は
-  変形した枠。線と色は選んだ空の画像の枠と同じ（Sky の行き先の氷。値は `docs/design.md` の「Sky の画像のハンドル」）。ハンドルは四隅と
+- 選んだ形：まとまりの枠を画面に写して描く。ストロークのまとまりの枠は、まとまりの向き（group の `rot_deg`。`docs/scene-state-v2.md` の
+  `painting`）の軸で点を囲む枠（`strokeGroupFrame`）：点を、点の重心のまわりにペイントの平面で `−rot_deg` 回し、その u・v を囲む枠（今と同じ
+  余白 `uvPad` を u と v に足す）を取り、その中心と四隅を `rot_deg` 回して戻す（回す中心は枠の形を変えないので、重心でよい）。`rot_deg` が 0
+  なら今の ERP の軸にそろえた枠とまったく同じ。四隅の v は今と同じく 0〜1 に寄せる（`frameCornersUv`）。ラスタの枠は変形した枠。
+  消しゴムがストロークのまとまりに届くかの判定（`erasePaint` のまとまりの範囲）も、この四隅を囲む範囲を使う（ERP の軸にそろえた
+  `centerUv ± halfW` だけで求めると、回した枠のはみ出た所に届かない）。線と色は選んだ空の画像の枠と同じ（Sky の行き先の氷。値は `docs/design.md` の「Sky の画像のハンドル」）。ハンドルは四隅と
   回転のハンドルで、辺の中点のハンドルは無い（縦横の比を変える式を持たない）。ロックしたまとまりと読み取り専用のエディタでは枠だけを描き、
   ハンドルを描かない。
 - 回転のハンドル：空に貼った画像の回転のハンドルと共有するのは、見た目・席・当たりの大きさ・Shift の止め方だけ（回す向きと式は下の
   「回す」で、ペイントの平面のもの）。席：画面に写した枠の上の辺の中点（四隅の左上と右上の中点）から、下の辺の中点から上の辺の中点への
   向きへ `STICKER_NODE_ROTATE_HANDLE_OFFSET_PX`（24px）離れた所に丸を置き、上の辺の中点と丸を線で結ぶ。丸の大きさ、線と色は空の画像の
-  回転のハンドルのまま（`docs/design.md` の「Sky の画像のハンドル」の回転 6px）。ラスタの枠は `rot_deg` で回るので、ハンドルも一緒に回る。
-  ストロークのまとまりの枠はいつも ERP の軸にそろうので、ハンドルはいつも ERP の上（北）の側にある。当たりは丸の中心から 12px。
+  回転のハンドルのまま（`docs/design.md` の「Sky の画像のハンドル」の回転 6px）。ラスタの枠はラスタの `rot_deg`、ストロークのまとまりの枠は
+  group の `rot_deg` で回るので、どちらもハンドルが枠と一緒に回る（空に貼った画像と同じ）。四隅と回転のハンドルの当たりは、この回った枠の
+  画面の位置で見る。当たりは丸の中心から 12px。
   選んだまとまりの上の押下は、回転のハンドル → 点だけのまとまりの点（`strokeDotHit`。本体に当たって動かす）→ 四隅のハンドル
   （`PAINT_CORNER_HIT_PX` 11px）の順に見る。点の例外が飛ばすのは四隅だけで、回転のハンドルは先に当たる（小さな枠でも回せるように）。
   カーソルは空の画像の回転のハンドルと同じ（上では `grab`）。
@@ -368,7 +373,8 @@ Cursor の道具で、自分のペイントを古い UI と同じ単位でつか
   足し（u は 0〜1 で回り、v は 0〜1 に寄せる）、ラスタは `transform.du`・`transform.dv` に足す（`dv` は −1〜1 に寄せる）。式は古い UI の
   `web_src/editor/items.js` `applyStrokeGroupOffset`・`applyRasterObjectOffset`。
 - 大きさを変える（四隅のハンドル）：枠の画面の中心からポインタまでの距離を、押したときの距離で割った比（どちらも 1 px 以上）で、一様に
-  変える。ストロークのまとまりは各点を、つかんだときの枠の中心のまわりに ERP の u・v で比倍し（比の下限 0.02。この下限は、ストロークのまとまりの大きさを変える比だけの規則で、点を写す式（`transformErpPointAround`）は持たない）、ラスタは
+  変える。ストロークのまとまりは各点を、つかんだときの枠の中心（回った枠の中心）のまわりに ERP の u・v で比倍し（一様なので、まとまりの
+  向きによらず同じ。`rot_deg` は変えない。比の下限 0.02。この下限は、ストロークのまとまりの大きさを変える比だけの規則で、点を写す式（`transformErpPointAround`）は持たない）、ラスタは
   `transform.scale` に比を掛ける（0.01〜100 に寄せる。下限 0.01 は `docs/scene-state-v2.md` の「ペイントの数値」の読み込みの下限と同じ値）。筆の太さ（ストロークの `size`）は変えない。式は古い UI の `editor/items.js`
   `applyStrokeGroupTransform`・`applyRasterObjectTransform`。
   ただし、どのストロークも一点だけのまとまり（筆で一度押しただけの点）では、点の当たりの中の押下は四隅のハンドルより先に本体に
@@ -378,17 +384,22 @@ Cursor の道具で、自分のペイントを古い UI と同じ単位でつか
   向き）。ERP の画像は画面の上で裏返らない（`docs/scene-state-v2.md` の角度規約で、ERP の左から右が経度の −180〜180、上から下が緯度の
   90〜−90）ので、ポインタを回した向きにペイントも回る。合うのは向きで、回る量は画面の角度をそのまま使うので、極の近くや斜めから見た所では
   見た目の回り方と少しずれる（空に貼った画像の回転のハンドルと同じ割り切り）。式は `docs/render-contract.md` の「ペイントのラスタの置き方」が持つ。
-  - ストロークのまとまり：中心は、つかんだときの点の重心（`strokeGroupCenterUv`。枠の中心ではない）。重心は回しても動かないので、何度回しても
-    まとまりがずれていかない（枠の中心は余白と極への寄せを含み、回すたびに少しずつ動くため）。各ストロークの点（`points`・`rawPoints`・
-    `processedPoints`）を `δ` 回す。ドラッグの間はつかんだときの点から求め直す（`transformStrokeGroup` に `scale` 1 と `δ`）。回した後の枠は、
-    回した点を囲む ERP の軸にそろえた枠に描き直す（枠の向きは状態に持たない）ので、斜めに回すと枠は大きくなり、回転のハンドルの席も動く。
-    角度は押したときの中心から測るので、ハンドルの席が動いても回し続けられる。筆の太さ（ストロークの `size`）は変えない。
+  - ストロークのまとまり：中心は、つかんだときの点の重心（`strokeGroupCenterUv`）。group の `rot_deg` を、つかんだときの値に `δ` を足した値に
+    し、各ストロークの点（`points`・`rawPoints`・`processedPoints`）を、新しい `rot_deg` とつかんだときの `rot_deg` の差だけ回す（Shift の
+    ときも点と枠の向きがそろう）。ドラッグの間はつかんだときの点と `rot_deg` から求め直す（`transformStrokeGroup` に `scale` 1 と差の角度）。
+    点と枠の向きが同じだけ回るので、まとまりの向きの軸で測った枠の形は変わらず、枠は形を保ったまま回る（極に寄せた点は除く）。重心も
+    回しても動かないので、何度回してもまとまりがずれていかない。筆の太さ（ストロークの `size`）は変えない。
   - ラスタ：中心はラスタの枠の中心に `du`・`dv` を足した所（描く式と同じ）。`transform.rot_deg` を、つかんだときの値に `δ` を足した値にする。
     書くのは新しい `rotateRasterObject`（`pano_paint_objects.js`）で、空の画像の `rotateStickerFromPointer`（`rot_deg − δ`。Sticker の Roll の
     向き）は使わない。`rot_deg` は範囲に丸めない（360° の差は同じ向き）。
-  - Shift：空に貼った画像の回転のハンドルとギズモの Rotate と同じ `ROTATE_SNAP_DEG`（15°）で止める。ラスタは `rot_deg` そのもの（絶対の
-    角度）を倍数に止め、ストロークのまとまりは角度を状態に持たないので、つかんでから回した分 `δ` を倍数に止める。
+  - Shift：空に貼った画像の回転のハンドルとギズモの Rotate と同じ `ROTATE_SNAP_DEG`（15°）で止める。ラスタもストロークのまとまりも、
+    `rot_deg` そのもの（絶対の角度）を倍数に止める。
   - 回す道具はハンドルだけで、インスペクタに角度の欄は置かない（「種類ごとの中身」の「ペイントのまとまり」は見出しだけのまま）。
+- group の `rot_deg` の持ち方：書くのは回転のハンドルだけ。動かす・大きさを変える・前面へ・背面へ・Lock は値を変えずに持ち、Delete は
+  group と一緒に消え、Undo は状態の段ごと戻す。新しいまとまりは 0（ストロークは一筆ごとに新しい `actionGroupId` のまとまりになり、
+  回したまとまりに後から加わらない。古い UI の一筆の中の区切りも同じまとまりの続き）。消しゴムがまとまりの一部を消して作るラスタは、
+  回した後の画素から作るので `rot_deg` 0 のラスタになる。古い UI は回さないが、同じ `strokeGroupFrame`・`frameCornersUv` で枠を描くので
+  回した枠を描き、`syncPaintGroups` は group の項目を残すので値を消さない。ノードは点を描くだけで、この値を読まない（点はすでに回してある）。
 - ノードの出力は、ラスタの `du`・`dv`・`scale`・`rot_deg` をエディタと同じ式で描く（`docs/render-contract.md` の「ペイントのラスタの置き方」）。
   Panorama Studio のノードはラスタを `painting_layer` の有無によらずいつも状態から描く（`core/render.py` `_sky_layers`）ので、この式が
   エディタとノードの出力をそろえる。旧ノード（PanoramaStickers・PanoramaCutout）の出力も同じ式で描くので、`scale` が 1 でないラスタは
@@ -400,7 +411,7 @@ Cursor の道具で、自分のペイントを古い UI と同じ単位でつか
   求め直すので、離すまでは戻る）。`du` は継ぎ目をまたぐ短い向きで取るので、一回の移動の差が半周（180°）を越えると反対の向きに回る。
   古い UI と同じ結果にそろえるためで、球面の上の回転にはしない。回すのも同じく球面の上の回転にはしない（ラスタを描く式が ERP の画素の
   平面で回すので、ストロークのまとまりもそれにそろえる。古い UI の回す式は u と v をそのまま回していたが、使う人が触れる道が無かったので、
-  そろえても今の絵は変わらない。ADR 0056）。
+  そろえても今の絵は変わらない。ADR 0056）。枠の向き（group の `rot_deg`）も同じ平面の角度。
 - 記録：ペイントには Lane も Keyframe も無い（`docs/timeline-ui.md` の「表示（目のアイコン）」のペイントの行）ので、再生ヘッドによらず
   `painting` をそのまま書き換え、記録の規則は通らない。動かし始め（回し始めも）で再生を止める（ストロークと同じ）。
 - ドラッグと Undo：ドラッグ（本体、四隅のハンドル、回転のハンドル）は、ほかの新しい UI のドラッグ（ギズモ、空の画像のハンドル）と同じく `stage_objects.js` の `edits` を通す：
