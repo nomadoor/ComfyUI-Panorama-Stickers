@@ -201,16 +201,18 @@ test("a paint group's bar fits its fixed name Paint (docs/design.md \"下の中�
 
 // --- The rotate handle (docs/studio-ui.md "ペイントのまとまり" "回転のハンドル", "回す").
 
-// The rotate handle of the selected paint group, found as the hover finds it: the first point straight up from (x, y)
-// fractions of the stage where the stage's cursor is grab. Page px.
-async function rotateHandle(page, x, y) {
+// The rotate handle of the selected paint group, found as the hover finds it: the first point from (x, y) fractions of
+// the stage, going the way [dx, dy] (up by default), where the stage's cursor is grab. Page px.
+async function rotateHandle(page, x, y, [dx, dy] = [0, -1]) {
   const box = await stageBox(page);
-  for (let py = box.y + box.height * y; py > box.y; py -= 2) {
-    await page.mouse.move(box.x + box.width * x, py);
+  for (let step = 0; step < 400; step += 1) {
+    const px = box.x + box.width * x + dx * step * 2;
+    const py = box.y + box.height * y + dy * step * 2;
+    await page.mouse.move(px, py);
     const cursor = await page.locator("[data-stage-canvas]").evaluate((el) => getComputedStyle(el).cursor);
-    if (cursor === "grab") return [box.x + box.width * x, py - 4];
+    if (cursor === "grab") return [px + dx * 4, py + dy * 4];
   }
-  throw new Error("no rotate handle above the point");
+  throw new Error("no rotate handle that way from the point");
 }
 
 // The page point of `point` turned by `deg` (clockwise on the screen) about `center`.
@@ -271,7 +273,8 @@ test("the rotate handle turns a stroke group about its points' mean as it goes; 
 
   // Escape during a turn puts it back with no step.
   const kept = await strokes(page);
-  const again = await rotateHandle(page, 0.4, 0.3);
+  // The frame turned 30° with it: its handle leans the same way.
+  const again = await rotateHandle(page, 0.4, 0.3, [Math.sin(Math.PI / 6), -Math.cos(Math.PI / 6)]);
   await page.mouse.move(...again);
   await page.mouse.down();
   await page.mouse.move(...turned(again, center, -60), { steps: 8 });
@@ -328,5 +331,67 @@ test("the rotate handle turns a raster object's rot_deg and the stage draws it t
   await page.waitForTimeout(300);
   expect((await rasterAt()).rot_deg).toBe(0);
   expect(red(await pixel(page, ...side))).toBe(true);
+  expect(problems).toEqual([]);
+});
+
+test("a turned stroke group keeps its angle: its frame and rotate handle turn with it, a second turn goes on, Shift stops the angle at 15°, Undo, and the eraser reaches it", async ({ page }) => {
+  const problems = await open(page);
+  await paintStroke(page, [[0.35, 0.3], [0.4, 0.3], [0.45, 0.3]]);
+  await page.mouse.click(...(await at(page, 0.4, 0.3)));
+  await page.waitForTimeout(150);
+  const groupAngle = () => page.evaluate(() => window.__studio.session.state.painting.groups[0].rot_deg ?? 0);
+  expect(await groupAngle()).toBe(0);
+  const center = await at(page, 0.4, 0.3);
+
+  // A quarter turn clockwise: the saved angle is about 90°, and the rotate handle now stands right of the stroke.
+  let handle = await rotateHandle(page, 0.4, 0.3);
+  await page.mouse.move(...handle);
+  await page.mouse.down();
+  await page.mouse.move(...turned(handle, center, 90), { steps: 12 });
+  await page.mouse.up();
+  await page.waitForTimeout(250);
+  const quarter = await groupAngle();
+  expect(Math.abs(quarter - 90)).toBeLessThan(12);
+  handle = await rotateHandle(page, 0.4, 0.3, [1, 0]);
+  expect(handle[0]).toBeGreaterThan(center[0] + 20);
+  expect(Math.abs(handle[1] - center[1])).toBeLessThan(30);
+
+  // A second turn goes on from the saved angle; with Shift the angle stops at a multiple of 15°.
+  await page.mouse.move(...handle);
+  await page.mouse.down();
+  await page.keyboard.down("Shift");
+  await page.mouse.move(...turned(handle, center, 37), { steps: 8 });
+  await page.mouse.up();
+  await page.keyboard.up("Shift");
+  await page.waitForTimeout(250);
+  const snapped = await groupAngle();
+  expect(snapped % 15).toBe(0);
+  expect(snapped).toBeGreaterThan(quarter + 15);
+
+  await page.locator('[data-tool="undo"]').click();
+  await page.waitForTimeout(300);
+  expect(await groupAngle()).toBe(quarter);
+
+  // The eraser across the stroke's lower end, below its old place: the group becomes raster objects of what is left.
+  await page.locator('[data-tool="paint"]').click();
+  await page.locator('[data-paint-brush="eraser"]').click();
+  const strokeNow = await strokes(page);
+  expect(strokeNow).toHaveLength(1);
+  let lowest = null;
+  for (let y = 0.5; y > 0.3; y -= 0.005) {
+    if (red(await pixel(page, 0.4, y))) {
+      lowest = y;
+      break;
+    }
+  }
+  expect(lowest).not.toBeNull();
+  await page.mouse.move(...(await at(page, 0.36, lowest - 0.01)));
+  await page.mouse.down();
+  await page.mouse.move(...(await at(page, 0.44, lowest - 0.01)), { steps: 8 });
+  await page.mouse.up();
+  await page.waitForTimeout(300);
+  const after = await page.evaluate(() => window.__studio.session.state.painting);
+  expect(after.paint.strokes).toHaveLength(0);
+  expect(after.raster_objects.length).toBeGreaterThanOrEqual(1);
   expect(problems).toEqual([]);
 });

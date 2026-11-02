@@ -791,6 +791,52 @@ test("the rotate handle turns a stroke group's points about their mean on the pa
   assert.equal(session.canUndo, false);
 });
 
+test("turning a stroke group saves its angle: its frame, corners and rotate handle turn with it, and a second turn goes on from it", () => {
+  const { session, objects } = setup({ painting: painted() });
+  session.selectObject("paint_group:g1");
+  const pivot = strokeGroupCenterUv(session.state.painting.paint.strokes);
+  const center = screenAt(pivot);
+  const edgeAngle = (corners) => angleAbout(corners[0], corners[1]);
+  const first = objects.overlay().paint;
+  const to = turnedAbout(first.rotateHandle, center, 30);
+  const delta = angleAbout(center, to) - angleAbout(center, first.rotateHandle);
+  let drag = objects.press(first.rotateHandle);
+  drag.move(to);
+  drag.end();
+  assert.ok(Math.abs(session.state.painting.groups[0].rot_deg - delta) < 1e-9);
+  const turned = objects.overlay().paint;
+  // The frame's top edge leans about as far as it turned (the ERP's warp off the view's middle leaves a few degrees).
+  assert.ok(Math.abs(edgeAngle(turned.corners) - edgeAngle(first.corners) - delta) < 8, `${edgeAngle(turned.corners)} vs ${delta}`);
+  assert.ok(turned.rotateHandle.x > first.rotateHandle.x + 5, "the handle turned with the frame");
+  const top = { x: (turned.corners[0].x + turned.corners[1].x) / 2, y: (turned.corners[0].y + turned.corners[1].y) / 2 };
+  assert.ok(Math.abs(Math.hypot(turned.rotateHandle.x - top.x, turned.rotateHandle.y - top.y) - 24) < 1e-9);
+  // A second turn goes on from the saved angle.
+  const again = turnedAbout(turned.rotateHandle, center, 20);
+  const delta2 = angleAbout(center, again) - angleAbout(center, turned.rotateHandle);
+  drag = objects.press(turned.rotateHandle);
+  drag.move(again);
+  drag.end();
+  assert.ok(Math.abs(session.state.painting.groups[0].rot_deg - (delta + delta2)) < 1e-9);
+  session.undo();
+  assert.ok(Math.abs(session.state.painting.groups[0].rot_deg - delta) < 1e-9, "Undo takes back the second turn only");
+});
+
+test("with Shift a stroke group's saved angle stops at multiples of 15°, and its points turn by what the angle changed", () => {
+  const { session, objects } = setup({ painting: painted([{ id: "g1", actionGroupId: "g1", z_index: 3, rot_deg: 7 }]) });
+  session.selectObject("paint_group:g1");
+  const before = structuredClone(groupPoints(session));
+  const pivot = strokeGroupCenterUv(session.state.painting.paint.strokes);
+  const { rotateHandle } = objects.overlay().paint;
+  const drag = objects.press(rotateHandle);
+  drag.move(turnedAbout(rotateHandle, screenAt(pivot), 37), { shiftKey: true });
+  drag.end();
+  assert.equal(session.state.painting.groups[0].rot_deg, 45);
+  groupPoints(session).forEach((point, index) => {
+    const want = transformErpPointAround(before[index], pivot, 1, 38);
+    assert.ok(Math.abs(point.u - want.u) < 1e-9 && Math.abs(point.v - want.v) < 1e-9);
+  });
+});
+
 test("with Shift a stroke group turns by multiples of 15°, a raster object to multiples of 15°", () => {
   let { session, objects } = setup({ painting: painted() });
   session.selectObject("paint_group:g1");

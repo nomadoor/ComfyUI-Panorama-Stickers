@@ -42,7 +42,7 @@ import {
   frameCornersUv, offsetRasterObject, offsetStrokeGroup, paintCornerHandle, paintObjectOf,
   paintIndexOf, paintObjectRowOf, pointerDistance, pointerScaleRatio, rasterAlphaHits, rasterObjectAlphaAt,
   rasterObjectCornersUv, rotateRasterObject, scaleRasterObject, skyStickersOf, strokeDotHit, strokeGroupCenterUv,
-  strokeHitLineWidth, strokePathsHit, strokePoints, transformStrokeGroup,
+  strokeHitLineWidth, strokePathsHit, strokePoints, transformStrokeGroup, turnStrokeGroup,
 } from "../pano_paint_objects.js";
 import {
   brushPresetIdForTool, directionOfErpPoint, erpPointOfDirection, shortestWrappedDelta, syncPaintGroups,
@@ -564,11 +564,10 @@ export function createStageObjects({
   }
 
   // A turn of a paint group from its rotate handle (docs/studio-ui.md "ペイントのまとまり" "回す"): the pointer's angle
-  // about the turn's center on screen, from the press's (clockwise positive), turns a stroke group's points about their
-  // mean as grabbed (strokeGroupCenterUv, which a turn does not move) or adds to a raster object's rot_deg about its
-  // box's center moved by du and dv. Shift stops a stroke group's turn, and a raster object's angle, at ROTATE_SNAP_DEG
-  // multiples. The center is measured where it was at the press, so the handle may move away under the frame drawn
-  // again.
+  // about the turn's center on screen, from the press's (clockwise positive), adds to a stroke group's rot_deg and turns
+  // its points about their mean as grabbed (turnStrokeGroup; strokeGroupCenterUv, which a turn does not move), or adds
+  // to a raster object's rot_deg about its box's center moved by du and dv. Shift stops either angle at ROTATE_SNAP_DEG
+  // multiples. The center is measured where it was at the press.
   function paintTurn(object, point) {
     const pivot = object.kind === "group"
       ? strokeGroupCenterUv(paintIndex(state()).groups.get(object.id)?.strokes ?? [])
@@ -581,10 +580,7 @@ export function createStageObjects({
         const delta = (Math.atan2(next.y - center.y, next.x - center.x) - startAngle) * (180 / Math.PI);
         const snap = event.shiftKey ? ROTATE_SNAP_DEG : 0;
         editPaint(object, (painting) => {
-          if (object.kind === "group") {
-            const turn = snap ? Math.round(delta / snap) * snap : delta;
-            return transformStrokeGroup(painting.paint.strokes, object.id, 1, turn, null, pivot);
-          }
+          if (object.kind === "group") return turnStrokeGroup(painting, object.id, delta, pivot, { snapDeg: snap });
           const item = painting.raster_objects.find((entry) => entry.id === object.id);
           return item ? rotateRasterObject(item, delta, { snapDeg: snap }) : false;
         });

@@ -5,8 +5,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  rasterObjectAlphaAt, rasterObjectCornersUv, rotateRasterObject, transformErpPointAround, transformStrokeGroup,
+  frameCornersUv, rasterObjectAlphaAt, rasterObjectCornersUv, rotateRasterObject, transformErpPointAround, transformStrokeGroup,
+  turnStrokeGroup,
 } from "../web_src/pano_paint_objects.js";
+import { turnPaintOffset } from "../web_src/pano_paint_display.js";
+import { normalizePaintingState } from "../web_src/pano_paint_types.js";
 
 const near = (actual, expected, label) => assert.ok(Math.abs(actual - expected) < 1e-9, `${label}: ${actual} vs ${expected}`);
 
@@ -62,4 +65,42 @@ test("a raster object turns by the pointer's turn from where it was grabbed, unw
   const bare = {};
   rotateRasterObject(bare, -10);
   assert.deepEqual(bare.transform, { du: 0, dv: 0, rot_deg: -10, scale: 1 });
+});
+
+test("a group's rot_deg is read as a finite JSON number, else 0 (old states have none)", () => {
+  const { groups } = normalizePaintingState({ groups: [
+    { id: "a", actionGroupId: "a", rot_deg: 397.5 },
+    { id: "b", actionGroupId: "b" },
+    { id: "c", actionGroupId: "c", rot_deg: "30" },
+    { id: "d", actionGroupId: "d", rot_deg: null },
+  ] });
+  assert.deepEqual(groups.map((group) => group.rot_deg), [397.5, 0, 0, 0]);
+});
+
+test("a stroke group's frame corners turn with its rot_deg about its center on the paint plane", () => {
+  const frame = { centerUv: { u: 0.5, v: 0.5 }, rot_deg: 30, halfW: 0.1, halfH: 0.05 };
+  const corners = frameCornersUv(frame);
+  [[-0.1, -0.05], [0.1, -0.05], [0.1, 0.05], [-0.1, 0.05]].forEach(([du, dv], index) => {
+    const [tu, tv] = turnPaintOffset(du, dv, 1, 30);
+    assert.ok(Math.abs(corners[index].u - (0.5 + tu)) < 1e-12 && Math.abs(corners[index].v - (0.5 + tv)) < 1e-12, `corner ${index}`);
+  });
+});
+
+test("turning a stroke group adds to its rot_deg and turns its points by what the angle changed; a snap stops the angle", () => {
+  const painting = () => ({
+    groups: [{ id: "g1", actionGroupId: "g1", z_index: 0, rot_deg: 10 }],
+    paint: { strokes: [{ id: "s1", actionGroupId: "g1", geometry: { points: [{ u: 0.6, v: 0.5 }] } }] },
+  });
+  const center = { u: 0.5, v: 0.5 };
+  let draft = painting();
+  assert.equal(turnStrokeGroup(draft, "g1", 25, center), true);
+  assert.equal(draft.groups[0].rot_deg, 35);
+  let want = transformErpPointAround({ u: 0.6, v: 0.5 }, center, 1, 25);
+  near(draft.paint.strokes[0].geometry.points[0].u, want.u, "u");
+  near(draft.paint.strokes[0].geometry.points[0].v, want.v, "v");
+  draft = painting();
+  turnStrokeGroup(draft, "g1", 25, center, { snapDeg: 15 });
+  assert.equal(draft.groups[0].rot_deg, 30);
+  want = transformErpPointAround({ u: 0.6, v: 0.5 }, center, 1, 20);
+  near(draft.paint.strokes[0].geometry.points[0].u, want.u, "snapped u");
 });

@@ -7,7 +7,7 @@
 import { BRUSH_PRESETS, DEFAULT_BRUSH_PRESET_ID, applyPresetToStroke } from "./pano_brush_presets.js";
 import { createPanoCanvas, releasePanoCanvas } from "./pano_diagnostics.js";
 import { clamp } from "./pano_math.js";
-import { pixelRangesMeet, rasterObjectPixelRanges, turnPaintOffset } from "./pano_paint_display.js";
+import { pixelRangesMeet, rasterObjectPixelRanges, turnPaintOffset, unturnPaintOffset } from "./pano_paint_display.js";
 import { normalizePaintingState } from "./pano_paint_types.js";
 
 const DEG2RAD = Math.PI / 180;
@@ -853,9 +853,14 @@ export function strokePoints(stroke) {
     : (geometry?.processedPoints || geometry?.rawPoints || geometry?.points || []);
 }
 
-// The axis-aligned box of a stroke group's points (rot_deg 0): { centerUv, rot_deg, halfW, halfH, uvPad }, or null
-// with no points. `presetIdOf(toolKind)` gives a stroke's brush preset (for its width).
-export function strokeGroupFrame(strokes, presetIdOf = (toolKind) => brushPresetIdForTool(toolKind)) {
+// The frame of a stroke group's points in its own axes (docs/studio-ui.md "ペイントのまとまり" "選んだ形"; rotationDeg is
+// the group's rot_deg): { centerUv, rot_deg, halfW, halfH, uvPad }, or null with no points. Its points turned back by
+// rotationDeg on the paint plane are boxed (u and v padded by uvPad), and the box's center turned again; the half sizes
+// are along its own axes (frameCornerOffsets turns them). The turn's center does not change the box, so it turns about
+// (the points' mean u, v 0), which at 0° gives the ERP-axis box exactly. `presetIdOf(toolKind)` gives a stroke's brush
+// preset (for its width).
+export function strokeGroupFrame(strokes, presetIdOf = (toolKind) => brushPresetIdForTool(toolKind), rotationDeg = 0) {
+  const turn = Number(rotationDeg || 0);
   const normalizeU = (u) => ((Number(u || 0) % 1) + 1) % 1;
   const sourcePoints = [];
   for (const stroke of strokes) {
@@ -876,9 +881,9 @@ export function strokeGroupFrame(strokes, presetIdOf = (toolKind) => brushPreset
   let minDU = Infinity, maxDU = -Infinity, minV = Infinity, maxV = -Infinity;
   sourcePoints.forEach((pt) => {
     const u = normalizeU(pt?.u || 0);
-    const du = shortestWrappedDelta(u, centU);
+    // The point in the group's own axes.
+    const [du, v] = unturnPaintOffset(shortestWrappedDelta(u, centU), Number(pt?.v || 0), 1, turn);
     minDU = Math.min(minDU, du); maxDU = Math.max(maxDU, du);
-    const v = Number(pt?.v || 0);
     minV = Math.min(minV, v); maxV = Math.max(maxV, v);
   });
   const maxStrokeWidth = strokes.reduce((max, stroke) => {
@@ -888,9 +893,10 @@ export function strokeGroupFrame(strokes, presetIdOf = (toolKind) => brushPreset
     return Math.max(max, size);
   }, 0);
   const uvPad = Math.max(0.0035, maxStrokeWidth / 2048);
+  const [centerDU, centerV] = turnPaintOffset((minDU + maxDU) * 0.5, (minV + maxV) * 0.5, 1, turn);
   return {
-    centerUv: { u: ((centU + (minDU + maxDU) * 0.5) % 1 + 1) % 1, v: clamp((minV + maxV) * 0.5, 0, 1) },
-    rot_deg: 0,
+    centerUv: { u: ((centU + centerDU) % 1 + 1) % 1, v: clamp(centerV, 0, 1) },
+    rot_deg: turn,
     halfW: (maxDU - minDU) * 0.5 + uvPad,
     halfH: (maxV - minV) * 0.5 + uvPad,
     uvPad,

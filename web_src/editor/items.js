@@ -111,8 +111,8 @@ export function createItems(deps) {
     const entry = getPaintingGroupList().find((g) => String(g?.actionGroupId || "") === gid);
     if (!entry) return null;
     const s = strokes || getStrokeGroupStrokes(gid, layerKind);
-    // Axis-aligned (rot_deg 0); rotation is stored separately and accumulated via transforms.
-    entry.frame = strokeGroupFrame(s, getBrushPresetIdForTool);
+    // In the group's own axes (its rot_deg, which only the new editor writes).
+    entry.frame = strokeGroupFrame(s, getBrushPresetIdForTool, entry.rot_deg);
     return entry.frame;
   }
 

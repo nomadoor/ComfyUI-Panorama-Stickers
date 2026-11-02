@@ -127,6 +127,20 @@ export function transformStrokeGroup(strokes, gid, scale, rotationDeg, sources, 
   return mapStrokeGroupPoints(strokes, gid, sources, (pt) => transformErpPointAround(pt, centerUv, ratio, rotationDeg));
 }
 
+// Turns the stroke group `gid` of `painting` by deltaDeg about `centerUv` (docs/studio-ui.md "ペイントのまとまり" "回す"):
+// its group entry's rot_deg becomes the one it has plus deltaDeg (with snapDeg, stopped at its multiples; not wrapped),
+// and its points turn by what that angle changed. Returns whether it changed (false without the group entry).
+export function turnStrokeGroup(painting, gid, deltaDeg, centerUv, { snapDeg = 0 } = {}) {
+  const group = (painting.groups ?? []).find((entry) => String(entry?.actionGroupId || "").trim() === gid);
+  if (!group) return false;
+  const from = Number(group.rot_deg || 0);
+  let to = from + Number(deltaDeg || 0);
+  if (snapDeg > 0) to = Math.round(to / snapDeg) * snapDeg;
+  group.rot_deg = to;
+  transformStrokeGroup(painting.paint.strokes, gid, 1, to - from, null, centerUv);
+  return true;
+}
+
 // The four ERP corners (top left, top right, bottom right, bottom left) of a stroke group's frame (strokeGroupFrame,
 // turned by its rot_deg: frameCornerOffsets), u wrapped and v kept in 0..1; none without one.
 export function frameCornersUv(frame) {
@@ -354,7 +368,7 @@ export function paintIndexOf(state) {
     for (const group of countedPaintGroups(state.painting, skyStickersOf(state))) {
       const id = String(group.actionGroupId || "");
       const strokes = groupStrokes(state.painting.paint?.strokes, id);
-      const frame = strokeGroupFrame(strokes);
+      const frame = strokeGroupFrame(strokes, undefined, group.rot_deg);
       if (frame) index.groups.set(id, { group, strokes, frame });
     }
     index.rasters = (state.painting.raster_objects ?? []).filter((item) => String(item.layerKind || "paint") === "paint");
