@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  rasterObjectAlphaAt, rasterObjectCornersUv, transformErpPointAround, transformStrokeGroup,
+  rasterObjectAlphaAt, rasterObjectCornersUv, rotateRasterObject, transformErpPointAround, transformStrokeGroup,
 } from "../web_src/pano_paint_objects.js";
 
 const near = (actual, expected, label) => assert.ok(Math.abs(actual - expected) < 1e-9, `${label}: ${actual} vs ${expected}`);
@@ -50,4 +50,16 @@ test("a turned raster object is hit inside the frame its corners draw", () => {
     const outside = { u: corner.u - (middle.u - corner.u) * 0.01, v: corner.v - (middle.v - corner.v) * 0.01 };
     assert.equal(rasterObjectAlphaAt(item, outside, alphaAt), 0, `outside corner ${index}`);
   });
+});
+
+test("a raster object turns by the pointer's turn from where it was grabbed, unwrapped; a snap stops the angle it reaches", () => {
+  const grabbed = { transform: { du: 0.1, dv: 0, rot_deg: 170, scale: 2 } };
+  const item = structuredClone(grabbed);
+  assert.equal(rotateRasterObject(item, 25, { snapshot: grabbed }), true);
+  assert.deepEqual(item.transform, { du: 0.1, dv: 0, rot_deg: 195, scale: 2 });
+  rotateRasterObject(item, 37, { snapshot: grabbed, snapDeg: 15 });
+  assert.equal(item.transform.rot_deg, 210);
+  const bare = {};
+  rotateRasterObject(bare, -10);
+  assert.deepEqual(bare.transform, { du: 0, dv: 0, rot_deg: -10, scale: 1 });
 });

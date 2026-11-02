@@ -215,6 +215,17 @@ export function scaleRasterObject(item, scale = 1, snapshot = null) {
   return true;
 }
 
+// Turns the raster object `item` by deltaDeg (clockwise on the ERP picture) from `snapshot` (null: from where it is):
+// its transform's rot_deg, not wrapped to a range. With snapDeg the angle it reaches stops at its multiples.
+export function rotateRasterObject(item, deltaDeg, { snapDeg = 0, snapshot = null } = {}) {
+  const source = snapshot && typeof snapshot === "object" ? snapshot : item;
+  let rotation = Number(source?.transform?.rot_deg || 0) + Number(deltaDeg || 0);
+  if (snapDeg > 0) rotation = Math.round(rotation / snapDeg) * snapDeg;
+  if (!item.transform) item.transform = { du: 0, dv: 0, rot_deg: 0, scale: 1 };
+  item.transform.rot_deg = rotation;
+  return true;
+}
+
 // The ERP center of a raster object as it is moved.
 export function rasterObjectCenterUv(item) {
   const bbox = item?.bbox || null;

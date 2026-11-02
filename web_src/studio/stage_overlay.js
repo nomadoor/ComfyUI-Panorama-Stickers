@@ -317,10 +317,18 @@ function drawScene(ctx, camera, width, height, scene) {
     }
   }
   // The selected paint group (docs/studio-ui.md "ペイントのまとまり"): its frame through its four corners in the sky
-  // image's look, with the corner dots only (no edge or rotate handles).
+  // image's look, with the corner dots and the rotate handle on its stem as the sky image's (no edge handles).
   if (scene.paint) {
-    strokeTwice(ctx, polygonPath(scene.paint.outline), GUIDE_LOOKS.skySelected);
-    if (scene.paint.handles) for (const corner of scene.paint.corners) dot(ctx, corner, CORNER_RADIUS);
+    const paint = scene.paint;
+    strokeTwice(ctx, polygonPath(paint.outline), GUIDE_LOOKS.skySelected);
+    if (paint.handles) {
+      const stem = new Path2D();
+      stem.moveTo(paint.rotateStemBase.x, paint.rotateStemBase.y);
+      stem.lineTo(paint.rotateHandle.x, paint.rotateHandle.y);
+      strokeTwice(ctx, stem, GUIDE_LOOKS.skySelected);
+      for (const corner of paint.corners) dot(ctx, corner, CORNER_RADIUS);
+      dot(ctx, paint.rotateHandle, ROTATE_RADIUS);
+    }
   }
   if (scene.gizmo) drawGizmo(ctx, scene.gizmo.handles, scene.gizmo.active, scene.gizmo.guides);
 }
