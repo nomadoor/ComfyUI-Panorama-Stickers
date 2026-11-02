@@ -523,34 +523,38 @@ def raster_object_placement(obj: dict, width: int, height: int, min_pixel: float
     }
 
 
-def _sample_box(image: np.ndarray, local_u: np.ndarray, local_v: np.ndarray) -> np.ndarray:
-    """The straight RGBA `image` (H, W, 4) read at the points (local_u, local_v) of its box (0..1 across, an image
-    pixel k's center at (k + 0.5) / its size): bilinearly with alpha multiplied in while it is mixed, the edge pixels
-    held out to the box's edge, and transparent outside the box."""
-    h, w = image.shape[:2]
-    premultiplied = np.concatenate([image[..., :3] * image[..., 3:4], image[..., 3:4]], axis=-1).astype(np.float32)
-    local_u = local_u.astype(np.float32)
-    local_v = local_v.astype(np.float32)
-    sx = np.clip(local_u * w - 0.5, 0.0, w - 1.0)
-    sy = np.clip(local_v * h - 0.5, 0.0, h - 1.0)
-    x0 = np.floor(sx).astype(np.int64)
-    y0 = np.floor(sy).astype(np.int64)
-    x1 = np.minimum(x0 + 1, w - 1)
-    y1 = np.minimum(y0 + 1, h - 1)
-    fx = (sx - x0)[..., None]
-    fy = (sy - y0)[..., None]
-    texels = premultiplied.reshape(-1, 4)
+def _premultiplied_texels(image: np.ndarray) -> np.ndarray:
+    """The straight RGBA `image` (H, W, 4) with its alpha multiplied in, as (H * W, 4) float32 texels."""
+    return np.concatenate([image[..., :3] * image[..., 3:4], image[..., 3:4]], axis=-1).astype(np.float32).reshape(-1, 4)
 
-    def texel(y, x):
-        return np.take(texels, (y * w + x).ravel(), axis=0).reshape(x.shape + (4,))
 
-    top = texel(y0, x0) * (1.0 - fx) + texel(y0, x1) * fx
-    bottom = texel(y1, x0) * (1.0 - fx) + texel(y1, x1) * fx
-    out = top * (1.0 - fy) + bottom * fy
-    inside = (local_u >= 0.0) & (local_u <= 1.0) & (local_v >= 0.0) & (local_v <= 1.0)
-    out *= inside[..., None]
-    alpha = out[..., 3:4]
-    out[..., :3] = np.where(alpha > 1e-6, out[..., :3] / np.maximum(alpha, 1e-6), 0.0)
+def _sample_box(texels: np.ndarray, size: tuple[int, int], local_u: np.ndarray, local_v: np.ndarray) -> np.ndarray:
+    """The image of `size` (H, W) whose premultiplied texels are `texels` (_premultiplied_texels), read as straight RGBA
+    at the points (local_u, local_v) of its box (0..1 across, an image pixel k's center at (k + 0.5) / its size):
+    bilinearly with alpha multiplied in while it is mixed, the edge pixels held out to the box's edge, and transparent
+    outside the box (only the points inside are read)."""
+    h, w = size
+    out = np.zeros(local_u.shape + (4,), dtype=np.float32)
+    inside = np.flatnonzero((local_u >= 0.0) & (local_u <= 1.0) & (local_v >= 0.0) & (local_v <= 1.0))
+    if not inside.size:
+        return out
+    sx = np.clip(local_u.ravel()[inside] * w - 0.5, 0.0, w - 1.0)
+    sy = np.clip(local_v.ravel()[inside] * h - 0.5, 0.0, h - 1.0)
+    x0 = sx.astype(np.int64)
+    y0 = sy.astype(np.int64)
+    fx = (sx - x0)[:, None]
+    fy = (sy - y0)[:, None]
+    right = np.minimum(x0 + 1, w - 1) - x0
+    row = y0 * w + x0
+    below = (np.minimum(y0 + 1, h - 1) - y0) * w
+    top = np.take(texels, row, axis=0)
+    top += (np.take(texels, row + right, axis=0) - top) * fx
+    bottom = np.take(texels, row + below, axis=0)
+    bottom += (np.take(texels, row + below + right, axis=0) - bottom) * fx
+    top += (bottom - top) * fy
+    alpha = top[:, 3:4]
+    top[:, :3] = np.where(alpha > 1e-6, top[:, :3] / np.maximum(alpha, 1e-6), 0.0)
+    out.reshape(-1, 4)[inside] = top
     return out
 
 
@@ -586,22 +590,20 @@ def _composite_one_raster_object(
     image = np.clip(raster, 0.0, 1.0)
     a, b, c, d = placement["matrix"]
     det = a * d - b * c
-    box_w, box_h = placement["width"], placement["height"]
     x0, x1, y0, y1 = span
+    # Each ERP pixel's center as an offset from the box's center, the same for every seam copy (a copy moves the pixels
+    # and the center alike), read once.
+    px = (np.arange(x0, x1, dtype=np.float32) + np.float32(0.5 - placement["center_x"]))[None, :]
+    py = (np.arange(y0, y1, dtype=np.float32) + np.float32(0.5 - placement["center_y"]))[:, None]
+    local_u = (np.float32(d / det) * px - np.float32(c / det) * py) / np.float32(placement["width"]) + np.float32(0.5)
+    local_v = (np.float32(-b / det) * px + np.float32(a / det) * py) / np.float32(placement["height"]) + np.float32(0.5)
+    patch = _sample_box(_premultiplied_texels(image), image.shape[:2], local_u, local_v)
     layer_kind = str(obj.get("layerKind") or "paint")
-    ys = np.arange(y0, y1, dtype=np.float64) + 0.5 - placement["center_y"]
     for offset in placement["wrap_offsets"]:
         left = max(0, x0 + offset)
         right = min(width, x1 + offset)
-        if right <= left:
-            continue
-        xs = np.arange(left, right, dtype=np.float64) + 0.5 - (placement["center_x"] + offset)
-        px, py = np.meshgrid(xs, ys)
-        # The box's pixel offset from its center at each ERP pixel's center.
-        lx = (d * px - c * py) / det
-        ly = (-b * px + a * py) / det
-        patch = _sample_box(image, lx / box_w + 0.5, ly / box_h + 0.5)
-        _composite_raster_patch(paint, mask, patch, layer_kind, y0, y1, left, right)
+        if right > left:
+            _composite_raster_patch(paint, mask, patch[:, left - offset - x0:right - offset - x0], layer_kind, y0, y1, left, right)
 
 
 def _composite_raster_objects(
