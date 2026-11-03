@@ -834,3 +834,17 @@ test("Keyframes pasted onto an upstream row are written as that object's overrid
   session.undo();
   assert.deepEqual(record().stickers[0].position.keyframes.map((key) => key.frame), [4]);
 });
+
+// docs/studio-ui.md "下の中央のバー": an input's object's Back to source resets the rows its bar counts as changed
+// (inspector_model.js stickerChangedRows): the animation's Speed too, not only the rows with Lanes.
+test("Back to source of an input's object resets every row away from the input's value, its animation's Speed included", () => {
+  const port = { id: "sticker_1", placement: "world", source: { kind: "port" }, position: { value: [1, 2, 3] }, animation: { clip: "Idle", speed: 2 } };
+  const session = createStudioSession({ state: load({ stickers: [port] }) });
+  session.selectObject("sticker_1");
+  const context = { playhead: 0, animations: { sticker_1: [{ name: "Idle" }, { name: "Walk" }] } };
+  assert.equal(session.revertSelected(context).changed, true);
+  const sticker = session.state.stickers[0];
+  assert.deepEqual(sticker.position.value, [0, 0, 0]);
+  assert.equal(sticker.animation.speed, 1);
+  assert.equal(session.canUndo, true);
+});

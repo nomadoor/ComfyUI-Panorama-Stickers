@@ -323,8 +323,8 @@ export function upstreamStickerOverridden(records, sticker) {
 // Lane is reverted only from an override made for the Sticker's placement, the one that applies to it.
 export function upstreamRevertedRecords(records, sticker, lane = null) {
   const { origin } = sticker;
-  if (!upstreamStickerOverridden(records, sticker)) return records;
   const override = upstreamOverrideOf(records, origin);
+  if (!override) return records;
   if (lane !== null && !(OVERRIDE_LANES.has(lane) && override.placement === sticker.placement && Object.hasOwn(override, lane))) return records;
   return changedRecords(records, origin.layer, null, (record) => ({
     ...record,

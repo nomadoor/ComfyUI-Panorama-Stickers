@@ -26,7 +26,7 @@ import { normalizePaintingState } from "../pano_paint_types.js";
 import { cameraToView as moveCameraToView } from "./camera_ui.js";
 import { editableCamera } from "./camera_state.js";
 import { applyInspectorEdit } from "./inspector_actions.js";
-import { ROW_LANES } from "./inspector_model.js";
+import { stickerChangedRows } from "./inspector_model.js";
 import { findSticker } from "./row_object.js";
 import { BACKGROUND_ROW, PAINTING_ROW } from "../pano_timeline.js";
 
@@ -502,8 +502,8 @@ export function createStudioSession({ state: opening, readOnly = false, upstream
     });
   }
 
-  // Back to source: every row of the selected port Sticker back to the input's value (each row's reset of the
-  // inspector, inspector_actions.js), or all the overrides of the selected upstream object off its record (the old
+  // Back to source: the rows of the selected port Sticker away from the input's value (inspector_model.js
+  // stickerChangedRows: the rows the bar counts) back to it (each row's reset of the inspector, inspector_actions.js), or all the overrides of the selected upstream object off its record (the old
   // editor's "Revert to upstream" All), as one Undo step. Not while it is locked. `context` is the inspector's.
   function revertSelected(context = {}) {
     const theirs = selectedUpstream();
@@ -513,10 +513,12 @@ export function createStudioSession({ state: opening, readOnly = false, upstream
       record();
       return result(true, { history: true });
     }
+    const port = selectedSticker();
+    const rows = port && !port.locked && port.source.kind === "port" ? stickerChangedRows(state, port, context) : [];
     return editSelected((draft, sticker) => {
-      if (sticker.locked || sticker.source.kind !== "port") return false;
+      if (!rows.length) return false;
       let changed = false;
-      for (const row of Object.keys(ROW_LANES[sticker.placement] ?? {})) {
+      for (const row of rows) {
         const outcome = applyInspectorEdit(draft, { type: "reset", target: { kind: "sticker", id: sticker.id }, row }, { ...context, readOnly });
         changed = outcome.changed || changed;
       }

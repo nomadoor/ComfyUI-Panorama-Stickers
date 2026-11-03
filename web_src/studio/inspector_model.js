@@ -373,11 +373,19 @@ function stickerCard(state, sticker, { playhead, readOnly, upstream, animations,
   };
 }
 
-// Whether any row of the Sticker `sticker`'s card is away from where its reset returns it (its `atDefault`): what the
-// bar's Back to source of an input's object puts back (docs/studio-ui.md "下の中央のバー"). `options` as the card's.
-export function stickerRowsChanged(state, sticker, options = {}) {
-  const card = stickerCard(state, sticker, { playhead: 0, readOnly: false, upstream: [], animations: {}, portSize: null, imageSizes: {}, ...options });
-  return card.rows.some((row) => row.resettable && !row.atDefault);
+// The ids of the rows of the Sticker `sticker`'s card that are away from where their reset returns them (resettable,
+// not `atDefault`): what the bar's Back to source of an input's object puts back, and whether it is lit
+// (docs/studio-ui.md "下の中央のバー"). `options` as the card's: { playhead, upstream, animations, portSize, imageSizes }.
+export function stickerChangedRows(state, sticker, { playhead, upstream, animations, portSize, imageSizes } = {}) {
+  const card = stickerCard(state, sticker, {
+    playhead: playhead ?? 0,
+    readOnly: false,
+    upstream: upstream ?? [],
+    animations: animations ?? {},
+    portSize: portSize ?? null,
+    imageSizes: imageSizes ?? {},
+  });
+  return card.rows.filter((row) => row.resettable && !row.atDefault).map((row) => row.id);
 }
 
 function cameraCard(state, { playhead, readOnly }) {

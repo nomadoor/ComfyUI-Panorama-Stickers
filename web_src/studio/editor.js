@@ -680,7 +680,7 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
 
   // What the inspector's edits read (inspector_actions.js applyInspectorEdit's context), with the upstream working
   // copies an upstream object's edit changes (docs/studio-ui.md "上流の物の編集").
-  const inspectorContext = () => ({ playhead: view.playhead, imageSizes: view.imageSizes, animations: view.animations, upstream: view.upstreamWorking });
+  const inspectorContext = () => ({ playhead: view.playhead, imageSizes: view.imageSizes, animations: view.animations, portSize: view.portSize, upstream: view.upstreamWorking });
 
   function inspectorEdit(edit) {
     // A wheel run of the Camera tab's Frame view still waiting to be one Undo step is one first.

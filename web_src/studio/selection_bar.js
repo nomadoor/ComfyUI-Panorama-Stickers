@@ -5,7 +5,7 @@ import { ICON } from "../icons.js";
 import { paintObjectOf } from "../pano_paint_objects.js";
 import { is3dFileSource } from "../pano_scene_state.js";
 import { UPSTREAM_INHERITED_TIP as INHERITED_TIP, isUpstreamSticker, upstreamStickerInherited, upstreamStickerOverridden } from "../pano_upstream.js";
-import { stickerRowsChanged } from "./inspector_model.js";
+import { stickerChangedRows } from "./inspector_model.js";
 import { findSticker } from "./row_object.js";
 import { objectLabel } from "./timeline_model.js";
 
@@ -52,12 +52,12 @@ const LATER = "in development";
 
 // Back to source of an input's or an upstream object (docs/studio-ui.md "下の中央のバー"): pressable only with something to
 // put back (an upstream object: any entry of its record, upstreamStickerOverridden; an input's: a row away from the
-// input's value, stickerRowsChanged) while it can change, in the override colour then (`overridden`); the tooltip says
+// input's value, stickerChangedRows) while it can change, in the override colour then (`overridden`); the tooltip says
 // why it is not, the first of: inherited only, read-only, locked, nothing to put back.
 function revertButton(button, state, sticker, { readOnly, locked, inherited, upstream, inputs }) {
   const theirs = isUpstreamSticker(sticker);
   const source = theirs ? "upstream" : "input";
-  const changed = theirs ? upstreamStickerOverridden(state.upstream ?? [], sticker) : stickerRowsChanged(state, sticker, { ...inputs, upstream });
+  const changed = theirs ? upstreamStickerOverridden(state.upstream ?? [], sticker) : stickerChangedRows(state, sticker, { ...inputs, upstream }).length > 0;
   let tip = `Back to source · every value back to the ${source}'s`;
   if (inherited) tip = INHERITED_TIP;
   else if (readOnly) tip = "Back to source · Read-only";
