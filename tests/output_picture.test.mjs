@@ -58,6 +58,9 @@ test("the Panorama picture is the live ERP from the Camera's position, over its 
   assert.deepEqual(input.space.stickers, content.space.stickers);
   assert.equal(input.clearColor, STAGE_CLEAR_COLOR);
   assert.ok(input.near > 0 && input.far > input.near);
-  // The Camera tab's frame draws the grid.
-  assert.ok(outputErpInput({ shot, erpRange: 360, ground: -1.5, radius: 50, width: 2, height: 1, background, content, owner: "tab", canvas, gridHidden: false }).space.ground);
+  assert.equal(input.space.sky, null);
+  // The Camera tab's frame draws the grids; the sky grid's eye is the Camera's position (docs/space-and-view.md "空のグリッド").
+  const tab = outputErpInput({ shot, erpRange: 360, ground: -1.5, radius: 50, width: 2, height: 1, background, content, owner: "tab", canvas, gridHidden: false });
+  assert.ok(tab.space.ground);
+  assert.deepEqual(tab.space.sky.eye, shot.position);
 });

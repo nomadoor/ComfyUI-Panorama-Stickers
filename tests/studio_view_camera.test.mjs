@@ -15,6 +15,7 @@ import {
   initialTarget,
   openingView,
   orbitCenter,
+  RESET_VIEW,
   recallView,
   rememberView,
 } from "../web_src/studio/view_camera.js";
@@ -470,13 +471,14 @@ test("an eased destination is not cut by the bound, and the bound grows to hold 
   assert.equal(view.pan(1, 0).notice, null);
 });
 
-test("Reset View eases to the opening's output view with the first T found there", () => {
-  const view = camera(pose({ position: [5, 1, 5], yaw_deg: 120, pitch_deg: 30 }));
-  view.reset(openingView({ output: { position: [0, 0, 0], yaw_deg: 10 }, world: WORLD }).pose);
+test("Reset View eases to the World origin, level, yaw 0 (not the Camera), with the first T found there (ADR 0058)", () => {
+  const view = camera(pose({ position: [5, 1, 5], yaw_deg: 120, pitch_deg: 30 }), { world: { ...WORLD, camera: [3, 0.4, 2.6] } });
+  assert.deepEqual(RESET_VIEW, { position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0 });
+  view.reset();
   view.step(0.4);
   const shown = view.pose();
   closeVec(shown.position, [0, 0, 0]);
-  close(shown.yaw_deg, 10);
+  close(shown.yaw_deg, 0);
   close(shown.pitch_deg, 0);
   onCenterLine(shown, 8);
 });
@@ -599,4 +601,73 @@ test("a notice shows for BOUND_NOTICE_SECONDS after the last time it was shown",
   assert.equal(notice.current(4.5), null);
   notice.show(null, 5);
   assert.equal(notice.current(5), null);
+});
+
+// --- A T the user points at (ADR 0058): taken as it is, pulled back into the range before the moves that scale with d.
+
+// A content sphere far out grows the world bound well past TARGET_MAX_DISTANCE (48 at E = 1.6).
+const WIDE = { ...WORLD, content: { center: [0, 0, -100], radius: 40 } };
+
+test("a double click on far ground makes the hit point itself T, not a point in mid-air at TARGET_MAX_DISTANCE", () => {
+  const view = camera(pose(), { world: WIDE });
+  assert.equal(view.focus([0, -1.6, -90]).moved, true);
+  closeVec(view.destination().target, [0, -1.6, -90]);
+});
+
+test("a double click on a hit outside the world bound counts as nothing", () => {
+  const view = camera();
+  assert.deepEqual(view.focus([0, -1.6, -200]), { moved: false, notice: "nothing-to-focus" });
+  closeVec(view.destination().target, [0, 0, -8]);
+  assert.equal(view.animating(), false);
+});
+
+test("an orbit's center far away is taken as it is", () => {
+  const view = camera(pose(), { world: WIDE });
+  view.beginOrbit([0, 0, -80]);
+  closeVec(view.destination().target, [0, 0, -80]);
+});
+
+test("an orbit turns about a far T at its full distance", () => {
+  const view = camera(pose(), { world: WIDE });
+  view.focus([0, -1.6, -90]);
+  view.step(1);
+  view.beginOrbit(null);
+  view.orbit(30, 0);
+  const turned = view.pose();
+  closeVec(turned.target, [0, -1.6, -90]);
+  close(len(sub(turned.position, turned.target)), len([0, -1.6, -90]));
+});
+
+// The pose a double click on the far point [0, -1.6, -90] leaves (turned to it, T there).
+function farTarget() {
+  const view = camera(pose(), { world: WIDE });
+  view.focus([0, -1.6, -90]);
+  view.step(1);
+  return view;
+}
+
+test("before a wheel step a far T is pulled back along its line into the range, in the same step", () => {
+  const view = farTarget();
+  const before = view.pose();
+  const along = sub(before.target, before.position).map((v) => v / len(sub(before.target, before.position)));
+  assert.equal(view.wheel(1, null).moved, true);
+  view.step(1);
+  const after = view.pose();
+  // About T pulled to 48 on its line: d is 48 / 1.2, along the same line from P.
+  close(len(sub(after.target, after.position)), 48 / 1.2);
+  closeVec(sub(after.target, after.position).map((v) => v / (48 / 1.2)), along);
+});
+
+test("before the keys and the joystick move, a far T is pulled back into the range, so they move at most TARGET_MAX_DISTANCE per second", () => {
+  const keys = farTarget();
+  keys.beginKeys();
+  const from = keys.pose().position;
+  keys.keys({ forward: 1, right: 0, up: 0 }, 0.1, false);
+  close(len(sub(keys.pose().position, from)), 48 * 0.1, 1e-6);
+  close(len(sub(keys.pose().target, keys.pose().position)), 48);
+  const stick = farTarget();
+  stick.beginJoystick();
+  const start = stick.pose().position;
+  stick.joystick(100, 0.1);
+  close(len(sub(stick.pose().position, start)), 48 * 0.1, 1e-6);
 });

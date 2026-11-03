@@ -7,6 +7,7 @@ import { MARKER_DOT_RADIUS, MARKER_LOOKS, MARKER_TOP_FILL, MARKER_UNDER } from "
 import { GIZMO_COLORS, GIZMO_LOOK, gizmoColor } from "./gizmo_overlay.js";
 import { GUIDE_LOOKS, GUIDE_UNDER_EXTRA, screenLines } from "./world_guides.js";
 import { BRUSH_RING } from "./paint.js";
+import { ORBIT_MARK_LOOK } from "./orbit_marker.js";
 
 // The sky image's handles (docs/studio-ui.md "下の中央のバー"; pano_sticker_affordance.js hits them): corner and rotate
 // dots, edge ticks, in the selected sky image's ice over a dark ring (docs/design.md "色": the color of the Sky).
@@ -266,12 +267,38 @@ function drawGizmo(ctx, handles, active, guides = []) {
 // at `ratio` device px per CSS px, seen from `camera` (stage_view.js stageCamera()). `origin` is where the view of
 // width x height starts on the stage (the Camera tab's Frame view spans a box of its own, stage_view.js cameraFrameView).
 // `ring` is the paint tools' brush ring at the pointer (studio/paint.js brushRing), or null.
-export function drawStageOverlay(ctx, { camera, width, height, ratio = 1, origin = { x: 0, y: 0 }, scene, ring = null }) {
+// `orbit` is the orbit center's mark ({ x, y, alpha } in the view's CSS px, stage.js orbitMark), or null.
+export function drawStageOverlay(ctx, { camera, width, height, ratio = 1, origin = { x: 0, y: 0 }, scene, ring = null, orbit = null }) {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
   ctx.setTransform(ratio, 0, 0, ratio, ratio * origin.x, ratio * origin.y);
   if (scene) drawScene(ctx, camera, width, height, scene);
   if (ring) drawBrushRing(ctx, ring);
+  if (orbit) drawOrbitMarker(ctx, orbit);
+}
+
+// The orbit center's mark (orbit_marker.js ORBIT_MARK_LOOK; docs/design.md "大きさ"): a small dot inside a thin ring,
+// each over a dark rim.
+function drawOrbitMarker(ctx, { x, y, alpha }) {
+  const M = ORBIT_MARK_LOOK;
+  ctx.save();
+  ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
+  const ring = new Path2D();
+  ring.arc(x, y, M.ringRadius, 0, Math.PI * 2);
+  ctx.lineWidth = M.underWidth;
+  ctx.strokeStyle = M.under;
+  ctx.stroke(ring);
+  ctx.lineWidth = M.ringWidth;
+  ctx.strokeStyle = M.ring;
+  ctx.stroke(ring);
+  const dot = new Path2D();
+  dot.arc(x, y, M.dotRadius, 0, Math.PI * 2);
+  ctx.fillStyle = M.dot;
+  ctx.fill(dot);
+  ctx.lineWidth = M.dotRim;
+  ctx.strokeStyle = M.under;
+  ctx.stroke(dot);
+  ctx.restore();
 }
 
 // The paint tools' brush ring at the pointer (studio/paint.js brushRing; its look: BRUSH_RING).

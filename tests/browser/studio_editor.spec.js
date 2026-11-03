@@ -132,10 +132,12 @@ test("the shell has its regions, the stage draws the background and the grid, an
   await page.locator('[data-action="grid"]').click();
   await expect(page.locator('[data-action="grid"]')).toHaveAttribute("aria-checked", "false");
   const hidden = await settled(page);
-  // Only the ground half changes: the grid lies below the horizon.
+  // The ground half changes most: the ground grid lies below the horizon, and the sky grid (quieter than the
+  // ground's, its Z axis meridian in ice) changes the sky less.
   const half = shown.length / 2;
-  expect(diff(shown.slice(half), hidden.slice(half))).toBeGreaterThan(0.5);
-  expect(diff(shown.slice(0, half * 0.8), hidden.slice(0, half * 0.8))).toBeLessThan(0.2);
+  const ground = diff(shown.slice(half), hidden.slice(half));
+  expect(ground).toBeGreaterThan(0.5);
+  expect(diff(shown.slice(0, half * 0.8), hidden.slice(0, half * 0.8))).toBeLessThan(ground / 2);
   await page.locator('[data-action="grid"]').click();
   await page.screenshot({ path: testInfo.outputPath("studio_editor.png") });
   console.log(`screenshot: ${testInfo.outputPath("studio_editor.png")}`);

@@ -184,8 +184,9 @@ test("the empty stage's hint shows with nothing linked, and not with `world` lin
 test("the upstream background shows while the node has no background of its own, and the node's own replaces it", async ({ page }, testInfo) => {
   let problems = await open(page, testInfo, "upstream");
   const colors = await page.evaluate(() => window.__studio.colors);
+  // Off the sky grid's lines (docs/space-and-view.md "空のグリッド") (yaw 0 is its Z axis meridian, pitch 30 a parallel).
   // Above the sky images: only the background is there.
-  const { sky: [above] } = await places(page, { sky: [[0, 30]] });
+  const { sky: [above] } = await places(page, { sky: [[12, 22]] });
   await expect.poll(() => stageAt(page, above).then((rgb) => near(rgb, colors.upstreamBg, 30)), { timeout: 10_000 }).toBe(true);
   await shot(page, "background");
   expect(problems).toEqual([]);
@@ -201,7 +202,7 @@ test("the upstream background shows while the node has no background of its own,
 test("the upstream background outside its Clip range shows its bg_color, else the node's, green when that is empty", async ({ page }, testInfo) => {
   let problems = await open(page, testInfo, "upstream-clip");
   const colors = await page.evaluate(() => window.__studio.colors);
-  const { sky: [above] } = await places(page, { sky: [[0, 30]] });
+  const { sky: [above] } = await places(page, { sky: [[12, 22]] });
   await expect.poll(() => stageAt(page, above).then((rgb) => near(rgb, colors.upstreamColor, 30)), { timeout: 10_000 }).toBe(true);
   expect(problems).toEqual([]);
 
@@ -213,7 +214,7 @@ test("the upstream background outside its Clip range shows its bg_color, else th
 test("as it is: a result that comes after opening brings the upstream bg_color at once, but not the upstream image", async ({ page }, testInfo) => {
   let problems = await open(page, testInfo, "upstream-late-clip");
   const colors = await page.evaluate(() => window.__studio.colors);
-  const { sky: [above] } = await places(page, { sky: [[0, 30]] });
+  const { sky: [above] } = await places(page, { sky: [[12, 22]] });
   await page.evaluate(() => window.__studio.arrive());
   await page.setViewportSize({ width: 1400, height: 860 });
   // The colour is decided on each draw: outside the upstream Clip range its bg_color shows.

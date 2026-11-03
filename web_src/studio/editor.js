@@ -942,7 +942,6 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
         cameraTab,
         root,
         opening,
-        output,
         world,
         background: stageBackground,
         content,

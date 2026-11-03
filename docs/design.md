@@ -536,8 +536,8 @@ stylesheet の読み込みは上の「この文書が owner である規則」�
 | 読み込み中のガイドの光の帯 | ガイドの見え方の上に、箱の画面の外接の矩形を左上から右下へ斜めに横切る白の帯。帯の幅は矩形の対角の 35%、真ん中が白 90%（線）と白 18%（見える面の塗り）で両側へ透明に。線は見え方の線より 1px 太い。帯は `LOAD_SHIMMER_MS` で一度横切り、繰り返す（`web_src/studio/load_reveal.js` `LOAD_LOOK`、描くのは `stage_overlay.js`） |
 | ギズモ | 見本 `specimen-11.html`。X は珊瑚、Y はライム、Z は氷。ポインタの下とドラッグしている取っ手は、その軸の色を白へ 35% 寄せた色で、線 3.5px・玉の半径 6.5px・Scale の四角の一辺 11px（白にはしない）。届く長さ（中心から棒の先、輪の半径）52px、線 2.5px で端は丸。Move の玉は半径 5px、中心の白い点は半径 4px（Move の中心の点のドラッグ中は 5.5px）。Rotate の輪の奥の半分は 35% の不透明。Scale の先は一辺 9px・角丸 2px の四角。棒・玉・四角・輪・平面の四角の下に黒 40% の下敷き（線は取っ手の線より 2px 太く、玉と四角は 1px ずつ外へ広い）、中心の白い点には黒 40% の 1.5px の縁。視線とほぼ平行な軸を隠す `GIZMO_HIDE_RATIO` は 0.2。当たりの幅は玉・四角・中心の点が 9px、棒と輪が 6px。Move の平面の四角は、二つの軸の届く長さの `GIZMO_PLANE_FROM` 0.28 から `GIZMO_PLANE_TO` 0.52 まで（正面から見て一辺約 12.5px）。色はその面に垂直な軸の色（Blender にならう：XY は氷、YZ は珊瑚、XZ はライム）の 40% の塗りと、同じ色の 1px の縁（下に黒 40% の 3px の縁）。ポインタの下とドラッグしている四角は、その色を白へ 35% 寄せた色の 60% の塗りと同じ色の縁。当たりは写した四角の中。ドラッグ中の軸のガイドの線は、その軸の色の 1.5px・不透明度 80%・端は丸、2D の層でなめらかに描く。平面の四角のドラッグ中は、その面の二つの軸のガイドの線を同じ見た目で二本描く（XZ なら X の珊瑚と Z の氷）（`web_src/studio/gizmo_overlay.js` `GIZMO_LOOK`・`GIZMO_COLORS`） |
 | 地面のグリッドの軸 | X 軸はギズモの X と同じ珊瑚 `#f37159`、Z 軸は氷 `#aecedb`、どちらも不透明度 75%（Y 軸の線は描かない。`web_src/studio/grid.js` `GRID_COLORS`。古い UI のグリッドは変えない）。グリッドの板の外から地平線までの続き（`docs/space-and-view.md` の「地面のグリッド」）も同じ色と濃さで、太さは軸と同じ |
-| 空のグリッド | 経線と緯線は白 16% の 1px。軸の経線は X 珊瑚 `#f37159`・Z 氷 `#aecedb` の不透明度 60%、1.5px。地平線は白 30% の 1px（帯・ぼかし・色の光は付けない）。極の点は白 30%（大きさは角度で `docs/space-and-view.md` の `SKY_POLE_DOT_DEG`）。どれも下に暗い線を敷かない。px は描く先の `STAGE_RENDER_SCALE` 画素（地面のグリッドと同じ。下の「描画のくっきりさ」）。値の置き場所は `web_src/studio/grid.js` `SKY_GRID`（未実装） |
-| オービットの中心の印 | 2D の重ね描き（`web_src/studio/stage_overlay.js`）。中の点は半径 2.5px の白 92%、その縁に黒 35% の 1px。外の輪は半径 9px、白 60% の 1.25px の線の下に黒 35% の 3.25px の線。消えるときは全体の不透明度を下げる（長さは `docs/space-and-view.md` の `ORBIT_MARK_HOLD_SECONDS`・`ORBIT_MARK_FADE_SECONDS`）。値の置き場所は `web_src/studio/orbit_marker.js`（未実装） |
+| 空のグリッド | 経線と緯線は白 16% の 1px。軸の経線は X 珊瑚 `#f37159`・Z 氷 `#aecedb` の不透明度 60%、1.5px。地平線は白 30% の 1px（帯・ぼかし・色の光は付けない）。極の点は白 30%（大きさは角度で `docs/space-and-view.md` の `SKY_POLE_DOT_DEG`）。どれも下に暗い線を敷かない。px は描く先の `STAGE_RENDER_SCALE` 画素（地面のグリッドと同じ。下の「描画のくっきりさ」）。値の置き場所は `web_src/studio/grid.js` `SKY_GRID`（角度は `web_src/studio/view_scale.js` の `SKY_*`） |
+| オービットの中心の印 | 2D の重ね描き（`web_src/studio/stage_overlay.js`）。中の点は半径 2.5px の白 92%、その縁に黒 35% の 1px。外の輪は半径 9px、白 60% の 1.25px の線の下に黒 35% の 3.25px の線。消えるときは全体の不透明度を下げる（長さは `docs/space-and-view.md` の `ORBIT_MARK_HOLD_SECONDS`・`ORBIT_MARK_FADE_SECONDS`）。値の置き場所は `web_src/studio/orbit_marker.js` `ORBIT_MARK_LOOK` |
 | Set orbit center のボタン | 視点の操作のつまみと同じ 34px の正円、アイコン 18px（下の「アイコン」）。ふだんと hover はつまみと同じ |
 | Set orbit center の待ち | 地は値の箱の地（`--studio-fill`）、アイコンは氷（`--studio-ice`）。ボタンの内側いっぱいに氷の 1.5px の輪を重ね、輪の不透明度を 1 と 0.3 の間でゆっくり往復させる（下の「動き」）。選ばれた状態の強い塗りは使わない（待っていることを、選んでいることと見分けるため） |
 | Sky の画像のハンドル | 枠は選択のガイドと同じ太さで色は氷 `#aecedb`（下に黒 70%）、四隅は半径 5px・辺の中点は 3.5px・回転は 6px の氷の丸に黒 70% の 1.5px の縁（`web_src/studio/world_guides.js` `GUIDE_LOOKS.skySelected`、描くのは `web_src/studio/stage_overlay.js`） |
@@ -593,7 +593,7 @@ Set orbit center の待ちの輪は明滅させずに出す）。
 - Sky の印は `view-360`、World の印は `box`。Add のアイコンは写真と立方体を重ね、立方体を手前にして重なる所の写真の線を切り取る
   （見本 `controls-2.html` の A4。写真は 0.78 倍で左上、立方体は見本より少し大きい 0.72 倍で右下）。左の列の Paint の印は `palette`、
   Camera の印は `camera-plus`（見本 `specimen-11.html`）。Set orbit center は、オービットの中心の印と同じ点と輪（左上寄り。輪は右下を開ける）に、
-  右下からクリックの矢印を添えた形を Tabler の線の形にならって描く（`web_src/icons.js` `orbit_center`、未実装。Frame Selected の `focus-2` と
+  右下からクリックの矢印を添えた形を Tabler の線の形にならって描く（`web_src/icons.js` `orbit_center`。Frame Selected の `focus-2` と
   見分けるため、目盛りの線は付けない）。
 - ループ（タイムラインのバー）とグリッド（ステージの右下）は、一つのアイコンのボタンで、今の状態をアイコンの形で示す（ループ
   `repeat` ／ `repeat-off`、グリッド `table` ／ `table-off`）。オンでも強い塗りにしない（`docs/agents/ux-principles.md` の例外）。

@@ -1,18 +1,21 @@
 <script setup>
 // The new Preview window's shell (docs/studio-ui.md "Preview のウィンドウ"): the stage fills the window; ✕ at the top
-// right, the view knobs and "?" at the right middle, Reset View, the grid switch and Fullscreen at the bottom right.
+// right, the view knobs, Set orbit center and "?" at the right middle, Reset View, the grid switch and Fullscreen at the
+// bottom right; at the top center only Set orbit center's waiting line (docs/space-and-view.md "Set orbit center").
 // No inspector, timeline, left rail or bottom bar. A VIDEO source has the playback strip at the bottom: play / pause,
 // the loop switch, the seek bar and the time, in the node surface's order. web_src/studio/preview_window.js owns what
-// it shows. `playback`: { video, frame, frames, fps, playing, loop }. `controller`: onStage({ canvas, root }), close(),
+// it shows. `playback`: { video, frame, frames, fps, playing, loop }. `controller`: onStage({ canvas, overlay, root }), close(),
 // resetView(), grid(shown), play(), seek(frame), loop(on), fullscreen(root).
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { ICON } from "../../icons.js";
 import { createBackdropClose } from "../../studio/backdrop.js";
 import { trackInputMode } from "../../studio/input_modality.js";
 import { shortcutGroups } from "../../studio/shortcuts.js";
+import { topLine } from "../../studio/notice_line.js";
 import StudioFloatGroup from "./StudioFloatGroup.vue";
 import StudioIconButton from "./StudioIconButton.vue";
 import StudioNavWidget from "./StudioNavWidget.vue";
+import StudioNotice from "./StudioNotice.vue";
 import StudioShortcuts from "./StudioShortcuts.vue";
 import StudioTooltip from "./StudioTooltip.vue";
 
@@ -26,6 +29,7 @@ const props = defineProps({
 const root = ref(null);
 const canvas = ref(null);
 const nav = ref(null);
+const overlay = ref(null);
 const help = ref(false);
 const fullscreen = ref(false);
 let stage = null;
@@ -36,7 +40,7 @@ const onFullscreenChange = () => {
 };
 onMounted(() => {
   stopInputMode = trackInputMode(root.value);
-  stage = props.controller.onStage({ canvas: canvas.value, root: root.value }) ?? null;
+  stage = props.controller.onStage({ canvas: canvas.value, overlay: overlay.value, root: root.value }) ?? null;
   root.value?.focus({ preventScroll: true });
   document.addEventListener("fullscreenchange", onFullscreenChange);
 });
@@ -52,6 +56,8 @@ function onBackdropUp(event) {
 const isMac = /Mac|iPhone|iPad/.test(globalThis.navigator?.platform || globalThis.navigator?.userAgent || "");
 const shortcuts = computed(() => shortcutGroups({ context: "preview", playable: props.playback.video, mac: isMac }));
 const helpButton = () => nav.value?.helpButton() ?? null;
+// The window has no top line but Set orbit center's waiting one (docs/studio-ui.md "Preview のウィンドウ").
+const waitLine = computed(() => topLine({ pickingCenter: !!props.ui.pickingCenter }));
 
 // --- The playback strip's time: "m:ss / m:ss" (the frame shown, the length).
 function clock(seconds) {
@@ -75,6 +81,10 @@ const timeText = computed(() => `${clock(props.playback.frame / props.playback.f
     >
       <div class="pano-studio-stage" data-region="stage">
         <canvas ref="canvas" class="pano-studio-stage-canvas" data-stage-canvas :style="{ cursor: ui.cursor || null }" />
+        <canvas ref="overlay" class="pano-studio-stage-overlay" data-stage-overlay aria-hidden="true" />
+        <div v-if="waitLine.text" class="pano-studio-at-notice">
+          <StudioNotice :text="waitLine.text" :kind="waitLine.kind" />
+        </div>
         <div class="pano-studio-at-close">
           <StudioFloatGroup layout="row" label="Window">
             <StudioIconButton :icon="ICON.close" label="Close" data-action="close" @press="controller.close()" />
@@ -85,6 +95,9 @@ const timeText = computed(() => `${clock(props.playback.frame / props.playback.f
             ref="nav"
             :lit="ui.lit"
             :help-open="help"
+            :center-picking="!!ui.pickingCenter"
+            @hover="(knob) => stage?.toolbarHover(knob)"
+            @center="stage?.pickCenter()"
             @knob="(knob, event) => stage?.knobDown(knob, event)"
             @help="help = !help"
           />
@@ -101,7 +114,7 @@ const timeText = computed(() => `${clock(props.playback.frame / props.playback.f
               :aria-checked="String(!ui.gridHidden)"
               :icon="ui.gridHidden ? ICON.grid_off : ICON.grid"
               label="Grid"
-              :tip="ui.gridHidden ? 'Ground grid: hidden' : 'Ground grid: shown'"
+              :tip="ui.gridHidden ? 'Grid: hidden' : 'Grid: shown'"
               @press="controller.grid(ui.gridHidden)"
             />
             <StudioIconButton

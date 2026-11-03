@@ -26,7 +26,7 @@
 | World の組み立て | — | `pano_three_view.js` `buildWorld`・`setChildren`・`cachedLines` | `tests/pano_pick.test.mjs` |
 | エディタの描画を直接表示する（スケジュール、キャンバス、解像度、コンテキストの喪失） | — | `web_src/pano_frame_scheduler.js` `createFrameScheduler`、`pano_editor_view.js` `screenRenderSize`、`pano_three_view.js` `fitRenderSize`、`web_src/components/PanoModal.vue` | `tests/pano_frame_scheduler.test.mjs`、`tests/pano_editor_direct_view.test.mjs`、`tests/pano_preview_view.test.mjs` |
 | WebGL の unpack 状態 | — | `pano_three_view.js` `settleUnpack` | `tests/pano_editor_view.test.mjs`、`tests/test_three_spark_core_pin.py`、`tests/browser/three_view.spec.js` |
-| 新しい UI のステージの描画（視点のカメラの far、地面のグリッドと空のグリッドを描く部品、すぐ読み込む側の箱の当たり） | — | `web_src/studio/stage_view.js` `stageCamera`・`stageRenderInput`、`pano_space.js` `spaceCamera`、`web_src/pano_ground_grid.js` `createGroundGrid`（`pano_three_view.js` が `space.ground` のときだけ描く）、`web_src/pano_sky_grid.js` `createSkyGrid`（未実装。`pano_three_view.js` の `fillSky` が `space.sky` のときだけ描く）、Panorama モードの開いた ERP の入力は `web_src/studio/output_picture.js` `outputErpInput`（Camera タブのフレームの所有者のときだけ `space.sky` を渡す）、`web_src/pano_ray_box.js` `rayBoxDepth`（`pano_pick.js` `rayBoxDepth` の写し） | `tests/studio_stage_view.test.mjs`、`tests/pano_ray_box.test.mjs`、`tests/browser/studio_editor.spec.js`、`tests/browser/ground_grid.spec.js`（グリッドの濃さと、半透明の物との順） |
+| 新しい UI のステージの描画（視点のカメラの far、地面のグリッドと空のグリッドを描く部品、すぐ読み込む側の箱の当たり） | — | `web_src/studio/stage_view.js` `stageCamera`・`stageRenderInput`、`pano_space.js` `spaceCamera`、`web_src/pano_ground_grid.js` `createGroundGrid`（`pano_three_view.js` が `space.ground` のときだけ描く）、`web_src/pano_sky_grid.js` `createSkyGrid`（`pano_three_view.js` の `fillSky` が `space.sky` のときだけ描く）、Panorama モードの開いた ERP の入力は `web_src/studio/output_picture.js` `outputErpInput`（Camera タブのフレームの所有者のときだけ `space.sky` を渡す）、`web_src/pano_ray_box.js` `rayBoxDepth`（`pano_pick.js` `rayBoxDepth` の写し） | `tests/studio_stage_view.test.mjs`、`tests/pano_ray_box.test.mjs`、`tests/browser/studio_editor.spec.js`、`tests/browser/ground_grid.spec.js`（グリッドの濃さと、半透明の物との順） |
 | Panorama モードの ERP の表示（新しい UI の Output の小窓と Camera タブ。6 方向を描いて ERP に貼り直す、描き直す条件、解像度） | — | 描く部品は `web_src/pano_live_erp.js` `createLiveErp`（three.js のチャンクに入る側。チャンクの規則は上の「版の固定と遅延読み込みのチャンク」の行）、渡す値（位置・回転の行列・範囲・大きさ）は `web_src/studio/erp_preview.js`。ビューへの組み込み（`drawFace` に 2 パスの描き方を渡す、Spark の `onDirty` を `invalidate("splats")` にする、描く物の変化で面を描き直す）は `pano_three_view.js` `renderLiveErp`、ステージ（Camera タブ）と Output の小窓から呼ぶのは `web_src/studio/stage.js`、Panorama Studio のノード上の表示から呼ぶのは `pano_preview_runtime.js`（共有の view の `renderLiveErp`、`pano_preview_view.js`） | `tests/studio_erp_preview.test.mjs`、`tests/browser/live_erp.spec.js`、`tests/browser/studio_camera_wired.spec.js`、`tests/browser/ground_grid.spec.js`（面の色空間） |
 
 ## 版と同梱
@@ -46,7 +46,7 @@ ComfyUI の `get_extensions` は `glob.glob(os.path.join(dir, "**/*.js"), recurs
 - `vite.lib.config.js` の `chunkFileNames` で、動的 import したモジュールを `web/.lazy/<名前>-<ハッシュ>.js` に出力する。ハッシュを付けるのは、更新後にブラウザが古いチャンクを使わないようにするためである。エディタを開いたときに `pano_editor_view.js` がこれを読み込む。
 - `npm run build:web` は古いチャンクを消さない。ハッシュが変わったら古いファイルを消す（`check:web` が報告する）。
 - チャンクの読み込みか WebGL の初期化に失敗したときは、コンソールにエラーを出し、画面にもそのことを表示する。
-- `pano_three_view.js` が import するのは、three.js（`TransformControls` を含む）と、チャンクの中だけで使うモジュール（`pano_pick.js`・`pano_scene_items.js`・`pano_scene_loaders.js`・`pano_spark_views.js`・`pano_depth_grid.js`・`pano_lens_glsl.js`・`pano_ground_grid.js`・`pano_live_erp.js`）だけである。GLTFLoader と Spark は `pano_scene_loaders.js` が読み込む（Spark は動的 import の `loadSpark`）。計算は即時に読み込まれる側（`pano_editor_view.js`）で行い、チャンクが `panorama_suite.js` から import し返さないようにしている。
+- `pano_three_view.js` が import するのは、three.js（`TransformControls` を含む）と、チャンクの中だけで使うモジュール（`pano_pick.js`・`pano_scene_items.js`・`pano_scene_loaders.js`・`pano_spark_views.js`・`pano_depth_grid.js`・`pano_lens_glsl.js`・`pano_ground_grid.js`・`pano_sky_grid.js`・`pano_live_erp.js`）だけである。GLTFLoader と Spark は `pano_scene_loaders.js` が読み込む（Spark は動的 import の `loadSpark`）。計算は即時に読み込まれる側（`pano_editor_view.js`）で行い、チャンクが `panorama_suite.js` から import し返さないようにしている。
 - `npm run check:web` は `panorama_suite.js` と `web/.lazy/` の全チャンクを再ビルドした結果と比べ、ビルドが出力しない古いチャンクも報告する。
 - three.js の GLTFLoader は同じチャンクに静的に入れる（チャンクは約 1.0MB、gzip で約 0.22MB）。Spark は別のチャンク（`web/.lazy/spark.module-<ハッシュ>.js`、約 5.2MB、gzip で約 1.8MB）で、SPLAT の `scene` を初めて読み込むときだけ `import()` する（`pano_scene_loaders.js` の `loadSpark`）。3D を使わないエディタとノード上の表示は Spark を読まない。Spark のチャンクは three.js を最初のチャンクから import する。
 
@@ -302,7 +302,7 @@ three のアップロードは render の中でしか起きないので、Spark 
   `space.ground`（`web_src/studio/grid.js` の `groundGrid` の値。何をどの高さに描き、どこで薄れるかは `docs/space-and-view.md`）が
   あるときだけ描く。古い UI は `space.ground` を渡さないので、古いグリッド（`space.grid`）のままである。X 軸と Z 軸は距離で薄めない
   （板の端までは同じ濃さ。板の外は下の空のグリッドが続きを描く）。
-- 空のグリッド：描く部品は `web_src/pano_sky_grid.js` の `createSkyGrid`（未実装）。背景の球（`domeGeometry`、内側を描く）を共有する一つの
+- 空のグリッド：描く部品は `web_src/pano_sky_grid.js` の `createSkyGrid`。背景の球（`domeGeometry`、内側を描く）を共有する一つの
   メッシュで、断片のシェーダが向きから経線・緯線・軸の経線・地平線・極の点を描く（何をどの角度に描き、どこで薄れるかは
   `docs/space-and-view.md` の「空のグリッド」、値は `docs/design.md`）。`pano_three_view.js` の `fillSky` が、描画の入力の `space.sky`
   （`web_src/studio/grid.js` の `skyGrid` の値。グリッドを隠しているときは無い）があるときだけ、Sky の場面に背景の上・Sky の層の下の順で

@@ -367,7 +367,7 @@ function setCollapsed(value) {
             <StudioNotice :text="line.text" :kind="line.kind" />
           </div>
           <div class="pano-studio-at-output">
-            <StudioOutputPreview :storage="storage" :ratio="frameAspect" :line="outputLine" :suspended="cameraTab" :suspended-tip="CAMERA_TAB_TIP" @open="(open) => (outputOpen = open)">
+            <StudioOutputPreview :storage="storage" :ratio="frameAspect" :line="outputLine" :suspended="cameraTab" :suspended-tip="CAMERA_TAB_TIP" :reveal="ui.cameraCue" @open="(open) => (outputOpen = open)">
               <canvas v-if="!panorama" ref="outputFrame" class="pano-studio-output-picture" data-output-picture="frame" aria-hidden="true" />
               <canvas v-else ref="outputErp" class="pano-studio-output-picture" data-output-picture="erp" aria-hidden="true" />
             </StudioOutputPreview>
@@ -379,6 +379,10 @@ function setCollapsed(value) {
               :disabled="!!navOff"
               :disabled-tip="navOff"
               :help-open="!!view.shortcuts"
+              :center-picking="!!ui.pickingCenter"
+              :center-off="cameraTab ? CAMERA_TAB_TIP : ''"
+              @hover="(knob) => stage?.toolbarHover(knob)"
+              @center="stage?.pickCenter()"
               @knob="(knob, event) => stage?.knobDown(knob, event)"
               @help="controller.shortcuts(!view.shortcuts)"
             />

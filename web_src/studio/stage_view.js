@@ -7,7 +7,7 @@ import { frameViewContext, placeDirection, screenRenderSize, shotCamera } from "
 import { lensAngle, lensCurveBent, lensFilm, lensPickWindow, withLensImage } from "../pano_lens.js";
 import { DEFAULT_VIEW_HFOV, placedCamera, spaceCamera } from "../pano_space.js";
 import { cameraAt } from "./camera_state.js";
-import { groundGrid } from "./grid.js";
+import { groundGrid, skyGrid } from "./grid.js";
 
 const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
@@ -154,15 +154,17 @@ export function surfaceHit(camera, x, y, width, height, { ground, picked = null 
 
 // The render input (pano_three_view.js render) of the stage: the view `camera` on the whole canvas of
 // canvasWidth x canvasHeight device px, the background ({ media, revision, coverage } or null), and a space with
-// the ground grid (hidden with `gridHidden`) and the working state's content at the playhead (`content`,
+// the ground grid and the sky grid (both hidden with `gridHidden`; the sky grid's half and carried axes go by `eye`, the
+// camera's position unless given) and the working state's content at the playhead (`content`,
 // stage_content.js stageContent(): its sky layers and its World part; null draws none). Where nothing draws the canvas is
 // `clearColor`, or see-through with null (the stage's loading gradient shows behind while the background loads).
 // The three.js view draws no gizmo: the new UI's is on the 2D overlay (gizmo_overlay.js).
 // `rect` ({ x, y, w, h } device px, render()'s) draws the view into that part instead (the Camera tab's Frame view), and
 // `lens` (pano_editor_view.js shotLensImage) draws it through a lens Camera's pass. `owner` is the draw's
 // (pano_three_view.js; the Output window's picture draws for its own).
-export function stageRenderInput({ camera, canvasWidth, canvasHeight, background, ground, gridHidden, clearColor = STAGE_CLEAR_COLOR, content = null, rect = null, lens = null, owner = "studio-stage" }) {
+export function stageRenderInput({ camera, canvasWidth, canvasHeight, background, ground, gridHidden, clearColor = STAGE_CLEAR_COLOR, content = null, rect = null, lens = null, owner = "studio-stage", eye = camera?.position ?? null }) {
   const grid = groundGrid({ ground, hidden: gridHidden });
+  const sky = skyGrid({ ground, hidden: gridHidden, eye });
   return {
     rect: rect ?? { x: 0, y: 0, w: canvasWidth, h: canvasHeight },
     ...(lens ? { lens } : {}),
@@ -175,6 +177,8 @@ export function stageRenderInput({ camera, canvasWidth, canvasHeight, background
       grid: null,
       // The grid's lines are drawn STAGE_RENDER_SCALE render pixels wide, one device pixel once the picture shrinks.
       ground: grid && { ...grid, linePx: STAGE_RENDER_SCALE },
+      // The sky grid's widths are render pixels as the ground grid's (docs/space-and-view.md "空のグリッド").
+      sky: sky && { ...sky, scale: STAGE_RENDER_SCALE },
       sceneUrls: [],
       scene: null,
       stickerUrls: [],

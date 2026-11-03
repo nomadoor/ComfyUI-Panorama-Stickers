@@ -103,3 +103,12 @@ test("the linked inputs come from the node's isInputConnected, not the deprecate
   assert.deepEqual(linkedInputNames({ inputs }), []);
   assert.deepEqual(linkedInputNames(null), []);
 });
+
+test("while Set orbit center waits the line says what to do, as info, after what did nothing and a done notice, before loading", () => {
+  assert.deepEqual(topLine({ pickingCenter: true }), { kind: "info", text: "Click a spot to orbit around · Esc to cancel" });
+  assert.equal(LINE_TEXT.pickCenter, "Click a spot to orbit around · Esc to cancel");
+  assert.equal(topLine({ pickingCenter: true, notice: "Nothing to focus on" }).text, "Nothing to focus on");
+  assert.equal(topLine({ pickingCenter: true, done: "Camera moved to this view" }).kind, "done");
+  assert.equal(topLine({ pickingCenter: true, view: "loading" }).text, LINE_TEXT.pickCenter);
+  assert.equal(topLine({ pickingCenter: false }).text, "");
+});
