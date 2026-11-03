@@ -39,6 +39,10 @@ async function open(page, delay, requested = []) {
   await page.goto("/tests/browser/pages/depth_color_sync.html");
   await page.waitForFunction(() => window.__studio?.ready, null, { timeout: 30_000 });
   expect(await page.evaluate(() => window.__studio.error)).toBeNull();
+  // The grids hidden: this test reads the stage's middle row, where the sky grid's horizon lies; at the narrow item's
+  // edges the line shifts the edges it finds (the item itself hides the sky grid; docs/space-and-view.md "空のグリッド").
+  await page.locator('[data-action="grid"]').click();
+  await expect(page.locator('[data-action="grid"]')).toHaveAttribute("aria-checked", "false");
   return problems;
 }
 

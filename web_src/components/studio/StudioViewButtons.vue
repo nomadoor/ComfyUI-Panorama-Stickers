@@ -43,7 +43,7 @@ const emit = defineEmits(["frame-selected", "reset-view", "grid"]);
       :aria-checked="String(gridShown)"
       :icon="gridShown ? ICON.grid : ICON.grid_off"
       label="Grid"
-      :tip="gridShown ? 'Ground grid: shown' : 'Ground grid: hidden'"
+      :tip="gridShown ? 'Grid: shown' : 'Grid: hidden'"
       @press="emit('grid', !gridShown)"
     />
   </StudioFloatGroup>

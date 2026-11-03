@@ -62,6 +62,7 @@ import { createSparkViews } from "./pano_spark_views.js";
 import { createDepthGridPickMaterial } from "./pano_depth_grid.js";
 import { LENS_GLSL } from "./pano_lens_glsl.js";
 import { createGroundGrid } from "./pano_ground_grid.js";
+import { createSkyGrid } from "./pano_sky_grid.js";
 import { canvasValueTarget, createLiveErp } from "./pano_live_erp.js";
 
 // The lights of the World pass (docs/render-contract.md "既定の照明", which owns the values; Python's
@@ -912,6 +913,8 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
   let guides = null;
   // The new UI's ground grid (pano_ground_grid.js), made the first time a space asks for it.
   let groundGrid = null;
+  // The new UI's sky grid (pano_sky_grid.js), made the first time a render's space has `sky`.
+  let skyGrid = null;
   // The default lights, always in the World (they change nothing that is not lit).
   const lights = createDefaultLights();
   const lines = { sets: null, lines: [] };
@@ -1329,6 +1332,9 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     if (background && owned.drawable({ id: "background", ...background })) {
       addErp(owned, projection, projection.background, { id: "background", opacity: 1, ...background }, background.coverage === 180);
     }
+    // The new UI's sky grid (space.sky, grid.js skyGrid), over the background and under the layers.
+    const sky = projection === panorama ? input.space?.sky : null;
+    if (sky) scene.add((skyGrid ||= createSkyGrid(domeGeometry)).show(sky));
     let erpIndex = 0;
     let stickerIndex = 0;
     let lensIndex = 0;
@@ -1972,6 +1978,7 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     depthColors.dispose();
     if (guides) disposeObject(guides.group);
     groundGrid?.dispose();
+    skyGrid?.dispose();
     lines.lines.forEach((line) => disposeObject(line));
     gizmo?.dispose();
     worldStickers.forEach((mesh) => mesh.material.dispose());

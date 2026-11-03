@@ -73,8 +73,10 @@ void main() {
   float major = lines(vWorld.xz, 10.0);
   vec4 color = vec4(minorColor.rgb, minorColor.a * lines(vWorld.xz, 1.0) * minorKeep * (1.0 - major));
   color = over(vec4(majorColor.rgb, majorColor.a * major * majorKeep), color);
-  color = over(vec4(axisXColor.rgb, axisXColor.a * axis(vWorld.z) * majorKeep), color);
-  color = over(vec4(axisZColor.rgb, axisZColor.a * axis(vWorld.x) * majorKeep), color);
+  // The axes keep their strength to the plane's edge (no distance fade); past it the sky grid carries them on to the
+  // horizon (pano_sky_grid.js; docs/space-and-view.md "地面のグリッド").
+  color = over(vec4(axisXColor.rgb, axisXColor.a * axis(vWorld.z)), color);
+  color = over(vec4(axisZColor.rgb, axisZColor.a * axis(vWorld.x)), color);
   if (color.a <= 0.002) discard;
   // sRGB values, blended as the canvas blends them (the lens and live ERP faces hold the canvas's values too).
   gl_FragColor = color;

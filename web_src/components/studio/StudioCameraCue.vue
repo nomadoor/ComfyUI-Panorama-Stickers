@@ -1,7 +1,7 @@
 <script setup>
 // The cue of the left column's Camera button (docs/studio-ui.md "エディタの中の Camera", the values in docs/design.md
-// "新しい UI の見た目" "動き"): four soft yellow viewfinder brackets fly in from the stage's corners, pinch once like a
-// focus lock, hold and lift away, over a faint yellow vignette. A CSS layer over the stage: the 3D view is neither
+// "新しい UI の見た目" "動き"): four soft yellow viewfinder brackets slide in from outside fast and slide back out slowly
+// as the layer fades, with a flat translucent yellow fill outside them. A CSS layer over the stage: the 3D view is neither
 // stopped nor drawn again. The editor mounts it once per move (a new key restarts it); it hides itself when its
 // lifetime animation ends, which is also the one that runs with reduced motion.
 import { ref } from "vue";
@@ -16,14 +16,15 @@ const BRACKETS = Object.freeze([
 
 const shown = ref(true);
 
+// The layer's own lifetime animation ended (not its fade, which ends a little earlier).
 function ended(event) {
-  if (event.target === event.currentTarget) shown.value = false;
+  if (event.target === event.currentTarget && event.animationName.endsWith("-life")) shown.value = false;
 }
 </script>
 
 <template>
   <div v-if="shown" class="pano-studio-cue" data-camera-cue aria-hidden="true" @animationend="ended">
-    <div class="pano-studio-cue-vignette" />
+    <div class="pano-studio-cue-fill" />
     <svg
       v-for="bracket in BRACKETS"
       :key="bracket.corner"

@@ -316,6 +316,11 @@ function cameraAxes(camera) {
   return { right: column(rotation, 0), up: column(rotation, 1), forward: back.map((value) => -value) };
 }
 
+// The World direction a camera (spaceCamera()'s, placedCamera()'s) looks along.
+export function cameraForward(camera) {
+  return cameraAxes(camera).forward;
+}
+
 // The key of an item made of several views (a DA3_GEOMETRY multiview element): its views' URLs, in order.
 export function multiviewKey(urls) {
   return `views:${JSON.stringify(urls)}`;

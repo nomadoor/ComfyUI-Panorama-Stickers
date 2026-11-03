@@ -3,10 +3,11 @@
 新しい UI の層（ADR 0044）の、Panorama Studio のエディタと新しい Preview のウィンドウで、使う人が空間の中をどう見て
 どう動くかの規則を定める：視点が一つであること、開いたときの視点と Reset View、量の一覧（目の高さ `E` の倍数の上限と、
 注視点までの距離から求める操作の量）、世界の境界、注視点 `T`、マウスとキーの割り当て（Panorama 表示と Frame 表示）、
-直接の操作となめらかに動く操作、カーソル、視点の操作の部品、地面のグリッド、World の物のガイドとホバー、
+直接の操作となめらかに動く操作、カーソル、視点の操作の部品、オービットの中心の印、地面のグリッドと空のグリッド、World の物のガイドとホバー、
 Add とドロップの着く所、Preview のウィンドウの違い、ウィンドウがフォーカスを失ったとき。用語は `CONTEXT.md` に従う。
 決めた理由は ADR 0045（目的と視点）、0046（地面の高さ）、0047（`docs/adr/0047-view-navigation-and-placement.md`。一つの視点の動かし方と、
-新しく置く物の行き先）にある。
+新しく置く物の行き先）、0058（`docs/adr/0058-orbit-center-mark-and-sky-grid.md`。オービットの中心を見せて決めること、Reset View の行き先、
+空のグリッド）にある。
 
 新しい UI に切り替えるまで、Panorama Studio と Preview は古い UI で開き、その視点の規則は `docs/editor-interaction.md` の
 「視点の操作」と `docs/preview-node.md` の「`PANO_SCENE` を見る」が持つ（ADR 0044 の「置き換えの進め方」）。
@@ -29,13 +30,14 @@ Python はこの文書の規則を持たない（列は `—`）。「（未実�
 | 規則 | Python | JS | test |
 |---|---|---|---|
 | 目の高さ `E` と量の一覧 | — | `web_src/studio/view_scale.js` | `tests/studio_view_scale.test.mjs` |
-| 視点が一つであること、開いたときの視点、Reset View、視点の記憶 | — | `web_src/studio/view_camera.js` `openingView`・`rememberView`・`recallView`、開くと閉じるは `web_src/studio/editor.js`、出力の視点は `web_src/studio/stage_view.js` `outputView`、下の部品 `web_src/pano_view_memory.js` `viewMemory`・`restoredView`、`web_src/pano_node_bridge.js` `editorSession` | `tests/studio_view_camera.test.mjs`、`tests/studio_stage_view.test.mjs`、`tests/pano_view_memory.test.mjs`、`tests/browser/studio_editor.spec.js` |
+| 視点が一つであること、開いたときの視点、Reset View（World の原点へ。ADR 0058）、視点の記憶 | — | `web_src/studio/view_camera.js` `openingView`・`rememberView`・`recallView`・`RESET_VIEW`（Reset View の行き先）、開くと閉じるは `web_src/studio/editor.js`、出力の視点は `web_src/studio/stage_view.js` `outputView`、下の部品 `web_src/pano_view_memory.js` `viewMemory`・`restoredView`、`web_src/pano_node_bridge.js` `editorSession` | `tests/studio_view_camera.test.mjs`、`tests/studio_stage_view.test.mjs`、`tests/pano_view_memory.test.mjs`、`tests/browser/studio_editor.spec.js`、`tests/browser/studio_orbit_center.spec.js`（Reset View） |
 | 世界の境界と、止まったときの知らせ、黙って何もしない操作の知らせ | — | `web_src/studio/view_scale.js` `worldBoundRadius`、`web_src/studio/view_camera.js` `clipToBound`・`createNotice`・`VIEW_NOTICES`、一行の知らせを出すのは `web_src/components/studio/StudioNotice.vue` | `tests/studio_view_scale.test.mjs`、`tests/studio_view_camera.test.mjs`、`tests/browser/studio_editor.spec.js` |
-| 注視点 `T`（初めの `T`、付いて動くこと、距離の範囲、決め直す操作、回る中心） | — | `web_src/studio/view_camera.js` `initialTarget`・`orbitCenter`・`createViewCamera`、ポインタの下の当たりは `web_src/studio/stage_view.js` `surfaceHit`（GPU の当たりと地面の近い方）、下の部品 `pano_space.js` `orbitView`・`viewAxes`・`frameView`・`frameSphere`、`pano_three_view.js` `pick`、`web_src/pano_ray_box.js`。選んだ物（タイムラインで選んだ行の物）の中心は `web_src/studio/stage_content.js` `stickerFrameSphere`、つなぐのは `web_src/studio/editor.js` | `tests/studio_view_camera.test.mjs`、`tests/studio_stage_view.test.mjs`、`tests/browser/studio_editor.spec.js` |
+| 注視点 `T`（初めの `T`、付いて動くこと、距離の範囲と遠い `T` を範囲に戻すこと、決め直す操作（ダブルクリック、Set orbit center）、回る中心） | — | `web_src/studio/view_camera.js` `initialTarget`・`orbitCenter`・`createViewCamera`、ポインタの下の当たりは `web_src/studio/stage_view.js` `surfaceHit`（GPU の当たりと地面の近い方）、下の部品 `pano_space.js` `orbitView`・`viewAxes`・`frameView`・`frameSphere`、`pano_three_view.js` `pick`、`web_src/pano_ray_box.js`。選んだ物（タイムラインで選んだ行の物）の中心は `web_src/studio/stage_content.js` `stickerFrameSphere`、つなぐのは `web_src/studio/editor.js` | `tests/studio_view_camera.test.mjs`、`tests/studio_stage_view.test.mjs`、`tests/browser/studio_editor.spec.js` |
 | マウスとキーの割り当て、直接の操作となめらかに動く操作（Panorama 表示と Frame 表示） | — | `web_src/studio/view_input.js` `navigationAction`・`createViewInput`・`createWheelSteps`、`web_src/studio/view_camera.js` `createViewCamera`、事象を受けるのは `web_src/studio/stage.js`、下の部品 `web_src/pano_view_keys.js` `keyMoveView`・`createMoveKeys`、`web_src/pano_wheel.js` `readWheelDirection`。Frame 表示の視点（`view_camera.js` `createViewCamera` の `frame`）と Camera の Lane への記録はステージ（`stage.js`）と `web_src/studio/editor.js`（`web_src/studio/camera_state.js` `moveCameraPose`。下の記録は `pano_editor_state.js` `setCameraShot`）、続けて回したホイールを Undo の 1 段にまとめる待ちは `view_scale.js` `FRAME_WHEEL_REST_MS`。レンズの Camera（κ ≠ 1）のパンとホイールの GPU の当たりと、パンでポインタの動きを写す点は `web_src/studio/stage_view.js` `lensPickView`・`lensPinholePoint`・`frameViewFov`（下の部品 `pano_lens.js` `lensPickWindow`・`lensAngle`）、使うのは `stage.js`。クリックで選ぶのは `stage_objects.js` `press`（レンズの Camera では写した像で。下の「World の物のガイドと、CPU のホバーとクリックの判定」の行）。 | `tests/studio_view_input.test.mjs`、`tests/studio_view_camera.test.mjs`、`tests/studio_stage_view.test.mjs`、`tests/pano_view_keys.test.mjs`、`tests/browser/studio_editor.spec.js`、`tests/browser/studio_camera_wired.spec.js` |
 | カーソル | — | `web_src/studio/view_input.js` `stageCursor`・`LOOK_CURSOR`・`ORBIT_CURSOR`・`KNOB_CURSOR` | `tests/studio_view_input.test.mjs` |
-| 視点の操作の部品（球・手・矢印、操作中に光ること） | — | `web_src/components/studio/StudioNavWidget.vue`、光る規則は `web_src/studio/view_input.js` `knobAction`・`litKnobs` | `tests/studio_view_input.test.mjs`、`tests/browser/studio_editor.spec.js` |
-| 地面のグリッド（何をどの高さに描き、どこで薄れるか） | — | `web_src/studio/grid.js` `groundGrid`（量は `view_scale.js`）、描く部品は `web_src/pano_ground_grid.js`（`docs/threejs-spark-integration.md`）、スイッチは `web_src/components/studio/StudioViewButtons.vue` | `tests/studio_stage_view.test.mjs`、`tests/browser/studio_editor.spec.js` |
+| 視点の操作の部品（球・手・矢印、操作中に光ること、Set orbit center のボタンとその待ち） | — | `web_src/components/studio/StudioNavWidget.vue`、光る規則は `web_src/studio/view_input.js` `knobAction`・`litKnobs`、待ちとステージのクリックは `web_src/studio/stage.js`（`pickCenter`・`toolbarHover`）、待ちの一行は `web_src/studio/notice_line.js` `topLine` | `tests/studio_view_input.test.mjs`、`tests/studio_notice_line.test.mjs`、`tests/browser/studio_editor.spec.js`、`tests/browser/studio_orbit_center.spec.js` |
+| オービットの中心の印（出すとき、置く点、消え方、描く箱） | — | 出すとき・強さ・置く点・描く箱は `web_src/studio/orbit_marker.js` `orbitMarkerAlpha`・`orbitMarkPoint`・`markOnView`（長さは `view_scale.js`）、状態を集めるのは `web_src/studio/stage.js` `orbitMark`（印だけが変わるフレームは重ね描きだけを描く）、描くのは `web_src/studio/stage_overlay.js` | `tests/studio_orbit_marker.test.mjs`、`tests/studio_stage.test.mjs`（重ね描きだけのフレーム）、`tests/browser/studio_orbit_center.spec.js` |
+| 地面のグリッド（何をどの高さに描き、どこで薄れるか）と空のグリッド（何をどの角度に描き、どこで薄れるか、どちらの半球か） | — | `web_src/studio/grid.js` `groundGrid`・`skyGrid`（量は `view_scale.js`）、描く部品は `web_src/pano_ground_grid.js` と `web_src/pano_sky_grid.js`（`docs/threejs-spark-integration.md`）、スイッチは `web_src/components/studio/StudioViewButtons.vue` | `tests/studio_stage_view.test.mjs`、`tests/output_picture.test.mjs`（Panorama モードの目と前方、出力の絵に描かないこと）、`tests/browser/studio_editor.spec.js`、`tests/browser/ground_grid.spec.js`、`tests/browser/studio_sky_grid.spec.js` |
 | World の物のガイドと、CPU のホバーとクリックの判定 | — | `web_src/studio/world_guides.js`（形・中心・箱の判定・見え方。読み込み中のガイドの箱は `web_src/studio/load_reveal.js` が渡す）、Camera の印の形と当たりは `web_src/studio/camera_marker.js`、3D の Sticker の粗い占有グリッドとその光線は `web_src/pano_coarse_grid.js`・`web_src/studio/hit_test.js`、ステージにつなぐのは `web_src/studio/stage_objects.js`、描くのは `web_src/studio/stage_overlay.js`、下の部品 `pano_space.js` `projectPoint`・`boxCorners`。Camera タブ（Frame 表示）では `stage.js` が Frame 表示の枠の箱で描く（`stage_overlay.js` の `origin`）。レンズの Camera（κ ≠ 1）では、`stage.js` が像を持たせた camera（`pano_lens.js` `withLensImage`。κ を丸めて 1 なら持たせない：`stage_view.js` `cameraFrameHit`）を渡し、3D の点の写し方は `pano_lens.js` `lensProjectPoint`、ポインタの光線は `lensStageRay`、線を分けて写すのは `lensPolylines`（`world_guides.js` `screenLines`）。`projectPoint`・`pano_editor_view.js` `viewProjection`・`hit_test.js` `cameraRay` はその camera のときこれらを通る（「レンズの Camera の当たり」） | `tests/studio_world_guides.test.mjs`、`tests/studio_camera_marker.test.mjs`、`tests/studio_stage_objects.test.mjs`、`tests/studio_hit_test.test.mjs`、`tests/pano_lens.test.mjs`、`tests/browser/studio_select.spec.js`、`tests/browser/studio_hit.spec.js`、`tests/browser/studio_camera_wired.spec.js`、`tests/browser/studio_camera_select.spec.js` |
 | Add とドロップの着く所（Add の画像の二択の後の置き場所を含む）と、ドラッグ中の印の形 | — | `web_src/studio/landing.js`（着く所 `landingHit`・`landingBoxes`・`groundLanding`・`groundBelow`、置く値 `skyPose`・`worldImageTransform`・`file3dTransform`・`file3dPosition`・`facingYaw`、印 `dropMarker`、ラベルの置き場所 `dropLabelPlace`）、置くのは `web_src/studio/add_files.js`、下の部品 `pano_three_view.js` `pick`（板を除く当たり）、CPU の箱の当たりは `web_src/studio/view_camera.js` `boxDepth`、`pano_sticker_geometry.js` `buildStickerGeometry`（Sky の枠） | `tests/studio_landing.test.mjs`、`tests/studio_add_files.test.mjs`、`tests/browser/studio_add.spec.js` |
 | Preview のウィンドウの視点（エディタとの違い、引き継ぎ、地面の高さ、減衰と慣性、グリッドの既定） | — | 減衰と慣性は `web_src/studio/preview_motion.js` `createPreviewMotion`（ステージの `follow`、`web_src/studio/stage.js`）、引き継ぎと地面の高さは `preview_motion.js` `previewOpening`・`previewOpeningPose`・`previewHandBack`・`previewGround`（地面の規則は `pano_scene_state.js` `sceneGround`）、つなぐのは `web_src/studio/preview_window.js`、慣性の減り方の値は `web_src/pano_interaction_controller.js`（ADR 0010） | `tests/studio_preview_motion.test.mjs`、`tests/browser/preview_window.spec.js` |
@@ -70,7 +72,14 @@ Python はこの文書の規則を持たない（列は `—`）。「（未実�
 | `CAMERA_GUIDE_MIN_PIXELS` | 絶対 | 80 px | Camera の印の長さの画面の下限。印の長さは、`CAMERA_GUIDE_LENGTH` と、Camera の位置の深さでこの CSS px に写る長さの大きい方にする（遠くから見ても、地面のグリッドの 1 マスほどに縮んでまぎれないため） |
 | `WORLD_IMAGE_HEIGHT` | `E` | 1 `E`（1.6） | World に置く画像の板の高さ |
 | `GRID_MINOR_FADE` | `E` | 8 `E` → 24 `E`（12.8 → 38.4） | 1 単位の線が薄れ始める距離と消える距離（視点からの水平の距離） |
-| `GRID_MAJOR_FADE` | `E` | 16 `E` → 30 `E`（25.6 → 48） | 10 単位の線と軸が薄れ始める距離と消える距離 |
+| `GRID_MAJOR_FADE` | `E` | 16 `E` → 30 `E`（25.6 → 48） | 10 単位の線が薄れ始める距離と消える距離。X 軸と Z 軸は薄れない（下の「地面のグリッド」） |
+| `SKY_GRID_STEP_DEG` | 絶対 | 30° | 空のグリッドの経線と緯線の間隔（下の「空のグリッド」） |
+| `SKY_LINE_FADE_DEG` | 絶対 | 35° → 72° | 空のグリッドの経線と緯線（軸の経線を除く）が薄れ始める高さと消える高さ（地平線からの角度。極へ向けて薄れる） |
+| `SKY_AXIS_RISE_DEG` | 絶対 | 4° → 40° | 空の軸の経線が現れ始める高さと最も濃くなる高さ（地平線からの角度。これより地平線に近いと薄れ、4° より近くでは描かない） |
+| `SKY_POLE_NEAR_DEG` | 絶対 | 25° → 8° | 極の点が現れ始める、視線と極の間の角度と、最も濃くなる角度 |
+| `SKY_POLE_DOT_DEG` | 絶対 | 0.45° | 極の点の半径（角度） |
+| `ORBIT_MARK_HOLD_SECONDS` | 絶対 | 0.6 秒 | ダブルクリックと Set orbit center で `T` を決めた後、オービットの中心の印をそのまま出しておく長さ（下の「オービットの中心の印」） |
+| `ORBIT_MARK_FADE_SECONDS` | 絶対 | 0.5 秒 | その後、印が消えるまでの長さ（線形に薄れる） |
 | `JOYSTICK_PIXELS` | `d`（絶対の px） | 100 px | 前後のジョイスティックで、1 秒に `d` 進むずれ |
 | `WHEEL_FACTOR` | `d`（絶対の比） | 1.2 | ホイールの一段の縮尺（Blender の一段と同じ） |
 | `PITCH_LIMIT` | 絶対 | 89.9° | 視点の pitch の上限と下限（±） |
@@ -121,8 +130,10 @@ Python はこの文書の規則を持たない（列は `—`）。「（未実�
 - 開いたとき：同じページで同じノードの視点を覚えていればそこから（下の「視点の記憶」）。無ければ出力の視点から始める：
   再生ヘッドでの Camera の位置と yaw（Camera はいつもあり、隠していても撮る。ADR 0048。既定の Camera は World の原点と yaw 0）。
   pitch はどちらも 0（水平。ADR 0046）。`T` は下の「初めの `T`」。
-- Reset View：開いたときの出力の視点（覚えた視点ではない）へ、`ACTION_EASE_SECONDS` で動く。`T` は行き先の視点で求めた
-  「初めの `T`」になる。Frame 表示では使えない（ボタンは隠さずに無効）。
+- Reset View：いつも World の原点・水平（pitch 0）・yaw 0 へ、`ACTION_EASE_SECONDS` で動く（持ち主の決定、2026-11-03。ADR 0058）。
+  Camera の位置ではない（開いたときの出力の視点とも、覚えた視点とも違うことがある）。原点はパノラマを撮った点で、Camera をどこへ
+  動かしても同じ所へ戻れる。`T` は行き先の視点で求めた「初めの `T`」になる。Frame 表示では使えない（ボタンは隠さずに無効）。
+  開いたときの視点は上のまま（出力の視点）。
 - 視点の記憶：エディタを閉じたときの表示（Panorama・Frame）、`P`・`yaw`・`pitch`・`d` をノードごとに覚え、同じページで
   開き直すとそこから始まる（`T` は前方 `d` の点。置き場所と消える時は今の `editorSession(node).view` のまま）。なめらかに
   動いている途中で閉じたときは、行き先を覚える。覚えた値が使えないとき（数でない、Frame 表示が使えない）は、全部を出力の
@@ -159,13 +170,13 @@ Python はこの文書の規則を持たない（列は `—`）。「（未実�
 
 | 操作 | 知らせ |
 |---|---|
-| 空（何にも当たらない所）へのダブルクリック | 「Nothing to focus on」 |
+| 空（何にも当たらない所、または世界の境界の外の当たり）へのダブルクリックと、Set orbit center の待ちのクリック | 「Nothing to focus on」 |
 | World の内容も選んだ物も無いときの Frame Selected | 「Nothing to frame」 |
 
 ## 注視点 `T`
 
-視点が持ち続ける一つの点で、オービットの中心になる。SuperSplat の焦点、Blender のビューの中心と同じ考え。画面に印は
-出さない。
+視点が持ち続ける一つの点で、オービットの中心になる。SuperSplat の焦点、Blender のビューの中心と同じ考え。ふだん画面に印は
+出さず、使う人が中心を気にするときだけ出す（下の「オービットの中心の印」。ADR 0058）。
 
 - 表面の当たり：この文書で「表面の当たり」は、光線と World の 3D の物（`scene` の中身、3D の Sticker）と地面（y = `ground`）の
   当たりのうち、視点に最も近いものをいう。`world` の画像の板は素通りする（板を当たりに数えない）。パン、ホイール、Add と
@@ -180,15 +191,26 @@ Python はこの文書の規則を持たない（列は `—`）。「（未実�
 - 付いて動く：見回し・パン・ジョイスティック・WASD / QE では、`T` を画面の中心の線の上の、動く前の距離 `d` の点に置き直す。
   オービットでは `T` は World の中でも画面の上でも動かない。ホイールは下の「ホイール」。
   - 選んだ物のまわりのオービット（下の「回る中心」）の後は、`T` は画面の中心から外れている。次の見回し・パン・ジョイスティック・
-    WASD / QE が、`T` を画面の中心の線の上の距離 `d` の点に戻す（そのとき `T` は World の中で跳ぶが、画面には印が無い）。
+    WASD / QE が、`T` を画面の中心の線の上の距離 `d` の点に戻す（そのとき `T` は World の中で跳ぶ。印を出していれば、印も新しい `T` へ移る）。
     `T` が外れたまま空でホイールを回すと、外れた `T` を中心に縮尺するので、絵がずれて動く。
-- 距離の範囲：`d` はいつも `TARGET_MIN_DISTANCE` 以上 `TARGET_MAX_DISTANCE` 以下にする。範囲の外の点を `T` にするときは、
-  `P` からその点への線の上で範囲に寄せる。なめらかに動く操作の行き先にも当てる。
+- 距離の範囲：`d` は `TARGET_MIN_DISTANCE` 以上 `TARGET_MAX_DISTANCE` 以下にする。範囲の外の点を `T` にするときは、
+  `P` からその点への線の上で範囲に寄せる（初めの `T`、Frame Selected、付いて動くときの置き直し）。
+  - 例外は、使う人が点を指した `T`：ダブルクリックと Set orbit center の当たり、オービットを始めるときの回る中心（選んだ物の中心、
+    Camera の位置）。これらは指した点そのものを `T` にし、`TARGET_MIN_DISTANCE` の下限だけを当てる（`P` と同じ点なら `forward` へ
+    `TARGET_MIN_DISTANCE` の点）。遠い地面を指しても `T` は宙に浮かず、指した所のまわりを回る（ADR 0058）。
+  - 範囲の外にある `T` は、オービットではそのまま使う。ホイール・ジョイスティック・WASD / QE は、動かす前に `T` を `P` から `T` への
+    同じ線の上で範囲に戻し、戻した `T` で量を求める（`T` は画面の同じ位置に残り、近づくだけ）。戻すのと動かすのは同じ一段（ホイール）・
+    同じフレーム（ジョイスティック、WASD / QE）の中で行い、戻しただけの段やフレームは作らない。これらの量は `d` に比例するので、
+    遠い `T` のまま求めると一度に何十の単位も跳ぶためである。見回し・パンは今までどおり `T` を範囲の中に置き直す（上の「付いて動く」）。
+    パンの深さの頭打ちは下の「直接の操作」のまま。
 - 黙って探し直さない：押したとき・ホイールのたびに、`T` を求め直すことはしない（求め直すと、回る量と動く量が毎回変わる）。
   `T` が変わるのは、上の「付いて動く」とホイールと、次の操作だけである。
-  - ダブルクリック（Panorama 表示と Preview）：ポインタの下の当たりを GPU で求める。表面の当たりと違い、`world` の画像の板にも
-    当てる（唯一の例外。見えている物に焦点を合わせる操作なので、見えている板も数える）。その点を `T` にして、視点を `T` が画面の中心に来る向きへ `ACTION_EASE_SECONDS` で
-    向ける（位置は動かさない）。当たりが無い（空）ときは動かさず、上の「黙って何もしない操作」の知らせを出す。
+  - ダブルクリック（Panorama 表示と Preview。Alt を押していても同じ）：ポインタの下の当たりを GPU で求める。表面の当たりと違い、`world` の画像の板にも
+    当てる（唯一の例外。見えている物に焦点を合わせる操作なので、見えている板も数える）。その点をそのまま `T` にして（上の「距離の範囲」の例外）、視点を `T` が画面の中心に来る向きへ `ACTION_EASE_SECONDS` で
+    向ける（位置は動かさない）。当たりが無い（空）とき、または当たりが世界の境界の外のときは動かさず、上の「黙って何もしない操作」の知らせを出す
+    （境界の外の当たりはホイールと同じく空として扱う）。`T` を決めると、オービットの中心の印をその点に出して消す（下の「オービットの中心の印」）。
+    ペイントの道具（Paint・Mask）を選んでいる間は、ダブルクリックは何もしない（ストロークのための押下を奪わないため）。
+  - Set orbit center（右の視点の操作の部品のボタン。下の「視点の操作の部品」）：待っている間の左クリックが、ダブルクリックと同じことをする。
   - Frame Selected：下の「Frame Selected」。
   - Reset View：上の「開いたときの視点と Reset View」と「初めの `T`」。
   - オービットを始めるとき：下の「回る中心」。
@@ -214,7 +236,7 @@ Camera そのものを動かす。
 | Alt + 中ボタンのドラッグ | 前後のジョイスティック |
 | ホイール | ポインタの下の点へ近づく・離れる一段 |
 | W / S・A / D・Q / E のキー | 前後・左右・下上（近道。同じことはマウスでもできる） |
-| ダブルクリック（Panorama 表示） | そこを `T` にして向く（上の「注視点 `T`」） |
+| ダブルクリック（Panorama 表示。Alt を押していても同じ） | そこを `T` にして向く（上の「注視点 `T`」） |
 
 - 物に触るのは Alt なしの左ボタンだけ。物の上の左ボタンは選択と編集（「選択と編集」の画面の spec。それまでは
   `docs/editor-interaction.md`）。動かさずに離した何もないところの左クリックは、今と同じく選択を外す。
@@ -226,7 +248,8 @@ Camera そのものを動かす。
 ### 直接の操作
 
 ドラッグ・ジョイスティック・キーは、ポインタとキーに 1 対 1 で、その場で当たる。エディタでは遅れ（追従）も慣性も付けない
-（ADR 0047）。
+（ADR 0047）。ドラッグの動きを 0.2 秒かけて追う追従（SuperSplat の `TweenValue` と同じ quintic の ease-out）は 2026-11-03 の試作で
+もう一度試し、持ち主が「ラグい」として捨てた（ADR 0058）。
 
 - 見回し：`P` は動かない。ドラッグの (dx, dy) 画素で `yaw` を dx ÷ 幅 × 横の画角だけ減らし、`pitch` を dy ÷ 高さ × 縦の画角
   だけ増やす（`PITCH_LIMIT` で止める）。絵はおおよそポインタに付いて動く（画面の端と pitch の大きいところでは、角度を画素に
@@ -265,6 +288,7 @@ Camera そのものを動かす。
   `WHEEL_STEP_PIXELS` より小さいもの）は、同じ向きの `deltaY` を溜め、`WHEEL_STEP_PIXELS` に達するごとに一段にする（向きが変わったら
   溜めた分を捨てる。ADR 0048）。ポインタの下の表面の当たり `G` を中心に、視点を縮尺する：`P' = G + k (P − G)`、`T' = G + k (T − G)`。
   `P` から `G` を通る線の上の点はどれも画面の同じ位置に留まるので、`G` はポインタの下に留まり、`d` も `k` 倍になる。
+  - 一段の前に、`T` が距離の範囲の外にあれば範囲に戻してから（上の「注視点 `T`」の「距離の範囲」）、`d` と `k` を求める。
   - `G` の代わりに `T` を使うとき：当たりが無い（空）、当たりが視点から `TARGET_MAX_DISTANCE` より遠い、当たりが世界の境界の外。
     `G` ＝ `T` のときは、`T` を動かさずに `d` を `k` 倍する Blender のふつうのズームになる。
   - `k`：近づくときは 1 ÷ `WHEEL_FACTOR` 以上 1 以下、離れるときは 1 以上 `WHEEL_FACTOR` 以下で、そのうえ
@@ -368,14 +392,16 @@ Camera である（表示が 1.00 なら pinhole と同じに扱う。保存し�
 | オービットのドラッグ中 | オービットのカーソル |
 | パンのドラッグ中 | `move` |
 | ジョイスティックのドラッグ中 | `ns-resize` |
+| Set orbit center の待ち（ステージのどこでも、物の上でも。下の「視点の操作の部品」） | `crosshair` |
 
 触れる物の判定は下の「ホバーの判定」の CPU の判定（クリックと同じ）で、GPU の当たりを読まない。
 
 ## 視点の操作の部品
 
 ステージの右の縦の中央（左の道具の列と左右対称。ADR 0048。置き場所の全体は `docs/studio-ui.md` の「画面の区画」）に、三つのつまみを
-縦に並べる。どれもドラッグするつまみで、押すたびに切り替わるボタンではない。つまみの列のすぐ下に、ショートカットの一覧を開く
-「?」のボタンを置く（中身は `docs/studio-ui.md`）。
+縦に並べる。どれもドラッグするつまみで、押すたびに切り替わるボタンではない。つまみの列の下に区切りの線を置き、その下に、押す
+ボタンを二つ縦に並べる：Set orbit center（下）と、ショートカットの一覧を開く「?」（中身は `docs/studio-ui.md`）。ドラッグするつまみと
+押すボタンを区切りで分ける（ADR 0058）。
 
 | つまみ | ドラッグの動き | tooltip |
 |---|---|---|
@@ -388,25 +414,105 @@ Camera である（表示が 1.00 なら pinhole と同じに扱う。保存し�
   オービット（Alt + ドラッグ、球のドラッグ）は球、パン（中ボタン、手のドラッグ）は手、前後（Alt + 中ボタン、矢印のドラッグ、
   WASD / QE の移動）は矢印。見回しには当たるつまみが無いので光らせない。Alt を押している間は、Alt のドラッグに当たるつまみ
   （球と矢印）も光らせる。光らせるのは表示だけで、状態にも Undo にも入らない。
+- 球にポインタを載せている間は、オービットの中心の印を出す（下の「オービットの中心の印」）。
 - つまみの上のホイールと右クリックのメニューは、ステージに渡さない。
 - つまみの席は 3D タブでも Camera タブでも Preview のウィンドウでも同じで、出たり消えたりしない。操作できないとき（読み取り
   専用の Camera タブ、ロックした Camera、Panorama モードの Camera タブ）は隠さずに無効にする。右下のボタン群と、Camera タブで無効に
   する部品（Reset View・左の道具）は `docs/studio-ui.md` の「画面の区画」と「Camera タブ」が持つ。
 
+### Set orbit center
+
+オービットの中心を、ステージの一点をクリックして決めるボタン（ADR 0058）。ダブルクリックと同じことを、知らなくても見つけられる
+入口として置く。
+
+- 押すと、次の一回の左ボタンの押下を待つ状態に入る。待っている間：
+  - ボタンは待っている見た目にする（選ばれた状態の灰の強い塗りではなく、操作を待っていると分かる形。値は `docs/design.md` の「大きさ」の
+    「Set orbit center の待ち」）。
+  - ステージのカーソルは `crosshair`（上の「カーソル」）。
+  - 上端の中央の一行に「Click a spot to orbit around · Esc to cancel」を出す（`docs/studio-ui.md` の「一行の知らせの種類」の知らせるだけ）。
+    この文を出すのは待っている間だけで、Alt を押したときなどほかの時には出さない（Alt のたびに文が出るのはうるさい。ADR 0058）。
+  - オービットの中心の印を出す（下の「オービットの中心の印」）。
+- 決めるのは、待っている間のステージの左ボタンの押下（`pointerdown`）。押した点の当たりを、ダブルクリックと同じく `T` にしてそちらへ向く
+  （上の「注視点 `T`」）。押した後にポインタを動かしても見回しにならない。Alt を押していても、物の上でも、ペイントの道具（Paint・Mask）を
+  選んでいても、待ちの押下が先に取る（物を選ばず、編集せず、ストロークを描かない）。当たりが無いか境界の外なら動かさず、
+  「Nothing to focus on」を出す。どちらでも待ちは終わる。
+- 待っている間も、右ボタン・中ボタンのドラッグ、ホイール、WASD / QE はふだんどおり効く。Reset View と Frame Selected も効き、待ちは続く。
+- 待ちをやめる（何も動かさない）：Escape（`docs/studio-ui.md` の「閉じ方」の表。視点のドラッグの最中なら、Escape は先にそのドラッグが取る）、
+  ボタンをもう一度押す、タブを変える（撮り方のモードを変えたときも）、ウィンドウがフォーカスを失う（下の「ウィンドウがフォーカスを失ったとき」）。
+  `Set ground` の待ち（`docs/studio-ui.md` の「種類ごとの中身」。まだ作っていない）ができたら、待ちは一度に一つにする：`Set ground` の待ちを
+  始めると Set orbit center の待ちをやめ、逆も同じ。
+- tooltip：ふだんは「Set orbit center · or double-click a spot」、待っている間は「Click a spot to orbit around · Esc to cancel」。
+- Camera タブでは使えない（Frame 表示にはダブルクリックで `T` を決め直す操作が無い。上の「Frame 表示」）。同じ席に出したまま無効にし、
+  tooltip は「Not available in the Camera view」。Preview のウィンドウでは 3D タブと同じに働く（下の「Preview のウィンドウ」）。
+
+## オービットの中心の印
+
+`T`（回る中心）を画面に示す、小さな点と細い輪の印（ADR 0058）。中心がどこか分からないまま回ると、目が遠い腕で振り回されて
+「速すぎる」と感じるため、中心を気にする時だけ見せる。
+
+- 出すとき（どれか一つでも当てはまる間）：
+  - Alt を押している間。
+  - オービットの間（Alt + ドラッグ、球のつまみのドラッグ。オービットの途中で Alt を離しても出し続ける）。
+  - 球のつまみにポインタを載せている間。
+  - Set orbit center にポインタを載せている間と、待っている間。
+  - ダブルクリックか Set orbit center で `T` を決めた直後：`ORBIT_MARK_HOLD_SECONDS` そのまま出し、`ORBIT_MARK_FADE_SECONDS` で消す。
+- 置く点：World の中の点に置き、画面の点には置かない（視点が動けば、印は World と一緒に画面の上を動く）。
+  - 次のオービットが回る中心（上の「回る中心」：選んだ物の中心、3D タブで選んだ Camera の位置、どちらも無ければ `T`）：Alt を押している間と、
+    球のつまみに載せている間。オービットの間でも、Set orbit center の待ちでもなければ、これがほかより先に当たる（Alt を押しながら
+    Set orbit center に載せていれば、こちら）。
+  - そのほか（オービットの間、Set orbit center に載せている間・待っている間、`T` を決めた直後）は、今の `T`。`T` を決めた直後の `T` は決めた点
+    （クリックした点）で、決めた瞬間からその点に出し、視点がそちらへ向く間も World のその点に留まる（画面では視点と一緒に動き、最後に
+    画面の中心に着く）。前の `T` から滑ってこない（なめらかに動く途中の補間した `T` には置かない。行き先の `T` に置く）。
+  - 見回し・パン・ジョイスティック・WASD / QE が `T` を置き直せば（上の「付いて動く」）、印も新しい `T` へ移る。
+- 3D タブ、Camera タブの Frame 表示（`T` は Camera の Frame 表示の `T`）、Preview のウィンドウで出す。Panorama モードの Camera タブでは
+  出さない（何も動かないため）。Camera タブで出すのは Alt・オービット・球に載せている間だけ（ダブルクリックと Set orbit center は無い）。
+  操作できない Camera タブ（読み取り専用、ロックした Camera）では出さない。
+- 視点の後ろにある点や、画面の外の点には描かない。
+- 印は表示だけで、当たりに数えず、状態にも Undo にも入らない。見た目の値は `docs/design.md` の「大きさ」の「オービットの中心の印」。
+
 ## 地面のグリッド
 
 - 地面は y = `ground` の水平の面。グリッドはその面に、地平線まで描く（内容の大きさで間隔を変えない）：
   - 1 単位ごとの線。視点からの水平の距離で `GRID_MINOR_FADE` のあいだに薄れて消える。
-  - 10 単位ごとの、より薄い線と、X 軸と Z 軸（ギズモの同じ軸と同じ色。X は珊瑚、Z は氷。値は `docs/design.md`）。`GRID_MAJOR_FADE` のあいだに薄れて消える。
+  - 10 単位ごとの、より薄い線。`GRID_MAJOR_FADE` のあいだに薄れて消える。
+  - X 軸と Z 軸（ギズモの同じ軸と同じ色。X は珊瑚、Z は氷。値は `docs/design.md`）。距離で薄れず、同じ濃さで地平線まで描く（ADR 0058。
+    薄れると、どちらが X か分からなくなった）。グリッドの板の外（視点から `GRID_MAJOR_FADE` の消える距離より先）は、空のグリッドを描く
+    層が同じ地面の上の続きとして地平線まで描く（下の「空のグリッド」、描き方は `docs/threejs-spark-integration.md`）。地平線の近くでも
+    一本の線のままで、地平線に沿ってにじまない。
   - 1 画素より細くなる線は、ちらつかないように薄くする。グリッドは深度を書かず、World の物はその上に前後どおり描く。
 - 原点に印は描かない。X 軸と Z 軸の線が原点で交わるので原点はそれで分かり、既定の Camera の位置（Camera の印）とも重なるため
   （持ち主の決定、2026-10-30。ADR 0047 の「原点の印」を改める）。「ERP origin」の文字も出さない。原点はパノラマを撮った点で、
   既定の Camera の位置（Camera を動かしていないときの出力の視点）である。
 - グリッドは Camera タブ（Frame モードと Panorama モード。Panorama モードでは開いた ERP の上に）にも描く。何も無い空間でも、地面と地平線で Camera の向きと高さが分かるように
   するためである（ADR 0048）。編集の目印なので出力には写らない。
-- グリッドのスイッチ（右下のボタン群。`docs/studio-ui.md` の「画面の区画」）はグリッドを隠す。3D タブと Camera タブで同じ一つの設定である
+- グリッドのスイッチ（右下のボタン群。`docs/studio-ui.md` の「画面の区画」。tooltip は「Grid: shown」「Grid: hidden」）は地面のグリッドと空のグリッドを一緒に隠す。3D タブと Camera タブで同じ一つの設定である
   （World の物のガイドについては下）。
 - グリッドの線の色・太さ・濃さの値は `docs/design.md` が持つ。
+
+### 空のグリッド
+
+無限遠の Sky の球に描く経緯線（ADR 0058）。地面の無い向き（空を見上げたとき、空だけの場面）でも、どちらを向いているかが分かるように
+する。無限遠にあるので、視点がどこにいても同じ向きに見え、視点の向きだけで動く。
+
+- 描く物：
+  - 経線と緯線を `SKY_GRID_STEP_DEG` ごとに描く。地平線（赤道）から極へ向けて、`SKY_LINE_FADE_DEG` のあいだに薄れて消える（経線が極に
+    集まって星の形にならないように）。線どうしが数画素より近づく所は、ちらつかないように薄くする。
+  - 軸の経線：+X と −X の向きを通る経線（X 軸、珊瑚）と、+Z と −Z の向きを通る経線（Z 軸、氷）を、ほかの線より太く描く。地面の X 軸と
+    Z 軸を見上げた続きで、極で十字に交わる。地平線から遠いほど濃く、地平線へ下りるほど薄くし（`SKY_AXIS_RISE_DEG`）、地平線のそばでは
+    描かない。地平線では地面の軸が続きを持ち、空の軸と二重にならない。
+  - 地平線：細い中立の線（帯やぼかし、色の付いた光は付けない）。
+  - 極の点：見えている半球の極（地面より上にいれば天頂）に小さな点を描く。視線が極に `SKY_POLE_NEAR_DEG` より近づいたときだけ現れ、
+    離れると消える。輪は描かない（真上・真下を見たときに視界を塞ぐため）。
+- 半球は目のいる側に従う：目が地面の高さ以上（y ≥ `ground`）なら上の半球だけを、下（y < `ground`）なら下の半球だけを描き、反対の半球には
+  描かない（そちらは地面のグリッドが受け持つ）。下の半球も同じ見た目を上下に写した形で描く（軸の経線は地平線から遠いほど濃く、極の点は天底）。
+  地平線の線はどちらでも描く。地面の軸の続き（上の「地面のグリッド」）も、目のいる側の地面に描く。目がちょうど地面の高さにあるときは、
+  地面の軸の続きを描かない（地面が線にしか見えないため）。
+- 目：3D タブと Preview のウィンドウでは視点の位置、Camera タブ（Frame 表示と Panorama モードの開いた ERP）では撮る Camera の位置。半球と
+  地面の軸の続きはこの目で決める。
+- 描く順：背景の上、Sky の層（Sky の Sticker、ペイント）と World の物の下。World の物と Sky の層は空のグリッドを隠す。
+- 描く所と出し入れは地面のグリッドと同じ（3D タブ、Camera タブ、Preview のウィンドウ。同じスイッチで一緒に隠す）。編集の目印なので、
+  出力、Output の小窓、ノード上の表示には写さない。
+- 線の色・太さ・濃さの値は `docs/design.md` の「大きさ」の「空のグリッド」。
 
 ## World の物のガイド
 
@@ -535,7 +641,7 @@ ADR 0047）。
   同じ席に置く。
 - 無いもの：選択、ガイドとホバーの強調、ドロップ、Add、ギズモ、Frame 表示、Frame Selected。物が無いので、左ドラッグはいつも
   見回しで、カーソルは物のカーソルにならない。
-- `T` を決め直すのはダブルクリックと Reset View だけ（Preview には選択が無いので、回る中心はいつも `T`）。
+- `T` を決め直すのはダブルクリック、Set orbit center と Reset View だけ（Preview には選択が無いので、回る中心はいつも `T`）。
 - 開いたとき：ノード上の表示から `P`・`yaw`・`pitch` を引き継ぐ（`docs/preview-node.md` の「大きなウィンドウ」）。画角は
   `DEFAULT_VIEW_HFOV`、`T` は「初めの `T`」で求める。引き継ぐものが無ければ原点、yaw 0、pitch 0。閉じると、ノード上の表示が
   ウィンドウの最後の `P`・`yaw`・`pitch` を引き継ぐ（今と同じ。なめらかに動いている途中や慣性で動いている途中なら、その時の
@@ -559,9 +665,13 @@ ADR 0047）。
     その速さでドラッグしたのと同じに動く（パンは離したときに掴んでいた深さのまま）。
   - 慣性は、ほかの視点の操作（押す、ホイール、ダブルクリック、WASD / QE、Reset View）を始めたときにも止まる。慣性で動いている間に
     別の操作が足されることはない。
-- 地面のグリッドは、既定で隠す。出すかどうかは見る人が右下のボタン群の決まった席のスイッチ（on / off）で決める
+- グリッド（地面と空）は、エディタと同じく既定で出す（ADR 0058 が ADR 0047 の「Preview では既定で隠す」を置き換える。空のグリッドで向きが
+  分かるのは、見るための場所でも役に立つため）。隠すかどうかは見る人が右下のボタン群の決まった席のスイッチ（on / off）で決める
   （押すたびに状態が反転するボタンにしない。`docs/agents/ux-principles.md`）。席は出たり消えたりしない。World の内容の有無で
   自動で出し入れせず、隠している間に絵が変わらない移動をしても知らせない（スイッチがいつも見えているため。ADR 0047）。
+- オービットの中心の印と Set orbit center はエディタと同じに働く（上の「オービットの中心の印」「Set orbit center」）。Set orbit center の
+  待ちの文は、Preview のウィンドウにはふだん一行の知らせが無いので、エディタと同じ上端の中央の席に、待っている間だけその一行を出す
+  （`docs/studio-ui.md` の「Preview のウィンドウ」）。
 
 ## ウィンドウがフォーカスを失ったとき
 
@@ -571,6 +681,7 @@ ADR 0047）。
 - 修飾キーの状態（Alt を押していないものとする）。
 - 押しているキー（全部を離したものとする。下の「キーを離したものとするとき」）。
 - ホバーの状態（ガイドのホバー、ギズモのハンドルの強調、部品のつまみの強調）。
+- Set orbit center の待ち（何も動かさずにやめる）。
 - 進んでいるジェスチャー（ドラッグ、ジョイスティック）は、その時点で離したものとして終える。Frame 表示で Camera を動かして
   いたときは、そこまでを Undo の 1 段にする。
 

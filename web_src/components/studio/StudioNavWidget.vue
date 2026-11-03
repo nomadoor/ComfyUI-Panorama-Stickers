@@ -16,8 +16,14 @@ defineProps({
   disabled: { type: Boolean, default: false },
   disabledTip: { type: String, default: "" },
   helpOpen: { type: Boolean, default: false },
+  // Set orbit center waits for a click on the stage (docs/space-and-view.md "Set orbit center"), and why it is disabled
+  // ("" when it is not; it works in the 3D tab and the Preview window only).
+  centerPicking: { type: Boolean, default: false },
+  centerOff: { type: String, default: "" },
 });
-const emit = defineEmits(["knob", "help"]);
+// `hover` out with the button the pointer comes over ("orbit", "center") or null when it leaves, so the stage shows the
+// orbit center's mark (docs/space-and-view.md "オービットの中心の印"); `center` out when Set orbit center is pressed.
+const emit = defineEmits(["knob", "help", "hover", "center"]);
 const help = ref(null);
 defineExpose({ helpButton: () => help.value?.$el ?? null });
 
@@ -26,6 +32,11 @@ const KNOBS = [
   { key: "pan", icon: ICON.hand, label: "Pan", tip: "Drag to pan · middle-drag in the view" },
   { key: "move", icon: ICON.arrows_vertical, label: "Move forward/back", tip: "Drag to move forward/back · Alt+middle-drag" },
 ];
+// Set orbit center's tooltips, idle and while it waits for a click (docs/space-and-view.md "Set orbit center").
+const CENTER_TIP = Object.freeze({
+  idle: "Set orbit center · or double-click a spot",
+  picking: "Click a spot to orbit around · Esc to cancel",
+});
 </script>
 
 <template>
@@ -42,8 +53,23 @@ const KNOBS = [
         :lit="lit.includes(knob.key)"
         :disabled="disabled"
         @pointerdown="!disabled && emit('knob', knob.key, $event)"
+        @pointerenter="knob.key === 'orbit' && !disabled && emit('hover', 'orbit')"
+        @pointerleave="knob.key === 'orbit' && emit('hover', null)"
       />
       <span class="pano-studio-sep" />
+      <StudioIconButton
+        data-action="orbit-center"
+        size="knob"
+        :icon="ICON.orbit_center"
+        label="Set orbit center"
+        :tip="centerOff || (centerPicking ? CENTER_TIP.picking : CENTER_TIP.idle)"
+        :class="{ 'is-waiting': centerPicking }"
+        :disabled="!!centerOff"
+        :aria-pressed="centerPicking ? 'true' : 'false'"
+        @pointerenter="!centerOff && emit('hover', 'center')"
+        @pointerleave="emit('hover', null)"
+        @press="emit('center')"
+      />
       <StudioIconButton
         ref="help"
         data-action="shortcuts"

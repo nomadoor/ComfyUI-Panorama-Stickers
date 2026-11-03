@@ -2,7 +2,7 @@
 // 描く"): the render inputs the editor's Output window and Panorama Studio's node surface give the lower three.js view, so
 // both draw the same picture. Pure: the callers draw them (pano_three_view.js render / renderLiveErp).
 import { shotCamera, shotLensImage } from "../pano_editor_view.js";
-import { placedCamera } from "../pano_space.js";
+import { placedCamera, viewAxes } from "../pano_space.js";
 import { liveErpView } from "./erp_preview.js";
 import { STAGE_CLEAR_COLOR, stageRenderInput } from "./stage_view.js";
 import { eyeHeight } from "./view_scale.js";
@@ -27,11 +27,14 @@ export function outputFrameInput({ shot, ground, radius, width, height, backgrou
 }
 
 // Panorama mode: the input of pano_three_view.js renderLiveErp for the live ERP from the Camera's position, `width` x
-// `height` pixels (erp_preview.js liveErpSize) on `canvas`, over `erpRange` (360 or 180), without the ground grid unless
-// `gridHidden` is false (the Camera tab's frame draws it).
+// `height` pixels (erp_preview.js liveErpSize) on `canvas`, over `erpRange` (360 or 180), without the grids unless
+// `gridHidden` is false (the Camera tab's frame draws them).
 export function outputErpInput({ shot, erpRange, ground, radius, width, height, background, content, owner, canvas, gridHidden = true }) {
   const planes = planesAt({}, shot, ground, radius);
-  const input = stageRenderInput({ camera: null, canvasWidth: 1, canvasHeight: 1, background, ground, gridHidden, content });
+  // The sky grid's eye is the Camera's position, its pole dot goes by the Camera's forward (docs/space-and-view.md
+  // "空のグリッド").
+  const forward = viewAxes(shot.yaw_deg, shot.pitch_deg, shot.roll_deg ?? 0).forward;
+  const input = stageRenderInput({ camera: null, canvasWidth: 1, canvasHeight: 1, background, ground, gridHidden, content, eye: shot.position, forward });
   return {
     owner,
     canvas,
