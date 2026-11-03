@@ -2,11 +2,11 @@
 // object, and the gizmo's modes on the keys 1, 2 and 3. Pure; components/studio/StudioSelectionBar.vue draws it and
 // studio/editor.js does what its buttons say.
 import { ICON } from "../icons.js";
-import { sceneStickerLabel } from "../pano_editor_state.js";
 import { paintObjectOf } from "../pano_paint_objects.js";
 import { is3dFileSource } from "../pano_scene_state.js";
 import { UPSTREAM_INHERITED_TIP as INHERITED_TIP, isUpstreamSticker, upstreamStickerInherited } from "../pano_upstream.js";
 import { findSticker } from "./row_object.js";
+import { objectLabel } from "./timeline_model.js";
 
 // The gizmo's modes (pano_three_view.js createGizmo) and their keys.
 export const GIZMO_MODES = Object.freeze([
@@ -116,5 +116,5 @@ export function selectionBar({ state, row, mode = "translate", readOnly = false,
     const tip = inherited ? INHERITED_TIP : `Back to source · every value back to the ${theirs ? "upstream's" : "input's"}`;
     groups.push([button("revert", ICON.back_initial, "Back to source", { disabled: edits, tip })]);
   }
-  return { kind, icon: kind === "sky" ? ICON.pano : ICON.box, name: sceneStickerLabel(sticker), fixedName: false, groups };
+  return { kind, icon: kind === "sky" ? ICON.pano : ICON.box, name: objectLabel(sticker), fixedName: false, groups };
 }
