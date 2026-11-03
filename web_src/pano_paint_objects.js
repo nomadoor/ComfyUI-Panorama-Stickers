@@ -102,7 +102,9 @@ function mapStrokeGroupPoints(strokes, gid, sources, map) {
 // strokes as a drag started; null moves them from where they are). rot_deg does not change. Returns whether it changed
 // a point.
 export function moveStrokeGroupTo(strokes, gid, frame, centerTo, sources = null) {
-  const to = strokeGroupAxes(centerTo, frame.rot_deg);
+  // Onto a pole (the old editor's Unwrap view holds the latitude at ±90°) it keeps the longitude its center had.
+  const fromYaw = Math.atan2(frame.center.x, frame.center.z) * (180 / Math.PI);
+  const to = strokeGroupAxes(centerTo, frame.rot_deg, { poleYawDeg: fromYaw });
   const axes = [["right", "right"], ["up", "up"], ["center", "center"]];
   return mapStrokeGroupPoints(strokes, gid, sources, (pt) => {
     const p = directionOfErpPoint(pt);

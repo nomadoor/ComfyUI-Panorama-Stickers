@@ -864,10 +864,12 @@ const POLE_EPS = 1e-9;
 
 // The axes of a stroke group's frame of center direction `center` turned by rotationDeg (clockwise seen from inside):
 // cameraBasis at the center's longitude and latitude with the roll -rotationDeg (a sky Sticker's roll turns its picture
-// counter-clockwise, docs/scene-state-v2.md): { center, right, up } (center: the basis's forward).
-export function strokeGroupAxes(center, rotationDeg = 0) {
+// counter-clockwise, docs/scene-state-v2.md): { center, right, up } (center: the basis's forward). On a pole the
+// longitude is poleYawDeg (0 unless given: a move onto the pole keeps the one it came from, as a sky Sticker keeps its
+// yaw).
+export function strokeGroupAxes(center, rotationDeg = 0, { poleYawDeg = 0 } = {}) {
   const onPole = Math.abs(center.x) < POLE_EPS && Math.abs(center.z) < POLE_EPS;
-  const yaw = onPole ? 0 : Math.atan2(center.x, center.z) / DEG2RAD;
+  const yaw = onPole ? poleYawDeg : Math.atan2(center.x, center.z) / DEG2RAD;
   const pitch = Math.asin(clamp(center.y, -1, 1)) / DEG2RAD;
   const basis = cameraBasis(yaw, pitch, -Number(rotationDeg || 0));
   return { center: basis.fwd, right: basis.right, up: basis.up };

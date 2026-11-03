@@ -19386,9 +19386,9 @@ function Ec(e) {
   return (t == null ? void 0 : t.geometryKind) === "lasso_fill" ? t == null ? void 0 : t.points : (t == null ? void 0 : t.processedPoints) || (t == null ? void 0 : t.rawPoints) || (t == null ? void 0 : t.points) || [];
 }
 const Rv = 89.5, $v = 1e-9;
-function VM(e, t = 0) {
-  const r = Math.abs(e.x) < $v && Math.abs(e.z) < $v ? 0 : Math.atan2(e.x, e.z) / rc, i = Math.asin(Ve(e.y, -1, 1)) / rc, o = ea(r, i, -Number(t || 0));
-  return { center: o.fwd, right: o.right, up: o.up };
+function VM(e, t = 0, { poleYawDeg: n = 0 } = {}) {
+  const i = Math.abs(e.x) < $v && Math.abs(e.z) < $v ? n : Math.atan2(e.x, e.z) / rc, o = Math.asin(Ve(e.y, -1, 1)) / rc, a = ea(i, o, -Number(t || 0));
+  return { center: a.fwd, right: a.right, up: a.up };
 }
 function zM(e, t, { clamp: n = !0 } = {}) {
   const r = Ca(t, e.center), i = Ca(t, e.right), o = Ca(t, e.up), a = Math.cos(Rv * rc);
@@ -20350,14 +20350,14 @@ function zy(e, t, n, r) {
   }), o;
 }
 function YM(e, t, n, r, i = null) {
-  const o = VM(r, n.rot_deg), a = [["right", "right"], ["up", "up"], ["center", "center"]];
-  return zy(e, t, i, (s) => {
-    const l = Xo(s), c = { x: 0, y: 0, z: 0 };
-    for (const [d, u] of a) {
-      const f = l.x * n[d].x + l.y * n[d].y + l.z * n[d].z;
-      c.x += f * o[u].x, c.y += f * o[u].y, c.z += f * o[u].z;
+  const o = Math.atan2(n.center.x, n.center.z) * (180 / Math.PI), a = VM(r, n.rot_deg, { poleYawDeg: o }), s = [["right", "right"], ["up", "up"], ["center", "center"]];
+  return zy(e, t, i, (l) => {
+    const c = Xo(l), d = { x: 0, y: 0, z: 0 };
+    for (const [u, f] of s) {
+      const p = c.x * n[u].x + c.y * n[u].y + c.z * n[u].z;
+      d.x += p * a[f].x, d.y += p * a[f].y, d.z += p * a[f].z;
     }
-    return jy(s, c);
+    return jy(l, d);
   });
 }
 function jy(e, t) {
