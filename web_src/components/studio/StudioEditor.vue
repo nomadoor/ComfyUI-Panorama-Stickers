@@ -100,7 +100,8 @@ function onBackdropUp(event) {
 // --- The bar at the bottom center: the paint tools while Paint or Mask is chosen, else the selected object's (none
 // while nothing is selected). The Camera tab shows it as the 3D tab does (ADR 0051; its tool is always Cursor).
 const paintModel = computed(() => props.view.paint);
-const bar = computed(() => selectionBar({ state: props.view.state, row: props.view.selection?.row ?? null, mode: props.view.gizmoMode, readOnly: props.view.readOnly, tab: props.view.tab, upstream: props.view.upstreamWorking }));
+const bar = computed(() => selectionBar({ state: props.view.state, row: props.view.selection?.row ?? null, mode: props.view.gizmoMode, readOnly: props.view.readOnly, tab: props.view.tab, upstream: props.view.upstreamWorking,
+  inputs: { playhead: props.view.playhead, portSize: props.view.portSize, imageSizes: props.view.imageSizes, animations: props.view.animations } }));
 
 // --- The Camera tab (docs/studio-ui.md "Camera タブ"): the frame of the output's ratio (the ERP's in Panorama mode)
 // with the edge rulers, which are the Camera card's rows and send the inspector's edits. Each tick strip has its fixed

@@ -5,7 +5,7 @@ import { projectPoint } from "../pano_space.js";
 import { LOAD_LOOK } from "./load_reveal.js";
 import { MARKER_DOT_RADIUS, MARKER_LOOKS, MARKER_TOP_FILL, MARKER_UNDER } from "./camera_marker.js";
 import { GIZMO_COLORS, GIZMO_LOOK, gizmoColor } from "./gizmo_overlay.js";
-import { GUIDE_LOOKS, GUIDE_UNDER_EXTRA, screenLines } from "./world_guides.js";
+import { GUIDE_LOOKS, GUIDE_UNDER_EXTRA, UPSTREAM_SELECTED_DASH, screenLines } from "./world_guides.js";
 import { BRUSH_RING } from "./paint.js";
 
 // The sky image's handles (docs/studio-ui.md "下の中央のバー"; pano_sticker_affordance.js hits them): corner and rotate
@@ -14,15 +14,19 @@ const CORNER_RADIUS = 5;
 const EDGE_RADIUS = 3.5;
 const ROTATE_RADIUS = 6;
 
-function strokeTwice(ctx, path, look) {
-  ctx.lineCap = "round";
+// `dashed`: an upstream object's selection frame (UPSTREAM_SELECTED_DASH, both strokes on the same dashes, square-cut;
+// the canvas starts the dashes again on each subpath, so each segment of a guide starts with a dash).
+function strokeTwice(ctx, path, look, dashed = false) {
+  ctx.lineCap = dashed ? "butt" : "round";
   ctx.lineJoin = "round";
+  ctx.setLineDash(dashed ? UPSTREAM_SELECTED_DASH : []);
   ctx.strokeStyle = look.dark;
   ctx.lineWidth = look.width + GUIDE_UNDER_EXTRA;
   ctx.stroke(path);
   ctx.strokeStyle = look.light;
   ctx.lineWidth = look.width;
   ctx.stroke(path);
+  ctx.setLineDash([]);
 }
 
 function segmentsPath(camera, segments, width, height) {
@@ -296,7 +300,7 @@ function drawScene(ctx, camera, width, height, scene) {
   const lines = [...scene.guides].sort((a, b) => order[a.look] - order[b.look]);
   for (const line of lines) {
     const path = segmentsPath(camera, line.segments, width, height);
-    strokeTwice(ctx, path, GUIDE_LOOKS[line.look]);
+    strokeTwice(ctx, path, GUIDE_LOOKS[line.look], !!line.dashed);
     if (line.shimmer > 0) drawShimmer(ctx, camera, line, path, GUIDE_LOOKS[line.look], width, height);
   }
   if (scene.camera) drawCameraMarker(ctx, scene.camera.screen, scene.camera.look);
@@ -305,7 +309,7 @@ function drawScene(ctx, camera, width, height, scene) {
     const frame = new Path2D();
     geometry.boundaryEdges.flat().forEach((point, index) => (index ? frame.lineTo(point.x, point.y) : frame.moveTo(point.x, point.y)));
     frame.closePath();
-    strokeTwice(ctx, frame, GUIDE_LOOKS.skySelected);
+    strokeTwice(ctx, frame, GUIDE_LOOKS.skySelected, !!scene.sky.dashed);
     if (handles) {
       const stem = new Path2D();
       stem.moveTo(geometry.rotateStemBase.x, geometry.rotateStemBase.y);

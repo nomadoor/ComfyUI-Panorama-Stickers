@@ -23,6 +23,11 @@ async function open(page, testInfo, which) {
   await page.goto(`/tests/browser/pages/studio_inputs.html?case=${which}`);
   await page.waitForFunction(() => window.__studio?.ready, null, { timeout: 30_000 });
   expect(await page.evaluate(() => window.__studio.error)).toBeNull();
+  // A refused pointer lock: a value box drags with the cursor shown (headless Chromium's lock stalls the mouse, as in
+  // tests/browser/studio_inspector.spec.js).
+  await page.evaluate(() => {
+    Element.prototype.requestPointerLock = () => Promise.reject(new DOMException("refused", "NotAllowedError"));
+  });
   await page.waitForTimeout(600);
   const renderer = await page.evaluate(() => window.__studio.rendererOf());
   testInfo.annotations.push({ type: "renderer", description: String(renderer) });
@@ -118,6 +123,31 @@ async function drag(page, from, to, steps = 8) {
 const selectedRow = (page) => page.evaluate(() => window.__studio.session.selection.row);
 const records = (page) => page.evaluate(() => JSON.parse(JSON.stringify(window.__studio.session.state.upstream)));
 const overrideOf = async (page, id) => (await records(page)).find((item) => item.layer === "scene_up")?.stickers.find((item) => item.id === id) ?? null;
+// The override colour (docs/design.md "色" 桃, the dark theme's) as computed CSS.
+const OVERRIDE_RGB = "rgb(232, 121, 166)";
+
+// How many pieces the selection frame of `color` breaks into along the overlay's row where it has the most pixels:
+// one for a solid frame's edge, many for a dashed one (docs/design.md "形と重なり").
+const frameRuns = (page, color) => page.evaluate((color) => {
+  const overlay = document.querySelector("[data-stage-overlay]");
+  const data = overlay.getContext("2d").getImageData(0, 0, overlay.width, overlay.height).data;
+  const want = [1, 3, 5].map((i) => parseInt(color.slice(i, i + 2), 16));
+  const hit = (i) => data[i + 3] > 200 && want.every((v, k) => Math.abs(data[i + k] - v) < 30);
+  let best = { pixels: 0, runs: 0 };
+  for (let y = 0; y < overlay.height; y += 1) {
+    let pixels = 0;
+    let runs = 0;
+    let inside = false;
+    for (let x = 0; x < overlay.width; x += 1) {
+      const on = hit((y * overlay.width + x) * 4);
+      if (on) pixels += 1;
+      if (on && !inside) runs += 1;
+      inside = on;
+    }
+    if (pixels > best.pixels) best = { pixels, runs };
+  }
+  return best.runs;
+}, color);
 const inspectorRow = (page, name) => page.locator(`.pano-studio-inspector [data-row="${name}"]`);
 
 // docs/studio-ui.md "上流の物の編集": the upstream objects are selected on the stage and edited with the stage's drags,
@@ -137,12 +167,20 @@ test("another Studio's Scene on scene: its objects are selected on the stage and
   await page.mouse.click(front.x, front.y);
   await expect.poll(() => selectedRow(page)).toBe("upstream:scene_up:sticker_1");
   await expect(page.locator('[data-region="inspector"]')).toContainText("From Studio Up");
-  await expect(page.locator('[data-bar="revert"]')).not.toHaveAttribute("aria-disabled", "true");
+  // Back to source: off as upstream has it, without the override colour; the selected frame is dashed.
+  await expect(page.locator('[data-bar="revert"]')).toHaveAttribute("aria-disabled", "true");
+  await expect(page.locator('[data-bar="revert"]')).toHaveAttribute("data-tip", "Back to source · as upstream has it");
+  await expect(page.locator('[data-bar="revert"]')).not.toHaveClass(/is-override/);
+  await expect.poll(() => frameRuns(page, "#aecedb")).toBeGreaterThan(6);
   await expect(page.locator('[data-bar="delete"]')).not.toHaveAttribute("aria-disabled", "true");
   await expect(page.locator('[data-bar="duplicate"]')).toHaveAttribute("aria-disabled", "true");
   // Its body's drag turns it (to the left, away from the board): one override of its direction, nothing else.
   await drag(page, front, { x: front.x - 120, y: front.y });
   await expect.poll(async () => Object.keys((await overrideOf(page, "sticker_1")) ?? {}).sort()).toEqual(["direction", "id", "placement"]);
+  // Overridden: Back to source on in the override colour, the Timeline row's dot in the same colour.
+  await expect(page.locator('[data-bar="revert"]')).not.toHaveAttribute("aria-disabled", "true");
+  await expect(page.locator('[data-bar="revert"]')).toHaveCSS("color", OVERRIDE_RGB);
+  await expect(page.locator('[data-head="upstream:scene_up:sticker_1"] .pano-studio-tl-override')).toHaveCSS("background-color", OVERRIDE_RGB);
   const { sky: [moved] } = await places(page, { sky: [[(await overrideOf(page, "sticker_1")).direction.value.yaw_deg, 0]] });
   await expect.poll(() => stageAt(page, moved).then((rgb) => near(rgb, colors.upstreamSky)), { timeout: 10_000 }).toBe(true);
   expect(near(await stageAt(page, front), colors.upstreamSky)).toBe(false);
@@ -153,6 +191,7 @@ test("another Studio's Scene on scene: its objects are selected on the stage and
   await drag(page, { x: box.x + box.width / 2, y: box.y + box.height / 2 }, { x: box.x + box.width / 2 - 60, y: box.y + box.height / 2 }, 10);
   await expect.poll(async () => (await overrideOf(page, "sticker_1")).opacity.keyframes[0].value).toBeLessThan(1);
   await expect(inspectorRow(page, "Opacity").locator(".pano-studio-row-mark")).toHaveCount(1);
+  await expect(inspectorRow(page, "Opacity").locator(".pano-studio-row-mark")).toHaveCSS("background-color", OVERRIDE_RGB);
   // Lock: the override, and Delete and Back to source go off while it is locked.
   await page.locator('[data-bar="lock"]').click();
   await expect.poll(async () => (await overrideOf(page, "sticker_1")).locked).toBe(true);
@@ -164,6 +203,7 @@ test("another Studio's Scene on scene: its objects are selected on the stage and
   // The world board: a click selects it, its gizmo's X ball moves it.
   await page.mouse.click(board.x, board.y);
   await expect.poll(() => selectedRow(page)).toBe("upstream:scene_up:sticker_2");
+  await expect.poll(() => frameRuns(page, "#e8cf74")).toBeGreaterThan(6);
   const ball = await xBall(page, [1.6, 0, -3]);
   await drag(page, ball, { x: ball.x + 80, y: ball.y });
   await expect.poll(async () => (await overrideOf(page, "sticker_2"))?.position?.value[0] ?? 0).toBeGreaterThan(1.7);

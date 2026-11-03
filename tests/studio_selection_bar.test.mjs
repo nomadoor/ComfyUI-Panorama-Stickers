@@ -123,7 +123,7 @@ const upstream = upstreamWorkingLayers([
 ], [], 24);
 const button = (bar, key) => bar.groups.flat().find((item) => item.key === key);
 
-test("an upstream object's bar: Lock, Delete and Back to source work; Duplicate, Replace and the order say why they are off", () => {
+test("an upstream object's bar: Lock and Delete work, Back to source is there (below); Duplicate, Replace and the order say why they are off", () => {
   assert.equal(selectedKind(state, "upstream:scene_up:sky_1"), null, "found only in the upstream layers given");
   assert.equal(selectedKind(state, "upstream:scene_up:sky_1", upstream), "sky");
   assert.equal(selectedKind(state, "upstream:scene_up:plane_1", upstream), "world-image");
@@ -131,7 +131,7 @@ test("an upstream object's bar: Lock, Delete and Back to source work; Duplicate,
   assert.equal(sky.name, "up.png");
   assert.deepEqual(keys(sky), [["front", "back"], ["duplicate", "replace"], ["lock", "delete"], ["revert"]]);
   assert.deepEqual(sky.groups.flat().map((item) => [item.key, item.disabled]), [
-    ["front", true], ["back", true], ["duplicate", true], ["replace", true], ["lock", false], ["delete", false], ["revert", false],
+    ["front", true], ["back", true], ["duplicate", true], ["replace", true], ["lock", false], ["delete", false], ["revert", true],
   ]);
   assert.equal(button(sky, "duplicate").tip, "Duplicate · not for an upstream object");
   assert.equal(button(sky, "front").tip, "Bring to front · not for an upstream object");
@@ -164,7 +164,39 @@ test("an input's object cannot be duplicated or deleted and says so", () => {
   const bar = selectionBar({ state, row: "port_1" });
   assert.equal(button(bar, "duplicate").tip, "Duplicate · not for an input's object");
   assert.equal(button(bar, "delete").tip, "Delete · not for an input's object");
-  assert.equal(button(bar, "revert").tip, "Back to source · every value back to the input's");
+  assert.equal(button(bar, "revert").tip, "Back to source · as the input has it");
+});
+
+// docs/studio-ui.md "下の中央のバー": Back to source is pressable only with something to put back and the object
+// changeable, in the override colour (`overridden`) then; the tooltip says why it is not, in its order.
+const records = (stickers) => [{ layer: "scene_up", fps: 24, deleted: [], stickers, scene: {} }];
+const revertOf = (raw, row, extra = {}) => button(selectionBar({ state: raw, row, upstream, ...extra }), "revert");
+const pick = ({ disabled, overridden, tip }) => ({ disabled, overridden, tip });
+
+test("an upstream object's Back to source: off as upstream has it, on in the override colour with any entry of its record", () => {
+  const row = "upstream:scene_up:sky_1";
+  assert.deepEqual(pick(revertOf(state, row)), { disabled: true, overridden: false, tip: "Back to source · as upstream has it" });
+  // A Lock override alone, or one made for the other placement, is something to put back.
+  for (const entry of [{ id: "sky_1", placement: "sky", locked: false }, { id: "sky_1", placement: "world", scale: { value: 2, keyframes: [] } }]) {
+    assert.deepEqual(pick(revertOf({ ...state, upstream: records([entry]) }, row)), { disabled: false, overridden: true, tip: "Back to source · every value back to the upstream's" });
+  }
+  const overridden = { ...state, upstream: records([{ id: "sky_1", placement: "sky", opacity: { value: 0.5, keyframes: [] } }]) };
+  assert.deepEqual(pick(revertOf(overridden, row, { readOnly: true })), { disabled: true, overridden: false, tip: "Back to source · Read-only" });
+  // Locked (upstream's chair_1, or a Lock override).
+  const locked = { ...state, upstream: records([{ id: "chair_1", placement: "world", scale: { value: 2, keyframes: [] } }]) };
+  assert.deepEqual(pick(revertOf(locked, "upstream:scene_up:chair_1")), { disabled: true, overridden: false, tip: "Back to source · locked" });
+  assert.deepEqual(pick(revertOf(state, "upstream:#1:sky_9", { readOnly: true })), { disabled: true, overridden: false, tip: "Inherited only: edit it in its own Panorama Studio" });
+});
+
+test("an input's object's Back to source: off while every row is at the input's value, on in the override colour once one is not", () => {
+  // A node has one port Sticker: as it came, and moved.
+  const asCame = loadSceneState({ version: 2, stickers: [{ id: "port_1", placement: "world", source: { kind: "port" } }] });
+  const ports = loadSceneState({ version: 2, stickers: [{ id: "port_2", placement: "world", source: { kind: "port" }, position: { value: [1, 2, 3] } }] });
+  assert.deepEqual(pick(button(selectionBar({ state: asCame, row: "port_1" }), "revert")), { disabled: true, overridden: false, tip: "Back to source · as the input has it" });
+  assert.deepEqual(pick(button(selectionBar({ state: ports, row: "port_2" }), "revert")), { disabled: false, overridden: true, tip: "Back to source · every value back to the input's" });
+  assert.deepEqual(pick(button(selectionBar({ state: ports, row: "port_2", readOnly: true }), "revert")), { disabled: true, overridden: false, tip: "Back to source · Read-only" });
+  const locked = { ...ports, stickers: ports.stickers.map((item) => ({ ...item, locked: true })) };
+  assert.deepEqual(pick(button(selectionBar({ state: locked, row: "port_2" }), "revert")), { disabled: true, overridden: false, tip: "Back to source · locked" });
 });
 
 test("the name field: a fixed name (the Camera's, a paint group's) fits its text, a name the user gives keeps the one width", () => {

@@ -353,3 +353,12 @@ test("while a paint group is selected, the Paint row shows selected (its selecti
   }
   assert.equal(row(view(ctx), "painting").selected, false);
 });
+
+// docs/timeline-ui.md "上流の層の行": the dot follows any entry of the record for the element's id (pano_upstream.js
+// upstreamStickerOverridden), whatever its fields and placement: what the bar's Back to source takes off.
+test("an upstream row's dot shows for any entry of its record: a Lock only, or one made for the other placement", () => {
+  const dotOf = (stickers) => view(ctxOf(studioState(), { upstream: [upstreamLayer({ record: { layer: "scene_up", stickers, scene: {}, deleted: [] } })] })).groups[0].rows[0].overridden;
+  assert.equal(dotOf([]), false);
+  assert.equal(dotOf([{ id: "sticker_1", placement: "world", locked: false }]), true);
+  assert.equal(dotOf([{ id: "sticker_1", placement: "sky", opacity: { value: 0.5, keyframes: [] } }]), true);
+});

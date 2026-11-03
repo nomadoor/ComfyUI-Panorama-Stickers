@@ -373,6 +373,13 @@ function stickerCard(state, sticker, { playhead, readOnly, upstream, animations,
   };
 }
 
+// Whether any row of the Sticker `sticker`'s card is away from where its reset returns it (its `atDefault`): what the
+// bar's Back to source of an input's object puts back (docs/studio-ui.md "下の中央のバー"). `options` as the card's.
+export function stickerRowsChanged(state, sticker, options = {}) {
+  const card = stickerCard(state, sticker, { playhead: 0, readOnly: false, upstream: [], animations: {}, portSize: null, imageSizes: {}, ...options });
+  return card.rows.some((row) => row.resettable && !row.atDefault);
+}
+
 function cameraCard(state, { playhead, readOnly }) {
   const camera = cameraOf(state);
   const locked = camera.locked === true;

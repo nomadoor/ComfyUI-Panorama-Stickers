@@ -7,7 +7,7 @@ import {
 
 // The row ids live with the Timeline rules (pano_timeline.js); the old UI's importers keep reading them here.
 export { BACKGROUND_ROW, PAINTING_ROW };
-import { upstreamLayerOverridden, upstreamRowId } from "./pano_upstream.js";
+import { upstreamLayerOverridden, upstreamRowId, upstreamStickerOverridden } from "./pano_upstream.js";
 
 export function patchUiButton(list, matchKey, key, patch) {
   const entry = Array.isArray(list) ? list.find((item) => String(item?.[matchKey] || "") === String(key || "")) : null;
@@ -600,7 +600,7 @@ export function buildTimelineModel(state, { span, portBarEnd = () => null, selec
         sceneRow: content || !sceneState.scene.visible,
         origin: {
           editable,
-          stickerOverridden: (sticker) => !!record?.stickers.some((item) => item.id === sticker.origin.id && item.placement === sticker.placement),
+          stickerOverridden: (sticker) => !!record && upstreamStickerOverridden([record], sticker),
           paintingOverridden: !!record && Object.hasOwn(record, "painting_visible"),
           sceneOverridden: !!record && Object.keys(record.scene).length > 0,
         },

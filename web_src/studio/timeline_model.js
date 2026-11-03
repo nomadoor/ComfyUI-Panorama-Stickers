@@ -40,7 +40,7 @@ import {
   timelinePlayable,
   timelineSpan,
 } from "../pano_timeline.js";
-import { upstreamLayerOverridden, upstreamRowId } from "../pano_upstream.js";
+import { upstreamLayerOverridden, upstreamRowId, upstreamStickerOverridden } from "../pano_upstream.js";
 import { cameraOf } from "./camera_state.js";
 
 // The name of a Sticker's row (and its inspector card): its file's name, else its id; an upstream element's own id, not
@@ -276,8 +276,8 @@ function overridden(entry) {
   if (!record) return false;
   if (entry.kind === "painting") return Object.hasOwn(record, "painting_visible");
   if (entry.kind === "scene") return Object.keys(record.scene || {}).length > 0;
-  const { origin, placement } = entry.owner;
-  return !!record.stickers?.some((item) => item.id === origin?.id && item.placement === placement);
+  // Any entry for the element's id, of any field and placement (docs/timeline-ui.md "上流の層の行").
+  return upstreamStickerOverridden([record], entry.owner);
 }
 
 // The Timeline for StudioTimeline.vue. `openRows` holds the ids of the open rows. Rows:

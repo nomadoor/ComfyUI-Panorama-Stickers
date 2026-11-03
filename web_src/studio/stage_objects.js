@@ -737,6 +737,8 @@ export function createStageObjects({
         segments: item.segments,
         corners: item.corners,
         look: guideLook({ selected: item.id === row, hovered: item.id === hovered, locked: item.locked, altHeld, gridHidden }),
+        // An upstream object's selected guide is dashed (docs/studio-ui.md "上流の物の編集" "見せる").
+        dashed: !!item.upstream && item.id === row,
         ...(shimmer > 0 ? { shimmer, phase } : {}),
       };
     }).filter((item) => item.look);
@@ -760,7 +762,7 @@ export function createStageObjects({
         active: draggedAxis ?? (altHeld ? null : gizmoAxis),
         guides: guideLines,
       } : null,
-      sky: sky ? { geometry: sky.geometry, handles: editable() && !sky.item.locked } : null,
+      sky: sky ? { geometry: sky.geometry, handles: editable() && !sky.item.locked, dashed: isUpstreamSticker(stickerOf(state(), sky.item.id)) } : null,
       // The selected paint group's frame (its corners, its edge `outline` (bent on a lens Camera's picture), screen
       // center and rotate handle with its stem's base in CSS px), with its corner and rotate handles unless it is locked.
       paint: paint ? {

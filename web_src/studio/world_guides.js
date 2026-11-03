@@ -6,7 +6,7 @@
 import { boxCorners, planeCorners, planeOutlineSegments, projectPoint, sceneContentBox, transformPoint } from "../pano_space.js";
 import { lensPolylines } from "../pano_lens.js";
 import { quaternionToRotation } from "../pano_world.js";
-import { upstreamStickerLocked } from "../pano_upstream.js";
+import { isUpstreamSticker, upstreamStickerLocked } from "../pano_upstream.js";
 
 // The looks of a guide (docs/design.md "新しい UI の見た目"): a light line over a dark line 2px wider, so it shows on
 // a light and a dark picture alike. The selected look's color is the soft yellow of the World drop mark; a selected
@@ -22,6 +22,9 @@ export const GUIDE_LOOKS = Object.freeze({
 });
 // How much wider the dark line under a guide is than the light one.
 export const GUIDE_UNDER_EXTRA = 2;
+// The dashes of an upstream object's selection frame (its selected guide, a selected sky image's frame), in CSS px
+// (docs/design.md "形と重なり"); the node's own frames, the handles and the gizmo stay solid.
+export const UPSTREAM_SELECTED_DASH = Object.freeze([6, 4]);
 
 const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
@@ -35,7 +38,7 @@ function loop(points) {
 
 // The World objects that have a guide in `content` (stage_content.js stageContent(): the shown world image planes and
 // the shown 3D Stickers' items, the 3D file Stickers' and the port Sticker's 3D media) of `state`: [{ id, kind
-// ("plane" | "box"), locked, loading, segments, corners, center } (a box also has `url`, its item's key or null while
+// ("plane" | "box"), locked, upstream, loading, segments, corners, center } (a box also has `url`, its item's key or null while
 // it loads, and `value`, the Sticker's evaluated transform)] in World units. `center` is where the object's gizmo sits too (docs/studio-ui.md "ギズモ" "物の中心"). `sceneBox(url)`
 // is the box of a loaded item (null while it loads: that object has no guide yet). `pendingBox(id)` is the box in its
 // own frame of a 3D file just placed whose item has not drawn yet (load_reveal.js: DROP_PREVIEW_BOX, then the route's
@@ -57,6 +60,7 @@ export function worldGuideItems(state, content, sceneBox = () => null, pendingBo
       id: plane.id,
       kind: "plane",
       locked: upstreamStickerLocked(sticker),
+      upstream: isUpstreamSticker(sticker),
       segments: plane.patch ? planeOutlineSegments(plane) : loop(corners),
       corners,
       center: [...plane.position],
@@ -68,6 +72,7 @@ export function worldGuideItems(state, content, sceneBox = () => null, pendingBo
       id: sticker.id,
       kind: "box",
       locked: upstreamStickerLocked(sticker),
+      upstream: isUpstreamSticker(sticker),
       loading,
       // The item's key and the Sticker's value, for the hit test through its grid (hit_test.js coarseUnder).
       url,

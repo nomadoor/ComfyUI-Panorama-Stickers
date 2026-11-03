@@ -1207,3 +1207,19 @@ test("in the Camera tab the selected upstream sky image's body drag turns it; a 
   assert.equal(session.selection.row, "upstream:scene_up:poster");
   assert.equal(pass.passes, true, "not selected before: it selects and the drag moves the Camera");
 });
+
+// docs/studio-ui.md "上流の物の編集" "見せる", docs/design.md "形と重なり": an upstream object's selection frame is
+// dashed; the node's own stay solid.
+test("the selected upstream object's frame is dashed (its sky frame, its World guide); the node's own and the others are solid", () => {
+  const board = { id: "board", placement: "world", source: file("up_board.png"), position: { value: [3, 0, -5] } };
+  const { session, objects } = setup({ upstreamLayers: [upLayer("scene_up", [upSky("poster", { direction: { value: { yaw_deg: 30, pitch_deg: 0 } } }), board])] });
+  session.selectObject("upstream:scene_up:board");
+  const guides = objects.overlay().guides;
+  assert.deepEqual(guides.map((item) => item.dashed), [false, true], "the own board's guide, then the upstream board's selected one");
+  session.selectObject("board");
+  assert.ok(objects.overlay().guides.every((item) => !item.dashed));
+  session.selectObject("upstream:scene_up:poster");
+  assert.equal(objects.overlay().sky.dashed, true);
+  session.selectObject("sky");
+  assert.equal(objects.overlay().sky.dashed, false);
+});
