@@ -11,6 +11,7 @@ import {
   easingGraphSide,
   formatBezier,
   parseBezier,
+  stickerChangedRows,
 } from "../web_src/studio/inspector_model.js";
 
 // docs/studio-ui.md "インスペクタ" (what each selection shows, the same in both tabs, the rows of each kind, the Camera card, reset,
@@ -426,4 +427,22 @@ test("an upstream element's row shows its card in the inspector (found in its la
   const id = upstream[0].sceneState.stickers[0].id;
   const m = model(state, { upstream, selection: { ids: [id] } });
   assert.deepEqual(m.cards.map((card) => card.target?.id), [id], "an upstream element's row shows its card");
+});
+
+// docs/studio-ui.md "リセットと Keyframe のポチ": a port Sticker shown with a Pose handoff of its placement.
+const SKY_HANDOFF = { placement: "sky", lanes: { direction: { value: { yaw_deg: 30, pitch_deg: 10 } }, roll: { value: 5 }, size: { value: { hFOV_deg: 40, vFOV_deg: 40 } } }, fps: 24 };
+
+test("a port Sticker's handed rows are at their reset's value while none of their Lanes is an override, whatever the value", () => {
+  const port = (overrides) => sky("sticker_1", { source: { kind: "port" }, handoff_overrides: overrides });
+  const state = load({ stickers: [port(["size"])] });
+  const card = model(state, { selection: { ids: ["sticker_1"] }, handoff: SKY_HANDOFF }).cards[0];
+  assert.equal(row(card, "rotation").atDefault, true, "handed, not overridden (its value is not the Lane default)");
+  assert.equal(row(card, "fov").atDefault, false, "overridden");
+  assert.equal(row(card, "opacity").atDefault, false, "not handed: the Lane default rule (opacity 0.5)");
+  assert.deepEqual(stickerChangedRows(state, state.stickers[0], { handoff: SKY_HANDOFF }), ["fov", "opacity"]);
+  // Without a handoff, or with one of the other placement, the Lane defaults decide.
+  assert.deepEqual(stickerChangedRows(state, state.stickers[0], {}), ["rotation", "fov", "opacity"]);
+  assert.deepEqual(stickerChangedRows(state, state.stickers[0], { handoff: { ...SKY_HANDOFF, placement: "world" } }), ["rotation", "fov", "opacity"]);
+  const plain = load({ stickers: [port([])] });
+  assert.deepEqual(stickerChangedRows(plain, plain.stickers[0], { handoff: SKY_HANDOFF }), ["opacity"]);
 });

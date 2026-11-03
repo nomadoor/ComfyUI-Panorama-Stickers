@@ -342,3 +342,15 @@ test("a state whose Camera is null gets the default Camera from a field, a choic
   assert.equal(outcome.changed, false);
   assert.equal(state.camera, null);
 });
+
+test("a port Sticker's reset of a handed row puts an override back to the handoff, and does nothing to a Lane not overridden", () => {
+  const handoff = { placement: "sky", lanes: { direction: { value: { yaw_deg: 30, pitch_deg: 10 } }, roll: { value: 5 }, size: { value: { hFOV_deg: 40, vFOV_deg: 40 } } }, fps: 24 };
+  const target = { kind: "sticker", id: "sticker_1" };
+  const state = load({ stickers: [{ id: "sticker_1", placement: "sky", source: { kind: "port" }, direction: { value: { yaw_deg: 90, pitch_deg: 0 } }, size: { value: { hFOV_deg: 70, vFOV_deg: 70 } }, handoff_overrides: ["size"] }] });
+  const before = structuredClone(state.stickers[0]);
+  assert.equal(applyInspectorEdit(state, { type: "reset", target, row: "rotation" }, { handoff }).changed, false);
+  assert.deepEqual(state.stickers[0], before);
+  assert.equal(applyInspectorEdit(state, { type: "reset", target, row: "fov" }, { handoff }).changed, true);
+  assert.deepEqual(state.stickers[0].size.value, { hFOV_deg: 40, vFOV_deg: 40 });
+  assert.deepEqual(state.stickers[0].handoff_overrides, []);
+});

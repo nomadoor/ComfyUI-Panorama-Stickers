@@ -141,6 +141,25 @@ function rebasedPortSticker(sticker, from, fps) {
   return clone(rebaseSceneState(loadSceneState({ version: 2, timeline: { fps: from }, stickers: [sticker] }), fps).stickers[0]);
 }
 
+// The last shown and stored port Stickers with the Lanes taken off the overrides since then (a reset back to the
+// handoff, revertHandoffLane) at the value they have now in `port`: going back to the handoff is no edit, so such a
+// Lane is not recorded as an override again, and the state keeps the handoff's value for it.
+function withReverted(port, shown, stored) {
+  if (shown.placement !== port.placement) return [shown, stored];
+  const reverted = shown.handoff_overrides.filter((name) => !port.handoff_overrides.includes(name));
+  if (!reverted.length) return [shown, stored];
+  const before = clone(shown);
+  // A stored Sticker still of the other placement (storedPortSticker) has none of these Lanes.
+  const kept = stored.placement === port.placement ? clone(stored) : stored;
+  for (const name of reverted) {
+    for (const sticker of kept === stored ? [before] : [before, kept]) {
+      if (port[name] === undefined) delete sticker[name];
+      else sticker[name] = clone(port[name]);
+    }
+  }
+  return [before, kept];
+}
+
 // The port Sticker of the working `state` shown with `handoff` (or null), from the last `pair`: { shown, pair,
 // changed }. With `record`, the Lanes an edit changed since the last shown one become overrides first
 // (recordHandoffEdits). `restored` says the working state's port Sticker is a stored one (opening, Undo), not a shown
@@ -157,8 +176,9 @@ export function syncPortHandoffPair(state, pair, handoff, { record = true, resto
     stored = clone(port);
   } else {
     const rebase = (sticker) => (pair.fps === fps ? sticker : rebasedPortSticker(sticker, pair.fps, fps));
-    if (record) recordHandoffEdits(current, rebase(pair.shown));
-    stored = storedPortSticker(current, rebase(pair.stored));
+    const [before, kept] = withReverted(current, rebase(pair.shown), rebase(pair.stored));
+    if (record) recordHandoffEdits(current, before);
+    stored = storedPortSticker(current, kept);
   }
   const shown = handoff ? inheritPortHandoff(state, stored, handoff) : clone(stored);
   return { shown, pair: { stored, shown: clone(shown), handoff, fps }, changed: !sameValue(shown, current) };

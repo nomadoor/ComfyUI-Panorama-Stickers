@@ -105,7 +105,7 @@ const paintModel = computed(() => props.view.paint);
 const portInputs = computed(() => {
   const row = props.view.selection?.row ?? null;
   const port = props.view.state.stickers.some((item) => item.id === row && item.source.kind === "port");
-  return port ? { playhead: props.view.playhead, portSize: props.view.portSize, imageSizes: props.view.imageSizes, animations: props.view.animations } : undefined;
+  return port ? { playhead: props.view.playhead, portSize: props.view.portSize, imageSizes: props.view.imageSizes, animations: props.view.animations, handoff: props.view.portHandoff } : undefined;
 });
 const bar = computed(() => selectionBar({ state: props.view.state, row: props.view.selection?.row ?? null, mode: props.view.gizmoMode, readOnly: props.view.readOnly, tab: props.view.tab, upstream: props.view.upstreamWorking, inputs: portInputs.value }));
 
@@ -463,6 +463,7 @@ function setCollapsed(value) {
         :animations="view.animations"
         :image-sizes="view.imageSizes"
         :port-size="view.portSize"
+        :handoff="view.portHandoff"
         @edit="(edit) => controller.inspectorEdit(edit)"
         @close="controller.close()"
       />

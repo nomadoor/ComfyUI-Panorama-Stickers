@@ -32,6 +32,8 @@ const props = defineProps({
   portSize: { type: Object, default: null },
   // The Stickers' image sizes by id ({ width, height } px), for a sky image's FOV reset.
   imageSizes: { type: Object, default: () => ({}) },
+  // The Pose handoff the port Sticker is shown with (pano_port_handoff.js portHandoff), or null: its handed rows' reset.
+  handoff: { type: Object, default: null },
 });
 const emit = defineEmits(["edit", "close"]);
 
@@ -45,6 +47,7 @@ const model = computed(() => buildInspectorModel({
   animations: props.animations,
   portSize: props.portSize,
   imageSizes: props.imageSizes,
+  handoff: props.handoff,
 }));
 
 // --- The Easing panel's size: its graph is square and as wide as the panel, smaller when it would leave less than

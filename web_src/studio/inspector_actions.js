@@ -32,7 +32,7 @@ import { FRAME_EPSILON, evaluateLane } from "../pano_scene_eval.js";
 import { ANIMATION_DEFAULT, ANIMATION_SPEED_MAX, ANIMATION_SPEED_MIN, CAMERA_LANES, DEFAULT_EASING, SKY_STICKER_LANES, WORLD_STICKER_LANES } from "../pano_scene_state.js";
 import { deleteKeyframes, keyLanes, rowLaneNames, setLaneValue, setSegmentEasing } from "../pano_timeline.js";
 import { isUpstreamSticker, upstreamStickerInherited } from "../pano_upstream.js";
-import { revertHandoffLane } from "../pano_port_handoff.js";
+import { HANDOFF_LANES, revertHandoffLane } from "../pano_port_handoff.js";
 import { editableCamera } from "./camera_state.js";
 import { defaultCamera } from "./defaults.js";
 import { ROW_LANES, ownerFrame, skyPlacedSize } from "./inspector_model.js";
@@ -141,10 +141,16 @@ function laneDefault(list, name) {
 // The Roll the Camera tab's Roll reset returns to: the rotation Lane's default (frame_layout.js grays the reset there).
 export const CAMERA_ROLL_DEFAULT = laneDefault(CAMERA_LANES, "rotation").roll_deg;
 
-// A port Sticker's reset of a Lane the Pose handoff gives (docs/studio-ui.md "リセットと Keyframe のポチ": the input's
-// value): it follows the handoff again. Returns the Lanes it did not revert.
+// A port Sticker's reset of a row the Pose handoff gives (docs/studio-ui.md "リセットと Keyframe のポチ": the input's
+// value): its overridden Lanes follow the handoff again, and a row with none overridden is where its reset returns it
+// already. Returns the Lanes left to reset to their defaults ([] when the handoff took the row), or null when the
+// reset does nothing.
 function resetHandoff(state, sticker, lanes, handoff) {
   if (sticker.source.kind !== "port" || !handoff) return lanes;
+  if (handoff.placement === sticker.placement && lanes.every((name) => HANDOFF_LANES[handoff.placement].includes(name))) {
+    const reverted = lanes.filter((name) => revertHandoffLane(state, sticker, handoff, name));
+    return reverted.length ? [] : null;
+  }
   return lanes.filter((name) => !revertHandoffLane(state, sticker, handoff, name));
 }
 
@@ -182,7 +188,9 @@ function applyReset(state, found, row, context) {
   if (isUpstreamSticker(sticker)) return { done: false, upstreamRevert: { sticker, lanes } };
   const frame = ownerFrame(sticker, playhead);
   const list = sticker.placement === "world" ? WORLD_STICKER_LANES : SKY_STICKER_LANES;
-  for (const name of resetHandoff(state, sticker, lanes, context.handoff)) {
+  const rest = resetHandoff(state, sticker, lanes, context.handoff);
+  if (!rest) return { done: false };
+  for (const name of rest) {
     let value = laneDefault(list, name);
     // A port sky Sticker's vFOV follows its media: only its hFOV is stored. Another sky image goes back to the size
     // it was placed at (docs/studio-ui.md "種類ごとの中身").

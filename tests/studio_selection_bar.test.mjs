@@ -217,3 +217,13 @@ test("the Camera tab shows no bar for the Camera (ADR 0055), and the other objec
   assert.deepEqual(keys(selectionBar({ state, row: "plane_1", tab: "camera" })), keys(selectionBar({ state, row: "plane_1" })));
   assert.equal(selectionBar({ state, row: "sky_1", tab: "camera" }).kind, "sky");
 });
+
+test("a port Sticker shown with a Pose handoff lights Back to source only while it has an override of a handed Lane (or another row away)", () => {
+  const handoff = { placement: "world", lanes: { position: { value: [0, 0, -2] }, rotation: { value: { yaw_deg: 0, pitch_deg: 0, roll_deg: 0 } }, scale: { value: 4 } }, fps: 24 };
+  const port = (overrides) => loadSceneState({ version: 2, stickers: [{ id: "port_1", placement: "world", source: { kind: "port" }, position: { value: [5, 1, 2] }, scale: { value: 3 }, handoff_overrides: overrides }] });
+  const revert = (s, inputs) => selectionBar({ state: s, row: "port_1", inputs }).groups.flat().find((button) => button.key === "revert");
+  assert.equal(revert(port([]), { handoff }).disabled, true);
+  assert.equal(revert(port(["scale"]), { handoff }).disabled, false);
+  // Without the handoff, the values away from the Lane defaults light it.
+  assert.equal(revert(port([]), {}).disabled, false);
+});

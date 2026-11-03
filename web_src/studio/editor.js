@@ -12,7 +12,7 @@
 // there. Closing also uploads the paint layer the node draws, as the old editor does (paint_upload.js).
 import { createApp, markRaw, reactive, shallowReactive } from "vue";
 import StudioEditor from "../components/studio/StudioEditor.vue";
-import { createComfyMediaAdapter } from "../pano_comfy_media.js";
+import { createComfyMediaAdapter, executionIdMatches } from "../pano_comfy_media.js";
 import { watchComfyRunning } from "../pano_comfy_running.js";
 import { createPanoCanvas, createPanoVideo, releasePanoCanvas } from "../pano_diagnostics.js";
 import { studioSizeWidgets } from "../pano_studio_status.js";
@@ -34,6 +34,7 @@ import { backgroundAt, backgroundLength, backgroundShowsAt, backgroundVideoCandi
 import { backgroundBarEnd, backgroundPlace } from "../pano_port_media.js";
 import { STUDIO_BACKGROUND_INPUT_NAMES, isNodeOutputMediaCurrent, linkedInputType, videoLinked } from "../pano_preview_video.js";
 import { PANO_SCENE_TYPE, ownSceneLinked } from "../pano_upstream.js";
+import { nodePortHandoff } from "../pano_stickers_node_surface.js";
 import { loadSceneState } from "../pano_scene_state.js";
 import { sceneFilesOf, stateAnimationClips } from "../pano_space.js";
 import { sceneAtVideoFps, timelineFpsLocked, videoTimelineFps } from "../pano_video_fps.js";
@@ -219,7 +220,12 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
       redraw(DRAW_REASON.MEDIA);
     },
   });
-  session = createStudioSession({ state: nodeState(node, media), readOnly, upstream });
+  // [inputs] The Pose handoff of the node's current result the port Sticker is shown with (docs/studio-ui.md "`port` の
+  // Sticker"): while `sticker` and `sticker_state` are linked and the result came from those links.
+  const currentHandoff = () => (isNodeOutputMediaCurrent(node, "sticker-handoff")
+    ? nodePortHandoff(node, media.uiValue(node, "pano_sticker_handoff"))
+    : null);
+  session = createStudioSession({ state: nodeState(node, media), readOnly, upstream, handoff: readOnly ? null : currentHandoff() });
   // The colors of the depth grids drawn (docs/threejs-spark-integration.md "DA3_GEOMETRY mono の深度のグリッド"): a
   // proxy MP4 per input (`scene`, `sticker`, an upstream layer) following the playhead.
   const depthColors = createDepthColors({
@@ -288,6 +294,9 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     shortcuts: false,
     // [inputs] The size of the port Sticker's media (its vFOV follows it), null before it loads.
     portSize: null,
+    // [inputs] The Pose handoff the port Sticker is shown with (session.portHandoff), for the inspector's reset and the
+    // bar's Back to source.
+    portHandoff: session.portHandoff,
     // [inputs] The upstream layers: as the Timeline shows them (studio/upstream.js timelineLayers), and their working
     // copies for the inspector and the bar.
     upstream: [],
@@ -331,6 +340,7 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     view.selection = session.selection;
     view.canUndo = session.canUndo;
     view.canRedo = session.canRedo;
+    view.portHandoff = session.portHandoff;
     world.ground = groundNow();
     world.camera = outputView(session.state, view.playhead).position;
     syncMedia();
@@ -680,7 +690,18 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
 
   // What the inspector's edits read (inspector_actions.js applyInspectorEdit's context), with the upstream working
   // copies an upstream object's edit changes (docs/studio-ui.md "上流の物の編集").
-  const inspectorContext = () => ({ playhead: view.playhead, imageSizes: view.imageSizes, animations: view.animations, portSize: view.portSize, upstream: view.upstreamWorking });
+  const inspectorContext = () => ({ playhead: view.playhead, imageSizes: view.imageSizes, animations: view.animations, portSize: view.portSize, upstream: view.upstreamWorking, handoff: session.portHandoff });
+
+  // [inputs] A result of this node while the editor is open: the port Sticker is shown with its Pose handoff
+  // (docs/studio-ui.md "`port` の Sticker"; during a drag, once it ends). ComfyUI stores the output before this
+  // listener runs (its own `executed` listener came first).
+  const onExecuted = (event) => {
+    if (closed || readOnly) return;
+    const detail = event?.detail ?? {};
+    if (!executionIdMatches(String(detail.display_node ?? detail.node ?? "").trim(), node.id)) return;
+    if (session.setPortHandoff(currentHandoff())) sync();
+  };
+  api?.addEventListener?.("executed", onExecuted);
 
   function inspectorEdit(edit) {
     // A wheel run of the Camera tab's Frame view still waiting to be one Undo step is one first.
@@ -1043,6 +1064,7 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     stageMedia.dispose();
     depthColors.dispose();
     comfyRunning.dispose();
+    api?.removeEventListener?.("executed", onExecuted);
     portMedia.dispose();
     upstream.dispose();
     vueApp.unmount();

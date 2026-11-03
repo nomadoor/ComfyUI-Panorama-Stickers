@@ -848,3 +848,87 @@ test("Back to source of an input's object resets every row away from the input's
   assert.equal(sticker.animation.speed, 1);
   assert.equal(session.canUndo, true);
 });
+
+// docs/studio-ui.md "`port` の Sticker" (Pose handoff) and docs/editor-interaction.md "`port` の Sticker の Pose handoff の
+// 表示と記録": the session shows the port Sticker with the handoff and keeps the stored one for Undo and state_json.
+const SKY_HANDOFF = {
+  placement: "sky",
+  lanes: { direction: { value: { yaw_deg: 10, pitch_deg: 5 }, keyframes: [] }, roll: { value: 3, keyframes: [] }, size: { value: { hFOV_deg: 60, vFOV_deg: 60 }, keyframes: [] } },
+  fps: 24,
+};
+const WORLD_HANDOFF = {
+  placement: "world",
+  lanes: { position: { value: [0, 0, -2], keyframes: [] }, rotation: { value: { yaw_deg: 0, pitch_deg: 0, roll_deg: 0 }, keyframes: [] }, scale: { value: 4, keyframes: [] } },
+  fps: 24,
+};
+const PORT_RAW = { stickers: [{ id: "sticker_1", placement: "sky", source: { kind: "port" }, direction: { value: { yaw_deg: -90, pitch_deg: 0 } }, size: { value: { hFOV_deg: 30, vFOV_deg: 30 } } }] };
+const portOf = (state) => state.stickers.find((item) => item.source.kind === "port");
+
+test("the port Sticker shows with the Pose handoff, and Undo and state_json keep the stored one", () => {
+  const current = text(PORT_RAW);
+  const session = createStudioSession({ state: load(PORT_RAW), handoff: SKY_HANDOFF });
+  assert.deepEqual(portOf(session.state).direction.value, { yaw_deg: 10, pitch_deg: 5 });
+  assert.equal(session.portHandoff, SKY_HANDOFF);
+  // Opening and closing writes nothing.
+  assert.equal(session.stateText(node, current), null);
+  // An edit of a handed Lane makes it an override; the other Lanes are written as stored.
+  session.select({ row: "sticker_1", keys: [] });
+  assert.equal(session.applyInspector({ type: "field", target: { kind: "sticker", id: "sticker_1" }, field: "rot_deg", value: 40, phase: "commit" }, { playhead: 0 }).changed, true);
+  assert.deepEqual(portOf(session.state).handoff_overrides, ["roll"]);
+  assert.deepEqual(portOf(session.state).direction.value, { yaw_deg: 10, pitch_deg: 5 });
+  const written = portOf(load(JSON.parse(session.stateText(node, current))));
+  assert.deepEqual(written.handoff_overrides, ["roll"]);
+  assert.equal(written.roll.value, 40);
+  assert.deepEqual(written.direction.value, { yaw_deg: -90, pitch_deg: 0 });
+  // Undo restores the stored Sticker, shown with the handoff again.
+  session.undo();
+  assert.deepEqual(portOf(session.state).handoff_overrides, []);
+  assert.equal(portOf(session.state).roll.value, 3);
+  // (The first write gave the state a Scene id, so the text is written again, with the stored Sticker as it was.)
+  assert.deepEqual(portOf(load(JSON.parse(session.stateText(node, current)))), portOf(load(PORT_RAW)));
+  session.redo();
+  assert.equal(portOf(session.state).roll.value, 40);
+});
+
+test("a row reset back to the handoff is not recorded as an override again; a reset of a row not overridden does nothing", () => {
+  const raw = { stickers: [{ ...PORT_RAW.stickers[0], handoff_overrides: ["size"] }] };
+  const session = createStudioSession({ state: load(raw), handoff: SKY_HANDOFF });
+  session.select({ row: "sticker_1", keys: [] });
+  const reset = (row) => session.applyInspector({ type: "reset", target: { kind: "sticker", id: "sticker_1" }, row }, { playhead: 0 });
+  assert.equal(reset("rotation").changed, false);
+  assert.equal(reset("fov").changed, true);
+  assert.deepEqual(portOf(session.state).handoff_overrides, []);
+  assert.deepEqual(portOf(session.state).size.value, { hFOV_deg: 60, vFOV_deg: 60 });
+  assert.deepEqual(portOf(load(JSON.parse(session.stateText(node, text(raw))))).handoff_overrides, []);
+  // The bar has nothing left to put back.
+  assert.equal(session.revertSelected({ playhead: 0 }).changed, false);
+});
+
+test("a new result's handoff is applied at once, or after the drag under way ends; a placement switch drops the Keyframe selection", () => {
+  const session = createStudioSession({ state: load(PORT_RAW) });
+  assert.deepEqual(portOf(session.state).direction.value, { yaw_deg: -90, pitch_deg: 0 });
+  session.select({ row: "sticker_1", keys: [{ row: "sticker_1", lane: "size", frame: 0 }] });
+  assert.equal(session.setPortHandoff(SKY_HANDOFF), true);
+  assert.deepEqual(portOf(session.state).direction.value, { yaw_deg: 10, pitch_deg: 5 });
+  assert.equal(session.selection.keys.length, 1, "the same placement keeps the Keyframe selection");
+  // During a drag, the world handoff waits for its end.
+  session.gesture((draft) => {
+    draft.stickers[0].opacity = { value: 0.5, keyframes: [] };
+    return true;
+  });
+  assert.equal(session.setPortHandoff(WORLD_HANDOFF), false);
+  assert.equal(portOf(session.state).placement, "sky");
+  session.cancelGesture();
+  assert.equal(portOf(session.state).placement, "world");
+  assert.deepEqual(session.selection, { row: "sticker_1", keys: [] });
+  // Undo history and state_json still hold the stored sky Sticker.
+  assert.equal(portOf(load(JSON.parse(session.stateText(node, "") ?? text(PORT_RAW)))).placement, "sky");
+});
+
+test("a change of the Timeline fps is no edit of the port Sticker shown with the Pose handoff", () => {
+  const keyed = { ...SKY_HANDOFF, lanes: { ...SKY_HANDOFF.lanes, roll: { value: 3, keyframes: [{ frame: 0, value: 3, easing: "auto" }, { frame: 7, value: 9, easing: "auto" }] } } };
+  const session = createStudioSession({ state: load(PORT_RAW), handoff: keyed });
+  assert.equal(session.applyTimeline({ kind: "fps", fps: 30 }).changed, true);
+  assert.deepEqual(portOf(session.state).handoff_overrides, []);
+  assert.deepEqual(portOf(load(JSON.parse(session.stateText(node, "")))).roll.keyframes, []);
+});
