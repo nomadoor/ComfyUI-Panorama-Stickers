@@ -7,7 +7,10 @@ import test from "node:test";
 import { newWorldSceneSticker } from "../web_src/pano_editor_state.js";
 import { loadSceneState, sceneStateText } from "../web_src/pano_scene_state.js";
 import { createStudioSession, inspectorSelection } from "../web_src/studio/session.js";
-import { keyRow } from "../web_src/studio/timeline_actions.js";
+import { copyKeys, keyRow, pasteKeys } from "../web_src/studio/timeline_actions.js";
+import { createStudioUpstream } from "../web_src/studio/upstream.js";
+
+globalThis.Image ??= class {};
 
 const file = (filename) => ({ kind: "file", filename, subfolder: "", storage: "input" });
 
@@ -590,4 +593,342 @@ test("the Camera button on a state whose Camera is null puts the default Camera 
   assert.deepEqual(session.state.camera.rotation.value, { yaw_deg: 30, pitch_deg: -10, roll_deg: 0 });
   assert.deepEqual(session.state.camera.fov, want.fov, "the default angle of view stays");
   assert.equal(session.state.camera.aspect, want.aspect);
+});
+
+// --- Upstream objects (docs/studio-ui.md "上流の物の編集"): edited in their working copies, written back as the
+// state's `upstream` records on each Undo step through the shared edits (pano_upstream_edits.js).
+
+const upLayer = {
+  version: 2,
+  id: "scene_up",
+  timeline: { fps: 24 },
+  stickers: [
+    sky("sky_1", { direction: { value: { yaw_deg: 10, pitch_deg: 0 } }, roll: { value: 5 } }),
+    { id: "board_1", placement: "world", source: file("board.png"), position: { value: [0, 0, -3] } },
+  ],
+};
+// A layer without a Scene id: only inherited.
+const inheritedLayer = { version: 2, timeline: { fps: 24 }, stickers: [sky("sky_9")] };
+
+function upstreamSession({ layers = [upLayer, inheritedLayer], records = [], list = null, own = {} } = {}) {
+  let session = null;
+  const box = { list: list ?? layers.map((state) => ({ state, ui: {} })) };
+  const upstream = createStudioUpstream({
+    list: () => box.list,
+    linkType: () => "PANO_SCENE",
+    uiList: () => [],
+    state: () => session.state,
+    setRecords: (next) => session.setUpstreamRecords(next),
+    mediaSource: () => "",
+    mediaAssetSource: () => "",
+    revisionOf: () => "",
+    playing: () => false,
+  });
+  session = createStudioSession({ state: load({ ...own, upstream: records }), upstream });
+  const sticker = (id) => upstream.working().flatMap((layer) => layer.sceneState.stickers).find((item) => item.id === id) ?? null;
+  const record = () => session.state.upstream.find((item) => item.layer === "scene_up") ?? null;
+  const context = () => ({ playhead: 0, upstream: upstream.working() });
+  return { session, upstream, sticker, record, context, box };
+}
+
+const SKY_UP = "upstream:scene_up:sky_1";
+const BOARD_UP = "upstream:scene_up:board_1";
+
+test("an upstream object is selected by its working id and kept while its working copy is there", () => {
+  const { session, box } = upstreamSession();
+  assert.equal(session.selectObject(SKY_UP), true);
+  assert.equal(session.selection.row, SKY_UP);
+  assert.equal(session.selectObject("upstream:scene_up:nothing"), true, "a row no object has lets the selection go");
+  assert.equal(session.selection.row, null);
+  session.selectObject(BOARD_UP);
+  // A new result without it: the selection goes with it.
+  box.list = [{ state: { ...upLayer, stickers: [upLayer.stickers[0]] }, ui: {} }];
+  session.keepSelection();
+  assert.equal(session.selection.row, null);
+});
+
+test("an inspector edit of an upstream object writes only that field as an override, as one Undo step", () => {
+  const { session, sticker, record, context } = upstreamSession();
+  session.selectObject(BOARD_UP);
+  assert.equal(session.state.upstream.length, 0, "opening writes nothing");
+  const result = session.applyInspector(field(BOARD_UP, "position_x", 4), context());
+  assert.equal(result.history, true);
+  assert.deepEqual(record().stickers, [{ id: "board_1", placement: "world", position: { value: [4, 0, -3], keyframes: [] } }]);
+  assert.equal(session.canUndo, true);
+  session.undo();
+  assert.deepEqual(session.state.upstream, []);
+  assert.deepEqual(sticker(BOARD_UP).position.value, [0, 0, -3], "the working copy is made again from the records");
+  assert.equal(session.selection.row, BOARD_UP);
+  session.redo();
+  assert.deepEqual(sticker(BOARD_UP).position.value, [4, 0, -3]);
+});
+
+test("an inspector drag of an upstream object changes only its working copy; its cancel puts back the value grabbed", () => {
+  const { session, sticker, context } = upstreamSession();
+  session.applyInspector(field(BOARD_UP, "position_x", 7, "input"), context());
+  assert.deepEqual(sticker(BOARD_UP).position.value, [7, 0, -3]);
+  assert.deepEqual(session.state.upstream, [], "a live change writes no record");
+  const cancel = session.applyInspector({ ...field(BOARD_UP, "position_x", 7), phase: "cancel" }, context());
+  assert.equal(cancel.cancel, true);
+  assert.deepEqual(sticker(BOARD_UP).position.value, [0, 0, -3]);
+  assert.equal(session.canUndo, false);
+});
+
+test("a row's reset takes all its Lanes' overrides off as one step, and a commit after it writes nothing", () => {
+  const records = load({ upstream: [{ layer: "scene_up", fps: 24, stickers: [{ id: "sky_1", placement: "sky", direction: { value: { yaw_deg: 50, pitch_deg: 0 } }, roll: { value: 30 }, opacity: { value: 0.5 } }] }] }).upstream;
+  const { session, sticker, record, context } = upstreamSession({ records });
+  assert.equal(sticker(SKY_UP).roll.value, 30);
+  const result = session.applyInspector({ type: "reset", target: { kind: "sticker", id: SKY_UP }, row: "rotation" }, context());
+  assert.equal(result.changed, true);
+  assert.equal(result.history, true);
+  assert.deepEqual(Object.keys(record().stickers[0]).sort(), ["id", "opacity", "placement"]);
+  assert.equal(sticker(SKY_UP).roll.value, 5, "the upstream value");
+  assert.deepEqual(sticker(SKY_UP).direction.value, { yaw_deg: 10, pitch_deg: 0 });
+  const upstream = session.state.upstream;
+  session.applyInspector(field(SKY_UP, "opacity", 50), context());
+  assert.deepEqual(session.state.upstream, upstream, "the reset values are not written back as overrides");
+  session.undo();
+  assert.equal(sticker(SKY_UP).roll.value, 30, "one step brings both Lanes back");
+  assert.deepEqual(sticker(SKY_UP).direction.value, { yaw_deg: 50, pitch_deg: 0 });
+});
+
+test("Lock writes the upstream object's `locked` override; locked, it is not deleted or reverted", () => {
+  const records = load({ upstream: [{ layer: "scene_up", fps: 24, stickers: [{ id: "board_1", placement: "world", scale: { value: 3 } }] }] }).upstream;
+  const { session, sticker, record, context } = upstreamSession({ records });
+  session.selectObject(BOARD_UP);
+  assert.equal(session.toggleLock().changed, true);
+  assert.equal(record().stickers[0].locked, true);
+  assert.equal(sticker(BOARD_UP).locked, true);
+  assert.deepEqual(session.deleteSelectedObject(), { changed: false, notice: null });
+  assert.equal(session.revertSelected(context()).changed, false);
+  assert.equal(session.applyInspector(field(BOARD_UP, "position_x", 4), context()).changed, false);
+  session.undo();
+  assert.equal(sticker(BOARD_UP).locked, false);
+});
+
+test("Delete of an upstream object deletes it in its layer's record as one step and lets the selection go", () => {
+  const { session, sticker, record } = upstreamSession();
+  session.selectObject(SKY_UP);
+  assert.deepEqual(session.deleteSelectedObject(), { changed: true, notice: null });
+  assert.deepEqual(record().deleted, ["sky_1"]);
+  assert.equal(sticker(SKY_UP), null);
+  assert.equal(session.selection.row, null);
+  session.undo();
+  assert.ok(sticker(SKY_UP));
+  assert.deepEqual(session.state.upstream, []);
+});
+
+test("Back to source drops all the upstream object's overrides as one step", () => {
+  const records = load({ upstream: [{ layer: "scene_up", fps: 24, stickers: [{ id: "board_1", placement: "world", scale: { value: 3 }, visible: false }] }] }).upstream;
+  const { session, sticker, context } = upstreamSession({ records });
+  session.selectObject(BOARD_UP);
+  assert.equal(session.revertSelected(context()).changed, true);
+  assert.deepEqual(session.state.upstream, []);
+  assert.equal(sticker(BOARD_UP).scale.value, 1);
+  assert.equal(session.revertSelected(context()).changed, false, "nothing more to revert");
+});
+
+test("an object of a layer whose overrides cannot be kept is selected but not changed (Lock included)", () => {
+  const { session, sticker, context } = upstreamSession();
+  const id = "upstream:#1:sky_9";
+  assert.equal(session.selectObject(id), true);
+  assert.equal(session.toggleLock().changed, false);
+  assert.deepEqual(session.deleteSelectedObject(), { changed: false, notice: null });
+  assert.equal(session.revertSelected(context()).changed, false);
+  assert.equal(session.applyInspector(field(id, "opacity", 50), context()).changed, false);
+  assert.ok(sticker(id));
+  assert.deepEqual(session.state.upstream, []);
+});
+
+test("a stage drag of an upstream object changes its working copy; its end is one step, its cancel puts it back", () => {
+  const { session, sticker, record, upstream } = upstreamSession();
+  const move = (x) => session.gesture((draft) => {
+    const found = upstream.working().flatMap((layer) => layer.sceneState.stickers).find((item) => item.id === BOARD_UP);
+    found.position = { ...found.position, value: [x, 0, -3] };
+    return true;
+  }, (base) => ({ ...base }));
+  move(2);
+  assert.deepEqual(session.state.upstream, []);
+  session.cancelGesture();
+  assert.deepEqual(sticker(BOARD_UP).position.value, [0, 0, -3]);
+  move(5);
+  assert.equal(session.commitGesture().history, true);
+  assert.deepEqual(record().stickers[0].position.value, [5, 0, -3]);
+});
+
+test("the Timeline's edits of upstream rows go into the working copies, are written on commit, and its cancel puts them back", () => {
+  const { session, sticker, record, upstream } = upstreamSession();
+  const layer = upstream.timelineLayers()[0];
+  const hidden = { ...layer.sceneState, stickers: layer.sceneState.stickers.map((item) => (item.id === SKY_UP ? { ...item, visible: false } : item)) };
+  const live = session.applyTimeline({ kind: "state", state: session.state, upstream: { scene_up: hidden }, phase: "live", stopsPlayback: true });
+  assert.equal(live.changed, true);
+  assert.equal(sticker(SKY_UP).visible, false);
+  session.applyTimeline({ kind: "state", state: session.state, upstream: { scene_up: layer.sceneState }, phase: "cancel", stopsPlayback: true });
+  assert.equal(sticker(SKY_UP).visible, true);
+  assert.deepEqual(session.state.upstream, []);
+  session.applyTimeline({ kind: "state", state: session.state, upstream: { scene_up: hidden }, phase: "commit", stopsPlayback: true });
+  assert.deepEqual(record().stickers, [{ id: "sky_1", placement: "sky", visible: false }]);
+});
+
+test("the Timeline's layer Revert and Restore deleted change the records as one step each", () => {
+  const records = load({ upstream: [{ layer: "scene_up", fps: 24, deleted: ["board_1"], scene: { visible: false }, painting_visible: false }] }).upstream;
+  const { session, sticker, record } = upstreamSession({ records });
+  assert.equal(sticker(BOARD_UP), null);
+  assert.equal(session.applyTimeline({ kind: "restore-upstream-deleted", key: "scene_up" }).history, true);
+  assert.ok(sticker(BOARD_UP));
+  assert.deepEqual(record().deleted, []);
+  assert.equal(session.applyTimeline({ kind: "revert-upstream-layer", key: "scene_up" }).history, true);
+  assert.equal(record(), null, "a record left without overrides goes");
+  assert.equal(session.applyTimeline({ kind: "revert-upstream-layer", key: "scene_up" }).changed, false);
+  session.undo();
+  session.undo();
+  assert.equal(sticker(BOARD_UP), null);
+});
+
+test("each Undo step prunes the overrides of elements no longer upstream, and opening never does", () => {
+  const records = load({ upstream: [{ layer: "scene_up", fps: 24, deleted: ["gone_1"], stickers: [{ id: "gone_2", placement: "sky", opacity: { value: 0.5 } }] }] }).upstream;
+  const { session, record, context } = upstreamSession({ records });
+  assert.deepEqual(record().deleted, ["gone_1"]);
+  session.applyInspector(field(BOARD_UP, "position_x", 4), context());
+  assert.deepEqual(record().deleted, []);
+  assert.deepEqual(record().stickers.map((item) => item.id), ["board_1"]);
+});
+
+test("keeping the selection on each redraw searches the upstream layers again only when something changed", () => {
+  let searches = 0;
+  const stickers = [{ id: "upstream:scene_up:sky_1", origin: { layer: "scene_up", id: "sky_1" } }];
+  const box = { list: [{ key: "scene_up", get sceneState() { searches += 1; return { stickers }; } }] };
+  const session = createStudioSession({ state: load({}), upstream: { working: () => box.list, edits: {} } });
+  session.selectObject("upstream:scene_up:sky_1");
+  session.keepSelection();
+  const after = searches;
+  for (let index = 0; index < 20; index += 1) session.keepSelection();
+  assert.equal(searches, after);
+  assert.equal(session.selection.row, "upstream:scene_up:sky_1");
+  // A new result without it: a new list, searched again.
+  box.list = [{ key: "scene_up", sceneState: { stickers: [] } }];
+  session.keepSelection();
+  assert.equal(session.selection.row, null);
+});
+
+test("a cancel makes the upstream working copies again only when a gesture was under way", () => {
+  let rebuilds = 0;
+  const session = createStudioSession({ state: load({ stickers: [world("sticker_1")] }), upstream: { working: () => [], edits: { rebuild: () => { rebuilds += 1; }, sync() {}, prune() {} } } });
+  session.applyInspector({ ...field("sticker_1", "position_x", 2), phase: "cancel" }, { playhead: 0 });
+  assert.equal(rebuilds, 0);
+  session.applyInspector(field("sticker_1", "position_x", 2, "input"), { playhead: 0 });
+  session.applyInspector({ ...field("sticker_1", "position_x", 2), phase: "cancel" }, { playhead: 0 });
+  assert.equal(rebuilds, 1);
+  assert.equal(session.cancelGesture().changed, false);
+  assert.equal(rebuilds, 1);
+});
+
+test("Keyframes pasted onto an upstream row are written as that object's override, as one step", () => {
+  const records = load({ upstream: [{ layer: "scene_up", fps: 24, stickers: [{ id: "board_1", placement: "world", position: { value: [0, 0, -3], keyframes: [{ frame: 4, value: [1, 0, -3] }] } }] }] }).upstream;
+  const { session, record, upstream } = upstreamSession({ records, own: { timeline: { fps: 24, length: 100 } } });
+  const ctx = () => ({ state: session.state, upstream: upstream.timelineLayers(), media: {} });
+  const clipboard = copyKeys(ctx(), { row: BOARD_UP, keys: [{ row: BOARD_UP, lane: null, frame: 4 }] });
+  const result = pasteKeys(ctx(), clipboard, { row: BOARD_UP, keys: [] }, 30);
+  session.applyTimeline({ kind: "state", ...result.edit, selection: result.selection, phase: "commit", stopsPlayback: true });
+  assert.deepEqual(record().stickers[0].position.keyframes.map((key) => key.frame), [4, 30]);
+  session.undo();
+  assert.deepEqual(record().stickers[0].position.keyframes.map((key) => key.frame), [4]);
+});
+
+// docs/studio-ui.md "下の中央のバー": an input's object's Back to source resets the rows its bar counts as changed
+// (inspector_model.js stickerChangedRows): the animation's Speed too, not only the rows with Lanes.
+test("Back to source of an input's object resets every row away from the input's value, its animation's Speed included", () => {
+  const port = { id: "sticker_1", placement: "world", source: { kind: "port" }, position: { value: [1, 2, 3] }, animation: { clip: "Idle", speed: 2 } };
+  const session = createStudioSession({ state: load({ stickers: [port] }) });
+  session.selectObject("sticker_1");
+  const context = { playhead: 0, animations: { sticker_1: [{ name: "Idle" }, { name: "Walk" }] } };
+  assert.equal(session.revertSelected(context).changed, true);
+  const sticker = session.state.stickers[0];
+  assert.deepEqual(sticker.position.value, [0, 0, 0]);
+  assert.equal(sticker.animation.speed, 1);
+  assert.equal(session.canUndo, true);
+});
+
+// docs/studio-ui.md "`port` の Sticker" (Pose handoff) and docs/editor-interaction.md "`port` の Sticker の Pose handoff の
+// 表示と記録": the session shows the port Sticker with the handoff and keeps the stored one for Undo and state_json.
+const SKY_HANDOFF = {
+  placement: "sky",
+  lanes: { direction: { value: { yaw_deg: 10, pitch_deg: 5 }, keyframes: [] }, roll: { value: 3, keyframes: [] }, size: { value: { hFOV_deg: 60, vFOV_deg: 60 }, keyframes: [] } },
+  fps: 24,
+};
+const WORLD_HANDOFF = {
+  placement: "world",
+  lanes: { position: { value: [0, 0, -2], keyframes: [] }, rotation: { value: { yaw_deg: 0, pitch_deg: 0, roll_deg: 0 }, keyframes: [] }, scale: { value: 4, keyframes: [] } },
+  fps: 24,
+};
+const PORT_RAW = { stickers: [{ id: "sticker_1", placement: "sky", source: { kind: "port" }, direction: { value: { yaw_deg: -90, pitch_deg: 0 } }, size: { value: { hFOV_deg: 30, vFOV_deg: 30 } } }] };
+const portOf = (state) => state.stickers.find((item) => item.source.kind === "port");
+
+test("the port Sticker shows with the Pose handoff, and Undo and state_json keep the stored one", () => {
+  const current = text(PORT_RAW);
+  const session = createStudioSession({ state: load(PORT_RAW), handoff: SKY_HANDOFF });
+  assert.deepEqual(portOf(session.state).direction.value, { yaw_deg: 10, pitch_deg: 5 });
+  assert.equal(session.portHandoff, SKY_HANDOFF);
+  // Opening and closing writes nothing.
+  assert.equal(session.stateText(node, current), null);
+  // An edit of a handed Lane makes it an override; the other Lanes are written as stored.
+  session.select({ row: "sticker_1", keys: [] });
+  assert.equal(session.applyInspector({ type: "field", target: { kind: "sticker", id: "sticker_1" }, field: "rot_deg", value: 40, phase: "commit" }, { playhead: 0 }).changed, true);
+  assert.deepEqual(portOf(session.state).handoff_overrides, ["roll"]);
+  assert.deepEqual(portOf(session.state).direction.value, { yaw_deg: 10, pitch_deg: 5 });
+  const written = portOf(load(JSON.parse(session.stateText(node, current))));
+  assert.deepEqual(written.handoff_overrides, ["roll"]);
+  assert.equal(written.roll.value, 40);
+  assert.deepEqual(written.direction.value, { yaw_deg: -90, pitch_deg: 0 });
+  // Undo restores the stored Sticker, shown with the handoff again.
+  session.undo();
+  assert.deepEqual(portOf(session.state).handoff_overrides, []);
+  assert.equal(portOf(session.state).roll.value, 3);
+  // (The first write gave the state a Scene id, so the text is written again, with the stored Sticker as it was.)
+  assert.deepEqual(portOf(load(JSON.parse(session.stateText(node, current)))), portOf(load(PORT_RAW)));
+  session.redo();
+  assert.equal(portOf(session.state).roll.value, 40);
+});
+
+test("a row reset back to the handoff is not recorded as an override again; a reset of a row not overridden does nothing", () => {
+  const raw = { stickers: [{ ...PORT_RAW.stickers[0], handoff_overrides: ["size"] }] };
+  const session = createStudioSession({ state: load(raw), handoff: SKY_HANDOFF });
+  session.select({ row: "sticker_1", keys: [] });
+  const reset = (row) => session.applyInspector({ type: "reset", target: { kind: "sticker", id: "sticker_1" }, row }, { playhead: 0 });
+  assert.equal(reset("rotation").changed, false);
+  assert.equal(reset("fov").changed, true);
+  assert.deepEqual(portOf(session.state).handoff_overrides, []);
+  assert.deepEqual(portOf(session.state).size.value, { hFOV_deg: 60, vFOV_deg: 60 });
+  assert.deepEqual(portOf(load(JSON.parse(session.stateText(node, text(raw))))).handoff_overrides, []);
+  // The bar has nothing left to put back.
+  assert.equal(session.revertSelected({ playhead: 0 }).changed, false);
+});
+
+test("a new result's handoff is applied at once, or after the drag under way ends; a placement switch drops the Keyframe selection", () => {
+  const session = createStudioSession({ state: load(PORT_RAW) });
+  assert.deepEqual(portOf(session.state).direction.value, { yaw_deg: -90, pitch_deg: 0 });
+  session.select({ row: "sticker_1", keys: [{ row: "sticker_1", lane: "size", frame: 0 }] });
+  assert.equal(session.setPortHandoff(SKY_HANDOFF), true);
+  assert.deepEqual(portOf(session.state).direction.value, { yaw_deg: 10, pitch_deg: 5 });
+  assert.equal(session.selection.keys.length, 1, "the same placement keeps the Keyframe selection");
+  // During a drag, the world handoff waits for its end.
+  session.gesture((draft) => {
+    draft.stickers[0].opacity = { value: 0.5, keyframes: [] };
+    return true;
+  });
+  assert.equal(session.setPortHandoff(WORLD_HANDOFF), false);
+  assert.equal(portOf(session.state).placement, "sky");
+  session.cancelGesture();
+  assert.equal(portOf(session.state).placement, "world");
+  assert.deepEqual(session.selection, { row: "sticker_1", keys: [] });
+  // Undo history and state_json still hold the stored sky Sticker.
+  assert.equal(portOf(load(JSON.parse(session.stateText(node, "") ?? text(PORT_RAW)))).placement, "sky");
+});
+
+test("a change of the Timeline fps is no edit of the port Sticker shown with the Pose handoff", () => {
+  const keyed = { ...SKY_HANDOFF, lanes: { ...SKY_HANDOFF.lanes, roll: { value: 3, keyframes: [{ frame: 0, value: 3, easing: "auto" }, { frame: 7, value: 9, easing: "auto" }] } } };
+  const session = createStudioSession({ state: load(PORT_RAW), handoff: keyed });
+  assert.equal(session.applyTimeline({ kind: "fps", fps: 30 }).changed, true);
+  assert.deepEqual(portOf(session.state).handoff_overrides, []);
+  assert.deepEqual(portOf(load(JSON.parse(session.stateText(node, "")))).roll.keyframes, []);
 });

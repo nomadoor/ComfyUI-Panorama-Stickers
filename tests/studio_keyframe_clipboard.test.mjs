@@ -5,7 +5,7 @@ import test from "node:test";
 
 import { createStudioSession } from "../web_src/studio/session.js";
 import { applyEdit, copyKeys, pasteKeys } from "../web_src/studio/timeline_actions.js";
-import { ctxOf, studioState } from "./studio_timeline_fixtures.mjs";
+import { ctxOf, studioState, upstreamLayer } from "./studio_timeline_fixtures.mjs";
 
 // studioState(): length 100; the Camera's position keyed at 0 ([0,0,0]) and 48 ([1,0,0]); sticker_1 (world, Clip range
 // from 10, `in` 0) keyed on position at 0 and 20 and on rotation at 20 (its own frames: Timeline 10, 30, 30);
@@ -134,4 +134,25 @@ test("a paste is one Undo step", () => {
   session.undo();
   assert.deepEqual(frames(session.state.camera.position), [0, 48]);
   assert.equal(session.canUndo, false);
+});
+
+// docs/studio-ui.md "上流の物の編集": Keyframes copy from an upstream row and paste onto it (the paste goes into its
+// layer's working copy, an override once written back); not onto a row of a layer whose overrides cannot be kept.
+test("an upstream row's Keyframes paste onto it in its layer's working copy; a `#` layer's row takes no paste", () => {
+  const row = "upstream:scene_up:sticker_1";
+  const ctx = ctxOf(studioState(), { upstream: [upstreamLayer()] });
+  const before = frozen(ctx);
+  const clipboard = copyKeys(ctx, { row, keys: [{ row, lane: null, frame: 50 }] });
+  const result = pasteKeys(ctx, clipboard, { row, keys: [] }, 80);
+  assert.equal(result.edit.state, ctx.state, "the node's own state is not changed");
+  const working = result.edit.upstream.scene_up.stickers[0];
+  assert.deepEqual(frames(working.position), [0, 50, 80]);
+  assert.deepEqual(working.position.keyframes[2].value, [0, 1, 0]);
+  assert.equal(frozen(ctx), before);
+
+  const inherited = ctxOf(studioState(), { upstream: [upstreamLayer({ key: "#0", editable: false })] });
+  const theirs = "upstream:#0:sticker_1";
+  const copied = copyKeys(inherited, { row: theirs, keys: [{ row: theirs, lane: null, frame: 50 }] });
+  assert.ok(copied, "it copies");
+  assert.equal(pasteKeys(inherited, copied, { row: theirs, keys: [] }, 80), null);
 });

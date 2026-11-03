@@ -198,13 +198,13 @@ test("the knobs light for their operation, W moves until released or the window 
   await expect.poll(lit).toEqual(["orbit", "move"]);
   await page.keyboard.up("Alt");
   await expect.poll(lit).toEqual([]);
-  // A middle drag on the stage pans: the hand lights.
+  // A right drag on the stage pans: the hand lights (ADR 0060).
   const at = await stageCenter(stage);
   await page.mouse.move(at.x, at.y);
-  await page.mouse.down({ button: "middle" });
+  await page.mouse.down({ button: "right" });
   await page.mouse.move(at.x + 30, at.y + 10);
   await expect.poll(lit).toEqual(["pan"]);
-  await page.mouse.up({ button: "middle" });
+  await page.mouse.up({ button: "right" });
   await expect.poll(lit).toEqual([]);
   // Dragging the sphere knob orbits and lights it; the editor shows the grabbing cursor.
   const sphere = await page.locator('[data-knob="orbit"]').boundingBox();

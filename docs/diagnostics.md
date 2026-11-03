@@ -38,8 +38,9 @@
 | `webgl` | WebGL コンテキスト：`created` / `lost` / `restored` / `disposed` / `alive`（破棄も喪失もしていない数） |
 | `video` | この拡張が作った `<video>`：`alive`（まだ GC されていない数。src を外して `load()` した要素も GC まで数える）、`loaded`（src があり、デコーダを持つ数）、`playing`、`list`（最大 20 件：`label`、再生中か、src があるか、`videoWidth` x `videoHeight`、`readyState`、DOM に付いているか） |
 | `frame` | エディタの描画：直近 1 秒のフレーム数、1 フレームの最長時間（ms）、長いタスク（`longtask`）の数と最長時間。エディタは描くことがあるときだけフレームを回すので（`pano_frame_scheduler.js`）、何もしていないときは 0 になる |
-| `renders` | three.js のビューの描画：`editor`（エディタのビュー）と `node`（ノード上の共有ビュー）ごとの、直近 1 秒の回数と最長時間 |
+| `renders` | three.js のビューの描画（ふつうの描画、`unwrap`、Panorama モードの ERP）：`editor`（エディタのビュー）と `node`（ノード上の共有ビュー）ごとの、直近 1 秒の回数と最長時間（CPU 側） |
 | `sources["three.editor"]`, `sources["three.node"]` | 各ビューの `renderer.info`（`textures`、`geometries`、`programs`、最後の描画パスの `calls` と `triangles`）、キャンバスの大きさ、`layerTextures`（ビューの owner が共有するレイヤのテクスチャの数。同じメディアは owner がいくつあっても 1 枚）、`sceneItems`（`scene` と 3D Sticker の項目の数、読み込み済み・読み込み中の数、読み込み済みの合計 MB）、`sparks`（Spark の `SparkRenderer` ごとに 1 行：`view`（`stage` / `camera_preview`）、`layer`（three.js の layer）、直近 1 秒の `generates`（全スプラットの生成）と `sorts`（読み戻しと並べ替え）の回数（Spark に数える手がかりのメソッドが無いときは `null`＝計測していない）、`camera`（最後に更新に使ったカメラの `position` と `direction`）。何もしていないときは `generates` と `sorts` が 0 になる） |
+| `gpu` | three.js のビューの描画ごとの GPU の時間：`timer`（`query`＝`EXT_disjoint_timer_query_webgl2` で測った、`finish`＝その拡張が無いので描画の前後で `gl.finish()` して測った（この場合は測ること自体が描画を遅くする）、`null`＝まだ測っていない）、`waiting`（結果を待っている問い合わせの数）、`passes`（直近 1 秒の描画を名前ごとに：`count`、GPU の合計 `ms` と最長 `maxMs`、`draws`（WebGL の draw 呼び出しの数）、`triangles`（三角形の数の合計））。名前は `ビュー.種類.owner` で、種類は `render`（ふつうの描画）・`erp`（Panorama モードの ERP の 6 面と写し）・`unwrap`、owner は描画を頼んだもの（`studio-stage` はステージ、`studio-output` は Output の小窓、`studio-live-erp` は Camera タブの ERP）、レンズの Camera の描画には `+lens` が付く。実装は `web_src/pano_diagnostics.js` `gpuStart`・`gpuEnd`・`gpuDraw` と `watchThreeView` |
 | `sources.editor` | 開いているエディタ：`type`（`stickers` / `cutout` など）、`readOnly`、`mode`、`interaction`（`editor.interaction.kind`）、`timelineDrag`、`playing` |
 | `costMs` | 前回の記録を作るのにかかった時間（localStorage への書き出しを含む） |
 

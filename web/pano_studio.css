@@ -36,6 +36,8 @@
   --studio-ice: #5f8fa3;
   --studio-lime: #7f9a3a;
   --studio-yellow: #a8861f;
+  /* The override colour (docs/design.md "色" 桃): an upstream object's overridden-row dots, Back to source while pressable. */
+  --studio-override: #c2477d;
   /* Floating parts over the stage: 85% opaque, never the 2nd gray on them. */
   --studio-float-alpha: 85%;
   --studio-float: color-mix(in srgb, var(--studio-panel) var(--studio-float-alpha), transparent);
@@ -100,6 +102,7 @@
   --studio-ice: #aecedb;
   --studio-lime: #d6e797;
   --studio-yellow: #e8cf74;
+  --studio-override: #e879a6;
 }
 
 .pano-studio *,
@@ -294,6 +297,11 @@
 .pano-studio-icon-btn.is-knob svg.icon {
   width: 18px;
   height: 18px;
+}
+
+/* Back to source while it has something to put back (docs/studio-ui.md "下の中央のバー"): the override colour. */
+.pano-studio-icon-btn.is-override {
+  color: var(--studio-override);
 }
 
 .pano-studio-icon-btn[aria-disabled="true"] {
@@ -583,7 +591,7 @@
   height: 4px;
   flex: none;
   border-radius: 50%;
-  background: var(--studio-fg);
+  background: var(--studio-override);
 }
 
 .pano-studio-row-values {
@@ -1240,7 +1248,7 @@
   height: 5px;
   margin: 0 4px;
   border-radius: 50%;
-  background: var(--studio-fg);
+  background: var(--studio-override);
   visibility: hidden;
 }
 

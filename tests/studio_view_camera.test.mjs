@@ -546,12 +546,25 @@ test("in the Frame view a wheel step and Frame Selected apply at once", () => {
   closeVec(view.pose().target, [0, 0, -20]);
 });
 
-test("the Frame view has no double click and no Reset View", () => {
+test("the Frame view has no Reset View", () => {
   const view = camera(pose(), { frame: true });
-  assert.equal(view.focus([1, 0, -3]).moved, false);
   assert.equal(view.reset(pose({ yaw_deg: 90 })).moved, false);
   closeVec(view.pose().target, [0, 0, -8]);
   assert.equal(view.pose().yaw_deg, 0);
+});
+
+test("a double click in the Frame view makes the hit T and turns the Camera to it at once, P and the roll staying", () => {
+  const view = camera(pose({ roll_deg: -4 }), { frame: true });
+  const result = view.focus([3, 0, -3]);
+  assert.equal(result.moved, true);
+  assert.equal(view.animating(), false);
+  const shown = view.pose();
+  closeVec(shown.position, [0, 0, 0]);
+  closeVec(shown.target, [3, 0, -3]);
+  close(shown.yaw_deg, 45);
+  close(shown.pitch_deg, 0);
+  close(shown.roll_deg, -4);
+  assert.deepEqual(view.focus(null), { moved: false, notice: "nothing-to-focus" });
 });
 
 test("in the Frame view the Camera keeps its roll, and a pan moves along the rolled screen axes", () => {

@@ -1,19 +1,18 @@
 // The upstream Scene in the new editor (docs/studio-ui.md "ノードの入力から来た物"): the layers of another Studio's
 // Scene on the `scene` input, from the node's result (`pano_upstream_layers`, docs/studio-node.md "上流の Scene"), with
 // the node's own overrides applied in working copies (pano_upstream_layers.js createUpstreamLayers, shared with the old
-// editor and the Preview), what the stage draws of them at a frame, their groups of Timeline rows (read-only until the
-// new editor edits upstream items), the upstream length the Auto length counts, whether the editor waits for a run to
-// show them. The upstream background that stands in while the node has no background of its own is
+// editor and the Preview), what the stage draws of them at a frame, their groups of Timeline rows, the edits of the
+// working copies written back as the overrides (docs/studio-ui.md "上流の物の編集", pano_upstream_edits.js, shared with
+// the old editor), the upstream length the Auto length counts, whether the editor waits for a run to show them. The upstream background that stands in while the node has no background of its own is
 // pano_background_choice.js's.
 import { portMediaMeta } from "../pano_port_media.js";
 import {
   layerUiList,
-  upstreamBaseline,
   upstreamDeletedCount,
   upstreamLayerEditable,
-  upstreamOverriddenEnds,
   upstreamPending,
 } from "../pano_upstream.js";
+import { createUpstreamEdits } from "../pano_upstream_edits.js";
 import { createUpstreamLayers } from "../pano_upstream_layers.js";
 
 // The paint of an upstream layer shows at the editor's default size, as the Preview shows it (pano_scene_viewer.js):
@@ -40,13 +39,12 @@ export function upstreamNodeName(nodes, key) {
 
 // list(): the `pano_upstream_layers` value of the node's current result, or null. linkType(): the type of the link on
 // `scene` (pano_preview_video.js linkedInputType). uiList(key): a list of the node's result. state(): the working
-// state (its `upstream` records and Timeline fps). nodeName(key): the upstream Studio's title for a layer key, or null.
+// state (its `upstream` records and Timeline fps). setRecords(records): writes the `upstream` records into the working
+// state (session.js setUpstreamRecords). nodeName(key): the upstream Studio's title for a layer key, or null.
 // mediaSource, mediaAssetSource, revisionOf, playing, editorFile and onMedia are createUpstreamLayers's.
 export function createStudioUpstream({
-  list, linkType, uiList, state, nodeName = () => null, mediaSource, mediaAssetSource, revisionOf, playing, editorFile = null, onMedia = () => {},
+  list, linkType, uiList, state, setRecords, nodeName = () => null, mediaSource, mediaAssetSource, revisionOf, playing, editorFile = null, onMedia = () => {},
 }) {
-  // The working copies as the last rebuild left them: the Auto length counts the Clip ranges overridden since.
-  let baseline = new Map();
   const layers = createUpstreamLayers({
     list,
     fps: () => state().timeline.fps,
@@ -58,29 +56,56 @@ export function createStudioUpstream({
     playing,
     editorFile,
     onMedia,
-    onRebuild: (working) => {
-      baseline = upstreamBaseline(working);
-    },
+    onRebuild: (working) => edits.rebuilt(working),
+  });
+  // The write-back of the working copies' edits and the operations that change the records (pano_upstream_edits.js);
+  // the Auto length counts the Clip ranges overridden since its baseline.
+  const edits = createUpstreamEdits({
+    records: () => state().upstream ?? [],
+    setRecords,
+    layers,
+    fps: () => state().timeline.fps,
   });
 
   const entries = () => layers.entries();
 
+  // The Studios' names by layer key, found once per result (nodeName parses every Panorama Studio's state_json), and
+  // the working layers as last handed out: the same list while each layer's working copy is the same object (the stage
+  // reads it on each draw and pointer move; an edit in place keeps the copy, a rebuild or setWorking replaces it).
+  let names = { list: null, byKey: new Map() };
+  let handed = { copies: [], list: [] };
+  function nameOf(key) {
+    const current = layers.current().list;
+    if (names.list !== current) names = { list: current, byKey: new Map() };
+    if (!names.byKey.has(key)) names.byKey.set(key, nodeName(key));
+    return names.byKey.get(key);
+  }
+  function working() {
+    const copies = (entries() ?? []).map((entry) => entry.working);
+    if (copies.length !== handed.copies.length || copies.some((copy, index) => copy !== handed.copies[index])) {
+      handed = { copies, list: copies.map((copy) => ({ ...copy, name: nameOf(copy.key) })) };
+    }
+    return handed.list;
+  }
+
   return {
-    // The working copies of the layers (pano_upstream.js upstreamWorkingLayers), none without a result.
-    working: () => (entries() ?? []).map((entry) => entry.working),
+    // The working copies of the layers (pano_upstream.js upstreamWorkingLayers), each with the `name` of the Studio it
+    // came from (nodeName, or null), none without a result. Their `sceneState` is the working copy itself: an edit
+    // of it is written back by `edits`.
+    working,
+    edits,
     // What the stage draws of the layers at Timeline `frame` ({ sky, stickers, items }), or null without layers.
     viewInput: (frame) => (entries() ? layers.viewInput(frame) : null),
-    // The layers as the Timeline shows them (timeline_model.js ctx `upstream`), read-only for now.
+    // The layers as the Timeline shows them (timeline_model.js ctx `upstream`).
     timelineLayers() {
       const records = state().upstream ?? [];
       return (entries() ?? []).map(({ layer, working }) => {
         const editable = upstreamLayerEditable(working.key);
         return {
           key: working.key,
-          name: nodeName(working.key),
+          name: nameOf(working.key),
           sceneState: working.sceneState,
           editable,
-          readOnly: true,
           record: editable ? records.find((item) => item.layer === working.key) ?? null : null,
           scene: layerUiList(layer.ui, "pano_scene_files").length > 0,
           // The number of its `scene` items: two or more give its Scene row a time of its own (timeline_model.js hasOwnTime).
@@ -100,16 +125,14 @@ export function createStudioUpstream({
       const portMeta = (index) => portMediaMeta((key) => layerUiList(current[index].layer.ui, key));
       return {
         frames: Number(frames) > 0 ? Number(frames) : 0,
-        ends: upstreamOverriddenEnds(working, state().upstream ?? [], baseline, portMeta, state().timeline.fps),
+        ends: edits.overriddenEnds(working, portMeta),
       };
     },
     // Whether a Scene is linked to `scene` and the node's result has no layers yet (it has not run since).
     pending: () => upstreamPending(linkType(), entries() ?? null),
-    // The working copies made again (Undo or Redo restored the `upstream` records).
-    rebuild: () => layers.rebuild(),
     dispose() {
       layers.dispose();
-      baseline = new Map();
+      edits.reset();
     },
   };
 }

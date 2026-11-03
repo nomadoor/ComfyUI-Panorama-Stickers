@@ -34,9 +34,9 @@ async function look(page, dx, dy) {
   const box = await page.locator("[data-stage-canvas]").boundingBox();
   const mid = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
   await page.mouse.move(mid.x, mid.y);
-  await page.mouse.down({ button: "right" });
+  await page.mouse.down({ button: "middle" });
   await page.mouse.move(mid.x + dx, mid.y + dy, { steps: 6 });
-  await page.mouse.up({ button: "right" });
+  await page.mouse.up({ button: "middle" });
   await page.mouse.move(5, 5);
   await page.waitForTimeout(300);
 }

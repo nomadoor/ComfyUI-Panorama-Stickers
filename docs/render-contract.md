@@ -147,7 +147,7 @@ RTX 4070 Ti、1 フレーム、κ = 0.5・hFOV 140°（4K は 4096 × 2048 相�
 - `sky` の Sticker の κ：κ = 0.5 の Sticker（市松）を κ = 1 の Camera で、κ = 1 の Sticker を κ = 0.5 の Camera で撮る場面（`LENS_STICKER_CASES` の `sky_k0_5_by_k1`・`sky_k1_by_k0_5`）。
 - `world` の Sticker の κ：κ = 0、hFOV 220° の球面の板を、レンズの中心からと、横にずれた位置から（視差）撮る場面（`world_k0_220_center`・`world_k0_220_side`）。許容差は下の κ の場面と同じ。Sticker の場面の素材は低周波（大きな市松）。エディタの描き方と当たり判定は `tests/browser/lens_stickers.spec.js` も確かめる。
 - Sticker の場面の計測（llvmpipe、`LENS_STICKER_CASES` の順に、平均 /255 と 8/255 超の割合）：0.232 / 0.000%、0.080 / 0.187%、0.346 / 0.089%、0.298 / 0.011%。すべて合格。
-- 輪の閉じ方（κ の Camera で撮り、Pose handoff で同じ κ の Sticker にして同じ Camera で撮り直すと一致する）は、Python の test（`tests/test_pose_handoff.py` の `test_a_lens_shot_returns_where_it_was_shot`。動かない Camera の `sky`、動く Camera の `world`、κ を Keyframe で動かす場合、hFOV が 180° を超える場合。κ = 1 だけの動く shot が平らな板になることは `test_a_pinhole_only_moving_shot_hands_todays_plane`）で守る。
+- 輪の閉じ方（κ の Camera で撮り、Pose handoff で同じ κ の Sticker にして同じ Camera で撮り直すと一致する）は、Python の test（`tests/test_pose_handoff.py` の `test_a_lens_shot_returns_where_it_was_shot`。動かない Camera と動く Camera（どちらも `sky`。ADR 0059）、κ を Keyframe で動かす場合、hFOV が 180° を超える場合。κ = 1 だけの動く shot が κ 1 の `sky` の Sticker になることは `test_a_pinhole_only_moving_shot_hands_a_pinhole_sky_sticker`）で守る。
 - κ = 0.7（hFOV 90°、余白付きの描画と後処理で 1 より小さい κ）、κ = 0.5（立体射影、hFOV 140°）、κ = 0（魚眼、hFOV 220°、立方体の 6 面）。スプラットの場面も同じ κ で入れる。素材は低周波（大きな市松と、なめらかな色の帯）。エディタは再標本化のぼけがあるので、ADR 0037 の「試作で決める」別の許容差として、縁を 1 画素削った内側で平均 ≤ 2/255、8/255 超 ≤ 2% を暫定とする（最初の計測で締める）。κ = 1 は後処理を通らない。
 - 計測（llvmpipe）：メッシュの場面はすべての κ で合格した。スプラットの場面は κ = 1 でも合格しない（平均 1.99/255、8/255 超 14%）。エディタ（Spark）とノードのスプラットの描き方の、レンズより前からある差で、次の候補として残す。許容差は緩めない。
 
@@ -330,10 +330,10 @@ RTX 4070 Ti、1 フレーム、κ = 0.5・hFOV 140°（4K は 4096 × 2048 相�
 - 板の縁はアンチエイリアスしない（ERP の出力の `sky` の Sticker と同じ。透視投影の `sky` の Sticker は縁をアンチエイリアスする。上記「Sky の描き方」）。光線が板と平行な画素と、Camera の後ろにある板は描かない。
 - Source を持たない Sticker、`active` でない Sticker、不透明度 0 の Sticker は描かない。VIDEO と IMAGE バッチの素材は `sky` と同じく `StickerSource.frame` のフレームを描く。
 - レンズ（`lens`。ADR 0042。`core/world_render.py` の `_lens_sticker_layer`）：`lens` を持たない Sticker は上のとおり平らな板。持つ Sticker は、κ = 1 も含めていつも、素材を κ と `lens.hFOV_deg` のレンズの像とみなし、レンズの中心のまわりの球面の一部に貼る（κ を Keyframe で 1 をまたいで動かしても形が跳ばない）。
-  - 形：レンズの中心 `L = position + ρ · (後ろの軸)`、半径 `ρ = scale ÷ (2 · g_κ(hFOV ÷ 2))`（`g_κ = lens_radius`）。球面の点のうち、`L` からの向きを Sticker の右・上・前の軸で見た角度 θ と方位 φ が、上の「Sky の描き方」の κ の Sticker と同じ写し方で `crop` の範囲（像の −1〜1）に入るものが板である。中心の点は `position`（θ = 0）。`scale` は κ = 0 では板の横の弧の長さになる。Pose handoff では `L` が Camera の位置、`ρ` が 2 になる（`docs/studio-node.md`）。
+  - 形：レンズの中心 `L = position + ρ · (後ろの軸)`、半径 `ρ = scale ÷ (2 · g_κ(hFOV ÷ 2))`（`g_κ = lens_radius`）。球面の点のうち、`L` からの向きを Sticker の右・上・前の軸で見た角度 θ と方位 φ が、上の「Sky の描き方」の κ の Sticker と同じ写し方で `crop` の範囲（像の −1〜1）に入るものが板である。中心の点は `position`（θ = 0）。`scale` は κ = 0 では板の横の弧の長さになる。ADR 0059 の前の実行の Pose handoff の結果では、`L` が Camera の位置、`ρ` が 2 だった（今の Pose handoff はいつも `sky` の Sticker）。
   - 180° を超える画角：θ が 180° を超える向きは板に入らない（Camera の規則と同じ）。`hFOV` が 360 なら、横は球を一周する帯になる。
   - 描き方：Sticker ごとに出力の全画素で光線と球（中心 `L`、半径 `ρ`）の交点を 2 つまで求め、光線の前方（`t > 0`）のものだけを、近い方から、交点の `L` からの向きが板に入るものを取る（両面）。素材の標本化と不透明度、縁は平らな板と同じ規則。奥行きは光線の長さ。
-  - 同じ姿勢（`L` から、同じ向きと κ と画角の Camera）で撮ると、素材の画素は撮った画素と同じ向きに戻る（輪が閉じる。`tests/test_pose_handoff.py` の `test_a_lens_shot_returns_where_it_was_shot`）。
+  - 同じ姿勢（`L` から、同じ向きと κ と画角の Camera）で撮ると、素材の画素は撮った画素と同じ向きに戻る（輪が閉じる）。
 
 ### `scene` の共通処理
 

@@ -18,14 +18,38 @@ import { createStudioSession } from "../web_src/studio/session.js";
 import { stageContent } from "../web_src/studio/stage_content.js";
 import { createStageObjects } from "../web_src/studio/stage_objects.js";
 import { stageCamera } from "../web_src/studio/stage_view.js";
+import { createStudioUpstream } from "../web_src/studio/upstream.js";
+
+// The upstream layers' pictures (pano_upstream_layers.js loads them as Images).
+globalThis.Image ??= class {
+  constructor() {
+    Object.assign(this, { naturalWidth: 100, naturalHeight: 100, width: 100, height: 100, complete: true });
+  }
+};
 
 const W = 1000;
 const H = 500;
 const file = (filename) => ({ kind: "file", filename, subfolder: "", storage: "input" });
 const image = { naturalWidth: 100, naturalHeight: 100, complete: true };
 
-function setup({ tab = "3d", camera: viewCamera = null, readOnly = false, stickers = null, sceneBox = () => null, editorFile = () => null, mode = "translate", painting = undefined, paintingVisible = true, rasterAlpha = undefined, view = { width: W, height: H }, cameraAt = [0, -1, -6] } = {}) {
-  const session = createStudioSession({
+function setup({ tab = "3d", camera: viewCamera = null, readOnly = false, stickers = null, sceneBox = () => null, editorFile = () => null, mode = "translate", painting = undefined, paintingVisible = true, rasterAlpha = undefined, view = { width: W, height: H }, cameraAt = [0, -1, -6], upstreamLayers = null } = {}) {
+  // [upstream] The layers of an upstream Scene (state v2 each), edited as overrides (docs/studio-ui.md "上流の物の編集").
+  let session = null;
+  // One result: its layers' list stays the same object while the editor is open.
+  const list = upstreamLayers && upstreamLayers.map((layer) => ({ state: layer, ui: {} }));
+  const upstream = upstreamLayers && createStudioUpstream({
+    list: () => list,
+    linkType: () => "PANO_SCENE",
+    uiList: () => [],
+    state: () => session.state,
+    setRecords: (records) => session.setUpstreamRecords(records),
+    mediaSource: () => "",
+    mediaAssetSource: (asset) => `/view?filename=${asset.filename}`,
+    revisionOf: () => "r",
+    playing: () => false,
+  });
+  session = createStudioSession({
+    upstream,
     state: loadSceneState({
       version: 2,
       camera: { projection: "perspective", position: { value: cameraAt }, rotation: { value: { yaw_deg: 180, pitch_deg: 0, roll_deg: 0 } } },
@@ -46,7 +70,7 @@ function setup({ tab = "3d", camera: viewCamera = null, readOnly = false, sticke
   };
   let cached = null;
   const content = () => {
-    if (!cached || cached.state !== session.state) cached = { state: session.state, value: stageContent(session.state, 0, { media: () => ({ media: image, revision: "r" }), editorFile, sceneBox }) };
+    if (!cached || cached.state !== session.state) cached = { state: session.state, value: stageContent(session.state, 0, { media: () => ({ media: image, revision: "r" }), editorFile, sceneBox, upstream: upstream?.viewInput(0) ?? null }) };
     return cached.value;
   };
   const gizmoMode = { value: mode };
@@ -64,8 +88,9 @@ function setup({ tab = "3d", camera: viewCamera = null, readOnly = false, sticke
     readOnly: () => readOnly,
     mode: () => gizmoMode.value,
     rasterAlpha,
+    upstream: () => upstream?.working() ?? [],
   });
-  return { session, objects, camera, gizmoMode };
+  return { session, objects, camera, gizmoMode, upstream };
 }
 
 const center = { x: W / 2, y: H / 2 };
@@ -1085,7 +1110,116 @@ test("a gizmo drag of a state whose Camera is null puts the default Camera there
   assert.ok(position[1] > 0.05 && Math.abs(position[0]) < 1e-9 && Math.abs(position[2]) < 1e-9);
 });
 
-test("an upstream element's row selected on the stage shows no gizmo (upstream elements are read-only here)", () => {
-  const { objects } = cameraSetup({ camera: { projection: "perspective" }, row: "upstream:scene_up:board", mode: "translate" });
+// --- Upstream objects on the stage (docs/studio-ui.md "上流の物の編集": selected and edited as the node's own, written
+// back as overrides; "ペイントのまとまり" "押したときの順": the upstream sky images after the node's own Sky).
+
+const upSky = (id, extra = {}) => ({ id, placement: "sky", source: file(`${id}.png`), direction: { value: { yaw_deg: 0, pitch_deg: 0 } }, size: { value: { hFOV_deg: 30, vFOV_deg: 30 } }, ...extra });
+const upLayer = (id, stickers) => ({ version: 2, ...(id ? { id } : {}), timeline: { fps: 24 }, stickers });
+const recordOf = (session, key) => session.state.upstream.find((item) => item.layer === key) ?? null;
+
+test("an upstream sky image is selected under the node's own Sky, and its drag turns its working copy, written back as one step", () => {
+  const { session, objects, upstream } = setup({ stickers: [], upstreamLayers: [upLayer("scene_up", [upSky("poster")])] });
+  const drag = objects.press(onSky);
+  assert.equal(session.selection.row, "upstream:scene_up:poster");
+  drag.move({ x: W * 0.75, y: onSky.y });
+  assert.deepEqual(session.state.upstream, [], "a drag writes no record until it ends");
+  const working = upstream.working()[0].sceneState.stickers[0];
+  assert.ok(Math.abs(evaluateLane(working, "direction", 0).yaw_deg) > 10);
+  drag.end();
+  assert.equal(session.canUndo, true);
+  assert.ok(recordOf(session, "scene_up").stickers[0].direction, "the direction override");
+  // The node's own sky image in front wins.
+  const own = setup({ upstreamLayers: [upLayer("scene_up", [upSky("poster")])] });
+  own.objects.press(onSky);
+  assert.equal(own.session.selection.row, "sky");
+});
+
+test("upstream sky images are hit from the downstream layer, and in a layer from the front; a hidden one is not hit", () => {
+  const layers = [
+    upLayer("scene_far", [upSky("far")]),
+    upLayer("scene_near", [upSky("back", { z_index: 0 }), upSky("front", { z_index: 2 }), upSky("hidden", { z_index: 5, visible: false })]),
+  ];
+  const { session, objects } = setup({ stickers: [], upstreamLayers: layers });
+  objects.press(onSky).end();
+  assert.equal(session.selection.row, "upstream:scene_near:front");
+});
+
+test("the selected upstream sky image's corner scales its working copy; a drag given up puts it back", () => {
+  const { session, objects, camera, upstream } = setup({ stickers: [], upstreamLayers: [upLayer("scene_up", [upSky("poster")])] });
+  session.selectObject("upstream:scene_up:poster");
+  const corner = buildStickerGeometry({ yaw_deg: 0, pitch_deg: 0, rot_deg: 0, hFOV_deg: 30, vFOV_deg: 30 }, viewProjection(camera, W, H)).corners[1];
+  assert.ok(objects.overlay().sky?.handles, "its handles show");
+  const drag = objects.press(corner);
+  drag.move({ x: center.x + (corner.x - center.x) * 2, y: center.y + (corner.y - center.y) * 2 });
+  const size = () => evaluateLane(upstream.working()[0].sceneState.stickers[0], "size", 0);
+  assert.ok(Math.abs(size().hFOV_deg - 60) < 1e-6);
+  drag.cancel();
+  assert.ok(Math.abs(size().hFOV_deg - 30) < 1e-6);
+  assert.deepEqual(session.state.upstream, []);
+  assert.equal(session.canUndo, false);
+});
+
+test("an upstream World plane is selected by its outline and its gizmo moves its working copy, written back as one step", () => {
+  const board = { id: "board", placement: "world", source: file("up_board.png"), position: { value: [3, 0, -5] } };
+  const { session, objects, upstream } = setup({ stickers: [], upstreamLayers: [upLayer("scene_up", [board])] });
+  const onBoard = { x: W / 2 * (1 + (3 / 5) / Math.tan(50 * Math.PI / 180)), y: H / 2 };
+  objects.press(onBoard).end();
+  assert.equal(session.selection.row, "upstream:scene_up:board");
+  const ball = ballOf(objects, "x");
+  const drag = objects.press(ball);
+  drag.move({ x: ball.x + 40, y: ball.y });
+  drag.end();
+  const position = evaluateLane(upstream.working()[0].sceneState.stickers[0], "position", 0);
+  assert.ok(position[0] > 3);
+  assert.deepEqual(recordOf(session, "scene_up").stickers[0].position.value, position);
+  assert.ok(session.undo());
+  assert.deepEqual(evaluateLane(upstream.working()[0].sceneState.stickers[0], "position", 0), [3, 0, -5]);
+});
+
+test("an upstream object of a layer whose overrides cannot be kept is selected but shows no gizmo or handles, as a locked one", () => {
+  const board = { id: "board", placement: "world", source: file("up_board.png"), position: { value: [0, 0, -5] } };
+  const { session, objects } = setup({ stickers: [], upstreamLayers: [upLayer(null, [board, upSky("poster")])] });
+  objects.press(center).end();
+  assert.equal(session.selection.row, "upstream:#0:board");
   assert.equal(objects.overlay().gizmo, null);
+  session.selectObject("upstream:#0:poster");
+  assert.equal(objects.overlay().sky.handles, false);
+  const before = session.state;
+  const drag = objects.press(onSky);
+  drag.move({ x: W * 0.75, y: onSky.y });
+  drag.end();
+  assert.equal(session.state, before, "its body's drag moves nothing");
+});
+
+test("in the Camera tab the selected upstream sky image's body drag turns it; a press on it unselected selects it and passes", () => {
+  const layers = [upLayer("scene_up", [upSky("poster"), upSky("other", { direction: { value: { yaw_deg: 40, pitch_deg: 0 } } })])];
+  const { session, objects, upstream } = setup({ tab: "camera", stickers: [], upstreamLayers: layers });
+  session.selectObject("upstream:scene_up:poster");
+  const drag = objects.press(onSky);
+  assert.equal(drag.passes, undefined, "the selected one takes the drag");
+  drag.move({ x: W * 0.3, y: onSky.y });
+  drag.end();
+  assert.ok(Math.abs(evaluateLane(upstream.working()[0].sceneState.stickers[0], "direction", 0).yaw_deg) > 5);
+  assert.ok(recordOf(session, "scene_up"));
+  session.selectObject(null);
+  // Where the drag left it: the body keeps the press's offset under the pointer.
+  const pass = objects.press({ x: W * 0.3, y: onSky.y });
+  assert.equal(session.selection.row, "upstream:scene_up:poster");
+  assert.equal(pass.passes, true, "not selected before: it selects and the drag moves the Camera");
+});
+
+// docs/studio-ui.md "上流の物の編集" "見せる", docs/design.md "形と重なり": an upstream object's selection frame is
+// dashed; the node's own stay solid.
+test("the selected upstream object's frame is dashed (its sky frame, its World guide); the node's own and the others are solid", () => {
+  const board = { id: "board", placement: "world", source: file("up_board.png"), position: { value: [3, 0, -5] } };
+  const { session, objects } = setup({ upstreamLayers: [upLayer("scene_up", [upSky("poster", { direction: { value: { yaw_deg: 30, pitch_deg: 0 } } }), board])] });
+  session.selectObject("upstream:scene_up:board");
+  const guides = objects.overlay().guides;
+  assert.deepEqual(guides.map((item) => item.dashed), [false, true], "the own board's guide, then the upstream board's selected one");
+  session.selectObject("board");
+  assert.ok(objects.overlay().guides.every((item) => !item.dashed));
+  session.selectObject("upstream:scene_up:poster");
+  assert.equal(objects.overlay().sky.dashed, true);
+  session.selectObject("sky");
+  assert.equal(objects.overlay().sky.dashed, false);
 });

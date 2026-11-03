@@ -11,6 +11,7 @@ import {
   easingGraphSide,
   formatBezier,
   parseBezier,
+  stickerChangedRows,
 } from "../web_src/studio/inspector_model.js";
 
 // docs/studio-ui.md "インスペクタ" (what each selection shows, the same in both tabs, the rows of each kind, the Camera card, reset,
@@ -320,7 +321,7 @@ test("an upstream element's overridden rows carry the mark, and their reset is o
   const { state, upstream } = upstreamFixture({ override: { id: "sticker_1", placement: "world", position: { value: [5, 5, 5], keyframes: [] } } });
   const card = model(state, { selection: { ids: ["upstream:scene_up:sticker_1"] }, upstream }).cards[0];
   assert.equal(card.kind, "world");
-  assert.match(card.note, /Upstream/);
+  assert.equal(card.note, "From scene_up", "without the Studio's name, its layer's key, as the Timeline's header");
   assert.deepEqual(values(row(card, "position")), [5, 5, 5]);
   assert.equal(row(card, "position").marked, true);
   assert.equal(row(card, "position").atDefault, false);
@@ -343,6 +344,16 @@ test("an element of an upstream layer whose overrides cannot be kept is shown wi
   const card = model(state, { selection: { ids: ["upstream:#0:sticker_1"] }, upstream }).cards[0];
   assert.ok(card.rows.length > 0);
   assert.ok(card.rows.every((item) => item.disabled));
+  assert.ok(card.rows.every((item) => item.tip === "Inherited only: edit it in its own Panorama Studio"));
+});
+
+// docs/studio-ui.md "上流の物の編集" "見せる": beside the card's title, the Timeline header's "From <the Studio's name>".
+test("an upstream element's card says which Studio it came from, as its Timeline group's header", () => {
+  const { state, upstream } = upstreamFixture();
+  const named = upstream.map((layer) => ({ ...layer, name: "Studio Up" }));
+  const card = model(state, { selection: { ids: ["upstream:scene_up:sticker_2"] }, upstream: named }).cards[0];
+  assert.equal(card.note, "From Studio Up");
+  assert.doesNotMatch(card.note, /Upstream/);
 });
 
 test("the Easing panel shows only while Keyframes are selected: the shared Easing, or mixed, and which preset is on", () => {
@@ -416,4 +427,22 @@ test("an upstream element's row shows its card in the inspector (found in its la
   const id = upstream[0].sceneState.stickers[0].id;
   const m = model(state, { upstream, selection: { ids: [id] } });
   assert.deepEqual(m.cards.map((card) => card.target?.id), [id], "an upstream element's row shows its card");
+});
+
+// docs/studio-ui.md "リセットと Keyframe のポチ": a port Sticker shown with a Pose handoff of its placement.
+const SKY_HANDOFF = { placement: "sky", lanes: { direction: { value: { yaw_deg: 30, pitch_deg: 10 } }, roll: { value: 5 }, size: { value: { hFOV_deg: 40, vFOV_deg: 40 } } }, fps: 24 };
+
+test("a port Sticker's handed rows are at their reset's value while none of their Lanes is an override, whatever the value", () => {
+  const port = (overrides) => sky("sticker_1", { source: { kind: "port" }, handoff_overrides: overrides });
+  const state = load({ stickers: [port(["size"])] });
+  const card = model(state, { selection: { ids: ["sticker_1"] }, handoff: SKY_HANDOFF }).cards[0];
+  assert.equal(row(card, "rotation").atDefault, true, "handed, not overridden (its value is not the Lane default)");
+  assert.equal(row(card, "fov").atDefault, false, "overridden");
+  assert.equal(row(card, "opacity").atDefault, false, "not handed: the Lane default rule (opacity 0.5)");
+  assert.deepEqual(stickerChangedRows(state, state.stickers[0], { handoff: SKY_HANDOFF }), ["fov", "opacity"]);
+  // Without a handoff, or with one of the other placement, the Lane defaults decide.
+  assert.deepEqual(stickerChangedRows(state, state.stickers[0], {}), ["rotation", "fov", "opacity"]);
+  assert.deepEqual(stickerChangedRows(state, state.stickers[0], { handoff: { ...SKY_HANDOFF, placement: "world" } }), ["rotation", "fov", "opacity"]);
+  const plain = load({ stickers: [port([])] });
+  assert.deepEqual(stickerChangedRows(plain, plain.stickers[0], { handoff: SKY_HANDOFF }), ["opacity"]);
 });

@@ -100,6 +100,13 @@ export function createDiagnostics(overrides = {}) {
   let frames = { count: 0, maxMs: 0 };
   let renders = new Map();
   let longTasks = { count: 0, maxMs: 0 };
+  // GPU passes since the last sample, by label: { count, ms, maxMs, draws, triangles } (gpuStart/gpuEnd), the
+  // timer queries still waiting for their result, the pass under way (its draws are counted), and how the time was
+  // taken ("query": EXT_disjoint_timer_query_webgl2, "finish": gl.finish() around the pass, null: none yet).
+  let gpu = new Map();
+  const gpuPending = [];
+  let gpuPass = null;
+  let gpuTimer = null;
   // The last records: { record, text } with text its JSON, oldest first.
   const ring = [];
 
@@ -214,6 +221,83 @@ export function createDiagnostics(overrides = {}) {
     renders.set(label, entry);
   }
 
+  function gpuEntry(label) {
+    let entry = gpu.get(label);
+    if (!entry) gpu.set(label, entry = { count: 0, ms: 0, maxMs: 0, draws: 0, triangles: 0 });
+    return entry;
+  }
+
+  // A pass whose time came: its time, draws and triangles go to its label together, so a sample's numbers are of the
+  // same passes.
+  function gpuAdd({ label, draws, triangles }, ms) {
+    const entry = gpuEntry(label);
+    entry.count += 1;
+    entry.ms += ms;
+    entry.maxMs = Math.max(entry.maxMs, ms);
+    entry.draws += draws;
+    entry.triangles += triangles;
+  }
+
+  // The timer queries whose results came, oldest first. A query of a lost context (an editor closed) never answers:
+  // it is dropped. GPU_DISJOINT_EXT resets when read, so it is read once: a disjoint poll drops what it took.
+  function gpuPoll() {
+    const taken = [];
+    let disjoint = false;
+    while (gpuPending.length) {
+      const pass = gpuPending[0];
+      const { gl, ext, query } = pass;
+      if (gl.isContextLost?.()) {
+        gpuPending.shift();
+        continue;
+      }
+      if (!gl.getQueryParameter(query, gl.QUERY_RESULT_AVAILABLE)) break;
+      gpuPending.shift();
+      if (!taken.length) disjoint = !!gl.getParameter(ext.GPU_DISJOINT_EXT);
+      taken.push({ pass, ms: gl.getQueryParameter(query, gl.QUERY_RESULT) / 1e6 });
+      gl.deleteQuery(query);
+    }
+    if (!disjoint) for (const { pass, ms } of taken) gpuAdd(pass, ms);
+  }
+
+  // A GPU pass of the WebGL2 context `gl` under `label` starts: its GPU time (a timer query, else gl.finish() around
+  // it) and its draws are counted until gpuEnd(pass). Nothing while off, or while another pass is under way.
+  function gpuStart(gl, label) {
+    if (!enabled || !gl || gpuPass || gl.isContextLost?.()) return null;
+    gpuPoll();
+    const ext = gl.getExtension?.("EXT_disjoint_timer_query_webgl2") ?? null;
+    const pass = { gl, ext, label, query: null, start: 0, draws: 0, triangles: 0 };
+    if (ext && gpuPending.length < 64) {
+      gpuTimer = "query";
+      pass.query = gl.createQuery();
+      gl.beginQuery(ext.TIME_ELAPSED_EXT, pass.query);
+    } else {
+      gpuTimer ??= "finish";
+      gl.finish();
+      pass.start = env.now();
+    }
+    gpuPass = pass;
+    return pass;
+  }
+
+  function gpuEnd(pass) {
+    if (!pass || gpuPass !== pass) return;
+    gpuPass = null;
+    if (pass.query) {
+      pass.gl.endQuery(pass.ext.TIME_ELAPSED_EXT);
+      gpuPending.push(pass);
+    } else {
+      pass.gl.finish();
+      gpuAdd(pass, env.now() - pass.start);
+    }
+  }
+
+  // A draw of `vertices` vertices (mode TRIANGLES counts vertices / 3 triangles) times `instances`, in the pass under way.
+  function gpuDraw(mode, vertices, instances = 1) {
+    if (!gpuPass) return;
+    gpuPass.draws += 1;
+    if (mode === 4) gpuPass.triangles += Math.floor(vertices / 3) * instances;
+  }
+
   function canvasStats() {
     let alive = 0;
     let sized = 0;
@@ -264,6 +348,12 @@ export function createDiagnostics(overrides = {}) {
     return { ...videoCounts, alive, loaded, playing, list };
   }
 
+  function gpuSample() {
+    gpuPoll();
+    const passes = Object.fromEntries([...gpu].map(([label, e]) => [label, { count: e.count, ms: round(e.ms), maxMs: round(e.maxMs), draws: e.draws, triangles: e.triangles }]));
+    return { timer: gpuTimer, waiting: gpuPending.length, passes };
+  }
+
   function sample() {
     const start = env.now();
     const memory = env.memory();
@@ -277,11 +367,13 @@ export function createDiagnostics(overrides = {}) {
       video: videoStats(),
       frame: { count: frames.count, maxMs: round(frames.maxMs), longTasks: longTasks.count, longTaskMaxMs: round(longTasks.maxMs) },
       renders: Object.fromEntries([...renders].map(([label, entry]) => [label, { count: entry.count, maxMs: round(entry.maxMs) }])),
+      gpu: gpuSample(),
       sources: Object.fromEntries([...sources].map(([name, read]) => [name, read()])),
       costMs: round(lastCost, 3),
     };
     frames = { count: 0, maxMs: 0 };
     renders = new Map();
+    gpu = new Map();
     longTasks = { count: 0, maxMs: 0 };
     ring.push({ record, text: JSON.stringify(record) });
     if (ring.length > DIAGNOSTICS_RECORDS) ring.shift();
@@ -367,6 +459,9 @@ export function createDiagnostics(overrides = {}) {
     recoverPrevious();
     if (next === enabled) return;
     enabled = next;
+    // A pass under way or waiting is let go (its context may be gone by the next turn on).
+    gpuPass = null;
+    for (const { gl, query } of gpuPending.splice(0)) if (!gl.isContextLost?.()) gl.deleteQuery(query);
     if (enabled) {
       session = {
         v: 1,
@@ -436,6 +531,9 @@ export function createDiagnostics(overrides = {}) {
     frameStart,
     frameEnd,
     renderEnd,
+    gpuStart,
+    gpuEnd,
+    gpuDraw,
     sample,
     serialize,
     recoverPrevious,
@@ -459,19 +557,31 @@ export const diagnosticsFrameEnd = diagnostics.frameEnd;
 // Wraps a three.js view (pano_three_view.js createThreeView) so its WebGL context, renderer.info, `scene`
 // items and Spark renderers (their generates and sorts since the last sample, pano_spark_views.js) are
 // sampled under `label`, and its renders are timed.
+// Each render is also a GPU pass (docs/diagnostics.md `gpu`) named by the view, the kind of render and its owner
+// (`editor.render.studio-stage+lens`, `editor.erp.studio-live-erp`), with its draws counted on the view's context.
 export function watchThreeView(view, label) {
   const disposeContext = diagnostics.watchContext(view.canvas, label);
   const removeSource = diagnostics.addSource(`three.${label}`, () => view.stats());
-  const timed = (render) => (input) => {
+  // The view's context while its draws are counted: only while the diagnostics are on; off, it lets go of them once.
+  let gl = null;
+  const timed = (render, kind) => (input) => {
     const start = diagnostics.frameStart();
-    const result = render(input);
-    diagnostics.renderEnd(label, start);
-    return result;
+    if (diagnostics.enabled) gl ??= countedContext(view.canvas, true);
+    else if (gl) gl = countedContext(view.canvas, false);
+    const owner = typeof input?.owner === "string" ? input.owner : "-";
+    const pass = diagnostics.gpuStart(gl, `${label}.${kind}.${owner}${input?.lens ? "+lens" : ""}`);
+    try {
+      return render(input);
+    } finally {
+      diagnostics.gpuEnd(pass);
+      diagnostics.renderEnd(label, start);
+    }
   };
   return {
     ...view,
-    render: timed(view.render),
-    renderUnwrap: timed(view.renderUnwrap),
+    render: timed(view.render, "render"),
+    renderUnwrap: timed(view.renderUnwrap, "unwrap"),
+    renderLiveErp: timed(view.renderLiveErp, "erp"),
     // A view let go because its context was lost ({ lost: true }) stays counted as that context's until it
     // is disposed again, so the context's restore is counted too.
     dispose(options) {
@@ -481,6 +591,43 @@ export function watchThreeView(view, label) {
       disposeContext();
     },
   };
+}
+
+// The contexts whose draws are counted, with their own draw functions.
+const countedContexts = new WeakMap();
+const DRAWS = {
+  drawArrays: (a) => diagnostics.gpuDraw(a[0], a[2]),
+  drawElements: (a) => diagnostics.gpuDraw(a[0], a[1]),
+  drawArraysInstanced: (a) => diagnostics.gpuDraw(a[0], a[2], a[3]),
+  drawElementsInstanced: (a) => diagnostics.gpuDraw(a[0], a[1], a[4]),
+};
+
+// The WebGL2 context of `canvas` (already made by the view) with its draws counted into the GPU pass under way while
+// `on`, or null; when not `on`, a context counted before gets its own draw functions back.
+export function countedContext(canvas, on) {
+  const gl = canvas?.getContext?.("webgl2") ?? null;
+  if (!gl) return null;
+  const own = countedContexts.get(gl);
+  if (!on) {
+    if (own) {
+      for (const [name, draw] of Object.entries(own)) gl[name] = draw;
+      countedContexts.delete(gl);
+    }
+    return null;
+  }
+  if (own) return gl;
+  const kept = {};
+  for (const [name, count] of Object.entries(DRAWS)) {
+    const draw = gl[name];
+    if (typeof draw !== "function") continue;
+    kept[name] = draw;
+    gl[name] = function (...args) {
+      count(args);
+      return draw.apply(this, args);
+    };
+  }
+  countedContexts.set(gl, kept);
+  return gl;
 }
 
 // The ComfyUI setting that turns the diagnostics on. ComfyUI calls onChange with the saved value when it

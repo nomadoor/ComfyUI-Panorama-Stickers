@@ -21,7 +21,7 @@ import { depthGridNotice, withDepthColor } from "../pano_depth_color.js";
 import { skyLayers, worldStickerLayers } from "../pano_editor_view.js";
 import { skyStickerVfov, sourceAsset } from "../pano_editor_state.js";
 import { createFile3dEditorFiles, file3dEditorFileOf } from "../pano_file_3d.js";
-import { evaluateSceneState } from "../pano_scene_eval.js";
+import { evaluateSceneState, evaluateSticker } from "../pano_scene_eval.js";
 import { is3dFileSource } from "../pano_scene_state.js";
 import {
   boundingSphere,
@@ -206,10 +206,12 @@ export function stageDepthNotice(content, errorOf, loaded) {
 
 // The sphere Frame Selected fits for the Sticker `id` (pano_space.js frameSphere): around it where it shows in the
 // World (its plane, or its 3D item's box), else around all the content (`content`, stageContent()'s). [inputs] The
-// port Sticker's 3D item is the `sticker` input's (content.space.sticker).
-export function stickerFrameSphere(state, content, id, { media, sceneBox = () => null, editorFile = () => null }) {
+// port Sticker's 3D item is the `sticker` input's (content.space.sticker). An upstream World object (its working id in
+// the working layers `upstreamWorking`, docs/studio-ui.md "上流の物の編集") is fitted where it is drawn: its plane or
+// its 3D item in content.space (upstreamStickers, upstreamItems).
+export function stickerFrameSphere(state, content, id, { media, sceneBox = () => null, editorFile = () => null, upstreamWorking = [] }) {
   const index = state.stickers.findIndex((item) => item.id === id);
-  if (index < 0) return content.sphere;
+  if (index < 0) return upstreamFrameSphere(content, upstreamWorking, id, sceneBox);
   const sticker = state.stickers[index];
   const value = content.evaluated.stickers[index];
   const shown = sticker.placement === "world" && !is3dFileSource(sticker.source) ? media(sticker) : null;
@@ -218,5 +220,17 @@ export function stickerFrameSphere(state, content, id, { media, sceneBox = () =>
   const portItem = sticker.source.kind === "port" && content.space.sticker?.id === id ? content.space.sticker : null;
   const request = is3dFileSource(sticker.source) ? fileStickerRequests({ ...state, stickers: [sticker] }, { ...content.evaluated, stickers: [value] }, editorFile)[0]?.request : portItem;
   const box = request ? sceneContentBox(request, sceneBox(request.url)) : null;
+  return frameSphere(content.sphere, { sticker, value, plane, box });
+}
+
+// stickerFrameSphere of an upstream World object `id` in the working layers `upstream`: its working copy evaluated at
+// the content's frame, its plane or its 3D item's box as drawn; the content's sphere when it is not there.
+function upstreamFrameSphere(content, upstream, id, sceneBox) {
+  const sticker = upstream.flatMap((layer) => layer.sceneState.stickers).find((item) => item.id === id);
+  if (!sticker) return content.sphere;
+  const value = evaluateSticker(sticker, content.evaluated.frame);
+  const plane = content.space.upstreamStickers.find((item) => item.id === id) ?? null;
+  const request = content.space.upstreamItems.find((entry) => entry.request?.id === id)?.request ?? null;
+  const box = request?.url ? sceneContentBox(request, sceneBox(request.url)) : null;
   return frameSphere(content.sphere, { sticker, value, plane, box });
 }

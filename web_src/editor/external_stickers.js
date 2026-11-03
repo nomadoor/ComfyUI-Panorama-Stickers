@@ -5,14 +5,13 @@ import { stickerVfovFromAspect } from "../pano_editor_state.js";
 import { runExternalStickerSync } from "../pano_external_sticker_sync.js";
 import { clamp, wrapYaw } from "../pano_math.js";
 import {
-  HANDOFF_ROW_LANES,
-  inheritPortHandoff,
-  recordHandoffEdits,
-  revertHandoffLane,
-  storedPortSticker,
+  handoffRowLanes,
+  NO_PORT_HANDOFF_PAIR,
+  revertPortHandoffPairLane,
+  storedPortState,
+  syncPortHandoffPair,
 } from "../pano_port_handoff.js";
 import { isNodeOutputMediaCurrent } from "../pano_preview_video.js";
-import { loadSceneState, rebaseSceneState } from "../pano_scene_state.js";
 import {
   nodePortHandoff,
   portStickerSyncValue,
@@ -32,7 +31,7 @@ export function createExternalStickers(deps) {
   // the port Sticker the state keeps (written to state_json and to the Undo history), `shown` the one shown
   // when it was last written back, which tells the Lanes an edit changed, and `handoff` the handoff shown,
   // all at the Timeline fps `fps`. The working state holds the shown Sticker.
-  let portSession = { stored: null, shown: null, handoff: null, fps: null };
+  let portSession = NO_PORT_HANDOFF_PAIR;
 
   function normalizeInputPoseValue(value, debugValue = null) {
     if (value && typeof value === "object" && !Array.isArray(value)) return value;
@@ -195,49 +194,27 @@ export function createExternalStickers(deps) {
     return type === "stickers" && !readOnly && node.__panoSceneStateV2 === true;
   }
 
-  // A port Sticker at `fps`, from one at `from`, as rebaseSceneState rebases it with the state.
-  function rebasedPortSticker(sticker, from, fps) {
-    return structuredClone(rebaseSceneState(loadSceneState({ version: 2, timeline: { fps: from }, stickers: [sticker] }), fps).stickers[0]);
-  }
-
-  // Keeps the port Sticker of the working state shown with the current Pose handoff. With `record`, the
-  // Lanes an edit changed since the last write-back become overrides first (recordHandoffEdits). `restored`
-  // says the working state's port Sticker is a stored one (opening, Undo), not a shown one. The commit and
-  // the Undo history run it before they read the state (storedEditorState).
+  // Keeps the port Sticker of the working state shown with the current Pose handoff (pano_port_handoff.js
+  // syncPortHandoffPair, written into the state in place). With `record`, the Lanes an edit changed since the last
+  // write-back become overrides first. `restored` says the working state's port Sticker is a stored one (opening,
+  // Undo), not a shown one. The commit and the Undo history run it before they read the state (storedEditorState).
   function syncPortHandoff({ record = true, restored = false } = {}) {
     if (!portHandoffShown()) return false;
     const port = state.stickers.find((item) => item.source?.kind === "port");
-    if (!port) {
-      portSession = { stored: null, shown: null, handoff: null, fps: null };
-      return false;
-    }
-    const { fps } = state.timeline;
-    let stored;
-    if (restored || !portSession.handoff || portSession.stored?.id !== port.id) {
-      stored = structuredClone(port);
-    } else {
-      // After a change of the Timeline fps, the working state was rebased (setTimelineFps): what was stored and
-      // shown is rebased the same way, so the rebase is no edit and an edit made before it still is.
-      const rebase = (sticker) => (portSession.fps === fps ? sticker : rebasedPortSticker(sticker, portSession.fps, fps));
-      if (record) recordHandoffEdits(port, rebase(portSession.shown));
-      stored = storedPortSticker(port, rebase(portSession.stored));
-    }
-    const handoff = currentPortHandoff();
-    const shown = handoff ? inheritPortHandoff(state, stored, handoff) : structuredClone(stored);
-    const changed = JSON.stringify(shown) !== JSON.stringify(port);
-    if (changed) {
+    const { shown, pair, changed } = syncPortHandoffPair(state, portSession, currentPortHandoff(), { record, restored });
+    portSession = pair;
+    if (!shown) return false;
+    if (JSON.stringify(shown) !== JSON.stringify(port)) {
       // The object stays the one the editor holds (a selection, a drag).
       for (const key of Object.keys(port)) delete port[key];
       Object.assign(port, shown);
     }
-    portSession = { stored, shown: structuredClone(shown), handoff, fps };
     return changed;
   }
 
   // The working state as the node keeps it: the port Sticker shown with the Pose handoff is its stored one.
   function storedEditorState() {
-    if (!portSession.handoff) return state;
-    return { ...state, stickers: state.stickers.map((item) => (item.source?.kind === "port" ? portSession.stored : item)) };
+    return storedPortState(state, portSession);
   }
 
   // The inspector's "Revert to upstream" of Panorama Studio's port Sticker, or null for another item: a button
@@ -245,19 +222,19 @@ export function createExternalStickers(deps) {
   // row is there with or without a handoff, so the inspector does not shift when one arrives.
   function portHandoffLanes(sticker) {
     if (!portHandoffShown() || sticker?.source?.kind !== "port") return null;
-    const { handoff } = portSession;
-    const shown = !!handoff && handoff.placement === sticker.placement;
-    return HANDOFF_ROW_LANES[sticker.placement].map((name) => ({ name, overridden: shown && sticker.handoff_overrides.includes(name) }));
+    return handoffRowLanes(portSession, sticker);
   }
 
   // "Revert to upstream": the port Sticker's Lane `name` follows the Pose handoff again (ADR 0030).
   function revertPortHandoffLane(name) {
     syncPortHandoff();
     const port = state.stickers.find((item) => item.source?.kind === "port");
-    if (!port || port.locked || !portSession.handoff || !revertHandoffLane(state, port, portSession.handoff, name)) return;
+    const reverted = port && revertPortHandoffPairLane(state, portSession, name);
+    if (!reverted) return;
     // Not an edit of the Lane: it is not made an override again, and the state keeps the upstream value.
-    portSession.shown = structuredClone(port);
-    portSession.stored[name] = structuredClone(port[name]);
+    for (const key of Object.keys(port)) delete port[key];
+    Object.assign(port, reverted.shown);
+    portSession = reverted.pair;
     pushHistory();
     commitAndRefreshNode();
     markObjectVisualsDirty();

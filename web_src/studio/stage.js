@@ -67,7 +67,7 @@ export function stageUi() {
 // overlay: the 2D canvas over the stage's (the guides, the Camera's mark, the gizmo, the sky image's handles; null draws
 // none).
 // objects: what selecting and editing the objects needs (stage_objects.js createStageObjects: state, playhead,
-// selection, select, edits, mode, tab, readOnly); without it the stage does not touch objects.
+// selection, select, edits, mode, tab, readOnly, upstream); without it the stage does not touch objects.
 // cameraTab: the Camera tab (docs/studio-ui.md "Camera タブ", docs/space-and-view.md "Frame 表示"), read at each frame:
 // tab() ("3d" or "camera"), mode() ("frame" or "panorama": the Camera's projection), shot() (the Camera at the
 // playhead, pano_editor_state.js cameraShot), erpRange() (360 or 180), frame() (the frame box in the stage's CSS px,
@@ -127,6 +127,8 @@ export function createStage({
   let keysMoving = false;
   // When (now(), ms) a double click or Set orbit center last set T, for the orbit center's mark (orbit_marker.js), or null.
   let setAt = null;
+  // The viewpoint T was set on (the 3D tab's or the Frame view's): the mark shows on that one only.
+  let setOn = null;
   // The view toolbar's button the pointer is over ("orbit", "center") or null, and whether the Set orbit
   // center button waits for a click on the stage (StudioNavWidget.vue).
   let toolbarHover = null;
@@ -423,11 +425,19 @@ export function createStage({
 
   // T where a double click or Set orbit center's click points (`point`, the stage's CSS px): the view turns to it
   // (view_camera.js focus) and the orbit center's mark shows there, fading.
+  // In the Frame view the Camera turns at once, one Undo step of its own (a wheel run still waiting is one first).
   function setCenterAt(point) {
     stopCoast();
-    const result = camera.focus(hitAt(point));
-    if (result.moved) setAt = now();
-    report(result);
+    const view = viewMode() === "frame" ? navCamera() : camera;
+    if (!view) return;
+    if (view === frameCamera) commitFrame();
+    const result = view.focus(hitAt(point));
+    if (result.moved) {
+      setAt = now();
+      setOn = view;
+    }
+    moved(view, result, "focus");
+    if (view === frameCamera) commitFrame();
     requestDraw();
   }
 
@@ -646,7 +656,7 @@ export function createStage({
       centerButton: !frame && toolbarHover === "center",
       picking: !frame && picking,
       orbiting: drag?.action === "orbit" && drag.camera === nav,
-      sinceSet: frame ? null : sinceSet(),
+      sinceSet: setOn === nav ? sinceSet() : null,
     };
     const alpha = orbitMarkerAlpha(state);
     if (!(alpha > 0)) return null;
@@ -984,11 +994,12 @@ export function createStage({
     requestDraw();
   }
 
-  // A double click turns the view to what is under the pointer (World image planes included, the one exception). Not in
-  // the Camera tab (docs/space-and-view.md "Frame 表示").
+  // A double click turns the view to what is under the pointer (World image planes included, the one exception); in the
+  // Camera tab's Frame view it turns the Camera (docs/space-and-view.md "Frame 表示").
   // With Alt held too (docs/space-and-view.md "マウスとキー"); nothing while a painting tool is chosen.
   function onDoubleClick(event) {
-    if (event.button !== 0 || viewMode() !== "space" || paintOn()) return;
+    const mode = viewMode();
+    if (event.button !== 0 || (mode !== "space" && mode !== "frame") || paintOn() || (mode === "frame" && paint?.active())) return;
     if (now() - pickedAt < DOUBLE_CLICK_AFTER_PICK_MS) return;
     setCenterAt(pointOf(event));
   }

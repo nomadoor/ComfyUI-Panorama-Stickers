@@ -49,7 +49,7 @@ test("a field edit without Keyframes changes the static value; input is live, co
   const state = load({ stickers: [world("sticker_1")] });
   let result = applyInspectorEdit(state, { type: "field", target: sticker, field: "position_x", value: 4, phase: "input" }, { playhead: 0 });
   assert.deepEqual(state.stickers[0].position.value, [4, 2, 3]);
-  assert.deepEqual(result, { changed: true, history: false, stopPlayback: false, upstreamChanged: false });
+  assert.deepEqual(result, { changed: true, history: false, stopPlayback: false, upstreamRevert: null });
   result = applyInspectorEdit(state, { type: "field", target: sticker, field: "position_x", value: 4, phase: "commit" }, { playhead: 0 });
   assert.equal(result.history, true);
   assert.deepEqual(state.stickers[0].position.keyframes, []);
@@ -133,7 +133,7 @@ test("the Camera's Aspect and H FOV and the lens κ keeping the center scale", (
 test("the key dot adds a Keyframe on its row's Lanes only, at the current value, and stops playback", () => {
   const state = load({ stickers: [world("sticker_1", { clip: { start: 5, in: 0, duration: null } })] });
   const result = applyInspectorEdit(state, { type: "key", target: sticker, row: "position" }, { playhead: 15 });
-  assert.deepEqual(result, { changed: true, history: true, stopPlayback: true, upstreamChanged: false });
+  assert.deepEqual(result, { changed: true, history: true, stopPlayback: true, upstreamRevert: null });
   assert.deepEqual(keys(state.stickers[0].position), [[10, [1, 2, 3]]]);
   for (const lane of ["rotation", "scale", "opacity"]) assert.deepEqual(state.stickers[0][lane].keyframes, [], lane);
 });
@@ -261,7 +261,7 @@ test("a locked Sticker and a read-only editor take no edit", () => {
 test("a cancel changes nothing here: the shell puts back the state from before the gesture", () => {
   const state = load({ stickers: [world("sticker_1")] });
   const result = applyInspectorEdit(state, { type: "field", target: sticker, field: "position_x", phase: "cancel" }, { playhead: 0 });
-  assert.deepEqual(result, { changed: false, history: false, stopPlayback: false, upstreamChanged: false, cancel: true });
+  assert.deepEqual(result, { changed: false, history: false, stopPlayback: false, upstreamRevert: null, cancel: true });
 });
 
 test("Easing: a preset or a bezier sets every selected segment; the reset goes back to ease-in-out", () => {
@@ -289,23 +289,26 @@ function upstreamFixture() {
   return { state, upstream };
 }
 
-test("an upstream element's row reset drops the override of that row's Lanes and shows the upstream value", () => {
+test("an upstream element's row reset changes nothing here and names the row's Lanes for the session to take off the records", () => {
   const { state, upstream } = upstreamFixture();
+  const before = structuredClone(state);
   const target = { kind: "sticker", id: "upstream:scene_up:sticker_1" };
   const result = applyInspectorEdit(state, { type: "reset", target, row: "position" }, { playhead: 0, upstream });
-  assert.equal(result.upstreamChanged, true);
-  assert.equal(result.history, true);
-  const override = state.upstream[0].stickers[0];
-  assert.equal(Object.hasOwn(override, "position"), false);
-  assert.equal(override.scale.value, 3);
-  const working = upstream[0].sceneState.stickers[0];
-  assert.deepEqual(working.position.value, [1, 2, 3]);
-  // The model now shows it at the upstream value, without the mark.
-  const card = buildInspectorModel({ state, selection: { ids: [target.id] }, playhead: 0, upstream }).cards[0];
-  const position = card.rows.find((row) => row.id === "position");
-  assert.equal(position.marked, false);
-  assert.equal(position.atDefault, true);
-  assert.equal(card.rows.find((row) => row.id === "scale").marked, true);
+  assert.equal(result.changed, false);
+  assert.equal(result.upstreamRevert.sticker, upstream[0].sceneState.stickers[0]);
+  assert.deepEqual(result.upstreamRevert.lanes, ["position"]);
+  assert.deepEqual(state, before, "the records are the session's to change");
+  assert.deepEqual(upstream[0].sceneState.stickers[0].position.value, [5, 5, 5], "no upstream value goes into the working copy");
+});
+
+test("an upstream element's animation is not overridden: its Clip and Speed take no edit", () => {
+  const { state, upstream } = upstreamFixture();
+  const target = { kind: "sticker", id: "upstream:scene_up:sticker_1" };
+  const animations = { [target.id]: [{ name: "Walk" }] };
+  assert.equal(applyInspectorEdit(state, { type: "field", target, field: "anim_speed", value: 2, phase: "commit" }, { upstream }).changed, false);
+  assert.equal(applyInspectorEdit(state, { type: "choice", target, field: "anim_clip", value: 0 }, { upstream, animations }).changed, false);
+  assert.equal(applyInspectorEdit(state, { type: "reset", target, row: "anim_speed" }, { upstream }).changed, false);
+  assert.equal(upstream[0].sceneState.stickers[0].animation, undefined);
 });
 
 test("an upstream element's field edit changes its working copy (the shell writes it as an override on its Undo step)", () => {
@@ -338,4 +341,16 @@ test("a state whose Camera is null gets the default Camera from a field, a choic
   const outcome = applyInspectorEdit(state, { type: "easing", keyframes: { owner: "camera", lane: null, frames: [0] }, easing: "hold", phase: "commit" }, { playhead: 0 });
   assert.equal(outcome.changed, false);
   assert.equal(state.camera, null);
+});
+
+test("a port Sticker's reset of a handed row puts an override back to the handoff, and does nothing to a Lane not overridden", () => {
+  const handoff = { placement: "sky", lanes: { direction: { value: { yaw_deg: 30, pitch_deg: 10 } }, roll: { value: 5 }, size: { value: { hFOV_deg: 40, vFOV_deg: 40 } } }, fps: 24 };
+  const target = { kind: "sticker", id: "sticker_1" };
+  const state = load({ stickers: [{ id: "sticker_1", placement: "sky", source: { kind: "port" }, direction: { value: { yaw_deg: 90, pitch_deg: 0 } }, size: { value: { hFOV_deg: 70, vFOV_deg: 70 } }, handoff_overrides: ["size"] }] });
+  const before = structuredClone(state.stickers[0]);
+  assert.equal(applyInspectorEdit(state, { type: "reset", target, row: "rotation" }, { handoff }).changed, false);
+  assert.deepEqual(state.stickers[0], before);
+  assert.equal(applyInspectorEdit(state, { type: "reset", target, row: "fov" }, { handoff }).changed, true);
+  assert.deepEqual(state.stickers[0].size.value, { hFOV_deg: 40, vFOV_deg: 40 });
+  assert.deepEqual(state.stickers[0].handoff_overrides, []);
 });

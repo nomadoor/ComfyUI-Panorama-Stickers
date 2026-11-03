@@ -51,6 +51,28 @@ test("Frame Selected of a world Sticker fits its own plane or item; a sky Sticke
   assert.equal(stickerFrameSphere(state, content, "sky_1", options), content.sphere);
 });
 
+// docs/studio-ui.md "上流の物の編集": Frame Selected and the orbit center fit a selected upstream World object as the
+// node's own (its working copy, its drawn plane or its 3D item's box).
+test("Frame Selected fits a selected upstream World object: its drawn plane, or its 3D item's box", () => {
+  const plane = { id: "upstream:scene_up:board", ...worldStickerPlane({ position: [5, 0, -6], yaw_deg: 0, pitch_deg: 0, roll_deg: 0, scale: 2 }, { x0: 0, y0: 0, x1: 1, y1: 1 }, 200, 100) };
+  const value = { position: [-4, 1, -2], yaw_deg: 0, pitch_deg: 0, roll_deg: 0, scale: 1, active: true };
+  // A working copy: its Stickers have their working ids and `origin` (pano_upstream.js upstreamWorkingLayers).
+  const sceneState = loadSceneState({ version: 2, id: "scene_up", stickers: [
+    { id: "board", placement: "world", source: file("board.png"), position: { value: [5, 0, -6] } },
+    { id: "chair", placement: "world", source: file("chair.glb"), position: { value: [-4, 1, -2] } },
+  ] });
+  for (const sticker of sceneState.stickers) Object.assign(sticker, { origin: { layer: "scene_up", id: sticker.id }, id: `upstream:scene_up:${sticker.id}` });
+  const layers = [{ key: "scene_up", sceneState }];
+  const upstream = { sky: [], stickers: [plane], items: [{ slot: "scene_up:file:chair", request: { id: "upstream:scene_up:chair", url: "file3d:0:chair", value }, value }] };
+  const options = { media, editorFile, sceneBox: (url) => (url.startsWith("file3d:") ? box : null), upstream };
+  const content = stageContent(state, 0, options);
+  const onPlane = stickerFrameSphere(state, content, "upstream:scene_up:board", { ...options, upstreamWorking: layers });
+  assert.deepEqual(onPlane.center.map((v) => Math.round(v * 1e6) / 1e6), [5, 0, -6]);
+  const onItem = stickerFrameSphere(state, content, "upstream:scene_up:chair", { ...options, upstreamWorking: layers });
+  assert.deepEqual(onItem.center.map((v) => Math.round(v * 1e6) / 1e6), [-4, 1, -2]);
+  assert.equal(stickerFrameSphere(state, content, "upstream:scene_up:board", options), content.sphere, "without the layers given, the content's");
+});
+
 test("the media loads each Sticker's image once by its URL and knows its size once loaded", () => {
   const made = [];
   class FakeImage {

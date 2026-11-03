@@ -612,7 +612,8 @@ test("each upstream layer has a group below the node's own rows: its header, its
     },
     { stickers: [{ id: "sticker_1", placement: "sky", source: { kind: "file", filename: "c.png" } }] },
   ];
-  const records = loadSceneState({ version: 2, upstream: [{ layer: "scene_a", fps: 24, stickers: [{ id: "sticker_2", placement: "sky", visible: false }], scene: { visible: true } }] }).upstream;
+  // sticker_3's entry was made for the other placement: its row is overridden all the same (upstreamStickerOverridden).
+  const records = loadSceneState({ version: 2, upstream: [{ layer: "scene_a", fps: 24, stickers: [{ id: "sticker_2", placement: "sky", visible: false }, { id: "sticker_3", placement: "sky", z_index: 4 }], scene: { visible: true } }] }).upstream;
   const working = upstreamWorkingLayers(upstreamLayersOf(raw.map((layer) => ({ state: { version: 2, ...layer } }))), records, 24);
   const upstream = working.map(({ key, sceneState }, index) => ({
     key, sceneState, editable: index === 0, record: index === 0 ? records[0] : null, scene: index === 0, deleted: 0,
@@ -627,7 +628,7 @@ test("each upstream layer has a group below the node's own rows: its header, its
   assert.deepEqual(a.rows.map((row) => [row.id, row.label, row.hideable, row.visible, row.keyable, row.upstream, row.overridden, row.editable, row.selected]), [
     ["upstream:scene_a:sticker_2", "b.png", true, false, true, true, true, true, true],
     ["upstream:scene_a:sticker_1", "a.png", true, true, true, true, false, true, false],
-    ["upstream:scene_a:sticker_3", "Sticker input", true, true, true, true, false, true, false],
+    ["upstream:scene_a:sticker_3", "Sticker input", true, true, true, true, true, true, false],
     ["upstream:scene_a:painting", "Paint", true, false, false, true, false, true, false],
     ["upstream:scene_a:scene", "Scene", true, true, false, true, true, true, false],
   ]);

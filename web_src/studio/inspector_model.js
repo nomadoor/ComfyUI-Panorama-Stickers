@@ -19,12 +19,13 @@ import {
   stickerLanes,
 } from "../pano_scene_state.js";
 import { EASING_PRESETS, rowLaneNames, selectedEasing } from "../pano_timeline.js";
-import { isUpstreamSticker, upstreamOverrideOf, upstreamStickerEditable } from "../pano_upstream.js";
+import { UPSTREAM_INHERITED_TIP, isUpstreamSticker, upstreamOverrideOf, upstreamStickerInherited } from "../pano_upstream.js";
 import { animationClipIndex } from "../pano_animation.js";
+import { HANDOFF_LANES } from "../pano_port_handoff.js";
 import { cameraOf } from "./camera_state.js";
 import { findSticker, keyframeOwner } from "./row_object.js";
 import { defaultCamera, groundOf } from "./defaults.js";
-import { objectLabel } from "./timeline_model.js";
+import { objectLabel, upstreamFromLabel } from "./timeline_model.js";
 
 // The least height (px) left above the Easing panel for the rows (docs/design.md "大きさ" EASING_MIN_ABOVE).
 export const EASING_MIN_ABOVE = 180;
@@ -315,11 +316,21 @@ function skyFovAtDefault(sticker, frame, imageSize) {
   return near(size, skyPlacedSize(size, imageSize));
 }
 
-function finishRows(rows, owner, { frame, disabled, disabledTip, base, override, keyable = true, imageSize = null }) {
+// The Lanes a Pose handoff gives the port Sticker `sticker` (`handoff`, pano_port_handoff.js portHandoff), when it is of
+// the Sticker's placement, else null: a row of only those Lanes is where its reset returns it while none of them is an
+// override (docs/studio-ui.md "リセットと Keyframe のポチ").
+function handedLanes(sticker, handoff) {
+  return sticker.source?.kind === "port" && handoff && handoff.placement === sticker.placement ? HANDOFF_LANES[handoff.placement] : null;
+}
+
+function finishRows(rows, owner, { frame, disabled, disabledTip, base, override, keyable = true, imageSize = null, handed = null }) {
   return rows.map((row) => {
     const lanes = row.lanes ?? [];
     const off = disabled || !!row.disabled;
     let atDefault = row.atDefault;
+    if (atDefault === undefined && lanes.length && handed && lanes.every((name) => handed.includes(name))) {
+      atDefault = !lanes.some((name) => (owner.handoff_overrides ?? []).includes(name));
+    }
     if (atDefault === undefined && lanes.length) {
       atDefault = owner.placement === "sky" && row.id === "fov" && !base ? skyFovAtDefault(owner, frame, imageSize) : laneRowAtDefault(owner, lanes, frame, base);
     }
@@ -340,22 +351,22 @@ function finishRows(rows, owner, { frame, disabled, disabledTip, base, override,
   });
 }
 
-function stickerCard(state, sticker, { playhead, readOnly, upstream, animations, portSize, imageSizes }) {
+function stickerCard(state, sticker, { playhead, readOnly, upstream, animations, portSize, imageSizes, handoff = null }) {
   const frame = ownerFrame(sticker, playhead);
   const isWorld = sticker.placement === "world";
   const fromUpstream = isUpstreamSticker(sticker);
-  const editable = !fromUpstream || upstreamStickerEditable(sticker);
+  const editable = !upstreamStickerInherited(sticker);
   const rows = isWorld ? worldRows(sticker, playhead, animations[sticker.id]) : skyRows(sticker, playhead, portSize);
   let disabledTip = "";
   if (readOnly) disabledTip = "Read-only";
-  else if (!editable) disabledTip = "Inherited only: edit it in its own Panorama Studio";
+  else if (!editable) disabledTip = UPSTREAM_INHERITED_TIP;
   else if (sticker.locked) disabledTip = "Locked";
   const override = fromUpstream ? upstreamOverrideOf(state.upstream ?? [], sticker.origin) : null;
   return {
     kind: sticker.placement,
     title: objectLabel(sticker),
     icon: isWorld ? ICON.box : ICON.pano,
-    note: fromUpstream ? `Upstream · ${sticker.origin.layer}` : isWorld ? "World" : "Sky",
+    note: fromUpstream ? upstreamFromLabel(upstream.find((layer) => layer.key === sticker.origin.layer)?.name, sticker.origin.layer) : isWorld ? "World" : "Sky",
     target: { kind: "sticker", id: sticker.id },
     rows: finishRows(
       // An upstream element's animation is shown, not overridden (docs/editor-interaction.md "アニメーションの行").
@@ -368,9 +379,27 @@ function stickerCard(state, sticker, { playhead, readOnly, upstream, animations,
         base: fromUpstream ? inheritedSticker(upstream, sticker, state.timeline.fps) : null,
         override: override && override.placement === sticker.placement ? override : null,
         imageSize: imageSizes[sticker.id] ?? null,
+        handed: handedLanes(sticker, handoff),
       },
     ),
   };
+}
+
+// The ids of the rows of the Sticker `sticker`'s card that are away from where their reset returns them (resettable,
+// not `atDefault`): what the bar's Back to source of an input's object puts back, and whether it is lit
+// (docs/studio-ui.md "下の中央のバー"). `options` as the card's: { playhead, upstream, animations, portSize, imageSizes,
+// handoff (the port Sticker's Pose handoff shown, the one the inspector's reset and the bar's press get) }.
+export function stickerChangedRows(state, sticker, { playhead, upstream, animations, portSize, imageSizes, handoff } = {}) {
+  const card = stickerCard(state, sticker, {
+    playhead: playhead ?? 0,
+    readOnly: false,
+    upstream: upstream ?? [],
+    animations: animations ?? {},
+    portSize: portSize ?? null,
+    imageSizes: imageSizes ?? {},
+    handoff: handoff ?? null,
+  });
+  return card.rows.filter((row) => row.resettable && !row.atDefault).map((row) => row.id);
 }
 
 function cameraCard(state, { playhead, readOnly }) {
@@ -467,12 +496,13 @@ export function buildCameraCard({ state, playhead = 0, readOnly = false }) {
 // "インスペクタ", ADR 0051): nothing selected shows the Scene card, the Camera's card over the Ground's. In the Camera
 // tab (`tab` "camera") the Camera's card is always on top, the selected object's under it, and Set ground is off in
 // Panorama mode. `upstream` is the
-// working layers (pano_upstream.js upstreamWorkingLayers), `animations` the clips of the 3D files by Sticker id
+// working layers (pano_upstream.js upstreamWorkingLayers; each with the `name` of the Studio it came from, or none,
+// studio/upstream.js working()), `animations` the clips of the 3D files by Sticker id
 // ([{ name }]), `portSize` the size of the port Sticker's media ({ width, height }), `imageSizes` the sizes of the
 // Stickers' images by Sticker id ({ width, height } px, once loaded).
 // Returns { cards: [{ kind, title, icon, note, target, rows }], easing }.
-export function buildInspectorModel({ state, selection = {}, tab = "3d", playhead = 0, readOnly = false, upstream = [], animations = {}, portSize = null, imageSizes = {} }) {
-  const options = { playhead, readOnly, upstream, animations, portSize, imageSizes, tab };
+export function buildInspectorModel({ state, selection = {}, tab = "3d", playhead = 0, readOnly = false, upstream = [], animations = {}, portSize = null, imageSizes = {}, handoff = null }) {
+  const options = { playhead, readOnly, upstream, animations, portSize, imageSizes, tab, handoff };
   const ids = selection.ids ?? [];
   const scene = () => [cameraCard(state, options), sceneCard(state, options)];
   let cards;

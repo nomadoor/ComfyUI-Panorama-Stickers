@@ -51,9 +51,12 @@ test("the list shows each key as the table has it, Ctrl as ⌘ on macOS", () => 
   assert.deepEqual(rowOf(mac, "Undo").keys, [["⌘", "Z"]]);
   assert.deepEqual(rowOf(full, "Delete").keys, [["Delete"], ["Backspace"]]);
   assert.deepEqual(rowOf(full, "Move / Rotate / Scale").keys, [["1"], ["2"], ["3"]]);
-  assert.deepEqual(rowOf(full, "Move forward / back").keys, [["Alt", "Middle-drag"]]);
+  // The left and middle buttons turn the view, the right moves it; Alt takes the other of the pair (ADR 0060).
+  assert.deepEqual(rowOf(full, "Look around").keys, [["Drag"], ["Middle-drag"]]);
+  assert.deepEqual(rowOf(full, "Orbit").keys, [["Alt", "Drag"], ["Alt", "Middle-drag"]]);
+  assert.deepEqual(rowOf(full, "Pan").keys, [["Right-drag"]]);
+  assert.deepEqual(rowOf(full, "Move forward / back").keys, [["Alt", "Right-drag"]]);
   assert.deepEqual(rowOf(full, "Move").keys, [["W"], ["S"], ["A"], ["D"], ["Q"], ["E"]]);
-  assert.deepEqual(rowOf(full, "Orbit").keys, [["Alt", "Drag"], ["Alt", "Right-drag"]]);
   assert.deepEqual(rowOf(full, "Show shortcuts").keys, [["?"]]);
   assert.deepEqual(rowOf(full, "Step back / close").keys, [["Esc"]]);
   assert.deepEqual(rowOf(full, "Copy keyframes").keys, [["Ctrl", "C"]]);

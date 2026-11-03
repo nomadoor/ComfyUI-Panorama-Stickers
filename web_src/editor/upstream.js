@@ -1,7 +1,7 @@
 // The upstream Scene on Panorama Studio's `scene` input (ADR 0029, ADR 0030): its layers from the node's
 // current result, their working copies with the node's overrides applied (pano_upstream.js
 // upstreamWorkingLayers), which the editor selects and edits like its own Stickers, the edits written back as
-// the node's overrides (syncUpstreamEdits), what the views draw of them at the playhead (their Stickers' images,
+// the node's overrides (syncUpstreamEdits, pano_upstream_edits.js createUpstreamEdits), what the views draw of them at the playhead (their Stickers' images,
 // port media and paint, at the same resolution as the node's own), and whether the editor waits for a run to
 // show them. The working copies never enter the state's Stickers.
 import { DRAW_REASON } from "../pano_frame_scheduler.js";
@@ -11,19 +11,12 @@ import {
   PANO_SCENE_TYPE,
   UPSTREAM_BACKGROUND_WARNING,
   layerUiList,
-  upstreamBaseline,
   upstreamDeletedCount,
-  upstreamDeletedRecords,
-  upstreamEditedRecords,
   upstreamLayerEditable,
-  upstreamLayerRevertedRecords,
-  upstreamOverriddenEnds,
   upstreamPending,
-  upstreamPrunedRecords,
-  upstreamRestoredRecords,
-  upstreamRevertedRecords,
   upstreamRowId,
 } from "../pano_upstream.js";
+import { createUpstreamEdits } from "../pano_upstream_edits.js";
 import { createUpstreamLayers } from "../pano_upstream_layers.js";
 
 export function createUpstream(deps) {
@@ -32,10 +25,6 @@ export function createUpstream(deps) {
   } = deps;
   // Bound by connect() to the other modules and showEditor.
   let file3dEditorFile, getDesiredPaintTargetDescriptor, getMediaRevisionToken, playback, requestDraw;
-
-  // The working copies' fields as the last write-back or rebuild left them (upstreamBaseline): an edit is what
-  // differs from them.
-  let baseline = new Map();
 
   const drawMedia = () => requestDraw({ cause: "frame_view", localOnly: true, reason: DRAW_REASON.MEDIA });
 
@@ -55,9 +44,17 @@ export function createUpstream(deps) {
     playing: () => playback.advancing,
     editorFile: (sticker) => file3dEditorFile(sticker),
     onMedia: drawMedia,
-    onRebuild: (working) => {
-      baseline = upstreamBaseline(working);
+    onRebuild: (working) => edits.rebuilt(working),
+  });
+  // The write-back of the working copies' edits into the state's `upstream` records and the operations that change
+  // them (pano_upstream_edits.js).
+  const edits = createUpstreamEdits({
+    records: () => state.upstream,
+    setRecords: (records) => {
+      state.upstream = records;
     },
+    layers,
+    fps: () => state.timeline.fps,
   });
 
   // Whether another Studio's Scene is linked to `scene`: by the link's type, or, when that is not known, by
@@ -75,7 +72,7 @@ export function createUpstream(deps) {
   // Makes the working copies of the upstream layers again from the layers as they came and the state's
   // `upstream` records: after a new result and after Undo or Redo restored the state.
   function rebuildUpstreamWorking() {
-    layers.rebuild();
+    edits.rebuild();
   }
 
   // Writes the edits of the working copies since the last write-back or rebuild into the state's `upstream`
@@ -83,54 +80,35 @@ export function createUpstream(deps) {
   // editor writes its state: before each Undo step and each commit. Opening and closing without an edit writes
   // nothing.
   function syncUpstreamEdits() {
-    const read = layers.current();
-    if (!read.list) return;
-    const working = read.entries.map((entry) => entry.working);
-    const records = upstreamEditedRecords(state.upstream, read.entries.map((entry) => entry.layer), working, baseline, read.fps);
-    if (records === state.upstream) return;
-    state.upstream = records;
-    baseline = upstreamBaseline(working);
+    edits.sync();
   }
 
   // Drops the overrides and deleted ids of elements no longer in their layers (upstreamPrunedRecords), while
   // the node's result is current. Called with each Undo step, after syncUpstreamEdits: only an edit prunes,
   // and opening and closing never do.
   function pruneUpstreamRecords() {
-    const entries = upstreamEntries();
-    if (entries) state.upstream = upstreamPrunedRecords(state.upstream, entries.map((entry) => entry.layer));
-  }
-
-  // The `upstream` records changed by `change(records)` with the edits written back first, and the working
-  // copies made again from them. Returns whether they changed.
-  function changeUpstreamRecords(change) {
-    syncUpstreamEdits();
-    const records = change(state.upstream);
-    if (records === state.upstream) return false;
-    state.upstream = records;
-    rebuildUpstreamWorking();
-    return true;
+    edits.prune();
   }
 
   // Delete of the working Stickers `stickers` (ADR 0030): their layers' records delete them, so they are drawn
   // and written downstream no more. The caller adds the Undo step.
   function deleteUpstreamStickers(stickers) {
-    const origins = stickers.map((sticker) => sticker.origin);
-    return changeUpstreamRecords((records) => upstreamDeletedRecords(records, origins, state.timeline.fps));
+    return edits.deleteStickers(stickers);
   }
 
   // "Revert to upstream" of the working Sticker `sticker`: all its overrides, or only its Lane `lane`.
   function revertUpstreamSticker(sticker, lane = null) {
-    return changeUpstreamRecords((records) => upstreamRevertedRecords(records, sticker, lane));
+    return edits.revertSticker(sticker, lane);
   }
 
   // "Revert" of the upstream layer with `key`: its `scene` and painting follow upstream again.
   function revertUpstreamLayer(key) {
-    return changeUpstreamRecords((records) => upstreamLayerRevertedRecords(records, key));
+    return edits.revertLayer(key);
   }
 
   // "Restore deleted" of the layer with `key`: its deleted elements show again.
   function restoreUpstreamDeleted(key) {
-    return changeUpstreamRecords((records) => upstreamRestoredRecords(records, key));
+    return edits.restoreDeleted(key);
   }
 
   // The working Stickers of the upstream layers, from the farthest upstream layer's to the nearest's, each
@@ -158,7 +136,7 @@ export function createUpstream(deps) {
     const portMeta = (index) => portMediaMeta((key) => layerUiList(entries[index].layer.ui, key));
     return {
       frames: Number(frames) > 0 ? Number(frames) : 0,
-      ends: upstreamOverriddenEnds(working, state.upstream, baseline, portMeta, state.timeline.fps, openClip),
+      ends: edits.overriddenEnds(working, portMeta, openClip),
     };
   }
 
@@ -222,7 +200,7 @@ export function createUpstream(deps) {
   // Lets go of the upstream media when the editor closes.
   function disposeUpstream() {
     layers.dispose();
-    baseline = new Map();
+    edits.reset();
   }
 
   return {

@@ -10,8 +10,11 @@ import {
   portHandoff,
   recordHandoffEdits,
   revertHandoffLane,
+  NO_PORT_HANDOFF_PAIR,
   showPortHandoff,
+  storedPortState,
   storedPortSticker,
+  syncPortHandoffPair,
 } from "../web_src/pano_port_handoff.js";
 import { evaluateSticker } from "../web_src/pano_scene_eval.js";
 import { createStickersNodeSurfaceSession, portStickerSyncValue, surfaceSceneEditorState } from "../web_src/pano_stickers_node_surface.js";
@@ -337,4 +340,37 @@ test("the handoff hands a sky Sticker's curve and a world Sticker's lens, and a 
   const sky = loadSceneState({ version: 2, stickers: [{ id: "p", placement: "sky", source }] });
   const curve = { value: 0.3, keyframes: [{ frame: 0, value: 0.3, easing: [0.42, 0, 0.58, 1] }] };
   assert.deepEqual(inheritPortHandoff(sky, sky.stickers[0], portHandoff({ placement: "sky", lanes: { curve }, fps: 24 })).curve, curve);
+});
+
+// --- The pair both editors keep (docs/editor-interaction.md "`port` の Sticker の Pose handoff の表示と記録").
+
+const portIn = (state) => state.stickers.find((item) => item.source.kind === "port");
+const withPort = (state, port) => ({ ...state, stickers: state.stickers.map((item) => (item.source.kind === "port" ? port : item)) });
+
+test("a Lane taken off the overrides and back to the handoff is not recorded as an override again", () => {
+  const handoff = portHandoff(SKY_HANDOFF);
+  const opened = loadSceneState({ version: 2, stickers: [{ ...SKY_PORT, handoff_overrides: ["direction"] }] });
+  const first = syncPortHandoffPair(opened, NO_PORT_HANDOFF_PAIR, handoff, { restored: true });
+  assert.deepEqual(first.shown.direction.value, { yaw_deg: -90, pitch_deg: 0 });
+  // The new UI's row reset changes a copy of the shown Sticker (inspector_actions.js resetHandoff).
+  const reset = structuredClone(first.shown);
+  assert.equal(revertHandoffLane(withPort(opened, first.shown), reset, handoff, "direction"), true);
+  const next = syncPortHandoffPair(withPort(opened, reset), first.pair, handoff, { record: true });
+  assert.deepEqual(next.shown.handoff_overrides, []);
+  assert.deepEqual(next.shown.direction, SKY_HANDOFF.lanes.direction);
+  const stored = portIn(storedPortState(withPort(opened, next.shown), next.pair));
+  assert.deepEqual(stored.handoff_overrides, []);
+  // An edit after it is recorded as usual.
+  const edited = structuredClone(next.shown);
+  edited.roll = { value: 40, keyframes: [] };
+  assert.deepEqual(syncPortHandoffPair(withPort(opened, edited), next.pair, handoff).shown.handoff_overrides, ["roll"]);
+});
+
+test("the port Sticker an editor shows after applying the handoff is the one the node surface shows", () => {
+  for (const [raw, value] of [[SKY_PORT, SKY_HANDOFF], [{ ...SKY_PORT, handoff_overrides: ["size"] }, WORLD_HANDOFF]]) {
+    const text = sceneStateText(loadSceneState({ version: 2, stickers: [raw] }));
+    const opened = parseSceneEditorState(text, {});
+    const { shown } = syncPortHandoffPair(opened, NO_PORT_HANDOFF_PAIR, portHandoff([value]), { restored: true });
+    assert.deepEqual(shown, portIn(surfaceSceneEditorState(text, {}, [value])));
+  }
 });

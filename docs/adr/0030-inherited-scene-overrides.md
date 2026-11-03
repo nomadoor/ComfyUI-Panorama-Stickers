@@ -28,7 +28,7 @@ ADR 0029 は、要素の正を一か所に保つために上流の要素を読�
 
 `sticker_state` で届く `port` の Sticker も、上流の要素と同じく引き継ぎと上書きで扱う。動きは実行のたびに `sticker_state` から引き継ぎ、下流で触った Lane だけが下流の値になる。これで、`sticker` と `sticker_state` をつなぐ順番に関わらず上流の Camera ワークが届き、上流の Camera ワークを直したときも下流に届く。
 
-上流の Camera の位置がどこかのフレームで原点から離れるとき、届く Sticker は `world` の Sticker とする。Camera の前方、距離 2 の位置に、Camera の回転で、画角いっぱいの大きさ（幅 `2 · 2 · tan(hFOV ÷ 2)`）で置き、Camera が動けば毎フレームの位置・回転・大きさを Keyframe に焼く。上流の Camera の位置から見れば、距離によらず撮った絵と一致する。距離は下流の視差と、下流の 3D との前後関係にだけ効く。Camera が原点から動かないときは、これまでどおり `sky` の Sticker とし、既存の結果を変えない。`sticker_state` の形式は変えない（位置の Lane はすでに入っている）。
+（次の段落の置き方は ADR 0059 で、いつも `sky` の Sticker にすると改めた。）上流の Camera の位置がどこかのフレームで原点から離れるとき、届く Sticker は `world` の Sticker とする。Camera の前方、距離 2 の位置に、Camera の回転で、画角いっぱいの大きさ（幅 `2 · 2 · tan(hFOV ÷ 2)`）で置き、Camera が動けば毎フレームの位置・回転・大きさを Keyframe に焼く。上流の Camera の位置から見れば、距離によらず撮った絵と一致する。距離は下流の視差と、下流の 3D との前後関係にだけ効く。Camera が原点から動かないときは、これまでどおり `sky` の Sticker とし、既存の結果を変えない。`sticker_state` の形式は変えない（位置の Lane はすでに入っている）。
 
 ## Consequences
 

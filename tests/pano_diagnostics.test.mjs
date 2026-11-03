@@ -9,7 +9,10 @@ import {
   DIAGNOSTICS_RECORDS,
   DIAGNOSTICS_SETTING,
   DIAGNOSTICS_STORAGE_KEY,
+  countedContext,
   createDiagnostics,
+  diagnostics as sharedDiagnostics,
+  watchThreeView,
 } from "../web_src/pano_diagnostics.js";
 import { createPanoEditorExtension } from "../web_src/pano_editor_extension.js";
 import { EDITOR_FILES } from "./editor_source.mjs";
@@ -254,6 +257,192 @@ test("frames, renders and sources are sampled, and the frame counts start over e
   assert.equal(record.frame.count, 0);
   assert.deepEqual(record.renders, {});
   assert.deepEqual(Object.keys(record.sources), ["editor"]);
+});
+
+// A WebGL2 context with or without EXT_disjoint_timer_query_webgl2: each query's result (ns) is `results` in order, and
+// is available at once.
+function fakeGl({ timer = true, results = [], disjoint = [] } = {}) {
+  const ext = { TIME_ELAPSED_EXT: 1, GPU_DISJOINT_EXT: 2 };
+  const queries = [];
+  return {
+    QUERY_RESULT_AVAILABLE: 10,
+    QUERY_RESULT: 11,
+    finished: 0,
+    lost: false,
+    deleted: 0,
+    disjointReads: 0,
+    isContextLost() {
+      return this.lost;
+    },
+    getExtension: (name) => (timer && name === "EXT_disjoint_timer_query_webgl2" ? ext : null),
+    createQuery() {
+      const query = { result: results[queries.length] ?? 0 };
+      queries.push(query);
+      return query;
+    },
+    beginQuery() {},
+    endQuery() {},
+    deleteQuery() {
+      this.deleted += 1;
+    },
+    // GPU_DISJOINT_EXT resets when read: `disjoint` lists what each read returns.
+    getParameter() {
+      return disjoint[this.disjointReads++] ?? false;
+    },
+    getQueryParameter(query, name) {
+      if (this.lost) return null;
+      if (name === 10) return true;
+      return query.result;
+    },
+    finish() {
+      this.finished += 1;
+    },
+  };
+}
+
+test("GPU passes are timed by label with their draws and triangles; while off nothing is counted", () => {
+  const { diagnostics, advance } = setup();
+  const gl = fakeGl({ results: [4e6, 2e6] });
+  assert.equal(diagnostics.gpuStart(gl, "editor.render.studio-stage"), null);
+  diagnostics.setEnabled(true);
+  for (const label of ["editor.render.studio-stage", "editor.render.studio-stage"]) {
+    const pass = diagnostics.gpuStart(gl, label);
+    // A pass started inside another is not one of its own.
+    assert.equal(diagnostics.gpuStart(gl, "inner"), null);
+    diagnostics.gpuDraw(4, 3000);
+    diagnostics.gpuDraw(4, 6, 2);
+    diagnostics.gpuDraw(1, 100);
+    diagnostics.gpuEnd(pass);
+  }
+  diagnostics.gpuDraw(4, 999);
+  advance(1);
+  const record = diagnostics.sample();
+  assert.deepEqual(record.gpu, {
+    timer: "query",
+    waiting: 0,
+    passes: { "editor.render.studio-stage": { count: 2, ms: 6, maxMs: 4, draws: 6, triangles: 2008 } },
+  });
+  assert.deepEqual(diagnostics.sample().gpu.passes, {});
+});
+
+test("without the timer query a GPU pass is timed with gl.finish() around it", () => {
+  const { diagnostics, advance } = setup();
+  const gl = fakeGl({ timer: false });
+  diagnostics.setEnabled(true);
+  const pass = diagnostics.gpuStart(gl, "editor.erp.studio-live-erp");
+  advance(7);
+  diagnostics.gpuEnd(pass);
+  assert.equal(gl.finished, 2);
+  const record = diagnostics.sample();
+  assert.equal(record.gpu.timer, "finish");
+  assert.deepEqual(record.gpu.passes["editor.erp.studio-live-erp"], { count: 1, ms: 7, maxMs: 7, draws: 0, triangles: 0 });
+});
+
+test("a lost context's waiting queries are dropped and the later passes are timed by query", () => {
+  const { diagnostics } = setup();
+  diagnostics.setEnabled(true);
+  const editor = fakeGl({ results: [1e6] });
+  diagnostics.gpuEnd(diagnostics.gpuStart(editor, "editor.render.studio-stage"));
+  // The editor closes before the result is read: its context is lost.
+  editor.lost = true;
+  assert.equal(diagnostics.gpuStart(editor, "editor.render.studio-stage"), null);
+  const node = fakeGl({ results: Array(70).fill(2e6) });
+  for (let i = 0; i < 70; i += 1) diagnostics.gpuEnd(diagnostics.gpuStart(node, "node.render.-"));
+  const record = diagnostics.sample();
+  assert.equal(node.finished, 0);
+  assert.deepEqual(record.gpu, { timer: "query", waiting: 0, passes: { "node.render.-": { count: 70, ms: 140, maxMs: 2, draws: 0, triangles: 0 } } });
+});
+
+test("a disjoint poll drops every result it took, reading the flag once", () => {
+  const { diagnostics } = setup();
+  diagnostics.setEnabled(true);
+  const gl = fakeGl({ results: [1e6, 1e6, 3e6], disjoint: [true, false] });
+  const one = diagnostics.gpuStart(gl, "x");
+  diagnostics.gpuDraw(4, 30);
+  diagnostics.gpuEnd(one);
+  // Not read yet: the first pass's draws wait for its time.
+  diagnostics.gpuEnd(diagnostics.gpuStart(gl, "x"));
+  assert.equal(gl.disjointReads, 1);
+  diagnostics.gpuEnd(diagnostics.gpuStart(gl, "x"));
+  const record = diagnostics.sample();
+  // One read per poll that took a result: the first pass (and its draws) went with the disjoint read.
+  assert.equal(gl.disjointReads, 3);
+  assert.deepEqual(record.gpu.passes, { x: { count: 2, ms: 4, maxMs: 3, draws: 0, triangles: 0 } });
+});
+
+test("turning the diagnostics off lets go of the waiting queries", () => {
+  const { diagnostics } = setup();
+  diagnostics.setEnabled(true);
+  const gl = fakeGl();
+  gl.getQueryParameter = (query, name) => (name === 10 ? false : 0);
+  diagnostics.gpuEnd(diagnostics.gpuStart(gl, "x"));
+  diagnostics.setEnabled(false);
+  assert.equal(gl.deleted, 1);
+  diagnostics.setEnabled(true);
+  assert.equal(diagnostics.sample().gpu.waiting, 0);
+});
+
+// A canvas whose WebGL2 context records its draws.
+function drawingCanvas() {
+  const calls = [];
+  const gl = {
+    drawArrays: (...args) => calls.push(["drawArrays", ...args]),
+    drawElements: (...args) => calls.push(["drawElements", ...args]),
+    finish() {},
+    getExtension: () => null,
+  };
+  const own = { drawArrays: gl.drawArrays, drawElements: gl.drawElements };
+  return { gl, own, calls, canvas: { getContext: (type) => (type === "webgl2" ? gl : null), addEventListener() {} } };
+}
+
+test("a counted context counts its draws once, and gets its own draw functions back when let go", () => {
+  const { gl, own, calls, canvas } = drawingCanvas();
+  assert.equal(countedContext(canvas, false), null);
+  assert.equal(gl.drawArrays, own.drawArrays);
+  assert.equal(countedContext(canvas, true), gl);
+  const wrapped = gl.drawArrays;
+  assert.notEqual(wrapped, own.drawArrays);
+  // Counted again, it is not wrapped twice.
+  countedContext(canvas, true);
+  assert.equal(gl.drawArrays, wrapped);
+  gl.drawElements(4, 6, 0, 0);
+  assert.deepEqual(calls, [["drawElements", 4, 6, 0, 0]]);
+  countedContext(canvas, false);
+  assert.equal(gl.drawArrays, own.drawArrays);
+  assert.equal(gl.drawElements, own.drawElements);
+});
+
+test("a watched view times its renders as GPU passes while on, ends a pass that throws, and leaves the context alone while off", () => {
+  const { gl, own, canvas } = drawingCanvas();
+  const view = {
+    canvas,
+    stats: () => ({}),
+    render(input) {
+      gl.drawElements(4, 3000, 0, 0);
+      if (input.fail) throw new Error("render failed");
+    },
+    renderUnwrap() {},
+    renderLiveErp() {},
+    dispose() {},
+  };
+  const watched = watchThreeView(view, "editor");
+  watched.render({ owner: "studio-stage" });
+  assert.equal(gl.drawElements, own.drawElements);
+  sharedDiagnostics.setEnabled(true);
+  try {
+    watched.render({ owner: "studio-stage", lens: {} });
+    assert.throws(() => watched.render({ owner: { id: 1 }, fail: true }), /render failed/);
+    watched.renderLiveErp({ owner: "studio-live-erp" });
+    const passes = sharedDiagnostics.sample().gpu.passes;
+    assert.deepEqual(Object.keys(passes).sort(), ["editor.erp.studio-live-erp", "editor.render.-", "editor.render.studio-stage+lens"]);
+    assert.equal(passes["editor.render.studio-stage+lens"].triangles, 1000);
+    assert.equal(passes["editor.render.-"].count, 1);
+  } finally {
+    sharedDiagnostics.setEnabled(false);
+  }
+  watched.render({ owner: "studio-stage" });
+  assert.equal(gl.drawElements, own.drawElements);
+  watched.dispose();
 });
 
 test("the ring keeps the last records and localStorage gets at most the size limit", () => {

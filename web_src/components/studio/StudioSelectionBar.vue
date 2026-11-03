@@ -31,6 +31,7 @@ const emit = defineEmits(["press"]);
         :tip="button.tip"
         :active="button.active"
         :disabled="button.disabled"
+        :class="{ 'is-override': button.overridden }"
         @press="emit('press', button.key)"
       />
     </template>
