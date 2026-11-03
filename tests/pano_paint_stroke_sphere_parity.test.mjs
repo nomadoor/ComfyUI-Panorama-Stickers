@@ -10,9 +10,13 @@ import { stampHalfWidthPx, strokeErpPath } from "../web_src/pano_paint_sphere.js
 const { paths, widths } = JSON.parse(readFileSync(new URL("./fixtures/paint_stroke_sphere.json", import.meta.url), "utf8"));
 const near = (actual, expected, label) => assert.ok(Math.abs(actual - expected) <= 1e-6, `${label}: ${actual} vs ${expected}`);
 
-for (const [name, { points, radius_px: radius, width, height, path }] of Object.entries(paths)) {
+for (const [name, { points, radius_px: radius, width, height, path, count }] of Object.entries(paths)) {
   test(`stroke path on the sphere: ${name}`, () => {
     const out = strokeErpPath(points.map(([u, v], index) => ({ u, v, t: index })), radius, width, height);
+    if (count !== undefined) {
+      assert.equal(out.length, count);
+      return;
+    }
     assert.equal(out.length, path.length);
     out.forEach((point, index) => {
       near(point.u, path[index][0], `u ${index}`);

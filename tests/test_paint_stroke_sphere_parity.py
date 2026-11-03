@@ -19,6 +19,9 @@ def test_stroke_path_on_the_sphere(name):
 
     out = stroke_erp_path(points, case["radius_px"], case["width"], case["height"])
 
+    if "count" in case:
+        assert len(out) == case["count"]
+        return
     assert len(out) == len(case["path"])
     assert [value for point in out for value in (point["u"], point["v"])] == pytest.approx(
         [value for point in case["path"] for value in point], abs=1e-6)

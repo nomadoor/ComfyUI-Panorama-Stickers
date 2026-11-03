@@ -1,5 +1,5 @@
 {
- "_doc": "How a paint stroke is drawn on the sphere (docs/render-contract.md \"\u30da\u30a4\u30f3\u30c8\u306e\u30b9\u30c8\u30ed\u30fc\u30af\u306e\u63cf\u304d\u65b9\"), read by tests/test_paint_stroke_sphere_parity.py (core/painting.py) and tests/pano_paint_stroke_sphere_parity.test.mjs (web_src/pano_paint_sphere.js). paths: the points a drawer walks ([u, v]), the stroke's base radius in pixels and the ERP size, and the path it walks after the great-circle points go in ([u, v], u continuous across the seam). widths: a stamp's vertical radius rv, aspect and ERP width, and its horizontal radius at rows v (unrounded). Numbers within 1e-6.",
+ "_doc": "How a paint stroke is drawn on the sphere (docs/render-contract.md \"\u30da\u30a4\u30f3\u30c8\u306e\u30b9\u30c8\u30ed\u30fc\u30af\u306e\u63cf\u304d\u65b9\"), read by tests/test_paint_stroke_sphere_parity.py (core/painting.py) and tests/pano_paint_stroke_sphere_parity.test.mjs (web_src/pano_paint_sphere.js). paths: the points a drawer walks ([u, v]), the stroke's base radius in pixels and the ERP size, and the path it walks after the great-circle points go in ([u, v], u continuous across the seam; or, for a long one, only how many points it has: count). widths: a stamp's vertical radius rv, aspect and ERP width, and its horizontal radius at rows v (unrounded). Numbers within 1e-6.",
  "paths": {
   "along_the_equator": {
    "points": [
@@ -251,6 +251,72 @@
      0.29
     ]
    ]
+  },
+  "the_same_point_twice": {
+   "points": [
+    [
+     0.3,
+     0.4
+    ],
+    [
+     0.3,
+     0.4
+    ]
+   ],
+   "radius_px": 5,
+   "width": 2048,
+   "height": 1024,
+   "path": [
+    [
+     0.3,
+     0.4
+    ],
+    [
+     0.3,
+     0.4
+    ]
+   ]
+  },
+  "under_a_pixel_apart": {
+   "points": [
+    [
+     0.3,
+     0.4
+    ],
+    [
+     0.3002,
+     0.4003
+    ]
+   ],
+   "radius_px": 0.01,
+   "width": 2048,
+   "height": 1024,
+   "path": [
+    [
+     0.3,
+     0.4
+    ],
+    [
+     0.3002,
+     0.4003
+    ]
+   ]
+  },
+  "sixteen_deep": {
+   "points": [
+    [
+     0.1,
+     0.01
+    ],
+    [
+     0.4,
+     0.01
+    ]
+   ],
+   "radius_px": 1e-09,
+   "width": 1000000000,
+   "height": 500000000,
+   "count": 65537
   }
  },
  "widths": {
