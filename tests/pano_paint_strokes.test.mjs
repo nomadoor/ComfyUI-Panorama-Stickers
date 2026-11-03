@@ -148,3 +148,28 @@ test("the eraser reaches a stroke group across the seam on either side, and not 
   assert.deepEqual(asked(0.02), ["g1"]);
   assert.deepEqual(asked(0.5), []);
 }));
+
+test("the eraser reaches a stroke group that goes all the way round, wherever it touches it", () => withRasterCanvas(() => {
+  const W = 256;
+  const H = 128;
+  // A thick horizon stroke all the way round: with its pad its range is wider than one turn.
+  const points = Array.from({ length: 100 }, (_, k) => ({ u: (0.46 + k * 0.01) % 1, v: 0.5 }));
+  const painting = normalizePaintingState({ groups: [{ id: "g1", actionGroupId: "g1", z_index: 0 }], paint: { strokes: [{ ...lineStroke(points), size: 103 }] } });
+  for (const eraserU of [0.1, 0.5, 0.7, 0.95]) {
+    const square = [[-3, -3], [3, -3], [3, 3], [-3, 3]].map(([x, y]) => ({ u: eraserU + x / W, v: 0.5 + y / H }));
+    const eraser = { ...lineStroke(square), id: "e1", toolKind: "eraser", geometry: { geometryKind: "lasso_fill", points: square } };
+    const seen = [];
+    erasePaint(painting, eraser, {
+      descriptor: { width: W, height: H },
+      groupStrokes: (gid) => painting.paint.strokes.filter((stroke) => stroke.actionGroupId === gid),
+      groupFrame: (group, strokes) => strokeGroupFrame(strokes, undefined, group.rot_deg),
+      groupCanvas: (gid) => {
+        seen.push(gid);
+        return null;
+      },
+      rasterCanvas: () => null,
+      topZ: () => 0,
+    });
+    assert.deepEqual(seen, ["g1"], `the eraser at u ${eraserU}`);
+  }
+}));

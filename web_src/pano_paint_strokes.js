@@ -1030,12 +1030,16 @@ export function erasePaint(painting, eraserStroke, { descriptor: erpDesc, groupS
     minV -= frame.uvPad; maxV += frame.uvPad;
     const width = erpDesc.width;
     const height = erpDesc.height;
+    const minY = Math.floor(clamp(minV, 0, 1) * height);
+    const maxY = Math.ceil(clamp(maxV, 0, 1) * height);
+    // A range a turn wide or more covers the whole width.
+    if (maxU - minU >= 1) return { minX: 0, maxX: width - 1, minY, maxY, wraps: false };
     return {
       minX: Math.floor(((minU % 1 + 1) % 1) * width),
       maxX: Math.ceil((((maxU % 1 + 1) % 1) * width)),
-      minY: Math.floor(clamp(minV, 0, 1) * height),
-      maxY: Math.ceil(clamp(maxV, 0, 1) * height),
-      wraps: (maxU - minU) >= 1 || ((minU % 1 + 1) % 1) > ((maxU % 1 + 1) % 1),
+      minY,
+      maxY,
+      wraps: ((minU % 1 + 1) % 1) > ((maxU % 1 + 1) % 1),
     };
   }
 
