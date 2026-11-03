@@ -76,6 +76,7 @@ If only the editor is extremely slow, open `chrome://gpu` (`edge://gpu` for Edge
 
 ## Changelog
 
+- **2.0.3**: Objects received from an upstream Studio can be selected and edited in the downstream editor (saved as overrides); a shot returned through `sticker_state` always goes back to the Sky, wherever the Camera stood; paint can be rotated; double-click sets the orbit center in the Camera tab too; right-drag now pans and middle-drag looks around; the orbit center mark and a latitude-longitude grid on the Sky; fixes.
 - **2.0.2**: Moving objects with a lens camera in the Camera tab; the Output window opens from the whole bar; depth-grid videos (MoGe, DA3) keep shape and color in step on slow connections and load ahead while paused; fixes.
 - **2.0.1**: The Studio editor shows the output size at all times and keeps the inspector the same across tabs; objects can be moved in the Camera tab; the node shows depth grids (MoGe, DA3) and the upstream scene, and can play; paint can be grabbed and moved; fixes.
 - **2.0.0**: Added Panorama Studio and the new Panorama Preview.
