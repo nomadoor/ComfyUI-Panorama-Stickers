@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { loadSceneState } from "../web_src/pano_scene_state.js";
-import { projectPoint } from "../web_src/pano_space.js";
+import { projectPoint, viewAxes } from "../web_src/pano_space.js";
 import { GROUND_DEFAULT as DEFAULT_GROUND } from "../web_src/studio/defaults.js";
 import { GRID_COLORS, SKY_GRID, groundGrid, skyGrid } from "../web_src/studio/grid.js";
 import {
@@ -306,6 +306,10 @@ test("the sky grid shows the upper half from at or above the ground, the lower h
 test("a stage render carries the sky grid with the view's position as its eye, and none when the grid is hidden", () => {
   const camera = stageCamera(level(), 800, 400, 48);
   const input = stageRenderInput({ camera, canvasWidth: 1600, canvasHeight: 800, background: null, ground: -1.6, gridHidden: false });
-  assert.deepEqual(input.space.sky, { ...skyGrid({ ground: -1.6, eye: camera.position }), scale: STAGE_RENDER_SCALE });
+  // The pole dot goes by the view's own forward (docs/threejs-spark-integration.md "新しい UI のステージの描画").
+  const turned = stageCamera({ ...level(), yaw_deg: 30, pitch_deg: 20 }, 800, 400, 48);
+  const sky = stageRenderInput({ camera: turned, canvasWidth: 2, canvasHeight: 2, background: null, ground: -1.6, gridHidden: false }).space.sky;
+  sky.forward.forEach((v, i) => assert.ok(Math.abs(v - viewAxes(30, 20).forward[i]) < 1e-9));
+  assert.deepEqual(input.space.sky, { ...skyGrid({ ground: -1.6, eye: camera.position, forward: input.space.sky.forward }), scale: STAGE_RENDER_SCALE });
   assert.equal(stageRenderInput({ camera, canvasWidth: 2, canvasHeight: 2, background: null, ground: -1.6, gridHidden: true }).space.sky, null);
 });

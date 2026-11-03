@@ -273,3 +273,89 @@ test("the Preview window has Set orbit center: its wait line at the top center, 
   await expect(page.locator("[data-preview-window]")).toHaveCount(0);
   expect(problems).toEqual([]);
 });
+
+test("Reset View and Frame Selected keep Set orbit center's wait", async ({ page }) => {
+  const { problems } = await open(page);
+  const button = page.locator('[data-action="orbit-center"]');
+  await button.click();
+  await page.locator('[data-action="reset-view"]').click();
+  await expect(button).toHaveClass(/is-waiting/);
+  await page.locator('[data-action="frame-selected"]').click();
+  await expect(button).toHaveClass(/is-waiting/);
+  await expect(page.locator(".pano-studio-notice")).toHaveText(/Click a spot to orbit around/);
+  expect(problems).toEqual([]);
+});
+
+test("with reduced motion the waiting ring does not pulse", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const { problems } = await open(page);
+  const button = page.locator('[data-action="orbit-center"]');
+  await button.click();
+  await expect(button).toHaveClass(/is-waiting/);
+  expect(await button.evaluate((el) => getComputedStyle(el, "::after").animationName)).toBe("none");
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  expect(await button.evaluate((el) => getComputedStyle(el, "::after").animationName)).toBe("pano-studio-waiting");
+  expect(problems).toEqual([]);
+});
+
+test("in the Frame view the mark of a selected object off the Camera's frame is not drawn outside the frame box", async ({ page }) => {
+  const problems = watch(page);
+  await page.setViewportSize({ width: 1440, height: 860 });
+  await page.goto("/tests/browser/pages/studio_camera_wired.html?aspect=16:9&mode=frame");
+  await page.waitForFunction(() => window.__studio?.ready, null, { timeout: 30_000 });
+  await expect(page.locator(".pano-studio-notice")).toHaveCount(0, { timeout: 30_000 });
+  await page.locator('[role="tablist"] button', { hasText: "Camera" }).click();
+  await expect(page.locator("[data-frame-box]")).toHaveCount(1);
+  // The marker in front of the Camera is selected, and the Camera turned away from it (a right drag over 0.13 of the
+  // frame's width): the next orbit turns about it, left of the frame box but on the stage.
+  await page.evaluate(() => window.__studio.session.select({ row: "sticker_1" }));
+  const box = await page.locator("[data-frame-box]").boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down({ button: "right" });
+  await page.mouse.move(box.x + box.width / 2 - box.width * 0.13, box.y + box.height / 2, { steps: 6 });
+  await page.mouse.up({ button: "right" });
+  await page.mouse.move(5, 5);
+  await page.waitForTimeout(400);
+  const outside = () => page.evaluate(() => {
+    const canvas = document.querySelector("[data-stage-overlay]");
+    const stage = canvas.getBoundingClientRect();
+    const frame = document.querySelector("[data-frame-box]").getBoundingClientRect();
+    const ratio = canvas.width / stage.width;
+    const data = canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height).data;
+    let sum = 0;
+    for (let y = 0; y < canvas.height; y += 1) {
+      for (let x = 0; x < canvas.width; x += 1) {
+        const cx = x / ratio + stage.left;
+        const cy = y / ratio + stage.top;
+        if (cx >= frame.left && cx <= frame.right && cy >= frame.top && cy <= frame.bottom) continue;
+        sum += data[(y * canvas.width + x) * 4 + 3];
+      }
+    }
+    return sum;
+  });
+  const before = await outside();
+  await page.keyboard.down("Alt");
+  await page.waitForTimeout(200);
+  expect(await outside()).toBe(before);
+  await page.keyboard.up("Alt");
+  expect(problems).toEqual([]);
+});
+
+test.describe("at a device pixel ratio of 2", () => {
+  test.use({ deviceScaleFactor: 2 });
+  test("the Preview window's overlay is drawn at device pixels, its mark in the middle", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto("/tests/browser/pages/preview_window.html");
+    await page.waitForFunction(() => window.__preview?.ready, null, { timeout: 30_000 });
+    expect(await page.evaluate(() => window.__preview.open())).toBe(true);
+    await expect.poll(() => page.evaluate(() => window.__preview.sample()), { timeout: 20_000 }).toBeGreaterThan(20);
+    const sizes = await page.evaluate(() => {
+      const overlay = document.querySelector("[data-stage-overlay]");
+      return { overlay: overlay.width, css: overlay.getBoundingClientRect().width };
+    });
+    await page.locator('[data-knob="orbit"]').hover();
+    await expect.poll(async () => (await overlayAt(page)).alpha).toBeGreaterThan(150);
+    expect(sizes.overlay).toBeGreaterThan(0);
+    expect(Math.abs(sizes.overlay - 2 * sizes.css)).toBeLessThanOrEqual(1);
+  });
+});

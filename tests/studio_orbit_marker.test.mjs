@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { orbitMarkPoint, orbitMarkerAlpha, orbitMarkerFading } from "../web_src/studio/orbit_marker.js";
+import { ORBIT_MARK_LOOK, markOnView, orbitMarkPoint, orbitMarkerAlpha, orbitMarkerFading } from "../web_src/studio/orbit_marker.js";
 import { ORBIT_MARK_FADE_SECONDS, ORBIT_MARK_HOLD_SECONDS } from "../web_src/studio/view_scale.js";
 
 const close = (actual, expected, eps = 1e-9) => assert.ok(Math.abs(actual - expected) <= eps, `${actual} != ${expected}`);
@@ -41,4 +41,14 @@ test("the mark's point: the next orbit's center for Alt and the orbit knob, else
   assert.deepEqual(orbitMarkPoint({ alt: true, picking: true, target: T, nextCenter: center }), T);
   assert.deepEqual(orbitMarkPoint({ centerButton: true, target: T, nextCenter: center }), T);
   assert.deepEqual(orbitMarkPoint({ sinceSet: 0.1, target: T, nextCenter: center }), T);
+});
+
+test("a mark whose ring lies wholly outside the box it is drawn in (the view, or the Camera tab's frame box) is not drawn", () => {
+  const r = ORBIT_MARK_LOOK.ringRadius + ORBIT_MARK_LOOK.underWidth / 2;
+  const box = { x: 20, y: 10, width: 100, height: 50 };
+  assert.deepEqual(markOnView({ x: 30, y: 20, z: 3 }, box), { x: 30, y: 20 });
+  assert.deepEqual(markOnView({ x: 20 - r + 1, y: 20, z: 3 }, box), { x: 20 - r + 1, y: 20 });
+  assert.equal(markOnView({ x: 20 - r - 1, y: 20, z: 3 }, box), null);
+  assert.equal(markOnView({ x: 50, y: 60 + r + 1, z: 3 }, box), null);
+  assert.equal(markOnView(null, box), null);
 });

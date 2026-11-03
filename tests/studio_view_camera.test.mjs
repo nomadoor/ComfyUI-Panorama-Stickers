@@ -671,3 +671,20 @@ test("before the keys and the joystick move, a far T is pulled back into the ran
   stick.joystick(100, 0.1);
   close(len(sub(stick.pose().position, start)), 48 * 0.1, 1e-6);
 });
+
+test("a look or a pan after a far pointed T puts T back on the center line within the range", () => {
+  const looked = farTarget();
+  looked.look(10, 0);
+  onCenterLine(looked.pose(), 48);
+  const panned = farTarget();
+  panned.beginPan(null);
+  panned.pan(10, 0);
+  close(len(sub(panned.pose().target, panned.pose().position)), 48);
+  onCenterLine(panned.pose(), 48);
+});
+
+test("an orbit's center at P itself becomes T TARGET_MIN_DISTANCE ahead", () => {
+  const view = camera(pose({ position: [1, 0, 2] }));
+  view.beginOrbit([1, 0, 2]);
+  closeVec(view.destination().target, [1, 0, 2 - 0.008]);
+});

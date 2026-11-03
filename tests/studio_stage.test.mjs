@@ -11,7 +11,7 @@ function target(extra = {}) {
   return Object.assign(new EventTarget(), extra);
 }
 
-function setup({ content } = {}) {
+function setup({ content, overlay = null } = {}) {
   const frames = [];
   let time = 0;
   const body = target({ tagName: "BODY" });
@@ -25,11 +25,12 @@ function setup({ content } = {}) {
   });
   const canvas = target({ width: 1000, height: 500, getBoundingClientRect: () => ({ left: 0, top: 0, width: 1000, height: 500 }) });
   const root = target({ contains: (node) => node === root, ownerDocument: document });
-  const view = () => ({ ready: true, render: () => null, resize: () => null, pick: () => null, dispose: () => {} });
+  const counts = { renders: 0 };
+  const view = () => ({ ready: true, render: () => { counts.renders += 1; return null; }, resize: () => null, pick: () => null, dispose: () => {} });
   const ui = stageUi();
   const opening = { pose: { position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0, roll_deg: 0, target: [0, 0, -8] } };
   const output = { position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0 };
-  const stage = createStage({ canvas, root, opening, output, world: { ground: -1.6, camera: [0, 0, 0] }, ui, ...(content ? { content } : {}), view, win, now: () => time });
+  const stage = createStage({ canvas, overlay, root, opening, output, world: { ground: -1.6, camera: [0, 0, 0] }, ui, ...(content ? { content } : {}), view, win, now: () => time });
   // Runs the frames asked for, one after another, at 16 ms apart.
   const run = () => {
     for (let i = 0; i < 20 && frames.length; i += 1) {
@@ -42,7 +43,7 @@ function setup({ content } = {}) {
     Object.defineProperty(event, "composedPath", { value: () => [body] });
     win.dispatchEvent(event);
   };
-  return { stage, ui, run, key, root, frames };
+  return { stage, ui, run, key, root, frames, counts, canvas };
 }
 
 test("a held movement key moves the view until Meta goes up, which lets it go", () => {
@@ -158,4 +159,55 @@ test("Reset View puts T on a 3D box in front of the view, as the spec's first T 
   for (let i = 0; i < 5; i += 1) run();
   const target = stage.pose().target;
   assert.ok(Math.abs(target[2] + 4) < 1e-6, `T is on the near face of the box, got ${target}`);
+});
+
+// docs/space-and-view.md "オービットの中心の印": the mark is the 2D overlay's only; showing, hiding and fading it draws the
+// overlay again but not the 3D view.
+function overlayStub() {
+  const calls = { arcs: 0, clears: 0 };
+  globalThis.Path2D ??= class { arc() { calls.arcs += 1; } moveTo() {} lineTo() {} closePath() {} };
+  const ctx = new Proxy({ canvas: null }, {
+    get(store, name) {
+      if (name in store) return store[name];
+      if (name === "clearRect") return () => { calls.clears += 1; };
+      return () => {};
+    },
+    set(store, name, value) { store[name] = value; return true; },
+  });
+  const overlay = { width: 1, height: 1, getContext: () => ctx };
+  ctx.canvas = overlay;
+  return { overlay, calls };
+}
+
+test("showing the orbit center's mark (a hover on the orbit knob) draws the overlay only, not the 3D view", () => {
+  const { overlay, calls } = overlayStub();
+  const { stage, run, counts } = setup({ overlay });
+  run();
+  const renders = counts.renders;
+  const clears = calls.clears;
+  stage.toolbarHover("orbit");
+  run();
+  assert.equal(counts.renders, renders, "no 3D draw for the mark");
+  assert.ok(calls.clears > clears, "the overlay was drawn again");
+  stage.toolbarHover(null);
+  run();
+  assert.equal(counts.renders, renders);
+  stage.dispose();
+});
+
+test("after a double click sets T, the mark fades out over overlay-only frames, then the frames stop", () => {
+  const { overlay, calls } = overlayStub();
+  const { stage, run, counts, canvas, frames } = setup({ overlay });
+  run();
+  const click = Object.assign(new Event("dblclick"), { button: 0, clientX: 500, clientY: 450 });
+  canvas.dispatchEvent(click);
+  // The turn (ACTION_EASE_SECONDS) draws the 3D view; the rest of the mark's life does not.
+  for (let i = 0; i < 3; i += 1) run();
+  const renders = counts.renders;
+  const clears = calls.clears;
+  for (let i = 0; i < 5; i += 1) run();
+  assert.equal(counts.renders, renders, "the fade draws no 3D view");
+  assert.ok(calls.clears > clears, "the fade draws the overlay");
+  assert.equal(frames.length, 0, "the frames stop once the mark is gone");
+  stage.dispose();
 });

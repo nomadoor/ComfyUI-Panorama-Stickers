@@ -39,3 +39,14 @@ export function orbitMarkPoint({ alt = false, orbitKnob = false, picking = false
   if ((alt || orbitKnob) && !orbiting && !picking) return nextCenter ?? target;
   return target;
 }
+
+// Where the mark goes (`at`: pano_space.js projectPoint's point in the view's CSS px, or null behind the view) when it
+// is drawn within `box` ({ x, y, width, height } in the same px: the view, or the Camera tab's frame box): { x, y }, or
+// null when its ring lies wholly outside the box (docs/space-and-view.md "オービットの中心の印": not drawn off the
+// screen; stage_overlay.js clips what is left to the box).
+export function markOnView(at, box) {
+  if (!at) return null;
+  const r = ORBIT_MARK_LOOK.ringRadius + ORBIT_MARK_LOOK.underWidth / 2;
+  if (at.x < box.x - r || at.y < box.y - r || at.x > box.x + box.width + r || at.y > box.y + box.height + r) return null;
+  return { x: at.x, y: at.y };
+}

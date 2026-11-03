@@ -10,15 +10,12 @@
 // ground (the other half is the ground's) but the horizon, each line about px render pixels wide with a one-pixel
 // feather (the pixel's angle from fwidth of the direction, as the ground grid's lines). Lines crowding closer than a
 // few pixels fade out so they do not flicker.
-import { BackSide, Mesh, OneFactor, OneMinusSrcAlphaFactor, CustomBlending, ShaderMaterial, Vector2, Vector4 } from "three";
+import { BackSide, Mesh, OneFactor, OneMinusSrcAlphaFactor, CustomBlending, ShaderMaterial, Vector2, Vector3, Vector4 } from "three";
 
 const SKY_GRID_VERTEX = `
 varying vec3 vDirection;
-varying vec3 vForward;
 void main() {
   vDirection = position;
-  // The view's direction in the dome's frame (the inverse turn of the model view; a uniform scale does not matter).
-  vForward = normalize(transpose(mat3(modelViewMatrix)) * vec3(0.0, 0.0, -1.0));
   gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
 }`;
 
@@ -44,8 +41,8 @@ uniform float groundReach;
 uniform float groundAxisPx;
 uniform vec4 groundAxisX;
 uniform vec4 groundAxisZ;
+uniform vec3 viewForward;
 varying vec3 vDirection;
-varying vec3 vForward;
 const float HALF_PI = 1.5707963267948966;
 
 // How much of a line widthPx wide covers this pixel, offPx pixels from its middle, its edges smoothed over a pixel.
@@ -116,7 +113,7 @@ void main() {
   float horizon = cover(abs(lat) / px, horizonPx);
 
   // The shown half's pole dot, only as the view comes near it.
-  float near = smoothstep(cos(poleNear.x), cos(poleNear.y), vForward.y * side);
+  float near = smoothstep(cos(poleNear.x), cos(poleNear.y), viewForward.y * side);
   float spot = (1.0 - smoothstep(-0.5, 0.5, (HALF_PI - up - poleDot) / px)) * near;
 
   vec4 color = vec4(lineColor.rgb, lineColor.a * max(parallel, meridian) * toPole * shown);
@@ -149,6 +146,7 @@ export function createSkyGrid(geometry) {
     poleDot: { value: 0.5 * RAD },
     poleColor: { value: new Vector4() },
     poleNear: { value: new Vector2() },
+    viewForward: { value: new Vector3(0, 0, -1) },
     axisRise: { value: new Vector2() },
     groundOn: { value: 0 },
     side: { value: 1 },
@@ -194,6 +192,8 @@ export function createSkyGrid(geometry) {
       uniforms.poleDot.value = sky.poleDotDeg * RAD;
       uniforms.poleColor.value.set(...sky.poleColor);
       uniforms.poleNear.value.set(sky.poleNearDeg[0] * RAD, sky.poleNearDeg[1] * RAD);
+      // The view's (or the live ERP Camera's) forward, not the face camera's (docs/threejs-spark-integration.md).
+      uniforms.viewForward.value.set(sky.forward[0], sky.forward[1], sky.forward[2]);
       uniforms.side.value = sky.side;
       uniforms.groundOn.value = sky.groundAxes ? 1 : 0;
       if (sky.groundAxes) {

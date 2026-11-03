@@ -55,8 +55,9 @@ export const SKY_GRID = Object.freeze({
 // (`eye`, the World position the half and the carried axes go by; null without one) and the ground height `ground`:
 // `side` 1 to draw the upper half (the eye at or above the ground), -1 the lower; `groundAxes` whether the ground's
 // axes are carried on past the plane (not with the eye exactly at the ground's height, nor without an eye), from
-// `groundReach` (the half side of the ground grid's plane, its 10-unit lines' fade end) in `groundAxisColors`.
-export function skyGrid({ hidden = false, ground = GROUND_DEFAULT, eye = null } = {}) {
+// `groundReach` (the half side of the ground grid's plane, its 10-unit lines' fade end) in `groundAxisColors`. `forward`
+// is the direction the view (or the Camera of a live ERP) looks along, which the pole's dot goes by (not a cube face's).
+export function skyGrid({ hidden = false, ground = GROUND_DEFAULT, eye = null, forward = null } = {}) {
   if (hidden) return null;
   const { GRID_MAJOR_FADE } = eyeLengths(eyeHeight(ground));
   return {
@@ -67,6 +68,7 @@ export function skyGrid({ hidden = false, ground = GROUND_DEFAULT, eye = null } 
     poleNearDeg: [...SKY_POLE_NEAR_DEG],
     poleDotDeg: SKY_POLE_DOT_DEG,
     eye: eye ? [...eye] : null,
+    forward: forward ? [...forward] : [0, 0, -1],
     ground,
     side: eye && eye[1] < ground ? -1 : 1,
     groundAxes: !!eye && eye[1] !== ground,
