@@ -1,11 +1,9 @@
 import {
   DEG2RAD,
   RAD2DEG,
-  add,
   cameraBasis,
   clamp,
-  mul,
-  norm,
+  tangentDirection,
   wrapYaw,
 } from "./pano_camera_math.js";
 import {
@@ -59,10 +57,7 @@ function stickerFrame(item) {
 
 function stickerDirection(frame, x, y) {
   if (frame.curve !== undefined) return lensAxesDirection({ fwd: frame.centerDir, right: frame.right, up: frame.up }, x, y, frame.curve);
-  return norm(add(
-    add(frame.centerDir, mul(frame.right, x)),
-    mul(frame.up, y),
-  ));
+  return tangentDirection({ fwd: frame.centerDir, right: frame.right, up: frame.up }, x, y);
 }
 
 export function buildStickerGeometry(item, projection) {
