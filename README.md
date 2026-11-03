@@ -8,7 +8,7 @@ A ComfyUI node set for placing images, videos and 3D in a 360° panorama and sho
 
 Fix the shot with an image generation model, then put it back where it was. You can do this round trip inside a ComfyUI workflow.
 
-https://github.com/user-attachments/assets/bf74e953-8ceb-4c7f-afa2-1c805f12c7af
+[![Panorama Stickers](https://img.youtube.com/vi/QnMhNTncaYI/maxresdefault.jpg)](https://youtu.be/QnMhNTncaYI)
 
 ## Panorama Studio
 
