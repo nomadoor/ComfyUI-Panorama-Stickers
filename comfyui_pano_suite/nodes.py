@@ -39,7 +39,6 @@ from .core.math import (
     calculate_dimensions_from_megapixels,
     calculate_output_dimensions,
     finite_float,
-    lens_radius,
     unit_float,
     vfov_from_hfov,
 )
@@ -67,7 +66,7 @@ from .core.video import (
     save_video_to_mp4,
 )
 from .core.video_source import MaterializedVideo, StreamedVideo
-from .core.world import FIT_3D_MIN_DISTANCE, box_sphere, fit_3d_position, world_rotation
+from .core.world import FIT_3D_MIN_DISTANCE, box_sphere, fit_3d_position
 from .core.gltf_animation import clip_time
 from .core.world_render import ContentSource, SceneContent
 from .scene_files import write_editor_files
@@ -1188,9 +1187,8 @@ def _handoff_lanes(sticker_state: dict, fps: float) -> tuple[str, dict]:
     """The placement and Lanes of the port Sticker that put it back where the Camera of `sticker_state` shot it
     (Pose handoff), at the Timeline `fps` of the state. The Sticker's clip frame is the time of its media.
 
-    A Camera that stays at the World origin hands a `sky` Sticker (direction, roll and size). A Camera whose
-    position leaves the origin in any evaluated frame hands a `world` one (ADR 0030): 2 ahead of the Camera, with
-    its rotation, as wide as its hFOV at that distance, so that seen from the Camera it covers the shot.
+    It is always a `sky` Sticker (direction, roll, size and lens curve), wherever the Camera stands (ADR 0059): at
+    infinity it covers what was at infinity from any position, and seen from the Camera it covers the shot.
 
     A Camera that moves is read at every Timeline frame over its Keyframes and baked into `auto` Keyframes,
     because a Camera rotation and a Sticker direction interpolate differently between Keyframes.
@@ -1212,28 +1210,13 @@ def _handoff_lanes(sticker_state: dict, fps: float) -> tuple[str, dict]:
             # Yaw and roll keep turning past 180 instead of jumping back a whole turn between Keyframes.
             value = {**value, "yaw_deg": _nearest_turn(value["yaw_deg"], shots[-1]["yaw_deg"]), "roll_deg": _nearest_turn(value["roll_deg"], shots[-1]["roll_deg"])}
         shots.append(value)
-    if any(math.hypot(*value["position"]) > 1e-9 for value in shots):
-        placement = "world"
-        position, rotation, scale = [], [], []
-        for value in shots:
-            forward = -world_rotation(value["yaw_deg"], value["pitch_deg"], value["roll_deg"])[:, 2]
-            position.append((np.asarray(value["position"], dtype=np.float64) + 2.0 * forward).tolist())
-            rotation.append({name: value[name] for name in ("yaw_deg", "pitch_deg", "roll_deg")})
-            # As wide as the shot at distance 2: 2 · 2 · g(hFOV / 2), g the lens curve's `lens_radius` (tan for a pinhole).
-            scale.append(4.0 * lens_radius(math.radians(value["hFOV_deg"]) / 2.0, value["curve"]))
-        series = [("position", position, ("position",)), ("rotation", rotation, ("rotation",)), ("scale", scale, ("fov", "curve"))]
-        if any(value["curve"] != 1.0 for value in shots):
-            # Through a lens other than a pinhole the Sticker is the part of the sphere of radius 2 around the Camera
-            # that the shot saw (ADR 0042); a pinhole-only shot stays today's plane.
-            series.append(("lens", [{"curve": value["curve"], "hFOV_deg": value["hFOV_deg"]} for value in shots], ("fov", "curve")))
-    else:
-        placement = "sky"
-        direction = [{"yaw_deg": value["yaw_deg"], "pitch_deg": value["pitch_deg"]} for value in shots]
-        roll = [value["roll_deg"] for value in shots]
-        # A port Sticker's vFOV follows its media (`derive_vfov`); stored, it is hFOV (docs/scene-state-v2.md).
-        size = [{"hFOV_deg": value["hFOV_deg"], "vFOV_deg": value["hFOV_deg"]} for value in shots]
-        curve = [value["curve"] for value in shots]
-        series = [("direction", direction, ("rotation",)), ("roll", roll, ("rotation",)), ("size", size, ("fov",)), ("curve", curve, ("curve",))]
+    placement = "sky"
+    direction = [{"yaw_deg": value["yaw_deg"], "pitch_deg": value["pitch_deg"]} for value in shots]
+    roll = [value["roll_deg"] for value in shots]
+    # A port Sticker's vFOV follows its media (`derive_vfov`); stored, it is hFOV (docs/scene-state-v2.md).
+    size = [{"hFOV_deg": value["hFOV_deg"], "vFOV_deg": value["hFOV_deg"]} for value in shots]
+    curve = [value["curve"] for value in shots]
+    series = [("direction", direction, ("rotation",)), ("roll", roll, ("rotation",)), ("size", size, ("fov",)), ("curve", curve, ("curve",))]
     lanes = {}
     for name, values, sources in series:
         moves = any(abs(a - b) > 1e-9 for value in values for a, b in zip(_lane_numbers(value), _lane_numbers(values[0])))
@@ -2123,9 +2106,8 @@ def _port_pose_ui(state: dict, port: PortMedia | None, stored_port: dict | None)
     if stored_port is not None and stored_port["placement"] == added["placement"]:
         return {}
     if added["placement"] == "world":
+        # Only 3D media add a world port Sticker: the Pose handoff hands a sky one (ADR 0059).
         pose = {"placement": "world", **{name: added[name]["value"] for name in ("position", "rotation", "scale")}}
-        if not port.is_3d:
-            pose["keyframes"] = {name: added[name]["keyframes"] for name in ("position", "rotation", "scale")}
     else:
         pose = {
             **added["direction"]["value"],
