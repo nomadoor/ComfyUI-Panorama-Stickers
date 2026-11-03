@@ -8,7 +8,7 @@
 
 撮った絵を画像生成モデルで直し、元の位置へ戻す。この往復を ComfyUI のワークフローの中で行えます。
 
-https://github.com/user-attachments/assets/bf74e953-8ceb-4c7f-afa2-1c805f12c7af
+[![Panorama Stickers](https://img.youtube.com/vi/QnMhNTncaYI/maxresdefault.jpg)](https://youtu.be/QnMhNTncaYI)
 
 ## Panorama Studio
 
