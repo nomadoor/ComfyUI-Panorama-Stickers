@@ -6,6 +6,7 @@ import { cameraShot } from "../web_src/pano_editor_state.js";
 import { loadSceneState } from "../web_src/pano_scene_state.js";
 import { liveErpView } from "../web_src/studio/erp_preview.js";
 import { outputErpInput, outputFrameInput } from "../web_src/studio/output_picture.js";
+import { viewAxes } from "../web_src/pano_space.js";
 import { STAGE_CLEAR_COLOR } from "../web_src/studio/stage_view.js";
 
 const state = loadSceneState({
@@ -22,6 +23,8 @@ test("the Frame picture looks through the Camera, without the ground grid, with 
   assert.deepEqual(input.camera.position, shot.position);
   assert.ok(input.camera.near > 0 && input.camera.far > input.camera.near);
   assert.equal(input.space.ground, null);
+  // Nor the sky grid (an edit guide; docs/space-and-view.md "空のグリッド"): the Output window and the node surface draw this.
+  assert.equal(input.space.sky, null);
   assert.deepEqual(input.space.stickers, content.space.stickers);
   assert.equal(input.layers, content.layers);
   assert.equal(input.background, background);
@@ -58,6 +61,11 @@ test("the Panorama picture is the live ERP from the Camera's position, over its 
   assert.deepEqual(input.space.stickers, content.space.stickers);
   assert.equal(input.clearColor, STAGE_CLEAR_COLOR);
   assert.ok(input.near > 0 && input.far > input.near);
-  // The Camera tab's frame draws the grid.
-  assert.ok(outputErpInput({ shot, erpRange: 360, ground: -1.5, radius: 50, width: 2, height: 1, background, content, owner: "tab", canvas, gridHidden: false }).space.ground);
+  assert.equal(input.space.sky, null);
+  // The Camera tab's frame draws the grids; the sky grid's eye is the Camera's position (docs/space-and-view.md "空のグリッド").
+  const tab = outputErpInput({ shot, erpRange: 360, ground: -1.5, radius: 50, width: 2, height: 1, background, content, owner: "tab", canvas, gridHidden: false });
+  assert.ok(tab.space.ground);
+  assert.deepEqual(tab.space.sky.eye, shot.position);
+  // Its forward is the Camera's, not a cube face's.
+  tab.space.sky.forward.forEach((v, i) => assert.ok(Math.abs(v - viewAxes(shot.yaw_deg, shot.pitch_deg).forward[i]) < 1e-9));
 });

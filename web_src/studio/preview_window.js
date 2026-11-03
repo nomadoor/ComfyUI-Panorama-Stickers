@@ -55,8 +55,8 @@ export async function openPreviewWindow(node, { app = null, api = null, storage 
   let stage = null;
   let closed = false;
   let releaseKeyGuard = () => {};
-  // The ground grid starts hidden (docs/space-and-view.md "Preview のウィンドウ").
-  const ui = reactive({ ...stageUi(), gridHidden: true, fullscreen: false });
+  // The grids (ground and sky) start shown, as in the editor (docs/space-and-view.md "Preview のウィンドウ", ADR 0058).
+  const ui = reactive({ ...stageUi(), gridHidden: false, fullscreen: false });
   // The playback strip (a VIDEO source only): the frame shown, its count and fps, whether it plays and loops.
   const isScene = linkedInputType(node, "source") === PANO_SCENE_TYPE;
   const isVideo = !isScene && videoLinked(node, SOURCE_INPUTS);
@@ -256,8 +256,7 @@ export async function openPreviewWindow(node, { app = null, api = null, storage 
     return backgroundAt(choice, { shows, picture });
   };
 
-  // Reset View goes to the origin; the window opens at the node's view (docs/space-and-view.md "Preview のウィンドウ").
-  const output = { position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0 };
+  // The window opens at the node's view; Reset View goes to the origin (stage.js, docs/space-and-view.md "Preview のウィンドウ").
   const world = { ground: isScene ? previewGround(upstreamList()) : previewGround(null), camera: null };
   const mountHost = document.createElement("div");
   document.body.appendChild(mountHost);
@@ -304,11 +303,12 @@ export async function openPreviewWindow(node, { app = null, api = null, storage 
     if (playbackView.video) controller.play();
   }
   const controller = {
-    onStage: ({ canvas, root }) => {
+    onStage: ({ canvas, overlay = null, root }) => {
       releaseKeyGuard = guardEditorKeys(root);
       const opening = previewOpening({ scene: sceneRecord?.view, image: imageRuntime?.view }, { ...world, boxes: [], content: null });
       const follow = createPreviewMotion({ pose: opening.pose });
-      stage = createStage({ canvas, root, opening, output, world, background, content, ui, follow, onEscape: () => close() });
+      // The overlay draws the orbit center's mark (docs/space-and-view.md "オービットの中心の印").
+      stage = createStage({ canvas, overlay, root, opening, world, background, content, ui, follow, onEscape: () => close() });
       return stage;
     },
     close: () => close(),

@@ -28,6 +28,9 @@ const props = defineProps({
   // The Camera tab: folded, its chevron faint and the line inert, the kept state untouched.
   suspended: { type: Boolean, default: false },
   suspendedTip: { type: String, default: "" },
+  // A count that, when it changes, opens the window if it is folded (the left column's Camera button moved the Camera:
+  // the shot shows at once; docs/studio-ui.md "Output の小窓"). The open state is kept as if the viewer opened it.
+  reveal: { type: Number, default: 0 },
 });
 const emit = defineEmits(["open"]);
 
@@ -37,6 +40,11 @@ const collapsed = ref(kept.collapsed);
 const size = computed(() => outputWindowSize(width.value, props.ratio));
 const shown = computed(() => outputWindowView({ collapsed: collapsed.value, suspended: props.suspended }));
 watch(() => shown.value.open, (open) => emit("open", open));
+watch(() => props.reveal, () => {
+  if (props.suspended || !collapsed.value) return;
+  collapsed.value = false;
+  keep();
+});
 
 // The folded pill's width follows its line (the right end fixed): measured whenever the line's box changes.
 const pill = ref(null);

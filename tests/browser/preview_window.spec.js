@@ -102,10 +102,10 @@ test("a PANO_SCENE source: its objects draw read-only over its background, and t
   expect(problems).toEqual([]);
 });
 
-// docs/space-and-view.md "Preview のウィンドウ": the grid starts hidden; a drag let go while moving coasts, a press stops it.
-test("the grid starts hidden, and a look drag let go while moving coasts until a press stops it", async ({ page }) => {
+// docs/space-and-view.md "Preview のウィンドウ" (the grids start shown, ADR 0058); a drag let go while moving coasts, a press stops it.
+test("the grid starts shown, and a look drag let go while moving coasts until a press stops it", async ({ page }) => {
   const problems = await open(page);
-  await expect(page.locator("[data-action=grid]")).toHaveAttribute("aria-checked", "false");
+  await expect(page.locator("[data-action=grid]")).toHaveAttribute("aria-checked", "true");
   await expect.poll(() => page.evaluate(() => window.__preview.sample()), { timeout: 20_000 }).toBeGreaterThan(20);
   const canvas = page.locator("[data-stage-canvas]");
   const box = await canvas.boundingBox();
