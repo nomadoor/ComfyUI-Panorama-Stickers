@@ -147,7 +147,7 @@ RTX 4070 Ti、1 フレーム、κ = 0.5・hFOV 140°（4K は 4096 × 2048 相�
 - `sky` の Sticker の κ：κ = 0.5 の Sticker（市松）を κ = 1 の Camera で、κ = 1 の Sticker を κ = 0.5 の Camera で撮る場面（`LENS_STICKER_CASES` の `sky_k0_5_by_k1`・`sky_k1_by_k0_5`）。
 - `world` の Sticker の κ：κ = 0、hFOV 220° の球面の板を、レンズの中心からと、横にずれた位置から（視差）撮る場面（`world_k0_220_center`・`world_k0_220_side`）。許容差は下の κ の場面と同じ。Sticker の場面の素材は低周波（大きな市松）。エディタの描き方と当たり判定は `tests/browser/lens_stickers.spec.js` も確かめる。
 - Sticker の場面の計測（llvmpipe、`LENS_STICKER_CASES` の順に、平均 /255 と 8/255 超の割合）：0.232 / 0.000%、0.080 / 0.187%、0.346 / 0.089%、0.298 / 0.011%。すべて合格。
-- 輪の閉じ方（κ の Camera で撮り、Pose handoff で同じ κ の Sticker にして同じ Camera で撮り直すと一致する）は、Python の test（`tests/test_pose_handoff.py` の `test_a_lens_shot_returns_where_it_was_shot`。動かない Camera の `sky`、動く Camera の `world`、κ を Keyframe で動かす場合、hFOV が 180° を超える場合。κ = 1 だけの動く shot が平らな板になることは `test_a_pinhole_only_moving_shot_hands_todays_plane`）で守る。
+- 輪の閉じ方（κ の Camera で撮り、Pose handoff で同じ κ の Sticker にして同じ Camera で撮り直すと一致する）は、Python の test（`tests/test_pose_handoff.py` の `test_a_lens_shot_returns_where_it_was_shot`。動かない Camera と動く Camera（どちらも `sky`。ADR 0059）、κ を Keyframe で動かす場合、hFOV が 180° を超える場合。κ = 1 だけの動く shot が κ 1 の `sky` の Sticker になることは `test_a_pinhole_only_moving_shot_hands_a_pinhole_sky_sticker`）で守る。
 - κ = 0.7（hFOV 90°、余白付きの描画と後処理で 1 より小さい κ）、κ = 0.5（立体射影、hFOV 140°）、κ = 0（魚眼、hFOV 220°、立方体の 6 面）。スプラットの場面も同じ κ で入れる。素材は低周波（大きな市松と、なめらかな色の帯）。エディタは再標本化のぼけがあるので、ADR 0037 の「試作で決める」別の許容差として、縁を 1 画素削った内側で平均 ≤ 2/255、8/255 超 ≤ 2% を暫定とする（最初の計測で締める）。κ = 1 は後処理を通らない。
 - 計測（llvmpipe）：メッシュの場面はすべての κ で合格した。スプラットの場面は κ = 1 でも合格しない（平均 1.99/255、8/255 超 14%）。エディタ（Spark）とノードのスプラットの描き方の、レンズより前からある差で、次の候補として残す。許容差は緩めない。
 
