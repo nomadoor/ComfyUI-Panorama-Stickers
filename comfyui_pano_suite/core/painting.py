@@ -678,19 +678,22 @@ def _composite_one_raster_object(
     a, b, c, d = placement["matrix"]
     det = a * d - b * c
     x0, x1, y0, y1 = span
-    # Each ERP pixel's center as an offset from the box's center, the same for every seam copy (a copy moves the pixels
-    # and the center alike), read once.
-    px = (np.arange(x0, x1, dtype=np.float32) + np.float32(0.5 - placement["center_x"]))[None, :]
-    py = (np.arange(y0, y1, dtype=np.float32) + np.float32(0.5 - placement["center_y"]))[:, None]
-    local_u = (np.float32(d / det) * px - np.float32(c / det) * py) / np.float32(placement["width"]) + np.float32(0.5)
-    local_v = (np.float32(-b / det) * px + np.float32(a / det) * py) / np.float32(placement["height"]) + np.float32(0.5)
-    patch = _sample_box(_premultiplied_texels(image), image.shape[:2], local_u, local_v)
+    texels = _premultiplied_texels(image)
     layer_kind = str(obj.get("layerKind") or "paint")
+    py = (np.arange(y0, y1, dtype=np.float32) + np.float32(0.5 - placement["center_y"]))[:, None]
+    # Each seam copy reads only its columns that land on the ERP ([0, width)): a raster scaled up can span many ERP
+    # widths, and only these are drawn. A column's offset from the box's center is the same in every copy (a copy moves
+    # the pixels and the center alike).
     for offset in placement["wrap_offsets"]:
         left = max(0, x0 + offset)
         right = min(width, x1 + offset)
-        if right > left:
-            _composite_raster_patch(paint, mask, patch[:, left - offset - x0:right - offset - x0], layer_kind, y0, y1, left, right)
+        if right <= left:
+            continue
+        px = (np.arange(left - offset, right - offset, dtype=np.float32) + np.float32(0.5 - placement["center_x"]))[None, :]
+        local_u = (np.float32(d / det) * px - np.float32(c / det) * py) / np.float32(placement["width"]) + np.float32(0.5)
+        local_v = (np.float32(-b / det) * px + np.float32(a / det) * py) / np.float32(placement["height"]) + np.float32(0.5)
+        patch = _sample_box(texels, image.shape[:2], local_u, local_v)
+        _composite_raster_patch(paint, mask, patch, layer_kind, y0, y1, left, right)
 
 
 def _composite_raster_objects(

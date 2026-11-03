@@ -119,3 +119,25 @@ def test_a_raster_moved_past_a_turn_draws_where_it_lies_within_one(du):
 
     assert (paint[..., 3] > 0.5).sum() == 40 * 20
     assert np.array_equal(paint[..., 3] > 0.5, want[..., 3] > 0.5)
+
+
+def test_a_raster_many_erp_widths_wide_reads_only_the_columns_on_the_erp(monkeypatch):
+    from comfyui_pano_suite.core import painting
+
+    width, height = 64, 32
+    # Scaled 100: its box spans many ERP widths; only the ERP's own columns are drawn.
+    item = _raster({"u0": 0.45, "v0": 0.45, "u1": 0.55, "v1": 0.55}, {"du": 0, "dv": 0, "rot_deg": 20, "scale": 100}, _png(40, 20))
+    before, _ = render_painting_to_erp({"paint": {"strokes": []}, "raster_objects": [item]}, width, height)
+    read = []
+    sample_box = painting._sample_box
+
+    def counting(texels, size, local_u, local_v):
+        read.append(local_u.shape[-1])
+        return sample_box(texels, size, local_u, local_v)
+
+    monkeypatch.setattr(painting, "_sample_box", counting)
+    paint = np.zeros((height, width, 4), np.float32)
+    mask = np.zeros((height, width), np.float32)
+    painting._composite_one_raster_object(paint, mask, item, width, height)
+    assert read and max(read) <= width
+    assert np.allclose(paint, before, atol=1e-6)
