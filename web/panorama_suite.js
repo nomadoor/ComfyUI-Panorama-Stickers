@@ -31913,8 +31913,8 @@ function Hj({ state: e, row: t, mode: n = "translate", readOnly: r = !1, tab: i 
 }
 const Bj = Object.freeze({
   0: ["look", "orbit"],
-  1: ["pan", "joystick"],
-  2: ["look", "orbit"]
+  1: ["look", "joystick"],
+  2: ["pan", "orbit"]
 });
 function CP({ button: e, altKey: t, shiftKey: n, ctrlKey: r, metaKey: i, overObject: o = !1, objectsTouchable: a = !0 }) {
   if (r || i || n) return null;
@@ -33989,7 +33989,7 @@ const rB = ["tabindex", "aria-label", "aria-valuenow", "aria-valuetext", "aria-v
     } });
     const o = [
       { key: "orbit", icon: Ne.sphere, label: "Orbit", tip: "Drag to orbit · Alt+drag in the view" },
-      { key: "pan", icon: Ne.hand, label: "Pan", tip: "Drag to pan · middle-drag in the view" },
+      { key: "pan", icon: Ne.hand, label: "Pan", tip: "Drag to pan · right-drag in the view" },
       { key: "move", icon: Ne.arrows_vertical, label: "Move forward/back", tip: "Drag to move forward/back · Alt+middle-drag" }
     ], a = Object.freeze({
       idle: "Set orbit center · or double-click a spot",

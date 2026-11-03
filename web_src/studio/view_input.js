@@ -11,17 +11,18 @@ import { WHEEL_STEP_PIXELS, frameSeconds } from "./view_scale.js";
 
 // --- Buttons and modifiers: the same table in the Panorama view and the Frame view (where the moves move the Camera).
 
-// button (MouseEvent.button) -> [without Alt, with Alt]. Buttons and modifiers not here do nothing.
+// button (MouseEvent.button) -> [without Alt, with Alt]: the right button pans, the middle looks around (ADR 0060).
+// Buttons and modifiers not here do nothing.
 const BUTTONS = Object.freeze({
   0: ["look", "orbit"],
-  1: ["pan", "joystick"],
-  2: ["look", "orbit"],
+  1: ["look", "joystick"],
+  2: ["pan", "orbit"],
 });
 
 // The operation a press starts, or null for none: a combination not in the table, or with Ctrl, Meta (left to range
 // selection and the browser) or Shift. overObject: the left button is over an object the stage can touch (the CPU
 // hover test); objectsTouchable false where objects are not moved (the Camera tab, the Preview window), so the left
-// button looks around there. The right button never touches an object.
+// button looks around there. The right and middle buttons never touch an object.
 export function navigationAction({ button, altKey, shiftKey, ctrlKey, metaKey, overObject = false, objectsTouchable = true }) {
   if (ctrlKey || metaKey || shiftKey) return null;
   const actions = BUTTONS[button];

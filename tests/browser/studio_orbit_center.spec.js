@@ -228,13 +228,13 @@ test("while Set orbit center waits, a view drag takes Escape first, the wait the
   const button = page.locator('[data-action="orbit-center"]');
   await button.click();
   await expect(button).toHaveClass(/is-waiting/);
-  // A right drag still looks around while it waits; Escape during it gives the drag up, and the wait goes on.
+  // A middle drag still looks around while it waits; Escape during it gives the drag up, and the wait goes on.
   await page.mouse.move(mid.x, mid.y);
-  await page.mouse.down({ button: "right" });
+  await page.mouse.down({ button: "middle" });
   await page.mouse.move(mid.x + 40, mid.y, { steps: 3 });
   await page.keyboard.press("Escape");
   await expect(button).toHaveClass(/is-waiting/);
-  await page.mouse.up({ button: "right" });
+  await page.mouse.up({ button: "middle" });
   await page.keyboard.press("Escape");
   await expect(button).not.toHaveClass(/is-waiting/);
   // The editor is still open (that Escape was the wait's).
@@ -346,14 +346,14 @@ test("in the Frame view the mark of a selected object off the Camera's frame is 
   await expect(page.locator(".pano-studio-notice")).toHaveCount(0, { timeout: 30_000 });
   await page.locator('[role="tablist"] button', { hasText: "Camera" }).click();
   await expect(page.locator("[data-frame-box]")).toHaveCount(1);
-  // The marker in front of the Camera is selected, and the Camera turned away from it (a right drag over 0.13 of the
+  // The marker in front of the Camera is selected, and the Camera turned away from it (a middle drag over 0.13 of the
   // frame's width): the next orbit turns about it, left of the frame box but on the stage.
   await page.evaluate(() => window.__studio.session.select({ row: "sticker_1" }));
   const box = await page.locator("[data-frame-box]").boundingBox();
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-  await page.mouse.down({ button: "right" });
+  await page.mouse.down({ button: "middle" });
   await page.mouse.move(box.x + box.width / 2 - box.width * 0.13, box.y + box.height / 2, { steps: 6 });
-  await page.mouse.up({ button: "right" });
+  await page.mouse.up({ button: "middle" });
   await page.mouse.move(5, 5);
   await page.waitForTimeout(400);
   const outside = () => page.evaluate(() => {

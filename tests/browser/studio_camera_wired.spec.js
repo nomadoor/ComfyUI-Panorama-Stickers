@@ -187,9 +187,9 @@ async function drag100(page, x, y, button) {
 test("Frame mode: a pan on a plane keeps the plane under the pointer; a wheel step there keeps it too", async ({ page }, testInfo) => {
   const problems = await open(page, testInfo);
   const stage = await stageBox(page);
-  // The red plane, 3 ahead: grabbed with the middle button, it follows the pointer 1:1 (docs/space-and-view.md "パン").
+  // The red plane, 3 ahead: grabbed with the right button, it follows the pointer 1:1 (docs/space-and-view.md "パン").
   const red = await page.evaluate((rgb) => window.__studio.stageCentroid(rgb), RED);
-  await drag100(page, stage.x + red.x, stage.y + red.y, "middle");
+  await drag100(page, stage.x + red.x, stage.y + red.y, "right");
   const panned = await page.evaluate((rgb) => window.__studio.stageCentroid(rgb), RED);
   expect(Math.abs(panned.x - (red.x + 100))).toBeLessThan(4);
   expect(Math.abs(panned.y - red.y)).toBeLessThan(4);
@@ -212,7 +212,7 @@ test("Frame mode: over the background, a Camera looking slightly down pans and w
   const sky = { x: stage.x + frame.x + frame.width / 2, y: stage.y + frame.y + frame.height * 0.1 };
   const start = await camera(page);
   // A pan over the sky at the top of the frame hits nothing: P moves 2 z tan(H FOV / 2) / W a pixel at T's depth z.
-  await drag100(page, sky.x, sky.y, "middle");
+  await drag100(page, sky.x, sky.y, "right");
   const panned = await camera(page);
   const moved = Math.hypot(...panned.position.map((value, axis) => value - start.position[axis]));
   const want = (2 * depth * Math.tan((start.hFOV_deg * Math.PI) / 360) / frame.width) * 100;
@@ -243,12 +243,12 @@ test("Frame mode: a Lens ruler drag that shows 1.00 leaves the Camera a pinhole,
   await page.waitForTimeout(200);
   await expect(page.locator('[data-ruler="Lens"] [data-ruler-value]')).toHaveText("1.00");
   expect((await camera(page)).curve).toBe(1);
-  // A click on the red plane selects it, and a middle drag on it keeps it under the pointer.
+  // A click on the red plane selects it, and a right drag on it keeps it under the pointer.
   const red = await page.evaluate((rgb) => window.__studio.stageCentroid(rgb), RED);
   await page.mouse.click(stage.x + red.x, stage.y + red.y);
   await page.waitForTimeout(100);
   expect(await page.evaluate(() => window.__studio.session.selection.row)).toBe("sticker_1");
-  await drag100(page, stage.x + red.x, stage.y + red.y, "middle");
+  await drag100(page, stage.x + red.x, stage.y + red.y, "right");
   const panned = await page.evaluate((rgb) => window.__studio.stageCentroid(rgb), RED);
   expect(Math.abs(panned.x - (red.x + 100))).toBeLessThan(4);
   expect(problems).toEqual([]);
@@ -299,7 +299,7 @@ test("Frame mode: on a lens Camera a click selects the object under the pointer,
   const planeZ = start.position[2] - 3;
   const t = (planeZ - ray.origin[2]) / ray.direction[2];
   const grabbed = ray.origin.map((value, axis) => value + ray.direction[axis] * t);
-  await drag100(page, stage.x + red.x, stage.y + red.y, "middle");
+  await drag100(page, stage.x + red.x, stage.y + red.y, "right");
   const panned = await camera(page);
   expect(panned.yaw_deg).toBeCloseTo(start.yaw_deg, 6);
   const after = await lensPixel(page, grabbed, frame, panned);
