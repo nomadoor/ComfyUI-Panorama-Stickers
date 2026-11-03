@@ -1,8 +1,8 @@
 {
   "id": "179e9c66-d274-4857-bcd9-34408448057b",
   "revision": 0,
-  "last_node_id": 88,
-  "last_link_id": 195,
+  "last_node_id": 98,
+  "last_link_id": 215,
   "nodes": [
     {
       "id": 8,
@@ -36,7 +36,7 @@
           "type": "IMAGE",
           "slot_index": 0,
           "links": [
-            101
+            211
           ]
         }
       ],
@@ -272,45 +272,6 @@
       }
     },
     {
-      "id": 56,
-      "type": "SaveImage",
-      "pos": [
-        1498.4417867517595,
-        188.1918182373047
-      ],
-      "size": [
-        904.5999031055446,
-        608.3313316976122
-      ],
-      "flags": {},
-      "order": 15,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "images",
-          "type": "IMAGE",
-          "link": 101
-        }
-      ],
-      "outputs": [
-        {
-          "name": "images",
-          "type": "IMAGE",
-          "links": null
-        }
-      ],
-      "properties": {
-        "cnr_id": "comfy-core",
-        "ver": "0.3.75"
-      },
-      "widgets_values": [
-        "ComfyUI"
-      ],
-      "widgets_values_named": {
-        "filename_prefix": "ComfyUI"
-      }
-    },
-    {
       "id": 55,
       "type": "MarkdownNote",
       "pos": [
@@ -413,7 +374,7 @@
           "name": "images.image_2",
           "shape": 7,
           "type": "IMAGE",
-          "link": 195
+          "link": 214
         },
         {
           "name": "images.image_3",
@@ -482,7 +443,7 @@
         {
           "name": "image",
           "type": "IMAGE",
-          "link": 194
+          "link": 213
         }
       ],
       "outputs": [
@@ -585,7 +546,7 @@
           "name": "moge_geometry",
           "type": "MOGE_GEOMETRY",
           "links": [
-            193
+            212
           ]
         }
       ],
@@ -742,7 +703,46 @@
       }
     },
     {
-      "id": 88,
+      "id": 96,
+      "type": "SaveImage",
+      "pos": [
+        1498.4417867517595,
+        188.1918182373047
+      ],
+      "size": [
+        904.5999031055446,
+        608.3313316976122
+      ],
+      "flags": {},
+      "order": 15,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 211
+        }
+      ],
+      "outputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "links": null
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.3.75"
+      },
+      "widgets_values": [
+        "ComfyUI"
+      ],
+      "widgets_values_named": {
+        "filename_prefix": "ComfyUI"
+      }
+    },
+    {
+      "id": 97,
       "type": "PanoramaStudio",
       "pos": [
         -50.74094638297038,
@@ -772,7 +772,7 @@
           "name": "world",
           "shape": 7,
           "type": "SPLAT,MESH,FILE_3D_GLB,FILE_3D_GLTF,FILE_3D_FBX,FILE_3D_OBJ,FILE_3D_STL,FILE_3D_USDZ,FILE_3D,FILE_3D_PLY,FILE_3D_SPLAT,FILE_3D_SPZ,FILE_3D_KSPLAT,FILE_3D_SPLAT_ANY,MOGE_GEOMETRY,DA3_GEOMETRY",
-          "link": 193
+          "link": 212
         },
         {
           "name": "sticker",
@@ -797,8 +797,8 @@
           "name": "first_frame",
           "type": "IMAGE",
           "links": [
-            194,
-            195
+            213,
+            214
           ]
         },
         {
@@ -822,19 +822,19 @@
         "cnr_id": "panorama-stickers"
       },
       "widgets_values": [
-        "#707070",
+        "#949494",
         "360",
         2,
         8,
-        "{\"version\":2,\"id\":\"VSJLVzOyTzQl_SwW\",\"timeline\":{\"fps\":24,\"length\":null},\"camera\":{\"aspect\":1.7777777777777777,\"position\":{\"value\":[-1.6457981725621833,-0.8757808465749886,-3.535357190358286],\"keyframes\":[]},\"rotation\":{\"value\":{\"yaw_deg\":31.810903546625696,\"pitch_deg\":14.605915754655907,\"roll_deg\":1.8},\"keyframes\":[]},\"fov\":{\"value\":84.4,\"keyframes\":[]},\"curve\":{\"value\":0.11,\"keyframes\":[]}},\"scene\":{\"clip\":{\"start\":0,\"in\":0,\"duration\":null},\"position\":{\"value\":[0,0,0],\"keyframes\":[]},\"rotation\":{\"value\":{\"yaw_deg\":0,\"pitch_deg\":0,\"roll_deg\":0},\"keyframes\":[]},\"scale\":{\"value\":1,\"keyframes\":[]}},\"stickers\":[],\"painting\":{\"version\":1,\"groups\":[],\"paint\":{\"strokes\":[]},\"mask\":{\"strokes\":[]},\"raster_objects\":[]},\"painting_layer\":null}",
+        "{\"version\":2,\"id\":\"8aJC4DbC1OSzxASZ\",\"timeline\":{\"fps\":24,\"length\":null},\"camera\":{\"aspect\":1.7777777777777777,\"position\":{\"value\":[-1.3840266990310008,-1.603507348571414,-3.519156789296118],\"keyframes\":[]},\"rotation\":{\"value\":{\"yaw_deg\":25.513020669378193,\"pitch_deg\":26.79260449795178,\"roll_deg\":-6.5},\"keyframes\":[]},\"fov\":{\"value\":86.9,\"keyframes\":[]},\"curve\":{\"value\":0.23,\"keyframes\":[]}},\"scene\":{\"clip\":{\"start\":0,\"in\":0,\"duration\":null},\"position\":{\"value\":[0,0,0],\"keyframes\":[]},\"rotation\":{\"value\":{\"yaw_deg\":0,\"pitch_deg\":0,\"roll_deg\":0},\"keyframes\":[]},\"scale\":{\"value\":1,\"keyframes\":[]}},\"stickers\":[],\"painting\":{\"version\":1,\"groups\":[],\"paint\":{\"strokes\":[]},\"mask\":{\"strokes\":[]},\"raster_objects\":[]},\"painting_layer\":null}",
         ""
       ],
       "widgets_values_named": {
-        "background_color": "#707070",
+        "background_color": "#949494",
         "background_range": "360",
         "megapixels": 2,
         "multiple": 8,
-        "state_json": "{\"version\":2,\"id\":\"VSJLVzOyTzQl_SwW\",\"timeline\":{\"fps\":24,\"length\":null},\"camera\":{\"aspect\":1.7777777777777777,\"position\":{\"value\":[-1.6457981725621833,-0.8757808465749886,-3.535357190358286],\"keyframes\":[]},\"rotation\":{\"value\":{\"yaw_deg\":31.810903546625696,\"pitch_deg\":14.605915754655907,\"roll_deg\":1.8},\"keyframes\":[]},\"fov\":{\"value\":84.4,\"keyframes\":[]},\"curve\":{\"value\":0.11,\"keyframes\":[]}},\"scene\":{\"clip\":{\"start\":0,\"in\":0,\"duration\":null},\"position\":{\"value\":[0,0,0],\"keyframes\":[]},\"rotation\":{\"value\":{\"yaw_deg\":0,\"pitch_deg\":0,\"roll_deg\":0},\"keyframes\":[]},\"scale\":{\"value\":1,\"keyframes\":[]}},\"stickers\":[],\"painting\":{\"version\":1,\"groups\":[],\"paint\":{\"strokes\":[]},\"mask\":{\"strokes\":[]},\"raster_objects\":[]},\"painting_layer\":null}",
+        "state_json": "{\"version\":2,\"id\":\"8aJC4DbC1OSzxASZ\",\"timeline\":{\"fps\":24,\"length\":null},\"camera\":{\"aspect\":1.7777777777777777,\"position\":{\"value\":[-1.3840266990310008,-1.603507348571414,-3.519156789296118],\"keyframes\":[]},\"rotation\":{\"value\":{\"yaw_deg\":25.513020669378193,\"pitch_deg\":26.79260449795178,\"roll_deg\":-6.5},\"keyframes\":[]},\"fov\":{\"value\":86.9,\"keyframes\":[]},\"curve\":{\"value\":0.23,\"keyframes\":[]}},\"scene\":{\"clip\":{\"start\":0,\"in\":0,\"duration\":null},\"position\":{\"value\":[0,0,0],\"keyframes\":[]},\"rotation\":{\"value\":{\"yaw_deg\":0,\"pitch_deg\":0,\"roll_deg\":0},\"keyframes\":[]},\"scale\":{\"value\":1,\"keyframes\":[]}},\"stickers\":[],\"painting\":{\"version\":1,\"groups\":[],\"paint\":{\"strokes\":[]},\"mask\":{\"strokes\":[]},\"raster_objects\":[]},\"painting_layer\":null}",
         "$$comfy_animation_preview": ""
       }
     }
@@ -855,14 +855,6 @@
       8,
       1,
       "VAE"
-    ],
-    [
-      101,
-      8,
-      0,
-      56,
-      0,
-      "IMAGE"
     ],
     [
       148,
@@ -945,6 +937,30 @@
       "IMAGE"
     ],
     [
+      211,
+      8,
+      0,
+      96,
+      0,
+      "IMAGE"
+    ],
+    [
+      212,
+      81,
+      0,
+      97,
+      2,
+      "MOGE_GEOMETRY"
+    ],
+    [
+      213,
+      97,
+      1,
+      76,
+      0,
+      "IMAGE"
+    ],
+    [
       115,
       38,
       0,
@@ -961,49 +977,33 @@
       "IMAGE"
     ],
     [
+      214,
+      97,
+      1,
+      64,
+      2,
+      "IMAGE"
+    ],
+    [
       159,
       39,
       0,
       64,
       4,
       "VAE"
-    ],
-    [
-      193,
-      81,
-      0,
-      88,
-      2,
-      "MOGE_GEOMETRY"
-    ],
-    [
-      194,
-      88,
-      1,
-      76,
-      0,
-      "IMAGE"
-    ],
-    [
-      195,
-      88,
-      1,
-      64,
-      2,
-      "IMAGE"
     ]
   ],
   "groups": [],
   "config": {},
   "extra": {
     "ds": {
-      "scale": 0.39142513012205454,
+      "scale": 0.6934334949441608,
       "offset": [
-        1570.947513716445,
-        740.7396697470141
+        1106.6065736040678,
+        263.4816747142094
       ]
     },
-    "frontendVersion": "1.57.1",
+    "frontendVersion": "1.57.6",
     "VHS_latentpreview": false,
     "VHS_latentpreviewrate": 0,
     "VHS_MetadataImage": true,

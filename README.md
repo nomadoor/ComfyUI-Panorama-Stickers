@@ -3,7 +3,6 @@
 [![English](https://img.shields.io/badge/README-English-3b82f6.svg)](./README.md)
 [![日本語](https://img.shields.io/badge/README-日本語-e11d48.svg)](./README_JA.md)
 [![中文](https://img.shields.io/badge/README-中文-16a34a.svg)](./README_ZH.md)
-[![Guide](https://img.shields.io/badge/Guide-English-3b82f6.svg)](https://comfyui.nomadoor.net/en/notes/panorama-stickers/)
 
 A ComfyUI node set for placing images, videos and 3D in a 360° panorama and shooting it from any viewpoint.
 
@@ -66,17 +65,10 @@ Connect a video to the background, or move stickers or the Camera with Keyframes
 | Workflow | What it does |
 |---|---|
 | [qwen-image-2.1-360-erp-outpaint.json](./example_workflows/qwen-image-2.1-360-erp-outpaint.json) | Paste images to make a panorama (Qwen-Image 2.1) |
+| [qwen-image-2.1-panorama-cutout.json](./example_workflows/qwen-image-2.1-panorama-cutout.json) | Shoot part of a panorama with the Camera, redraw it with Qwen-Image 2.1, and put it back where it was shot |
+| [qwen-image-2.1-panorama-with-3d.json](./example_workflows/qwen-image-2.1-panorama-with-3d.json) | Place a 3D model (PLY) in a panorama, shoot it, and blend it into the background with Qwen-Image 2.1 |
 | [qwen-image-2.1-moge3-anyangle.json](./example_workflows/qwen-image-2.1-moge3-anyangle.json) | Turn an image into 3D with MoGe 3, shoot it from another angle, and finish it with Qwen-Image 2.1 |
-| [minimax-h3-moge3-crossview.json](./example_workflows/minimax-h3-moge3-crossview.json) | Turn a video into 3D with MoGe 3, shoot it with a new camera, and fill in what the original camera never saw with MiniMax H3 and the [CrossView-Warp](https://huggingface.co/Cseti/MiniMax-H3_Ref2VA-LoRA-CrossView-Warp_v1) LoRA by Cseti |
-| [LTX-2.3_360vr_distilled_3stage.json](./example_workflows/LTX-2.3_360vr_distilled_3stage.json) | Make a 360° video from text (LTX-2.3 and the [LTX2.3_360vr](https://civitai.com/models/2327337/360-degree-panoramic-shot-ltx-23) LoRA by the model's author) |
-
-Earlier workflows: FLUX.2 Klein [4B](./example_workflows/flux-2-klein-4B-360-erp-outpaint.json) / [9B](./example_workflows/flux-2-klein-9B-360-erp-outpaint.json) ([4B LoRA](https://huggingface.co/nomadoor/flux-2-klein-4B-360-erp-outpaint-lora) / [9B LoRA](https://huggingface.co/nomadoor/flux-2-klein-9B-360-erp-outpaint-lora))
-
-## Guide
-
-The guide explains how to use it in detail.
-
-- [日本語](https://comfyui.nomadoor.net/ja/notes/panorama-stickers/) / [English](https://comfyui.nomadoor.net/en/notes/panorama-stickers/) / [中文](https://comfyui.nomadoor.net/zh/notes/panorama-stickers/)
+| [pika-h3-flex-moge3-crossview.json](./example_workflows/pika-h3-flex-moge3-crossview.json) | Turn a video into 3D with MoGe 3, shoot it with a new camera, and fill in what the original camera never saw with MiniMax H3 (Pika H3 Flex and the [CrossView-Warp](https://huggingface.co/Cseti/MiniMax-H3_Ref2VA-LoRA-CrossView-Warp_v1) LoRA by Cseti) |
 
 ## Troubleshooting
 

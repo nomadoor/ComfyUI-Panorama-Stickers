@@ -3,7 +3,6 @@
 [![English](https://img.shields.io/badge/README-English-3b82f6.svg)](./README.md)
 [![日本語](https://img.shields.io/badge/README-日本語-e11d48.svg)](./README_JA.md)
 [![中文](https://img.shields.io/badge/README-中文-16a34a.svg)](./README_ZH.md)
-[![指南](https://img.shields.io/badge/Guide-中文-3b82f6.svg)](https://comfyui.nomadoor.net/zh/notes/panorama-stickers/)
 
 这是一套 ComfyUI 节点，可以把图像、视频和 3D 放进 360° 全景，再从任意视角拍摄。
 
@@ -65,18 +64,11 @@ https://github.com/user-attachments/assets/bf74e953-8ceb-4c7f-afa2-1c805f12c7af
 
 | Workflow | 内容 |
 |---|---|
-| [qwen-image-2.1-360-erp-outpaint.json](./example_workflows/qwen-image-2.1-360-erp-outpaint.json) | 贴上图像，制作全景（Qwen-Image 2.1） |
-| [qwen-image-2.1-moge3-anyangle.json](./example_workflows/qwen-image-2.1-moge3-anyangle.json) | 用 MoGe 3 把图像转成 3D，从别的角度拍摄，再用 Qwen-Image 2.1 完善画面 |
-| [minimax-h3-moge3-crossview.json](./example_workflows/minimax-h3-moge3-crossview.json) | 用 MoGe 3 把视频转成 3D，用新的相机拍摄，再用 MiniMax H3 和 Cseti 制作的 [CrossView-Warp](https://huggingface.co/Cseti/MiniMax-H3_Ref2VA-LoRA-CrossView-Warp_v1) LoRA 补全原相机没有拍到的部分 |
-| [LTX-2.3_360vr_distilled_3stage.json](./example_workflows/LTX-2.3_360vr_distilled_3stage.json) | 通过文本制作 360° 视频（LTX-2.3，以及该模型作者制作的 [LTX2.3_360vr](https://civitai.com/models/2327337/360-degree-panoramic-shot-ltx-23) LoRA） |
-
-以前的 workflow：FLUX.2 Klein [4B](./example_workflows/flux-2-klein-4B-360-erp-outpaint.json)・[9B](./example_workflows/flux-2-klein-9B-360-erp-outpaint.json)（[4B LoRA](https://huggingface.co/nomadoor/flux-2-klein-4B-360-erp-outpaint-lora)・[9B LoRA](https://huggingface.co/nomadoor/flux-2-klein-9B-360-erp-outpaint-lora)）
-
-## 指南
-
-详细用法整理在指南中。
-
-- [日本語](https://comfyui.nomadoor.net/ja/notes/panorama-stickers/)・[English](https://comfyui.nomadoor.net/en/notes/panorama-stickers/)・[中文](https://comfyui.nomadoor.net/zh/notes/panorama-stickers/)
+| [qwen-image-2.1-360-erp-outpaint.json](./example_workflows/qwen-image-2.1-360-erp-outpaint.json) | 贴上图像，制作全景图（Qwen-Image 2.1） |
+| [qwen-image-2.1-panorama-cutout.json](./example_workflows/qwen-image-2.1-panorama-cutout.json) | 用 Camera 拍摄全景图的一部分，用 Qwen-Image 2.1 重新绘制，再放回拍摄的位置 |
+| [qwen-image-2.1-panorama-with-3d.json](./example_workflows/qwen-image-2.1-panorama-with-3d.json) | 在全景图中放置 3D 模型（PLY）并拍摄，用 Qwen-Image 2.1 使其融入背景 |
+| [qwen-image-2.1-moge3-anyangle.json](./example_workflows/qwen-image-2.1-moge3-anyangle.json) | 用 MoGe 3 把图像转成 3D，从另一个角度拍摄，再用 Qwen-Image 2.1 完成 |
+| [pika-h3-flex-moge3-crossview.json](./example_workflows/pika-h3-flex-moge3-crossview.json) | 用 MoGe 3 把视频转成 3D，用新的相机拍摄，再用 MiniMax H3（Pika H3 Flex 和 Cseti 的 [CrossView-Warp](https://huggingface.co/Cseti/MiniMax-H3_Ref2VA-LoRA-CrossView-Warp_v1) LoRA）补全原相机没有拍到的部分 |
 
 ## 故障排除
 
