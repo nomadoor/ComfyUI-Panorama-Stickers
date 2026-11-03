@@ -3,7 +3,7 @@
 // as a run would leave it (docs/studio-node.md "実行結果の `ui`"); ComfyUI is not used. `?case=` picks the inputs:
 //   port      the `sticker` input's image, its port Sticker a sky image in front of the view
 //   port3d    the `sticker` input's GLB, its port Sticker a world object in front of the view
-//   upstream  another Studio's Scene on `scene`: a sky image, a world board and its background
+//   upstream  another Studio's Scene on `scene`: a sky image, a world board and its background, edited as overrides
 //   upstream-own  the same with the node's own `background` linked too
 //   upstream-world  the same with the node's own `world` linked too (its own `scene` row shows with the group)
 //   upstream-pending  a Scene linked to `scene`, the node not run yet
@@ -194,6 +194,8 @@ try {
   const editor = await openStudioEditor(node, { app, api: null, storage: memoryStorage });
   studio.session = editor.session;
   studio.close = () => editor.close();
+  // The node's state_json as the editor wrote it (on closing).
+  studio.stateText = () => node.widgets[0].value;
   studio.rendererOf = () => {
     const canvas = document.querySelector("[data-stage-canvas]");
     const gl = canvas.getContext("webgl2");

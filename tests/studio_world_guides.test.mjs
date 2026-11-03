@@ -119,3 +119,43 @@ test("on a lens Camera's picture a guide line bends, cut past the lens's limit, 
   const inward = { x: edge.x - (edge.x - center.x) * 0.05, y: edge.y - (edge.y - center.y) * 0.05 };
   assert.equal(hoverGuide([plane], lens, inward, W, H), "plane");
 });
+
+// docs/space-and-view.md "World の物のガイド": the upstream World objects count as the node's own; one of a layer
+// whose overrides cannot be kept is treated as locked (docs/studio-ui.md "上流の物の編集").
+test("the upstream World objects have their guides too: their planes and their 3D items' boxes, by their working ids", () => {
+  // Working copies: their Stickers keep their `origin` (pano_upstream.js upstreamWorkingLayers).
+  const layer = (id, stickers) => {
+    const sceneState = loadSceneState({ version: 2, id, stickers });
+    sceneState.stickers.forEach((sticker, index) => Object.assign(sticker, { id: stickers[index].id, origin: stickers[index].origin }));
+    return { key: id ?? "#1", sceneState };
+  };
+  const upstream = [
+    layer("scene_up", [
+      { id: "upstream:scene_up:board", placement: "world", source: { kind: "file", filename: "b.png" }, origin: { layer: "scene_up", id: "board" } },
+      { id: "upstream:scene_up:chair", placement: "world", source: { kind: "file", filename: "c.glb" }, origin: { layer: "scene_up", id: "chair" } },
+    ]),
+    layer(null, [{ id: "upstream:#1:far", placement: "world", source: { kind: "file", filename: "f.png" }, origin: { layer: "#1", id: "far" } }]),
+  ];
+  const plane = (id, z) => ({ id, ...worldStickerPlane({ position: [0, 0, z], yaw_deg: 0, pitch_deg: 0, roll_deg: 0, scale: 1 }, { x0: 0, y0: 0, x1: 1, y1: 1 }, 100, 100) });
+  const value = { position: [2, 0, -6], yaw_deg: 0, pitch_deg: 0, roll_deg: 0, scale: 1 };
+  const content = {
+    space: {
+      stickers: [],
+      fileStickers: [],
+      upstreamStickers: [plane("upstream:scene_up:board", -4), plane("upstream:#1:far", -9)],
+      upstreamItems: [
+        { slot: "scene_up:file:upstream:scene_up:chair", request: { id: "upstream:scene_up:chair", url: "file3d:1:chair", value }, value },
+        // The layer's `scene` has no guide.
+        { slot: "scene_up:scene", request: { url: "scene.glb", value }, value },
+      ],
+    },
+  };
+  const items = worldGuideItems(loadSceneState({ version: 2 }), content, () => box, () => null, upstream);
+  assert.deepEqual(items.map((item) => [item.id, item.kind, item.locked]), [
+    ["upstream:scene_up:board", "plane", false],
+    ["upstream:#1:far", "plane", true],
+    ["upstream:scene_up:chair", "box", false],
+  ]);
+  assert.equal(items[2].url, "file3d:1:chair");
+  assert.deepEqual(worldGuideItems(loadSceneState({ version: 2 }), content, () => box).map((item) => item.id), [], "without the layers given, none");
+});

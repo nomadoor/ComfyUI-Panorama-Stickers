@@ -7,10 +7,9 @@
 //   state       the working state v2 (a snapshot; nothing here changes it). Its `camera` may be null: the Camera row
 //               then shows the default Camera (camera_state.js cameraOf)
 //   upstream    the upstream layers, farthest first: [{ key, name, sceneState, editable, record, scene, deleted,
-//               portMeta, readOnly }] (editor/upstream.js upstreamTimelineLayers, with `name` the upstream node's title,
-//               `portMeta` the media meta of its port Sticker and `readOnly` a layer shown without edits: the new
-//               editor's until it edits upstream items, studio/upstream.js; optional `sceneItems`, the number of items of its
-//               3D content, and `animations`, its animated 3D files' clips as media.animations)
+//               portMeta }] (editor/upstream.js upstreamTimelineLayers, with `name` the upstream node's title and
+//               `portMeta` the media meta of its port Sticker, studio/upstream.js; optional `sceneItems`, the number of
+//               items of its 3D content, and `animations`, its animated 3D files' clips as media.animations)
 //   media       what timelineSpan knows of the inputs (pano_timeline.js autoTimelineLength), `port` the node's own port
 //               Sticker's media meta
 //   spanOf      optional (ctx, openClip) => span, in place of timelineSpan(state, media) (for an upstream layer's
@@ -113,7 +112,7 @@ export function findEntry(ctx, id) {
 // Whether the row's own state may change here: not read-only, and an upstream layer's only while the node keeps
 // its overrides (ADR 0030).
 export function entryWritable(ctx, entry) {
-  return !ctx.readOnly && (!entry.layer || (entry.layer.editable && !entry.layer.readOnly));
+  return !ctx.readOnly && (!entry.layer || entry.layer.editable);
 }
 
 // Whether the row's Keyframes may change: writable, not locked, and not an upstream `scene` (no override holds its
@@ -251,9 +250,15 @@ const keyId = (row, lane, frame) => `${row}\u0000${lane ?? ""}\u0000${frame}`;
 
 const INHERITED_TIP = "Inherited only: this node cannot keep changes to this layer";
 
+// "From <the Studio's name>" (its layer's key without one): the header of an upstream layer's group, and the note beside
+// an upstream object's inspector card (docs/studio-ui.md "上流の物の編集" "見せる").
+export function upstreamFromLabel(name, key) {
+  return `From ${name || key}`;
+}
+
 // Why a row's controls are disabled, or "" when they are not.
 function blockedTip(ctx, entry, { locked = true } = {}) {
-  if (ctx.readOnly || entry.layer?.readOnly) return "Read-only";
+  if (ctx.readOnly) return "Read-only";
   if (entry.layer && !entry.layer.editable) return INHERITED_TIP;
   if (locked && entry.owner?.locked === true) return "Locked";
   return "";
@@ -346,11 +351,11 @@ export function buildStudioTimeline(ctx, { selection = null, playhead = 0, playi
   const { own, groups } = timelineEntries(ctx);
   const rows = own.map(rowOf);
   const groupModels = groups.map(({ layer, entries }) => {
-    const editable = !!layer.editable && !ctx.readOnly && !layer.readOnly;
+    const editable = !!layer.editable && !ctx.readOnly;
     const deleted = layer.editable ? layer.deleted || 0 : 0;
     return {
       key: layer.key,
-      label: `From ${layer.name || layer.key}${layer.editable ? "" : " · inherited only"}`,
+      label: `${upstreamFromLabel(layer.name, layer.key)}${layer.editable ? "" : " · inherited only"}`,
       tip: "Items from the scene input. Changes here are saved in this node.",
       revert: {
         disabled: !editable || !upstreamLayerOverridden(layer.record ?? null),

@@ -58,7 +58,7 @@ export function stageUi() {
 // overlay: the 2D canvas over the stage's (the guides, the Camera's mark, the gizmo, the sky image's handles; null draws
 // none).
 // objects: what selecting and editing the objects needs (stage_objects.js createStageObjects: state, playhead,
-// selection, select, edits, mode, tab, readOnly); without it the stage does not touch objects.
+// selection, select, edits, mode, tab, readOnly, upstream); without it the stage does not touch objects.
 // cameraTab: the Camera tab (docs/studio-ui.md "Camera タブ", docs/space-and-view.md "Frame 表示"), read at each frame:
 // tab() ("3d" or "camera"), mode() ("frame" or "panorama": the Camera's projection), shot() (the Camera at the
 // playhead, pano_editor_state.js cameraShot), erpRange() (360 or 180), frame() (the frame box in the stage's CSS px,

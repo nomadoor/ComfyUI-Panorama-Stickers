@@ -5,6 +5,7 @@ import test from "node:test";
 
 import { ICON } from "../web_src/icons.js";
 import { loadSceneState } from "../web_src/pano_scene_state.js";
+import { upstreamWorkingLayers } from "../web_src/pano_upstream.js";
 import { gizmoModeOfKey, selectedKind, selectionBar, shownGizmoMode } from "../web_src/studio/selection_bar.js";
 
 const file = (filename) => ({ kind: "file", filename, subfolder: "", storage: "input" });
@@ -111,10 +112,52 @@ test("a paint group (a stroke group or a paint raster object) has the bar Bring 
   assert.ok(selectionBar({ state: painted, row: "raster:r1", readOnly: true }).groups.flat().every((button) => button.disabled));
 });
 
-test("an upstream element's row (its working id) has no kind and no bar: upstream elements are read-only here", () => {
-  const row = "upstream:scene_up:sky_1";
-  assert.equal(selectedKind(state, row), null);
-  assert.equal(selectionBar({ state, row }), null);
+// docs/studio-ui.md "上流の物の編集": the owner table's bar column.
+const upstream = upstreamWorkingLayers([
+  { sceneState: loadSceneState({ version: 2, id: "scene_up", stickers: [
+    { id: "sky_1", placement: "sky", source: file("up.png") },
+    { id: "plane_1", placement: "world", source: file("up_board.png") },
+    { id: "chair_1", placement: "world", source: file("up_chair.glb"), locked: true },
+  ] }), ui: {} },
+  { sceneState: loadSceneState({ version: 2, stickers: [{ id: "sky_9", placement: "sky", source: file("far.png") }] }), ui: {} },
+], [], 24);
+const button = (bar, key) => bar.groups.flat().find((item) => item.key === key);
+
+test("an upstream object's bar: Lock, Delete and Back to source work; Duplicate, Replace and the order say why they are off", () => {
+  assert.equal(selectedKind(state, "upstream:scene_up:sky_1"), null, "found only in the upstream layers given");
+  assert.equal(selectedKind(state, "upstream:scene_up:sky_1", upstream), "sky");
+  assert.equal(selectedKind(state, "upstream:scene_up:plane_1", upstream), "world-image");
+  const sky = selectionBar({ state, row: "upstream:scene_up:sky_1", upstream });
+  assert.equal(sky.name, "up.png");
+  assert.deepEqual(keys(sky), [["front", "back"], ["duplicate", "replace"], ["lock", "delete"], ["revert"]]);
+  assert.deepEqual(sky.groups.flat().map((item) => [item.key, item.disabled]), [
+    ["front", true], ["back", true], ["duplicate", true], ["replace", true], ["lock", false], ["delete", false], ["revert", false],
+  ]);
+  assert.equal(button(sky, "duplicate").tip, "Duplicate · not for an upstream object");
+  assert.equal(button(sky, "front").tip, "Bring to front · not for an upstream object");
+  assert.equal(button(sky, "replace").tip, "Replace · not for an upstream object");
+  const plane = selectionBar({ state, row: "upstream:scene_up:plane_1", upstream });
+  assert.deepEqual(keys(plane)[0], ["gizmo:translate", "gizmo:rotate", "gizmo:scale"]);
+  assert.ok(plane.groups[0].every((item) => !item.disabled), "the gizmo's modes work");
+  // Locked: Delete and Back to source are off, Lock shows it.
+  const chair = selectionBar({ state, row: "upstream:scene_up:chair_1", upstream });
+  assert.deepEqual(["lock", "delete", "revert"].map((key) => button(chair, key).disabled), [false, true, true]);
+  assert.equal(button(chair, "lock").icon, ICON.lock_closed);
+});
+
+test("an object of an upstream layer whose overrides cannot be kept has its bar with every edit off, saying why", () => {
+  const bar = selectionBar({ state, row: "upstream:#1:sky_9", upstream });
+  for (const key of ["front", "back", "duplicate", "replace", "lock", "delete", "revert"]) {
+    assert.equal(button(bar, key).disabled, true, key);
+    assert.equal(button(bar, key).tip, "Inherited only: edit it in its own Panorama Studio", key);
+  }
+});
+
+test("an input's object cannot be duplicated or deleted and says so", () => {
+  const bar = selectionBar({ state, row: "port_1" });
+  assert.equal(button(bar, "duplicate").tip, "Duplicate · not for an input's object");
+  assert.equal(button(bar, "delete").tip, "Delete · not for an input's object");
+  assert.equal(button(bar, "revert").tip, "Back to source · every value back to the input's");
 });
 
 test("the name field: a fixed name (the Camera's, a paint group's) fits its text, a name the user gives keeps the one width", () => {

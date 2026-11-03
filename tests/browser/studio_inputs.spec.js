@@ -2,8 +2,8 @@ import { expect, test } from "@playwright/test";
 
 // What comes from the node's inputs on the new editor's stage and Timeline (docs/studio-ui.md "ノードの入力から来た物")
 // on tests/browser/pages/studio_inputs.html, in a real browser engine: the `sticker` input's port Sticker (its image,
-// its GLB), another Studio's Scene on `scene` (its layers read-only, its background), with the node's result made in
-// the page.
+// its GLB), another Studio's Scene on `scene` (its layers edited as overrides, docs/studio-ui.md "上流の物の編集"; its
+// background), with the node's result made in the page.
 
 const SHOTS = process.env.STUDIO_SHOTS_DIR || null;
 
@@ -93,33 +93,109 @@ test("the sticker input's GLB is drawn as its world port Sticker and selected by
   expect(problems).toEqual([]);
 });
 
-test("another Studio's Scene on scene: its layers are drawn, shown read-only in a group named after it", async ({ page }, testInfo) => {
+// The Move gizmo's X ball of a World object whose guide's center is `center`, from the view the page opens with
+// (gizmo_overlay.js; Move uses the World axes), in page px.
+async function xBall(page, center) {
+  return page.evaluate(async (center) => {
+    const { stageCamera } = await import("/web_src/studio/stage_view.js");
+    const { gizmoHandles } = await import("/web_src/studio/gizmo_overlay.js");
+    const canvas = document.querySelector("[data-stage-canvas]");
+    const rect = canvas.getBoundingClientRect();
+    const camera = stageCamera({ position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0, roll_deg: 0, target: [0, 0, -3] }, rect.width, rect.height, 50);
+    const handles = gizmoHandles({ mode: "translate", transform: { position: center, quaternion: { x: 0, y: 0, z: 0, w: 1 }, scale: 1 } }, camera, rect.width, rect.height);
+    const ball = handles.axes.find((axis) => axis.name === "x").end;
+    return { x: rect.left + ball.x, y: rect.top + ball.y };
+  }, center);
+}
+
+async function drag(page, from, to, steps = 8) {
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  for (let i = 1; i <= steps; i += 1) await page.mouse.move(from.x + (to.x - from.x) * i / steps, from.y + (to.y - from.y) * i / steps);
+  await page.mouse.up();
+}
+
+const selectedRow = (page) => page.evaluate(() => window.__studio.session.selection.row);
+const records = (page) => page.evaluate(() => JSON.parse(JSON.stringify(window.__studio.session.state.upstream)));
+const overrideOf = async (page, id) => (await records(page)).find((item) => item.layer === "scene_up")?.stickers.find((item) => item.id === id) ?? null;
+const inspectorRow = (page, name) => page.locator(`.pano-studio-inspector [data-row="${name}"]`);
+
+// docs/studio-ui.md "上流の物の編集": the upstream objects are selected on the stage and edited with the stage's drags,
+// the gizmo, the inspector and the bar, each edit written to the state's `upstream` records as an override.
+test("another Studio's Scene on scene: its objects are selected on the stage and edited as overrides, written to state_json", async ({ page }, testInfo) => {
   const problems = await open(page, testInfo, "upstream");
   const colors = await page.evaluate(() => window.__studio.colors);
   const { sky: [front], world: [board] } = await places(page, { sky: [[0, 0]], world: [[1.6, 0, -3]] });
   await expect.poll(() => stageAt(page, front).then((rgb) => near(rgb, colors.upstreamSky)), { timeout: 10_000 }).toBe(true);
   await expect.poll(() => stageAt(page, board).then((rgb) => near(rgb, colors.upstreamBoard)), { timeout: 10_000 }).toBe(true);
-
   const group = page.locator('[data-group="scene_up"]');
   await expect(group).toContainText("From Studio Up");
   await expect(group.locator('[data-part="revert"]')).toHaveAttribute("aria-disabled", "true");
-  const head = page.locator('[data-head="upstream:scene_up:sticker_1"]');
-  await expect(head).toBeVisible();
-  await expect(head.locator('[data-part="eye"]')).toHaveAttribute("aria-disabled", "true");
+  await expect(page.locator('[data-head="upstream:scene_up:sticker_1"] [data-part="eye"]')).not.toHaveAttribute("aria-disabled", "true");
 
-  // Not selected on the stage (read-only for now).
+  // The sky image: a click selects it, its card says where it came from, its bar has Lock, Delete and Back to source.
   await page.mouse.click(front.x, front.y);
-  await page.waitForTimeout(200);
-  expect(await page.evaluate(() => window.__studio.session.selection.row)).toBeNull();
-  // Its row selects it: the inspector shows it read-only and the bar does not show.
-  await head.locator('[data-part="name"]').click();
-  await expect.poll(() => page.evaluate(() => window.__studio.session.selection.row)).toBe("upstream:scene_up:sticker_1");
-  await expect(page.locator('[data-region="inspector"]')).toContainText("Upstream · scene_up");
-  await expect(page.locator('[data-bar="revert"]')).toHaveCount(0);
-  await shot(page, "layers");
-  // Nothing was written: closing leaves the node's state as it was.
-  const before = await page.evaluate(() => JSON.stringify(window.__studio.session.state.upstream));
-  expect(before).toBe("[]");
+  await expect.poll(() => selectedRow(page)).toBe("upstream:scene_up:sticker_1");
+  await expect(page.locator('[data-region="inspector"]')).toContainText("From Studio Up");
+  await expect(page.locator('[data-bar="revert"]')).not.toHaveAttribute("aria-disabled", "true");
+  await expect(page.locator('[data-bar="delete"]')).not.toHaveAttribute("aria-disabled", "true");
+  await expect(page.locator('[data-bar="duplicate"]')).toHaveAttribute("aria-disabled", "true");
+  // Its body's drag turns it (to the left, away from the board): one override of its direction, nothing else.
+  await drag(page, front, { x: front.x - 120, y: front.y });
+  await expect.poll(async () => Object.keys((await overrideOf(page, "sticker_1")) ?? {}).sort()).toEqual(["direction", "id", "placement"]);
+  const { sky: [moved] } = await places(page, { sky: [[(await overrideOf(page, "sticker_1")).direction.value.yaw_deg, 0]] });
+  await expect.poll(() => stageAt(page, moved).then((rgb) => near(rgb, colors.upstreamSky)), { timeout: 10_000 }).toBe(true);
+  expect(near(await stageAt(page, front), colors.upstreamSky)).toBe(false);
+  // The inspector: the Opacity dot keys it at the playhead, its value box's drag changes the Keyframe.
+  await inspectorRow(page, "Opacity").locator(".pano-studio-keydot").click();
+  await expect.poll(async () => (await overrideOf(page, "sticker_1"))?.opacity?.keyframes.length).toBe(1);
+  const box = await inspectorRow(page, "Opacity").locator('[data-field="opacity"]').boundingBox();
+  await drag(page, { x: box.x + box.width / 2, y: box.y + box.height / 2 }, { x: box.x + box.width / 2 - 60, y: box.y + box.height / 2 }, 10);
+  await expect.poll(async () => (await overrideOf(page, "sticker_1")).opacity.keyframes[0].value).toBeLessThan(1);
+  await expect(inspectorRow(page, "Opacity").locator(".pano-studio-row-mark")).toHaveCount(1);
+  // Lock: the override, and Delete and Back to source go off while it is locked.
+  await page.locator('[data-bar="lock"]').click();
+  await expect.poll(async () => (await overrideOf(page, "sticker_1")).locked).toBe(true);
+  await expect(page.locator('[data-bar="delete"]')).toHaveAttribute("aria-disabled", "true");
+  await page.locator('[data-bar="lock"]').click();
+  await expect.poll(async () => (await overrideOf(page, "sticker_1")).locked).toBe(false);
+  await shot(page, "edit-sky");
+
+  // The world board: a click selects it, its gizmo's X ball moves it.
+  await page.mouse.click(board.x, board.y);
+  await expect.poll(() => selectedRow(page)).toBe("upstream:scene_up:sticker_2");
+  const ball = await xBall(page, [1.6, 0, -3]);
+  await drag(page, ball, { x: ball.x + 80, y: ball.y });
+  await expect.poll(async () => (await overrideOf(page, "sticker_2"))?.position?.value[0] ?? 0).toBeGreaterThan(1.7);
+  await shot(page, "edit-board");
+  // Delete: it goes from the stage, the record deletes it, and the group's Restore deleted brings it back.
+  await page.keyboard.press("Delete");
+  await expect.poll(async () => (await records(page))[0].deleted).toEqual(["sticker_2"]);
+  expect(await selectedRow(page)).toBeNull();
+  expect(await overrideOf(page, "sticker_2")).toBeNull();
+  const restore = group.locator('[data-part="restore"]');
+  await expect(restore).toContainText("Restore deleted (1)");
+  await restore.click();
+  await expect.poll(async () => (await records(page))[0].deleted).toEqual([]);
+  await expect.poll(() => stageAt(page, board).then((rgb) => near(rgb, colors.upstreamBoard)), { timeout: 10_000 }).toBe(true);
+
+  // Back to source: the sky image's overrides all go; Undo brings them back.
+  await page.locator('[data-head="upstream:scene_up:sticker_1"] [data-part="name"]').click();
+  await expect.poll(() => selectedRow(page)).toBe("upstream:scene_up:sticker_1");
+  await page.locator('[data-bar="revert"]').click();
+  await expect.poll(() => records(page)).toEqual([]);
+  await expect.poll(() => stageAt(page, front).then((rgb) => near(rgb, colors.upstreamSky)), { timeout: 10_000 }).toBe(true);
+  await page.keyboard.press("Control+z");
+  await expect.poll(async () => Object.keys((await overrideOf(page, "sticker_1")) ?? {}).sort()).toEqual(["direction", "id", "locked", "opacity", "placement"]);
+
+  // Closing writes the records into state_json; the upstream Studio's own state is not touched.
+  await page.evaluate(() => window.__studio.close());
+  const written = JSON.parse(await page.evaluate(() => window.__studio.stateText()));
+  const [record] = written.upstream;
+  expect(record.layer).toBe("scene_up");
+  expect(record.stickers.map((item) => item.id)).toEqual(["sticker_1"]);
+  expect(Object.keys(record.stickers[0]).sort()).toEqual(["direction", "id", "locked", "opacity", "placement"]);
+  expect(written.stickers).toEqual([]);
   expect(problems).toEqual([]);
 });
 

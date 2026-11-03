@@ -335,3 +335,85 @@ def test_a_reverted_layer_draws_its_upstream_scene_and_paint_in_the_editor_and_t
         assert_parity(expected, state)
     assert applied[1].state["scene"]["visible"] is True
     assert applied[1].state["painting_visible"] is True
+
+
+NEW_UI_SCRIPT = textwrap.dedent(
+    """
+    import { readFileSync } from "node:fs";
+    import { loadSceneState } from "./web_src/pano_scene_state.js";
+    import { createStudioSession } from "./web_src/studio/session.js";
+    import { createStudioUpstream } from "./web_src/studio/upstream.js";
+
+    globalThis.Image = class {};
+    const fixture = JSON.parse(readFileSync("tests/fixtures/scene_inherit/editor_working.json", "utf8"));
+    const list = fixture.layers.map((state) => ({ state, ui: {} }));
+    let session = null;
+    const upstream = createStudioUpstream({
+      list: () => list,
+      linkType: () => "PANO_SCENE",
+      uiList: () => [],
+      state: () => session.state,
+      setRecords: (records) => session.setUpstreamRecords(records),
+      mediaSource: () => "",
+      mediaAssetSource: () => "",
+      revisionOf: () => "",
+      playing: () => false,
+    });
+    session = createStudioSession({ state: loadSceneState(fixture.own), upstream });
+    // The new editor's ways (docs/studio-ui.md "上流の物の編集"): the inspector, the bar, the Timeline, the stage's drag.
+    const context = () => ({ playhead: 10, upstream: upstream.working() });
+    const field = (id, name, value) => ({ type: "field", target: { kind: "sticker", id }, field: name, value, phase: "commit" });
+    // scene_a (24 fps): the sky image's Roll from the inspector (a Lane its record does not hold yet), Lock of its
+    // hidden world Sticker from the bar.
+    session.applyInspector(field("upstream:scene_a:sticker_1", "rot_deg", 12), context());
+    session.selectObject("upstream:scene_a:sticker_3");
+    session.toggleLock();
+    // scene_b (30 fps): its world Sticker moved by the stage's drag, its port Sticker hidden and sized from the Timeline.
+    session.gesture(() => {
+      const plane = upstream.working().find((layer) => layer.key === "scene_b").sceneState.stickers.find((item) => item.origin.id === "sticker_1");
+      plane.position.keyframes.push({ frame: 20, value: [3, 1, -2], easing: "auto" });
+      return true;
+    }, (base) => ({ ...base }));
+    session.commitGesture();
+    const layer = upstream.timelineLayers().find((item) => item.key === "scene_b");
+    const sized = layer.sceneState.stickers.map((item) => (item.origin.id === "sticker_2" ? { ...item, visible: false, size: { ...item.size, value: { ...item.size.value, hFOV_deg: 50 } } } : item));
+    session.applyTimeline({ kind: "state", state: session.state, upstream: { scene_b: { ...layer.sceneState, stickers: sized } }, phase: "commit", stopsPlayback: true });
+    // The layers whose elements are only inherited take no edit.
+    session.applyInspector(field("upstream:#2:sticker_1", "opacity", 20), context());
+    session.selectObject("upstream:#0:sticker_1");
+    session.toggleLock();
+    const states = upstream.working().map(({ sceneState }) => {
+      const copy = structuredClone(sceneState);
+      copy.stickers.forEach((item) => {
+        item.id = item.origin.id;
+        delete item.origin;
+      });
+      return copy;
+    });
+    console.log(JSON.stringify({ records: session.state.upstream, states }));
+    """
+)
+
+
+def test_the_new_editors_edits_of_upstream_objects_draw_in_the_node_as_the_editor_shows_them():
+    """The new editor (studio/session.js with studio/upstream.js) writes its edits of upstream objects through the
+    shared write-back (pano_upstream_edits.js): `_override_layers` applies the records to the layers the editor shows."""
+    if shutil.which("node") is None:
+        pytest.skip("node.js is required")
+    case = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    edited = json.loads(subprocess.run(
+        ["node", "--input-type=module", "-e", NEW_UI_SCRIPT], cwd=REPO_ROOT, text=True, capture_output=True, check=True,
+    ).stdout)
+    records = edited["records"]
+    assert [record["layer"] for record in records] == ["scene_a", "scene_b"]
+    assert "origin" not in json.dumps(records) and "upstream:" not in json.dumps(records)
+    scene_a = {item["id"]: item for item in records[0]["stickers"]}
+    assert sorted(scene_a["sticker_1"]) == ["clip", "crop", "direction", "id", "placement", "roll", "z_index"]
+    assert scene_a["sticker_3"] == {"id": "sticker_3", "placement": "world", "visible": False, "locked": True}
+    scene_b = {item["id"]: item for item in records[1]["stickers"]}
+    assert sorted(scene_b["sticker_2"]) == ["id", "placement", "size", "visible", "z_index"]
+    assert len(scene_b["sticker_1"]["position"]["keyframes"]) == 3
+    _, applied = node_layers({**case, "own": {**case["own"], "upstream": records}})
+    for layer, state in zip(applied, edited["states"], strict=True):
+        expected = layer.state if layer.state["timeline"]["fps"] == 24 else rebase_scene_state(layer.state, 24)
+        assert_parity(expected, state)

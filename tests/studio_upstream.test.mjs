@@ -1,6 +1,7 @@
 // The upstream Scene in the new editor (web_src/studio/upstream.js, docs/studio-ui.md "ノードの入力から来た物"): its
-// layers from the node's result, drawn and shown read-only in the Timeline, the name of their group, the Auto length,
-// waiting for a run, and the upstream background when the node has none of its own.
+// layers from the node's result, drawn and shown in the Timeline, the name of their group, their edits written back
+// (docs/studio-ui.md "上流の物の編集"), the Auto length, waiting for a run, and the upstream background when the node
+// has none of its own.
 import assert from "node:assert/strict";
 import test from "node:test";
 
@@ -18,11 +19,15 @@ const layerState = {
 };
 
 function setup({ list = [{ state: layerState, ui: {} }], linkType = "PANO_SCENE", state = loadSceneState({ version: 2 }), frames = [48] } = {}) {
+  const box = { state };
   return createStudioUpstream({
     list: () => list,
     linkType: () => linkType,
     uiList: (key) => (key === "pano_upstream_frames" ? frames : []),
-    state: () => state,
+    state: () => box.state,
+    setRecords: (records) => {
+      box.state = { ...box.state, upstream: records };
+    },
     nodeName: (key) => (key === "scene_up" ? "Studio Up" : null),
     mediaSource: (entry) => entry,
     mediaAssetSource: (asset) => `/view?filename=${asset.filename}`,
@@ -31,15 +36,27 @@ function setup({ list = [{ state: layerState, ui: {} }], linkType = "PANO_SCENE"
   });
 }
 
-test("the upstream layers show read-only in the Timeline, named after the Studio they came from", () => {
+test("the upstream layers show in the Timeline and the inspector, named after the Studio they came from", () => {
   const upstream = setup();
   const [layer] = upstream.timelineLayers();
   assert.equal(layer.key, "scene_up");
   assert.equal(layer.name, "Studio Up");
-  assert.equal(layer.readOnly, true);
   assert.equal(layer.editable, true);
+  assert.equal(Object.hasOwn(layer, "readOnly"), false);
   assert.deepEqual(layer.sceneState.stickers.map((sticker) => sticker.id), ["upstream:scene_up:sticker_1"]);
-  assert.deepEqual(upstream.working().map((item) => item.key), ["scene_up"]);
+  assert.deepEqual(upstream.working().map((item) => [item.key, item.name]), [["scene_up", "Studio Up"]]);
+  assert.equal(upstream.working()[0].sceneState, layer.sceneState, "both show the one working copy");
+});
+
+test("an edit of a working copy is written back as the state's records, and its Clip range counts in the Auto length", () => {
+  const upstream = setup();
+  const [layer] = upstream.working();
+  const sticker = layer.sceneState.stickers[0];
+  sticker.clip = { start: 40, in: 0, duration: 30 };
+  assert.deepEqual(upstream.output().ends, [70], "an edit not written back yet counts already");
+  assert.equal(upstream.edits.sync(), true);
+  assert.deepEqual(upstream.output().ends, [70], "the record's Clip range counts once written");
+  assert.equal(upstream.edits.sync(), false);
 });
 
 test("the upstream layers count in the Auto length, and the editor waits for a run while the result has none", () => {

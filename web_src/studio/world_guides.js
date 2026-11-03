@@ -6,6 +6,7 @@
 import { boxCorners, planeCorners, planeOutlineSegments, projectPoint, sceneContentBox, transformPoint } from "../pano_space.js";
 import { lensPolylines } from "../pano_lens.js";
 import { quaternionToRotation } from "../pano_world.js";
+import { isUpstreamSticker, upstreamStickerEditable } from "../pano_upstream.js";
 
 // The looks of a guide (docs/design.md "新しい UI の見た目"): a light line over a dark line 2px wider, so it shows on
 // a light and a dark picture alike. The selected look's color is the soft yellow of the World drop mark; a selected
@@ -39,12 +40,16 @@ function loop(points) {
 // is the box of a loaded item (null while it loads: that object has no guide yet). `pendingBox(id)` is the box in its
 // own frame of a 3D file just placed whose item has not drawn yet (load_reveal.js: DROP_PREVIEW_BOX, then the route's
 // box), or null: such an object has a guide of that box, `loading`. Hidden objects and those outside their Clip range
-// are not in `content`; the `scene` content and the Camera have no guide.
-export function worldGuideItems(state, content, sceneBox = () => null, pendingBox = () => null) {
+// are not in `content`; the `scene` content and the Camera have no guide. The upstream World objects (their planes and
+// 3D items in `content`, by their working ids in the working layers `upstream`) have guides as the node's own, after
+// them; one of a layer whose overrides cannot be kept is `locked` (docs/studio-ui.md "上流の物の編集").
+export function worldGuideItems(state, content, sceneBox = () => null, pendingBox = () => null, upstream = []) {
   if (!content) return [];
   const byId = new Map(state.stickers.map((sticker) => [sticker.id, sticker]));
+  for (const layer of upstream) for (const sticker of layer.sceneState.stickers) byId.set(sticker.id, sticker);
+  const lockedOf = (sticker) => sticker.locked === true || (isUpstreamSticker(sticker) && !upstreamStickerEditable(sticker));
   const items = [];
-  for (const plane of content.space?.stickers ?? []) {
+  for (const plane of [...(content.space?.stickers ?? []), ...(upstream.length ? content.space?.upstreamStickers ?? [] : [])]) {
     const sticker = byId.get(plane.id);
     if (!sticker) continue;
     const corners = planeCorners(plane);
@@ -52,7 +57,7 @@ export function worldGuideItems(state, content, sceneBox = () => null, pendingBo
     items.push({
       id: plane.id,
       kind: "plane",
-      locked: sticker.locked === true,
+      locked: lockedOf(sticker),
       segments: plane.patch ? planeOutlineSegments(plane) : loop(corners),
       corners,
       center: [...plane.position],
@@ -63,7 +68,7 @@ export function worldGuideItems(state, content, sceneBox = () => null, pendingBo
     return {
       id: sticker.id,
       kind: "box",
-      locked: sticker.locked === true,
+      locked: lockedOf(sticker),
       loading,
       // The item's key and the Sticker's value, for the hit test through its grid (hit_test.js coarseUnder).
       url,
@@ -76,7 +81,9 @@ export function worldGuideItems(state, content, sceneBox = () => null, pendingBo
   const boxed = new Set();
   // The 3D file Stickers' items and the port Sticker's 3D media (its item at the playhead).
   const portRequest = content.space?.sticker?.id != null ? [content.space.sticker] : [];
-  for (const request of [...portRequest, ...(content.space?.fileStickers ?? [])]) {
+  // The upstream layers' 3D port Stickers and 3D file Stickers (an item with a Sticker's id; a layer's `scene` has none).
+  const upstreamRequests = upstream.length ? (content.space?.upstreamItems ?? []).map((entry) => entry.request).filter((request) => request?.id != null) : [];
+  for (const request of [...portRequest, ...(content.space?.fileStickers ?? []), ...upstreamRequests]) {
     const sticker = byId.get(request.id);
     const box = sticker ? sceneContentBox(request, sceneBox(request.url)) : null;
     if (!box) continue;

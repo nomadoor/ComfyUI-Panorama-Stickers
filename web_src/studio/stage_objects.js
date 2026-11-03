@@ -11,8 +11,13 @@
 //      it (its drag does nothing: the gizmo moves it);
 //   4. the Camera's mark (3D tab; camera_marker.js: anywhere on its filled shape or near its lines): selects the Camera;
 //   5. the node's own Sky from the visual front (skyObjects: the sky images and the paint groups by the draw order,
-//      reversed): selects it and its drag turns a sky image (its direction) or moves a paint group (not a locked one);
+//      reversed), then the upstream sky images under it (from the downstream layer, in a layer from the front): selects
+//      it and its drag turns a sky image (its direction) or moves a paint group (not a locked one);
 //   6. nothing: the stage looks around, and a press let go without moving lets the selection go.
+// The upstream objects (docs/studio-ui.md "上流の物の編集") are found by their working ids in the working layers
+// (`upstream`) and count as the node's own: the upstream World objects in 3 (their guides, world_guides.js), the sky
+// images after 5, the selected one's gizmo or handles in 1 and 2. Their drags change their working copies (the session
+// writes them back as overrides); one of a layer whose overrides cannot be kept is locked.
 // The Camera tab's Frame view does the same for the selected object (its gizmo, its handles, its body: docs/studio-ui.md
 // "Camera タブ", ADR 0051); a press on any other object, or on a locked one, selects it and its drag is the stage's,
 // which moves the Camera (the handler says `passes`). The Camera selected there shows no gizmo (the view is inside it).
@@ -23,11 +28,12 @@
 // started from), edits.commit() at the end (one Undo step when it changed something), edits.cancel() when it is given
 // up. An object's drag writes its Lanes by the recording rule (docs/timeline-ui.md "記録の規則"); a paint group's writes
 // the painting as it is (it has no Lanes).
-import { viewProjection } from "../pano_editor_view.js";
+import { mediaSize, viewProjection } from "../pano_editor_view.js";
 import { rasterObjectTurnCenterUv } from "../pano_paint_display.js";
 import { lensPolylines } from "../pano_lens.js";
-import { setStickerPose, setWorldStickerTransform } from "../pano_editor_state.js";
+import { setStickerPose, setWorldStickerTransform, skyStickerVfov } from "../pano_editor_state.js";
 import { evaluateSticker } from "../pano_scene_eval.js";
+import { isUpstreamSticker, upstreamStickerEditable } from "../pano_upstream.js";
 import { gizmoDragLanes, sceneTransform } from "../pano_space.js";
 import { hitFrameAffordance, ROTATE_HANDLE_HIT_PX, STICKER_NODE_ROTATE_HANDLE_OFFSET_PX } from "../pano_sticker_affordance.js";
 import {
@@ -60,6 +66,43 @@ import { coarseUnder } from "./hit_test.js";
 // The cursor over an object's body (hit_test.js's rule: the default arrow; handles bring their own).
 const BODY_CURSOR = "default";
 
+// Whether a Sticker does not move on the stage: locked, or an upstream object of a layer whose overrides cannot be kept.
+function lockedOf(sticker) {
+  return sticker.locked === true || (isUpstreamSticker(sticker) && !upstreamStickerEditable(sticker));
+}
+
+// A sky image as the geometry helpers read it (pano_sticker_geometry.js) from its evaluated pose `value`.
+function skyItem(sticker, value) {
+  return {
+    id: sticker.id,
+    yaw_deg: value.yaw_deg,
+    pitch_deg: value.pitch_deg,
+    rot_deg: value.roll_deg,
+    hFOV_deg: value.hFOV_deg,
+    vFOV_deg: value.vFOV_deg,
+    curve: value.curve,
+    z_index: Number(sticker.z_index || 0),
+    locked: lockedOf(sticker),
+  };
+}
+
+// The upstream sky images drawn at `frame` as the geometry helpers read them, in the order a press hits them
+// (docs/studio-ui.md "上流の物の編集" "選ぶ"): from the downstream layer, in a layer from the front (the larger z_index,
+// a tie the later one, as drawn). Each pose is its working copy's at the frame, its vFOV as drawn (a port Sticker's
+// follows its media). `upstream` is the working layers (farthest first).
+function upstreamSkyItems(upstream, content, frame) {
+  if (!content || !upstream.length) return [];
+  const drawn = new Map(content.layers.filter((layer) => layer.kind === "sticker").map((layer) => [layer.id, layer]));
+  return [...upstream].reverse().flatMap((layer) => layer.sceneState.stickers
+    .map((sticker, index) => ({ sticker, index }))
+    .filter(({ sticker }) => sticker.placement === "sky" && drawn.has(sticker.id))
+    .sort((a, b) => Number(b.sticker.z_index || 0) - Number(a.sticker.z_index || 0) || b.index - a.index)
+    .map(({ sticker }) => {
+      const value = evaluateSticker(sticker, frame);
+      return skyItem(sticker, { ...value, vFOV_deg: skyStickerVfov(sticker, value, mediaSize(drawn.get(sticker.id).media)) });
+    }));
+}
+
 // The sky images drawn at the playhead as the geometry helpers read them (pano_sticker_geometry.js): their evaluated
 // pose, in list order.
 function skyItems(state, content) {
@@ -68,18 +111,7 @@ function skyItems(state, content) {
   const items = [];
   state.stickers.forEach((sticker, index) => {
     if (sticker.placement !== "sky" || !drawn.has(sticker.id)) return;
-    const value = content.evaluated.stickers[index];
-    items.push({
-      id: sticker.id,
-      yaw_deg: value.yaw_deg,
-      pitch_deg: value.pitch_deg,
-      rot_deg: value.roll_deg,
-      hFOV_deg: value.hFOV_deg,
-      vFOV_deg: value.vFOV_deg,
-      curve: value.curve,
-      z_index: Number(sticker.z_index || 0),
-      locked: sticker.locked === true,
-    });
+    items.push(skyItem(sticker, content.evaluated.stickers[index]));
   });
   return items;
 }
@@ -94,9 +126,9 @@ function paintIndex(state) {
 // images and the paint groups (paintIndex) by the order they are drawn (pano_editor_view.js skyLayers over
 // pano_paint_layers.js skyPaintLayers: by z_index, a paint group's truncated as drawn, ties the sky images, then the
 // stroke groups, then the raster objects, each in list order), reversed. Each is { kind: "sky", row, item } or
-// { kind: "group" | "raster", id, row, item, locked }. The upstream Stickers lie under the node's own Sky and are not
-// among them.
-function skyObjects(state, content) {
+// { kind: "group" | "raster", id, row, item, locked }. The upstream sky images (upstreamSkyItems, at `frame` of the
+// working layers `upstream`) lie under the node's own Sky and come after them.
+function skyObjects(state, content, upstream = [], frame = 0) {
   const entries = skyItems(state, content).map((item) => ({ kind: "sky", row: item.id, item, zIndex: item.z_index }));
   const index = paintIndex(state);
   for (const [id, { group }] of index.groups) {
@@ -105,9 +137,10 @@ function skyObjects(state, content) {
   for (const item of index.rasters) {
     entries.push({ kind: "raster", id: item.id, row: paintObjectRowOf("raster", item.id), item, locked: item.locked === true, zIndex: Math.trunc(Number(item.z_index) || 0) });
   }
-  return entries.map((entry, order) => ({ entry, order }))
+  const own = entries.map((entry, order) => ({ entry, order }))
     .sort((a, b) => b.entry.zIndex - a.entry.zIndex || b.order - a.order)
     .map(({ entry }) => entry);
+  return [...own, ...upstreamSkyItems(upstream, content, frame).map((item) => ({ kind: "sky", row: item.id, item }))];
 }
 
 // Where the ERP point `point` lands on the screen of `projection` (pano_editor_view.js viewProjection): { x, y }, or
@@ -228,7 +261,8 @@ function viewKey(camera, width, height) {
 // Frame view one carrying its picture, pano_lens.js withLensImage) and its CSS size.
 // selection(): the selected row ("camera", a Sticker id, a paint group's `paint_group:` / `raster:` row, or null); select(row) selects (null lets go). mode(): the
 // gizmo's mode. tab(): "3d" or "camera". ground(): the ground
-// height. readOnly(): no edits. loading: load_reveal.js
+// height. readOnly(): no edits. upstream(): the upstream working layers (studio/upstream.js working(); [] without).
+// loading: load_reveal.js
 // createLoadReveal()'s for the guides of 3D files just placed (their stand-in box and band), or null.
 // rasterAlpha(item, u, v): the alpha (0..255) of a paint raster object's image at a point of its box (0..1 across), or
 // null while it cannot be read (studio/paint.js rasterAlpha); a raster object is then hit anywhere in its box.
@@ -248,6 +282,7 @@ export function createStageObjects({
   readOnly = () => false,
   loading = null,
   rasterAlpha = () => null,
+  upstream = () => [],
 }) {
   let hovered = null;
   // The gizmo's handle under the pointer, and the one being dragged (gizmo_overlay.js gizmoHit's names).
@@ -261,6 +296,18 @@ export function createStageObjects({
 
   function cameraValue() {
     return cameraAt(state(), playhead());
+  }
+
+  // The Sticker with the id `id`: the node's own, else an upstream working copy (a drag changes it in place).
+  const stickerOf = (scene, id) => findSticker(scene, upstream(), id);
+  // What a drag of the Sticker `id` copies of the state it started from (session.js gesture's copy): an upstream
+  // object's drag changes its working copy, not the state, so the state is only replaced.
+  const draftOf = (id) => (isUpstreamSticker(stickerOf(state(), id)) ? (base) => ({ ...base }) : undefined);
+  // The evaluated value of a World Sticker at the playhead: the node's own from what is drawn, an upstream one from its
+  // working copy.
+  function stickerValue(sticker) {
+    if (isUpstreamSticker(sticker)) return evaluateSticker(sticker, playhead());
+    return content()?.evaluated.stickers.find((item) => item.id === sticker.id) ?? null;
   }
 
   // The stage's view now ({ key, projection, state, frames, paths }), with the paint's screen shapes made in it for the
@@ -303,7 +350,7 @@ export function createStageObjects({
   function gizmo() {
     if (!editable()) return null;
     const row = selection();
-    const kind = selectedKind(state(), row);
+    const kind = selectedKind(state(), row, upstream());
     if (kind === "camera") {
       if (tab() !== "3d") return null;
       const value = cameraValue();
@@ -311,18 +358,19 @@ export function createStageObjects({
       return { mode: shownGizmoMode(kind, mode()), transform: sceneTransform({ ...value, scale: 1 }) };
     }
     if (kind !== "world-image" && kind !== "world-3d") return null;
-    // Own Stickers only: upstream elements are read-only on the stage (docs/studio-ui.md "ノードの入力から来た物").
-    const sticker = findSticker(state(), [], row);
-    const value = content()?.evaluated.stickers.find((item) => item.id === row);
-    if (!sticker || sticker.locked || !value?.active) return null;
+    const sticker = stickerOf(state(), row);
+    const value = sticker ? stickerValue(sticker) : null;
+    if (!sticker || lockedOf(sticker) || !value?.active) return null;
     const guide = guides().find((item) => item.id === row);
     return { mode: shownGizmoMode(kind, mode()), transform: sceneTransform(value), center: guide ? [...guide.center] : null };
   }
 
-  // The selected sky image's geometry with its handles (pano_sticker_geometry.js), or null.
+  // The selected sky image's geometry with its handles (pano_sticker_geometry.js), or null: the node's own or an
+  // upstream one.
   function selectedSky() {
     const row = selection();
-    const item = skyItems(state(), content()).find((entry) => entry.id === row);
+    const item = skyItems(state(), content()).find((entry) => entry.id === row)
+      ?? (String(row ?? "").startsWith("upstream:") ? upstreamSkyItems(upstream(), content(), playhead()).find((entry) => entry.id === row) : null);
     if (!item) return null;
     const geometry = buildStickerGeometry(item, projection());
     return geometry.visible ? { item, geometry } : null;
@@ -348,16 +396,17 @@ export function createStageObjects({
     return paintCornerHandle(paint.geometry, point);
   }
 
-  // The node's own Sky objects in order (skyObjects), made again only when the state or what is drawn changes.
+  // The Sky objects in order (skyObjects), made again only when the state or what is drawn changes (an edit of an
+  // upstream working copy replaces the state too).
   let ordered = { state: null, content: null, objects: [] };
   function skyObjectsNow() {
     const scene = state();
     const shown = content();
-    if (ordered.state !== scene || ordered.content !== shown) ordered = { state: scene, content: shown, objects: skyObjects(scene, shown) };
+    if (ordered.state !== scene || ordered.content !== shown) ordered = { state: scene, content: shown, objects: skyObjects(scene, shown, upstream(), playhead()) };
     return ordered.objects;
   }
 
-  // The node's own Sky object under `point`, front to back (skyObjects):
+  // The Sky object under `point`, front to back (skyObjects):
   // { object, geometry } or null (geometry: a sky image's, or a paint group's frame). A sky image is hit inside its
   // edge, a stroke group along its strokes wherever its frame is (pano_paint_objects.js strokePathsHit), a raster
   // object inside its box on the screen where its pixels show (rasterAlphaHits).
@@ -384,7 +433,7 @@ export function createStageObjects({
   }
 
   function guides() {
-    return worldGuideItems(state(), content(), (url) => editorView.sceneBox(url), (id) => loading?.pendingBox(id) ?? null);
+    return worldGuideItems(state(), content(), (url) => editorView.sceneBox(url), (id) => loading?.pendingBox(id) ?? null, upstream());
   }
 
   // The Camera's mark on screen (camera_marker.js cameraMarkerScreen), or null: in the 3D tab only, and not while it
@@ -455,7 +504,8 @@ export function createStageObjects({
     if (!grab) return null;
     const row = selection();
     const frame = playhead();
-    const base = row === "camera" ? cameraValue() : evaluateSticker(findSticker(state(), [], row), frame);
+    const base = row === "camera" ? cameraValue() : evaluateSticker(stickerOf(state(), row), frame);
+    const copy = row === "camera" ? undefined : draftOf(row);
     draggedAxis = axis;
     dragGuides = grab.guides ?? [];
     return {
@@ -475,11 +525,11 @@ export function createStageObjects({
             setCameraLanes(editableCamera(draft), frame, lanes);
             return true;
           }
-          const sticker = draft.stickers.find((item) => item.id === row);
+          const sticker = stickerOf(draft, row);
           if (!sticker) return false;
           setWorldStickerTransform(sticker, frame, lanes);
           return true;
-        });
+        }, copy);
       },
       end() {
         draggedAxis = null;
@@ -502,12 +552,13 @@ export function createStageObjects({
     const offset = { x: point.x - center.x, y: point.y - center.y };
     const startDistance = Math.max(1, Math.hypot(point.x - center.x, point.y - center.y));
     const startAngle = Math.atan2(point.y - center.y, point.x - center.x);
+    const copy = draftOf(item.id);
     const write = (pose) => edits.live((draft) => {
-      const sticker = draft.stickers.find((entry) => entry.id === item.id);
+      const sticker = stickerOf(draft, item.id);
       if (!sticker) return false;
       setStickerPose(sticker, frame, pose);
       return true;
-    });
+    }, copy);
     return {
       move(next, event = {}) {
         if (kind === "move") {

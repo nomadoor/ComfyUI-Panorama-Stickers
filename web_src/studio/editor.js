@@ -160,7 +160,8 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
   // A state_json that cannot be read is kept as it is: the editor opens read-only (docs/studio-ui.md "閉じ方").
   const stateUnreadable = !readableStateText(String(widgetOf(node, "state_json")?.value ?? ""));
   if (stateUnreadable) readOnly = true;
-  const session = createStudioSession({ state: nodeState(node, media), readOnly });
+  // The session (session.js), made once the upstream layers it edits are (below).
+  let session = null;
   const nodeSession = editorSession(node);
   const stateWidget = widgetOf(node, "state_json");
   const backgroundLinked = linked(node, BACKGROUND_INPUTS);
@@ -194,7 +195,7 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     },
   });
   // [inputs] The upstream Scene on `scene` (another Studio's PANO_SCENE): its layers from the node's current result,
-  // read-only for now (studio/upstream.js).
+  // edited as the node's overrides (studio/upstream.js, docs/studio-ui.md "上流の物の編集").
   const upstreamList = () => {
     const value = isNodeOutputMediaCurrent(node, "scene") ? media.uiValue(node, "pano_upstream_layers") : null;
     return Array.isArray(value) && value.length ? value : null;
@@ -205,6 +206,7 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     linkType: () => linkedInputType(node, "scene"),
     uiList: (key) => media.uiList(node, key),
     state: () => session.state,
+    setRecords: (records) => session.setUpstreamRecords(records),
     nodeName: (key) => upstreamNodeName(graphNodes(), key),
     mediaSource: media.source,
     mediaAssetSource: media.assetSource,
@@ -217,6 +219,7 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
       redraw(DRAW_REASON.MEDIA);
     },
   });
+  session = createStudioSession({ state: nodeState(node, media), readOnly, upstream });
   // The colors of the depth grids drawn (docs/threejs-spark-integration.md "DA3_GEOMETRY mono の深度のグリッド"): a
   // proxy MP4 per input (`scene`, `sticker`, an upstream layer) following the playhead.
   const depthColors = createDepthColors({
@@ -285,11 +288,10 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     shortcuts: false,
     // [inputs] The size of the port Sticker's media (its vFOV follows it), null before it loads.
     portSize: null,
-    // [inputs] The upstream layers: as the Timeline shows them (studio/upstream.js timelineLayers), their working
-    // copies for the inspector, and whether the selected object is one of them (shown read-only).
+    // [inputs] The upstream layers: as the Timeline shows them (studio/upstream.js timelineLayers), and their working
+    // copies for the inspector and the bar.
     upstream: [],
     upstreamWorking: [],
-    upstreamSelected: false,
     // The left column's tool ("cursor", "paint", "mask"; docs/studio-ui.md "左の列"): Cursor each time the editor
     // opens. `paint` is the bar of a painting tool (paint_bar.js paintBar) or null; `confirm` the question a Clear asks
     // ({ title, body, confirm, layer }) while it waits for the answer.
@@ -307,7 +309,6 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     view.portSize = portMedia.size();
     view.upstream = upstream.timelineLayers();
     view.upstreamWorking = upstream.working();
-    view.upstreamSelected = String(session.selection.row ?? "").startsWith("upstream:");
     ui.upstreamPending = upstream.pending();
     view.background = backgroundLinked
       ? { end: backgroundBarEnd(state.background.clip, state.timeline.fps, view.media.bg), video: videoLinked(node, BACKGROUND_INPUTS) }
@@ -324,6 +325,8 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
   const world = { ground: groundNow(), camera: outputView(session.state, 0).position };
 
   function sync() {
+    // [inputs] An upstream object gone with a new result is selected no more.
+    session.keepSelection();
     view.state = session.state;
     view.selection = session.selection;
     view.canUndo = session.canUndo;
@@ -488,7 +491,7 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     return value;
   }
   // The stage's selection (view_camera.js orbitCenter, frameSelectedSphere) of the object of the row `row` (a Sticker
-  // id, "camera", or a paint group's `paint_group:` / `raster:` row).
+  // id, an upstream object's working id, "camera", or a paint group's `paint_group:` / `raster:` row).
   function selectionOf(row) {
     if (!row) return null;
     if (row === "camera") {
@@ -496,7 +499,7 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     }
     // A paint group is on the Sky, as a sky image: it has no sphere of its own (docs/space-and-view.md "Frame Selected").
     if (paintObjectRow(row)) return { kind: "object", sphere: content().sphere };
-    const sphere = stickerFrameSphere(session.state, content(), row, { media: mediaOf, editorFile: stageMedia.editorFile, sceneBox });
+    const sphere = stickerFrameSphere(session.state, content(), row, { media: mediaOf, editorFile: stageMedia.editorFile, sceneBox, upstreamWorking: upstream.working() });
     return { kind: "object", sphere };
   }
 
@@ -675,10 +678,14 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
 
   // --- Edits.
 
+  // What the inspector's edits read (inspector_actions.js applyInspectorEdit's context), with the upstream working
+  // copies an upstream object's edit changes (docs/studio-ui.md "上流の物の編集").
+  const inspectorContext = () => ({ playhead: view.playhead, imageSizes: view.imageSizes, animations: view.animations, upstream: view.upstreamWorking });
+
   function inspectorEdit(edit) {
     // A wheel run of the Camera tab's Frame view still waiting to be one Undo step is one first.
     stage?.settle();
-    const outcome = session.applyInspector(edit, { playhead: view.playhead, imageSizes: view.imageSizes, animations: view.animations });
+    const outcome = session.applyInspector(edit, inspectorContext());
     if (outcome.stopPlayback) playback.stop();
     sync();
   }
@@ -815,7 +822,7 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     else if (key === "lock") objectOutcome(session.toggleLock());
     else if (key === "duplicate") objectOutcome(session.duplicateSelected());
     else if (key === "front" || key === "back") objectOutcome(session.orderSelected(key));
-    else if (key === "revert") objectOutcome(session.revertSelected({ playhead: view.playhead, imageSizes: view.imageSizes, animations: view.animations }));
+    else if (key === "revert") objectOutcome(session.revertSelected(inspectorContext()));
     else if (key === "delete") deleteSelection();
   }
 
@@ -870,7 +877,7 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     if (action.startsWith("gizmo:")) {
       // The gizmo's Move, Rotate, Scale for the selected object that has them.
       const mode = action.slice("gizmo:".length);
-      if (gizmoModeOfKey(selectedKind(session.state, session.selection.row), event.key) !== mode) return;
+      if (gizmoModeOfKey(selectedKind(session.state, session.selection.row, view.upstreamWorking), event.key) !== mode) return;
       event.preventDefault();
       event.stopPropagation();
       setGizmoMode(mode);
@@ -938,6 +945,7 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
           readOnly: () => readOnly,
           loading: reveal,
           rasterAlpha: (item, u, v) => paint.rasterAlpha(item, u, v),
+          upstream: () => upstream.working(),
         },
         cameraTab,
         root,

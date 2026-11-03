@@ -24,7 +24,7 @@ import { animationClipIndex } from "../pano_animation.js";
 import { cameraOf } from "./camera_state.js";
 import { findSticker, keyframeOwner } from "./row_object.js";
 import { defaultCamera, groundOf } from "./defaults.js";
-import { objectLabel } from "./timeline_model.js";
+import { objectLabel, upstreamFromLabel } from "./timeline_model.js";
 
 // The least height (px) left above the Easing panel for the rows (docs/design.md "大きさ" EASING_MIN_ABOVE).
 export const EASING_MIN_ABOVE = 180;
@@ -355,7 +355,7 @@ function stickerCard(state, sticker, { playhead, readOnly, upstream, animations,
     kind: sticker.placement,
     title: objectLabel(sticker),
     icon: isWorld ? ICON.box : ICON.pano,
-    note: fromUpstream ? `Upstream · ${sticker.origin.layer}` : isWorld ? "World" : "Sky",
+    note: fromUpstream ? upstreamFromLabel(upstream.find((layer) => layer.key === sticker.origin.layer)?.name, sticker.origin.layer) : isWorld ? "World" : "Sky",
     target: { kind: "sticker", id: sticker.id },
     rows: finishRows(
       // An upstream element's animation is shown, not overridden (docs/editor-interaction.md "アニメーションの行").
@@ -467,7 +467,8 @@ export function buildCameraCard({ state, playhead = 0, readOnly = false }) {
 // "インスペクタ", ADR 0051): nothing selected shows the Scene card, the Camera's card over the Ground's. In the Camera
 // tab (`tab` "camera") the Camera's card is always on top, the selected object's under it, and Set ground is off in
 // Panorama mode. `upstream` is the
-// working layers (pano_upstream.js upstreamWorkingLayers), `animations` the clips of the 3D files by Sticker id
+// working layers (pano_upstream.js upstreamWorkingLayers; each with the `name` of the Studio it came from, or none,
+// studio/upstream.js working()), `animations` the clips of the 3D files by Sticker id
 // ([{ name }]), `portSize` the size of the port Sticker's media ({ width, height }), `imageSizes` the sizes of the
 // Stickers' images by Sticker id ({ width, height } px, once loaded).
 // Returns { cards: [{ kind, title, icon, note, target, rows }], easing }.

@@ -14,11 +14,12 @@
 // `target` is a card's target ({ kind: "sticker" | "camera" | "scene", id }), `keyframes` the selection's
 // ({ owner, lane, frames }).
 //
-// applyInspectorEdit returns { changed, history, stopPlayback, upstreamChanged }: `history` asks for one Undo step
-// (a commit), `stopPlayback` for the dot's stop of playback, `upstreamChanged` that the node's `upstream` records
-// changed so the working layers are made again from them (pano_upstream.js upstreamWorkingLayers). An "input" changes
-// the state live without an Undo step; a "cancel" changes nothing, and the shell puts back the state it had before
-// the gesture's first input (with `cancel: true` in the result).
+// applyInspectorEdit returns { changed, history, stopPlayback, upstreamRevert }: `history` asks for one Undo step
+// (a commit), `stopPlayback` for the dot's stop of playback, `upstreamRevert` ({ sticker, lanes }, else null) the reset
+// of an upstream object's row, which changes nothing here: the session takes those Lanes' overrides off the records
+// (docs/studio-ui.md "上流の物の編集"). An "input" changes the state live without an Undo step; a "cancel" changes
+// nothing, and the shell puts back the state it had before the gesture's first input (with `cancel: true` in the
+// result). An upstream object's edits change its working copy in place (the session writes it back).
 import {
   WORLD_MIN_SCALE,
   setCameraCurveKeepingCenter,
@@ -30,16 +31,16 @@ import {
 import { FRAME_EPSILON, evaluateLane } from "../pano_scene_eval.js";
 import { ANIMATION_DEFAULT, ANIMATION_SPEED_MAX, ANIMATION_SPEED_MIN, CAMERA_LANES, DEFAULT_EASING, SKY_STICKER_LANES, WORLD_STICKER_LANES } from "../pano_scene_state.js";
 import { deleteKeyframes, keyLanes, rowLaneNames, setLaneValue, setSegmentEasing } from "../pano_timeline.js";
-import { isUpstreamSticker, upstreamRevertedRecords, upstreamStickerEditable } from "../pano_upstream.js";
+import { isUpstreamSticker, upstreamStickerEditable } from "../pano_upstream.js";
 import { revertHandoffLane } from "../pano_port_handoff.js";
 import { editableCamera } from "./camera_state.js";
 import { defaultCamera } from "./defaults.js";
-import { ROW_LANES, inheritedSticker, ownerFrame, skyPlacedSize } from "./inspector_model.js";
+import { ROW_LANES, ownerFrame, skyPlacedSize } from "./inspector_model.js";
 import { findSticker, keyframeOwner } from "./row_object.js";
 
 const SKY_POSE_FIELDS = new Set(["yaw_deg", "pitch_deg", "rot_deg", "hFOV_deg", "vFOV_deg"]);
 
-const result = (changed, extra = {}) => ({ changed, history: false, stopPlayback: false, upstreamChanged: false, ...extra });
+const result = (changed, extra = {}) => ({ changed, history: false, stopPlayback: false, upstreamRevert: null, ...extra });
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
@@ -79,6 +80,8 @@ function applyField(state, found, edit, context) {
   }
   const sticker = found.owner;
   if (field === "anim_speed") {
+    // An upstream object's animation is not overridden (docs/studio-ui.md "上流の物の編集" "作らないもの").
+    if (isUpstreamSticker(sticker)) return false;
     setAnimation(sticker, { speed: clamp(value, ANIMATION_SPEED_MIN, ANIMATION_SPEED_MAX) });
     return true;
   }
@@ -103,7 +106,7 @@ function applyChoice(state, found, { field, value }, context) {
     else return false;
     return true;
   }
-  if (field !== "anim_clip" || !found.owner) return false;
+  if (field !== "anim_clip" || !found.owner || isUpstreamSticker(found.owner)) return false;
   const clip = context.animations?.[found.owner.id]?.[value];
   if (!clip) return false;
   setAnimation(found.owner, { clip: clip.name });
@@ -138,16 +141,6 @@ function laneDefault(list, name) {
 // The Roll the Camera tab's Roll reset returns to: the rotation Lane's default (frame_layout.js grays the reset there).
 export const CAMERA_ROLL_DEFAULT = laneDefault(CAMERA_LANES, "rotation").roll_deg;
 
-// An upstream element's reset: the override of the row's Lanes goes, so it inherits them again, and its working copy
-// shows the upstream value at once.
-function resetUpstream(state, sticker, lanes, upstream) {
-  const base = inheritedSticker(upstream, sticker, state.timeline.fps);
-  let records = state.upstream ?? [];
-  for (const name of lanes) records = upstreamRevertedRecords(records, sticker, name);
-  state.upstream = records;
-  if (base) for (const name of lanes) sticker[name] = structuredClone(base[name]);
-}
-
 // A port Sticker's reset of a Lane the Pose handoff gives (docs/studio-ui.md "リセットと Keyframe のポチ": the input's
 // value): it follows the handoff again. Returns the Lanes it did not revert.
 function resetHandoff(state, sticker, lanes, handoff) {
@@ -180,15 +173,13 @@ function applyReset(state, found, row, context) {
   }
   const sticker = found.owner;
   if (row === "anim_clip" || row === "anim_speed") {
+    if (isUpstreamSticker(sticker)) return { done: false };
     setAnimation(sticker, row === "anim_clip" ? { clip: ANIMATION_DEFAULT.clip } : { speed: ANIMATION_DEFAULT.speed });
     return { done: true };
   }
   const lanes = rowLanes(found, row);
   if (!lanes) return { done: false };
-  if (isUpstreamSticker(sticker)) {
-    resetUpstream(state, sticker, lanes, context.upstream);
-    return { done: true, upstreamChanged: true };
-  }
+  if (isUpstreamSticker(sticker)) return { done: false, upstreamRevert: { sticker, lanes } };
   const frame = ownerFrame(sticker, playhead);
   const list = sticker.placement === "world" ? WORLD_STICKER_LANES : SKY_STICKER_LANES;
   for (const name of resetHandoff(state, sticker, lanes, context.handoff)) {
@@ -242,8 +233,8 @@ export function applyInspectorEdit(state, edit, context = {}) {
     return result(changed, { history: changed, stopPlayback: changed });
   }
   if (edit.type === "reset") {
-    const { done, upstreamChanged = false } = applyReset(state, found, edit.row, ctx);
-    return result(done, { history: done, upstreamChanged });
+    const { done, upstreamRevert = null } = applyReset(state, found, edit.row, ctx);
+    return result(done, { history: done, upstreamRevert });
   }
   return result(false);
 }

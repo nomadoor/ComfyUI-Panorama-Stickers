@@ -85,3 +85,28 @@ test("the pruning drops the overrides of elements no longer in their layers, onl
   assert.deepEqual(box.state.upstream.find((item) => item.layer === "scene_a").stickers.map((item) => item.id), ["sticker_1"]);
   assert.equal(setup({ list: null }).edits.prune(), false);
 });
+
+test("a row's reset takes several Lanes' overrides off in one change, and a commit after it writes nothing", () => {
+  const { box, edits, sticker } = setup();
+  setStickerPose(sticker("upstream:scene_a:sticker_1"), 0, { rot_deg: 40 });
+  edits.sync();
+  const writes = box.writes;
+  assert.equal(edits.revertSticker(sticker("upstream:scene_a:sticker_1"), ["direction", "roll"]), true);
+  assert.equal(box.writes, writes + 1, "one change");
+  const override = box.state.upstream.find((item) => item.layer === "scene_a").stickers.find((item) => item.id === "sticker_1");
+  assert.equal(Object.hasOwn(override, "direction"), false);
+  assert.equal(Object.hasOwn(override, "roll"), false);
+  assert.equal(sticker("upstream:scene_a:sticker_1").roll.value, 15, "the upstream value");
+  assert.equal(edits.sync(), false, "the upstream values are not written back as overrides");
+});
+
+test("the Timeline's new working copy of a layer goes in and is written back with the next sync", () => {
+  const { box, edits, layers } = setup();
+  const entry = layers.entries().find((item) => item.working.key === "scene_a");
+  const sceneState = { ...entry.working.sceneState, painting_visible: true };
+  assert.equal(edits.setWorking("scene_a", sceneState), true);
+  assert.equal(entry.working.sceneState, sceneState);
+  assert.equal(edits.setWorking("scene_gone", sceneState), false);
+  assert.equal(edits.sync(), true);
+  assert.equal(box.state.upstream.find((item) => item.layer === "scene_a").painting_visible, true);
+});

@@ -83,12 +83,23 @@ export function createUpstreamEdits({ records, setRecords, layers, fps }) {
     prune,
     // Delete of the working Stickers `stickers`: their layers' records delete them.
     deleteStickers: (stickers) => change((current) => upstreamDeletedRecords(current, stickers.map((sticker) => sticker.origin), fps())),
-    // "Revert to upstream" of the working Sticker `sticker`: all its overrides, or only its Lane `lane`.
-    revertSticker: (sticker, lane = null) => change((current) => upstreamRevertedRecords(current, sticker, lane)),
+    // "Revert to upstream" of the working Sticker `sticker`: all its overrides, or only its Lane `lanes`, or its Lanes
+    // `lanes` (a list: a row of the new inspector, docs/studio-ui.md "上流の物の編集") in one change.
+    revertSticker: (sticker, lanes = null) => change((current) => (
+      Array.isArray(lanes) ? lanes.reduce((next, lane) => upstreamRevertedRecords(next, sticker, lane), current) : upstreamRevertedRecords(current, sticker, lanes)
+    )),
     // "Revert" of the layer with `key`: its `scene` and painting follow upstream again.
     revertLayer: (key) => change((current) => upstreamLayerRevertedRecords(current, key)),
     // "Restore deleted" of the layer with `key`: its deleted elements show again.
     restoreDeleted: (key) => change((current) => upstreamRestoredRecords(current, key)),
+    // The Timeline's new working copy `sceneState` of the layer with `key` (timeline_actions.js, an edit's
+    // `upstream`), written back with the next sync(). Returns whether the layer is there.
+    setWorking(key, sceneState) {
+      const entry = layers.current().entries.find((item) => item.working?.key === key);
+      if (!entry) return false;
+      entry.working = { ...entry.working, sceneState };
+      return true;
+    },
     // The ends of the Clip ranges overridden in the working copies (upstreamOverriddenEnds), against this baseline:
     // what the Auto length counts. portMeta(index) is a layer's port media meta; `openClip` the one being dragged.
     overriddenEnds(working, portMeta, openClip = null) {

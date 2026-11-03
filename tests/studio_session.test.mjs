@@ -8,6 +8,9 @@ import { newWorldSceneSticker } from "../web_src/pano_editor_state.js";
 import { loadSceneState, sceneStateText } from "../web_src/pano_scene_state.js";
 import { createStudioSession, inspectorSelection } from "../web_src/studio/session.js";
 import { keyRow } from "../web_src/studio/timeline_actions.js";
+import { createStudioUpstream } from "../web_src/studio/upstream.js";
+
+globalThis.Image ??= class {};
 
 const file = (filename) => ({ kind: "file", filename, subfolder: "", storage: "input" });
 
@@ -590,4 +593,203 @@ test("the Camera button on a state whose Camera is null puts the default Camera 
   assert.deepEqual(session.state.camera.rotation.value, { yaw_deg: 30, pitch_deg: -10, roll_deg: 0 });
   assert.deepEqual(session.state.camera.fov, want.fov, "the default angle of view stays");
   assert.equal(session.state.camera.aspect, want.aspect);
+});
+
+// --- Upstream objects (docs/studio-ui.md "上流の物の編集"): edited in their working copies, written back as the
+// state's `upstream` records on each Undo step through the shared edits (pano_upstream_edits.js).
+
+const upLayer = {
+  version: 2,
+  id: "scene_up",
+  timeline: { fps: 24 },
+  stickers: [
+    sky("sky_1", { direction: { value: { yaw_deg: 10, pitch_deg: 0 } }, roll: { value: 5 } }),
+    { id: "board_1", placement: "world", source: file("board.png"), position: { value: [0, 0, -3] } },
+  ],
+};
+// A layer without a Scene id: only inherited.
+const inheritedLayer = { version: 2, timeline: { fps: 24 }, stickers: [sky("sky_9")] };
+
+function upstreamSession({ layers = [upLayer, inheritedLayer], records = [], list = null } = {}) {
+  let session = null;
+  const box = { list: list ?? layers.map((state) => ({ state, ui: {} })) };
+  const upstream = createStudioUpstream({
+    list: () => box.list,
+    linkType: () => "PANO_SCENE",
+    uiList: () => [],
+    state: () => session.state,
+    setRecords: (next) => session.setUpstreamRecords(next),
+    mediaSource: () => "",
+    mediaAssetSource: () => "",
+    revisionOf: () => "",
+    playing: () => false,
+  });
+  session = createStudioSession({ state: load({ upstream: records }), upstream });
+  const sticker = (id) => upstream.working().flatMap((layer) => layer.sceneState.stickers).find((item) => item.id === id) ?? null;
+  const record = () => session.state.upstream.find((item) => item.layer === "scene_up") ?? null;
+  const context = () => ({ playhead: 0, upstream: upstream.working() });
+  return { session, upstream, sticker, record, context, box };
+}
+
+const SKY_UP = "upstream:scene_up:sky_1";
+const BOARD_UP = "upstream:scene_up:board_1";
+
+test("an upstream object is selected by its working id and kept while its working copy is there", () => {
+  const { session, box } = upstreamSession();
+  assert.equal(session.selectObject(SKY_UP), true);
+  assert.equal(session.selection.row, SKY_UP);
+  assert.equal(session.selectObject("upstream:scene_up:nothing"), true, "a row no object has lets the selection go");
+  assert.equal(session.selection.row, null);
+  session.selectObject(BOARD_UP);
+  // A new result without it: the selection goes with it.
+  box.list = [{ state: { ...upLayer, stickers: [upLayer.stickers[0]] }, ui: {} }];
+  session.keepSelection();
+  assert.equal(session.selection.row, null);
+});
+
+test("an inspector edit of an upstream object writes only that field as an override, as one Undo step", () => {
+  const { session, sticker, record, context } = upstreamSession();
+  session.selectObject(BOARD_UP);
+  assert.equal(session.state.upstream.length, 0, "opening writes nothing");
+  const result = session.applyInspector(field(BOARD_UP, "position_x", 4), context());
+  assert.equal(result.history, true);
+  assert.deepEqual(record().stickers, [{ id: "board_1", placement: "world", position: { value: [4, 0, -3], keyframes: [] } }]);
+  assert.equal(session.canUndo, true);
+  session.undo();
+  assert.deepEqual(session.state.upstream, []);
+  assert.deepEqual(sticker(BOARD_UP).position.value, [0, 0, -3], "the working copy is made again from the records");
+  assert.equal(session.selection.row, BOARD_UP);
+  session.redo();
+  assert.deepEqual(sticker(BOARD_UP).position.value, [4, 0, -3]);
+});
+
+test("an inspector drag of an upstream object changes only its working copy; its cancel puts back the value grabbed", () => {
+  const { session, sticker, context } = upstreamSession();
+  session.applyInspector(field(BOARD_UP, "position_x", 7, "input"), context());
+  assert.deepEqual(sticker(BOARD_UP).position.value, [7, 0, -3]);
+  assert.deepEqual(session.state.upstream, [], "a live change writes no record");
+  const cancel = session.applyInspector({ ...field(BOARD_UP, "position_x", 7), phase: "cancel" }, context());
+  assert.equal(cancel.cancel, true);
+  assert.deepEqual(sticker(BOARD_UP).position.value, [0, 0, -3]);
+  assert.equal(session.canUndo, false);
+});
+
+test("a row's reset takes all its Lanes' overrides off as one step, and a commit after it writes nothing", () => {
+  const records = load({ upstream: [{ layer: "scene_up", fps: 24, stickers: [{ id: "sky_1", placement: "sky", direction: { value: { yaw_deg: 50, pitch_deg: 0 } }, roll: { value: 30 }, opacity: { value: 0.5 } }] }] }).upstream;
+  const { session, sticker, record, context } = upstreamSession({ records });
+  assert.equal(sticker(SKY_UP).roll.value, 30);
+  const result = session.applyInspector({ type: "reset", target: { kind: "sticker", id: SKY_UP }, row: "rotation" }, context());
+  assert.equal(result.changed, true);
+  assert.equal(result.history, true);
+  assert.deepEqual(Object.keys(record().stickers[0]).sort(), ["id", "opacity", "placement"]);
+  assert.equal(sticker(SKY_UP).roll.value, 5, "the upstream value");
+  assert.deepEqual(sticker(SKY_UP).direction.value, { yaw_deg: 10, pitch_deg: 0 });
+  const upstream = session.state.upstream;
+  session.applyInspector(field(SKY_UP, "opacity", 50), context());
+  assert.deepEqual(session.state.upstream, upstream, "the reset values are not written back as overrides");
+  session.undo();
+  assert.equal(sticker(SKY_UP).roll.value, 30, "one step brings both Lanes back");
+  assert.deepEqual(sticker(SKY_UP).direction.value, { yaw_deg: 50, pitch_deg: 0 });
+});
+
+test("Lock writes the upstream object's `locked` override; locked, it is not deleted or reverted", () => {
+  const records = load({ upstream: [{ layer: "scene_up", fps: 24, stickers: [{ id: "board_1", placement: "world", scale: { value: 3 } }] }] }).upstream;
+  const { session, sticker, record, context } = upstreamSession({ records });
+  session.selectObject(BOARD_UP);
+  assert.equal(session.toggleLock().changed, true);
+  assert.equal(record().stickers[0].locked, true);
+  assert.equal(sticker(BOARD_UP).locked, true);
+  assert.deepEqual(session.deleteSelectedObject(), { changed: false, notice: null });
+  assert.equal(session.revertSelected(context()).changed, false);
+  assert.equal(session.applyInspector(field(BOARD_UP, "position_x", 4), context()).changed, false);
+  session.undo();
+  assert.equal(sticker(BOARD_UP).locked, false);
+});
+
+test("Delete of an upstream object deletes it in its layer's record as one step and lets the selection go", () => {
+  const { session, sticker, record } = upstreamSession();
+  session.selectObject(SKY_UP);
+  assert.deepEqual(session.deleteSelectedObject(), { changed: true, notice: null });
+  assert.deepEqual(record().deleted, ["sky_1"]);
+  assert.equal(sticker(SKY_UP), null);
+  assert.equal(session.selection.row, null);
+  session.undo();
+  assert.ok(sticker(SKY_UP));
+  assert.deepEqual(session.state.upstream, []);
+});
+
+test("Back to source drops all the upstream object's overrides as one step", () => {
+  const records = load({ upstream: [{ layer: "scene_up", fps: 24, stickers: [{ id: "board_1", placement: "world", scale: { value: 3 }, visible: false }] }] }).upstream;
+  const { session, sticker, context } = upstreamSession({ records });
+  session.selectObject(BOARD_UP);
+  assert.equal(session.revertSelected(context()).changed, true);
+  assert.deepEqual(session.state.upstream, []);
+  assert.equal(sticker(BOARD_UP).scale.value, 1);
+  assert.equal(session.revertSelected(context()).changed, false, "nothing more to revert");
+});
+
+test("an object of a layer whose overrides cannot be kept is selected but not changed (Lock included)", () => {
+  const { session, sticker, context } = upstreamSession();
+  const id = "upstream:#1:sky_9";
+  assert.equal(session.selectObject(id), true);
+  assert.equal(session.toggleLock().changed, false);
+  assert.deepEqual(session.deleteSelectedObject(), { changed: false, notice: null });
+  assert.equal(session.revertSelected(context()).changed, false);
+  assert.equal(session.applyInspector(field(id, "opacity", 50), context()).changed, false);
+  assert.ok(sticker(id));
+  assert.deepEqual(session.state.upstream, []);
+});
+
+test("a stage drag of an upstream object changes its working copy; its end is one step, its cancel puts it back", () => {
+  const { session, sticker, record, upstream } = upstreamSession();
+  const move = (x) => session.gesture((draft) => {
+    const found = upstream.working().flatMap((layer) => layer.sceneState.stickers).find((item) => item.id === BOARD_UP);
+    found.position = { ...found.position, value: [x, 0, -3] };
+    return true;
+  }, (base) => ({ ...base }));
+  move(2);
+  assert.deepEqual(session.state.upstream, []);
+  session.cancelGesture();
+  assert.deepEqual(sticker(BOARD_UP).position.value, [0, 0, -3]);
+  move(5);
+  assert.equal(session.commitGesture().history, true);
+  assert.deepEqual(record().stickers[0].position.value, [5, 0, -3]);
+});
+
+test("the Timeline's edits of upstream rows go into the working copies, are written on commit, and its cancel puts them back", () => {
+  const { session, sticker, record, upstream } = upstreamSession();
+  const layer = upstream.timelineLayers()[0];
+  const hidden = { ...layer.sceneState, stickers: layer.sceneState.stickers.map((item) => (item.id === SKY_UP ? { ...item, visible: false } : item)) };
+  const live = session.applyTimeline({ kind: "state", state: session.state, upstream: { scene_up: hidden }, phase: "live", stopsPlayback: true });
+  assert.equal(live.changed, true);
+  assert.equal(sticker(SKY_UP).visible, false);
+  session.applyTimeline({ kind: "state", state: session.state, upstream: { scene_up: layer.sceneState }, phase: "cancel", stopsPlayback: true });
+  assert.equal(sticker(SKY_UP).visible, true);
+  assert.deepEqual(session.state.upstream, []);
+  session.applyTimeline({ kind: "state", state: session.state, upstream: { scene_up: hidden }, phase: "commit", stopsPlayback: true });
+  assert.deepEqual(record().stickers, [{ id: "sky_1", placement: "sky", visible: false }]);
+});
+
+test("the Timeline's layer Revert and Restore deleted change the records as one step each", () => {
+  const records = load({ upstream: [{ layer: "scene_up", fps: 24, deleted: ["board_1"], scene: { visible: false }, painting_visible: false }] }).upstream;
+  const { session, sticker, record } = upstreamSession({ records });
+  assert.equal(sticker(BOARD_UP), null);
+  assert.equal(session.applyTimeline({ kind: "restore-upstream-deleted", key: "scene_up" }).history, true);
+  assert.ok(sticker(BOARD_UP));
+  assert.deepEqual(record().deleted, []);
+  assert.equal(session.applyTimeline({ kind: "revert-upstream-layer", key: "scene_up" }).history, true);
+  assert.equal(record(), null, "a record left without overrides goes");
+  assert.equal(session.applyTimeline({ kind: "revert-upstream-layer", key: "scene_up" }).changed, false);
+  session.undo();
+  session.undo();
+  assert.equal(sticker(BOARD_UP), null);
+});
+
+test("each Undo step prunes the overrides of elements no longer upstream, and opening never does", () => {
+  const records = load({ upstream: [{ layer: "scene_up", fps: 24, deleted: ["gone_1"], stickers: [{ id: "gone_2", placement: "sky", opacity: { value: 0.5 } }] }] }).upstream;
+  const { session, record, context } = upstreamSession({ records });
+  assert.deepEqual(record().deleted, ["gone_1"]);
+  session.applyInspector(field(BOARD_UP, "position_x", 4), context());
+  assert.deepEqual(record().deleted, []);
+  assert.deepEqual(record().stickers.map((item) => item.id), ["board_1"]);
 });

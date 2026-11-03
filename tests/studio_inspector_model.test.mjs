@@ -320,7 +320,7 @@ test("an upstream element's overridden rows carry the mark, and their reset is o
   const { state, upstream } = upstreamFixture({ override: { id: "sticker_1", placement: "world", position: { value: [5, 5, 5], keyframes: [] } } });
   const card = model(state, { selection: { ids: ["upstream:scene_up:sticker_1"] }, upstream }).cards[0];
   assert.equal(card.kind, "world");
-  assert.match(card.note, /Upstream/);
+  assert.equal(card.note, "From scene_up", "without the Studio's name, its layer's key, as the Timeline's header");
   assert.deepEqual(values(row(card, "position")), [5, 5, 5]);
   assert.equal(row(card, "position").marked, true);
   assert.equal(row(card, "position").atDefault, false);
@@ -343,6 +343,16 @@ test("an element of an upstream layer whose overrides cannot be kept is shown wi
   const card = model(state, { selection: { ids: ["upstream:#0:sticker_1"] }, upstream }).cards[0];
   assert.ok(card.rows.length > 0);
   assert.ok(card.rows.every((item) => item.disabled));
+  assert.ok(card.rows.every((item) => item.tip === "Inherited only: edit it in its own Panorama Studio"));
+});
+
+// docs/studio-ui.md "上流の物の編集" "見せる": beside the card's title, the Timeline header's "From <the Studio's name>".
+test("an upstream element's card says which Studio it came from, as its Timeline group's header", () => {
+  const { state, upstream } = upstreamFixture();
+  const named = upstream.map((layer) => ({ ...layer, name: "Studio Up" }));
+  const card = model(state, { selection: { ids: ["upstream:scene_up:sticker_2"] }, upstream: named }).cards[0];
+  assert.equal(card.note, "From Studio Up");
+  assert.doesNotMatch(card.note, /Upstream/);
 });
 
 test("the Easing panel shows only while Keyframes are selected: the shared Easing, or mixed, and which preset is on", () => {

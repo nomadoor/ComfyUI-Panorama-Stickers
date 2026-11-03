@@ -239,7 +239,8 @@ export function workingSkyLayers(sceneState, frame, stickers, { media, paintLaye
   });
 }
 
-function mediaSize(media) {
+// The pixel size of a picture (a video, an image or a canvas).
+export function mediaSize(media) {
   return {
     width: Number(media.videoWidth || media.naturalWidth || media.width || 0),
     height: Number(media.videoHeight || media.naturalHeight || media.height || 0),

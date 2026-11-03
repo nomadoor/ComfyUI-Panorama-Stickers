@@ -1,7 +1,8 @@
 // What the selection's row names in the new UI (docs/studio-ui.md, the owner table's row of the selected row's
 // object): "camera", "scene", an own Sticker's id, or an upstream element's working id (`upstream:<key>:<id>`,
-// pano_upstream.js upstreamWorkingLayers). Each caller says whether it looks in the upstream layers: the bar at the
-// bottom center and the stage do not (upstream elements are read-only there), the inspector does. Pure.
+// pano_upstream.js upstreamWorkingLayers). Each caller gives the upstream layers it looks in: the bar at the bottom
+// center, the stage, the inspector and the session look in the working layers (docs/studio-ui.md "上流の物の編集").
+// Pure.
 import { cameraOf } from "./camera_state.js";
 
 // The working Sticker with the id `id`: the state's own, then, in the upstream working layers `upstream`, an upstream
