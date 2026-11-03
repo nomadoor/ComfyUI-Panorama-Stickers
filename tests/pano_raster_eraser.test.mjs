@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createDamageLog } from "../web_src/pano_paint_damage.js";
+import { pixelRangesMeet, rasterObjectPixelRanges } from "../web_src/pano_paint_display.js";
 import { rasterEraserDisplay } from "../web_src/pano_raster_eraser.js";
 import { createLayerTextures } from "../web_src/pano_three_view.js";
 import { createRasterCanvas, fakeGpu, withRasterCanvas } from "./raster_canvas.mjs";
@@ -95,3 +96,34 @@ test("a raster object shows the live eraser where it takes its pixels, uploading
   });
   assert.deepEqual(shown, ["base", "base", "erased", "erased", "erased", "base", "erased", "base", "erased", "base", "erased", "erased", "erased", "base"]);
 }));
+
+test("the live eraser reaches the part of a scaled or turned raster object outside its untransformed box", () => withRasterCanvas(() => {
+  // Scaled 2 about its box's center (130, 60): it covers x 38..222 and y 0..120.
+  const canvas = createRasterCanvas(W, H);
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "rgba(40,160,220,0.8)";
+  ctx.fillRect(40, 10, 180, 100);
+  const scaled = { ...item(), transform: { du: 0, dv: 0, rot_deg: 0, scale: 2 } };
+  const layer = rasterEraserDisplay({ log: createDamageLog(), base: null }, canvas, scaled, previewer()([[200, 60], [204, 60]]), surface);
+  assert.notEqual(layer.media, canvas, "the eraser right of x 176 takes its pixels");
+  // Turned 90°: its box of 92 x 60 px stands 60 x 92 px, over y 14..106.
+  const tall = createRasterCanvas(W, H);
+  const tallCtx = tall.getContext("2d");
+  tallCtx.fillStyle = "rgba(40,160,220,0.8)";
+  tallCtx.fillRect(100, 14, 60, 92);
+  const turned = { ...item(), transform: { du: 0, dv: 0, rot_deg: 90, scale: 1 } };
+  const tallLayer = rasterEraserDisplay({ log: createDamageLog(), base: null }, tall, turned, previewer()([[130, 100], [134, 100]]), surface);
+  assert.notEqual(tallLayer.media, tall, "the eraser below y 90 takes its pixels");
+}));
+
+test("the pixels of a raster object across the seam are two ranges, and a box meets either", () => {
+  const across = { bbox: { u0: 0.9, v0: 0.4, u1: 1.0, v1: 0.5 }, transform: { du: 0.05, dv: 0, rot_deg: 0, scale: 1 } };
+  const ranges = rasterObjectPixelRanges(across, 400, 200);
+  assert.deepEqual(ranges, [{ x0: 380, y0: 80, x1: 400, y1: 100 }, { x0: 0, y0: 80, x1: 20, y1: 100 }]);
+  const box = (minX, maxX) => ({ minX, maxX, minY: 85, maxY: 90 });
+  assert.equal(pixelRangesMeet(ranges, box(395, 399)), true, "the right one");
+  assert.equal(pixelRangesMeet(ranges, box(0, 4)), true, "the left one");
+  assert.equal(pixelRangesMeet(ranges, box(20, 379)), false, "between them");
+  assert.equal(pixelRangesMeet(ranges, { minX: 0, maxX: 399, minY: 100, maxY: 120 }), false, "below them");
+  assert.equal(pixelRangesMeet(ranges, box(19, 19)), true, "the last column of the left one");
+});

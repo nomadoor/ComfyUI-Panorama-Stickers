@@ -1,11 +1,9 @@
 import {
   DEG2RAD,
   RAD2DEG,
-  add,
   cameraBasis,
   clamp,
-  mul,
-  norm,
+  tangentDirection,
   wrapYaw,
 } from "./pano_camera_math.js";
 import {
@@ -59,10 +57,7 @@ function stickerFrame(item) {
 
 function stickerDirection(frame, x, y) {
   if (frame.curve !== undefined) return lensAxesDirection({ fwd: frame.centerDir, right: frame.right, up: frame.up }, x, y, frame.curve);
-  return norm(add(
-    add(frame.centerDir, mul(frame.right, x)),
-    mul(frame.up, y),
-  ));
+  return tangentDirection({ fwd: frame.centerDir, right: frame.right, up: frame.up }, x, y);
 }
 
 export function buildStickerGeometry(item, projection) {
@@ -150,9 +145,16 @@ export function pickStickerAtPoint(items, selectedId, point, projection) {
   return null;
 }
 
-// null where the projection has no ray (past a lens Camera's limit, pano_editor_view.js viewProjection).
+// The direction under the screen point `point` of `projection` (a viewProjection()), or null where it has none (past a
+// lens Camera's limit): what a sky image's move and a paint stroke group's move put their center at.
+export function directionAtScreenPoint(projection, point) {
+  return projection.ray(point.x, point.y) || null;
+}
+
+// The sky Sticker `item` with its center at the direction under `point` (directionAtScreenPoint), its roll kept; null
+// where there is none (past a lens Camera's limit, pano_editor_view.js viewProjection).
 export function moveStickerToScreenPoint(item, point, projection) {
-  const direction = projection.ray(point.x, point.y);
+  const direction = directionAtScreenPoint(projection, point);
   if (!direction) return null;
   return {
     ...item,

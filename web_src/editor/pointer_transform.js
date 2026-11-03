@@ -1,9 +1,10 @@
 // The pointer gestures that transform one canvas item: move, scale (both axes, "scale_x", "scale_y") and
 // rotate of a sky Sticker or the shot ("move", "scale", "scale_x", "scale_y", "rotate"), of a stroke group
-// ("move_stroke_group", "scale_stroke_group", "rotate_stroke_group") and of a raster object
+// ("move_stroke_group", "scale_stroke_group") and of a raster object
 // ("move_raster_object", "scale_raster_object"). pointer_input.js decides from the handle under the press
 // which one starts. Letting go of any item edit that moved, a multi-selection move (pointer_multi_move.js)
 // too, is one Undo step (endTransform).
+import { yawPitchToDir } from "../pano_camera_math.js";
 import { deriveCutoutAspectLabelFromFov, deriveHorizontalFovDeg, getCutoutCameraParams } from "../pano_cutout_view_math.js";
 import { CAMERA_SHOT_ID } from "../pano_editor_state.js";
 import { DRAW_REASON } from "../pano_frame_scheduler.js";
@@ -48,33 +49,46 @@ export function createPointerTransform(deps) {
     return cloneJson(getRasterObjectList().find((entry) => String(entry?.id || "") === parseRasterObjectSelectionId(item.rasterObjectId || item.id || "")));
   }
 
-  // Writes the yaw and pitch that put item at canvas point (x, y): through the active shot in a shot
-  // editor's Frame view, the Unwrap rect, or the view. Returns false when the Frame view has no shot, rect
-  // or direction there, and writes nothing.
-  function writePoseAtScreenPoint(item, x, y) {
+  // The yaw and pitch at canvas point (x, y) ({ yaw_deg, pitch_deg }): through the active shot in a shot editor's
+  // Frame view (held in its rect), the Unwrap rect (the latitude held in -90..90), or the view; null when the Frame
+  // view has no shot, rect or direction there. What a sky Sticker's move and a stroke group's move put their center at.
+  function poseAtScreenPoint(x, y) {
     if (editor.mode === "frame" && shotEditor) {
       const shot = getActiveCutoutShot();
       const rect = getFrameViewRect(shot);
-      if (!shot || !rect) return false;
+      if (!shot || !rect) return null;
       const framePoint = {
         x: clamp((x - rect.x) / Math.max(1, rect.w), 0, 1),
         y: clamp((y - rect.y) / Math.max(1, rect.h), 0, 1),
       };
       const dir = frameLocalPointToWorldDir(shot, framePoint);
-      if (!dir) return false;
+      if (!dir) return null;
       const yp = dirToYawPitch(dir);
-      writePose(item, { yaw_deg: yp.yaw, pitch_deg: yp.pitch });
-    } else if (editor.mode === "unwrap") {
+      return { yaw_deg: yp.yaw, pitch_deg: yp.pitch };
+    }
+    if (editor.mode === "unwrap") {
       const r = getUnwrapRect();
       const nx = clamp((x - r.x) / Math.max(r.w, 1), 0, 1);
       const ny = clamp((y - r.y) / Math.max(r.h, 1), 0, 1);
-      writePose(item, { yaw_deg: wrapYaw(nx * 360 - 180), pitch_deg: clamp(90 - ny * 180, -90, 90) });
-    } else {
-      const dir = screenToWorldDir(x, y);
-      const yp = dirToYawPitch(dir);
-      writePose(item, { yaw_deg: yp.yaw, pitch_deg: yp.pitch });
+      return { yaw_deg: wrapYaw(nx * 360 - 180), pitch_deg: clamp(90 - ny * 180, -90, 90) };
     }
+    const yp = dirToYawPitch(screenToWorldDir(x, y));
+    return { yaw_deg: yp.yaw, pitch_deg: yp.pitch };
+  }
+
+  // Writes the yaw and pitch that put item at canvas point (x, y) (poseAtScreenPoint). Returns false when there is
+  // none there, and writes nothing.
+  function writePoseAtScreenPoint(item, x, y) {
+    const pose = poseAtScreenPoint(x, y);
+    if (!pose) return false;
+    writePose(item, pose);
     return true;
+  }
+
+  // The offset of the press `p` from a stroke group's center direction on the screen (its geometry's `anchor`), or null
+  // when that has no screen point (the press only selects; docs/studio-ui.md "ペイントのまとまり" "動かす").
+  function strokeGroupOffset(geom, p) {
+    return geom?.anchor ? { x: p.x - geom.anchor.x, y: p.y - geom.anchor.y } : null;
   }
 
   // ---- Starting on a handle of the selected item (selGeom its geometry, h the handle).
@@ -128,34 +142,25 @@ export function createPointerTransform(deps) {
     canvas.setPointerCapture(e.pointerId);
   }
 
+  // A stroke group has no rotate handle here (hit_test.js handleHit returns none for it; the new editor turns it).
   function startRotate(e, p, selected, selGeom) {
-    editor.interaction = isStrokeGroupItem(selected)
-      ? {
-        kind: "rotate_stroke_group",
-        item: selected,
-        center: selGeom.center,
-        startAng: Math.atan2(p.y - selGeom.center.y, p.x - selGeom.center.x),
-        snapshot: strokeGroupSnapshot(selected),
-        frameSnapshot: strokeGroupFrameSnapshot(selected),
-      }
-      : {
-        kind: "rotate",
-        item: selected,
-        center: selGeom.center,
-        startRot: Number(poseOf(selected).rot_deg || poseOf(selected).roll_deg || 0),
-        startAng: Math.atan2(p.y - selGeom.center.y, p.x - selGeom.center.x),
-      };
+    editor.interaction = {
+      kind: "rotate",
+      item: selected,
+      center: selGeom.center,
+      startRot: Number(poseOf(selected).rot_deg || poseOf(selected).roll_deg || 0),
+      startAng: Math.atan2(p.y - selGeom.center.y, p.x - selGeom.center.x),
+    };
     updateCursor(p);
     canvas.setPointerCapture(e.pointerId);
   }
 
   function startMove(e, p, selected, selGeom) {
     if (isStrokeGroupItem(selected)) {
-      const startUv = editUvAt(p);
       editor.interaction = {
         kind: "move_stroke_group",
         item: selected,
-        startUv,
+        offset: strokeGroupOffset(selGeom, p),
         snapshot: strokeGroupSnapshot(selected),
         frameSnapshot: strokeGroupFrameSnapshot(selected),
       };
@@ -189,10 +194,8 @@ export function createPointerTransform(deps) {
     editor.interaction = {
       kind: isStrokeGroupItem(hit.item) ? "move_stroke_group" : (isRasterObjectItem(hit.item) ? "move_raster_object" : "move"),
       item: hit.item,
-      offset: { x: p.x - hit.geom.center.x, y: p.y - hit.geom.center.y },
-      startUv: (isStrokeGroupItem(hit.item) || isRasterObjectItem(hit.item))
-        ? editUvAt(p)
-        : null,
+      offset: isStrokeGroupItem(hit.item) ? strokeGroupOffset(hit.geom, p) : { x: p.x - hit.geom.center.x, y: p.y - hit.geom.center.y },
+      startUv: isRasterObjectItem(hit.item) ? editUvAt(p) : null,
       snapshot: isStrokeGroupItem(hit.item)
         ? strokeGroupSnapshot(hit.item)
         : (isRasterObjectItem(hit.item)
@@ -218,12 +221,15 @@ export function createPointerTransform(deps) {
     requestDraw({ localOnly: true });
   }
 
+  // A stroke group moves as a sky Sticker does (docs/studio-ui.md "ペイントのまとまり" "動かす"): its center direction goes
+  // where the pointer less the press's offset points (poseAtScreenPoint), and its points go with it on the sphere.
+  // Without an offset (its center direction had no screen point) the press only selected it.
   function moveStrokeGroup(it, p) {
-    const currentUv = editUvAt(p);
-    if (!currentUv || !it.startUv) return;
-    const du = shortestWrappedDelta(Number(currentUv.u || 0), Number(it.startUv.u || 0));
-    const dv = Number(currentUv.v || 0) - Number(it.startUv.v || 0);
-    if (applyStrokeGroupOffset(it.item?.actionGroupId, du, dv, it.snapshot, it.item?.layerKind, it.frameSnapshot)) {
+    if (!it.offset) return;
+    const pose = poseAtScreenPoint(p.x - it.offset.x, p.y - it.offset.y);
+    if (!pose) return;
+    const centerTo = yawPitchToDir(pose.yaw_deg, pose.pitch_deg);
+    if (applyStrokeGroupOffset(it.item?.actionGroupId, centerTo, it.snapshot, it.item?.layerKind, it.frameSnapshot)) {
       markPaintStrokeVisualsDirty({ rebuildPaintEngine: false });
       requestDraw({ localOnly: true, reason: DRAW_REASON.PAINT });
     }
@@ -250,16 +256,7 @@ export function createPointerTransform(deps) {
 
   function scaleStrokeGroup(it, p) {
     const ratio = pointerScaleRatio(it.center, it.startDist, p);
-    if (applyStrokeGroupTransform(it.item?.actionGroupId, ratio, 0, it.snapshot, it.item?.layerKind, it.frameSnapshot)) {
-      markPaintStrokeVisualsDirty({ rebuildPaintEngine: false });
-      requestDraw({ localOnly: true, reason: DRAW_REASON.PAINT });
-    }
-  }
-
-  function rotateStrokeGroup(it, p, e) {
-    let delta = (Math.atan2(p.y - it.center.y, p.x - it.center.x) - Number(it.startAng || 0)) * RAD2DEG;
-    if (e.shiftKey) delta = Math.round(delta / 45) * 45;
-    if (applyStrokeGroupTransform(it.item?.actionGroupId, 1, delta, it.snapshot, it.item?.layerKind, it.frameSnapshot)) {
+    if (applyStrokeGroupTransform(it.item?.actionGroupId, ratio, it.snapshot, it.item?.layerKind, it.frameSnapshot)) {
       markPaintStrokeVisualsDirty({ rebuildPaintEngine: false });
       requestDraw({ localOnly: true, reason: DRAW_REASON.PAINT });
     }
@@ -308,8 +305,7 @@ export function createPointerTransform(deps) {
     if (!editor.interaction.moved) return;
     let compositeChanged = false;
     if (editor.interaction.kind === "move_stroke_group"
-      || editor.interaction.kind === "scale_stroke_group"
-      || editor.interaction.kind === "rotate_stroke_group") {
+      || editor.interaction.kind === "scale_stroke_group") {
       compositeChanged = true;
     }
     if (editor.interaction.kind === "move_raster_object" || editor.interaction.kind === "scale_raster_object") {
@@ -322,7 +318,7 @@ export function createPointerTransform(deps) {
       compositeChanged = true;
     }
     if (compositeChanged) {
-      const strokeDragKinds = ["move_stroke_group", "scale_stroke_group", "rotate_stroke_group"];
+      const strokeDragKinds = ["move_stroke_group", "scale_stroke_group"];
       const isStrokeDrag = strokeDragKinds.includes(editor.interaction.kind)
         || (editor.interaction.kind === "move_multi" && Array.isArray(editor.interaction.strokeSnapshots) && editor.interaction.strokeSnapshots.length);
       if (isStrokeDrag) {
@@ -364,7 +360,7 @@ export function createPointerTransform(deps) {
   function gestureRecords(it) {
     switch (it.kind) {
       case "move": case "scale": case "scale_x": case "scale_y": case "rotate":
-      case "move_stroke_group": case "scale_stroke_group": case "rotate_stroke_group":
+      case "move_stroke_group": case "scale_stroke_group":
       case "move_raster_object": case "scale_raster_object":
         return itemRecords(it.item);
       case "move_multi": return it.items.flatMap(itemRecords);
@@ -420,9 +416,9 @@ export function createPointerTransform(deps) {
         syncSidePanelControls, updateCursor, updateSelectionMenu, writePose,
       } = api);
     },
-    editUvAt, strokeGroupSnapshot, strokeGroupFrameSnapshot, rasterObjectSnapshot, writePoseAtScreenPoint,
+    editUvAt, strokeGroupSnapshot, strokeGroupFrameSnapshot, rasterObjectSnapshot, poseAtScreenPoint, writePoseAtScreenPoint,
     startScale, startAxisScale, startRotate, startMove, startHitMove,
-    moveItem, moveStrokeGroup, moveRasterObject, scaleRasterObject, scaleStrokeGroup, rotateStrokeGroup, scaleItem,
+    moveItem, moveStrokeGroup, moveRasterObject, scaleRasterObject, scaleStrokeGroup, scaleItem,
     rotateItem, endTransform, takeGestureSnapshot, restoreGestureSnapshot,
   };
 }

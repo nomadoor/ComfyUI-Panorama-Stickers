@@ -5,8 +5,8 @@ from PIL import Image
 
 from comfyui_pano_suite.core.cutout import build_cutout_sampling_map, cutout_from_erp, sample_cutout_from_sampling_map
 from comfyui_pano_suite.core.painting import (
-    _uv_bbox_to_pixels,
     painting_state_has_renderables,
+    raster_object_pixel_ranges,
     render_painting_to_cutout,
 )
 
@@ -153,17 +153,14 @@ def test_cutout_sampling_map_matches_direct_cutout_render():
     assert np.allclose(direct, mapped, atol=1e-5)
 
 
-def test_uv_bbox_to_pixels_keeps_thin_non_wrapping_bbox_non_wrapped():
-    x0, y0, x1, y1, dst_w, dst_h = _uv_bbox_to_pixels(
-        {"u0": 0.1001, "v0": 0.2, "u1": 0.1002, "v1": 0.4},
-        {"du": 0.0, "dv": 0.0},
+def test_a_thin_raster_box_covers_one_pixel_and_does_not_wrap():
+    ranges = raster_object_pixel_ranges(
+        {"bbox": {"u0": 0.1001, "v0": 0.2, "u1": 0.1002, "v1": 0.4}, "transform": {"du": 0.0, "dv": 0.0}},
         8,
         8,
     )
 
-    assert x0 == x1
-    assert dst_w == 1
-    assert dst_h >= 1
+    assert ranges == [(0, 1, 1, 4)]
 
 
 def test_render_painting_to_cutout_ignores_stale_painting_layer_payload():

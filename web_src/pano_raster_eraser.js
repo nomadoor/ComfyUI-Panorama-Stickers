@@ -1,38 +1,7 @@
 // A raster object of the paint as the editor's views draw it while the paint eraser is drawn
 // (editor/paint_layers.js buildEditorViewPaintLayers): its ERP canvas with the live eraser cut out of it.
 import { clamp } from "./pano_math.js";
-
-// A raster object's approximate box on an ERP of width x height ({ minX, maxX, minY, maxY, wraps }), or null.
-export function rasterObjectErpBounds(item, width, height) {
-  if (!item?.bbox) return null;
-  const bbox = item.bbox;
-  const tf = item.transform || {};
-  const u0 = Number(bbox.u0 || 0) + Number(tf.du || 0);
-  const u1 = Number(bbox.u1 || 0) + Number(tf.du || 0);
-  const v0 = Number(bbox.v0 || 0) + Number(tf.dv || 0);
-  const v1 = Number(bbox.v1 || 0) + Number(tf.dv || 0);
-  return {
-    minX: Math.floor((((u0 % 1) + 1) % 1) * width),
-    maxX: Math.ceil((((u1 % 1) + 1) % 1) * width),
-    minY: Math.floor(clamp(v0, 0, 1) * height),
-    maxY: Math.ceil(clamp(v1, 0, 1) * height),
-    wraps: (u1 - u0) >= 1 || u0 < 0 || u1 > 1,
-  };
-}
-
-export function erpBoundsIntersect(a, b, width) {
-  if (!a || !b) return false;
-  const split = (box) => {
-    if (!box.wraps) return [box];
-    return [
-      { minX: 0, maxX: box.maxX, minY: box.minY, maxY: box.maxY, wraps: false },
-      { minX: box.minX, maxX: width - 1, minY: box.minY, maxY: box.maxY, wraps: false },
-    ];
-  };
-  const aa = split(a);
-  const bb = split(b);
-  return aa.some((x) => bb.some((y) => !(x.maxX < y.minX || y.maxX < x.minX || x.maxY < y.minY || y.maxY < x.minY)));
-}
+import { pixelRangesMeet, rasterObjectPixelRanges } from "./pano_paint_display.js";
 
 // A raster object as the views draw it ({ media, revision, changed }): its ERP canvas (sourceCanvas), or a
 // canvas with the live eraser cut out of it where the eraser takes some of its pixels. `display` is the raster
@@ -49,11 +18,11 @@ export function rasterEraserDisplay(display, sourceCanvas, item, previewInfo, cr
   }
   const width = Number(sourceCanvas.width || 0);
   const height = Number(sourceCanvas.height || 0);
-  const objectBounds = previewInfo?.surface?.canvas && width >= 1 && height >= 1
-    ? rasterObjectErpBounds(item, width, height)
-    : null;
+  // The eraser reaches it where its bounds meet the pixels the raster object covers (pano_paint_display.js
+  // rasterObjectPixelRanges); one without a box is always reached.
+  const ranges = item?.bbox ? rasterObjectPixelRanges(item, width, height) : null;
   const reaches = !!previewInfo?.surface?.canvas && width >= 1 && height >= 1
-    && !(objectBounds && !erpBoundsIntersect(objectBounds, previewInfo.bounds, width));
+    && (!ranges || pixelRangesMeet(ranges, previewInfo.bounds));
   let touched = false;
   if (reaches) {
     const eraser = previewInfo.surface.canvas;

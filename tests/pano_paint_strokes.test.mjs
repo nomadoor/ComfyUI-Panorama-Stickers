@@ -3,8 +3,11 @@ import test from "node:test";
 import { normalizePaintingState } from "../web_src/pano_paint_types.js";
 import {
   brushPresetIdForTool, brushStrokeSize, commitPaintStroke, ensurePaintGroup, erpPointOfDirection, freehandStrokeRecord,
-  lassoFillStrokeRecord, nextPaintZIndex, paintTargetDescriptor, syncPaintGroups, takesStrokePoint,
+  createRasterSurface, erasePaint, lassoFillStrokeRecord, nextPaintZIndex, paintTargetDescriptor, rasterizeStrokeToSurface, strokeGroupFrame,
+  syncPaintGroups, takesStrokePoint,
 } from "../web_src/pano_paint_strokes.js";
+import { turnPaintOffset } from "../web_src/pano_paint_display.js";
+import { withRasterCanvas } from "./raster_canvas.mjs";
 
 // The lower paint strokes (web_src/pano_paint_strokes.js): the record a stroke gets and how it goes into the painting,
 // which the old editor and the new UI share (docs/editor-architecture.md, docs/studio-ui.md "ペイントの道具").
@@ -85,3 +88,128 @@ test("the groups follow the strokes: one without strokes goes, a missing one com
   assert.deepEqual(groups.map((group) => [group.actionGroupId, group.z_index]), [["b", 3]]);
   assert.equal(painting.groups, groups);
 });
+
+// --- The eraser's reach over a turned stroke group (docs/studio-ui.md "ペイントのまとまり" "選んだ形"): from its points.
+
+// Eleven points on a line 0.2 long through (0.5, 0.5), turned 45° on the paint plane.
+const turnedLine = () => Array.from({ length: 11 }, (_, k) => {
+  const [du, dv] = turnPaintOffset((k - 5) * 0.02, 0, 1, 45);
+  return { u: 0.5 + du, v: 0.5 + dv };
+});
+const lineStroke = (points) => ({ id: "s1", actionGroupId: "g1", layerKind: "paint", toolKind: "pen", size: 10, opacity: 1, color: { r: 1, g: 0, b: 0, a: 1 }, targetSpace: { kind: "ERP_GLOBAL" }, geometry: { geometryKind: "freehand_open", points, rawPoints: points, processedPoints: points } });
+
+test("the eraser reaches the end of a turned stroke group, wherever its frame lies", () => withRasterCanvas(() => {
+  const W = 256;
+  const H = 128;
+  const points = turnedLine();
+  const end = points[10];
+  const painting = normalizePaintingState({ groups: [{ id: "g1", actionGroupId: "g1", z_index: 0, rot_deg: 45 }], paint: { strokes: [lineStroke(points)] } });
+  // A lasso eraser: a square 8 px across around the line's far end.
+  const square = [[-4, -4], [4, -4], [4, 4], [-4, 4]].map(([x, y]) => ({ u: end.u + x / W, v: end.v + y / H }));
+  const eraser = { ...lineStroke(square), id: "e1", toolKind: "eraser", geometry: { geometryKind: "lasso_fill", points: square } };
+  // The group's pixels are read only when the eraser's bounds meet the group's: that is what is pinned here.
+  const asked = [];
+  erasePaint(painting, eraser, {
+    descriptor: { width: W, height: H },
+    groupStrokes: (gid) => painting.paint.strokes.filter((stroke) => stroke.actionGroupId === gid),
+    groupFrame: (group, strokes) => strokeGroupFrame(strokes, undefined, group.rot_deg),
+    groupCanvas: (gid) => {
+      asked.push(gid);
+      return null;
+    },
+    rasterCanvas: () => null,
+    topZ: () => 0,
+  });
+  assert.deepEqual(asked, ["g1"]);
+}));
+
+test("the eraser reaches a stroke group across the seam on either side, and not one it does not touch", () => withRasterCanvas(() => {
+  const W = 256;
+  const H = 128;
+  const points = [{ u: 0.97, v: 0.5 }, { u: 0.99, v: 0.5 }, { u: 0.01, v: 0.5 }, { u: 0.03, v: 0.5 }];
+  const asked = (eraserU) => {
+    const painting = normalizePaintingState({ groups: [{ id: "g1", actionGroupId: "g1", z_index: 0 }], paint: { strokes: [lineStroke(points)] } });
+    const square = [[-3, -3], [3, -3], [3, 3], [-3, 3]].map(([x, y]) => ({ u: eraserU + x / W, v: 0.5 + y / H }));
+    const eraser = { ...lineStroke(square), id: "e1", toolKind: "eraser", geometry: { geometryKind: "lasso_fill", points: square } };
+    const seen = [];
+    erasePaint(painting, eraser, {
+      descriptor: { width: W, height: H },
+      groupStrokes: (gid) => painting.paint.strokes.filter((stroke) => stroke.actionGroupId === gid),
+      groupFrame: (group, strokes) => strokeGroupFrame(strokes, undefined, group.rot_deg),
+      groupCanvas: (gid) => {
+        seen.push(gid);
+        return null;
+      },
+      rasterCanvas: () => null,
+      topZ: () => 0,
+    });
+    return seen;
+  };
+  assert.deepEqual(asked(0.985), ["g1"]);
+  assert.deepEqual(asked(0.02), ["g1"]);
+  assert.deepEqual(asked(0.5), []);
+}));
+
+test("the eraser reaches a stroke group that goes all the way round, wherever it touches it", () => withRasterCanvas(() => {
+  const W = 256;
+  const H = 128;
+  // A thick horizon stroke all the way round: with its pad its range is wider than one turn.
+  const points = Array.from({ length: 100 }, (_, k) => ({ u: (0.46 + k * 0.01) % 1, v: 0.5 }));
+  const painting = normalizePaintingState({ groups: [{ id: "g1", actionGroupId: "g1", z_index: 0 }], paint: { strokes: [{ ...lineStroke(points), size: 103 }] } });
+  for (const eraserU of [0.1, 0.5, 0.7, 0.95]) {
+    const square = [[-3, -3], [3, -3], [3, 3], [-3, 3]].map(([x, y]) => ({ u: eraserU + x / W, v: 0.5 + y / H }));
+    const eraser = { ...lineStroke(square), id: "e1", toolKind: "eraser", geometry: { geometryKind: "lasso_fill", points: square } };
+    const seen = [];
+    erasePaint(painting, eraser, {
+      descriptor: { width: W, height: H },
+      groupStrokes: (gid) => painting.paint.strokes.filter((stroke) => stroke.actionGroupId === gid),
+      groupFrame: (group, strokes) => strokeGroupFrame(strokes, undefined, group.rot_deg),
+      groupCanvas: (gid) => {
+        seen.push(gid);
+        return null;
+      },
+      rasterCanvas: () => null,
+      topZ: () => 0,
+    });
+    assert.deepEqual(seen, ["g1"], `the eraser at u ${eraserU}`);
+  }
+}));
+
+test("what the eraser reaches of a stamp at a capped row, or over the seam, goes the whole way across", () => withRasterCanvas(() => {
+  const W = 256;
+  const H = 128;
+  const dot = (u, v) => ({ ...lineStroke([{ u, v }]), radiusModel: "erp_uv_norm", radiusValue: 4 / W });
+  for (const [label, u, v] of [["a capped row", 0.5, 0.004], ["over the seam", 0.002, 0.5]]) {
+    const surface = createRasterSurface(W, H, { readback: true });
+    const box = rasterizeStrokeToSurface(surface, dot(u, v), { w: W, h: H });
+    assert.equal(box.x0, 0, label);
+    assert.equal(box.x1, W, label);
+  }
+  // At the equator, away from the seam, it stays a stamp wide.
+  const surface = createRasterSurface(W, H, { readback: true });
+  const box = rasterizeStrokeToSurface(surface, dot(0.5, 0.5), { w: W, h: H });
+  assert.ok(box.x1 - box.x0 < 20, `${box.x0}..${box.x1}`);
+}));
+
+test("the eraser reaches a stroke group near the pole from the other side of the pole on the same row", () => withRasterCanvas(() => {
+  const W = 256;
+  const H = 128;
+  const points = [{ u: 0.2, v: 0.01 }, { u: 0.21, v: 0.01 }];
+  // A brush 4 px tall on this ERP: its stamps on that row go all the way round (stampHalfWidthPx at its cap).
+  const painting = normalizePaintingState({ groups: [{ id: "g1", actionGroupId: "g1", z_index: 0 }], paint: { strokes: [{ ...lineStroke(points), radiusModel: "erp_uv_norm", radiusValue: 4 / W }] } });
+  const square = [[-2, -1], [2, -1], [2, 1], [-2, 1]].map(([x, y]) => ({ u: 0.7 + x / W, v: 0.01 + y / H }));
+  const eraser = { ...lineStroke(square), id: "e1", toolKind: "eraser", geometry: { geometryKind: "lasso_fill", points: square } };
+  const asked = [];
+  erasePaint(painting, eraser, {
+    descriptor: { width: W, height: H },
+    groupStrokes: (gid) => painting.paint.strokes.filter((stroke) => stroke.actionGroupId === gid),
+    groupFrame: (group, strokes) => strokeGroupFrame(strokes, undefined, group.rot_deg),
+    groupCanvas: (gid) => {
+      asked.push(gid);
+      return null;
+    },
+    rasterCanvas: () => null,
+    topZ: () => 0,
+  });
+  assert.deepEqual(asked, ["g1"]);
+}));
