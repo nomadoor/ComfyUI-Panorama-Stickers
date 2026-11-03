@@ -18846,7 +18846,26 @@ function S3({ presented: e, background: t = nc, stickers: n = [] } = {}) {
   const a = t === pr, s = r.includes(pr);
   return a && s ? { status: pr, detail: "mixed" } : a ? { status: pr, detail: "background" } : s ? { status: pr, detail: "stickers" } : { status: nc, detail: "" };
 }
-const rc = Math.PI / 180, Ki = (e, t, n) => e + (t - e) * n, Yo = [
+function _i(e, t) {
+  let n = Number(e || 0) - Number(t || 0);
+  for (; n > 0.5; ) n -= 1;
+  for (; n < -0.5; ) n += 1;
+  return n;
+}
+function Mi(e, t = 0) {
+  const n = Math.atan2(e.x, e.z), r = Math.asin(Ve(e.y, -1, 1));
+  return {
+    targetKind: "ERP_GLOBAL",
+    u: (n / (2 * Math.PI) + 0.5 + 1) % 1,
+    v: Ve(0.5 - r / Math.PI, 0, 1),
+    t: Number(t || 0)
+  };
+}
+function Yo(e) {
+  const t = (Number(e.u || 0) - 0.5) * (2 * Math.PI), n = (0.5 - Number(e.v || 0)) * Math.PI, r = Math.cos(n);
+  return { x: r * Math.sin(t), y: Math.sin(n), z: r * Math.cos(t) };
+}
+const rc = Math.PI / 180, Ki = (e, t, n) => e + (t - e) * n, qo = [
   { id: "green", label: "Green", color: { r: 0, g: 1, b: 0, a: 1 } },
   { id: "red", label: "Red", color: { r: 1, g: 0, b: 0, a: 1 } },
   { id: "blue", label: "Blue", color: { r: 0, g: 0, b: 1, a: 1 } },
@@ -18857,7 +18876,7 @@ function qn(e, t = null) {
   const n = t == null ? Number((e == null ? void 0 : e.a) ?? 1) : Number(t);
   return `rgba(${Math.round(Ve(Number((e == null ? void 0 : e.r) ?? 0), 0, 1) * 255)}, ${Math.round(Ve(Number((e == null ? void 0 : e.g) ?? 0), 0, 1) * 255)}, ${Math.round(Ve(Number((e == null ? void 0 : e.b) ?? 0), 0, 1) * 255)}, ${Ve(n, 0, 1)})`;
 }
-function qo(e, t, n = 0.015) {
+function Xo(e, t, n = 0.015) {
   return !e || !t ? !1 : Math.abs(Number(e.r ?? 0) - Number(t.r ?? 0)) <= n && Math.abs(Number(e.g ?? 0) - Number(t.g ?? 0)) <= n && Math.abs(Number(e.b ?? 0) - Number(t.b ?? 0)) <= n && Math.abs(Number(e.a ?? 1) - Number(t.a ?? 1)) <= n;
 }
 function fn(e) {
@@ -18869,7 +18888,7 @@ function fn(e) {
   };
 }
 function AM(e) {
-  return Yo.some((t) => qo(e, t.color));
+  return qo.some((t) => Xo(e, t.color));
 }
 function Ba(e, t, n) {
   const r = (Number(e) % 1 + 1) % 1, i = Ve(Number(t), 0, 1), o = Ve(Number(n), 0, 1);
@@ -18899,25 +18918,6 @@ function _d(e) {
 }
 function ms(e) {
   return `${e}_${Math.random().toString(16).slice(2, 10)}`;
-}
-function _i(e, t) {
-  let n = Number(e || 0) - Number(t || 0);
-  for (; n > 0.5; ) n -= 1;
-  for (; n < -0.5; ) n += 1;
-  return n;
-}
-function Mi(e, t = 0) {
-  const n = Math.atan2(e.x, e.z), r = Math.asin(Ve(e.y, -1, 1));
-  return {
-    targetKind: "ERP_GLOBAL",
-    u: (n / (2 * Math.PI) + 0.5 + 1) % 1,
-    v: Ve(0.5 - r / Math.PI, 0, 1),
-    t: Number(t || 0)
-  };
-}
-function Xo(e) {
-  const t = (Number(e.u || 0) - 0.5) * (2 * Math.PI), n = (0.5 - Number(e.v || 0)) * Math.PI, r = Math.cos(n);
-  return { x: r * Math.sin(t), y: Math.sin(n), z: r * Math.cos(t) };
 }
 function Pc(e = 2048) {
   const t = Math.max(1, e);
@@ -19410,7 +19410,7 @@ function xl(e, t = (r) => ho(r), n = 0) {
     Array.isArray(F) && i.push(...F);
   }
   if (!i.length) return null;
-  const o = i.map((T) => Xo(T)), a = o.reduce((T, F) => ({ x: T.x + F.x, y: T.y + F.y, z: T.z + F.z }), { x: 0, y: 0, z: 0 }), s = Math.hypot(a.x, a.y, a.z);
+  const o = i.map((T) => Yo(T)), a = o.reduce((T, F) => ({ x: T.x + F.x, y: T.y + F.y, z: T.z + F.z }), { x: 0, y: 0, z: 0 }), s = Math.hypot(a.x, a.y, a.z);
   let l;
   if (s >= 1e-9)
     l = { x: a.x / s, y: a.y / s, z: a.z / s };
@@ -19419,7 +19419,7 @@ function xl(e, t = (r) => ho(r), n = 0) {
     let F = 0, D = 0;
     i.forEach((C) => {
       F += T + _i(r((C == null ? void 0 : C.u) || 0), T), D += Number((C == null ? void 0 : C.v) || 0);
-    }), l = Xo({ u: r(F / i.length), v: D / i.length });
+    }), l = Yo({ u: r(F / i.length), v: D / i.length });
   }
   const c = Number(n || 0), d = VM(l, c);
   let u = 1 / 0, f = -1 / 0, p = 1 / 0, g = -1 / 0;
@@ -20352,7 +20352,7 @@ function zy(e, t, n, r) {
 function YM(e, t, n, r, i = null) {
   const o = Math.atan2(n.center.x, n.center.z) * (180 / Math.PI), a = VM(r, n.rot_deg, { poleYawDeg: o }), s = [["right", "right"], ["up", "up"], ["center", "center"]];
   return zy(e, t, i, (l) => {
-    const c = Xo(l), d = { x: 0, y: 0, z: 0 };
+    const c = Yo(l), d = { x: 0, y: 0, z: 0 };
     for (const [u, f] of s) {
       const p = c.x * n[u].x + c.y * n[u].y + c.z * n[u].z;
       d.x += p * a[f].x, d.y += p * a[f].y, d.z += p * a[f].z;
@@ -20367,12 +20367,12 @@ function jy(e, t) {
 function qM(e, t, n, r, i) {
   const o = Math.max(bV, Number(n || 1)), { box: a } = i;
   return zy(e, t, r, (s) => {
-    const l = zM(i, Xo(s), { clamp: !1 });
+    const l = zM(i, Yo(s), { clamp: !1 });
     return l ? jy(s, $y(i, a.x + o * (l[0] - a.x), a.y + o * (l[1] - a.y))) : s;
   });
 }
 function kV(e, t, n) {
-  const r = Xo(e), i = Number(n || 0) * (Math.PI / 180), o = Math.cos(i), a = Math.sin(i), s = (t.x * r.x + t.y * r.y + t.z * r.z) * (1 - o), l = { x: t.y * r.z - t.z * r.y, y: t.z * r.x - t.x * r.z, z: t.x * r.y - t.y * r.x };
+  const r = Yo(e), i = Number(n || 0) * (Math.PI / 180), o = Math.cos(i), a = Math.sin(i), s = (t.x * r.x + t.y * r.y + t.z * r.z) * (1 - o), l = { x: t.y * r.z - t.z * r.y, y: t.z * r.x - t.x * r.z, z: t.x * r.y - t.y * r.x };
   return jy(e, {
     x: r.x * o - l.x * a + t.x * s,
     y: r.y * o - l.y * a + t.y * s,
@@ -24317,10 +24317,10 @@ function _z(e) {
     Q();
     const Ae = LV({
       editor: n,
-      swatches: Yo,
+      swatches: qo,
       paintColorPopOpen: i ? !i.hidden : !1,
       colorToCss: qn,
-      colorsApproximatelyEqual: qo,
+      colorsApproximatelyEqual: Xo,
       rgb01ToHsv: _d,
       hsv01ToRgb: Ba,
       getBrushPresetIdForTool: T,
@@ -28017,7 +28017,7 @@ function Gz(e) {
   let m, b, h, w, y, k, P, T, F, D, C, Z, $, S, N, H, ee, q, le, V, x, B, R, ne, te, _, z, L, E, re, ae, j, G, v, M, O, U, J, Q, X, K, oe, fe, Ee, Pe, he, xe, Ne, Le, Fe, Ae, ce;
   const A = () => {
     if (!t.customPaintSessionStart) return;
-    if (qo(t.customPaintSessionStart, t.customPaintColor)) {
+    if (Xo(t.customPaintSessionStart, t.customPaintColor)) {
       t.customPaintSessionStart = null;
       return;
     }
@@ -28027,7 +28027,7 @@ function Gz(e) {
     }
     const me = [
       fn(t.customPaintColor),
-      ...t.customPaintHistory.filter((ke) => !qo(ke, t.customPaintColor))
+      ...t.customPaintHistory.filter((ke) => !Xo(ke, t.customPaintColor))
     ];
     t.customPaintHistory = me.slice(0, 8), t.customPaintSessionStart = null;
   }, Y = (me = !1) => {
@@ -28090,7 +28090,7 @@ function Gz(e) {
         return;
       }
       if (Ce.matches("[data-paint-color-swatch]")) {
-        const et = Yo.find((en) => en.id === Ce.getAttribute("data-paint-color-swatch"));
+        const et = qo.find((en) => en.id === Ce.getAttribute("data-paint-color-swatch"));
         if (!et) return;
         t.paintColor = fn(et.color), Y(!0), K();
         return;
@@ -29367,7 +29367,7 @@ async function o8(e, t, n = {}) {
     hideSidebar: i,
     nodeTitle: a,
     shellPreset: F,
-    paintSwatches: Yo.map((Ke) => ({
+    paintSwatches: qo.map((Ke) => ({
       id: Ke.id,
       label: Ke.label,
       cssColor: qn(Ke.color, 1)
@@ -36087,7 +36087,7 @@ function AG(e, t) {
   return e.brushSizes = { ...e.brushSizes, [kP(e)]: n }, e;
 }
 function IG(e, t) {
-  const n = Yo.find((r) => r.id === t);
+  const n = qo.find((r) => r.id === t);
   return n && (e.paintColor = fn(n.color), Co(e, !0)), e;
 }
 function CG(e) {
@@ -36095,9 +36095,9 @@ function CG(e) {
 }
 function Co(e, t = !1) {
   const n = e.colorStart;
-  return !n || (e.colorStart = null, !t || qo(n, e.customColor) || AM(e.customColor)) || (e.recentColors = [
+  return !n || (e.colorStart = null, !t || Xo(n, e.customColor) || AM(e.customColor)) || (e.recentColors = [
     fn(e.customColor),
-    ...e.recentColors.filter((r) => !qo(r, e.customColor))
+    ...e.recentColors.filter((r) => !Xo(r, e.customColor))
   ].slice(0, wP)), e;
 }
 function F1(e, t) {
@@ -36106,9 +36106,9 @@ function F1(e, t) {
 function OG(e, { readOnly: t = !1 } = {}) {
   var l;
   if (!Io(e)) return null;
-  const n = e.tool === "mask", r = zf(e), i = (n ? bP : yP).map((c) => ({ ...c, active: c.key === r })), o = { value: e.brushSizes[kP(e)] ?? 10, min: Ph, max: vP, disabled: r === "lasso_fill" }, a = ((l = Yo.find((c) => qo(e.paintColor, c.color))) == null ? void 0 : l.id) ?? "", s = n ? null : {
+  const n = e.tool === "mask", r = zf(e), i = (n ? bP : yP).map((c) => ({ ...c, active: c.key === r })), o = { value: e.brushSizes[kP(e)] ?? 10, min: Ph, max: vP, disabled: r === "lasso_fill" }, a = ((l = qo.find((c) => Xo(e.paintColor, c.color))) == null ? void 0 : l.id) ?? "", s = n ? null : {
     enabled: e.paintBrush !== "eraser",
-    swatches: Yo.map((c) => ({ id: c.id, label: c.label, css: qn(c.color, 1), active: c.id === a })),
+    swatches: qo.map((c) => ({ id: c.id, label: c.label, css: qn(c.color, 1), active: c.id === a })),
     custom: { css: qn(e.customColor, 1), active: !a, open: !!e.colorStart },
     picker: {
       color: fn(e.customColor),
@@ -36528,7 +36528,7 @@ function eW(e, t) {
   return n.map((i, o) => ({ entry: i, order: o })).sort((i, o) => o.entry.zIndex - i.entry.zIndex || o.order - i.order).map(({ entry: i }) => i);
 }
 function Rd(e, t) {
-  return Nh(e, Xo(t));
+  return Nh(e, Yo(t));
 }
 function Nh(e, t) {
   const n = e.project(t);
@@ -36558,7 +36558,7 @@ function tW(e, t, n) {
   if (t.kind === "raster" && (r = { x: o.reduce((c, d) => c + d.x, 0) / 4, y: o.reduce((c, d) => c + d.y, 0) / 4 }), !r) return { visible: !1 };
   if (!n.bent) return { visible: !0, center: r, corners: o, outline: o, ...z1(o) };
   const a = i.map((c) => {
-    const { x: d, y: u, z: f } = Xo(c);
+    const { x: d, y: u, z: f } = Yo(c);
     return [d, u, f];
   }), s = ([c, d, u]) => {
     const f = n.project({ x: c, y: d, z: u });
