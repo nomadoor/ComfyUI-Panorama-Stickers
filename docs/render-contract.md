@@ -17,6 +17,7 @@ Panorama Studio のバックエンドの描画関数（`render_frame`、重な�
 | 重なり順と合成 | `render.py` `composite_frame`、`core/world_render.py` `over_by_depth` | — | `tests/test_render.py`、`tests/test_world_render.py` |
 | Sky の標本化（直接の標本化、縮めるときの平均、Sky の幅） | `render.py` `_sky_layers`・`_shoot_sky`・`_sample_filtered`・`_shrink`・`_sky_size` | — | `tests/test_render.py`、`tests/test_studio_node.py`、`tests/test_studio_scene.py` |
 | ペイントのラスタの置き方（ラスタオブジェクトを ERP に置く中心・大きさ・`scale`・`rot_deg`・継ぎ目、回す平面と向き、ラスタの占める画素の範囲。ストロークのまとまりは球面の上で回すので、この式を使わない） | `core/painting.py` `raster_object_placement`・`raster_object_corners_uv`・`raster_object_pixel_ranges`、描くのは `_composite_one_raster_object`（画素を読むのは `_sample_box`） | `web_src/pano_paint_display.js` `turnPaintOffset`・`unturnPaintOffset`（回す平面の式）・`rasterObjectTurnCenterUv`（回す中心）・`placeRasterObjectErp`・`drawRasterObjectErp`・`rasterObjectCornersUv`・`rasterObjectPixelRanges`・`pixelRangesMeet`、`web_src/pano_paint_objects.js` `inverseTransformErpPointAround`・`rasterObjectAlphaAt`（`rasterObjectCornersUv` もここから読める）、範囲を使う所は `web_src/pano_paint_strokes.js` `erasePaint`・`web_src/pano_raster_eraser.js` `rasterEraserDisplay` | フィクスチャ `tests/fixtures/paint_raster_place.json` を `tests/test_paint_raster_place_parity.py`（回したラスタ・大きくしたラスタ・継ぎ目をまたぐラスタの描いた画素も見る）と `tests/pano_paint_raster_place_parity.test.mjs` が読む。平面の上の回し方は `tests/pano_paint_objects.test.mjs`、消しゴムの届く範囲は `tests/pano_raster_eraser.test.mjs`。エディタの絵は `tests/browser/paint_rasters.spec.js` |
+| ペイントのストロークの描き方（筆を押す所の経路、押した形の横の幅と消しゴムの届く範囲、球面の上で描くこと。ERP の上の画素の扱いと継ぎ目） | `core/painting.py` `stroke_erp_path`・`stamp_half_width_px`（未実装）、描くのは `_stroke_freehand_alpha`・`_polygon_alpha_mask` | `web_src/pano_paint_strokes.js` `strokeErpPath`・`stampHalfWidthPx`（未実装）、エディタの表示は `web_src/pano_paint_engine.js` `drawStampStroke`・`appendStrokePoint`・`drawLassoFillNative`（今の `_drawSingleStamp` の 1/max(0.05, cos 緯度) を置き換える）、消しゴムの届く画素は `pano_paint_strokes.js` `rasterizeStrokeToSurface` | フィクスチャ `tests/fixtures/paint_stroke_sphere.json` を `tests/test_paint_stroke_sphere_parity.py` と `tests/pano_paint_stroke_sphere_parity.test.mjs` が読む（未実装）。エディタの絵は `tests/browser/paint_rasters.spec.js`、ノードの出力は `tests/test_legacy_goldens.py` |
 | World の層と `world` の Sticker の板 | `world_render.py` `world_layer` | — | `tests/test_world_render.py`、`tests/test_stickers_world.py`、`tests/test_studio_upstream.py` |
 | 3D の `world` の Sticker | `world_render.py` `ContentSource`、`nodes.py` `_port_media`・`_resolve_sources`（3D ファイルの `file` の Source） | — | `tests/test_stickers_3d.py` |
 | `scene` の共通処理 | `world_render.py` `SceneContent`、`nodes.py` `_scene_content` | — | `tests/test_world_render.py`、`tests/test_scene_mesh.py` |
@@ -252,6 +253,55 @@ RTX 4070 Ti、1 フレーム、κ = 0.5・hFOV 140°（4K は 4096 × 2048 相�
   これまでと同じ値で掛ける）。どれかが変わったら、変わった理由を確かめてから焼き直す。`tests/test_cutout_paint.py` の `_uv_bbox_to_pixels` の
   test は、細い枠の占める範囲の test に替えた。
 - 決めた理由：ADR 0056。
+
+### ペイントのストロークの描き方
+
+ペイントのストローク（`painting.paint.strokes`・`mask.strokes`。形は `docs/scene-state-v2.md` の `painting`）を ERP に描く規則。ノード（Python）と
+エディタ（JS のペイントのエンジンと、消しゴムの届く画素を求める `rasterizeStrokeToSurface`）が同じ規則で描く。ストロークのまとまりは球面の上で
+動かし回す（`docs/studio-ui.md` の「ペイントのまとまり」）ので、極の近くや極をまたぐ所でも、球面の上で筆の太さと経路が保たれるように描く。
+決めた理由は ADR 0057。
+
+- 対象：`targetSpace.kind` が `ERP_GLOBAL` のすべてのストローク。描いた表示（`viewMode`）では分けない（`viewMode` は読み込みで捨てられ、
+  開き直した後には残らないため。今のエンジンの、描いている間だけの `viewMode !== "unwrap"` の分け方はやめる）。
+- 経路（`strokeErpPath`・`stroke_erp_path`）：各描き手が今たどる点の並び（エンジンは記録した点（`rawPoints`、無ければ `points`）を、中点と
+  Catmull-Rom で滑らかにする前に。ノードと `rasterizeStrokeToSurface` は `processedPoints`、無ければ記録した点）の隣どうし `a`・`b` について、
+  次の規則で点を入れる。u は、各描き手がすでに使っている継ぎ目をまたいで続く u（隣どうしの差が −0.5〜0.5 になるよう 1 の倍数を足した値）で扱う。
+  - 離れ：`a`・`b` の ERP の直線の中点 `m`（続く u と v の平均）と、`a`・`b` の大円の中点 `g`（二つの向きの和を長さ 1 にしたもの）の、
+    `directionOfErpPoint` の向きどうしの角。
+  - 離れが、筆の縦の半径の角 `ρ = 半径の画素 ÷ ERP の高さ × π` の半分より大きければ、`g` を `a` と `b` の間に入れ、二つの区間に同じことを
+    繰り返す。半径はストロークの基の半径（`widthScale`・`pressureLike` を掛けない）。
+  - 入れる点の u は `g` の経度の u を、`m` の続く u から継ぎ目をまたぐ短い向きで取った値（続く u のまま）。`g` が極の上（緯度の絶対値が
+    90° − 1e-9 以上）なら、`m` の u。v は `g` の緯度の v。`t`・`widthScale`・`pressureLike` は `a` と `b` の平均。
+  - 入れないとき：`a` と `b` がほぼ同じ向き（向きの差の長さが 1e-12 未満）、ちょうど正反対（`|a·b + 1| < 1e-12`。大円が決まらない）、
+    区間の ERP の長さが 1 画素未満、または入れる深さが 16 に達したとき。
+  - 赤道に沿う区間と経線に沿う区間は大円と重なるので点は入らない。点を入れた区間では、エンジンの中点と Catmull-Rom の滑らかさの支えになる
+    点も変わるので、描く画素が今と同じになるのは点が入らない所だけ。
+- 押した形の横の幅（`stampHalfWidthPx`・`stamp_half_width_px`。消しゴムの届く範囲もこの一つを使う）：筆の形の縦の半径を `rv`（今のとおり）、
+  横の縦に対する比を `aspect`、押す所の緯度を `φ`（v から）、ERP の幅を `W` として、横の半径 `rh` は、`rv · aspect ≥ cos φ · W ÷ 2` なら
+  `W ÷ 2`、そうでなければ `rv · aspect ÷ cos φ`（割り算をしない比べ方で、`cos φ ≤ 0` も覆う。`W ÷ 2` はその行で押した形が経度の全周を覆う所で、
+  調整した数ではなく ERP の幾何で決まる）。筆の形を斜めにする `angle` は、筆の形を回してから横に `rh ÷ (rv · aspect)` 倍に引き伸ばす順で掛ける
+  （引き伸ばしはいつも ERP の横の向き）。今のエンジンの `1 ÷ max(0.05, cos φ)` と、横に広げない今のノードを、この一つの規則に置き換える。
+- 消しゴムの届く範囲：`rasterizeStrokeToSurface` は、押す形を横の半径 `rh`・縦の半径 `rv` の楕円にし、今の「幅の 4 分の 1」の上限をやめる
+  （`rh` の上限 `W ÷ 2` に従う）。`erasePaint` のまとまりの範囲（`getGroupApproxBoundsPx`）は、u の余白を、まとまりの点のうち最も極に近い v
+  での `rh`（`W ÷ 2` なら全幅）にする。
+- 間隔：筆を押す間隔は今のとおり ERP の画素で測る（経路は上で細かくなるので、極の近くでも途切れない）。継ぎ目の写し（左右の端からはみ出た分を
+  反対の端に描く）は今のまま。ノードは、経路の点を入れてから（続く u のまま）左右の写しを作る。
+- 投げ縄：塗る多角形の辺も、上の経路の規則で大円に寄せる。極を囲む投げ縄（ERP の上では多角形が閉じない）は今のまま扱い、次の候補とする。
+- Python の筆の形：横の半径ごとに筆の形を作って使い回すので、`rh` を 0.5 画素に丸めた値で作る（フィクスチャは丸める前の数を比べる。JS は
+  丸めない）。ノードは crayon を丸い筆で描く（今のまま）。半径の決め方（Python は `radiusValue`、JS のエンジンは筆の形ごとの規則）の今の違いは
+  この規則では直さない。
+- 一致を守る test：`tests/fixtures/paint_stroke_sphere.json`（点の並び・筆の半径の画素 `radius_px`・ERP の大きさごとに、経路の点の並びと、
+  いくつかの v の行の横の半径。赤道と経線に沿う区間（点が入らない）、極の近くの区間、極をちょうど通る区間、正反対の二点、継ぎ目をまたぐ区間、
+  上限に届く行を含む）を Python と JS が読む。押した画素そのものは、補間と筆の形の作り方の違いで揃わないので、一致の対象は経路と幅の数とする。
+  Python は、継ぎ目をまたぐストロークで、点を入れてから左右の写しを作ることも test で見る。
+- 出力が変わるもの（意図した変更）：ノードの出力では、赤道から離れたストロークが横に `1 ÷ cos φ` 倍太くなり、エディタで見る太さと揃う
+  （今はノードだけが細い）。基準画像：`stickers_paint`（緯度およそ 9〜36° の二本。横に 1〜24% 太くなり、点の少ない古いストローク（3 点）の
+  曲がり方も大円に寄って、はっきり形が変わる大きな見た目の変化）は変わる。`stickers_paint_mask`・`stickers_paint_interleaved`・
+  `studio_paint_interleaved`（緯度 9° 以内）はわずかに変わる見込み。`render_painting_to_cutout` は同じ描き方を通るが、旧 Cutout の基準画像
+  （`cutout_single_shot`）はペイントを持たないので変わらない。ペイントを持たない基準画像は変わらない。エディタでは、緯度 87° より極に近い所、
+  極の近くで点が大きく離れた区間、古い UI の Unwrap の表示で描いたストローク（横に広がるようになる）が変わる
+  （`tests/fixtures/paint_rasters_golden.json` の `paint_group:g1` は、点が赤道の近くで密なので変わらない見込み）。どれも、変わった理由が上の
+  規則であることを確かめてから焼き直す。
 
 ## World の描き方
 
