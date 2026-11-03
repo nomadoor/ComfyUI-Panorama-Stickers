@@ -163,6 +163,46 @@ test("the Camera tab's Frame view shows the mark at the Camera's T while Alt is 
   expect(problems).toEqual([]);
 });
 
+test("the Camera tab's Frame view: a double click on a plane turns the Camera to it at once as one Undo step, the mark shows there", async ({ page }) => {
+  const problems = watch(page);
+  await page.setViewportSize({ width: 1440, height: 860 });
+  await page.goto("/tests/browser/pages/studio_camera_wired.html?aspect=16:9&mode=frame");
+  await page.waitForFunction(() => window.__studio?.ready, null, { timeout: 30_000 });
+  expect(await page.evaluate(() => window.__studio.error)).toBeNull();
+  await expect(page.locator(".pano-studio-notice")).toHaveCount(0, { timeout: 30_000 });
+  await page.locator('[role="tablist"] button', { hasText: "Camera" }).click();
+  await expect(page.locator("[data-frame-box]")).toHaveCount(1);
+  await page.waitForTimeout(400);
+  const stage = await page.locator("[data-stage-canvas]").boundingBox();
+  const frame = await page.locator("[data-frame-box]").evaluate((el) => {
+    const s = document.querySelector("[data-stage-canvas]").getBoundingClientRect();
+    const r = el.getBoundingClientRect();
+    return { x: r.left - s.left + r.width / 2, y: r.top - s.top + r.height / 2 };
+  });
+  const before = await page.evaluate(() => window.__studio.camera());
+  // The red plane, ahead of the Camera's position (the Camera looks 30 degrees to its right).
+  const red = await page.evaluate(() => window.__studio.stageCentroid([255, 0, 0]));
+  expect(Math.hypot(red.x - frame.x, red.y - frame.y)).toBeGreaterThan(60);
+  await page.mouse.dblclick(stage.x + red.x, stage.y + red.y);
+  // At once (no eased move): the plane is in the frame's middle, the mark on it.
+  await expect.poll(async () => {
+    const at = await page.evaluate(() => window.__studio.stageCentroid([255, 0, 0]));
+    return Math.hypot(at.x - frame.x, at.y - frame.y);
+  }, { timeout: 1500 }).toBeLessThan(12);
+  expect(await overlaySum(page, frame)).toBeGreaterThan(2000);
+  const after = await page.evaluate(() => window.__studio.camera());
+  expect(after.position.map((v) => Math.round(v * 1e4))).toEqual(before.position.map((v) => Math.round(v * 1e4)));
+  expect(Math.abs(after.roll_deg - before.roll_deg)).toBeLessThan(1e-6);
+  expect(Math.abs(after.yaw_deg - before.yaw_deg)).toBeGreaterThan(10);
+  expect(await page.evaluate(() => window.__studio.session.canUndo)).toBe(true);
+  // One Undo step takes the turn back.
+  await page.evaluate(() => window.__studio.session.undo());
+  const undone = await page.evaluate(() => window.__studio.camera());
+  expect(Math.abs(undone.yaw_deg - before.yaw_deg)).toBeLessThan(1e-6);
+  expect(Math.abs(undone.pitch_deg - before.pitch_deg)).toBeLessThan(1e-6);
+  expect(problems).toEqual([]);
+});
+
 test("Reset View goes to the World origin, level, yaw 0, not to the Camera the view opened at", async ({ page }) => {
   const problems = watch(page);
   await page.setViewportSize({ width: 1440, height: 860 });

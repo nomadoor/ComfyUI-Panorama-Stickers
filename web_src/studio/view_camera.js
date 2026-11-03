@@ -247,7 +247,7 @@ function unrolled(dx, dy, rollDeg) {
 }
 
 // The viewpoint, from `pose`. frame: the Frame view's, where the pose is the Camera: wheel steps and Frame Selected
-// apply at once, there is no double click and no Reset View, the Camera keeps its roll, and the world bound counts the
+// apply at once, a double click turns the Camera at once, there is no Reset View, the Camera keeps its roll, and the world bound counts the
 // Camera where the gesture started. Every move returns { moved, notice } (notice: a VIEW_NOTICES key or null).
 export function createViewCamera({ pose: start, frame = false }) {
   let pose = copyPose(start);
@@ -468,9 +468,9 @@ export function createViewCamera({ pose: start, frame = false }) {
 
     // A double click (or Set orbit center's click) on `hit` (the GPU hit under the pointer, World image planes included;
     // null over nothing): the point itself becomes T (pointedTarget) and the view turns to center it over
-    // ACTION_EASE_SECONDS, P staying. A hit outside the world bound counts as none, as the wheel's. Not in the Frame view.
+    // ACTION_EASE_SECONDS, P and the roll staying. A hit outside the world bound counts as none, as the wheel's. At once
+    // in the Frame view, as the wheel (docs/space-and-view.md "Frame 表示").
     focus(hit) {
-      if (frame) return result(false);
       if (!hit || length(hit) > bound()) return result(false, "nothing-to-focus");
       const base = aim();
       const target = pointedTarget(base.position, hit, eye(), forwardOf(base));
