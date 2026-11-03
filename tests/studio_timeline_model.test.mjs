@@ -9,10 +9,10 @@ import {
   jumpFrames,
   keysInRange,
   timecode,
-  timelineCamera,
   xToFrame,
   xToFrameExact,
 } from "../web_src/studio/timeline_model.js";
+import { cameraOf } from "../web_src/studio/camera_state.js";
 import { ctxOf, studioState, upstreamLayer } from "./studio_timeline_fixtures.mjs";
 
 const view = (ctx, options = {}) => buildStudioTimeline(ctx, { selection: { row: null, keys: [] }, playhead: 0, ...options });
@@ -40,7 +40,7 @@ test("a state whose camera is null shows the Camera row as the default Camera, w
   assert.deepEqual(camera.pins, []);
   assert.equal(camera.dot.state, "none");
   assert.equal(camera.eye.icon, ICON.eye);
-  assert.equal(timelineCamera(state).position.keyframes.length, 0);
+  assert.equal(cameraOf(state).position.keyframes.length, 0);
 });
 
 test("a row's pins are at Timeline frames, half where only some of its Lanes have a Keyframe", () => {
@@ -236,23 +236,19 @@ test("an upstream layer without a name falls back to its key; an inherited-only 
   assert.equal(group.rows[0].overridden, false);
 });
 
-// docs/studio-ui.md "ノードの入力から来た物": until the new editor edits upstream items, a layer shows read-only.
-test("a read-only upstream layer keeps its name and disables its rows and actions with the Read-only tip", () => {
+// docs/studio-ui.md "上流の物の編集": an upstream layer's rows and its header's actions work as the node's own.
+test("an upstream layer keeps its name, and its rows and its header's Revert and Restore deleted work", () => {
   const record = { layer: "scene_up", stickers: [], scene: { visible: false }, deleted: ["x"] };
-  const model = view(ctxOf(studioState(), { upstream: [upstreamLayer({ record, deleted: 2, readOnly: true })] }));
+  const model = view(ctxOf(studioState(), { upstream: [upstreamLayer({ record, deleted: 2 })] }));
   const [group] = model.groups;
   assert.equal(group.label, "From Studio #4");
-  assert.equal(group.revert.disabled, true);
-  assert.equal(group.restore.disabled, true);
+  assert.equal(group.revert.disabled, false);
+  assert.equal(group.restore.disabled, false);
   const [up] = group.rows;
-  assert.equal(up.dot.disabled, true);
-  assert.equal(up.dot.tip, "Read-only");
-  assert.equal(up.eye.disabled, true);
-  assert.equal(up.eye.tip, "Read-only");
-  assert.equal(up.clipEditable, false);
-  assert.equal(up.keysEditable, false);
-  // The node's own rows stay editable.
-  assert.equal(row(model, "sticker_1").dot.disabled, false);
+  assert.equal(up.dot.disabled, false);
+  assert.equal(up.eye.disabled, false);
+  assert.equal(up.clipEditable, true);
+  assert.equal(up.keysEditable, true);
 });
 
 test("the node's own scene row (the `world` content) shows with an upstream Scene, last of the own rows", () => {
@@ -356,4 +352,13 @@ test("while a paint group is selected, the Paint row shows selected (its selecti
     assert.equal(row(model, "camera").selected, false);
   }
   assert.equal(row(view(ctx), "painting").selected, false);
+});
+
+// docs/timeline-ui.md "上流の層の行": the dot follows any entry of the record for the element's id (pano_upstream.js
+// upstreamStickerOverridden), whatever its fields and placement: what the bar's Back to source takes off.
+test("an upstream row's dot shows for any entry of its record: a Lock only, or one made for the other placement", () => {
+  const dotOf = (stickers) => view(ctxOf(studioState(), { upstream: [upstreamLayer({ record: { layer: "scene_up", stickers, scene: {}, deleted: [] } })] })).groups[0].rows[0].overridden;
+  assert.equal(dotOf([]), false);
+  assert.equal(dotOf([{ id: "sticker_1", placement: "world", locked: false }]), true);
+  assert.equal(dotOf([{ id: "sticker_1", placement: "sky", opacity: { value: 0.5, keyframes: [] } }]), true);
 });

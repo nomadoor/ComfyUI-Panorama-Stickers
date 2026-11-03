@@ -69,7 +69,7 @@ _Avoid_: 3DoF / 6DoF（視点は一つで、切り替えは無い）
 
 **注視点（Target, `T`）**:
 Viewport camera が持ち続ける点。回り込みの中心であり、パン・ホイール・前後の移動の量はここまでの距離で決まる。
-見回し・パン・移動では画面の中央に付いて動き、決め直すのはダブルクリック・Frame Selected・Reset View だけ。
+見回し・パン・移動では画面の中央に付いて動き、決め直すのはダブルクリック・Set orbit center・Frame Selected・Reset View だけ。ふだん画面に印は出さず、中心を気にする時だけ印を出す（ADR 0058）。
 選んだ物があれば、回り込みはその中心を回る。
 _Avoid_: ピボット, 焦点, 回転の中心
 
@@ -89,7 +89,7 @@ Camera で Scene を画像にする方法。ERP、透視投影など。
 _Avoid_: coverage（旧ノードの入力の名前。Panorama Studio では使わない）
 
 **Pose handoff**:
-透視投影の Camera で撮影したときの Camera の軌道（`sticker_state`）を別の Panorama Studio の `sticker` に渡し、切り抜いた内容を撮影した位置と向きへ戻すこと。Camera が原点から動かなければ `sky` の Sticker、どこかのフレームで原点から離れれば Camera の前方 2 に置く `world` の Sticker になる。実行のたびに引き継ぎ、下流で触った Lane（`handoff_overrides`）だけが下流の値になる（ADR 0030）。
+透視投影の Camera で撮影したときの Camera の軌道（`sticker_state`）を別の Panorama Studio の `sticker` に渡し、切り抜いた内容を撮影した位置と向きへ戻すこと。Camera の位置によらず、撮った向きと画角の `sky` の Sticker になる（ADR 0059）。実行のたびに引き継ぎ、下流で触った Lane（`handoff_overrides`）だけが下流の値になる（ADR 0030）。
 
 **PANO_SCENE**:
 Panorama Studio が出力する Scene の値。Camera を含まない。状態と入力素材を結び付けた派生値であり、正は各ノードの `state_json` にある。

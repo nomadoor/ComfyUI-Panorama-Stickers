@@ -3,7 +3,7 @@ import { wrapYaw } from "./pano_math.js";
 import { DEG2RAD, RAD2DEG, clamp } from "./pano_camera_math.js";
 import { deriveVerticalFovDeg, normalizeCutoutShotItem } from "./pano_cutout_view_math.js";
 import { lensAngle, lensFovKeepingCenter, lensFovLimit, lensRadius } from "./pano_lens.js";
-import { evaluateCamera, evaluateLane, evaluateSticker } from "./pano_scene_eval.js";
+import { clipFrame, evaluateCamera, evaluateLane, evaluateSticker } from "./pano_scene_eval.js";
 import { SKY_STICKER_LANES, cameraAspect, freeStickerNumber, loadSceneState, rebaseSceneState, sceneStateText, stickerCounter } from "./pano_scene_state.js";
 import { laneNames, setLaneValue } from "./pano_timeline.js";
 import { NEW_STICKER_HFOV } from "./pano_space.js";
@@ -294,12 +294,12 @@ export function unkeyedPose(sticker, pose) {
 // An edit changes only the Lanes of the fields it has, each by the recording rule (setLaneValue). A port
 // Sticker's vFOV is not stored: it follows its media (skyStickerVfov).
 export function setStickerPose(sticker, frame, pose) {
-  const clipFrame = frame - (sticker.clip.start - sticker.clip.in);
+  const stickerFrame = clipFrame(sticker.clip, frame);
   const direction = pick(pose, ["yaw_deg", "pitch_deg"]);
   const size = pick(pose, sticker.source.kind === "port" ? ["hFOV_deg"] : ["hFOV_deg", "vFOV_deg"]);
-  if (Object.keys(direction).length) setLaneValue(sticker, "direction", clipFrame, direction);
-  if (pose.rot_deg !== undefined) setLaneValue(sticker, "roll", clipFrame, pose.rot_deg);
-  if (Object.keys(size).length) setLaneValue(sticker, "size", clipFrame, size);
+  if (Object.keys(direction).length) setLaneValue(sticker, "direction", stickerFrame, direction);
+  if (pose.rot_deg !== undefined) setLaneValue(sticker, "roll", stickerFrame, pose.rot_deg);
+  if (Object.keys(size).length) setLaneValue(sticker, "size", stickerFrame, size);
 }
 
 const POSITION_FIELDS = ["position_x", "position_y", "position_z"];
@@ -411,7 +411,7 @@ export function setCameraField(camera, frame, field, value) {
 }
 
 export function setStickerOpacity(sticker, frame, opacity) {
-  setLaneValue(sticker, "opacity", frame - (sticker.clip.start - sticker.clip.in), opacity);
+  setLaneValue(sticker, "opacity", clipFrame(sticker.clip, frame), opacity);
 }
 
 // The smallest scale the inspector sets on a world Sticker (its scale has no upper limit).
@@ -432,27 +432,27 @@ export function worldStickerFields(sticker, frame) {
 
 // An inspector edit of one world Sticker field at a Timeline frame, by the recording rule of its Lane.
 export function setWorldStickerField(sticker, frame, field, value) {
-  const clipFrame = frame - (sticker.clip.start - sticker.clip.in);
+  const stickerFrame = clipFrame(sticker.clip, frame);
   const axis = POSITION_FIELDS.indexOf(field);
   if (axis >= 0) {
-    const position = evaluateLane(sticker, "position", clipFrame);
+    const position = evaluateLane(sticker, "position", stickerFrame);
     position[axis] = value;
-    setLaneValue(sticker, "position", clipFrame, position);
+    setLaneValue(sticker, "position", stickerFrame, position);
   } else if (field === "scale") {
-    setLaneValue(sticker, "scale", clipFrame, value);
+    setLaneValue(sticker, "scale", stickerFrame, value);
   } else if (field === "opacity") {
-    setLaneValue(sticker, "opacity", clipFrame, value / 100);
+    setLaneValue(sticker, "opacity", stickerFrame, value / 100);
   } else {
-    setLaneValue(sticker, "rotation", clipFrame, { [field]: value });
+    setLaneValue(sticker, "rotation", stickerFrame, { [field]: value });
   }
 }
 
 // A gizmo edit of a world Sticker at a Timeline frame: only the Lanes of the parts it has
 // ({ position, rotation, scale }), each by the recording rule.
 export function setWorldStickerTransform(sticker, frame, transform) {
-  const clipFrame = frame - (sticker.clip.start - sticker.clip.in);
+  const stickerFrame = clipFrame(sticker.clip, frame);
   for (const name of ["position", "rotation", "scale"]) {
-    if (transform[name] !== undefined) setLaneValue(sticker, name, clipFrame, transform[name]);
+    if (transform[name] !== undefined) setLaneValue(sticker, name, stickerFrame, transform[name]);
   }
 }
 

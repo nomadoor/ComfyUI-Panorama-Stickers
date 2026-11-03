@@ -101,7 +101,7 @@ import { createModalEvents } from "./editor/modal_events.js";
 import { createKeyboard } from "./editor/keyboard.js";
 import { editorSession, noteStudioEditorOpen, peekEditorSession, peekNodeSurface, stateSync } from "./pano_node_bridge.js";
 import { createFile3dEditorFiles, file3dEditorFileOf } from "./pano_file_3d.js";
-import { getRenderableMediaRevisionToken } from "./pano_preview_runtime.js";
+import { mediaPlayheadRevisionToken } from "./pano_media_session.js";
 import { attachSceneViewerNode, redrawSceneViewers, touchSceneViewer } from "./pano_scene_viewer_node.js";
 import { openSceneViewerWindow } from "./pano_scene_viewer_window.js";
 
@@ -558,7 +558,6 @@ async function showEditor(node, type, options = {}) {
   const imageCache = new Map();
   const rasterImageCache = new Map();
   const rasterImageAlphaCache = new Map();
-  const rasterErpCanvasCache = new Map();
   const stillCanvas = createPanoCanvas({ label: "editor.still" });
   stillCanvas.__panoFrameIdx = 0;
   // The still of the port Sticker's MP4 (Panorama Studio's `sticker` input).
@@ -700,7 +699,7 @@ async function showEditor(node, type, options = {}) {
     loadPreferredExactLinkedImage, mediaAssetSource, mediaSource, mediaUiImage, node, overlay, paintColorPop,
     paintColorRow, paintColorSv, paintColorSvCursor, paintCursorEl, paintDockEl, paintHueHandle, paintHueStrip,
     paintSizePreviewEl, paintSizePreviewSampleEl, portStillCanvas, portVideoEl, presetWidget, previewMode,
-    rasterErpCanvasCache, rasterImageAlphaCache, rasterImageCache, readOnly, resolveEditorOutputPresetWidth, root,
+    rasterImageAlphaCache, rasterImageCache, readOnly, resolveEditorOutputPresetWidth, root,
     runtime, sceneV2, scheduler, selectionMenu, setCanvasCursor, shotEditor, stageWrap, state, stateV2,
     stateWidget, stillCanvas, studio, timeline, timelinePlayhead, timers, toolRailEl, tooltip, tooltipEl, type, uiState,
     videoEl, videoTimelineFps, videoTransportEl, viewController, vueModal,
@@ -993,7 +992,7 @@ const sceneViewerMedia = {
   uiList: (node, key) => (isNodeOutputMediaCurrent(node, "background") ? comfyMedia.uiList(node, key) : []),
   mediaSource,
   mediaAssetSource,
-  revisionOf: getRenderableMediaRevisionToken,
+  revisionOf: mediaPlayheadRevisionToken,
   editorFile: (sticker) => file3dEditorFileOf(sceneViewerFiles, sticker, mediaSource),
   refreshFile: (source) => sceneViewerFiles.refresh(source),
 };

@@ -4,6 +4,7 @@
 // it (pano_video_playback.js createVideoPlayback), the still of its last confirmed frame, and what the views draw of it.
 // Both editors use it: the old one (editor/media_session.js, which adds the legacy transport and its filmstrip) and
 // the new one (studio/editor.js).
+import { BACKGROUND_UI_KEYS } from "./pano_background_choice.js";
 import { isPanoramaPreviewNodeName } from "./pano_preview_identity.js";
 import { createVideoPlayback } from "./pano_video_playback.js";
 
@@ -12,11 +13,13 @@ const HAVE_CURRENT_DATA = 2;
 // The keys of the node's result ({ videoKey, metaKey }) that hold the background VIDEO an editor shows: the
 // Preview's own, an upstream Scene's background (`upstream`, pano_upstream.js upstreamBackgroundOf), or the editor
 // MP4 of the Stickers / Cutout / Panorama Studio background input. `nodeName` is the node's class; `type` the editor's.
+// The keys are pano_background_choice.js BACKGROUND_UI_KEYS (the old editor asks here).
 export function backgroundVideoKeys({ nodeName = "", upstream = null, type = "stickers" } = {}) {
-  if (isPanoramaPreviewNodeName(nodeName)) return { videoKey: "pano_videos", metaKey: "pano_video_meta" };
+  const { preview, studio } = BACKGROUND_UI_KEYS;
+  if (isPanoramaPreviewNodeName(nodeName)) return { videoKey: preview.video, metaKey: preview.meta };
   if (upstream) return { videoKey: upstream.videoKey, metaKey: upstream.metaKey };
-  if (type === "stickers" || type === "cutout") return { videoKey: "pano_input_videos", metaKey: "pano_input_video_meta" };
-  return { videoKey: "pano_videos", metaKey: "pano_video_meta" };
+  if (type === "stickers" || type === "cutout") return { videoKey: studio.video, metaKey: studio.meta };
+  return { videoKey: preview.video, metaKey: preview.meta };
 }
 
 // The meta entry of a VIDEO in a result's `ui` value (a list of one, or the entry itself), or null.
@@ -77,6 +80,35 @@ export function mediaRevisionToken(media) {
     Number(media.naturalWidth || media.width || 0),
     Number(media.naturalHeight || media.height || 0),
   ].join("|");
+}
+
+// The revision the node surfaces (pano_preview_runtime.js, pano_preview_previewnode.js) and the old editor's Scene
+// viewer give: mediaRevisionToken, with a VIDEO's playhead, readyState and pause added; "" without media.
+export function mediaPlayheadRevisionToken(media) {
+  if (!media) return "";
+  if (!isVideo(media)) return mediaRevisionToken(media);
+  return [
+    mediaRevisionToken(media),
+    Number(media.currentTime || 0).toFixed(3),
+    Number(media.readyState || 0),
+    media.paused ? "paused" : "playing",
+  ].join("|");
+}
+
+// Whether the node surfaces draw a media: a sized canvas, a VIDEO with a frame, else a complete image with a width.
+// Unlike isDecodedImageReady it does not check an image's height and wants `complete` of anything else; the media
+// the node surfaces pass (an image, a VIDEO, a canvas) read the same both ways.
+export function isRenderableMediaReady(media) {
+  if (!media) return false;
+  if (isCanvas(media)) {
+    return Number(media.width || 0) > 0 && Number(media.height || 0) > 0;
+  }
+  if (isVideo(media)) {
+    return Number(media.videoWidth || 0) > 0
+      && Number(media.videoHeight || 0) > 0
+      && Number(media.readyState || 0) >= 2;
+  }
+  return !!media.complete && Number(media.naturalWidth || media.width || 0) > 0;
 }
 
 // Whether an image, a VIDEO or a canvas has a picture to draw.

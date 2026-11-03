@@ -17,6 +17,8 @@ import { STAGE_CLEAR_COLOR, cameraFrameHit, frameViewFov, lensPickView, lensPinh
 import { createNotice, createViewCamera, frameSelectedSphere, orbitCenter } from "./view_camera.js";
 import { KNOB_CURSOR, createViewInput, createWheelSteps, knobAction, litKnobs, navigationAction, stageCursor } from "./view_input.js";
 import { BOUND_NOTICE_SECONDS, FRAME_WHEEL_REST_MS, PITCH_LIMIT, frameSeconds } from "./view_scale.js";
+import { projectPoint } from "../pano_space.js";
+import { markOnView, orbitMarkPoint, orbitMarkerAlpha, orbitMarkerFading } from "./orbit_marker.js";
 
 // The owners (pano_three_view.js) the live ERP of the Camera tab's Panorama mode, the Output window's Frame picture and
 // its live ERP draw for.
@@ -26,6 +28,10 @@ export const OUTPUT_ERP_OWNER = "studio-output-erp";
 // The reasons that leave the Output window's picture as it is: the stage's view, its overlay, its own Spark sort, and
 // a paint stroke under way (its end changes the state, which draws the window again).
 const OUTPUT_KEEPS = new Set([DRAW_REASON.VIEW, DRAW_REASON.OVERLAY, DRAW_REASON.SPLAT_STAGE, DRAW_REASON.PAINT]);
+
+// A double click that comes within this long after Set orbit center's press is the one its clicks made (a browser's
+// double click interval is about 500 ms): it does not set T again.
+const DOUBLE_CLICK_AFTER_PICK_MS = 600;
 
 // The fields of `ui` the stage writes (the shell reads them).
 export function stageUi() {
@@ -44,12 +50,15 @@ export function stageUi() {
     loadingGuide: false,
     // The Hide Grid switch: the grid is hidden (the shell writes it).
     gridHidden: false,
+    // Set orbit center waits for a click on the stage (docs/space-and-view.md "Set orbit center"): the button shows it,
+    // the top line says what to do, the stage's cursor is a crosshair.
+    pickingCenter: false,
   };
 }
 
 // canvas: the stage's <canvas>; root: the editor's root element (whose keys the stage takes, stageOwnsKey).
-// opening: view_camera.js openingView()'s { pose }; output: the output view Reset View goes to ({ position, yaw_deg,
-// pitch_deg }). world: { ground, camera } (the ground height, the Camera's position at the playhead), read at each
+// opening: view_camera.js openingView()'s { pose } (Reset View goes to view_camera.js RESET_VIEW, the World origin).
+// world: { ground, camera } (the ground height, the Camera's position at the playhead), read at each
 // frame (the editor changes its fields and asks for a redraw). background(): the background to draw ({ media,
 // revision, coverage }) or null. content(): the working state's content at the playhead (stage_content.js
 // stageContent()) or null. selected(): what is selected for the orbit's center and Frame Selected (view_camera.js
@@ -58,7 +67,7 @@ export function stageUi() {
 // overlay: the 2D canvas over the stage's (the guides, the Camera's mark, the gizmo, the sky image's handles; null draws
 // none).
 // objects: what selecting and editing the objects needs (stage_objects.js createStageObjects: state, playhead,
-// selection, select, edits, mode, tab, readOnly); without it the stage does not touch objects.
+// selection, select, edits, mode, tab, readOnly, upstream); without it the stage does not touch objects.
 // cameraTab: the Camera tab (docs/studio-ui.md "Camera タブ", docs/space-and-view.md "Frame 表示"), read at each frame:
 // tab() ("3d" or "camera"), mode() ("frame" or "panorama": the Camera's projection), shot() (the Camera at the
 // playhead, pano_editor_state.js cameraShot), erpRange() (360 or 180), frame() (the frame box in the stage's CSS px,
@@ -83,7 +92,6 @@ export function createStage({
   cameraTab = null,
   root,
   opening,
-  output,
   world,
   background = () => null,
   content = () => null,
@@ -117,6 +125,16 @@ export function createStage({
   // Movement keys moved the view in the last frame, or one went down since (input.keyMotion() counts the time it
   // asks for, so it is read once a frame, in draw()).
   let keysMoving = false;
+  // When (now(), ms) a double click or Set orbit center last set T, for the orbit center's mark (orbit_marker.js), or null.
+  let setAt = null;
+  // The viewpoint T was set on (the 3D tab's or the Frame view's): the mark shows on that one only.
+  let setOn = null;
+  // The view toolbar's button the pointer is over ("orbit", "center") or null, and whether the Set orbit
+  // center button waits for a click on the stage (StudioNavWidget.vue).
+  let toolbarHover = null;
+  let picking = false;
+  // When (now(), ms) the wait's press last set T: the double click its clicks may make is not a second one.
+  let pickedAt = -Infinity;
 
   const editorView = makeView({
     canvas,
@@ -327,6 +345,8 @@ export function createStage({
 
   function draw(ts, reasons = new Set()) {
     if (ownMotion?.revealing()) reasons.add(DRAW_REASON.MEDIA);
+    // Whether anything that moves the 3D picture runs this frame (an eased move that ends now still draws).
+    const moving = camera.animating() || !!drag || keysMoving || !!ownMotion?.animating() || !!follow?.animating();
     const seconds = lastFrame ? frameSeconds((ts - lastFrame) / 1000) : 0;
     lastFrame = ts;
     camera.step(seconds);
@@ -348,12 +368,27 @@ export function createStage({
       if (coasted.ended && !drag && !keysMoving) camera.endGesture();
     }
     if (!camera.animating() && !motion && drag?.action !== "joystick" && !follow?.animating()) lastFrame = 0;
+    // The mark after T was set fades on frames of its own (overlay only); this frame draws it at no strength once it is
+    // gone, and then they stop.
+    if (setAt !== null) {
+      if (orbitMarkerFading(sinceSet())) requestDraw(DRAW_REASON.OVERLAY);
+      else setAt = null;
+    }
     if (!editorView.ready) return;
     const shown = content();
     camera.setWorld({ ground: world.ground, boxes: shown?.boxes ?? [], camera: world.camera ?? null, content: shown?.sphere ?? null });
     frameCamera?.setWorld({ ground: world.ground, boxes: shown?.boxes ?? [], camera: null, content: shown?.sphere ?? null });
     const mode = viewMode();
-    if (mode !== lastMode) changeMode(mode);
+    const modeChanged = mode !== lastMode;
+    if (modeChanged) changeMode(mode);
+    // Only the 2D overlay changed (the orbit center's mark, the brush ring, a hover): the 3D picture and the Output
+    // window stay as they are.
+    const overlayOnly = !moving && !modeChanged && !motion && reasons.size > 0 && [...reasons].every((reason) => reason === DRAW_REASON.OVERLAY);
+    if (overlayOnly) {
+      drawOverlay();
+      syncUi();
+      return;
+    }
     // The Output window's Frame picture goes first, in a corner of the canvas the stage's frame then covers.
     const output = outputTarget();
     if (output?.kind === "frame") drawOutputFrame(shown, output, reasons);
@@ -375,7 +410,35 @@ export function createStage({
     }
     // Entering the Frame view starts from the Camera's first T (docs/space-and-view.md "Frame 表示").
     if (mode === "frame") frameCamera = null;
+    setPicking(false);
     lastMode = mode;
+  }
+
+  // Set orbit center waits for a click (`on`) or no longer (docs/space-and-view.md "Set orbit center").
+  function setPicking(on) {
+    if (picking === on) return;
+    picking = on;
+    ui.pickingCenter = on;
+    syncUi();
+    requestDraw(DRAW_REASON.OVERLAY);
+  }
+
+  // T where a double click or Set orbit center's click points (`point`, the stage's CSS px): the view turns to it
+  // (view_camera.js focus) and the orbit center's mark shows there, fading.
+  // In the Frame view the Camera turns at once, one Undo step of its own (a wheel run still waiting is one first).
+  function setCenterAt(point) {
+    stopCoast();
+    const view = viewMode() === "frame" ? navCamera() : camera;
+    if (!view) return;
+    if (view === frameCamera) commitFrame();
+    const result = view.focus(hitAt(point));
+    if (result.moved) {
+      setAt = now();
+      setOn = view;
+    }
+    moved(view, result, "focus");
+    if (view === frameCamera) commitFrame();
+    requestDraw();
   }
 
   // --- The Output window (docs/studio-ui.md "Output の小窓"): the Camera's output, drawn at the window's device
@@ -556,7 +619,8 @@ export function createStage({
     if (!ctx) return;
     const view = viewport();
     const scene = objectsOn() ? objects.overlay({ altHeld: input.altHeld(), gridHidden: ui.gridHidden }) : null;
-    const ring = paintOn() && pointer && (!drag || drag.action === "paint") ? paint.ring(local(pointer, view), directionsOf(view)) : null;
+    // No brush ring while Set orbit center waits (its press paints nothing; the cursor is a crosshair).
+    const ring = paintOn() && !picking && pointer && (!drag || drag.action === "paint") ? paint.ring(local(pointer, view), directionsOf(view)) : null;
     drawStageOverlay(ctx, {
       camera: view.objectCamera,
       width: view.width,
@@ -565,9 +629,49 @@ export function createStage({
       ratio,
       scene,
       ring,
+      orbit: orbitMark(view),
     });
     const loading = !!scene?.loading;
     if (ui.loadingGuide !== loading) ui.loadingGuide = loading;
+  }
+
+  // Seconds since a double click or Set orbit center last set T, or null.
+  function sinceSet() {
+    return setAt === null ? null : (now() - setAt) / 1000;
+  }
+
+  // The orbit center's mark (docs/space-and-view.md "オービットの中心の印"; orbit_marker.js) on the 3D tab, the Frame view
+  // (a Camera that can move) and the Preview window: { x, y, alpha } in the view's CSS px, or null. Its point is a World
+  // point (orbit_marker.js orbitMarkPoint) with T as it is set (the destination, not one an eased move carries).
+  function orbitMark(view) {
+    const mode = viewMode();
+    if (mode !== "space" && mode !== "frame") return null;
+    const nav = mode === "space" ? camera : (frameCamera && cameraTab.movable() ? frameCamera : null);
+    if (!nav) return null;
+    const frame = nav === frameCamera;
+    const state = {
+      alt: input.altHeld(),
+      orbitKnob: toolbarHover === "orbit",
+      // Set orbit center works in the 3D tab only.
+      centerButton: !frame && toolbarHover === "center",
+      picking: !frame && picking,
+      orbiting: drag?.action === "orbit" && drag.camera === nav,
+      sinceSet: setOn === nav ? sinceSet() : null,
+    };
+    const alpha = orbitMarkerAlpha(state);
+    if (!(alpha > 0)) return null;
+    // The next orbit's center is looked up only when the mark can be on it.
+    const wantsCenter = (state.alt || state.orbitKnob) && !state.orbiting && !state.picking;
+    const nextCenter = wantsCenter ? orbitCenter({ selection: frame ? objectSelection() : selected(), frame }) : null;
+    const point = orbitMarkPoint({ ...state, target: nav.destination().target, nextCenter });
+    // The Frame view's camera spans more than the frame box (its context reaches the stage's edges): the mark stays in
+    // the box.
+    const frameBox = frame ? cameraTab.frame() : null;
+    const box = frameBox
+      ? { x: frameBox.x - view.x, y: frameBox.y - view.y, width: frameBox.width, height: frameBox.height }
+      : { x: 0, y: 0, width: view.width, height: view.height };
+    const at = markOnView(projectPoint(view.objectCamera, point, view.width, view.height), box);
+    return at ? { ...at, alpha, box } : null;
   }
 
   // A change of size (the stage's canvas, the Camera tab's frame box or its ERP canvas, the Output window) draws at once,
@@ -596,6 +700,11 @@ export function createStage({
     ui.lit = litKnobs({ gesture, keysMoving, altHeld: input.altHeld() });
     ui.knobDrag = !!drag?.knob;
     const dragged = drag?.action === "object" ? objectCursor : null;
+    // Set orbit center waits for a click.
+    if (picking && !drag) {
+      ui.cursor = "crosshair";
+      return;
+    }
     // A painting tool shows its brush ring in place of the cursor (a crosshair for the lasso), but while the view moves.
     if (paintOn() && !drag?.knob && (!drag || drag.action === "paint")) {
       const view = viewport();
@@ -789,6 +898,14 @@ export function createStage({
     const plainLeft = event.button === 0 && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey;
     // Panorama mode's frame only shows: nothing on the stage moves or selects there.
     if (viewMode() === "erp") return;
+    // Set orbit center waits: the left press sets T there and does nothing else (no look, no selection, no stroke).
+    if (picking && event.button === 0) {
+      event.preventDefault();
+      pickedAt = now();
+      setPicking(false);
+      if (viewMode() === "space") setCenterAt(point);
+      return;
+    }
     // A painting tool: a plain left press paints (nothing happens where it cannot, a hidden painting).
     if (plainLeft && paintOn()) {
       event.preventDefault();
@@ -840,7 +957,10 @@ export function createStage({
   function onPointerMove(event) {
     if (!drag || event.pointerId !== drag.pointerId) {
       if (!drag) {
-        if (event.altKey !== input.altHeld()) input.modifiers(event);
+        if (event.altKey !== input.altHeld()) {
+          input.modifiers(event);
+          requestDraw(DRAW_REASON.OVERLAY);
+        }
         const point = pointOf(event);
         hoverAt(event.target === canvas && insideStage(point) ? point : null);
         syncUi();
@@ -874,13 +994,14 @@ export function createStage({
     requestDraw();
   }
 
-  // A double click turns the view to what is under the pointer (World image planes included, the one exception). Not in
-  // the Camera tab (docs/space-and-view.md "Frame 表示").
+  // A double click turns the view to what is under the pointer (World image planes included, the one exception); in the
+  // Camera tab's Frame view it turns the Camera (docs/space-and-view.md "Frame 表示").
+  // With Alt held too (docs/space-and-view.md "マウスとキー"); nothing while a painting tool is chosen.
   function onDoubleClick(event) {
-    if (event.button !== 0 || event.altKey || viewMode() !== "space" || paintOn()) return;
-    stopCoast();
-    report(camera.focus(hitAt(pointOf(event))));
-    requestDraw();
+    const mode = viewMode();
+    if (event.button !== 0 || (mode !== "space" && mode !== "frame") || paintOn() || (mode === "frame" && paint?.active())) return;
+    if (now() - pickedAt < DOUBLE_CLICK_AFTER_PICK_MS) return;
+    setCenterAt(pointOf(event));
   }
 
   function onContextMenu(event) {
@@ -906,7 +1027,9 @@ export function createStage({
     if (editorKeyAction(event) !== "escape" || !stageOwnsKey(event, root)) return;
     event.preventDefault();
     event.stopPropagation();
+    // A view drag under way takes Escape first, then Set orbit center's wait (docs/studio-ui.md "閉じ方").
     if (drag) end(true);
+    else if (picking) setPicking(false);
     else onEscape();
   }
 
@@ -914,6 +1037,7 @@ export function createStage({
     const alt = input.altHeld();
     input.modifiers(event);
     if (alt !== input.altHeld() && pointer && !drag) hoverAt(pointer);
+    if (alt !== input.altHeld()) requestDraw(DRAW_REASON.OVERLAY);
     // Shift pressed while a movement key is held makes it fast at once: the keys' modifiers follow every key event
     // (view_input.js keyUp passes them on and releases nothing for a key that is not held).
     if (!isMoveKey(event.code)) input.keyUp({ code: event.code, shiftKey: event.shiftKey });
@@ -943,6 +1067,7 @@ export function createStage({
     const alt = input.altHeld();
     input.modifiers(event);
     if (alt !== input.altHeld() && pointer && !drag) hoverAt(pointer);
+    if (alt !== input.altHeld()) requestDraw(DRAW_REASON.OVERLAY);
     // macOS sends no keyup for a key let go while Meta is down: Meta going up lets every key go.
     const released = event.key === "Meta" ? releaseKeys() : input.keyUp(event);
     if (released && isMoveKey(event.code)) {
@@ -963,6 +1088,7 @@ export function createStage({
   // The window lost focus or the page was hidden: Alt up, every key released, the hover gone, the drag ended.
   function onLostFocus() {
     follow?.stop();
+    setPicking(false);
     input.lostFocus();
     keysMoving = false;
     wheelSteps.reset();
@@ -1031,15 +1157,28 @@ export function createStage({
       input.modifiers(event);
       begin(action, { x: event.clientX, y: event.clientY }, event.pointerId, knob);
     },
+    // The pointer is over a button of the view toolbar (StudioNavWidget.vue: "orbit", "center") or left it (null): the
+    // orbit center's mark shows while it is there.
+    toolbarHover(knob) {
+      const next = knob === "orbit" || knob === "center" ? knob : null;
+      if (toolbarHover === next) return;
+      toolbarHover = next;
+      requestDraw(DRAW_REASON.OVERLAY);
+    },
+    // Set orbit center was pressed: it waits for a click on the stage, or stops waiting when it already did. The 3D tab
+    // only (the Preview window's stage is a 3D view too).
+    pickCenter() {
+      setPicking(!picking && viewMode() === "space");
+    },
     // The Frame view's change still waiting (a wheel run) becomes one Undo step now: before another edit or a step.
     settle() {
       if (!drag && !keysMoving) commitFrame();
     },
-    // Reset View: to the output view the editor opened with. Not in the Camera tab.
+    // Reset View: to the World origin, level, yaw 0 (view_camera.js RESET_VIEW; ADR 0058). Not in the Camera tab.
     resetView() {
       if (viewMode() !== "space") return;
       stopCoast();
-      report(camera.reset(output));
+      report(camera.reset());
       requestDraw();
     },
     // Frame Selected: the selected object (selected(), or `selection` when given: a Timeline row's double click), else

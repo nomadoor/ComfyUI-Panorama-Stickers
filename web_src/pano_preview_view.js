@@ -14,8 +14,8 @@ export function previewNodeCamera(view, width, height) {
   return viewportCamera({ yaw_deg: view.yaw, pitch_deg: view.pitch, roll_deg: 0, hFOV_deg: view.fov }, width, height);
 }
 
-// load({ onUpdate, onSplats }) resolves to a view with render(input), renderLiveErp(input), release(owner) and dispose(), made with those
-// hooks (pano_three_view.js createThreeView). Returns acquire(onChange, { items }), which hands out a handle per node;
+// load({ onUpdate, onSplats }) resolves to a view with render(input), renderLiveErp(input), release(owner), releaseWorld(owner) and
+// dispose(), made with those hooks (pano_three_view.js createThreeView, each node drawing a World of its own: ownWorlds). Returns acquire(onChange, { items }), which hands out a handle per node;
 // onChange runs when the view becomes ready or fails to load. A node that draws 3D items (`items`, the Preview's
 // Scene viewer) is also told when an item the view loads is ready and when its own splats are sorted again; the
 // other nodes are not. A failed load is tried again once every node has gone and a node draws again.
@@ -82,10 +82,10 @@ export function createSharedView(load) {
         return view ? view.pickSurface(camera, x, y, width, height) : null;
       },
       sceneBox(url) {
-        return view ? view.sceneBox(url) : null;
+        return view ? view.sceneBox(url, user) : null;
       },
       sceneItemError(url) {
-        return view ? view.sceneItemError(url) : null;
+        return view ? view.sceneItemError(url, user) : null;
       },
       contentRevision() {
         return view ? view.contentRevision() : 0;
@@ -94,11 +94,17 @@ export function createSharedView(load) {
       release() {
         view?.release(user);
       },
+      // Frees the loaded 3D items of this node's World while it is out of sight or under its editor
+      // (docs/studio-node-surface.md "見えないときとエディタを開いている間"); its next render loads them again.
+      releaseWorld() {
+        view?.releaseWorld(user);
+      },
       dispose() {
         if (disposed) return;
         disposed = true;
         users.delete(user);
         view?.release(user);
+        view?.releaseWorld(user);
         if (users.size) return;
         failed = false;
         view?.dispose();
@@ -110,6 +116,6 @@ export function createSharedView(load) {
 
 export const acquirePreviewView = createSharedView(
   ({ onUpdate, onSplats }) => import("./pano_three_view.js").then((module) => (
-    watchThreeView(module.createThreeView({ onUpdate, onSplats, createCanvas: () => createPanoCanvas({ label: "three.node" }) }), "node")
+    watchThreeView(module.createThreeView({ onUpdate, onSplats, ownWorlds: true, createCanvas: () => createPanoCanvas({ label: "three.node" }) }), "node")
   )),
 );

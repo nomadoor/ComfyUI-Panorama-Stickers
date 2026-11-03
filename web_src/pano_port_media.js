@@ -5,7 +5,7 @@
 // seconds before a PTS that count as its frame. Timeline frames are those of the state, at its
 // Timeline fps `fps`.
 import { createPanoCanvas } from "./pano_diagnostics.js";
-import { clipActive } from "./pano_scene_eval.js";
+import { clipActive, clipFrame, clipOrigin } from "./pano_scene_eval.js";
 import { defaultClip } from "./pano_scene_state.js";
 
 // The keys of a result's `ui` that carry the port Sticker's media (docs/studio-node.md "実行結果の `ui`"): its first
@@ -24,12 +24,12 @@ const PTS_HAIR = 1e-3;
 // nearest image, sought at the middle of its frame in the MP4 (evenly spaced at meta.fps).
 export function portMediaTime(clip, frame, fps, meta) {
   if (!clipActive(clip, frame)) return null;
-  const clipFrame = frame - (clip.start - clip.in);
+  const mediaFrame = clipFrame(clip, frame);
   if (meta.kind === "IMAGE") {
-    const index = Math.floor(clipFrame + 0.5);
+    const index = Math.floor(mediaFrame + 0.5);
     return index >= 0 && index < meta.frames ? (index + 0.5) / meta.fps : null;
   }
-  const time = clipFrame / fps + Math.max(PTS_HAIR / fps, Number(meta.pts_tolerance) || 0);
+  const time = mediaFrame / fps + Math.max(PTS_HAIR / fps, Number(meta.pts_tolerance) || 0);
   return time >= 0 && time < meta.duration ? time : null;
 }
 
@@ -38,7 +38,7 @@ export function portMediaTime(clip, frame, fps, meta) {
 // (autoTimelineLength); else 0.
 export function portMediaFrames(clip, fps, meta) {
   if (clip.duration !== null) return 0;
-  return Math.round(clip.start - clip.in + (meta.kind === "IMAGE" ? meta.frames : meta.duration * fps));
+  return Math.round(clipOrigin(clip) + (meta.kind === "IMAGE" ? meta.frames : meta.duration * fps));
 }
 
 // The Timeline frame where Panorama Studio's own background media ends, placed by its Clip range `clip`
@@ -47,7 +47,7 @@ export function portMediaFrames(clip, fps, meta) {
 // background as autoTimelineLength reads it ({ video, frames, duration }). Where its bar ends without a duration,
 // and where the editor and the node surfaces show bg_color after it (backgroundShownAt).
 export function bgMediaEnd(clip, fps, bg, under = false) {
-  return clip.start - clip.in + (bg.video && under ? bg.duration * fps : bg.frames);
+  return clipOrigin(clip) + (bg.video && under ? bg.duration * fps : bg.frames);
 }
 
 // Where the background's bar on the Timeline ends (the background row): where its media ends (bgMediaEnd) for a VIDEO
@@ -71,7 +71,7 @@ export function backgroundClipAt(clip, fromFps, toFps) {
 // start - in, shown from start until start + duration (Infinity without a duration: until the VIDEO ends).
 export function backgroundPlace(clip) {
   if (defaultClip(clip)) return null;
-  return { origin: clip.start - clip.in, start: clip.start, end: clip.duration === null ? Infinity : clip.start + clip.duration };
+  return { origin: clipOrigin(clip), start: clip.start, end: clip.duration === null ? Infinity : clip.start + clip.duration };
 }
 
 // Whether the background shows at Timeline `frame` (the node shows bg_color where it does not): inside its Clip

@@ -255,16 +255,38 @@ test("Panorama mode Camera tab: a selection carried in is not let go by a click 
   expect(problems).toEqual([]);
 });
 
-test("Camera tab: the Camera selected in the 3D tab shows its card and its bar there, without a gizmo", async ({ page }) => {
+test("Camera tab: the Camera selected in the 3D tab shows its card there, without its bar (ADR 0055) or a gizmo; back in the 3D tab its bar shows again", async ({ page }) => {
   const problems = await load(page);
   await page.locator('[data-head="camera"] [data-part="name"]').first().click();
   await expect.poll(() => selected(page)).toBe("camera");
+  await expect(page.locator('.pano-studio-at-bar [data-kind="camera"]')).toHaveCount(1);
   await toTab(page, "Camera");
   expect(await cards(page)).toEqual(["camera"]);
-  await expect(page.locator('.pano-studio-at-bar [data-kind="camera"]')).toHaveCount(1);
+  await expect(page.locator('.pano-studio-at-bar [data-kind]')).toHaveCount(0);
+  expect(await selected(page)).toBe("camera");
+  // The frame keeps the bar's seat under it: the same frame as with nothing selected.
+  const frameSelected = await rectOf(page, "[data-frame-box]");
+  await page.keyboard.press("Escape");
+  await expect.poll(() => selected(page)).toBeNull();
+  expect(await rectOf(page, "[data-frame-box]")).toEqual(frameSelected);
+  await page.locator('[data-head="camera"] [data-part="name"]').first().click();
+  await expect.poll(() => selected(page)).toBe("camera");
+  await expect(page.locator('.pano-studio-at-bar [data-kind]')).toHaveCount(0);
   // No gizmo of its own: nothing near the frame's middle grabs.
   const frame = await rectOf(page, "[data-frame-box]");
   expect(await grabNear(page, { x: frame.x + frame.width / 2, y: frame.y + frame.height / 2 }, 60)).toBeNull();
+  await toTab(page, "3D");
+  await expect(page.locator('.pano-studio-at-bar [data-kind="camera"]')).toHaveCount(1);
+  expect(problems).toEqual([]);
+});
+
+test("Camera tab: another selected object keeps its bar there (ADR 0051)", async ({ page }) => {
+  const problems = await load(page);
+  const id = await page.evaluate(() => window.__studio.session.state.stickers[0].id);
+  await page.locator(`[data-head="${id}"] [data-part="name"]`).first().click();
+  await expect.poll(() => selected(page)).toBe(id);
+  await toTab(page, "Camera");
+  await expect(page.locator('.pano-studio-at-bar [data-kind]')).toHaveCount(1);
   expect(problems).toEqual([]);
 });
 

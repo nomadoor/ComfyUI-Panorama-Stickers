@@ -19,6 +19,7 @@ Panorama Studio の `state_json`（状態 v2）、Camera を持つ Panorama Stud
 | Timeline の上限の定数 | `scene_state.py` の `TIMELINE_FPS_MIN`・`TIMELINE_FPS_MAX`・`TIMELINE_LENGTH_MAX`・`TIMELINE_FRAME_MAX` | `pano_scene_state.js` の同名の定数 | フィクスチャ `v2_timeline_limits` |
 | `sticker_state` の読み込み | `scene_state.py` `load_sticker_state` | `pano_scene_state.js` `loadStickerState` | `test_scene_state.py`、`pano_scene_state.test.mjs`、`test_scene_state_parity.py` |
 | 評価関数と補間 | `core/scene_eval.py` `evaluate_scene_state` | `web_src/pano_scene_eval.js` `evaluateSceneState` | `tests/test_scene_eval.py`、`test_scene_state_parity.py` |
+| 素材の先頭（`start − in`）と、Timeline frame から素材の先頭からのフレームへの直し方（`frame − (start − in)`） | `scene_eval.py` `_clip_frame` | `pano_scene_eval.js` `clipOrigin`・`clipFrame`（エディタ・タイムライン・`port` の素材の時刻も呼ぶ） | `tests/pano_scene_eval.test.mjs`、評価の `clip_frame` を比べる `test_scene_state_parity.py` |
 | fps の再基準化 | `scene_state.py` `rebase_scene_state` | `pano_scene_state.js` `rebaseSceneState` | `test_scene_state.py`、`pano_scene_state.test.mjs`、`test_scene_state_parity.py` |
 | 上書きの記録の再基準化 | `scene_state.py` `rebase_upstream_record` | `pano_scene_state.js` `rebaseUpstreamRecord` | `tests/test_scene_inherit.py`、`tests/pano_scene_inherit.test.mjs`、`tests/test_upstream_editor_parity.py` |
 | 上書きを当てる | `core/scene_inherit.py` `apply_upstream_overrides` | `web_src/pano_scene_inherit.js` `applyUpstreamOverrides` | `test_scene_inherit.py`、`pano_scene_inherit.test.mjs` |
@@ -63,7 +64,7 @@ Python と JS の両方の test が同じファイルを読む。Python と JS �
 - yaw（経度）は `atan2(x, z)`。0 が正面、+90 が右、−90 が左、±180 が背面（ERP の左右の端の継ぎ目）。範囲に丸めて表すときは −180 以上 180 未満（`wrap_yaw_deg`）。状態の yaw は丸めない（下の Lane の規則）。
 - pitch（緯度）は −90〜90 で、0 が水平線、+90 が天頂。
 - ERP の画像は、左から右へ経度 −180〜180（`coverage` 180 では −90〜90）、上から下へ緯度 90〜−90。画素の中心で標本化する。
-- Camera の向きは `Ry(yaw) @ Rx(−pitch) @ Rz(roll)`。正の yaw は右を、正の pitch は上を向き、正の roll は画像を時計回りに回す。
+- Camera の向きは `Ry(yaw) @ Rx(−pitch) @ Rz(roll)`。正の yaw は右を、正の pitch は上を向き、正の roll は画像を時計回りに回す。同じ基底を、Camera は見る側として、`sky` の Sticker は空に貼る側として使うので、正の roll で Camera の写す絵は時計回りに回り、`sky` の Sticker の画像は中から見て反時計回りに回る。
 
 ### 時間
 
@@ -113,7 +114,7 @@ Python と JS の両方の test が同じファイルを読む。Python と JS �
 | `scene.animation` | オブジェクト または欠け | 欠け | `scene` 入力の 3D ファイルの glTF のアニメーション（ADR 0043）。形は下の Sticker の `animation` と同じ |
 | `stickers` | 配列 | `[]` | `sky` の層は `z_index`（ペイントと共通の軸）で並べ、同じ値ならリストの順（先頭が奥）。`world` の Sticker は奥行きで重なる |
 | `next_sticker_id` | 整数 | 下記 | 次に加える Sticker の番号 `n`（`sticker_<n>`）。下記「Sticker の id の採番」 |
-| `painting` | オブジェクト | 空のペイント | 既存の `normalize_painting_state` / `normalizePaintingState` で正規化する。`sky` の静的な層。`version` は保存された値によらず常に `1`。group とラスタ（`raster_objects`）の `z_index` は、`z_index`、次に `zIndex` のうち最初の有限の JSON の数値（真偽値と文字列は数えない。double にできない大きな整数は有限でない）で、どちらにも無いときは groups（raster_objects）の中の順番にする。エディタは数値を書くので、文字列はテキストを手で書いた状態にだけ現れる。group の値は `Math.round` と同じ丸め（半分は +∞ の向き。−2.5 は −2）、ラスタの値は丸めず、どちらも 0 以上に寄せる。group の `locked` はエディタだけが使う（ノードは描画に使わない）ので、Python の読み込みは持たない。ラスタの `locked` もエディタだけが使い（ノードは描画に使わない）、Python の読み込みはその値を保つ。ほかの数値は下記「ペイントの数値」 |
+| `painting` | オブジェクト | 空のペイント | 既存の `normalize_painting_state` / `normalizePaintingState` で正規化する。`sky` の静的な層。`version` は保存された値によらず常に `1`。group とラスタ（`raster_objects`）の `z_index` は、`z_index`、次に `zIndex` のうち最初の有限の JSON の数値（真偽値と文字列は数えない。double にできない大きな整数は有限でない）で、どちらにも無いときは groups（raster_objects）の中の順番にする。エディタは数値を書くので、文字列はテキストを手で書いた状態にだけ現れる。group の値は `Math.round` と同じ丸め（半分は +∞ の向き。−2.5 は −2）、ラスタの値は丸めず、どちらも 0 以上に寄せる。group の `locked` はエディタだけが使う（ノードは描画に使わない）ので、Python の読み込みは持たない。group の `rot_deg`（任意。まとまりの枠の向き：中心の向きのまわりの回転で、正は中から見て時計回り。roll との向きの関係は上の角度規約の項、枠の作り方は `docs/studio-ui.md` の「ペイントのまとまり」。点はすでに回してあり、枠と回転のハンドルを点と一緒に回して描くためだけに持つ）も同じくエディタだけが使い、Python の読み込みは持たない。JS の読み込みは、有限の JSON の数値ならそのまま（範囲に丸めない。360° の差は同じ向き）、無いときと不正なときは 0 にする（下記「ペイントの数値」の `finiteNumber`。この項目が無い古い状態は 0 で読む）。ラスタの `locked` もエディタだけが使い（ノードは描画に使わない）、Python の読み込みはその値を保つ。ほかの数値は下記「ペイントの数値」 |
 | `painting_layer` | オブジェクト または `null` | `null` | ペイントのラスタ画像の参照。中身はそのまま保つ |
 | `painting_visible` | 真偽値 | `true` | 真偽値でなければ既定値。`false` ならペイント（ストローク・ラスタ・マスク）を描かず、MASK にも出さない |
 | `ground` | 数値 または欠け | 欠け | 地面の高さ（World の y。ADR 0046）。数でない値・有限でない値は欠けとして読む。欠けているときは、上流の Scene があれば上流の層の `ground`（最も下流で `ground` を持つ層のもの）、無ければ `GROUND_DEFAULT`（-1.6）として読む。正規化の結果には欠けのまま残し、読む側（評価関数と、下の読む場所）が既定の規則で値を求める。使う人が「ここを地面にする」で変えたときだけ値が入る（`docs/studio-ui.md` の Scene のカード、`docs/space-and-view.md` の目の高さ `E`）。読む場所：エディタのグリッドと置く物の位置（JS）、ノードが置く 3D の `port` の Sticker の位置（Python `nodes.py` の `_world_port_sticker`。ADR 0046 の「ノードが置く 3D の `port` の Sticker も地面の上に置く」）、`PANO_SCENE` の下流での上流の層の `ground`（Python・JS） |

@@ -1,0 +1,40 @@
+{
+ "chromium": "153.0.8010.12",
+ "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+ "hashes": {
+  "studio": {
+   "paint_group:g1": "2048x1024:9bb75e4f78ad9b56b424930fdbd998ea",
+   "raster:front": "2048x1024:744985faf053cb955f4c34e182e598b9",
+   "raster:seam": "2048x1024:380f7ed1d9a0edf7d97bdea0fc2dffb1",
+   "raster:thin": "2048x1024:57f035bb8d913bb31e3aebea9ecb4362"
+  },
+  "editor2048": {
+   "raster:front": "2048x1024:744985faf053cb955f4c34e182e598b9",
+   "raster:seam": "2048x1024:380f7ed1d9a0edf7d97bdea0fc2dffb1",
+   "raster:thin": "2048x1024:57f035bb8d913bb31e3aebea9ecb4362"
+  },
+  "editor4096": {
+   "raster:front": "4096x2048:117cc2aa17acbd58168b363e6a39d7a2",
+   "raster:seam": "4096x2048:9b8416713a3c4db6f39c716800ff9962",
+   "raster:thin": "4096x2048:d3072535aeb92bf694d1890dab061d13"
+  },
+  "surface2048": {
+   "paint_group:g1": "2048x1024:9bb75e4f78ad9b56b424930fdbd998ea",
+   "raster:front": "1024x512:a455104d1e6c5009443a56327add0e56",
+   "raster:seam": "1024x512:97147e9fef2f08f6536ca2838ed82415",
+   "raster:thin": "1024x512:5647f05ec18958947d32874eeb788fa3"
+  },
+  "surface512": {
+   "paint_group:g1": "512x256:9f7042d7dbcf2a8855b456eb5f578987",
+   "raster:front": "512x256:1fbf6f96ff565da5c4e9f533a03464c4",
+   "raster:seam": "512x256:8d4daf874148e3eb781cb54c1738df41",
+   "raster:thin": "512x256:07854d2fef297a06ba81685e660c332d"
+  },
+  "upstream2048": {
+   "paint_group:g1": "2048x1024:9bb75e4f78ad9b56b424930fdbd998ea",
+   "raster:front": "2048x1024:744985faf053cb955f4c34e182e598b9",
+   "raster:seam": "2048x1024:380f7ed1d9a0edf7d97bdea0fc2dffb1",
+   "raster:thin": "2048x1024:57f035bb8d913bb31e3aebea9ecb4362"
+  }
+ }
+}

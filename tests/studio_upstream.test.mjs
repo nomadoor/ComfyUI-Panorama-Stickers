@@ -1,11 +1,12 @@
 // The upstream Scene in the new editor (web_src/studio/upstream.js, docs/studio-ui.md "ノードの入力から来た物"): its
-// layers from the node's result, drawn and shown read-only in the Timeline, the name of their group, the Auto length,
-// waiting for a run, and the upstream background when the node has none of its own.
+// layers from the node's result, drawn and shown in the Timeline, the name of their group, their edits written back
+// (docs/studio-ui.md "上流の物の編集"), the Auto length, waiting for a run, and the upstream background when the node
+// has none of its own.
 import assert from "node:assert/strict";
 import test from "node:test";
 
 import { loadSceneState } from "../web_src/pano_scene_state.js";
-import { createStudioUpstream, upstreamBackground, upstreamNodeName } from "../web_src/studio/upstream.js";
+import { createStudioUpstream, upstreamNodeName } from "../web_src/studio/upstream.js";
 
 class FakeImage {}
 globalThis.Image ??= FakeImage;
@@ -17,13 +18,17 @@ const layerState = {
   stickers: [{ id: "sticker_1", placement: "world", source: { kind: "file", filename: "a.png", subfolder: "", storage: "input" }, position: { value: [0, 0, -3] } }],
 };
 
-function setup({ list = [{ state: layerState, ui: {} }], linkType = "PANO_SCENE", state = loadSceneState({ version: 2 }), frames = [48] } = {}) {
+function setup({ list = [{ state: layerState, ui: {} }], linkType = "PANO_SCENE", state = loadSceneState({ version: 2 }), frames = [48], nodeName = (key) => (key === "scene_up" ? "Studio Up" : null) } = {}) {
+  const box = { state };
   return createStudioUpstream({
     list: () => list,
     linkType: () => linkType,
     uiList: (key) => (key === "pano_upstream_frames" ? frames : []),
-    state: () => state,
-    nodeName: (key) => (key === "scene_up" ? "Studio Up" : null),
+    state: () => box.state,
+    setRecords: (records) => {
+      box.state = { ...box.state, upstream: records };
+    },
+    nodeName,
     mediaSource: (entry) => entry,
     mediaAssetSource: (asset) => `/view?filename=${asset.filename}`,
     revisionOf: () => "r",
@@ -31,15 +36,27 @@ function setup({ list = [{ state: layerState, ui: {} }], linkType = "PANO_SCENE"
   });
 }
 
-test("the upstream layers show read-only in the Timeline, named after the Studio they came from", () => {
+test("the upstream layers show in the Timeline and the inspector, named after the Studio they came from", () => {
   const upstream = setup();
   const [layer] = upstream.timelineLayers();
   assert.equal(layer.key, "scene_up");
   assert.equal(layer.name, "Studio Up");
-  assert.equal(layer.readOnly, true);
   assert.equal(layer.editable, true);
+  assert.equal(Object.hasOwn(layer, "readOnly"), false);
   assert.deepEqual(layer.sceneState.stickers.map((sticker) => sticker.id), ["upstream:scene_up:sticker_1"]);
-  assert.deepEqual(upstream.working().map((item) => item.key), ["scene_up"]);
+  assert.deepEqual(upstream.working().map((item) => [item.key, item.name]), [["scene_up", "Studio Up"]]);
+  assert.equal(upstream.working()[0].sceneState, layer.sceneState, "both show the one working copy");
+});
+
+test("an edit of a working copy is written back as the state's records, and its Clip range counts in the Auto length", () => {
+  const upstream = setup();
+  const [layer] = upstream.working();
+  const sticker = layer.sceneState.stickers[0];
+  sticker.clip = { start: 40, in: 0, duration: 30 };
+  assert.deepEqual(upstream.output().ends, [70], "an edit not written back yet counts already");
+  assert.equal(upstream.edits.sync(), true);
+  assert.deepEqual(upstream.output().ends, [70], "the record's Clip range counts once written");
+  assert.equal(upstream.edits.sync(), false);
 });
 
 test("the upstream layers count in the Auto length, and the editor waits for a run while the result has none", () => {
@@ -71,22 +88,35 @@ test("the upstream Studio's name is the title of the Panorama Studio on the grap
   assert.equal(upstreamNodeName(nodes, "#0"), null);
 });
 
-test("the upstream background stands in only while the node's own background is not linked", () => {
-  const ui = {
-    pano_upstream_input_images: ["/up.png"],
-    pano_upstream_coverage: [180],
-    pano_upstream_bg_color: [[1, 0, 0]],
-    pano_upstream_bg_clip: [{ clip: { start: 12, in: 0, duration: 24 }, fps: 12 }],
-  };
-  const uiList = (key) => ui[key] ?? [];
-  const bg = upstreamBackground({ uiList, current: true, ownLinked: false, fps: 24 });
-  assert.equal(bg.imageKey, "pano_upstream_input_images");
-  assert.equal(bg.coverage, 180);
-  assert.equal(bg.color, "#ff0000");
-  // Its Studio's Clip range, in this editor's frames (seconds kept).
-  assert.deepEqual(bg.place, { start: 24, in: 0, duration: 48 });
-  assert.equal(upstreamBackground({ uiList, current: true, ownLinked: true, fps: 24 }), null, "the node's own background replaces it");
-  assert.equal(upstreamBackground({ uiList, current: false, ownLinked: false, fps: 24 }), null);
-  assert.equal(upstreamBackground({ uiList: () => [], current: true, ownLinked: false, fps: 24 }), null);
-  assert.deepEqual(upstreamBackground({ uiList: (key) => (key === "pano_upstream_input_images" ? ["/up.png"] : []), current: true, ownLinked: false, fps: 24 }).place, { start: 0, in: 0, duration: null });
+
+// The stage reads the working layers on each draw and pointer move: the Studios' names (each a parse of every
+// Panorama Studio's state_json) are found once per result, and the list stays one object until the copies change.
+test("the working layers keep their names and their list across reads, until a new result or a rebuild", () => {
+  let lookups = 0;
+  const box = { list: [{ state: layerState, ui: {} }] };
+  const upstream = setup({ list: null, nodeName: () => { lookups += 1; return "Studio Up"; } });
+  const counted = createStudioUpstream({
+    list: () => box.list,
+    linkType: () => "PANO_SCENE",
+    uiList: () => [],
+    state: () => loadSceneState({ version: 2 }),
+    setRecords() {},
+    nodeName: () => { lookups += 1; return "Studio Up"; },
+    mediaSource: (entry) => entry,
+    mediaAssetSource: () => "",
+    revisionOf: () => "r",
+    playing: () => false,
+  });
+  const first = counted.working();
+  for (let index = 0; index < 50; index += 1) assert.equal(counted.working(), first);
+  assert.equal(lookups, 1);
+  assert.equal(first[0].name, "Studio Up");
+  counted.edits.rebuild();
+  const rebuilt = counted.working();
+  assert.notEqual(rebuilt, first, "made again: a new list");
+  assert.equal(lookups, 1, "the same result: its names are kept");
+  box.list = [{ state: layerState, ui: {} }];
+  counted.working();
+  assert.equal(lookups, 2, "a new result: its names are found again");
+  assert.deepEqual(upstream.working(), []);
 });

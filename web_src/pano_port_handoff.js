@@ -3,7 +3,8 @@
 // stored value, the others follow the handoff, and its placement follows the handoff (nodes.py
 // `_inherit_handoff`). The state keeps the stored Lanes: showing the handoff never changes state_json, and an
 // edit of an inherited Lane makes it an override (docs/editor-interaction.md).
-import { loadSceneState, SKY_STICKER_LANES, timelineFps, WORLD_STICKER_LANES } from "./pano_scene_state.js";
+import { clipOrigin } from "./pano_scene_eval.js";
+import { loadSceneState, rebaseSceneState, SKY_STICKER_LANES, timelineFps, WORLD_STICKER_LANES } from "./pano_scene_state.js";
 
 // The Lanes a handoff of each placement hands: with a lens (ADR 0042) a sky Sticker's `curve`, and a world
 // Sticker's `lens` when a shot was not through a pinhole alone.
@@ -42,7 +43,7 @@ function sameValue(a, b) {
 function handoffLanes(handoff, fps, clip) {
   const from = handoff.fps ?? fps;
   if (from === fps) return handoff.lanes;
-  const origin = clip.start - clip.in;
+  const origin = clipOrigin(clip);
   const runOrigin = Math.floor(origin * from / fps + 0.5);
   return Object.fromEntries(Object.entries(handoff.lanes).map(([name, lane]) => [name, {
     value: lane.value,
@@ -122,4 +123,87 @@ export function revertHandoffLane(state, sticker, handoff, name) {
   sticker.handoff_overrides = sticker.handoff_overrides.filter((item) => item !== name);
   sticker[name] = clone(inheritPortHandoff(state, sticker, handoff)[name]);
   return true;
+}
+
+// --- The pair an editor keeps while it shows the Pose handoff (docs/editor-interaction.md "`port` の Sticker の Pose
+// handoff の表示と記録"): { stored, shown, handoff, fps }, the port Sticker the state keeps, the one shown the last
+// time, the handoff shown, and the Timeline fps they are at. Both editors call these: they take values and return
+// values, and never change the state they are given (the old editor writes what they return into its own state).
+
+export const NO_PORT_HANDOFF_PAIR = Object.freeze({ stored: null, shown: null, handoff: null, fps: null });
+
+function portOf(state) {
+  return state.stickers.find((item) => item.source?.kind === "port") ?? null;
+}
+
+// A port Sticker at `fps`, from one at `from`, as rebaseSceneState rebases it with the state.
+function rebasedPortSticker(sticker, from, fps) {
+  return clone(rebaseSceneState(loadSceneState({ version: 2, timeline: { fps: from }, stickers: [sticker] }), fps).stickers[0]);
+}
+
+// The last shown and stored port Stickers with the Lanes taken off the overrides since then (a reset back to the
+// handoff, revertHandoffLane) at the value they have now in `port`: going back to the handoff is no edit, so such a
+// Lane is not recorded as an override again, and the state keeps the handoff's value for it.
+function withReverted(port, shown, stored) {
+  if (shown.placement !== port.placement) return [shown, stored];
+  const reverted = shown.handoff_overrides.filter((name) => !port.handoff_overrides.includes(name));
+  if (!reverted.length) return [shown, stored];
+  const before = clone(shown);
+  // A stored Sticker still of the other placement (storedPortSticker) has none of these Lanes.
+  const kept = stored.placement === port.placement ? clone(stored) : stored;
+  for (const name of reverted) {
+    for (const sticker of kept === stored ? [before] : [before, kept]) {
+      if (port[name] === undefined) delete sticker[name];
+      else sticker[name] = clone(port[name]);
+    }
+  }
+  return [before, kept];
+}
+
+// The port Sticker of the working `state` shown with `handoff` (or null), from the last `pair`: { shown, pair,
+// changed }. With `record`, the Lanes an edit changed since the last shown one become overrides first
+// (recordHandoffEdits). `restored` says the working state's port Sticker is a stored one (opening, Undo), not a shown
+// one. After a change of the Timeline fps, what was stored and shown is rebased the same way, so the rebase is no edit.
+// `shown` is null when the state has no port Sticker; `changed` says it differs from the state's (its overrides
+// recorded).
+export function syncPortHandoffPair(state, pair, handoff, { record = true, restored = false } = {}) {
+  const port = portOf(state);
+  if (!port) return { shown: null, pair: NO_PORT_HANDOFF_PAIR, changed: false };
+  const { fps } = state.timeline;
+  const current = clone(port);
+  let stored;
+  if (restored || !pair?.handoff || pair.stored?.id !== port.id) {
+    stored = clone(port);
+  } else {
+    const rebase = (sticker) => (pair.fps === fps ? sticker : rebasedPortSticker(sticker, pair.fps, fps));
+    const [before, kept] = withReverted(current, rebase(pair.shown), rebase(pair.stored));
+    if (record) recordHandoffEdits(current, before);
+    stored = storedPortSticker(current, kept);
+  }
+  const shown = handoff ? inheritPortHandoff(state, stored, handoff) : clone(stored);
+  return { shown, pair: { stored, shown: clone(shown), handoff, fps }, changed: !sameValue(shown, current) };
+}
+
+// The working `state` as the node keeps it: its port Sticker shown with the Pose handoff is the pair's stored one.
+export function storedPortState(state, pair) {
+  if (!pair?.handoff) return state;
+  return { ...state, stickers: state.stickers.map((item) => (item.source?.kind === "port" ? pair.stored : item)) };
+}
+
+// "Revert to upstream" of the Lane `name` of the shown port Sticker of `state`: { shown, pair } with that Lane
+// following the pair's handoff again, its value kept as the stored one too (not an edit), or null when it was no
+// override (or the Sticker is locked, or no handoff is shown).
+export function revertPortHandoffPairLane(state, pair, name) {
+  const port = portOf(state);
+  if (!port || port.locked || !pair?.handoff) return null;
+  const shown = clone(port);
+  if (!revertHandoffLane(state, shown, pair.handoff, name)) return null;
+  return { shown, pair: { ...pair, shown: clone(shown), stored: { ...pair.stored, [name]: clone(shown[name]) } } };
+}
+
+// The old inspector's "Revert to upstream" buttons of the port Sticker `sticker`: one per Lane a handoff of its
+// placement gives, overridden while the pair shows a handoff of that placement and the Lane is in its overrides.
+export function handoffRowLanes(pair, sticker) {
+  const shown = !!pair?.handoff && pair.handoff.placement === sticker.placement;
+  return HANDOFF_ROW_LANES[sticker.placement].map((name) => ({ name, overridden: shown && sticker.handoff_overrides.includes(name) }));
 }

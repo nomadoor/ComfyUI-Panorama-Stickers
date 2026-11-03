@@ -11,11 +11,20 @@ import { loadSceneState, sceneGround } from "./pano_scene_state.js";
 import { surfacePaintLayers } from "./pano_surface_paint.js";
 import { shotCamera, viewProjection, workingSkyLayers } from "./pano_editor_view.js";
 import { acquirePreviewView, previewNodeCamera } from "./pano_preview_view.js";
-import { createComfyMediaAdapter } from "./pano_comfy_media.js";
+import {
+  createComfyMediaAdapter,
+  executionIdMatches,
+  preferredImageInputsForNode,
+  resolveInputOriginNode,
+} from "./pano_comfy_media.js";
+import {
+  isRenderableMediaReady,
+  mediaPlayheadRevisionToken as getRenderableMediaRevisionToken,
+} from "./pano_media_session.js";
 import { createNodePlayback, createSoloPlayback, surfaceShown } from "./pano_node_playback.js";
 import { createDepthColors } from "./pano_depth_color.js";
-import { backgroundClipAt, bgColorBackground, portMediaMeta, portMediaSource } from "./pano_port_media.js";
-import { upstreamBackgroundOf } from "./pano_upstream.js";
+import { portMediaMeta, portMediaSource } from "./pano_port_media.js";
+import { backgroundAt, backgroundLength, backgroundVideoCandidates, chooseBackground } from "./pano_background_choice.js";
 import {
   beginCutoutRollGesture,
   buildCutoutAddFrameAction,
@@ -110,10 +119,19 @@ import { createFile3dEditorFiles, file3dEditorFileOf } from "./pano_file_3d.js";
 import { createViewportRestoreScheduler } from "./pano_viewport_restore.js";
 import { editorOpen, mediaCache, nodeSurface, stateSync } from "./pano_node_bridge.js";
 const { app } = appModule;
-setNodeOutputLookup((node) => lookupNodeOutputEntry(node.id));
 trackRunOutputs(api);
 const sharedPreviewImageCache = createSharedImageCache();
 const { linkedVideoFile, source: mediaSource, assetSource: mediaAssetSource } = createComfyMediaAdapter({ app, api });
+// The node surfaces' own reading of ComfyUI's results (pano_comfy_media.js "nodeSurface"), under the names this file
+// has used for it.
+const surfaceMedia = createComfyMediaAdapter({ app, api, read: "nodeSurface" });
+const {
+  assetSource: stickerAssetToPreviewSrc,
+  output: lookupNodeOutputEntry,
+  source: imageSourceFromCandidate,
+  sourceCandidates: buildImageSrcCandidates,
+} = surfaceMedia;
+setNodeOutputLookup((node) => lookupNodeOutputEntry(node.id));
 // The editor files of the 3D file Stickers the node surfaces' Auto length reads (their animated files' clips, ADR 0043),
 // one registry for every surface, as the editor asks the same route; an answer draws the graph again.
 // Panorama Studio's surfaces also draw the 3D file Stickers from those files, so an answer draws them again.
@@ -456,65 +474,6 @@ function getCachedState(node) {
 
 function getWidget(node, name) { return node.widgets?.find((w) => w.name === name) || null; }
 
-function getGraphNodeById(graph, id) {
-  if (!graph || id == null) return null;
-  if (typeof graph.getNodeById === "function") return graph.getNodeById(id);
-  return graph._nodes_by_id?.[id] || graph._nodes_by_id?.[String(id)] || null;
-}
-
-function resolveInputOriginNode(node, inputIndex, fallbackOriginId = null) {
-  let originNode = null;
-  try {
-    originNode = typeof node?.getInputNode === "function" ? node.getInputNode(inputIndex) : null;
-  } catch {
-    originNode = null;
-  }
-  if (originNode?.isSubgraphNode?.()) {
-    try {
-      const inputLink = typeof node?.getInputLink === "function" ? node.getInputLink(inputIndex) : null;
-      const resolved = inputLink ? originNode.resolveSubgraphOutputLink?.(Number(inputLink.origin_slot ?? 0)) : null;
-      if (resolved?.outputNode) originNode = resolved.outputNode;
-    } catch {
-      // ignore
-    }
-  }
-  if (!originNode && fallbackOriginId != null) {
-    originNode = getGraphNodeById(node?.graph, fallbackOriginId);
-  }
-  return originNode;
-}
-
-function listInputNames(node) {
-  const inputs = Array.isArray(node?.inputs) ? node.inputs : [];
-  return inputs.map((i) => String(i?.name || "")).filter(Boolean);
-}
-
-export function preferredImageInputsForNode(node, preferredInputNames = []) {
-  const names = listInputNames(node);
-  const out = [];
-  preferredInputNames.forEach((name) => {
-    if (names.includes(String(name))) out.push(String(name));
-  });
-  names.forEach((name) => {
-    if (BACKGROUND_INPUT_NAMES.includes(name) && !out.includes(name)) out.push(name);
-  });
-  return out.length ? out : preferredInputNames;
-}
-
-function normalizeExecutionId(value) {
-  const id = String(value ?? "").trim();
-  if (!id) return { full: "", tail: "" };
-  const parts = id.split(":").map((p) => String(p).trim()).filter(Boolean);
-  return { full: id, tail: parts.length ? parts[parts.length - 1] : id };
-}
-
-function executionIdMatches(value, target) {
-  const a = normalizeExecutionId(value);
-  const b = normalizeExecutionId(target);
-  if (!a.full || !b.full) return false;
-  return a.full === b.full || a.tail === b.full || a.full === b.tail || a.tail === b.tail;
-}
-
 function originNodeOf(node, slot) {
   return resolveInputOriginNode(node, slot, node.graph ? node.getInputLink(slot)?.origin_id : null);
 }
@@ -589,183 +548,12 @@ const executedRefreshMonitor = {
   },
 };
 
-function comfyImageEntryToUrl(entry) {
-  if (!entry || typeof entry !== "object") return "";
-  const filename = String(entry.filename || "");
-  if (!filename) return "";
-  const params = new URLSearchParams();
-  params.set("filename", filename);
-  const viewType = String(
-    entry.storage
-    || (String(entry.type || "").trim().toLowerCase() === "comfy_image" ? "output" : entry.type)
-    || "output"
-  );
-  params.set("type", viewType);
-  if (entry.subfolder) params.set("subfolder", String(entry.subfolder));
-  const q = `/view?${params.toString()}`;
-  return typeof api?.apiURL === "function" ? api.apiURL(q) : q;
-}
-
-function isDirectImageUrl(src) {
-  const s = String(src || "").trim();
-  if (!s) return false;
-  return (
-    /^https?:\/\//i.test(s)
-    || s.startsWith("/")
-    || s.startsWith("blob:")
-    || s.startsWith("data:")
-  );
-}
-
-function splitFilenameAndSubfolder(pathish) {
-  const normalized = String(pathish || "").trim().replaceAll("\\", "/");
-  const trimmed = normalized.replace(/^\.\/+/, "").replace(/^\/+/, "");
-  if (!trimmed) return { filename: "", subfolder: "" };
-  const parts = trimmed.split("/").filter(Boolean);
-  if (!parts.length) return { filename: "", subfolder: "" };
-  const filename = String(parts.pop() || "").trim();
-  const subfolder = parts.join("/");
-  return { filename, subfolder };
-}
-
-function uniqStrings(values) {
-  const out = [];
-  const seen = new Set();
-  values.forEach((v) => {
-    const s = String(v || "").trim();
-    if (!s || seen.has(s)) return;
-    seen.add(s);
-    out.push(s);
-  });
-  return out;
-}
-
-function buildImageSrcCandidates(srcRaw) {
-  const src = String(srcRaw || "").trim();
-  if (!src) return [];
-  if (isDirectImageUrl(src)) return [src];
-  const { filename, subfolder } = splitFilenameAndSubfolder(src);
-  if (!filename) return [src];
-  const byView = ["temp", "output", "input"].map((type) => comfyImageEntryToUrl({
-    filename,
-    subfolder,
-    type,
-  }));
-  return uniqStrings([...byView, src]);
-}
-
-function stickerAssetToPreviewSrc(asset) {
-  if (!asset || typeof asset !== "object") return "";
-  const type = String(asset.type || "").trim().toLowerCase();
-  if (type === "dataurl") return String(asset.value || "");
-  if (type === "comfy_image") {
-    const filename = String(asset.filename || "").trim();
-    if (!filename) return "";
-    return comfyImageEntryToUrl({
-      filename,
-      subfolder: String(asset.subfolder || ""),
-      type: String(asset.storage || "input"),
-    });
-  }
-  return "";
-}
-
-function lookupNodeOutputEntry(nodeId) {
-  const store = app?.nodeOutputs;
-  if (!store || nodeId == null) return null;
-  // Performance fix: Prefer strictly direct lookup.
-  // Iterating all outputs every frame causes massive lag when many nodes are present.
-  const raw = String(nodeId);
-  let val = null;
-  if (store instanceof Map) {
-    val = store.get(nodeId) || store.get(raw) || store.get(Number(raw)) || null;
-  } else {
-    val = store[nodeId] || store[raw] || null;
-  }
-  if (val) return val;
-
-  // Compatibility Fallback: Direct lookup failed, possibly due to execution-scoped keys (e.g. "promptId:nodeId").
-  // We iterate keys ONLY if direct lookup misses.
-  const targetId = raw;
-  if (store instanceof Map) {
-    for (const key of store.keys()) {
-      if (executionIdMatches(key, targetId)) return store.get(key);
-    }
-  } else {
-    const keys = Object.keys(store);
-    for (const key of keys) {
-      if (executionIdMatches(key, targetId)) return store[key];
-    }
-  }
-  return null;
-}
-
 function ownOutputUiValue(node, key, outputOverride = null) {
   const output = outputOverride || lookupNodeOutputEntry(node?.id);
   const value = output?.ui && Object.prototype.hasOwnProperty.call(output.ui, key)
     ? output.ui[key]
     : output?.[key];
   return Array.isArray(value) ? value[0] : value;
-}
-
-function imageSourceFromCandidate(candidate) {
-  if (!candidate) return "";
-  if (typeof candidate === "string") {
-    return String(candidate || "").trim();
-  }
-  if (Array.isArray(candidate)) {
-    if (candidate.length === 0) return "";
-    if (candidate.length === 1) return imageSourceFromCandidate(candidate[0]);
-    const filename = String(candidate[0] || "").trim();
-    if (filename) {
-      const subfolder = String(candidate[1] || "").trim();
-      const type = String(candidate[2] || "output").trim() || "output";
-      return comfyImageEntryToUrl({ filename, subfolder, type });
-    }
-    for (const entry of candidate) {
-      const src = imageSourceFromCandidate(entry);
-      if (src) return src;
-    }
-    return "";
-  }
-  if (typeof candidate?.src === "string" && candidate.src) return candidate.src;
-  if (typeof candidate?.url === "string" && candidate.url) return candidate.url;
-  return comfyImageEntryToUrl(candidate);
-}
-
-function isRenderableMediaReady(media) {
-  if (!media) return false;
-  if (typeof HTMLCanvasElement !== "undefined" && media instanceof HTMLCanvasElement) {
-    return Number(media.width || 0) > 0 && Number(media.height || 0) > 0;
-  }
-  if (media instanceof HTMLVideoElement) {
-    return Number(media.videoWidth || 0) > 0
-      && Number(media.videoHeight || 0) > 0
-      && Number(media.readyState || 0) >= 2;
-  }
-  return !!media.complete && Number(media.naturalWidth || media.width || 0) > 0;
-}
-
-export function getRenderableMediaRevisionToken(media) {
-  if (!media) return "";
-  if (media instanceof HTMLVideoElement) {
-    return [
-      String(media.currentSrc || media.src || ""),
-      Number(media.videoWidth || 0),
-      Number(media.videoHeight || 0),
-      Number(media.currentTime || 0).toFixed(3),
-      Number(media.readyState || 0),
-      media.paused ? "paused" : "playing",
-    ].join("|");
-  }
-  if (typeof HTMLCanvasElement !== "undefined" && media instanceof HTMLCanvasElement) {
-    return ["canvas", media.width, media.height, Number(media.__panoFrameIdx || 0)].join("|");
-  }
-  return [
-    String(media.currentSrc || media.src || ""),
-    Number(media.naturalWidth || media.width || 0),
-    Number(media.naturalHeight || media.height || 0),
-  ].join("|");
 }
 
 function appendImageRevision(src, rev) {
@@ -864,147 +652,18 @@ function getNodeOwnOutputVideo(node, videoKeys = ["pano_videos"], onLoad = null)
   return player.video;
 }
 
-function findLinkedInputImageSource(node, preferredInputNames = []) {
-  const inputs = Array.isArray(node?.inputs) ? node.inputs : [];
-  if (!inputs.length) return { src: "", sourceType: "", inputName: "" };
-  // The node's own result first (pano_input_images: the picture its run got, the only place an IMAGE made by another
-  // node is), while it is current for the inputs; then the linked inputs (docs/adr/0003-external-input-sticker-failure-
-  // boundaries.md, Amendment 2026-03-11).
-  const selfOutput = isNodeOutputMediaCurrent(node, "background") ? lookupNodeOutputEntry(node?.id) : null;
-  const ownCandidates = [
-    ...(Array.isArray(selfOutput?.pano_input_images) ? selfOutput.pano_input_images : []),
-    ...(Array.isArray(selfOutput?.ui?.pano_input_images) ? selfOutput.ui.pano_input_images : []),
-  ];
-  for (const item of ownCandidates) {
-    const src = imageSourceFromCandidate(item);
-    if (src) {
-      panoPreviewLog(node, "image-resolve", { sourceType: "selfOutput", src, stage: "hit" });
-      return { src, sourceType: "selfOutput", inputName: "own" };
-    }
-  }
-
-  const preferredResolved = preferredImageInputsForNode(node, preferredInputNames);
-  const preferred = preferredResolved
-    .map((name) => inputs.findIndex((i) => String(i?.name || "") === String(name)))
-    .filter((idx) => idx >= 0);
-  const imageTyped = inputs
-    .map((input, idx) => ({ input, idx }))
-    .filter(({ input }) => String(input?.type || "").toUpperCase() === "IMAGE")
-    .map(({ idx }) => idx);
-  const indices = [...new Set([...preferred, ...imageTyped])];
-  panoPreviewLog(node, "image-resolve", {
-    inputCandidates: preferredResolved,
-    resolvedIndices: indices,
-    stage: "start",
-  });
-
-  for (const idx of indices) {
-    const input = inputs[idx];
-    const link = node.graph ? node.getInputLink(idx) : null;
-    if (link?.origin_id == null) continue;
-    const originId = link.origin_id;
-    const originNode = resolveInputOriginNode(node, idx, originId);
-    if (!originNode) continue;
-    const resolvedOriginSlot = Number(link.origin_slot ?? 0);
-
-    const outputs = lookupNodeOutputEntry(originNode?.id ?? originId);
-    // LoadVideo shows its file here, which an <img> cannot load.
-    const outImgs = Array.isArray(outputs?.images) ? outputs.images : [];
-    if (outImgs.length) {
-      const ordered = [];
-      if (resolvedOriginSlot >= 0 && resolvedOriginSlot < outImgs.length) ordered.push(outImgs[resolvedOriginSlot]);
-      ordered.push(...outImgs);
-      for (const cand of ordered.filter((image) => !isVideoFile(image))) {
-        const src = imageSourceFromCandidate(cand);
-        if (src) {
-          panoPreviewLog(node, "image-resolve", {
-            inputName: String(input?.name || ""),
-            sourceType: "nodeOutputs",
-            stage: "hit",
-          });
-          return { src: `${src}&pano_src=${outputSourceToken(outputs)}`, sourceType: "nodeOutputs", inputName: String(input?.name || "") };
-        }
-      }
-    }
-
-    let appNodeImageUrls = [];
-    try {
-      appNodeImageUrls = typeof app?.getNodeImageUrls === "function" ? (app.getNodeImageUrls(originNode) || []) : [];
-    } catch {
-      appNodeImageUrls = [];
-    }
-    if (Array.isArray(appNodeImageUrls) && appNodeImageUrls.length) {
-      const ordered = [];
-      if (resolvedOriginSlot >= 0 && resolvedOriginSlot < appNodeImageUrls.length) ordered.push(appNodeImageUrls[resolvedOriginSlot]);
-      ordered.push(...appNodeImageUrls);
-      for (const cand of ordered) {
-        const src = imageSourceFromCandidate(cand);
-        if (src) {
-          panoPreviewLog(node, "image-resolve", {
-            inputName: String(input?.name || ""),
-            sourceType: "appNodeImageUrls",
-            stage: "hit",
-          });
-          return { src, sourceType: "appNodeImageUrls", inputName: String(input?.name || "") };
-        }
-      }
-    }
-
-    const nodeImgs = Array.isArray(originNode?.imgs) ? originNode.imgs : [];
-    if (nodeImgs.length) {
-      const ordered = [];
-      if (resolvedOriginSlot >= 0 && resolvedOriginSlot < nodeImgs.length) ordered.push(nodeImgs[resolvedOriginSlot]);
-      ordered.push(...nodeImgs);
-      for (const cand of ordered) {
-        const src = imageSourceFromCandidate(cand);
-        if (src) {
-          panoPreviewLog(node, "image-resolve", {
-            inputName: String(input?.name || ""),
-            sourceType: "nodeImgs",
-            stage: "hit",
-          });
-          return { src, sourceType: "nodeImgs", inputName: String(input?.name || "") };
-        }
-      }
-    }
-
-    const imageWidget = originNode?.widgets?.find((w) => String(w?.name || "").toLowerCase() === "image");
-    if (imageWidget) {
-      let src = imageSourceFromCandidate(imageWidget.value);
-      if (src && !src.includes("/") && !src.includes(":") && (originNode.comfyClass === "LoadImage" || originNode.type === "LoadImage")) {
-        src = api.apiURL(`/view?filename=${encodeURIComponent(src)}&type=input&subfolder=`);
-      }
-      if (src) {
-        panoPreviewLog(node, "image-resolve", {
-          inputName: String(input?.name || ""),
-          sourceType: "widget",
-          stage: "hit",
-        });
-        return { src, sourceType: "widget", inputName: String(input?.name || "") };
-      }
-    }
-  }
-
-  panoPreviewLog(node, "image-resolve", { stage: "miss" });
-  return { src: "", sourceType: "", inputName: "" };
-}
-
-function getLinkedInputImage(node, preferredInputNames = [], options = {}) {
-  const resolved = findLinkedInputImageSource(node, preferredInputNames);
+// The image of the node's linked image input (a new source returns its loading image, not the one shown before).
+function getLinkedInputImage(node, preferredInputNames = []) {
+  const resolved = surfaceMedia.nodeSurfaceLinkedSource(node, preferredInputNames, { log: (tag, payload) => panoPreviewLog(node, tag, payload) });
   const srcRaw = String(resolved?.src || "").trim();
   if (!srcRaw) return null;
   const candidates = buildImageSrcCandidates(srcRaw);
   if (!candidates.length) return null;
-  const preserveReadyWhilePending = options?.preserveReadyWhilePending !== false;
   const linkedImages = mediaCache(node).linkedImages;
   const key = preferredInputNames.join("|") || "image";
   const cached = linkedImages.get(key);
   if (cached && cached.srcRaw === srcRaw && cached.img) return cached.img;
-  if (cached && cached.pendingSrcRaw === srcRaw && cached.pendingImg) {
-    return (preserveReadyWhilePending && cached.img && (cached.img.complete || cached.img.naturalWidth || cached.img.width))
-      ? cached.img
-      : cached.pendingImg;
-  }
+  if (cached && cached.pendingSrcRaw === srcRaw && cached.pendingImg) return cached.pendingImg;
 
   const img = new Image();
   const cacheEntry = cached || { srcRaw: "", resolvedSrc: "", img: null, pendingSrcRaw: "", pendingResolvedSrc: "", pendingImg: null };
@@ -1082,13 +741,12 @@ function getLinkedInputImage(node, preferredInputNames = [], options = {}) {
     });
   };
   tryLoadNext();
-  return (preserveReadyWhilePending && cacheEntry.img && (cacheEntry.img.complete || cacheEntry.img.naturalWidth || cacheEntry.img.width))
-    ? cacheEntry.img
-    : img;
+  return img;
 }
 
-export function getLinkedInputImageForPreview(node, preferredInputNames = [], onLoad = null, options = {}) {
-  const img = getLinkedInputImage(node, preferredInputNames, options);
+// getLinkedInputImage, with onLoad() run once when the image loads (the node surface draws its DOM canvas again).
+function getLinkedInputImageForPreview(node, preferredInputNames = [], onLoad = null) {
+  const img = getLinkedInputImage(node, preferredInputNames);
   if (!img) return null;
   if (typeof onLoad === "function") {
     if (!(img.complete && (img.naturalWidth || img.width))) {
@@ -1325,13 +983,28 @@ function surfaceFrame(node) {
   return nodeSurface(node).playback?.playback.frame ?? NODE_SURFACE_FRAME;
 }
 
-// Panorama Studio's background VIDEO, best first, as the editor picks it: the node's current
-// result, else the file LoadVideo loads into the background input.
-function backgroundVideoSources(node) {
-  const own = isNodeOutputMediaCurrent(node, "background")
-    ? resolvePreviewVideoSource(lookupNodeOutputEntry(node.id), ["pano_input_videos"], imageSourceFromCandidate)
-    : "";
-  return [own, linkedVideoFile(node, BACKGROUND_INPUT_NAMES)];
+// Which background Panorama Studio's surface shows (pano_background_choice.js, caller "surface"), from the node's
+// result, its widgets and its working state (`state`, getCachedState's).
+function surfaceBackgroundChoice(node, state) {
+  return chooseBackground("surface", {
+    uiList: (key) => ownOutputUiList(node, key),
+    current: (channel) => isNodeOutputMediaCurrent(node, channel),
+    widget: (name) => getWidget(node, name),
+    clip: state.background?.clip ?? null,
+    fps: state.timeline.fps,
+  });
+}
+
+// Panorama Studio's background VIDEO, best first (backgroundVideoCandidates of `choice`, surfaceBackgroundChoice's): the
+// node's current result, else the file LoadVideo loads into the background input.
+function backgroundVideoSources(node, choice) {
+  const { own, file } = backgroundVideoCandidates(choice, {
+    uiList: (key) => ownOutputUiList(node, key),
+    current: (channel) => isNodeOutputMediaCurrent(node, channel),
+    sourceOf: (key) => resolvePreviewVideoSource(lookupNodeOutputEntry(node.id), [key], imageSourceFromCandidate),
+    linkedVideoFile: (inputs) => linkedVideoFile(node, inputs),
+  });
+  return [own, file];
 }
 
 // The port Sticker's MP4 ({ src, meta }) or the PNGs of an RGBA IMAGE batch ({ frames, meta }) in the
@@ -1360,25 +1033,18 @@ function ownOutputUiList(node, key) {
 // in, which its length holds already, with its Clip range as `upstreamClip` and its MP4's meta as
 // `upstreamMedia`), the port Sticker's media, the `scene` items, and the upstream Scene's
 // length with the ends of the Clip ranges the node overrides in it (the surface's upstream layers', as in the editor).
-// `state` is the node's working state v2.
-function surfaceTimelineMedia(node, state) {
-  const media = {};
+// `state` is the node's working state v2, `choice` its background (surfaceBackgroundChoice).
+function surfaceTimelineMedia(node, state, choice) {
   const list = (key) => ownOutputUiList(node, key);
   const scene = isNodeOutputMediaCurrent(node, "scene");
   const layers = scene ? list("pano_upstream_layers") : [];
-  const upstreamBackground = scene ? upstreamBackgroundOf(list) : null;
-  if (upstreamBackground) {
-    media.bg = null;
-    // The upstream background is placed by the Clip range of the Studio it came from (pano_node_playback.js).
-    const { clip } = upstreamBackground;
-    media.upstreamClip = clip && backgroundClipAt(clip.clip, clip.fps, state.timeline.fps);
-    // Its media ends it as in the editor (an upstream background counts as a VIDEO ending at its `duration`).
-    const meta = list(upstreamBackground.metaKey)[0];
-    if (meta && typeof meta === "object") media.upstreamMedia = { video: true, frames: Number(meta.frames), duration: Number(meta.duration) };
-  } else if (isNodeOutputMediaCurrent(node, "background")) {
-    const meta = list("pano_input_video_meta")[0];
-    if (meta && typeof meta === "object") media.bg = { video: videoLinked(node, BACKGROUND_INPUT_NAMES), frames: Number(meta.frames), duration: Number(meta.duration) };
-  }
+  // The background (pano_background_choice.js backgroundLength): an upstream one is placed by the Clip range of the
+  // Studio it came from and ends with its media, as in the editor (pano_node_playback.js).
+  const media = backgroundLength(choice, {
+    uiList: list,
+    current: (channel) => isNodeOutputMediaCurrent(node, channel),
+    videoLinked: videoLinked(node, BACKGROUND_INPUT_NAMES),
+  });
   if (isNodeOutputMediaCurrent(node, "external-sticker")) media.port = portMediaMeta(list);
   if (layers.length) {
     // The upstream Scene's length as the editor counts it (studio/upstream.js output()), from the layers the picture draws.
@@ -1458,14 +1124,37 @@ function surfaceStickerMedia(node, state, item) {
   return isRenderableMediaReady(img) ? { media: img, revision: getRenderableMediaRevisionToken(img) } : null;
 }
 
-// The background the on-node surface draws (`bgImg`, the played VIDEO, its still or the linked image): outside its Clip
-// range and media (Panorama Studio) the node's background_color (an upstream Scene's while it stands in), as in the
-// output; null while it loads. `fill` (Panorama Studio) draws background_color without any background, as the output.
-function surfaceBackground(node, state, bgImg, { fill = false } = {}) {
-  const upstreamColor = isNodeOutputMediaCurrent(node, "scene") ? upstreamBackgroundOf((key) => ownOutputUiList(node, key))?.color : null;
-  if (nodeSurface(node).playback?.playback.backgroundShows === false) return bgColorBackground(upstreamColor || surfaceBackgroundColor(node));
-  if (isRenderableMediaReady(bgImg)) return { media: bgImg, revision: getRenderableMediaRevisionToken(bgImg), coverage: Number(state.coverage) === 180 ? 180 : 360 };
-  return fill && !bgImg ? bgColorBackground(upstreamColor || surfaceBackgroundColor(node)) : null;
+// The background a legacy on-node surface draws (`bgImg`, its looping VIDEO or the linked image) once it has a picture,
+// over the node's coverage; null while it loads or without one.
+function surfaceBackground(state, bgImg) {
+  return isRenderableMediaReady(bgImg) ? { media: bgImg, revision: getRenderableMediaRevisionToken(bgImg), coverage: Number(state.coverage) === 180 ? 180 : 360 } : null;
+}
+
+// Panorama Studio's background at the display frame (pano_background_choice.js backgroundAt): background_color (an
+// upstream Scene's while its background stands in) outside its Clip range and media, and without any background, as in
+// the output; the played VIDEO, its still or the linked image once it has a picture; null while one loads.
+function studioBackground(node, choice) {
+  // An upstream background that no longer stands in lets its image go, shown or not (the own image is kept elsewhere).
+  if (choice.from !== "upstream") nodeSurface(node).studioInputs?.releaseBackgroundImages();
+  const bgImg = choice.from === "upstream" ? upstreamBackgroundMedia(node, choice) : surfaceBackgroundMedia(node);
+  const ready = isRenderableMediaReady(bgImg);
+  return backgroundAt(choice, {
+    shows: nodeSurface(node).playback?.playback.backgroundShows !== false,
+    picture: ready ? { media: bgImg, revision: getRenderableMediaRevisionToken(bgImg) } : null,
+    pending: !!bgImg && !ready,
+  });
+}
+
+// The upstream Scene's background standing in on Panorama Studio's surface (docs/studio-node-surface.md "表示フレームと
+// VIDEO"): its played VIDEO (the playback's candidates are its VIDEO only), else the first image of the result's
+// pano_upstream_input_images, which the surface's studioInputs hold and let go out of sight; null for an image that
+// did not load (its bg_color shows).
+function upstreamBackgroundMedia(node, choice) {
+  const surface = nodeSurface(node);
+  const played = surface.playback ? playbackBackground(surface.playback) : null;
+  if (played) return played;
+  const image = surface.studioInputs?.backgroundImage(choice.keys.image) ?? null;
+  return image?.complete && !image.naturalWidth ? null : image;
 }
 
 // The background media the on-node surface draws: Panorama Studio's played background VIDEO (its Timeline), the legacy
@@ -1479,7 +1168,6 @@ function surfaceBackgroundMedia(node) {
     node,
     BACKGROUND_INPUT_NAMES,
     () => surface.dom?.requestDraw?.(),
-    { preserveReadyWhilePending: false },
   );
 }
 
@@ -1539,7 +1227,7 @@ function drawStudioPicture(node, canvas, surfaceView, layout, erpCanvas) {
     playing: !!surface.playback?.playback.advancing,
   });
   inputs?.depthColors.retain(content.space.depthSlots);
-  const background = surfaceBackground(node, state, surfaceBackgroundMedia(node), { fill: true });
+  const background = studioBackground(node, surfaceBackgroundChoice(node, state));
   const radius = worldBoundRadius({ eye: eyeHeight(ground), content: content.sphere, camera: shot.position });
   let drawn = false;
   // A change of mode lets go of what the other mode held (the live ERP and its canvas, or the lens faces), as the
@@ -1599,7 +1287,7 @@ function surfaceViewInput(node, state, bgImg) {
   const sceneState = surfaceSceneState(node, state);
   const paintLayers = surfacePaintLayers(nodeSurface(node), state);
   return {
-    background: surfaceBackground(node, state, bgImg),
+    background: surfaceBackground(state, bgImg),
     layers: workingSkyLayers(sceneState, surfaceFrame(node), state.stickers, { media: (item) => surfaceStickerMedia(node, state, item), paintLayers }),
   };
 }
@@ -2253,17 +1941,31 @@ function attachPanoramaPreviewImpl(node, options = {}) {
         editorFile: (sticker) => file3dEditorFileOf(surfaceFile3dFiles, sticker, mediaSource),
         onMedia: requestDraw,
       });
+      // The upstream Scene's background image (upstreamBackgroundMedia), loaded from the result once per source.
+      const backgroundImages = new Map();
+      const releaseBackgroundImages = () => {
+        backgroundImages.forEach((image) => {
+          image.onload = null;
+          image.onerror = null;
+          image.removeAttribute("src");
+        });
+        backgroundImages.clear();
+      };
       surface.studioInputs = {
         depthColors,
         upstream,
         depthColor: (slot, request) => depthColors.picture(slot, request, playback.advancing),
+        backgroundImage: (key) => surfaceMedia.uiImage(node, key, backgroundImages, requestDraw),
+        releaseBackgroundImages,
         release() {
           depthColors.retain([]);
           upstream.dispose();
+          releaseBackgroundImages();
         },
         dispose() {
           depthColors.dispose();
           upstream.dispose();
+          releaseBackgroundImages();
         },
       };
     }
@@ -2276,12 +1978,14 @@ function attachPanoramaPreviewImpl(node, options = {}) {
     const source = playback.source;
     const sticker = shown ? portStickerMedia(node) : null;
     const state = getCachedState(node);
+    // The background chosen once for this follow (pano_background_choice.js): its VIDEO candidates and its length.
+    const choice = shown ? surfaceBackgroundChoice(node, state) : null;
     const playable = playback.follow({
       shown,
-      sources: shown ? backgroundVideoSources(node) : [],
+      sources: shown ? backgroundVideoSources(node, choice) : [],
       state,
       sticker,
-      media: shown ? surfaceTimelineMedia(node, state) : {},
+      media: shown ? surfaceTimelineMedia(node, state, choice) : {},
     });
     // The still of the port Sticker's MP4 is released with its source.
     if ((sticker?.src || "") !== surfacePlayback.stickerSource) {
@@ -2293,8 +1997,11 @@ function attachPanoramaPreviewImpl(node, options = {}) {
       releasePanoCanvas(still);
       still.__panoFrameIdx = 0;
     }
-    // Out of sight the depth grids' color VIDEOs and the upstream layers' media are let go too.
-    if (!shown) surface.studioInputs?.release();
+    // Out of sight the depth grids' color VIDEOs, the upstream layers' media and the loaded 3D items are let go too.
+    if (!shown) {
+      surface.studioInputs?.release();
+      surfaceView.releaseWorld();
+    }
     nodeSurfaceUiModel.playable = playable;
     nodeSurfaceUiModel.playing = playback.playing;
   };
@@ -2585,8 +2292,11 @@ function attachPanoramaPreviewImpl(node, options = {}) {
           const status = studioStatus(studioStatusOptions(node), () => surfaceSceneState(node, getCachedState(node)));
           if (status) nodeSurfaceUiModel.status = status;
         }
-        // Collapsed or under the node's open editor, the surface does not draw and frees its textures.
-        if (node.flags?.collapsed || editorOpen(node)) surfaceView.release();
+        // Collapsed or under the node's open editor, the surface does not draw and frees its textures and loaded 3D items.
+        if (node.flags?.collapsed || editorOpen(node)) {
+          surfaceView.release();
+          surfaceView.releaseWorld();
+        }
         else if (studioSurface) {
           // Open Studio's width with its label, from the button while it shows it.
           if (studioStyled && studioOpenButton?.offsetWidth > 0 && !studioOpenButton.classList.contains("is-compact")) studioOpenWidth = studioOpenButton.offsetWidth;
@@ -3112,13 +2822,11 @@ function attachPanoramaPreviewImpl(node, options = {}) {
     if (studioErpCanvas) releasePanoCanvas(studioErpCanvas);
     studioSurfaceDraws.delete(requestDraw);
     surface.scene = null;
-    surface.rasterCache?.dispose?.();
-    surface.rasterCache = null;
-    surface.rasterReady = null;
-    // The paint engine and the painting it drew go with the surface; a surface attached again rebuilds them.
-    surface.paintEngine = null;
+    // The paint display (its engine and raster canvases) goes with the surface; a surface attached again makes it again.
+    surface.paintDisplay?.dispose?.();
+    surface.paintDisplay = null;
+    surface.paintInput = null;
     surface.paintState = null;
-    surface.paintRevision = null;
     unregisterExternalStickerSync();
     viewportRestoreScheduler.dispose();
     if (dropCueTimer) clearTimeout(dropCueTimer);

@@ -9,18 +9,30 @@
 // (timeline_actions.js) are new states already.
 //
 // The selection is the Timeline's { row, keys } (timeline_model.js): `row` the selected object's row id ("camera", a
-// Sticker id, or a paint group's `paint_group:<actionGroupId>` / `raster:<id>`, pano_paint_objects.js paintObjectRow),
-// `keys` the selected Keyframes. The inspector reads it through inspectorSelection().
+// Sticker id, an upstream object's working id `upstream:<key>:<id>`, or a paint group's `paint_group:<actionGroupId>` /
+// `raster:<id>`, pano_paint_objects.js paintObjectRow), `keys` the selected Keyframes. The inspector reads it through
+// inspectorSelection().
+//
+// The upstream objects (docs/studio-ui.md "上流の物の編集") are edited in their working copies (studio/upstream.js),
+// which lie outside the state: an edit of one changes the working copy and replaces the state all the same, and each
+// Undo step writes the edits back into the state's `upstream` records first (pano_upstream_edits.js). A given-up
+// gesture, Undo and Redo make the working copies again from the records.
+//
+// The port Sticker is shown with the Pose handoff of the node's result (docs/studio-ui.md "`port` の Sticker",
+// docs/editor-interaction.md "`port` の Sticker の Pose handoff の表示と記録"): the working state holds the shown one,
+// and the pair of pano_port_handoff.js the stored one, which every Undo step and the state_json text hold.
 import { createEditorHistory, duplicateSceneSticker, editorStateWrite, restoredHistoryState, takeStickerId } from "../pano_editor_state.js";
 import { rebaseSceneState, stickerCounter } from "../pano_scene_state.js";
-import { isUpstreamSticker } from "../pano_upstream.js";
+import { isUpstreamSticker, upstreamStickerInherited, upstreamStickerLocked } from "../pano_upstream.js";
 import { deletePaintObjects, numberSkyOrder, paintObjectOf, paintObjectRow, restackSkyOrder, skyDisplayList, skyStickersOf } from "../pano_paint_objects.js";
 import { syncPaintGroups } from "../pano_paint_strokes.js";
+import { NO_PORT_HANDOFF_PAIR, storedPortState, syncPortHandoffPair } from "../pano_port_handoff.js";
 import { normalizePaintingState } from "../pano_paint_types.js";
 import { cameraToView as moveCameraToView } from "./camera_ui.js";
-import { defaultCamera } from "./defaults.js";
+import { editableCamera } from "./camera_state.js";
 import { applyInspectorEdit } from "./inspector_actions.js";
-import { ROW_LANES } from "./inspector_model.js";
+import { stickerChangedRows } from "./inspector_model.js";
+import { findSticker } from "./row_object.js";
 import { BACKGROUND_ROW, PAINTING_ROW } from "../pano_timeline.js";
 
 const EMPTY_SELECTION = Object.freeze({ row: null, keys: [] });
@@ -54,16 +66,19 @@ export function inspectorSelection(selection) {
   return { ids: row ? [row] : [], keyframes };
 }
 
-// Whether the row `row` names an object of `state`: the Camera, a Sticker, or a paint group (pano_paint_objects.js).
-function rowInState(state, row) {
-  return row === "camera" || state.stickers.some((item) => item.id === row) || !!paintObjectOf(state, row);
+// Whether the row `row` names an object of `state`: the Camera, a Sticker (an upstream one in the working layers
+// `upstream`), or a paint group (pano_paint_objects.js).
+function rowInState(state, row, upstream) {
+  return row === "camera" || !!findSticker(state, upstream, row) || !!paintObjectOf(state, row);
 }
 
 const result = (changed, extra = {}) => ({ changed, history: false, stopPlayback: false, ...extra });
 
 // state: the working state v2 the editor opens on (loadSceneState's). readOnly: a read-only editor (no edits, nothing
-// written).
-export function createStudioSession({ state: opening, readOnly = false }) {
+// written). upstream: the upstream layers (studio/upstream.js createStudioUpstream: its `working()` and `edits`), or
+// null without them. handoff: the Pose handoff of the node's result to show the port Sticker with (pano_port_handoff.js
+// portHandoff), or null; setPortHandoff() gives a new result's.
+export function createStudioSession({ state: opening, readOnly = false, upstream = null, handoff: openingHandoff = null }) {
   let state = opening;
   let selection = EMPTY_SELECTION;
   // The state before the first live change of a gesture (a value box's or the Easing graph's drag, a Timeline drag),
@@ -75,27 +90,77 @@ export function createStudioSession({ state: opening, readOnly = false }) {
   // The placed objects not settled yet (addPlaced, adoptPlaced): they have no Undo step, so a step taken back or
   // done again leaves them in (docs/studio-ui.md "Add とドロップの見せ方").
   const unsettled = new Set();
+  // The opening step holds the stored state; the working state then shows the port Sticker with the handoff.
   const history = createEditorHistory(state);
+  const working = () => upstream?.working() ?? [];
+  // The Pose handoff shown and the pair of the stored and shown port Sticker (pano_port_handoff.js syncPortHandoffPair);
+  // a handoff that came during a drag waits for its end (`handoffWaits`).
+  let handoff = readOnly ? null : openingHandoff;
+  let pair = NO_PORT_HANDOFF_PAIR;
+  let handoffWaits = false;
+  // What the last keepSelection() of the editor checked.
+  let kept = { state: null, list: null, selection: null };
 
+  // Shows the port Sticker with the current handoff (syncPortHandoffPair): with `record`, the handed Lanes an edit
+  // changed since the last shown one become overrides first; `restored` says the state's port Sticker is a stored one
+  // (opening, Undo, Redo). The object selection stays; a switch of placement lets the Keyframe selection go. Returns
+  // whether the shown Sticker changed.
+  function showHandoff({ record: recording = true, restored = false } = {}) {
+    handoffWaits = false;
+    if (readOnly || (!handoff && !pair.handoff)) return false;
+    const before = state.stickers.find((item) => item.source.kind === "port");
+    const out = syncPortHandoffPair(state, pair, handoff, { record: recording, restored });
+    pair = out.pair;
+    if (!out.shown || JSON.stringify(out.shown) === JSON.stringify(before)) return false;
+    state = { ...state, stickers: state.stickers.map((item) => (item === before ? out.shown : item)) };
+    if (out.shown.placement !== before.placement) selection = { row: selection.row, keys: [] };
+    return true;
+  }
+
+  // The state as the node keeps it: the port Sticker shown with the handoff is the stored one.
+  const storedState = () => storedPortState(state, pair);
+
+  // A drag ended or was given up: a handoff that came during it is shown now.
+  function afterGesture() {
+    if (handoffWaits) showHandoff();
+  }
+
+  // An Undo step: the upstream objects' edits are written back and the records pruned first (docs/studio-ui.md
+  // "上流の物の編集" "書き戻し"), and the handed Lanes an edit changed become overrides; the step holds the stored state.
   function record() {
-    history.record(state);
+    if (upstream) {
+      upstream.edits.sync();
+      upstream.edits.prune();
+    }
+    showHandoff();
+    history.record(storedState());
     gestureBase = null;
     settledInGesture = false;
   }
 
+  // The inspector's context with the handoff shown, the one its reset and the bar's Back to source read.
+  const withHandoff = (context) => ({ ...context, handoff: pair.handoff });
+
+  showHandoff({ restored: true });
+
   // A selection whose object is gone lets it go; its Keyframes go with any change of the state's shape.
   function keepSelection(next = selection) {
-    const row = next.row && rowInState(state, next.row) ? next.row : null;
+    const row = next.row && rowInState(state, next.row, working()) ? next.row : null;
     selection = { row, keys: next.keys ?? [] };
   }
 
   function applyInspector(edit, context = {}) {
     if (readOnly) return result(false);
     if (edit.phase === "cancel") {
-      if (gestureBase) state = gestureBase;
+      if (gestureBase) {
+        state = gestureBase;
+        upstream?.edits.rebuild();
+      }
       gestureBase = null;
+      afterGesture();
       return result(true, { cancel: true });
     }
+    context = withHandoff(context);
     const draft = structuredClone(state);
     const easing = edit.type === "easing" || edit.type === "easing-reset";
     const groups = easing ? keyframeGroups(selection) : [];
@@ -107,6 +172,15 @@ export function createStudioSession({ state: opening, readOnly = false }) {
     } else {
       outcome = applyInspectorEdit(draft, edit, { ...context, readOnly });
     }
+    // An upstream row's reset takes its Lanes' overrides off the records (never the upstream values into the working
+    // copy: docs/studio-ui.md "上流の物の編集").
+    if (outcome.upstreamRevert) {
+      const { sticker, lanes } = outcome.upstreamRevert;
+      if (gestureBase || !upstream?.edits.revertSticker(sticker, lanes)) return result(false);
+      keepSelection();
+      record();
+      return result(true, { history: true });
+    }
     if (!outcome.changed) return outcome;
     if (!outcome.history && !gestureBase) gestureBase = state;
     state = draft;
@@ -114,9 +188,28 @@ export function createStudioSession({ state: opening, readOnly = false }) {
     return outcome;
   }
 
+  // The new working copies of the upstream layers a Timeline edit gives ({ [key]: sceneState }) go in; the state is
+  // replaced with them (`next`, the edit's state, a copy when it is the same object) so the views see the change.
+  function withWorking(next, layers) {
+    const keys = Object.keys(layers ?? {});
+    if (!upstream || !keys.length) return next;
+    for (const key of keys) upstream.edits.setWorking(key, layers[key]);
+    return next === state ? { ...next } : next;
+  }
+
+  // A change of the upstream records (the layer's Revert, Restore deleted) as one Undo step.
+  function changeUpstream(change) {
+    if (!upstream || gestureBase || !change(upstream.edits)) return result(false, { fps: null });
+    keepSelection();
+    record();
+    return result(true, { history: true, stopPlayback: true, fps: null });
+  }
+
   // An edit of <StudioTimeline> (its `edit` event).
   function applyTimeline(payload) {
     if (readOnly) return result(false, { fps: null });
+    if (payload.kind === "revert-upstream-layer") return changeUpstream((edits) => edits.revertLayer(payload.key));
+    if (payload.kind === "restore-upstream-deleted") return changeUpstream((edits) => edits.restoreDeleted(payload.key));
     if (payload.kind === "fps") {
       const from = state.timeline.fps;
       const ground = state.ground;
@@ -130,14 +223,15 @@ export function createStudioSession({ state: opening, readOnly = false }) {
     const stopPlayback = payload.stopsPlayback !== false;
     if (payload.phase === "live") {
       if (!gestureBase) gestureBase = state;
-      state = payload.state;
+      state = withWorking(payload.state, payload.upstream);
       if (payload.selection) selection = payload.selection;
       return result(true, { stopPlayback, fps: null });
     }
-    state = payload.state;
+    state = withWorking(payload.state, payload.upstream);
     if (payload.phase === "cancel") {
       gestureBase = null;
       if (payload.selection) selection = payload.selection;
+      afterGesture();
       return result(true, { stopPlayback, fps: null });
     }
     keepSelection(payload.selection ?? selection);
@@ -146,8 +240,9 @@ export function createStudioSession({ state: opening, readOnly = false }) {
   }
 
   // Delete with no Keyframes selected (docs/timeline-ui.md "記録の規則": the Keyframes go first, <StudioTimeline>
-  // handleDelete): the selected Sticker goes. The Camera cannot be deleted (docs/studio-ui.md "下の中央のバー").
-  // A port Sticker and an upstream element are not deleted here yet.
+  // handleDelete): the selected Sticker goes, or the selected upstream object is deleted in its layer's record
+  // (docs/studio-ui.md "上流の物の編集"). The Camera cannot be deleted (docs/studio-ui.md "下の中央のバー"). A port
+  // Sticker is not deleted here yet.
   function deleteSelectedObject() {
     const { row } = selection;
     if (readOnly || !row) return { changed: false, notice: null };
@@ -162,8 +257,15 @@ export function createStudioSession({ state: opening, readOnly = false }) {
       if (outcome.changed) selection = EMPTY_SELECTION;
       return { changed: outcome.changed, notice: null };
     }
+    const theirs = selectedUpstream();
+    if (theirs) {
+      if (gestureBase || upstreamStickerLocked(theirs) || !upstream.edits.deleteStickers([theirs])) return { changed: false, notice: null };
+      selection = EMPTY_SELECTION;
+      record();
+      return { changed: true, notice: null };
+    }
     const sticker = state.stickers.find((item) => item.id === row);
-    if (!sticker || sticker.locked || sticker.source.kind === "port" || isUpstreamSticker(sticker)) return { changed: false, notice: null };
+    if (!sticker || sticker.locked || sticker.source.kind === "port") return { changed: false, notice: null };
     state = { ...state, stickers: state.stickers.filter((item) => item !== sticker) };
     unsettled.delete(sticker.id);
     selection = EMPTY_SELECTION;
@@ -196,12 +298,15 @@ export function createStudioSession({ state: opening, readOnly = false }) {
     return result(true, { history: true });
   }
 
-  // A drag is given up (Escape, the window lost the focus): the state it started from comes back, with no step.
+  // A drag is given up (Escape, the window lost the focus): the state it started from comes back, with no step, and the
+  // upstream working copies as the records have them.
   function cancelGesture() {
     if (!gestureBase) return result(false);
     state = gestureBase;
     gestureBase = null;
+    upstream?.edits.rebuild();
     if (settledInGesture) record();
+    else afterGesture();
     return result(true, { cancel: true });
   }
 
@@ -280,6 +385,23 @@ export function createStudioSession({ state: opening, readOnly = false }) {
   }
 
   const selectedSticker = () => state.stickers.find((item) => item.id === selection.row) ?? null;
+  // The selected upstream object (its working copy), or null.
+  const selectedUpstream = () => {
+    if (!upstream || !String(selection.row ?? "").startsWith("upstream:")) return null;
+    const sticker = findSticker({ stickers: [] }, working(), selection.row);
+    return isUpstreamSticker(sticker) ? sticker : null;
+  };
+
+  // An edit of the selected upstream object's working copy as one Undo step: edit(sticker) changes it and returns
+  // whether it did; record() writes it back.
+  function editUpstream(edit) {
+    const sticker = selectedUpstream();
+    if (readOnly || !sticker || gestureBase || upstreamStickerInherited(sticker) || !edit(sticker)) return result(false);
+    state = { ...state };
+    keepSelection();
+    record();
+    return result(true, { history: true });
+  }
 
   // An edit of the selected Sticker as one Undo step: edit(draft, sticker) changes the copy and returns whether it did.
   function editSelected(edit) {
@@ -298,17 +420,23 @@ export function createStudioSession({ state: opening, readOnly = false }) {
   function editCamera(edit) {
     if (readOnly || gestureBase) return result(false);
     const draft = structuredClone(state);
-    draft.camera ??= defaultCamera();
-    if (!edit(draft.camera)) return result(false);
+    if (!edit(editableCamera(draft))) return result(false);
     state = draft;
     record();
     return result(true, { history: true });
   }
 
-  // Lock: the selected Sticker's `locked`, the selected Camera's `camera.locked`, or the selected paint group's (the
-  // stroke group's entry, written with the counted groups, or the raster object's) turns over. A paint group's lock is
-  // the editor's own (the node does not read it), so the uploaded `painting_layer` stays.
+  // Lock: the selected Sticker's `locked`, the selected Camera's `camera.locked`, the selected upstream object's (its
+  // `locked` override; not in a layer whose overrides cannot be kept), or the selected paint group's (the stroke group's
+  // entry, written with the counted groups, or the raster object's) turns over. A paint group's lock is the editor's
+  // own (the node does not read it), so the uploaded `painting_layer` stays.
   function toggleLock() {
+    if (selectedUpstream()) {
+      return editUpstream((sticker) => {
+        sticker.locked = !sticker.locked;
+        return true;
+      });
+    }
     const paint = paintObjectOf(state, selection.row);
     if (paint) {
       return editPainting((draft) => {
@@ -420,13 +548,24 @@ export function createStudioSession({ state: opening, readOnly = false }) {
     });
   }
 
-  // Back to source: every row of the selected port Sticker or upstream element back to the input's or the upstream's
-  // value (each row's reset of the inspector, inspector_actions.js), as one Undo step. `context` is the inspector's.
+  // Back to source: the rows of the selected port Sticker away from the input's value (inspector_model.js
+  // stickerChangedRows: the rows the bar counts) back to it (each row's reset of the inspector, inspector_actions.js), or all the overrides of the selected upstream object off its record (the old
+  // editor's "Revert to upstream" All), as one Undo step. Not while it is locked. `context` is the inspector's.
   function revertSelected(context = {}) {
+    context = withHandoff(context);
+    const theirs = selectedUpstream();
+    if (theirs) {
+      if (readOnly || gestureBase || upstreamStickerLocked(theirs) || !upstream.edits.revertSticker(theirs)) return result(false);
+      keepSelection();
+      record();
+      return result(true, { history: true });
+    }
+    const port = selectedSticker();
+    const rows = port && !port.locked && port.source.kind === "port" ? stickerChangedRows(state, port, context) : [];
     return editSelected((draft, sticker) => {
-      if (sticker.locked || !(sticker.source.kind === "port" || isUpstreamSticker(sticker))) return false;
+      if (!rows.length) return false;
       let changed = false;
-      for (const row of Object.keys(ROW_LANES[sticker.placement] ?? {})) {
+      for (const row of rows) {
         const outcome = applyInspectorEdit(draft, { type: "reset", target: { kind: "sticker", id: sticker.id }, row }, { ...context, readOnly });
         changed = outcome.changed || changed;
       }
@@ -461,6 +600,10 @@ export function createStudioSession({ state: opening, readOnly = false }) {
     // A placed object still uploading stays, as it is now.
     const missing = placed.filter((item) => !state.stickers.some((other) => other.id === item.id));
     if (missing.length) state = { ...state, stickers: [...state.stickers, ...missing] };
+    // The upstream working copies and their baseline follow the restored records.
+    upstream?.edits.rebuild();
+    // The restored port Sticker is the stored one: it is shown with the handoff again.
+    showHandoff({ restored: true });
     keepSelection({ row: selection.row, keys: [] });
     return { fps: state.timeline.fps === from ? null : { from, to: state.timeline.fps } };
   }
@@ -479,15 +622,42 @@ export function createStudioSession({ state: opening, readOnly = false }) {
       return !readOnly && history.length > 1 && history.index >= 0 && history.index < history.length - 1;
     },
     readOnly,
+    // The Pose handoff the port Sticker is shown with, or null (the inspector's and the bar's `handoff`).
+    get portHandoff() {
+      return pair.handoff;
+    },
+    // A new result's Pose handoff (or null): shown at once, or after the drag under way ends. Returns whether the
+    // shown port Sticker changed.
+    setPortHandoff(next) {
+      if (readOnly) return false;
+      handoff = next ?? null;
+      if (gestureBase) {
+        handoffWaits = true;
+        return false;
+      }
+      return showHandoff();
+    },
     select(next) {
       selection = { row: next?.row ?? null, keys: next?.keys ?? [] };
     },
     // The stage selects an object (null lets the selection go): the Keyframes selected stay with the same object only.
     selectObject(row) {
-      const next = row && rowInState(state, row) ? row : null;
+      const next = row && rowInState(state, row, working()) ? row : null;
       if (next === selection.row) return false;
       selection = { row: next, keys: [] };
       return true;
+    },
+    // A selection whose object is gone (a new result without the upstream object) lets it go. The editor calls it on
+    // each redraw: it searches again only when the state, the upstream working layers or the selection changed.
+    keepSelection() {
+      const list = working();
+      if (kept.state === state && kept.list === list && kept.selection === selection) return;
+      keepSelection();
+      kept = { state, list, selection };
+    },
+    // The upstream edits write the state's `upstream` records (pano_upstream_edits.js setRecords).
+    setUpstreamRecords(records) {
+      if (!readOnly) state = { ...state, upstream: records };
     },
     gesture,
     commitGesture,
@@ -512,9 +682,15 @@ export function createStudioSession({ state: opening, readOnly = false }) {
     redo: () => step(1),
     // The text to write to state_json over the widget's `current` text (pano_editor_state.js editorStateWrite: null
     // when `current` already means the state, its fps rebased included; a Scene id given on the first write), or null.
+    // The port Sticker shown with the Pose handoff is written as the stored one.
     stateText(node, current) {
       if (readOnly) return null;
-      return editorStateWrite(node, state, String(current ?? ""), { rebased: true });
+      showHandoff();
+      const stored = storedState();
+      const text = editorStateWrite(node, stored, String(current ?? ""), { rebased: true });
+      // A Scene id given on writing stays with the working state.
+      if (stored !== state) state.id = stored.id;
+      return text;
     },
   };
 }

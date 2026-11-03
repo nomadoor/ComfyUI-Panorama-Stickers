@@ -95,6 +95,23 @@ function targetWithin(position, point, eye, forward) {
   return add(position, direction, clamp(away, TARGET_MIN_DISTANCE, TARGET_MAX_DISTANCE));
 }
 
+// A T the user points at (a double click's or Set orbit center's hit, an orbit's center; ADR 0058): `point` itself,
+// only kept TARGET_MIN_DISTANCE away from the view (along `forward` when it is the position itself). It may lie beyond
+// TARGET_MAX_DISTANCE: an orbit turns about it, and ranged() brings it back before the moves that scale with d.
+function pointedTarget(position, point, eye, forward) {
+  const { TARGET_MIN_DISTANCE } = eyeLengths(eye);
+  const offset = sub(point, position);
+  const away = length(offset);
+  const direction = away > EPSILON ? offset.map((value) => value / away) : forward;
+  return add(position, direction, Math.max(away, TARGET_MIN_DISTANCE));
+}
+
+// The pose with T brought back within the distance range on its line from P (the wheel, the joystick and the keys
+// call it before they work out their amounts; T keeps its place on the screen).
+function ranged(p, eye) {
+  return { ...p, target: targetWithin(p.position, p.target, eye, forwardOf(p)) };
+}
+
 // T on the screen center's line at the distance `distance` (within the range).
 function centered(p, distance, eye) {
   const forward = forwardOf(p);
@@ -157,6 +174,9 @@ export function frameSelectedSphere({ selection, content, ground }) {
   if (selection?.kind === "object" && selection.sphere) return selection.sphere;
   return content ?? null;
 }
+
+// Where Reset View goes: the World origin, level, yaw 0 (ADR 0058; not the Camera).
+export const RESET_VIEW = Object.freeze({ position: Object.freeze([0, 0, 0]), yaw_deg: 0, pitch_deg: 0 });
 
 // --- Opening and the view memory (kept per node for the page, pano_node_bridge.js editorSession(node).view).
 
@@ -227,7 +247,7 @@ function unrolled(dx, dy, rollDeg) {
 }
 
 // The viewpoint, from `pose`. frame: the Frame view's, where the pose is the Camera: wheel steps and Frame Selected
-// apply at once, there is no double click and no Reset View, the Camera keeps its roll, and the world bound counts the
+// apply at once, a double click turns the Camera at once, there is no Reset View, the Camera keeps its roll, and the world bound counts the
 // Camera where the gesture started. Every move returns { moved, notice } (notice: a VIEW_NOTICES key or null).
 export function createViewCamera({ pose: start, frame = false }) {
   let pose = copyPose(start);
@@ -346,10 +366,10 @@ export function createViewCamera({ pose: start, frame = false }) {
       return result(true);
     },
 
-    // An orbit starts: `center` (orbitCenter()'s, or null) becomes T, within the range, without turning the view.
+    // An orbit starts: `center` (orbitCenter()'s, or null) becomes T as it is (pointedTarget), without turning the view.
     beginOrbit(center) {
       const base = direct();
-      if (center) pose = { ...base, target: targetWithin(base.position, center, eye(), forwardOf(base)) };
+      if (center) pose = { ...base, target: pointedTarget(base.position, center, eye(), forwardOf(base)) };
       return result(false);
     },
     // Turns about T by a drag of (dx, dy) px at ORBIT_DEG_PER_PIXEL (pano_space.js orbitView); T stays in the World and
@@ -391,7 +411,7 @@ export function createViewCamera({ pose: start, frame = false }) {
     // Moves along forward by d x offset / JOYSTICK_PIXELS per second for `seconds` (view_scale.js frameSeconds);
     // offset: the pointer's px above the press (below goes back).
     joystick(offset, seconds) {
-      const base = direct();
+      const base = ranged(direct(), eye());
       const d = length(sub(base.target, base.position));
       return moveTo(base, add(base.position, forwardOf(base), d * offset / JOYSTICK_PIXELS * seconds));
     },
@@ -402,7 +422,7 @@ export function createViewCamera({ pose: start, frame = false }) {
     // WASD / QE: d per second toward `direction` (pano_view_keys.js createMoveKeys().direction()) for `seconds`,
     // KEY_MOVE_FAST times that with Shift (`fast`). Alt does not slow it.
     keys(direction, seconds, fast) {
-      const base = direct();
+      const base = ranged(direct(), eye());
       const d = length(sub(base.target, base.position));
       const moved = keyMoveView(asView(base), direction, d * (fast ? KEY_MOVE_FAST : 1) * seconds);
       return moveTo(base, moved.position);
@@ -423,7 +443,8 @@ export function createViewCamera({ pose: start, frame = false }) {
     // where G was picked, and eases on from there to its own destination; a step that moves nothing leaves the move.
     wheel(step, hit) {
       if (!step) return result(false);
-      const base = copyPose(shown());
+      // A T beyond the range (one the user pointed at) comes back on its line first, in this same step.
+      const base = ranged(copyPose(shown()), eye());
       // In the Frame view a wheel step is a gesture of its own: the bound counts the Camera where it starts.
       const radius = frame ? boundOf(world, destination, gestureCamera ?? base.position) : bound();
       const { TARGET_MIN_DISTANCE, TARGET_MAX_DISTANCE } = eyeLengths(eye());
@@ -445,13 +466,14 @@ export function createViewCamera({ pose: start, frame = false }) {
       return result(moved, stopped || !moved ? "bound" : null);
     },
 
-    // A double click on `hit` (the GPU hit under the pointer, World image planes included; null over nothing): it
-    // becomes T and the view turns to center it over ACTION_EASE_SECONDS, P staying. Not in the Frame view.
+    // A double click (or Set orbit center's click) on `hit` (the GPU hit under the pointer, World image planes included;
+    // null over nothing): the point itself becomes T (pointedTarget) and the view turns to center it over
+    // ACTION_EASE_SECONDS, P and the roll staying. A hit outside the world bound counts as none, as the wheel's. At once
+    // in the Frame view, as the wheel (docs/space-and-view.md "Frame 表示").
     focus(hit) {
-      if (frame) return result(false);
-      if (!hit) return result(false, "nothing-to-focus");
+      if (!hit || length(hit) > bound()) return result(false, "nothing-to-focus");
       const base = aim();
-      const target = targetWithin(base.position, hit, eye(), forwardOf(base));
+      const target = pointedTarget(base.position, hit, eye(), forwardOf(base));
       const offset = sub(target, base.position);
       const away = length(offset);
       const yaw = Math.atan2(offset[0], -offset[2]) * RAD2DEG;
@@ -474,9 +496,9 @@ export function createViewCamera({ pose: start, frame = false }) {
       return result(true);
     },
 
-    // Reset View: eases to `to` ({ position, yaw_deg, pitch_deg }: the output view the editor opened with, or the
-    // Preview's origin), T at the first T found there. Not in the Frame view.
-    reset(to) {
+    // Reset View: eases to `to` (RESET_VIEW: the World origin, level, yaw 0), T at the first T found there. Not in the
+    // Frame view.
+    reset(to = RESET_VIEW) {
       if (frame) return result(false);
       const p = { position: [...to.position], yaw_deg: wrapYaw(to.yaw_deg), pitch_deg: clamp(to.pitch_deg, -PITCH_LIMIT, PITCH_LIMIT), roll_deg: 0 };
       destination = [...p.position];

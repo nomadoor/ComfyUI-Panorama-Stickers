@@ -16,6 +16,8 @@ Panorama Studio のバックエンドの描画関数（`render_frame`、重な�
 | 描画の入口、層、`cache` の使い回し | `core/render.py` `render_frame`・`RenderLayer`・`Projection` | — | `tests/test_render.py`、`tests/test_memory_cache.py`、`tests/test_studio_scene.py` |
 | 重なり順と合成 | `render.py` `composite_frame`、`core/world_render.py` `over_by_depth` | — | `tests/test_render.py`、`tests/test_world_render.py` |
 | Sky の標本化（直接の標本化、縮めるときの平均、Sky の幅） | `render.py` `_sky_layers`・`_shoot_sky`・`_sample_filtered`・`_shrink`・`_sky_size` | — | `tests/test_render.py`、`tests/test_studio_node.py`、`tests/test_studio_scene.py` |
+| ペイントのラスタの置き方（ラスタオブジェクトを ERP に置く中心・大きさ・`scale`・`rot_deg`・継ぎ目、回す平面と向き、ラスタの占める画素の範囲。ストロークのまとまりは球面の上で回すので、この式を使わない） | `core/painting.py` `raster_object_placement`・`raster_object_corners_uv`・`raster_object_pixel_ranges`、描くのは `_composite_one_raster_object`（画素を読むのは `_sample_box`） | `web_src/pano_paint_display.js` `turnPaintOffset`・`unturnPaintOffset`（回す平面の式）・`rasterObjectTurnCenterUv`（回す中心）・`placeRasterObjectErp`・`drawRasterObjectErp`・`rasterObjectCornersUv`・`rasterObjectPixelRanges`・`pixelRangesMeet`、`web_src/pano_paint_objects.js` `inverseTransformErpPointAround`・`rasterObjectAlphaAt`（`rasterObjectCornersUv` もここから読める）、範囲を使う所は `web_src/pano_paint_strokes.js` `erasePaint`・`web_src/pano_raster_eraser.js` `rasterEraserDisplay` | フィクスチャ `tests/fixtures/paint_raster_place.json` を `tests/test_paint_raster_place_parity.py`（回したラスタ・大きくしたラスタ・継ぎ目をまたぐラスタの描いた画素も見る）と `tests/pano_paint_raster_place_parity.test.mjs` が読む。平面の上の回し方は `tests/pano_paint_objects.test.mjs`、消しゴムの届く範囲は `tests/pano_raster_eraser.test.mjs`。エディタの絵は `tests/browser/paint_rasters.spec.js` |
+| ペイントのストロークの描き方（筆を押す所の経路、押した形の横の幅と消しゴムの届く範囲、球面の上で描くこと。ERP の上の画素の扱いと継ぎ目） | `core/painting.py` `stroke_erp_path`・`stamp_half_width_px`、描くのは `_stroke_freehand_alpha`（経路は `_stroke_point_paths_for_erp_geometry`）・`_stroke_segments_for_erp_geometry`・`_polygon_alpha_mask` | `web_src/pano_paint_sphere.js` `strokeErpPath`・`stampHalfWidthPx`、エディタの表示は `web_src/pano_paint_engine.js` `drawStampStroke`・`appendPoint`（描いている間）・`_drawSingleStamp`・`_placeStamp`・`drawLassoFillNative`、消しゴムの届く画素は `web_src/pano_paint_strokes.js` `rasterizeStrokeToSurface`（`drawDiscStamp`・`drawNativeLassoFill`）、まとまりの範囲は `erasePaint` の `getGroupApproxBoundsPx` | フィクスチャ `tests/fixtures/paint_stroke_sphere.json` を `tests/test_paint_stroke_sphere_parity.py`（緯度 60° で横に 2 倍の太さ、継ぎ目をまたぐストロークも見る）と `tests/pano_paint_stroke_sphere_parity.test.mjs` が読む。極の近くへ運んだストロークに穴が無いことは `tests/browser/paint_sphere.spec.js`（エンジンと `rasterizeStrokeToSurface`）。エディタの絵は `tests/browser/paint_rasters.spec.js`、ノードの出力は `tests/test_legacy_goldens.py` |
 | World の層と `world` の Sticker の板 | `world_render.py` `world_layer` | — | `tests/test_world_render.py`、`tests/test_stickers_world.py`、`tests/test_studio_upstream.py` |
 | 3D の `world` の Sticker | `world_render.py` `ContentSource`、`nodes.py` `_port_media`・`_resolve_sources`（3D ファイルの `file` の Source） | — | `tests/test_stickers_3d.py` |
 | `scene` の共通処理 | `world_render.py` `SceneContent`、`nodes.py` `_scene_content` | — | `tests/test_world_render.py`、`tests/test_scene_mesh.py` |
@@ -145,7 +147,7 @@ RTX 4070 Ti、1 フレーム、κ = 0.5・hFOV 140°（4K は 4096 × 2048 相�
 - `sky` の Sticker の κ：κ = 0.5 の Sticker（市松）を κ = 1 の Camera で、κ = 1 の Sticker を κ = 0.5 の Camera で撮る場面（`LENS_STICKER_CASES` の `sky_k0_5_by_k1`・`sky_k1_by_k0_5`）。
 - `world` の Sticker の κ：κ = 0、hFOV 220° の球面の板を、レンズの中心からと、横にずれた位置から（視差）撮る場面（`world_k0_220_center`・`world_k0_220_side`）。許容差は下の κ の場面と同じ。Sticker の場面の素材は低周波（大きな市松）。エディタの描き方と当たり判定は `tests/browser/lens_stickers.spec.js` も確かめる。
 - Sticker の場面の計測（llvmpipe、`LENS_STICKER_CASES` の順に、平均 /255 と 8/255 超の割合）：0.232 / 0.000%、0.080 / 0.187%、0.346 / 0.089%、0.298 / 0.011%。すべて合格。
-- 輪の閉じ方（κ の Camera で撮り、Pose handoff で同じ κ の Sticker にして同じ Camera で撮り直すと一致する）は、Python の test（`tests/test_pose_handoff.py` の `test_a_lens_shot_returns_where_it_was_shot`。動かない Camera の `sky`、動く Camera の `world`、κ を Keyframe で動かす場合、hFOV が 180° を超える場合。κ = 1 だけの動く shot が平らな板になることは `test_a_pinhole_only_moving_shot_hands_todays_plane`）で守る。
+- 輪の閉じ方（κ の Camera で撮り、Pose handoff で同じ κ の Sticker にして同じ Camera で撮り直すと一致する）は、Python の test（`tests/test_pose_handoff.py` の `test_a_lens_shot_returns_where_it_was_shot`。動かない Camera と動く Camera（どちらも `sky`。ADR 0059）、κ を Keyframe で動かす場合、hFOV が 180° を超える場合。κ = 1 だけの動く shot が κ 1 の `sky` の Sticker になることは `test_a_pinhole_only_moving_shot_hands_a_pinhole_sky_sticker`）で守る。
 - κ = 0.7（hFOV 90°、余白付きの描画と後処理で 1 より小さい κ）、κ = 0.5（立体射影、hFOV 140°）、κ = 0（魚眼、hFOV 220°、立方体の 6 面）。スプラットの場面も同じ κ で入れる。素材は低周波（大きな市松と、なめらかな色の帯）。エディタは再標本化のぼけがあるので、ADR 0037 の「試作で決める」別の許容差として、縁を 1 画素削った内側で平均 ≤ 2/255、8/255 超 ≤ 2% を暫定とする（最初の計測で締める）。κ = 1 は後処理を通らない。
 - 計測（llvmpipe）：メッシュの場面はすべての κ で合格した。スプラットの場面は κ = 1 でも合格しない（平均 1.99/255、8/255 超 14%）。エディタ（Spark）とノードのスプラットの描き方の、レンズより前からある差で、次の候補として残す。許容差は緩めない。
 
@@ -178,7 +180,7 @@ RTX 4070 Ti、1 フレーム、κ = 0.5・hFOV 140°（4K は 4096 × 2048 相�
 - 背景と Sky は無限遠にあるので、Camera の位置では変わらない（ADR 0023）。MASK もペイントと同じく Camera の回転に従う。
 - Sky（`sky` の Sticker とペイント）と MASK は全方向にあり、どの向きの Camera でも写す。
 - 360 の出力で Camera の回転が 0 のときは、背景の向きの計算と標本化を飛ばし、背景をそのまま使う（Sky は回転が 0 でも出力の画素の向きから標本化する）。背景は出力と大きさが違えば大きさを合わせる（`_resize`）。どちらかの向きに縮めるときは、三角形のフィルターで出力の画素の範囲を平均し（`antialias=True`。経度の継ぎ目の向こうの列も使う）、拡大だけのときは双線形にする。
-- 状態だけが持つペイントを ERP に描くのは、`core/display_layers.py` と `core/painting.py` の既存の処理を使う。
+- 状態だけが持つペイントを ERP に描くのは、`core/display_layers.py` と `core/painting.py` の既存の処理を使う。ラスタオブジェクトの置き方は下の「ペイントのラスタの置き方」。
 - Sky の層（`_sky_layers`）は、旧ノードの `core/display_layers.py` の `compose_display_list_to_overlay_rgba` と同じ並べ方（`build_display_entries`）と同じ規則（どの層もなければ、アップロード済みのペイントを一枚で使う、など）で並べる。Sticker とペイントを交互に重ねた場面は、基準画像 `stickers_paint_interleaved`（Studio は `studio_paint_interleaved`）で固定している。
 - `z_index` は Sticker の Source ではないが、`crop` と同じく描画に要る静的な値なので、`StickerSource` に入れて渡す（評価関数の戻り値は変えない）。
 - Sky の直接の標本化：中間の ERP は、透視投影の狭い画角では巨大になる（画角 5°・幅 1024 の出力で幅数万）か、上限で粗くなる（狭い画角の透視投影で Sticker やペイントがぼける）ので経由しない。各層を出力の画素の向きから直接、その層の画素で標本化し（`_sky_layers` で層を用意し、`_shoot_sky` で写す）、`compose_display_list_to_overlay_rgba` と同じ順に、同じストレートアルファの「上に重ねる」規則で重ねる（アルファを掛けた状態で重ね、最後に戻す）。
@@ -193,6 +195,115 @@ RTX 4070 Ti、1 フレーム、κ = 0.5・hFOV 140°（4K は 4096 × 2048 相�
   - Sky のキー（`_sky_key`）は、この大きさと、`sky` の Sticker の値と素材のフレーム。Camera の向きのキーに Projection を入れる。キーが変われば層の並びを組み直し（ペイントの層と MASK は、`device` に置いたものを `cache` の `sky_paint` に大きさごとに持ち、大きさが変わるまで使い回す）、向きのキーが変われば写し直す。
 - 旧 Cutout は ERP の画素 i を `u = i`（画素の中心ではなく端）とみなして標本化していたので、Panorama Studio の透視投影の出力は旧 Cutout から ERP の半画素ずれる（`docs/legacy-baselines.md`）。
 - `bg_media` は `coverage` の範囲の ERP とみなし、Sky と同じく Camera の向きで写す。360 では 360 の ERP、180 では旧ノード・Cutout と同じく Scene の前方（経度 −90°〜90°）の半球の ERP とする。180 の出力で、Camera を回して `bg_media` の半球の外が見える画素は、`bg_media` がない画素として `bg_color` になる。Sky と MASK はその上にも描く。出力の範囲が Camera の前方の半球だけであることは変わらない。
+
+### ペイントのラスタの置き方
+
+ペイントのラスタオブジェクト（`painting.raster_objects[]`。形は `docs/scene-state-v2.md` の `painting`）を ERP に置く式。ノード（Python）と、
+エディタ・ノード上の面・上流の Scene の層（JS。4 か所とも `pano_paint_display.js` を通る。`docs/editor-architecture.md`）が同じ式で描き、
+エディタの選んだ枠・当たり（`docs/studio-ui.md` の「ペイントのまとまり」）と消しゴムの届く範囲も同じ式から求める。`layerKind` が
+`paint` のラスタにも `mask` のラスタにも使う。
+
+- 描く所：ノードはラスタを、`painting_layer` の有無によらずいつも状態から描く。Panorama Studio は `_sky_layers`（`render_raster_layer_from_state`）、
+  旧ノードの PanoramaStickers・PanoramaCutout は `nodes.py` から `compose_display_list_to_overlay_rgba`（`core/display_layers.py` の
+  `render_raster_layer_from_state`）と `render_painting_to_erp` を通る。どれも `core/painting.py` `_composite_one_raster_object` に行き着く。
+  MASK は、アップロードされた `mask` が無いときだけ状態から描く。
+- 回す平面：経度と緯度を同じ度で測る平面（ERP の u を 360°、v を 180° として測る）で回し、拡大する。点 `p` を中心 `c` のまわりに
+  `rot_deg` 回して `scale` 倍するとき、`x = 2 · Δu`（`Δu` は `p.u − c.u` の継ぎ目をまたぐ短い向き）、`y = p.v − c.v` とし、
+  `x' = scale · (x cos θ − y sin θ)`、`y' = scale · (x sin θ + y cos θ)`、`u' = c.u + x' / 2`（0〜1 で回る）、`v' = c.v + y'` とする
+  （θ は `rot_deg` のラジアン）。逆の向き（当たりで画素を読むとき、Python が画素を読むとき）はこの逆の式。`rot_deg` が 0 のときは今の
+  拡大の式と同じ値になる。ストロークのまとまりは球面の上で回して大きさを変える（`docs/studio-ui.md` の「ペイントのまとまり」）ので、
+  この式を使わない。ERP の平面で回すので、極の近くで回したラスタは形が崩れる（`docs/studio-ui.md` の「まだ決めていないこと」）。
+- 描く ERP の画素への写し方：上の平面の度から、描く ERP の画素へ、横は幅 ÷ 360、縦は高さ ÷ 180 を掛けて写す（JS も Python も、この写し方を
+  明示して使う）。エディタのペイントのキャンバスの高さは幅の半分を丸めた値（`paintTargetDescriptor` の `round(width · 0.5)`）で、奇数の幅
+  では 2:1 から 1px 未満ずれ、Python の ERP の出力の大きさは使う人が決める。どちらも、canvas の `rotate`・`scale` を画素の上でそのまま掛ける
+  のではなく、この写し方を通すことで同じ置き方になる。
+- 向き：v は下向きに増えるので、正の `rot_deg` は ERP の画像の上で時計回り（2:1 の画素の上の canvas の `rotate` と同じ向き）。`rot_deg` は
+  範囲に丸めない。
+- `scale` の下限：ラスタの `scale` は読み込み（`core/paint_state.py` `_normalize_raster_transform`・`web_src/pano_paint_types.js`
+  `normalizeRasterTransform`。`docs/scene-state-v2.md` の「ペイントの数値」）が 0.01 以上にした値を、この式はそのまま使う。点を写す式
+  （`inverseTransformErpPointAround`）は下限を持たない（今の 0.02 の下限は、ストロークのまとまりの大きさを変える
+  比の規則として `docs/studio-ui.md` の「ペイントのまとまり」に移す。ラスタの当たりが 0.01〜0.02 の `scale` で絵とずれないように）。
+- 中心：ラスタの枠（`bbox`）の中心に `transform.du`・`dv` を足した所。描くときは、描く ERP の画素で枠の幅と高さをそれぞれ 1px 以上とし
+  （Python と、`placeRasterObjectErp` の `minPixel` 1。ノード上の面だけは `PAINT_DISPLAY_PLACES` の `surface` の `minPixel` 0 のまま）、
+  1px に満たない枠は左上から広げる（中心はその広げた枠の中心）。
+- 変形した枠の四隅（`rasterObjectCornersUv`）：`bbox` の四隅を、上の中心（広げない枠の中心）のまわりに上の式で写したもの。ERP の大きさを
+  受け取らず、`minPixel` で広げた枠は使わない。四隅は uv で持ち、ステージの枠と当たりは画面の px で見るので、1px 未満の差は見えないため
+  （`stage_objects.js`・`editor/items.js` の呼び方を変えない）。そのため、1px に満たない枠では、四隅と描いた画素は一致しない。ラスタの
+  四隅の v は 0〜1 に寄せない（寄せると、極を越えた枠の形が描いた絵と変わる）。
+- ラスタの占める画素の範囲：四隅を囲む範囲を描く ERP の画素に写し、上下は ERP の中に切り詰めたもの（継ぎ目をまたげば二つ）。
+  消しゴムがラスタに届くかの判定（`erasePaint`、ドラッグの間の見せ方の `rasterEraserDisplay`）と、
+  Python が描く範囲はこの範囲を使う（`du`・`dv` だけで求めると、大きくしたり回したりしたラスタのはみ出た所に消しゴムが届かない）。
+- 継ぎ目：経度の継ぎ目をまたぐラスタは、反対の側にも続けて描く（`placeRasterObjectErp` の `wrapOffsets`、−360°・0・+360° の写し）。
+  緯度は回さず、ERP の上下の外にはみ出た所は描かない。
+- 画素の中心（Python）：描く ERP の画素 (i, j) は、その中心 `((i + 0.5) ÷ 幅, (j + 0.5) ÷ 高さ)` の uv で、逆の式で枠の中の位置を求めて
+  読む。枠は端の座標（`u0`・`u1` は枠の左右の端）で、ラスタの画像の画素 k の中心は枠の幅の `(k + 0.5) ÷ 画像の幅` の所。双線形に補間する
+  （上の「Sky の描き方」と同じ画素の中心の取り方、`align_corners=False`。旧 Cutout の端の取り方（この節の上の項）にはしない）。
+  `rot_deg` が 0 でも同じ読み方にする（LANCZOS の縮小は使わない）。ブラウザの `drawImage` と補間が違うので、縁の画素の濃さは揃わない。
+  一致を守るのは置き方の数（中心・枠の大きさ・`rot_deg`・`scale`）、四隅、占める範囲。
+- 一致を守る test：`tests/fixtures/paint_raster_place.json`（枠・変形・描く ERP の大きさごとに、置き方の数、四隅の uv、占める範囲の画素。
+  回したもの、大きくしたもの、継ぎ目をまたぐもの、極を越えて四隅の v が 0〜1 の外に出るもの（範囲は切り詰める）、1px に満たない枠、
+  2:1 でない ERP と奇数の幅を含む）を Python と JS の両方が読む（許容差は状態の parity と同じ 1e-4）。Python の test は、90° 回したラスタの
+  不透明な画素が、四隅から求めた枠の中（1px の余裕）に収まることも確かめる。
+- 出力が変わるもの（意図した変更。同じ原因）：`scale` が 1 でないラスタ（古い UI でも新しい UI でも四隅で作れる）は、Panorama Studio と
+  旧ノード（PanoramaStickers・PanoramaCutout）の出力で、これまでの元の大きさからエディタと同じ大きさに変わる。`rot_deg` が 0 でないラスタも
+  回って描かれる。縁の画素は補間の変更で少し変わる。基準画像：旧ノードと Studio の基準画像（`tests/test_legacy_goldens.py`、
+  `stickers_paint_interleaved`・`studio_paint_interleaved` を含む）の場面はラスタオブジェクトを持たない（`tools/bake_legacy_goldens.py`）ので
+  変わらない。エディタの `tests/fixtures/paint_rasters_golden.json`（回して大きくしたラスタを含む。キャンバスは
+  どれも偶数の幅の 2:1）も、写し方を明示しても同じ画素（2:1 では縦横の写し方が同じなので、`drawRasterObjectErp` は canvas の回転と拡大を
+  これまでと同じ値で掛ける）。どれかが変わったら、変わった理由を確かめてから焼き直す。`tests/test_cutout_paint.py` の `_uv_bbox_to_pixels` の
+  test は、細い枠の占める範囲の test に替えた。
+- 決めた理由：ADR 0056。
+
+### ペイントのストロークの描き方
+
+ペイントのストローク（`painting.paint.strokes`・`mask.strokes`。形は `docs/scene-state-v2.md` の `painting`）を ERP に描く規則。ノード（Python）と
+エディタ（JS のペイントのエンジンと、消しゴムの届く画素を求める `rasterizeStrokeToSurface`）が同じ規則で描く。ストロークのまとまりは球面の上で
+動かし回す（`docs/studio-ui.md` の「ペイントのまとまり」）ので、極の近くや極をまたぐ所でも、球面の上で筆の太さと経路が保たれるように描く。
+決めた理由は ADR 0057。
+
+- 対象：`targetSpace.kind` が `ERP_GLOBAL` のすべてのストローク。描いた表示（`viewMode`）では分けない（`viewMode` は読み込みで捨てられ、
+  開き直した後には残らないため。今のエンジンの、描いている間だけの `viewMode !== "unwrap"` の分け方はやめる）。
+- 経路（`strokeErpPath`・`stroke_erp_path`）：各描き手が今たどる点の並び（エンジンは記録した点（`rawPoints`、無ければ `points`）を、中点と
+  Catmull-Rom で滑らかにする前に。ノードと `rasterizeStrokeToSurface` は `processedPoints`、無ければ記録した点）の隣どうし `a`・`b` について、
+  次の規則で点を入れる。u は、各描き手がすでに使っている継ぎ目をまたいで続く u（隣どうしの差が −0.5〜0.5 になるよう 1 の倍数を足した値）で扱う。
+  - 離れ：`a`・`b` の ERP の直線の中点 `m`（続く u と v の平均）と、`a`・`b` の大円の中点 `g`（二つの向きの和を長さ 1 にしたもの）の、
+    `directionOfErpPoint` の向きどうしの角。
+  - 離れが、筆の縦の半径の角 `ρ = 半径の画素 ÷ ERP の高さ × π` の半分より大きければ、`g` を `a` と `b` の間に入れ、二つの区間に同じことを
+    繰り返す。半径はストロークの基の半径（`widthScale`・`pressureLike` を掛けない）。
+  - 入れる点の u は `g` の経度の u を、`m` の続く u から継ぎ目をまたぐ短い向きで取った値（続く u のまま）。`g` が極の上（緯度の絶対値が
+    90° − 1e-9 以上）なら、`m` の u。v は `g` の緯度の v。`t`・`widthScale`・`pressureLike` は `a` と `b` の平均。
+  - 入れないとき：`a` と `b` がほぼ同じ向き（向きの差の長さが 1e-12 未満）、ちょうど正反対（`|a·b + 1| < 1e-12`。大円が決まらない）、
+    区間の ERP の長さが 1 画素未満、または入れる深さが 16 に達したとき。
+  - 赤道に沿う区間と経線に沿う区間は大円と重なるので点は入らない。点を入れた区間では、エンジンの中点と Catmull-Rom の滑らかさの支えになる
+    点も変わるので、描く画素が今と同じになるのは点が入らない所だけ。
+- 押した形の横の幅（`stampHalfWidthPx`・`stamp_half_width_px`。消しゴムの届く範囲もこの一つを使う）：筆の形の縦の半径を `rv`（今のとおり）、
+  横の縦に対する比を `aspect`、押す所の緯度を `φ`（v から）、ERP の幅を `W` として、横の半径 `rh` は、`rv · aspect ≥ cos φ · W ÷ 2` なら
+  `W ÷ 2`、そうでなければ `rv · aspect ÷ cos φ`（割り算をしない比べ方で、`cos φ ≤ 0` も覆う。`W ÷ 2` はその行で押した形が経度の全周を覆う所で、
+  調整した数ではなく ERP の幾何で決まる）。筆の形を斜めにする `angle` は、筆の形を回してから横に `rh ÷ (rv · aspect)` 倍に引き伸ばす順で掛ける
+  （引き伸ばしはいつも ERP の横の向き）。今のエンジンの `1 ÷ max(0.05, cos φ)` と、横に広げない今のノードを、この一つの規則に置き換える。
+- 消しゴムの届く範囲：`rasterizeStrokeToSurface` は、押す形を横の半径 `rh`・縦の半径 `rv` の楕円にし、今の「幅の 4 分の 1」の上限をやめる
+  （`rh` の上限 `W ÷ 2` に従う）。`erasePaint` のまとまりの範囲（`getGroupApproxBoundsPx`）は、u の余白を、まとまりの点のうち最も極に近い v
+  での `rh`（`W ÷ 2` なら全幅）にする。
+- 間隔：筆を押す間隔は今のとおり ERP の画素で測る（経路は上で細かくなるので、極の近くでも途切れない）。継ぎ目の写し（左右の端からはみ出た分を
+  反対の端に描く）は今のまま。ノードは、経路の点を入れてから（続く u のまま）左右の写しを作る。
+- 投げ縄：塗る多角形の辺も、上の経路の規則で大円に寄せる。極を囲む投げ縄（ERP の上では多角形が閉じない）は今のまま扱い、次の候補とする。
+- Python の筆の形：横の半径ごとに筆の形を作って使い回すので、`rh` を 0.5 画素に丸めた値で作る（フィクスチャは丸める前の数を比べる。JS は
+  丸めない）。横の半径は 0.5 画素以上とし、引き伸ばしは筆の形を作るときの横の半径（1 画素以上に寄せる）に対して掛ける。ノードは crayon を丸い
+  筆で描く（今のまま）。半径の決め方（Python は `radiusValue` の直径を整数に丸めた半径、JS は丸めない半径。JS のエンジンは筆の形ごとの規則）の
+  今の違いはこの規則では直さないので、点を入れるかどうかの判断が、しきい値のごく近くで Python と JS で分かれることがある（次の候補）。
+- 分かっている限り：押す形が全幅に届く行で一回だけ押した点は、継ぎ目の写しの縁で少し薄い帯が出ることがある（ふつうは押す間隔が密なので
+  見えない）。
+- 一致を守る test：`tests/fixtures/paint_stroke_sphere.json`（点の並び・筆の半径の画素 `radius_px`・ERP の大きさごとに、経路の点の並びと、
+  いくつかの v の行の横の半径。赤道と経線に沿う区間（点が入らない）、極の近くの区間、極をちょうど通る区間、正反対の二点、継ぎ目をまたぐ区間、
+  上限に届く行を含む）を Python と JS が読む。押した画素そのものは、補間と筆の形の作り方の違いで揃わないので、一致の対象は経路と幅の数とする。
+  Python は、継ぎ目をまたぐストロークで、点を入れてから左右の写しを作ることも test で見る。
+- 出力が変わるもの（意図した変更）：ノードの出力では、赤道から離れたストロークが横に `1 ÷ cos φ` 倍太くなり、エディタで見る太さと揃う
+  （今はノードだけが細い）。基準画像：`stickers_paint`（緯度およそ 9〜36° の二本。横に 1〜24% 太くなり、点の少ない古いストローク（3 点）の
+  曲がり方も大円に寄って、はっきり形が変わる大きな見た目の変化）は焼き直した（`docs/legacy-baselines.md`）。`stickers_paint_mask`・
+  `stickers_paint_interleaved`・`studio_paint_interleaved`（緯度 9° 以内）は、許容の中で変わらなかった。`render_painting_to_cutout` は同じ描き方を通るが、旧 Cutout の基準画像
+  （`cutout_single_shot`）はペイントを持たないので変わらない。ペイントを持たない基準画像は変わらない。エディタでは、緯度 87° より極に近い所、
+  極の近くで点が大きく離れた区間、古い UI の Unwrap の表示で描いたストローク（横に広がるようになる）が変わる
+  （`tests/fixtures/paint_rasters_golden.json` の `paint_group:g1` は変わらなかった）。
 
 ## World の描き方
 
@@ -219,10 +330,10 @@ RTX 4070 Ti、1 フレーム、κ = 0.5・hFOV 140°（4K は 4096 × 2048 相�
 - 板の縁はアンチエイリアスしない（ERP の出力の `sky` の Sticker と同じ。透視投影の `sky` の Sticker は縁をアンチエイリアスする。上記「Sky の描き方」）。光線が板と平行な画素と、Camera の後ろにある板は描かない。
 - Source を持たない Sticker、`active` でない Sticker、不透明度 0 の Sticker は描かない。VIDEO と IMAGE バッチの素材は `sky` と同じく `StickerSource.frame` のフレームを描く。
 - レンズ（`lens`。ADR 0042。`core/world_render.py` の `_lens_sticker_layer`）：`lens` を持たない Sticker は上のとおり平らな板。持つ Sticker は、κ = 1 も含めていつも、素材を κ と `lens.hFOV_deg` のレンズの像とみなし、レンズの中心のまわりの球面の一部に貼る（κ を Keyframe で 1 をまたいで動かしても形が跳ばない）。
-  - 形：レンズの中心 `L = position + ρ · (後ろの軸)`、半径 `ρ = scale ÷ (2 · g_κ(hFOV ÷ 2))`（`g_κ = lens_radius`）。球面の点のうち、`L` からの向きを Sticker の右・上・前の軸で見た角度 θ と方位 φ が、上の「Sky の描き方」の κ の Sticker と同じ写し方で `crop` の範囲（像の −1〜1）に入るものが板である。中心の点は `position`（θ = 0）。`scale` は κ = 0 では板の横の弧の長さになる。Pose handoff では `L` が Camera の位置、`ρ` が 2 になる（`docs/studio-node.md`）。
+  - 形：レンズの中心 `L = position + ρ · (後ろの軸)`、半径 `ρ = scale ÷ (2 · g_κ(hFOV ÷ 2))`（`g_κ = lens_radius`）。球面の点のうち、`L` からの向きを Sticker の右・上・前の軸で見た角度 θ と方位 φ が、上の「Sky の描き方」の κ の Sticker と同じ写し方で `crop` の範囲（像の −1〜1）に入るものが板である。中心の点は `position`（θ = 0）。`scale` は κ = 0 では板の横の弧の長さになる。ADR 0059 の前の実行の Pose handoff の結果では、`L` が Camera の位置、`ρ` が 2 だった（今の Pose handoff はいつも `sky` の Sticker）。
   - 180° を超える画角：θ が 180° を超える向きは板に入らない（Camera の規則と同じ）。`hFOV` が 360 なら、横は球を一周する帯になる。
   - 描き方：Sticker ごとに出力の全画素で光線と球（中心 `L`、半径 `ρ`）の交点を 2 つまで求め、光線の前方（`t > 0`）のものだけを、近い方から、交点の `L` からの向きが板に入るものを取る（両面）。素材の標本化と不透明度、縁は平らな板と同じ規則。奥行きは光線の長さ。
-  - 同じ姿勢（`L` から、同じ向きと κ と画角の Camera）で撮ると、素材の画素は撮った画素と同じ向きに戻る（輪が閉じる。`tests/test_pose_handoff.py` の `test_a_lens_shot_returns_where_it_was_shot`）。
+  - 同じ姿勢（`L` から、同じ向きと κ と画角の Camera）で撮ると、素材の画素は撮った画素と同じ向きに戻る（輪が閉じる）。
 
 ### `scene` の共通処理
 

@@ -85,6 +85,7 @@ function fakeLoader() {
     const view = {
       renders: [],
       released: [],
+      worldsReleased: [],
       disposed: false,
       render(input) {
         this.renders.push(input);
@@ -96,6 +97,9 @@ function fakeLoader() {
       },
       release(owner) {
         this.released.push(owner);
+      },
+      releaseWorld(owner) {
+        this.worldsReleased.push(owner);
       },
       dispose() {
         this.disposed = true;
@@ -131,8 +135,12 @@ test("on-node Previews share one view that loads on the first frame and goes wit
 
   a.release();
   assert.deepEqual(view.released, [view.renders[0].owner], "a node without media frees its textures");
+  assert.deepEqual(view.worldsReleased, [], "and keeps the items of its World");
+  a.releaseWorld();
+  assert.deepEqual(view.worldsReleased, [view.renders[0].owner], "a node out of sight frees the items of its World");
   a.dispose();
   assert.equal(view.released.length, 2);
+  assert.deepEqual(view.worldsReleased, [view.renders[0].owner, view.renders[0].owner], "and so does a node removed");
   assert.equal(a.render({}), null, "a disposed handle does not render or load");
   assert.equal(view.disposed, false);
   b.dispose();
@@ -170,7 +178,7 @@ test("a node draws its live ERP through the shared view as its own owner, and no
 // the frame that asked for them. Only the nodes that draw 3D items are told; the other on-node views draw as before.
 test("an item loaded or splats sorted in the shared view are told only to the nodes that draw 3D items", async () => {
   let hooks = null;
-  const view = { render: (input) => ({ owner: input.owner }), release() {}, dispose() {} };
+  const view = { render: (input) => ({ owner: input.owner }), release() {}, releaseWorld() {}, dispose() {} };
   const acquire = createSharedView((given) => {
     hooks = given;
     return Promise.resolve(view);
@@ -189,6 +197,32 @@ test("an item loaded or splats sorted in the shared view are told only to the no
   hooks.onSplats(other.render({}).owner);
   assert.deepEqual(changes, ["scene2"]);
   [scene, other, scene2].forEach((handle) => handle.dispose());
+});
+
+// Each node draws its own inputs, a World of its own in the shared view: the view keeps each node's `scene` and 3D Sticker
+// items apart (pano_three_view.js createThreeView ownWorlds), so one node's render never drops the items another draws.
+test("the shared view keeps a World per node: a node asks for the boxes and load errors of its own items", async () => {
+  assert.match(source("pano_preview_view.js"), /createThreeView\(\{ onUpdate, onSplats, ownWorlds: true,/);
+  const asked = [];
+  const view = {
+    render: (input) => ({ owner: input.owner }),
+    sceneBox: (url, owner) => asked.push(["box", url, owner]) && null,
+    sceneItemError: (url, owner) => asked.push(["error", url, owner]) && null,
+    release() {},
+    releaseWorld() {},
+    dispose() {},
+  };
+  const acquire = createSharedView(() => Promise.resolve(view));
+  const a = acquire(() => {}, { items: true });
+  const b = acquire(() => {}, { items: true });
+  a.render({});
+  await settle();
+  const ownerA = a.render({}).owner;
+  const ownerB = b.render({}).owner;
+  a.sceneBox("x.ply");
+  b.sceneItemError("x.ply");
+  assert.deepEqual(asked, [["box", "x.ply", ownerA], ["error", "x.ply", ownerB]]);
+  [a, b].forEach((handle) => handle.dispose());
 });
 
 test("a failed load marks every node failed until every node has gone", async (t) => {

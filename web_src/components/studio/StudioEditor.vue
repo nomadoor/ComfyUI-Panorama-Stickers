@@ -1,8 +1,8 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { createBackdropClose } from "../../studio/backdrop.js";
-import { cameraButton } from "../../studio/camera_ui.js";
-import { cameraOf } from "../../studio/defaults.js";
+import { CAMERA_TAB_LOCKED_TIP, cameraButton } from "../../studio/camera_ui.js";
+import { cameraOf } from "../../studio/camera_state.js";
 import { liveErpRatio } from "../../studio/erp_preview.js";
 import { cameraRulers, rulerEdit } from "../../studio/frame_layout.js";
 import { ROTATE_SNAP_DEG } from "../../studio/view_scale.js";
@@ -100,7 +100,14 @@ function onBackdropUp(event) {
 // --- The bar at the bottom center: the paint tools while Paint or Mask is chosen, else the selected object's (none
 // while nothing is selected). The Camera tab shows it as the 3D tab does (ADR 0051; its tool is always Cursor).
 const paintModel = computed(() => props.view.paint);
-const bar = computed(() => selectionBar({ state: props.view.state, row: props.view.selection?.row ?? null, mode: props.view.gizmoMode, readOnly: props.view.readOnly }));
+// What an input's object's rows read for its Back to source (selection_bar.js), only while the port Sticker is selected:
+// the bar of anything else does not follow the playhead.
+const portInputs = computed(() => {
+  const row = props.view.selection?.row ?? null;
+  const port = props.view.state.stickers.some((item) => item.id === row && item.source.kind === "port");
+  return port ? { playhead: props.view.playhead, portSize: props.view.portSize, imageSizes: props.view.imageSizes, animations: props.view.animations, handoff: props.view.portHandoff } : undefined;
+});
+const bar = computed(() => selectionBar({ state: props.view.state, row: props.view.selection?.row ?? null, mode: props.view.gizmoMode, readOnly: props.view.readOnly, tab: props.view.tab, upstream: props.view.upstreamWorking, inputs: portInputs.value }));
 
 // --- The Camera tab (docs/studio-ui.md "Camera タブ"): the frame of the output's ratio (the ERP's in Panorama mode)
 // with the edge rulers, which are the Camera card's rows and send the inspector's edits. Each tick strip has its fixed
@@ -108,7 +115,7 @@ const bar = computed(() => selectionBar({ state: props.view.state, row: props.vi
 const CAMERA_TAB_TIP = "Not available in the Camera view";
 const camera = computed(() => cameraOf(props.view.state));
 const panorama = computed(() => camera.value.projection === "erp");
-const frameAspect = computed(() => (panorama.value ? liveErpRatio(camera.value.erp_range === 180 ? 180 : 360) : camera.value.aspect));
+const frameAspect = computed(() => (panorama.value ? liveErpRatio(camera.value.erp_range) : camera.value.aspect));
 const rulers = computed(() => (cameraTab.value
   ? cameraRulers(buildCameraCard({ state: props.view.state, playhead: props.view.playhead, readOnly: props.view.readOnly }))
   : null));
@@ -132,7 +139,7 @@ const navOff = computed(() => {
   if (!cameraTab.value) return "";
   if (panorama.value) return "Not available in Panorama mode";
   if (props.view.readOnly) return "Read-only";
-  if (camera.value.locked === true) return "Locked";
+  if (camera.value.locked === true) return CAMERA_TAB_LOCKED_TIP;
   return "";
 });
 // --- The list of shortcuts (docs/studio-ui.md "ショートカットの一覧"): what works on the screen now.
@@ -367,7 +374,7 @@ function setCollapsed(value) {
             <StudioNotice :text="line.text" :kind="line.kind" />
           </div>
           <div class="pano-studio-at-output">
-            <StudioOutputPreview :storage="storage" :ratio="frameAspect" :line="outputLine" :suspended="cameraTab" :suspended-tip="CAMERA_TAB_TIP" @open="(open) => (outputOpen = open)">
+            <StudioOutputPreview :storage="storage" :ratio="frameAspect" :line="outputLine" :suspended="cameraTab" :suspended-tip="CAMERA_TAB_TIP" :reveal="ui.cameraCue" @open="(open) => (outputOpen = open)">
               <canvas v-if="!panorama" ref="outputFrame" class="pano-studio-output-picture" data-output-picture="frame" aria-hidden="true" />
               <canvas v-else ref="outputErp" class="pano-studio-output-picture" data-output-picture="erp" aria-hidden="true" />
             </StudioOutputPreview>
@@ -379,6 +386,10 @@ function setCollapsed(value) {
               :disabled="!!navOff"
               :disabled-tip="navOff"
               :help-open="!!view.shortcuts"
+              :center-picking="!!ui.pickingCenter"
+              :center-off="cameraTab ? CAMERA_TAB_TIP : ''"
+              @hover="(knob) => stage?.toolbarHover(knob)"
+              @center="stage?.pickCenter()"
               @knob="(knob, event) => stage?.knobDown(knob, event)"
               @help="controller.shortcuts(!view.shortcuts)"
             />
@@ -447,11 +458,12 @@ function setCollapsed(value) {
         :tab="view.tab"
         :playhead="view.playhead"
         :node-name="nodeTitle"
-        :read-only="view.readOnly || view.upstreamSelected"
+        :read-only="view.readOnly"
         :upstream="view.upstreamWorking"
         :animations="view.animations"
         :image-sizes="view.imageSizes"
         :port-size="view.portSize"
+        :handoff="view.portHandoff"
         @edit="(edit) => controller.inspectorEdit(edit)"
         @close="controller.close()"
       />

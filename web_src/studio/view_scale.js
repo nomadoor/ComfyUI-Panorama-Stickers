@@ -69,6 +69,19 @@ export const ORBIT_DEG_PER_PIXEL = 0.3;
 export const WHEEL_EASE_SECONDS = 0.4;
 // How long a double click's turn, Frame Selected and Reset View take.
 export const ACTION_EASE_SECONDS = 0.4;
+// After a double click or Set orbit center sets T, the orbit center's mark stays this long, then fades out over the
+// next (docs/space-and-view.md "オービットの中心の印").
+export const ORBIT_MARK_HOLD_SECONDS = 0.6;
+export const ORBIT_MARK_FADE_SECONDS = 0.5;
+// The sky grid (docs/space-and-view.md "空のグリッド"), in degrees: the step of its meridians and parallels; where its
+// lines (not the axis meridians) start to fade and are gone, up from the horizon; where the axis meridians start to
+// show and are full, up from the horizon; how near the view's direction comes to the pole before its dot starts to show
+// and is full; and the dot's radius.
+export const SKY_GRID_STEP_DEG = 30;
+export const SKY_LINE_FADE_DEG = Object.freeze([35, 72]);
+export const SKY_AXIS_RISE_DEG = Object.freeze([4, 40]);
+export const SKY_POLE_NEAR_DEG = Object.freeze([25, 8]);
+export const SKY_POLE_DOT_DEG = 0.45;
 // A continuous move (joystick, WASD / QE, the Preview's damping and inertia) counts a frame's time up to this; a gap
 // this long or longer (a stopped tab) counts as FRAME_FALLBACK_SECONDS.
 export const FRAME_GAP_LIMIT = 0.1;

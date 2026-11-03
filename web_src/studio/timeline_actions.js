@@ -32,8 +32,8 @@ import {
   jumpFrames,
   nearestKeyFrame,
   spanOf,
-  timelineCamera,
 } from "./timeline_model.js";
+import { cameraOf } from "./camera_state.js";
 
 // A copy-on-write draft of ctx's state and upstream working copies: owner(entry) gives a copy of the entry's owner
 // that may be changed, made once per owner; result() gives the edit.
@@ -67,7 +67,7 @@ function createDraft(ctx) {
         return target.stickers.find((sticker) => sticker.id === entry.id);
       }
       // The Camera of a state without one is the default Camera, written by its first edit.
-      if (entry.kind === "camera" && first) target.camera = structuredClone(target.camera ?? timelineCamera(target));
+      if (entry.kind === "camera" && first) target.camera = structuredClone(target.camera ?? cameraOf(target));
       else if (first) target[entry.kind] = structuredClone(target[entry.kind]);
       return target[entry.kind];
     },

@@ -5,12 +5,11 @@
 //
 // `ctx`, shared with timeline_actions.js, is what the shell gives the Timeline:
 //   state       the working state v2 (a snapshot; nothing here changes it). Its `camera` may be null: the Camera row
-//               then shows the default Camera (timelineCamera)
+//               then shows the default Camera (camera_state.js cameraOf)
 //   upstream    the upstream layers, farthest first: [{ key, name, sceneState, editable, record, scene, deleted,
-//               portMeta, readOnly }] (editor/upstream.js upstreamTimelineLayers, with `name` the upstream node's title,
-//               `portMeta` the media meta of its port Sticker and `readOnly` a layer shown without edits: the new
-//               editor's until it edits upstream items, studio/upstream.js; optional `sceneItems`, the number of items of its
-//               3D content, and `animations`, its animated 3D files' clips as media.animations)
+//               portMeta }] (editor/upstream.js upstreamTimelineLayers, with `name` the upstream node's title and
+//               `portMeta` the media meta of its port Sticker, studio/upstream.js; optional `sceneItems`, the number of
+//               items of its 3D content, and `animations`, its animated 3D files' clips as media.animations)
 //   media       what timelineSpan knows of the inputs (pano_timeline.js autoTimelineLength), `port` the node's own port
 //               Sticker's media meta
 //   spanOf      optional (ctx, openClip) => span, in place of timelineSpan(state, media) (for an upstream layer's
@@ -29,7 +28,7 @@ import { sceneStickerLabel } from "../pano_editor_state.js";
 import { paintObjectRow } from "../pano_paint_objects.js";
 import { portMediaFrames } from "../pano_port_media.js";
 import { defaultClip } from "../pano_scene_state.js";
-import { FRAME_EPSILON } from "../pano_scene_eval.js";
+import { FRAME_EPSILON, clipOrigin } from "../pano_scene_eval.js";
 import {
   BACKGROUND_ROW,
   hasPainting,
@@ -41,8 +40,8 @@ import {
   timelinePlayable,
   timelineSpan,
 } from "../pano_timeline.js";
-import { upstreamLayerOverridden, upstreamRowId } from "../pano_upstream.js";
-import { cameraOf } from "./defaults.js";
+import { upstreamLayerOverridden, upstreamRowId, upstreamStickerOverridden } from "../pano_upstream.js";
+import { cameraOf } from "./camera_state.js";
 
 // The name of a Sticker's row (and its inspector card): its file's name, else its id; an upstream element's own id, not
 // its working id (`upstream:<key>:<id>`).
@@ -53,19 +52,13 @@ export function objectLabel(sticker) {
 export const CAMERA_ROW = "camera";
 export const SCENE_ROW = "scene";
 
-// The Camera the Camera row shows and edits: the state's (a loaded state always has one, ADR 0048), or the default
-// Camera (defaults.js).
-export function timelineCamera(state) {
-  return cameraOf(state);
-}
-
 // The Timeline's span (the output's length) for ctx, `openClip` counted as a Clip range without a duration.
 export function spanOf(ctx, openClip = null) {
   if (ctx.spanOf) return ctx.spanOf(ctx, openClip);
   return timelineSpan(ctx.state, { ...(ctx.media || {}), camera: true, openClip });
 }
 
-const clipOffset = (owner) => (owner?.clip ? owner.clip.start - owner.clip.in : 0);
+const clipOffset = (owner) => (owner?.clip ? clipOrigin(owner.clip) : 0);
 
 // Every row of the Timeline as an entry: { id, kind, owner, sceneState, layer, offset, label, icon }, the node's own
 // (`own`) and per upstream layer (`groups`). `kind` is background, camera, sticker, painting or scene; `owner` holds
@@ -98,7 +91,7 @@ export function timelineEntries(ctx) {
   };
   const own = [];
   if (ctx.background) own.push({ id: BACKGROUND_ROW, kind: "background", owner: state.background, sceneState: state, layer: null, offset: clipOffset(state.background), label: "Background", icon: ICON.unwrap });
-  own.push({ id: CAMERA_ROW, kind: "camera", owner: timelineCamera(state), sceneState: state, layer: null, offset: 0, label: "Camera", icon: ICON.camera });
+  own.push({ id: CAMERA_ROW, kind: "camera", owner: cameraOf(state), sceneState: state, layer: null, offset: 0, label: "Camera", icon: ICON.camera });
   // The own `scene` (the `world` content) is drawn over the upstream layers too, so its row shows with them.
   own.push(...stateEntries(state, null, !!ctx.sceneRow || ownerTimed(state.scene)));
   return {
@@ -119,7 +112,7 @@ export function findEntry(ctx, id) {
 // Whether the row's own state may change here: not read-only, and an upstream layer's only while the node keeps
 // its overrides (ADR 0030).
 export function entryWritable(ctx, entry) {
-  return !ctx.readOnly && (!entry.layer || (entry.layer.editable && !entry.layer.readOnly));
+  return !ctx.readOnly && (!entry.layer || entry.layer.editable);
 }
 
 // Whether the row's Keyframes may change: writable, not locked, and not an upstream `scene` (no override holds its
@@ -257,9 +250,15 @@ const keyId = (row, lane, frame) => `${row}\u0000${lane ?? ""}\u0000${frame}`;
 
 const INHERITED_TIP = "Inherited only: this node cannot keep changes to this layer";
 
+// "From <the Studio's name>" (its layer's key without one): the header of an upstream layer's group, and the note beside
+// an upstream object's inspector card (docs/studio-ui.md "上流の物の編集" "見せる").
+export function upstreamFromLabel(name, key) {
+  return `From ${name || key}`;
+}
+
 // Why a row's controls are disabled, or "" when they are not.
 function blockedTip(ctx, entry, { locked = true } = {}) {
-  if (ctx.readOnly || entry.layer?.readOnly) return "Read-only";
+  if (ctx.readOnly) return "Read-only";
   if (entry.layer && !entry.layer.editable) return INHERITED_TIP;
   if (locked && entry.owner?.locked === true) return "Locked";
   return "";
@@ -277,8 +276,8 @@ function overridden(entry) {
   if (!record) return false;
   if (entry.kind === "painting") return Object.hasOwn(record, "painting_visible");
   if (entry.kind === "scene") return Object.keys(record.scene || {}).length > 0;
-  const { origin, placement } = entry.owner;
-  return !!record.stickers?.some((item) => item.id === origin?.id && item.placement === placement);
+  // Any entry for the element's id, of any field and placement (docs/timeline-ui.md "上流の層の行").
+  return upstreamStickerOverridden([record], entry.owner);
 }
 
 // The Timeline for StudioTimeline.vue. `openRows` holds the ids of the open rows. Rows:
@@ -352,11 +351,11 @@ export function buildStudioTimeline(ctx, { selection = null, playhead = 0, playi
   const { own, groups } = timelineEntries(ctx);
   const rows = own.map(rowOf);
   const groupModels = groups.map(({ layer, entries }) => {
-    const editable = !!layer.editable && !ctx.readOnly && !layer.readOnly;
+    const editable = !!layer.editable && !ctx.readOnly;
     const deleted = layer.editable ? layer.deleted || 0 : 0;
     return {
       key: layer.key,
-      label: `From ${layer.name || layer.key}${layer.editable ? "" : " · inherited only"}`,
+      label: `${upstreamFromLabel(layer.name, layer.key)}${layer.editable ? "" : " · inherited only"}`,
       tip: "Items from the scene input. Changes here are saved in this node.",
       revert: {
         disabled: !editable || !upstreamLayerOverridden(layer.record ?? null),

@@ -1,4 +1,6 @@
 export const STICKER_NODE_ROTATE_HANDLE_OFFSET_PX = 24;
+// How near (px) a rotate handle's center is hit.
+export const ROTATE_HANDLE_HIT_PX = 12;
 
 export function stickerSelectionAccent(item = {}) {
   if (item?.locked === true) return "#ff4d4f";
@@ -45,7 +47,7 @@ export function hitStickerSelectionAffordance(geometry, point) {
       cursor: (vx * vy) >= 0 ? "nwse-resize" : "nesw-resize",
     };
   }
-  if (distanceSquared(geometry.rotateHandle, point) <= 12 * 12) {
+  if (distanceSquared(geometry.rotateHandle, point) <= ROTATE_HANDLE_HIT_PX * ROTATE_HANDLE_HIT_PX) {
     return { kind: "rotate", cursor: "grab" };
   }
   if (pointInPolygon(point, insideOf(geometry))) return { kind: "move", cursor: "default" };
@@ -71,7 +73,7 @@ export function hitFrameAffordance(geometry, point, { edges = false, resize = tr
     const vy = corner.y - geometry.center.y;
     return { kind: "scale", cornerIdx, cursor: (vx * vy) >= 0 ? "nwse-resize" : "nesw-resize" };
   }
-  if (distanceSquared(geometry.rotateHandle, point) <= 12 * 12) return { kind: "rotate", cursor: "grab" };
+  if (distanceSquared(geometry.rotateHandle, point) <= ROTATE_HANDLE_HIT_PX * ROTATE_HANDLE_HIT_PX) return { kind: "rotate", cursor: "grab" };
   if (pointInPolygon(point, insideOf(geometry))) return { kind: "move", cursor: "default" };
   return { kind: "none", cursor: emptyCursor };
 }

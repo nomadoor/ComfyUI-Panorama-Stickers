@@ -14,11 +14,12 @@
 // `target` is a card's target ({ kind: "sticker" | "camera" | "scene", id }), `keyframes` the selection's
 // ({ owner, lane, frames }).
 //
-// applyInspectorEdit returns { changed, history, stopPlayback, upstreamChanged }: `history` asks for one Undo step
-// (a commit), `stopPlayback` for the dot's stop of playback, `upstreamChanged` that the node's `upstream` records
-// changed so the working layers are made again from them (pano_upstream.js upstreamWorkingLayers). An "input" changes
-// the state live without an Undo step; a "cancel" changes nothing, and the shell puts back the state it had before
-// the gesture's first input (with `cancel: true` in the result).
+// applyInspectorEdit returns { changed, history, stopPlayback, upstreamRevert }: `history` asks for one Undo step
+// (a commit), `stopPlayback` for the dot's stop of playback, `upstreamRevert` ({ sticker, lanes }, else null) the reset
+// of an upstream object's row, which changes nothing here: the session takes those Lanes' overrides off the records
+// (docs/studio-ui.md "上流の物の編集"). An "input" changes the state live without an Undo step; a "cancel" changes
+// nothing, and the shell puts back the state it had before the gesture's first input (with `cancel: true` in the
+// result). An upstream object's edits change its working copy in place (the session writes it back).
 import {
   WORLD_MIN_SCALE,
   setCameraCurveKeepingCenter,
@@ -30,23 +31,19 @@ import {
 import { FRAME_EPSILON, evaluateLane } from "../pano_scene_eval.js";
 import { ANIMATION_DEFAULT, ANIMATION_SPEED_MAX, ANIMATION_SPEED_MIN, CAMERA_LANES, DEFAULT_EASING, SKY_STICKER_LANES, WORLD_STICKER_LANES } from "../pano_scene_state.js";
 import { deleteKeyframes, keyLanes, rowLaneNames, setLaneValue, setSegmentEasing } from "../pano_timeline.js";
-import { isUpstreamSticker, upstreamRevertedRecords, upstreamStickerEditable } from "../pano_upstream.js";
-import { revertHandoffLane } from "../pano_port_handoff.js";
+import { isUpstreamSticker, upstreamStickerInherited } from "../pano_upstream.js";
+import { HANDOFF_LANES, revertHandoffLane } from "../pano_port_handoff.js";
+import { editableCamera } from "./camera_state.js";
 import { defaultCamera } from "./defaults.js";
-import { ROW_LANES, findSticker, inheritedSticker, keyframeOwner, ownerFrame, skyPlacedSize } from "./inspector_model.js";
+import { ROW_LANES, ownerFrame, skyPlacedSize } from "./inspector_model.js";
+import { findSticker, keyframeOwner } from "./row_object.js";
 
 const SKY_POSE_FIELDS = new Set(["yaw_deg", "pitch_deg", "rot_deg", "hFOV_deg", "vFOV_deg"]);
 
-const result = (changed, extra = {}) => ({ changed, history: false, stopPlayback: false, upstreamChanged: false, ...extra });
+const result = (changed, extra = {}) => ({ changed, history: false, stopPlayback: false, upstreamRevert: null, ...extra });
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
-}
-
-// The Camera to edit: a state without one gets the default Camera first (docs/scene-state-v2.md "既定の Camera").
-function editedCamera(state) {
-  if (!state.camera) state.camera = defaultCamera();
-  return state.camera;
 }
 
 // What an edit acts on: { kind, owner }, or null when it is not there or not editable (locked, read-only, an
@@ -60,7 +57,7 @@ function resolve(state, target, { upstream, readOnly }) {
   }
   const sticker = findSticker(state, upstream, target.id);
   if (!sticker || sticker.locked) return null;
-  if (isUpstreamSticker(sticker) && !upstreamStickerEditable(sticker)) return null;
+  if (upstreamStickerInherited(sticker)) return null;
   return { kind: sticker.placement, owner: sticker };
 }
 
@@ -76,13 +73,15 @@ function applyField(state, found, edit, context) {
     return true;
   }
   if (found.kind === "camera") {
-    const camera = editedCamera(state);
+    const camera = editableCamera(state);
     if (field === "curve") setCameraCurveKeepingCenter(camera, playhead, value, edit.start ?? { hFOV_deg: evaluateLane(camera, "fov", playhead), curve: evaluateLane(camera, "curve", playhead) });
     else setCameraField(camera, playhead, field, value);
     return true;
   }
   const sticker = found.owner;
   if (field === "anim_speed") {
+    // An upstream object's animation is not overridden (docs/studio-ui.md "上流の物の編集" "作らないもの").
+    if (isUpstreamSticker(sticker)) return false;
     setAnimation(sticker, { speed: clamp(value, ANIMATION_SPEED_MIN, ANIMATION_SPEED_MAX) });
     return true;
   }
@@ -101,13 +100,13 @@ function applyField(state, found, edit, context) {
 
 function applyChoice(state, found, { field, value }, context) {
   if (found.kind === "camera") {
-    const camera = editedCamera(state);
+    const camera = editableCamera(state);
     if (field === "projection" && (value === "erp" || value === "perspective")) camera.projection = value;
     else if (field === "erp_range" && (value === 360 || value === 180)) camera.erp_range = value;
     else return false;
     return true;
   }
-  if (field !== "anim_clip" || !found.owner) return false;
+  if (field !== "anim_clip" || !found.owner || isUpstreamSticker(found.owner)) return false;
   const clip = context.animations?.[found.owner.id]?.[value];
   if (!clip) return false;
   setAnimation(found.owner, { clip: clip.name });
@@ -123,7 +122,7 @@ function rowLanes(found, row) {
 function applyKey(state, found, row, playhead) {
   const lanes = rowLanes(found, row);
   if (!lanes) return false;
-  const owner = found.kind === "camera" ? editedCamera(state) : found.owner;
+  const owner = found.kind === "camera" ? editableCamera(state) : found.owner;
   const frame = ownerFrame(owner, playhead);
   const at = (name) => owner[name].keyframes.find((key) => Math.abs(key.frame - frame) <= FRAME_EPSILON);
   const keyed = lanes.filter(at);
@@ -142,20 +141,16 @@ function laneDefault(list, name) {
 // The Roll the Camera tab's Roll reset returns to: the rotation Lane's default (frame_layout.js grays the reset there).
 export const CAMERA_ROLL_DEFAULT = laneDefault(CAMERA_LANES, "rotation").roll_deg;
 
-// An upstream element's reset: the override of the row's Lanes goes, so it inherits them again, and its working copy
-// shows the upstream value at once.
-function resetUpstream(state, sticker, lanes, upstream) {
-  const base = inheritedSticker(upstream, sticker, state.timeline.fps);
-  let records = state.upstream ?? [];
-  for (const name of lanes) records = upstreamRevertedRecords(records, sticker, name);
-  state.upstream = records;
-  if (base) for (const name of lanes) sticker[name] = structuredClone(base[name]);
-}
-
-// A port Sticker's reset of a Lane the Pose handoff gives (docs/studio-ui.md "リセットと Keyframe のポチ": the input's
-// value): it follows the handoff again. Returns the Lanes it did not revert.
+// A port Sticker's reset of a row the Pose handoff gives (docs/studio-ui.md "リセットと Keyframe のポチ": the input's
+// value): its overridden Lanes follow the handoff again, and a row with none overridden is where its reset returns it
+// already. Returns the Lanes left to reset to their defaults ([] when the handoff took the row), or null when the
+// reset does nothing.
 function resetHandoff(state, sticker, lanes, handoff) {
   if (sticker.source.kind !== "port" || !handoff) return lanes;
+  if (handoff.placement === sticker.placement && lanes.every((name) => HANDOFF_LANES[handoff.placement].includes(name))) {
+    const reverted = lanes.filter((name) => revertHandoffLane(state, sticker, handoff, name));
+    return reverted.length ? [] : null;
+  }
   return lanes.filter((name) => !revertHandoffLane(state, sticker, handoff, name));
 }
 
@@ -167,7 +162,7 @@ function applyReset(state, found, row, context) {
     return { done: true };
   }
   if (found.kind === "camera") {
-    const camera = editedCamera(state);
+    const camera = editableCamera(state);
     if (row === "aspect") {
       camera.aspect = defaultCamera().aspect;
       return { done: true };
@@ -184,18 +179,18 @@ function applyReset(state, found, row, context) {
   }
   const sticker = found.owner;
   if (row === "anim_clip" || row === "anim_speed") {
+    if (isUpstreamSticker(sticker)) return { done: false };
     setAnimation(sticker, row === "anim_clip" ? { clip: ANIMATION_DEFAULT.clip } : { speed: ANIMATION_DEFAULT.speed });
     return { done: true };
   }
   const lanes = rowLanes(found, row);
   if (!lanes) return { done: false };
-  if (isUpstreamSticker(sticker)) {
-    resetUpstream(state, sticker, lanes, context.upstream);
-    return { done: true, upstreamChanged: true };
-  }
+  if (isUpstreamSticker(sticker)) return { done: false, upstreamRevert: { sticker, lanes } };
   const frame = ownerFrame(sticker, playhead);
   const list = sticker.placement === "world" ? WORLD_STICKER_LANES : SKY_STICKER_LANES;
-  for (const name of resetHandoff(state, sticker, lanes, context.handoff)) {
+  const rest = resetHandoff(state, sticker, lanes, context.handoff);
+  if (!rest) return { done: false };
+  for (const name of rest) {
     let value = laneDefault(list, name);
     // A port sky Sticker's vFOV follows its media: only its hFOV is stored. Another sky image goes back to the size
     // it was placed at (docs/studio-ui.md "種類ごとの中身").
@@ -208,9 +203,11 @@ function applyReset(state, found, row, context) {
 
 function applyEasing(state, keyframes, easing, upstream) {
   if (!keyframes?.frames?.length) return false;
+  // Without a Camera an Easing edit writes nothing (the other edits put the default Camera there first, camera_state.js
+  // editableCamera); whether to align it is an open decision of the owner.
   const owner = keyframes.owner === "camera" ? (state.camera ?? null) : keyframeOwner(state, upstream, keyframes.owner);
   if (!owner || owner.locked) return false;
-  if (isUpstreamSticker(owner) && !upstreamStickerEditable(owner)) return false;
+  if (upstreamStickerInherited(owner)) return false;
   const names = keyframes.lane ? [keyframes.lane] : rowLaneNames(owner);
   setSegmentEasing(owner, names, keyframes.frames, easing);
   return true;
@@ -244,8 +241,8 @@ export function applyInspectorEdit(state, edit, context = {}) {
     return result(changed, { history: changed, stopPlayback: changed });
   }
   if (edit.type === "reset") {
-    const { done, upstreamChanged = false } = applyReset(state, found, edit.row, ctx);
-    return result(done, { history: done, upstreamChanged });
+    const { done, upstreamRevert = null } = applyReset(state, found, edit.row, ctx);
+    return result(done, { history: done, upstreamRevert });
   }
   return result(false);
 }

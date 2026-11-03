@@ -1,7 +1,7 @@
 <script setup>
 import { shallowRef } from "vue";
 import { loadSceneState } from "/web_src/pano_scene_state.js";
-import { upstreamWorkingLayers } from "/web_src/pano_upstream.js";
+import { upstreamRevertedRecords, upstreamWorkingLayers } from "/web_src/pano_upstream.js";
 import { applyInspectorEdit } from "/web_src/studio/inspector_actions.js";
 import StudioInspector from "/web_src/components/studio/StudioInspector.vue";
 
@@ -67,7 +67,14 @@ function onEdit(edit) {
     layers = before.layers;
   }
   if (edit.phase !== "input") before = null;
-  if (result.upstreamChanged) layers = upstreamWorkingLayers([{ sceneState: layerState, ui: {} }], raw.upstream, raw.timeline.fps);
+  // An upstream row's reset: the session takes its Lanes' overrides off the records and makes the working copies again
+  // from them (session.js, pano_upstream_edits.js), as one Undo step.
+  if (result.upstreamRevert) {
+    const { sticker, lanes } = result.upstreamRevert;
+    raw.upstream = lanes.reduce((records, lane) => upstreamRevertedRecords(records, sticker, lane), raw.upstream);
+    layers = upstreamWorkingLayers([{ sceneState: layerState, ui: {} }], raw.upstream, raw.timeline.fps);
+    history += 1;
+  }
   if (result.history) history += 1;
   window.__edits.push({ edit: JSON.parse(JSON.stringify(edit)), result });
   show();

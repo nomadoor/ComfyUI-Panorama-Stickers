@@ -24,21 +24,22 @@ test("left on nothing looks around, left on an object selects and edits", () => 
   assert.equal(press(0, {}, { overObject: true }), "object");
 });
 
-test("right looks around anywhere, never touching an object", () => {
-  assert.equal(press(2), "look");
-  assert.equal(press(2, {}, { overObject: true }), "look");
+test("right pans anywhere, never touching an object (ADR 0060)", () => {
+  assert.equal(press(2), "pan");
+  assert.equal(press(2, {}, { overObject: true }), "pan");
 });
 
-test("middle pans", () => {
-  assert.equal(press(1), "pan");
-  assert.equal(press(1, {}, { overObject: true }), "pan");
+test("middle looks around anywhere, never touching an object (ADR 0060)", () => {
+  assert.equal(press(1), "look");
+  assert.equal(press(1, {}, { overObject: true }), "look");
 });
 
-test("Alt + left and Alt + right orbit anywhere, Alt + middle is the joystick", () => {
+test("Alt + left and Alt + middle orbit anywhere, Alt + right is the joystick (ADR 0060)", () => {
   assert.equal(press(0, { altKey: true }), "orbit");
   assert.equal(press(0, { altKey: true }, { overObject: true }), "orbit");
-  assert.equal(press(2, { altKey: true }, { overObject: true }), "orbit");
-  assert.equal(press(1, { altKey: true }), "joystick");
+  assert.equal(press(1, { altKey: true }, { overObject: true }), "orbit");
+  assert.equal(press(2, { altKey: true }), "joystick");
+  assert.equal(press(2, { altKey: true }, { overObject: true }), "joystick");
 });
 
 test("Ctrl, Meta, Shift and other buttons do nothing to the view", () => {

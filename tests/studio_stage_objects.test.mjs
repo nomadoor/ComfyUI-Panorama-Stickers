@@ -10,22 +10,46 @@ import test from "node:test";
 import { evaluateLane } from "../web_src/pano_scene_eval.js";
 import { loadSceneState } from "../web_src/pano_scene_state.js";
 import { buildStickerGeometry } from "../web_src/pano_sticker_geometry.js";
-import { transformErpPointAround } from "../web_src/pano_paint_objects.js";
-import { erpPointOfDirection, strokeGroupFrame } from "../web_src/pano_paint_strokes.js";
+import { moveStrokeGroupTo, rasterObjectCenterUv, strokeHitLineWidth, strokeHitThreshold, transformStrokeGroup, turnErpPointOnSphere } from "../web_src/pano_paint_objects.js";
+import { directionOfErpPoint, erpPointOfDirection, strokeGroupFrame } from "../web_src/pano_paint_strokes.js";
 import { viewProjection } from "../web_src/pano_editor_view.js";
 import { projectPoint } from "../web_src/pano_space.js";
 import { createStudioSession } from "../web_src/studio/session.js";
 import { stageContent } from "../web_src/studio/stage_content.js";
 import { createStageObjects } from "../web_src/studio/stage_objects.js";
 import { stageCamera } from "../web_src/studio/stage_view.js";
+import { createStudioUpstream } from "../web_src/studio/upstream.js";
+
+// The upstream layers' pictures (pano_upstream_layers.js loads them as Images).
+globalThis.Image ??= class {
+  constructor() {
+    Object.assign(this, { naturalWidth: 100, naturalHeight: 100, width: 100, height: 100, complete: true });
+  }
+};
 
 const W = 1000;
 const H = 500;
 const file = (filename) => ({ kind: "file", filename, subfolder: "", storage: "input" });
 const image = { naturalWidth: 100, naturalHeight: 100, complete: true };
 
-function setup({ tab = "3d", camera: viewCamera = null, readOnly = false, stickers = null, sceneBox = () => null, editorFile = () => null, mode = "translate", painting = undefined, paintingVisible = true, rasterAlpha = undefined, view = { width: W, height: H }, cameraAt = [0, -1, -6] } = {}) {
-  const session = createStudioSession({
+function setup({ tab = "3d", camera: viewCamera = null, readOnly = false, stickers = null, sceneBox = () => null, editorFile = () => null, mode = "translate", painting = undefined, paintingVisible = true, rasterAlpha = undefined, view = { width: W, height: H }, cameraAt = [0, -1, -6], upstreamLayers = null } = {}) {
+  // [upstream] The layers of an upstream Scene (state v2 each), edited as overrides (docs/studio-ui.md "上流の物の編集").
+  let session = null;
+  // One result: its layers' list stays the same object while the editor is open.
+  const list = upstreamLayers && upstreamLayers.map((layer) => ({ state: layer, ui: {} }));
+  const upstream = upstreamLayers && createStudioUpstream({
+    list: () => list,
+    linkType: () => "PANO_SCENE",
+    uiList: () => [],
+    state: () => session.state,
+    setRecords: (records) => session.setUpstreamRecords(records),
+    mediaSource: () => "",
+    mediaAssetSource: (asset) => `/view?filename=${asset.filename}`,
+    revisionOf: () => "r",
+    playing: () => false,
+  });
+  session = createStudioSession({
+    upstream,
     state: loadSceneState({
       version: 2,
       camera: { projection: "perspective", position: { value: cameraAt }, rotation: { value: { yaw_deg: 180, pitch_deg: 0, roll_deg: 0 } } },
@@ -46,7 +70,7 @@ function setup({ tab = "3d", camera: viewCamera = null, readOnly = false, sticke
   };
   let cached = null;
   const content = () => {
-    if (!cached || cached.state !== session.state) cached = { state: session.state, value: stageContent(session.state, 0, { media: () => ({ media: image, revision: "r" }), editorFile, sceneBox }) };
+    if (!cached || cached.state !== session.state) cached = { state: session.state, value: stageContent(session.state, 0, { media: () => ({ media: image, revision: "r" }), editorFile, sceneBox, upstream: upstream?.viewInput(0) ?? null }) };
     return cached.value;
   };
   const gizmoMode = { value: mode };
@@ -64,8 +88,9 @@ function setup({ tab = "3d", camera: viewCamera = null, readOnly = false, sticke
     readOnly: () => readOnly,
     mode: () => gizmoMode.value,
     rasterAlpha,
+    upstream: () => upstream?.working() ?? [],
   });
-  return { session, objects, camera, gizmoMode };
+  return { session, objects, camera, gizmoMode, upstream };
 }
 
 const center = { x: W / 2, y: H / 2 };
@@ -516,21 +541,24 @@ function painted(groups = [{ id: "g1", actionGroupId: "g1", z_index: 3 }], strok
 }
 const groupPoints = (session) => session.state.painting.paint.strokes[0].geometry.points;
 
-test("a press on a stroke selects its group (paint_group:<id>); its drag adds the ERP difference to every point list, as one Undo step", () => {
+test("a press on a stroke selects its group (paint_group:<id>); its drag carries it as a sky image moves, every point list, as one Undo step", () => {
   const { session, objects } = setup({ painting: painted() });
   const before = structuredClone(session.state.painting.paint.strokes[0].geometry);
+  const grabbed = structuredClone(session.state.painting.paint.strokes);
+  const frame = strokeGroupFrame(grabbed);
   const drag = objects.press(strokeAt);
   assert.ok(drag);
   assert.equal(session.selection.row, "paint_group:g1");
   const to = { x: 420, y: 160 };
   drag.move(to);
-  const start = erpAt(strokeAt);
-  const now = erpAt(to);
-  const du = now.u - start.u;
-  const dv = now.v - start.v;
+  // Its center direction keeps the press's screen offset from it and goes under the pointer less that offset.
+  const anchor = screenAtDir(frame.center);
+  const centerTo = viewProjection(stageCam(), W, H).ray(to.x - (strokeAt.x - anchor.x), to.y - (strokeAt.y - anchor.y));
+  moveStrokeGroupTo(grabbed, "g1", frame, centerTo, null);
   for (const key of ["points", "rawPoints", "processedPoints"]) {
     session.state.painting.paint.strokes[0].geometry[key].forEach((point, index) => {
-      assert.ok(Math.abs(point.u - (before[key][index].u + du)) < 1e-9 && Math.abs(point.v - (before[key][index].v + dv)) < 1e-9, key);
+      const want = grabbed[0].geometry[key][index];
+      assert.ok(Math.abs(point.u - want.u) < 1e-9 && Math.abs(point.v - want.v) < 1e-9, key);
     });
   }
   assert.equal(session.state.painting_layer, null);
@@ -615,13 +643,15 @@ test("the selected stroke group's corner scales its points about its frame's cen
   const { corners, center: middle, handles } = objects.overlay().paint;
   assert.equal(handles, true);
   assert.equal(objects.hover(corners[1]).cursor, "nesw-resize");
-  const before = structuredClone(groupPoints(session));
-  const frame = strokeGroupFrame(session.state.painting.paint.strokes);
+  const strokesBefore = structuredClone(session.state.painting.paint.strokes);
+  const frame = strokeGroupFrame(strokesBefore);
   const drag = objects.press(corners[1]);
   drag.move({ x: middle.x + (corners[1].x - middle.x) * 2, y: middle.y + (corners[1].y - middle.y) * 2 });
   drag.end();
+  // Twice as far from its box's center on its frame's tangent plane.
+  transformStrokeGroup(strokesBefore, "g1", 2, null, frame);
   groupPoints(session).forEach((point, index) => {
-    const want = transformErpPointAround(before[index], frame.centerUv, 2, 0);
+    const want = strokesBefore[0].geometry.points[index];
     assert.ok(Math.abs(point.u - want.u) < 1e-9 && Math.abs(point.v - want.v) < 1e-9);
   });
   assert.equal(session.state.painting.paint.strokes[0].size, 10, "the brush size stays");
@@ -726,4 +756,470 @@ test("a one-point stroke's dot moves it when pressed, though its frame's corners
   const want = erpOf({ x: 40, y: 22 });
   const moved = session.state.painting.paint.strokes[0].geometry.points[0];
   assert.ok(Math.abs(moved.u - want.u) < 1e-9 && Math.abs(moved.v - want.v) < 1e-9);
+});
+
+// --- Turning a paint group (docs/studio-ui.md "ペイントのまとまり" "回転のハンドル", "回す").
+
+const screenAt = (point) => {
+  const at = viewProjection(stageCam(), W, H).project(directionOfErpPoint(point));
+  return { x: at.x, y: at.y };
+};
+// The pointer at `point` turned by `deg` (clockwise on the screen) about `center`.
+const turnedAbout = (point, center, deg) => {
+  const rad = deg * Math.PI / 180;
+  const dx = point.x - center.x;
+  const dy = point.y - center.y;
+  return { x: center.x + dx * Math.cos(rad) - dy * Math.sin(rad), y: center.y + dx * Math.sin(rad) + dy * Math.cos(rad) };
+};
+const angleAbout = (center, p) => Math.atan2(p.y - center.y, p.x - center.x) * 180 / Math.PI;
+const screenAtDir = (direction) => {
+  const at = viewProjection(stageCam(), W, H).project(direction);
+  return { x: at.x, y: at.y };
+};
+// The direction a stroke group turns about: its frame's center direction (strokeGroupFrame).
+const groupCenter = (session) => strokeGroupFrame(session.state.painting.paint.strokes, undefined, session.state.painting.groups[0]?.rot_deg).center;
+
+test("the selected paint group's rotate handle stands 24 px out from its top edge's middle, away from its bottom edge", () => {
+  const { session, objects } = setup({ painting: painted() });
+  session.selectObject("paint_group:g1");
+  const { corners, rotateStemBase, rotateHandle, handles } = objects.overlay().paint;
+  assert.equal(handles, true);
+  const top = { x: (corners[0].x + corners[1].x) / 2, y: (corners[0].y + corners[1].y) / 2 };
+  const bottom = { x: (corners[3].x + corners[2].x) / 2, y: (corners[3].y + corners[2].y) / 2 };
+  assert.ok(Math.hypot(rotateStemBase.x - top.x, rotateStemBase.y - top.y) < 1e-9);
+  const length = Math.hypot(top.x - bottom.x, top.y - bottom.y);
+  assert.ok(Math.abs(rotateHandle.x - (top.x + (top.x - bottom.x) / length * 24)) < 1e-9);
+  assert.ok(Math.abs(rotateHandle.y - (top.y + (top.y - bottom.y) / length * 24)) < 1e-9);
+  assert.equal(objects.hover(rotateHandle).cursor, "grab");
+  assert.equal(objects.hover({ x: rotateHandle.x, y: rotateHandle.y - 11.9 }).cursor, "grab", "hit within 12 px");
+});
+
+test("the rotate handle turns a stroke group's points on the sphere about its center direction, as one Undo step; Escape puts it back", () => {
+  const { session, objects } = setup({ painting: painted() });
+  session.selectObject("paint_group:g1");
+  const before = structuredClone(session.state.painting.paint.strokes[0].geometry);
+  const pivot = groupCenter(session);
+  const center = screenAtDir(pivot);
+  const { rotateHandle } = objects.overlay().paint;
+  const to = turnedAbout(rotateHandle, center, 40);
+  const delta = angleAbout(center, to) - angleAbout(center, rotateHandle);
+  const drag = objects.press(rotateHandle);
+  drag.move(to);
+  assert.equal(session.state.painting_layer, null);
+  for (const key of ["points", "rawPoints", "processedPoints"]) {
+    session.state.painting.paint.strokes[0].geometry[key].forEach((point, index) => {
+      const want = turnErpPointOnSphere(before[key][index], pivot, delta);
+      assert.ok(Math.abs(point.u - want.u) < 1e-9 && Math.abs(point.v - want.v) < 1e-9, key);
+    });
+  }
+  assert.equal(session.state.painting.paint.strokes[0].size, 10, "the brush size stays");
+  assert.equal(session.canUndo, false, "no step while it turns");
+  drag.end();
+  assert.equal(session.canUndo, true);
+  session.undo();
+  assert.deepEqual(session.state.painting.paint.strokes[0].geometry, before);
+  assert.equal(session.canUndo, false, "one step");
+  const given = session.state;
+  const again = objects.press(objects.overlay().paint.rotateHandle);
+  again.move(to);
+  again.cancel();
+  assert.equal(session.state, given);
+  assert.equal(session.canUndo, false);
+});
+
+test("turning a stroke group saves its angle: its frame, corners and rotate handle turn with it, and a second turn goes on from it", () => {
+  const { session, objects } = setup({ painting: painted() });
+  session.selectObject("paint_group:g1");
+  const pivot = groupCenter(session);
+  const center = screenAtDir(pivot);
+  const edgeAngle = (corners) => angleAbout(corners[0], corners[1]);
+  const first = objects.overlay().paint;
+  const to = turnedAbout(first.rotateHandle, center, 30);
+  const delta = angleAbout(center, to) - angleAbout(center, first.rotateHandle);
+  let drag = objects.press(first.rotateHandle);
+  drag.move(to);
+  drag.end();
+  assert.ok(Math.abs(session.state.painting.groups[0].rot_deg - delta) < 1e-9);
+  const turned = objects.overlay().paint;
+  // The frame's top edge leans about as far as it turned (the ERP's warp off the view's middle leaves a few degrees).
+  assert.ok(Math.abs(edgeAngle(turned.corners) - edgeAngle(first.corners) - delta) < 8, `${edgeAngle(turned.corners)} vs ${delta}`);
+  assert.ok(turned.rotateHandle.x > first.rotateHandle.x + 5, "the handle turned with the frame");
+  const top = { x: (turned.corners[0].x + turned.corners[1].x) / 2, y: (turned.corners[0].y + turned.corners[1].y) / 2 };
+  assert.ok(Math.abs(Math.hypot(turned.rotateHandle.x - top.x, turned.rotateHandle.y - top.y) - 24) < 1e-9);
+  // A second turn goes on from the saved angle.
+  const again = turnedAbout(turned.rotateHandle, center, 20);
+  const delta2 = angleAbout(center, again) - angleAbout(center, turned.rotateHandle);
+  drag = objects.press(turned.rotateHandle);
+  drag.move(again);
+  drag.end();
+  assert.ok(Math.abs(session.state.painting.groups[0].rot_deg - (delta + delta2)) < 1e-9);
+  session.undo();
+  assert.ok(Math.abs(session.state.painting.groups[0].rot_deg - delta) < 1e-9, "Undo takes back the second turn only");
+});
+
+test("with Shift a stroke group's saved angle stops at multiples of 15°, and its points turn by what the angle changed", () => {
+  const { session, objects } = setup({ painting: painted([{ id: "g1", actionGroupId: "g1", z_index: 3, rot_deg: 7 }]) });
+  session.selectObject("paint_group:g1");
+  const before = structuredClone(groupPoints(session));
+  const pivot = groupCenter(session);
+  const { rotateHandle } = objects.overlay().paint;
+  const drag = objects.press(rotateHandle);
+  drag.move(turnedAbout(rotateHandle, screenAtDir(pivot), 37), { shiftKey: true });
+  drag.end();
+  assert.equal(session.state.painting.groups[0].rot_deg, 45);
+  groupPoints(session).forEach((point, index) => {
+    const want = turnErpPointOnSphere(before[index], pivot, 38);
+    assert.ok(Math.abs(point.u - want.u) < 1e-9 && Math.abs(point.v - want.v) < 1e-9);
+  });
+});
+
+test("moving and scaling a turned stroke group keep its rot_deg; Escape during a turn puts it back", () => {
+  const { session, objects } = setup({ painting: painted([{ id: "g1", actionGroupId: "g1", z_index: 3, rot_deg: 20 }]) });
+  session.selectObject("paint_group:g1");
+  const move = objects.press(strokeAt);
+  move.move({ x: strokeAt.x + 30, y: strokeAt.y + 10 });
+  move.end();
+  assert.equal(session.state.painting.groups[0].rot_deg, 20);
+  const { corners, center: middle } = objects.overlay().paint;
+  const scale = objects.press(corners[2]);
+  scale.move({ x: middle.x + (corners[2].x - middle.x) * 1.5, y: middle.y + (corners[2].y - middle.y) * 1.5 });
+  scale.end();
+  assert.equal(session.state.painting.groups[0].rot_deg, 20);
+  const given = session.state;
+  const { rotateHandle } = objects.overlay().paint;
+  const turn = objects.press(rotateHandle);
+  turn.move(turnedAbout(rotateHandle, screenAtDir(groupCenter(session)), 50));
+  assert.notEqual(session.state.painting.groups[0].rot_deg, 20);
+  turn.cancel();
+  assert.equal(session.state, given);
+  assert.equal(session.state.painting.groups[0].rot_deg, 20);
+});
+
+test("a stroke group dragged over the zenith goes over it as a sky image does: same shape, frame glued, rot_deg kept; Escape and Undo", () => {
+  // The view looks up, the zenith above the middle of the stage.
+  const up = stageCamera({ position: [0, 0, 0], yaw_deg: 0, pitch_deg: 75, roll_deg: 0, target: [0, 0, -5] }, W, H, 50);
+  const project = (d) => {
+    const at = viewProjection(up, W, H).project(d);
+    return { x: at.x, y: at.y };
+  };
+  const points = [{ u: 0.48, v: 0.06 }, { u: 0.5, v: 0.065 }, { u: 0.52, v: 0.06 }];
+  const strokes = [{ ...strokeOn("st1", "g1", left, leftEnd), size: 10, geometry: { geometryKind: "freehand_open", points, rawPoints: points, processedPoints: points } }];
+  const { session, objects } = setup({ stickers: [], camera: up, cameraAt: [0, 0, 50], painting: painted([{ id: "g1", actionGroupId: "g1", z_index: 3, rot_deg: 10 }], strokes) });
+  const before = strokeGroupFrame(session.state.painting.paint.strokes, undefined, 10);
+  const grab = project(directionOfErpPoint(points[1]));
+  const anchor = project(before.center);
+  // Its center to latitude 80° behind, over the zenith.
+  const target = project(directionOfErpPoint({ u: 0, v: 0.5 - 80 / 180 }));
+  const to = { x: grab.x + target.x - anchor.x, y: grab.y + target.y - anchor.y };
+  const start = session.state;
+  let drag = objects.press(grab);
+  assert.equal(session.selection.row, "paint_group:g1");
+  drag.move(to);
+  drag.cancel();
+  assert.equal(session.state, start, "Escape puts it back");
+  drag = objects.press(grab);
+  drag.move({ x: (grab.x + to.x) / 2, y: (grab.y + to.y) / 2 });
+  drag.move(to);
+  drag.end();
+  const after = strokeGroupFrame(session.state.painting.paint.strokes, undefined, session.state.painting.groups[0].rot_deg);
+  assert.equal(session.state.painting.groups[0].rot_deg, 10);
+  assert.ok(Math.abs(Math.abs(after.centerUv.u - 0.5) - 0.5) < 0.02, `behind: ${after.centerUv.u}`);
+  assert.ok(Math.abs(after.halfW - before.halfW) < 1e-6 && Math.abs(after.halfH - before.halfH) < 1e-6, "same shape in its frame");
+  session.state.painting.paint.strokes[0].geometry.points.forEach((p) => assert.ok(p.v > 0.02, `not on the pole's line: ${p.v}`));
+  session.undo();
+  assert.deepEqual(session.state.painting.paint.strokes[0].geometry.points.map(({ u, v }) => ({ u, v })), points, "one Undo step");
+});
+
+test("a stroke group whose center has no place on the screen is selected by a press but not moved", () => {
+  // An arc 300° long around the back: only its ends show in front, its mean direction is behind the view.
+  const points = Array.from({ length: 31 }, (_, k) => ({ u: (k * 10 - 150) / 360 + 1, v: 0.45 })).map((p) => ({ u: p.u % 1, v: p.v }));
+  const stroke = { ...strokeOn("st1", "g1", left, leftEnd), geometry: { geometryKind: "freehand_open", points, rawPoints: points, processedPoints: points } };
+  const { session, objects } = setup({ stickers: [], painting: painted(undefined, [stroke]) });
+  const end = screenAtDir(directionOfErpPoint(points[0]));
+  assert.ok(end.x > 0 && end.x < W && end.y > 0 && end.y < H, "an end shows");
+  const drag = objects.press(end);
+  assert.equal(session.selection.row, "paint_group:g1");
+  const before = session.state;
+  drag.move({ x: end.x + 40, y: end.y + 20 });
+  drag.end();
+  assert.equal(session.state, before);
+});
+
+test("with Shift a stroke group turns by multiples of 15°, a raster object to multiples of 15°", () => {
+  let { session, objects } = setup({ painting: painted() });
+  session.selectObject("paint_group:g1");
+  const before = structuredClone(groupPoints(session));
+  const pivot = groupCenter(session);
+  const center = screenAtDir(pivot);
+  let { rotateHandle } = objects.overlay().paint;
+  let drag = objects.press(rotateHandle);
+  drag.move(turnedAbout(rotateHandle, center, 37), { shiftKey: true });
+  drag.end();
+  groupPoints(session).forEach((point, index) => {
+    const want = turnErpPointOnSphere(before[index], pivot, 30);
+    assert.ok(Math.abs(point.u - want.u) < 1e-9 && Math.abs(point.v - want.v) < 1e-9);
+  });
+  const raster = rasterOn("r1", { x: 600, y: 100 }, { x: 700, y: 200 }, { transform: { du: 0, dv: 0, rot_deg: 7, scale: 1 } });
+  ({ session, objects } = setup({ stickers: [], painting: painted([], [], [raster]), rasterAlpha: () => 255 }));
+  session.selectObject("raster:r1");
+  ({ rotateHandle } = objects.overlay().paint);
+  const rasterCenter = screenAt(rasterObjectCenterUv(raster));
+  drag = objects.press(rotateHandle);
+  drag.move(turnedAbout(rotateHandle, rasterCenter, 20), { shiftKey: true });
+  drag.end();
+  assert.equal(session.state.painting.raster_objects[0].transform.rot_deg, 30);
+});
+
+test("the rotate handle adds the pointer's turn to a raster object's rot_deg, and the handle turns with its frame", () => {
+  const raster = rasterOn("r1", { x: 600, y: 100 }, { x: 700, y: 200 });
+  const { session, objects } = setup({ stickers: [], painting: painted([], [], [raster]), rasterAlpha: () => 255 });
+  session.selectObject("raster:r1");
+  const { rotateHandle, corners } = objects.overlay().paint;
+  const center = screenAt(rasterObjectCenterUv(raster));
+  const to = turnedAbout(rotateHandle, center, 25);
+  const delta = angleAbout(center, to) - angleAbout(center, rotateHandle);
+  const drag = objects.press(rotateHandle);
+  drag.move(to);
+  drag.end();
+  const turned = session.state.painting.raster_objects[0];
+  assert.ok(Math.abs(turned.transform.rot_deg - delta) < 1e-9);
+  assert.equal(turned.transform.scale, 1);
+  assert.equal(session.state.painting_layer, null);
+  // Its frame is drawn turned: the handle now leans the way it turned.
+  const after = objects.overlay().paint;
+  assert.notDeepEqual(after.corners, corners);
+  assert.ok(after.rotateHandle.x > rotateHandle.x + 5, "turned clockwise, the handle on top moves right");
+});
+
+test("in the Camera tab's Frame view the selected paint group's rotate handle turns it, not the Camera", () => {
+  const { session, objects } = setup({ tab: "camera", painting: painted() });
+  session.selectObject("paint_group:g1");
+  const before = structuredClone(groupPoints(session));
+  const camera = structuredClone(session.state.camera);
+  const { rotateHandle, handles } = objects.overlay().paint;
+  assert.equal(handles, true);
+  const drag = objects.press(rotateHandle);
+  assert.notEqual(drag.passes, true);
+  const pivot = groupCenter(session);
+  drag.move(turnedAbout(rotateHandle, screenAtDir(pivot), 45));
+  drag.end();
+  assert.notDeepEqual(groupPoints(session), before);
+  assert.deepEqual(session.state.camera, camera);
+  assert.equal(session.canUndo, true);
+});
+
+test("no rotate handle on a locked paint group or in a read-only editor; a group of dots turns from its handle before its dot moves it", () => {
+  let { session, objects } = setup({ painting: painted([{ id: "g1", actionGroupId: "g1", z_index: 3, locked: true }]) });
+  session.selectObject("paint_group:g1");
+  assert.equal(objects.overlay().paint.handles, false);
+  let paint = objects.overlay().paint;
+  assert.notEqual(objects.hover(paint.rotateHandle).cursor, "grab");
+  ({ session, objects } = setup({ painting: painted(), readOnly: true }));
+  session.selectObject("paint_group:g1");
+  assert.equal(objects.overlay().paint.handles, false);
+  // Two fat dots close together on a small stage: the press on the handle lies on a dot too.
+  const view = { width: 200, height: 100 };
+  const small = stageCamera({ position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0, roll_deg: 0, target: [0, 0, -5] }, view.width, view.height, 50);
+  const smallProjection = viewProjection(small, view.width, view.height);
+  const dots = [{ x: 100, y: 70 }, { x: 102, y: 70 }].map((p, index) => {
+    const { u, v } = erpPointOfDirection(smallProjection.ray(p.x, p.y));
+    const point = { u, v };
+    return { ...strokeOn(`st${index}`, "g1", left, leftEnd), size: 200, geometry: { geometryKind: "freehand_open", points: [point], rawPoints: [point], processedPoints: [point] } };
+  });
+  ({ session, objects } = setup({ stickers: [], painting: painted(undefined, dots), view, cameraAt: [0, 0, 50] }));
+  session.selectObject("paint_group:g1");
+  paint = objects.overlay().paint;
+  const reach = strokeHitThreshold(strokeHitLineWidth(dots[0], "pen"));
+  assert.ok(Math.hypot(paint.rotateHandle.x - 101, paint.rotateHandle.y - 70) < reach, "the handle lies within a dot's reach");
+  assert.equal(objects.hover(paint.rotateHandle).cursor, "grab");
+  const before = structuredClone(session.state.painting.paint.strokes.map((stroke) => stroke.geometry.points[0]));
+  const at = smallProjection.project(groupCenter(session));
+  const drag = objects.press(paint.rotateHandle);
+  drag.move(turnedAbout(paint.rotateHandle, { x: at.x, y: at.y }, 90));
+  drag.end();
+  const after = session.state.painting.paint.strokes.map((stroke) => stroke.geometry.points[0]);
+  assert.ok(Math.abs(after[0].v - before[0].v) > 1e-4, "the dots turned about their mean");
+  // Turned about their mean direction, which stays.
+  const meanOf = (list) => {
+    const [a, b] = list.map(directionOfErpPoint);
+    return { x: a.x + b.x, y: a.y + b.y, z: a.z + b.z };
+  };
+  const [m0, m1] = [meanOf(before), meanOf(after)];
+  assert.ok(Math.abs(m0.x - m1.x) < 1e-9 && Math.abs(m0.y - m1.y) < 1e-9 && Math.abs(m0.z - m1.z) < 1e-9, "not moved");
+});
+
+// A stage with the Camera's rotation as `rotation`, the view at `viewAt` looking down -Z, and the selection `row`.
+function cameraSetup({ camera, row = "camera", mode = "rotate", viewAt = [0, 0, 0] } = {}) {
+  const raw = loadSceneState({ version: 2, stickers: [{ id: "board", placement: "world", source: file("board.png"), position: { value: [3, 0, -5] } }] });
+  const session = createStudioSession({ state: camera === null ? { ...raw, camera: null } : loadSceneState({ version: 2, camera, stickers: raw.stickers }) });
+  const view = stageCamera({ position: viewAt, yaw_deg: 0, pitch_deg: 0, roll_deg: 0, target: [viewAt[0], viewAt[1], viewAt[2] - 5] }, W, H, 50);
+  const selected = { row };
+  const objects = createStageObjects({
+    editorView: { sceneBox: () => null, pickSticker: () => assert.fail("the GPU pick is read") },
+    camera: () => view,
+    size: () => ({ width: W, height: H }),
+    state: () => session.state,
+    content: () => stageContent(session.state, 0, { media: () => ({ media: image, revision: "r" }), editorFile: () => null, sceneBox: () => null }),
+    playhead: () => 0,
+    selection: () => selected.row,
+    select: (next) => { selected.row = next; },
+    edits: { live: (apply, copy) => session.gesture(apply, copy), commit: () => session.commitGesture(), cancel: () => session.cancelGesture() },
+    tab: () => "3d",
+    readOnly: () => false,
+    mode: () => mode,
+  });
+  return { session, objects };
+}
+
+// The gizmo writes the whole rotation as gizmoDragLanes reads it (yaw in -180..180), not the nearest turn of its base
+// as the Camera tab and the Camera button do (camera_state.js moveCameraPose). Whether the gizmo should keep the
+// nearest turn too is an open decision of the owner; this test intentionally changes if they are aligned.
+test("a Rotate drag of the Camera's gizmo writes all three angles at the frame, the yaw wrapped across 180°", () => {
+  const { session, objects } = cameraSetup({
+    camera: {
+      projection: "perspective",
+      position: { value: [0, -1, -6] },
+      rotation: { value: { yaw_deg: 0, pitch_deg: 0, roll_deg: 0 }, keyframes: [{ frame: 0, value: { yaw_deg: 175, pitch_deg: 0, roll_deg: 0 } }, { frame: 10, value: { yaw_deg: 170, pitch_deg: 0, roll_deg: 0 } }] },
+    },
+  });
+  const ring = handlesOf(objects).rings.find((item) => item.name === "y");
+  const grip = ring.points.find((p) => p && p.front);
+  const drag = objects.press(grip);
+  assert.ok(drag, "the Y ring is grabbed");
+  drag.move({ x: grip.x + 40, y: grip.y });
+  drag.end();
+  const [first, second] = session.state.camera.rotation.keyframes;
+  assert.deepEqual(Object.keys(first.value).sort(), ["pitch_deg", "roll_deg", "yaw_deg"]);
+  assert.ok(Math.abs(first.value.yaw_deg - -178.19374595652172) < 1e-9, `the yaw is written as ${first.value.yaw_deg}, not past 180`);
+  assert.equal(first.value.pitch_deg, 0);
+  assert.equal(first.value.roll_deg, 0);
+  assert.deepEqual(second, { frame: 10, value: { yaw_deg: 170, pitch_deg: 0, roll_deg: 0 }, easing: second.easing });
+});
+
+test("a gizmo drag of a state whose Camera is null puts the default Camera there first and writes its Lane", () => {
+  const { session, objects } = cameraSetup({ camera: null, mode: "translate", viewAt: [0, 0, 6] });
+  const ball = ballOf(objects, "y");
+  const drag = objects.press(ball);
+  assert.ok(drag, "the Y ball is grabbed");
+  drag.move({ x: ball.x, y: ball.y - 30 });
+  drag.end();
+  const camera = session.state.camera;
+  assert.ok(camera, "the Camera is written");
+  assert.equal(camera.projection, "erp", "the default Camera's mode");
+  const position = evaluateLane(camera, "position", 0);
+  assert.ok(position[1] > 0.05 && Math.abs(position[0]) < 1e-9 && Math.abs(position[2]) < 1e-9);
+});
+
+// --- Upstream objects on the stage (docs/studio-ui.md "上流の物の編集": selected and edited as the node's own, written
+// back as overrides; "ペイントのまとまり" "押したときの順": the upstream sky images after the node's own Sky).
+
+const upSky = (id, extra = {}) => ({ id, placement: "sky", source: file(`${id}.png`), direction: { value: { yaw_deg: 0, pitch_deg: 0 } }, size: { value: { hFOV_deg: 30, vFOV_deg: 30 } }, ...extra });
+const upLayer = (id, stickers) => ({ version: 2, ...(id ? { id } : {}), timeline: { fps: 24 }, stickers });
+const recordOf = (session, key) => session.state.upstream.find((item) => item.layer === key) ?? null;
+
+test("an upstream sky image is selected under the node's own Sky, and its drag turns its working copy, written back as one step", () => {
+  const { session, objects, upstream } = setup({ stickers: [], upstreamLayers: [upLayer("scene_up", [upSky("poster")])] });
+  const drag = objects.press(onSky);
+  assert.equal(session.selection.row, "upstream:scene_up:poster");
+  drag.move({ x: W * 0.75, y: onSky.y });
+  assert.deepEqual(session.state.upstream, [], "a drag writes no record until it ends");
+  const working = upstream.working()[0].sceneState.stickers[0];
+  assert.ok(Math.abs(evaluateLane(working, "direction", 0).yaw_deg) > 10);
+  drag.end();
+  assert.equal(session.canUndo, true);
+  assert.ok(recordOf(session, "scene_up").stickers[0].direction, "the direction override");
+  // The node's own sky image in front wins.
+  const own = setup({ upstreamLayers: [upLayer("scene_up", [upSky("poster")])] });
+  own.objects.press(onSky);
+  assert.equal(own.session.selection.row, "sky");
+});
+
+test("upstream sky images are hit from the downstream layer, and in a layer from the front; a hidden one is not hit", () => {
+  const layers = [
+    upLayer("scene_far", [upSky("far")]),
+    upLayer("scene_near", [upSky("back", { z_index: 0 }), upSky("front", { z_index: 2 }), upSky("hidden", { z_index: 5, visible: false })]),
+  ];
+  const { session, objects } = setup({ stickers: [], upstreamLayers: layers });
+  objects.press(onSky).end();
+  assert.equal(session.selection.row, "upstream:scene_near:front");
+});
+
+test("the selected upstream sky image's corner scales its working copy; a drag given up puts it back", () => {
+  const { session, objects, camera, upstream } = setup({ stickers: [], upstreamLayers: [upLayer("scene_up", [upSky("poster")])] });
+  session.selectObject("upstream:scene_up:poster");
+  const corner = buildStickerGeometry({ yaw_deg: 0, pitch_deg: 0, rot_deg: 0, hFOV_deg: 30, vFOV_deg: 30 }, viewProjection(camera, W, H)).corners[1];
+  assert.ok(objects.overlay().sky?.handles, "its handles show");
+  const drag = objects.press(corner);
+  drag.move({ x: center.x + (corner.x - center.x) * 2, y: center.y + (corner.y - center.y) * 2 });
+  const size = () => evaluateLane(upstream.working()[0].sceneState.stickers[0], "size", 0);
+  assert.ok(Math.abs(size().hFOV_deg - 60) < 1e-6);
+  drag.cancel();
+  assert.ok(Math.abs(size().hFOV_deg - 30) < 1e-6);
+  assert.deepEqual(session.state.upstream, []);
+  assert.equal(session.canUndo, false);
+});
+
+test("an upstream World plane is selected by its outline and its gizmo moves its working copy, written back as one step", () => {
+  const board = { id: "board", placement: "world", source: file("up_board.png"), position: { value: [3, 0, -5] } };
+  const { session, objects, upstream } = setup({ stickers: [], upstreamLayers: [upLayer("scene_up", [board])] });
+  const onBoard = { x: W / 2 * (1 + (3 / 5) / Math.tan(50 * Math.PI / 180)), y: H / 2 };
+  objects.press(onBoard).end();
+  assert.equal(session.selection.row, "upstream:scene_up:board");
+  const ball = ballOf(objects, "x");
+  const drag = objects.press(ball);
+  drag.move({ x: ball.x + 40, y: ball.y });
+  drag.end();
+  const position = evaluateLane(upstream.working()[0].sceneState.stickers[0], "position", 0);
+  assert.ok(position[0] > 3);
+  assert.deepEqual(recordOf(session, "scene_up").stickers[0].position.value, position);
+  assert.ok(session.undo());
+  assert.deepEqual(evaluateLane(upstream.working()[0].sceneState.stickers[0], "position", 0), [3, 0, -5]);
+});
+
+test("an upstream object of a layer whose overrides cannot be kept is selected but shows no gizmo or handles, as a locked one", () => {
+  const board = { id: "board", placement: "world", source: file("up_board.png"), position: { value: [0, 0, -5] } };
+  const { session, objects } = setup({ stickers: [], upstreamLayers: [upLayer(null, [board, upSky("poster")])] });
+  objects.press(center).end();
+  assert.equal(session.selection.row, "upstream:#0:board");
+  assert.equal(objects.overlay().gizmo, null);
+  session.selectObject("upstream:#0:poster");
+  assert.equal(objects.overlay().sky.handles, false);
+  const before = session.state;
+  const drag = objects.press(onSky);
+  drag.move({ x: W * 0.75, y: onSky.y });
+  drag.end();
+  assert.equal(session.state, before, "its body's drag moves nothing");
+});
+
+test("in the Camera tab the selected upstream sky image's body drag turns it; a press on it unselected selects it and passes", () => {
+  const layers = [upLayer("scene_up", [upSky("poster"), upSky("other", { direction: { value: { yaw_deg: 40, pitch_deg: 0 } } })])];
+  const { session, objects, upstream } = setup({ tab: "camera", stickers: [], upstreamLayers: layers });
+  session.selectObject("upstream:scene_up:poster");
+  const drag = objects.press(onSky);
+  assert.equal(drag.passes, undefined, "the selected one takes the drag");
+  drag.move({ x: W * 0.3, y: onSky.y });
+  drag.end();
+  assert.ok(Math.abs(evaluateLane(upstream.working()[0].sceneState.stickers[0], "direction", 0).yaw_deg) > 5);
+  assert.ok(recordOf(session, "scene_up"));
+  session.selectObject(null);
+  // Where the drag left it: the body keeps the press's offset under the pointer.
+  const pass = objects.press({ x: W * 0.3, y: onSky.y });
+  assert.equal(session.selection.row, "upstream:scene_up:poster");
+  assert.equal(pass.passes, true, "not selected before: it selects and the drag moves the Camera");
+});
+
+// docs/studio-ui.md "上流の物の編集" "見せる", docs/design.md "形と重なり": an upstream object's selection frame is
+// dashed; the node's own stay solid.
+test("the selected upstream object's frame is dashed (its sky frame, its World guide); the node's own and the others are solid", () => {
+  const board = { id: "board", placement: "world", source: file("up_board.png"), position: { value: [3, 0, -5] } };
+  const { session, objects } = setup({ upstreamLayers: [upLayer("scene_up", [upSky("poster", { direction: { value: { yaw_deg: 30, pitch_deg: 0 } } }), board])] });
+  session.selectObject("upstream:scene_up:board");
+  const guides = objects.overlay().guides;
+  assert.deepEqual(guides.map((item) => item.dashed), [false, true], "the own board's guide, then the upstream board's selected one");
+  session.selectObject("board");
+  assert.ok(objects.overlay().guides.every((item) => !item.dashed));
+  session.selectObject("upstream:scene_up:poster");
+  assert.equal(objects.overlay().sky.dashed, true);
+  session.selectObject("sky");
+  assert.equal(objects.overlay().sky.dashed, false);
 });

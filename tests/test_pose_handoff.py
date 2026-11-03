@@ -233,14 +233,14 @@ def test_without_sticker_state_a_stored_port_sticker_is_unchanged():
     assert "pano_sticker_input_pose" not in output.ui
 
 
-# The Camera leaves the World origin (ADR 0030): the handoff is a world Sticker 2 ahead of it.
+# The Camera leaves the World origin: the handoff is still a sky Sticker (ADR 0059), its position unused.
 WORLD_TRAJECTORY = _camera({
     "position": [{"frame": 0, "value": [0.0, 0.0, 0.0]}, {"frame": 6, "value": [1.0, 0.3, -1.5]}],
     **{name: TRAJECTORY["camera"][name]["keyframes"] for name in ("rotation", "fov")},
 })
 
 
-def test_a_static_camera_away_from_the_origin_hands_a_world_sticker():
+def test_a_static_camera_away_from_the_origin_hands_a_sky_sticker():
     sticker_state = _sticker_state({
         "position": [{"frame": 0, "value": [1.0, 2.0, 3.0]}],
         "rotation": [{"frame": 0, "value": {"yaw_deg": 90.0, "pitch_deg": 0.0, "roll_deg": 20.0}}],
@@ -250,16 +250,12 @@ def test_a_static_camera_away_from_the_origin_hands_a_world_sticker():
     output = _run(sticker=_solid([1.0, 0.0, 0.0]), sticker_state=sticker_state)
     port = _port(output)
 
-    # Yaw 90 faces World +X; hFOV 90 is 2 * 2 * tan(45) = 4 wide at distance 2.
-    assert port["placement"] == "world"
-    assert port["position"]["value"] == pytest.approx([3.0, 2.0, 3.0])
-    assert port["rotation"]["value"] == pytest.approx({"yaw_deg": 90.0, "pitch_deg": 0.0, "roll_deg": 20.0})
-    assert port["scale"]["value"] == pytest.approx(4.0)
-    assert all(port[name]["keyframes"] == [] for name in ("position", "rotation", "scale"))
-    assert output.ui["pano_sticker_handoff"][0]["placement"] == "world"
-    [pose] = output.ui["pano_sticker_input_pose"]
-    assert pose["placement"] == "world" and "replace" not in pose
-    assert pose["keyframes"] == {"position": [], "rotation": [], "scale": []}
+    assert port["placement"] == "sky" and "position" not in port
+    assert port["direction"]["value"] == pytest.approx({"yaw_deg": 90.0, "pitch_deg": 0.0})
+    assert port["roll"]["value"] == pytest.approx(20.0)
+    assert port["size"]["value"]["hFOV_deg"] == pytest.approx(90.0)
+    assert all(port[name]["keyframes"] == [] for name in ("direction", "roll", "size"))
+    assert output.ui["pano_sticker_handoff"][0]["placement"] == "sky"
 
 
 def test_a_camera_at_the_origin_in_every_frame_still_hands_a_sky_sticker():
@@ -273,7 +269,7 @@ def test_a_camera_at_the_origin_in_every_frame_still_hands_a_sky_sticker():
     assert port["placement"] == "sky" and len(port["direction"]["keyframes"]) == 5
 
 
-def test_a_moving_camera_is_baked_into_world_keyframes_and_a_cut_stays_a_cut():
+def test_a_moving_camera_is_baked_into_sky_keyframes_its_position_unused():
     sticker_state = _sticker_state({
         "position": [{"frame": 0, "value": [0.0, 0.0, 0.0], "easing": "hold"}, {"frame": 4, "value": [1.0, 0.0, 0.0]}],
         "rotation": [{"frame": 0, "value": {"yaw_deg": 170.0}}, {"frame": 4, "value": {"yaw_deg": 190.0}}],
@@ -282,60 +278,49 @@ def test_a_moving_camera_is_baked_into_world_keyframes_and_a_cut_stays_a_cut():
 
     port = _port(_run(sticker=_solid([1.0, 0.0, 0.0]), sticker_state=sticker_state))
 
-    assert port["placement"] == "world"
-    positions = port["position"]["keyframes"]
-    assert [key["frame"] for key in positions] == [0, 1, 2, 3, 4]
-    assert [key["easing"] for key in positions] == ["hold"] * 4 + ["auto"]
+    assert port["placement"] == "sky" and "position" not in port
+    directions = port["direction"]["keyframes"]
+    assert [key["frame"] for key in directions] == [0, 1, 2, 3, 4]
+    # The position's hold does not make the direction hold: only the rotation's Keyframes count for it.
+    assert all(key["easing"] == "auto" for key in directions)
     # Yaw turns on past 180; a Lane the Camera does not move stays a static value.
-    yaws = [key["value"]["yaw_deg"] for key in port["rotation"]["keyframes"]]
+    yaws = [key["value"]["yaw_deg"] for key in directions]
     assert yaws[0] == pytest.approx(170.0) and yaws[-1] == pytest.approx(190.0) and all(b > a for a, b in zip(yaws, yaws[1:]))
-    assert all(key["easing"] == "auto" for key in port["rotation"]["keyframes"])
-    assert port["scale"] == {"value": pytest.approx(4.0 * math.tan(math.radians(30.0))), "keyframes": []}
+    assert port["size"] == {"value": pytest.approx({"hFOV_deg": 60.0, "vFOV_deg": 60.0}), "keyframes": []}
 
 
 @pytest.mark.parametrize("aspect", [1.0, 16 / 9], ids=["square", "16:9"])
-def test_world_handoff_returns_the_shot_seen_from_the_camera(aspect):
+def test_a_shot_away_from_the_origin_returns_seen_from_the_camera_and_from_the_origin(aspect):
+    # The background is at infinity: the sky Sticker covers the shot from wherever the same turn and hFOV shoot it.
     camera = _with_aspect(WORLD_TRAJECTORY, aspect)
+    at_origin = {**camera, "camera": {**camera["camera"], "position": {"value": [0.0, 0.0, 0.0], "keyframes": []}}}
     with render_only_runtime():
         shot = _shoot(_textured_erp(), camera)
         scene = _upstream(sticker=_frames(shot), sticker_state=shot[4], **output_size(2048))[0]
         again = _frames(_shoot(scene, camera))
-    assert scene.layers[-1].state["stickers"][0]["placement"] == "world"
+        from_origin = _frames(_shoot(scene, at_origin))
+    assert scene.layers[-1].state["stickers"][0]["placement"] == "sky"
     assert again.shape == _frames(shot).shape
     assert _interior_error(again, _frames(shot)) < ROUND_TRIP_ERROR
+    assert _interior_error(from_origin, _frames(shot)) < ROUND_TRIP_ERROR
 
 
-def test_world_round_trip_tolerance_catches_a_camera_moved_away():
-    camera = _with_aspect(WORLD_TRAJECTORY, 1.0)
-    with render_only_runtime():
-        shot = _shoot(_textured_erp(), camera)
-        scene = _upstream(sticker=_frames(shot), sticker_state=shot[4], **output_size(2048))[0]
-        moved = {**camera, "camera": {**camera["camera"], "position": {"value": [0.3, 0.0, 0.0], "keyframes": []}}}
-        again = _frames(_shoot(scene, moved))
-    assert _interior_error(again, _frames(shot)) > ROUND_TRIP_ERROR
+def test_a_stored_world_port_sticker_becomes_sky_and_drops_the_world_overrides():
+    world = {"id": "sticker_1", "placement": "world", "source": {"kind": "port"}, "clip": STORED_PORT["clip"], "locked": True,
+             "visible": False, "crop": {"x0": 0.1, "y0": 0.0, "x1": 0.9, "y1": 1.0}, "opacity": {"value": 0.5},
+             "position": {"value": [0.0, 0.0, -1.0]}, "handoff_overrides": ["position", "opacity"]}
+    other = {"id": "sticker_2", "source": {"kind": "file", "filename": "x.png"}, "z_index": 5}
+    to_side = _sticker_state({"position": [{"frame": 0, "value": [0.0, 0.0, 1.0]}]})
 
-
-def test_the_placement_follows_the_handoff_and_drops_the_other_placements_overrides():
-    stored = {**STORED_PORT, "crop": {"x0": 0.1, "y0": 0.0, "x1": 0.9, "y1": 1.0}, "opacity": {"value": 0.5},
-              "visible": False, "handoff_overrides": ["direction", "opacity"]}
-    to_world = _sticker_state({"position": [{"frame": 0, "value": [0.0, 0.0, 1.0]}]})
-
-    output = _run({"version": 2, "stickers": [stored]}, sticker=_solid([1.0, 0.0, 0.0]), sticker_state=to_world)
+    output = _run({"version": 2, "stickers": [other, world]}, sticker=_solid([1.0, 0.0, 0.0]), sticker_state=to_side)
     port = _port(output)
 
-    assert port["placement"] == "world" and "direction" not in port and "z_index" not in port
-    assert port["position"]["value"] == pytest.approx([0.0, 0.0, -1.0])
-    assert (port["id"], port["clip"], port["visible"], port["locked"]) == ("sticker_1", stored["clip"], False, True)
+    assert port["placement"] == "sky" and "position" not in port
+    assert (port["id"], port["clip"], port["visible"], port["locked"]) == ("sticker_1", STORED_PORT["clip"], False, True)
     assert (port["crop"], port["opacity"]) == ({"x0": 0.1, "y0": 0.0, "x1": 0.9, "y1": 1.0}, {"value": 0.5, "keyframes": []})
-    assert port["handoff_overrides"] == ["opacity"]
+    # Above the other sky Stickers, without the world overrides.
+    assert port["z_index"] == 6 and port["handoff_overrides"] == ["opacity"]
     assert output.ui["pano_sticker_input_pose"][0]["replace"] is True
-
-    # Back at the origin, it is a sky Sticker again (above the other sky Stickers), without the world overrides.
-    world = {**port, "handoff_overrides": ["position", "opacity"]}
-    other = {"id": "sticker_2", "source": {"kind": "file", "filename": "x.png"}, "z_index": 5}
-    back = _port(_run({"version": 2, "stickers": [other, world]}, sticker=_solid([1.0, 0.0, 0.0]), sticker_state=MOVING))
-    assert back["placement"] == "sky" and "position" not in back
-    assert back["z_index"] == 6 and back["handoff_overrides"] == ["opacity"] and back["opacity"]["value"] == 0.5
 
 
 # The editor shows the handoff by the same rule (web_src/pano_port_handoff.js `inheritPortHandoff`), held to these
@@ -353,8 +338,8 @@ def test_inheriting_the_handoff_matches_the_fixture_the_editor_shares(name):
     assert _inherit_handoff(state, port, case["handoff"]["placement"], case["handoff"]["lanes"]) == case["expected"]
 
 
-# The lens curve κ (ADR 0042): a shot through a lens hands a Sticker of the same lens, so that the same Camera shoots
-# the same frames again; a still Camera's `sky` Sticker carries a `curve`, a moving one's `world` Sticker a `lens`.
+# The lens curve κ (ADR 0042): a shot through a lens hands a sky Sticker of the same lens (`curve`), so that the same
+# Camera shoots the same frames again, moving or not (ADR 0059).
 
 def _lens_camera(lanes):
     """A Camera of these Keyframes, its lens curve among them."""
@@ -370,15 +355,15 @@ THROUGH_ONE = {"curve": [{"frame": 0, "value": 0.6}, {"frame": 3, "value": 1.0},
 
 
 @pytest.mark.parametrize("aspect", [1.0, 16 / 9], ids=["square", "16:9"])
-@pytest.mark.parametrize("lanes, placement", [
-    ({"curve": [{"frame": 0, "value": 0.5}], "fov": [{"frame": 0, "value": 140.0}]}, "sky"),
-    ({"curve": [{"frame": 0, "value": 0.0}], "fov": [{"frame": 0, "value": 220.0}]}, "sky"),
-    ({**THROUGH_ONE, "rotation": MOVING_LENS["rotation"]}, "sky"),
-    ({"curve": [{"frame": 0, "value": 0.5}], "fov": [{"frame": 0, "value": 140.0}], **MOVING_LENS}, "world"),
-    ({"curve": [{"frame": 0, "value": 0.0}], "fov": [{"frame": 0, "value": 220.0}], **MOVING_LENS}, "world"),
-    ({**THROUGH_ONE, **MOVING_LENS}, "world"),
-], ids=["sky k0.5", "sky k0 220", "sky k through 1", "world k0.5", "world k0 220", "world k through 1"])
-def test_a_lens_shot_returns_where_it_was_shot(lanes, placement, aspect):
+@pytest.mark.parametrize("lanes", [
+    {"curve": [{"frame": 0, "value": 0.5}], "fov": [{"frame": 0, "value": 140.0}]},
+    {"curve": [{"frame": 0, "value": 0.0}], "fov": [{"frame": 0, "value": 220.0}]},
+    {**THROUGH_ONE, "rotation": MOVING_LENS["rotation"]},
+    {"curve": [{"frame": 0, "value": 0.5}], "fov": [{"frame": 0, "value": 140.0}], **MOVING_LENS},
+    {"curve": [{"frame": 0, "value": 0.0}], "fov": [{"frame": 0, "value": 220.0}], **MOVING_LENS},
+    {**THROUGH_ONE, **MOVING_LENS},
+], ids=["k0.5", "k0 220", "k through 1", "moving k0.5", "moving k0 220", "moving k through 1"])
+def test_a_lens_shot_returns_where_it_was_shot(lanes, aspect):
     # A wide frame also checks the port Sticker's vFOV through the lens (g(vFOV / 2) = g(hFOV / 2) x height / width).
     camera = _with_aspect(_lens_camera(lanes), aspect)
     shot = _shoot(_textured_erp(), camera)
@@ -387,18 +372,15 @@ def test_a_lens_shot_returns_where_it_was_shot(lanes, placement, aspect):
     [port] = scene.layers[-1].state["stickers"]
     again = _frames(_shoot(scene, camera))
 
-    assert port["placement"] == placement
-    if placement == "sky":
-        assert port["curve"]["keyframes"] or port["curve"]["value"] != 1.0
-    else:
-        assert "lens" in port
+    assert port["placement"] == "sky" and "lens" not in port
+    assert port["curve"]["keyframes"] or port["curve"]["value"] != 1.0
     assert _interior_error(again, _frames(shot)) < ROUND_TRIP_ERROR
 
 
-def test_a_pinhole_only_moving_shot_hands_todays_plane():
+def test_a_pinhole_only_moving_shot_hands_a_pinhole_sky_sticker():
     camera = _camera(MOVING_LENS)
     shot = _shoot(_textured_erp(), camera)
 
     [port] = _upstream(None, sticker=_frames(shot), sticker_state=shot[4], **output_size(2048))[0].layers[-1].state["stickers"]
 
-    assert port["placement"] == "world" and "lens" not in port
+    assert port["placement"] == "sky" and port["curve"] == {"value": 1.0, "keyframes": []}

@@ -3,7 +3,6 @@
 [![English](https://img.shields.io/badge/README-English-3b82f6.svg)](./README.md)
 [![日本語](https://img.shields.io/badge/README-日本語-e11d48.svg)](./README_JA.md)
 [![中文](https://img.shields.io/badge/README-中文-16a34a.svg)](./README_ZH.md)
-[![ガイド](https://img.shields.io/badge/Guide-日本語-3b82f6.svg)](https://comfyui.nomadoor.net/ja/notes/panorama-stickers/)
 
 360度パノラマに、画像・動画・3D を置いて、好きな視点から撮る ComfyUI のノードセットです。
 
@@ -66,16 +65,10 @@ https://github.com/user-attachments/assets/bf74e953-8ceb-4c7f-afa2-1c805f12c7af
 | ワークフロー | 内容 |
 |---|---|
 | [qwen-image-2.1-360-erp-outpaint.json](./example_workflows/qwen-image-2.1-360-erp-outpaint.json) | 画像を貼ってパノラマを作る（Qwen-Image 2.1） |
+| [qwen-image-2.1-panorama-cutout.json](./example_workflows/qwen-image-2.1-panorama-cutout.json) | パノラマの一部を Camera で撮り、Qwen-Image 2.1 で描き直して、撮った所へ戻す |
+| [qwen-image-2.1-panorama-with-3d.json](./example_workflows/qwen-image-2.1-panorama-with-3d.json) | パノラマに 3D モデル（PLY）を置いて撮り、Qwen-Image 2.1 で背景になじませる |
 | [qwen-image-2.1-moge3-anyangle.json](./example_workflows/qwen-image-2.1-moge3-anyangle.json) | 画像を MoGe 3 で 3D にし、別の角度から撮って Qwen-Image 2.1 で仕上げる |
-| [LTX-2.3_360vr_distilled_3stage.json](./example_workflows/LTX-2.3_360vr_distilled_3stage.json) | テキストから 360° 動画を作る（LTX-2.3 と、モデル作者による [LTX2.3_360vr](https://civitai.com/models/2327337/360-degree-panoramic-shot-ltx-23) LoRA） |
-
-以前のワークフロー：FLUX.2 Klein [4B](./example_workflows/flux-2-klein-4B-360-erp-outpaint.json)・[9B](./example_workflows/flux-2-klein-9B-360-erp-outpaint.json)（[4B LoRA](https://huggingface.co/nomadoor/flux-2-klein-4B-360-erp-outpaint-lora)・[9B LoRA](https://huggingface.co/nomadoor/flux-2-klein-9B-360-erp-outpaint-lora)）
-
-## ガイド
-
-詳しい使い方はガイドにまとめています。
-
-- [日本語](https://comfyui.nomadoor.net/ja/notes/panorama-stickers/)・[English](https://comfyui.nomadoor.net/en/notes/panorama-stickers/)・[中文](https://comfyui.nomadoor.net/zh/notes/panorama-stickers/)
+| [pika-h3-flex-moge3-crossview.json](./example_workflows/pika-h3-flex-moge3-crossview.json) | 動画を MoGe 3 で 3D にし、新しいカメラで撮り、元のカメラに映っていなかった所を MiniMax H3（Pika H3 Flex と、Cseti 氏の [CrossView-Warp](https://huggingface.co/Cseti/MiniMax-H3_Ref2VA-LoRA-CrossView-Warp_v1) LoRA）で埋める |
 
 ## 困ったとき
 
@@ -83,6 +76,7 @@ https://github.com/user-attachments/assets/bf74e953-8ceb-4c7f-afa2-1c805f12c7af
 
 ## 更新履歴
 
+- **2.0.3**：上流の Studio から受け取った物を、下流のエディタで選んで編集できるようにしました（上書きとして保存します）。撮った絵を `sticker_state` で戻す往復は、Camera の位置によらず Sky に戻ります。ペイントを回せます。Camera タブでもダブルクリックで回る中心を決められます。マウスの右ドラッグはパン、中ボタンのドラッグは見回しになりました。オービットの中心の印と、Sky の経緯線のグリッドを出します。ほか不具合の修正。
 - **2.0.2**：レンズの付いた Camera でも Camera タブで物を動かせるようにしました。Output の小窓はバー全体で開閉できます。深度の格子の動画（MoGe・DA3）は、遅い回線でも形と色がずれず、止まっている間に先読みします。ほか不具合の修正。
 - **2.0.1**：Studio のエディタで出力の大きさをいつも表示し、タブを切り替えてもインスペクタが変わらないようにしました。Camera タブでも物を動かせます。ノード上で深度の格子（MoGe・DA3）と上流の Scene を表示し、再生できるようにしました。ペイントをつかんで動かせます。ほか不具合の修正。
 - **2.0.0**：Panorama Studio と、新しい Panorama Preview を追加しました。

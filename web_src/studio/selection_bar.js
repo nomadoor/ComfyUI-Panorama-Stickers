@@ -2,10 +2,12 @@
 // object, and the gizmo's modes on the keys 1, 2 and 3. Pure; components/studio/StudioSelectionBar.vue draws it and
 // studio/editor.js does what its buttons say.
 import { ICON } from "../icons.js";
-import { sceneStickerLabel } from "../pano_editor_state.js";
 import { paintObjectOf } from "../pano_paint_objects.js";
 import { is3dFileSource } from "../pano_scene_state.js";
-import { isUpstreamSticker } from "../pano_upstream.js";
+import { UPSTREAM_INHERITED_TIP as INHERITED_TIP, isUpstreamSticker, upstreamStickerInherited, upstreamStickerOverridden } from "../pano_upstream.js";
+import { stickerChangedRows } from "./inspector_model.js";
+import { findSticker } from "./row_object.js";
+import { objectLabel } from "./timeline_model.js";
 
 // The gizmo's modes (pano_three_view.js createGizmo) and their keys.
 export const GIZMO_MODES = Object.freeze([
@@ -14,13 +16,14 @@ export const GIZMO_MODES = Object.freeze([
   Object.freeze({ mode: "scale", key: "3", label: "Scale", icon: ICON.gizmo_scale }),
 ]);
 
-// The kind of the object of the row `row` in `state`: "sky", "world-image", "world-3d", "camera", "paint" (a stroke group
-// or a paint raster object, pano_paint_objects.js paintObjectOf), or null (nothing, or a row that is no object).
-export function selectedKind(state, row) {
+// The kind of the object of the row `row` in `state` (an upstream object's in the working layers `upstream`): "sky",
+// "world-image", "world-3d", "camera", "paint" (a stroke group or a paint raster object, pano_paint_objects.js
+// paintObjectOf), or null (nothing, or a row that is no object).
+export function selectedKind(state, row, upstream = []) {
   if (!row) return null;
   if (row === "camera") return "camera";
   if (paintObjectOf(state, row)) return "paint";
-  const sticker = state.stickers.find((item) => item.id === row);
+  const sticker = findSticker(state, upstream, row);
   if (!sticker) return null;
   if (sticker.placement === "sky") return "sky";
   return is3dFileSource(sticker.source) || sticker.source.kind === "port" ? "world-3d" : "world-image";
@@ -47,15 +50,39 @@ export function gizmoModeOfKey(kind, key) {
 
 const LATER = "in development";
 
-// The bar for the row `row` of `state` with the gizmo in `mode`: null when it is not shown (nothing selected), else
-// { kind, icon, name, groups: [[{ key, icon, label, tip, active, disabled }]] }. `readOnly` disables the edits.
+// Back to source of an input's or an upstream object (docs/studio-ui.md "下の中央のバー"): pressable only with something to
+// put back (an upstream object: any entry of its record, upstreamStickerOverridden; an input's: a row away from the
+// input's value, stickerChangedRows) while it can change, in the override colour then (`overridden`); the tooltip says
+// why it is not, the first of: inherited only, read-only, locked, nothing to put back.
+function revertButton(button, state, sticker, { readOnly, locked, inherited, upstream, inputs }) {
+  const theirs = isUpstreamSticker(sticker);
+  const source = theirs ? "upstream" : "input";
+  const changed = theirs ? upstreamStickerOverridden(state.upstream ?? [], sticker) : stickerChangedRows(state, sticker, { ...inputs, upstream }).length > 0;
+  let tip = `Back to source · every value back to the ${source}'s`;
+  if (inherited) tip = INHERITED_TIP;
+  else if (readOnly) tip = "Back to source · Read-only";
+  else if (locked) tip = "Back to source · locked";
+  else if (!changed) tip = `Back to source · as ${theirs ? "upstream" : "the input"} has it`;
+  const pressable = changed && !inherited && !readOnly && !locked;
+  return button("revert", ICON.back_initial, "Back to source", { disabled: !pressable, overridden: pressable, tip });
+}
+
+// The bar for the row `row` of `state` with the gizmo in `mode`, in the tab `tab` ("3d" or "camera"): null when it is
+// not shown (nothing selected; the Camera in the Camera tab, ADR 0055), else
+// { kind, icon, name, fixedName, groups: [[{ key, icon, label, tip, active, disabled }]] }. `fixedName`: the name is the
+// kind's (the Camera, a paint group), and its field fits the text instead of the one width of the names users give
+// (docs/design.md "下の中央のバーの名前の欄"). `readOnly` disables the edits. `upstream` is the working layers an upstream
+// object is found in (docs/studio-ui.md "上流の物の編集": its bar is its kind's, with Back to source, and without
+// Duplicate, Replace and the order). `inputs` is what an input's object's rows read (inspector_model.js: playhead,
+// portSize, imageSizes, animations), for whether its Back to source has anything to put back.
 // The Lock of the Camera turns `camera.locked` over (docs/scene-state-v2.md). A paint group has Bring to front / Send to
 // back and Lock / Delete (docs/studio-ui.md "ペイントのまとまり"). Not yet here: the multi-selection; Replace waits for a
 // file picker below the old UI.
-export function selectionBar({ state, row, mode = "translate", readOnly = false }) {
-  const kind = selectedKind(state, row);
+export function selectionBar({ state, row, mode = "translate", readOnly = false, tab = "3d", upstream = [], inputs = {} }) {
+  const kind = selectedKind(state, row, upstream);
   if (!kind) return null;
-  const button = (key, icon, label, extra = {}) => ({ key, icon, label, tip: extra.tip ?? label, active: !!extra.active, disabled: !!extra.disabled });
+  if (kind === "camera" && tab === "camera") return null;
+  const button = (key, icon, label, extra = {}) => ({ key, icon, label, tip: extra.tip ?? label, active: !!extra.active, disabled: !!extra.disabled, overridden: !!extra.overridden });
   const shown = shownGizmoMode(kind, mode);
   const gizmo = gizmoModes(kind).map((entry) => button(`gizmo:${entry.mode}`, entry.icon, entry.label, {
     tip: `${entry.label} (${entry.key})`,
@@ -63,7 +90,7 @@ export function selectionBar({ state, row, mode = "translate", readOnly = false 
   }));
   const lockButton = (locked) => button("lock", locked ? ICON.lock_closed : ICON.lock_open, locked ? "Unlock" : "Lock", { disabled: readOnly });
   if (kind === "camera") {
-    return { kind, icon: ICON.camera, name: "Camera", groups: [gizmo, [lockButton(state.camera?.locked === true)]] };
+    return { kind, icon: ICON.camera, name: "Camera", fixedName: true, groups: [gizmo, [lockButton(state.camera?.locked === true)]] };
   }
   if (kind === "paint") {
     const { locked } = paintObjectOf(state, row);
@@ -72,31 +99,38 @@ export function selectionBar({ state, row, mode = "translate", readOnly = false 
       kind,
       icon: ICON.palette_tool,
       name: "Paint",
+      fixedName: true,
       groups: [
         [button("front", ICON.order_front, "Bring to front", { disabled }), button("back", ICON.order_back, "Send to back", { disabled })],
         [lockButton(locked), button("delete", ICON.delete, "Delete", { disabled, tip: "Delete (Del)" })],
       ],
     };
   }
-  const sticker = state.stickers.find((item) => item.id === row);
+  const sticker = findSticker(state, upstream, row);
   const locked = sticker.locked === true;
-  const fromSource = sticker.source.kind === "port" || isUpstreamSticker(sticker);
-  const edits = readOnly || locked;
+  const theirs = isUpstreamSticker(sticker);
+  const port = sticker.source.kind === "port";
+  // An object of a layer whose overrides cannot be kept: every edit off, as locked, Lock too.
+  const inherited = upstreamStickerInherited(sticker);
+  const edits = readOnly || locked || inherited;
+  // Off for an input's or an upstream object, with the reason in its tip.
+  const notFor = theirs ? "not for an upstream object" : port ? "not for an input's object" : null;
+  const offFor = (label, tip = label) => (inherited ? { disabled: true, tip: INHERITED_TIP } : notFor ? { disabled: true, tip: `${label} · ${notFor}` } : { tip });
   const first = kind === "sky"
     ? [
-      button("front", ICON.order_front, "Bring to front", { disabled: edits }),
-      button("back", ICON.order_back, "Send to back", { disabled: edits }),
+      button("front", ICON.order_front, "Bring to front", theirs ? offFor("Bring to front") : { disabled: edits }),
+      button("back", ICON.order_back, "Send to back", theirs ? offFor("Send to back") : { disabled: edits }),
     ]
     : gizmo;
   const copy = [
-    button("duplicate", ICON.duplicate, "Duplicate", { disabled: readOnly || fromSource, tip: fromSource ? "Duplicate · not for an input's or an upstream object" : "Duplicate" }),
-    button("replace", ICON.replace_image, "Replace", { disabled: true, tip: `Replace · ${LATER}` }),
+    button("duplicate", ICON.duplicate, "Duplicate", notFor ? offFor("Duplicate") : { disabled: readOnly }),
+    button("replace", ICON.replace_image, "Replace", notFor ? offFor("Replace") : { disabled: true, tip: `Replace · ${LATER}` }),
   ];
   const keep = [
-    lockButton(locked),
-    button("delete", ICON.delete, "Delete", { disabled: edits || fromSource, tip: fromSource ? "Delete · not for an input's or an upstream object" : "Delete (Del)" }),
+    inherited ? button("lock", locked ? ICON.lock_closed : ICON.lock_open, locked ? "Unlock" : "Lock", { disabled: true, tip: INHERITED_TIP }) : lockButton(locked),
+    button("delete", ICON.delete, "Delete", port ? offFor("Delete") : inherited ? offFor("Delete") : { disabled: edits, tip: "Delete (Del)" }),
   ];
   const groups = [first, copy, keep];
-  if (fromSource) groups.push([button("revert", ICON.back_initial, "Back to source", { disabled: edits, tip: "Back to source · every value back to the input's or the upstream's" })]);
-  return { kind, icon: kind === "sky" ? ICON.pano : ICON.box, name: sceneStickerLabel(sticker), groups };
+  if (theirs || port) groups.push([revertButton(button, state, sticker, { readOnly, locked, inherited, upstream, inputs })]);
+  return { kind, icon: kind === "sky" ? ICON.pano : ICON.box, name: objectLabel(sticker), fixedName: false, groups };
 }

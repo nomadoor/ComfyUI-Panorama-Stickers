@@ -5,8 +5,9 @@ import { projectPoint } from "../pano_space.js";
 import { LOAD_LOOK } from "./load_reveal.js";
 import { MARKER_DOT_RADIUS, MARKER_LOOKS, MARKER_TOP_FILL, MARKER_UNDER } from "./camera_marker.js";
 import { GIZMO_COLORS, GIZMO_LOOK, gizmoColor } from "./gizmo_overlay.js";
-import { GUIDE_LOOKS, GUIDE_UNDER_EXTRA, screenLines } from "./world_guides.js";
+import { GUIDE_LOOKS, GUIDE_UNDER_EXTRA, UPSTREAM_SELECTED_DASH, screenLines } from "./world_guides.js";
 import { BRUSH_RING } from "./paint.js";
+import { ORBIT_MARK_LOOK } from "./orbit_marker.js";
 
 // The sky image's handles (docs/studio-ui.md "下の中央のバー"; pano_sticker_affordance.js hits them): corner and rotate
 // dots, edge ticks, in the selected sky image's ice over a dark ring (docs/design.md "色": the color of the Sky).
@@ -14,15 +15,19 @@ const CORNER_RADIUS = 5;
 const EDGE_RADIUS = 3.5;
 const ROTATE_RADIUS = 6;
 
-function strokeTwice(ctx, path, look) {
-  ctx.lineCap = "round";
+// `dashed`: an upstream object's selection frame (UPSTREAM_SELECTED_DASH, both strokes on the same dashes, square-cut;
+// the canvas starts the dashes again on each subpath, so each segment of a guide starts with a dash).
+function strokeTwice(ctx, path, look, dashed = false) {
+  ctx.lineCap = dashed ? "butt" : "round";
   ctx.lineJoin = "round";
+  ctx.setLineDash(dashed ? UPSTREAM_SELECTED_DASH : []);
   ctx.strokeStyle = look.dark;
   ctx.lineWidth = look.width + GUIDE_UNDER_EXTRA;
   ctx.stroke(path);
   ctx.strokeStyle = look.light;
   ctx.lineWidth = look.width;
   ctx.stroke(path);
+  ctx.setLineDash([]);
 }
 
 function segmentsPath(camera, segments, width, height) {
@@ -266,12 +271,43 @@ function drawGizmo(ctx, handles, active, guides = []) {
 // at `ratio` device px per CSS px, seen from `camera` (stage_view.js stageCamera()). `origin` is where the view of
 // width x height starts on the stage (the Camera tab's Frame view spans a box of its own, stage_view.js cameraFrameView).
 // `ring` is the paint tools' brush ring at the pointer (studio/paint.js brushRing), or null.
-export function drawStageOverlay(ctx, { camera, width, height, ratio = 1, origin = { x: 0, y: 0 }, scene, ring = null }) {
+// `orbit` is the orbit center's mark ({ x, y, alpha, box } in the view's CSS px, stage.js orbitMark; drawn within `box`),
+// or null.
+export function drawStageOverlay(ctx, { camera, width, height, ratio = 1, origin = { x: 0, y: 0 }, scene, ring = null, orbit = null }) {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
   ctx.setTransform(ratio, 0, 0, ratio, ratio * origin.x, ratio * origin.y);
   if (scene) drawScene(ctx, camera, width, height, scene);
   if (ring) drawBrushRing(ctx, ring);
+  if (orbit) drawOrbitMarker(ctx, orbit);
+}
+
+// The orbit center's mark (orbit_marker.js ORBIT_MARK_LOOK; docs/design.md "大きさ"): a small dot inside a thin ring,
+// each over a dark rim.
+function drawOrbitMarker(ctx, { x, y, alpha, box }) {
+  const M = ORBIT_MARK_LOOK;
+  ctx.save();
+  // Within its box (the view, or the Camera tab's frame box).
+  ctx.beginPath();
+  ctx.rect(box.x, box.y, box.width, box.height);
+  ctx.clip();
+  ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
+  const ring = new Path2D();
+  ring.arc(x, y, M.ringRadius, 0, Math.PI * 2);
+  ctx.lineWidth = M.underWidth;
+  ctx.strokeStyle = M.under;
+  ctx.stroke(ring);
+  ctx.lineWidth = M.ringWidth;
+  ctx.strokeStyle = M.ring;
+  ctx.stroke(ring);
+  const dot = new Path2D();
+  dot.arc(x, y, M.dotRadius, 0, Math.PI * 2);
+  ctx.fillStyle = M.dot;
+  ctx.fill(dot);
+  ctx.lineWidth = M.dotRim;
+  ctx.strokeStyle = M.under;
+  ctx.stroke(dot);
+  ctx.restore();
 }
 
 // The paint tools' brush ring at the pointer (studio/paint.js brushRing; its look: BRUSH_RING).
@@ -296,7 +332,7 @@ function drawScene(ctx, camera, width, height, scene) {
   const lines = [...scene.guides].sort((a, b) => order[a.look] - order[b.look]);
   for (const line of lines) {
     const path = segmentsPath(camera, line.segments, width, height);
-    strokeTwice(ctx, path, GUIDE_LOOKS[line.look]);
+    strokeTwice(ctx, path, GUIDE_LOOKS[line.look], !!line.dashed);
     if (line.shimmer > 0) drawShimmer(ctx, camera, line, path, GUIDE_LOOKS[line.look], width, height);
   }
   if (scene.camera) drawCameraMarker(ctx, scene.camera.screen, scene.camera.look);
@@ -305,7 +341,7 @@ function drawScene(ctx, camera, width, height, scene) {
     const frame = new Path2D();
     geometry.boundaryEdges.flat().forEach((point, index) => (index ? frame.lineTo(point.x, point.y) : frame.moveTo(point.x, point.y)));
     frame.closePath();
-    strokeTwice(ctx, frame, GUIDE_LOOKS.skySelected);
+    strokeTwice(ctx, frame, GUIDE_LOOKS.skySelected, !!scene.sky.dashed);
     if (handles) {
       const stem = new Path2D();
       stem.moveTo(geometry.rotateStemBase.x, geometry.rotateStemBase.y);
@@ -317,10 +353,18 @@ function drawScene(ctx, camera, width, height, scene) {
     }
   }
   // The selected paint group (docs/studio-ui.md "ペイントのまとまり"): its frame through its four corners in the sky
-  // image's look, with the corner dots only (no edge or rotate handles).
+  // image's look, with the corner dots and the rotate handle on its stem as the sky image's (no edge handles).
   if (scene.paint) {
-    strokeTwice(ctx, polygonPath(scene.paint.outline), GUIDE_LOOKS.skySelected);
-    if (scene.paint.handles) for (const corner of scene.paint.corners) dot(ctx, corner, CORNER_RADIUS);
+    const paint = scene.paint;
+    strokeTwice(ctx, polygonPath(paint.outline), GUIDE_LOOKS.skySelected);
+    if (paint.handles) {
+      const stem = new Path2D();
+      stem.moveTo(paint.rotateStemBase.x, paint.rotateStemBase.y);
+      stem.lineTo(paint.rotateHandle.x, paint.rotateHandle.y);
+      strokeTwice(ctx, stem, GUIDE_LOOKS.skySelected);
+      for (const corner of paint.corners) dot(ctx, corner, CORNER_RADIUS);
+      dot(ctx, paint.rotateHandle, ROTATE_RADIUS);
+    }
   }
   if (scene.gizmo) drawGizmo(ctx, scene.gizmo.handles, scene.gizmo.active, scene.gizmo.guides);
 }

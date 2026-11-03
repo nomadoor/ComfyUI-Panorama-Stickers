@@ -132,10 +132,12 @@ test("the shell has its regions, the stage draws the background and the grid, an
   await page.locator('[data-action="grid"]').click();
   await expect(page.locator('[data-action="grid"]')).toHaveAttribute("aria-checked", "false");
   const hidden = await settled(page);
-  // Only the ground half changes: the grid lies below the horizon.
+  // The ground half changes most: the ground grid lies below the horizon, and the sky grid (quieter than the
+  // ground's, its Z axis meridian in ice) changes the sky less.
   const half = shown.length / 2;
-  expect(diff(shown.slice(half), hidden.slice(half))).toBeGreaterThan(0.5);
-  expect(diff(shown.slice(0, half * 0.8), hidden.slice(0, half * 0.8))).toBeLessThan(0.2);
+  const ground = diff(shown.slice(half), hidden.slice(half));
+  expect(ground).toBeGreaterThan(0.5);
+  expect(diff(shown.slice(0, half * 0.8), hidden.slice(0, half * 0.8))).toBeLessThan(ground / 2);
   await page.locator('[data-action="grid"]').click();
   await page.screenshot({ path: testInfo.outputPath("studio_editor.png") });
   console.log(`screenshot: ${testInfo.outputPath("studio_editor.png")}`);
@@ -196,13 +198,13 @@ test("the knobs light for their operation, W moves until released or the window 
   await expect.poll(lit).toEqual(["orbit", "move"]);
   await page.keyboard.up("Alt");
   await expect.poll(lit).toEqual([]);
-  // A middle drag on the stage pans: the hand lights.
+  // A right drag on the stage pans: the hand lights (ADR 0060).
   const at = await stageCenter(stage);
   await page.mouse.move(at.x, at.y);
-  await page.mouse.down({ button: "middle" });
+  await page.mouse.down({ button: "right" });
   await page.mouse.move(at.x + 30, at.y + 10);
   await expect.poll(lit).toEqual(["pan"]);
-  await page.mouse.up({ button: "middle" });
+  await page.mouse.up({ button: "right" });
   await expect.poll(lit).toEqual([]);
   // Dragging the sphere knob orbits and lights it; the editor shows the grabbing cursor.
   const sphere = await page.locator('[data-knob="orbit"]').boundingBox();

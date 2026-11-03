@@ -5,9 +5,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { loadSceneState } from "../web_src/pano_scene_state.js";
-import { projectPoint } from "../web_src/pano_space.js";
+import { projectPoint, viewAxes } from "../web_src/pano_space.js";
 import { GROUND_DEFAULT as DEFAULT_GROUND } from "../web_src/studio/defaults.js";
-import { GRID_COLORS, groundGrid } from "../web_src/studio/grid.js";
+import { GRID_COLORS, SKY_GRID, groundGrid, skyGrid } from "../web_src/studio/grid.js";
 import {
   OUTPUT_LINE_HEIGHT,
   OUTPUT_MAX_WIDTH,
@@ -269,4 +269,47 @@ test("the Frame view's hits go by the lens picture only for a κ not shown as 1.
   assert.equal(bent.hitLens.curve, 0.8);
   assert.equal(bent.objectCamera.lensImage, bent.view.lens);
   assert.equal(cameraFrameHit(shotAt(1), fit).objectCamera.lensImage, undefined);
+});
+
+test("a state whose Camera is null has the output view of the default Camera: the origin, yaw 0, level", () => {
+  assert.deepEqual(outputView({ ...loadSceneState(null), camera: null }, 0), { position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0 });
+  assert.deepEqual(outputView({ ...loadSceneState(null), camera: null }, 12.5), { position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0 });
+});
+
+// docs/space-and-view.md "空のグリッド" (ADR 0058): the sky grid goes with the ground grid's switch, its half follows the
+// eye's side of the ground, and the ground's axes are carried on to the horizon from the eye.
+test("the sky grid shows the upper half from at or above the ground, the lower half from below, and carries the ground's axes on from the eye", () => {
+  assert.equal(skyGrid({ hidden: true, ground: -1.6, eye: [0, 0, 0] }), null);
+  const above = skyGrid({ ground: -1.6, eye: [1, 0, 2] });
+  assert.equal(above.side, 1);
+  assert.deepEqual(above.eye, [1, 0, 2]);
+  assert.equal(above.groundAxes, true);
+  assert.equal(above.ground, -1.6);
+  assert.equal(above.groundReach, groundGrid({ ground: -1.6 }).majorFade[1]);
+  assert.deepEqual(above.groundAxisColors, { x: GRID_COLORS.axisX, z: GRID_COLORS.axisZ });
+  assert.equal(skyGrid({ ground: -1.6, eye: [0, -3, 0] }).side, -1);
+  // Exactly at the ground's height: the upper half, and no carried axes (the ground is a line).
+  const level = skyGrid({ ground: -1.6, eye: [0, -1.6, 0] });
+  assert.equal(level.side, 1);
+  assert.equal(level.groundAxes, false);
+  // No eye (nothing to go by): the upper half without carried axes.
+  assert.equal(skyGrid({ ground: -1.6, eye: null }).groundAxes, false);
+  // The angles are the spec's quantities, the looks design.md's.
+  assert.equal(above.stepDeg, 30);
+  assert.deepEqual(above.lineFadeDeg, [35, 72]);
+  assert.deepEqual(above.axisRiseDeg, [4, 40]);
+  assert.deepEqual(above.poleNearDeg, [25, 8]);
+  assert.equal(above.poleDotDeg, 0.45);
+  assert.equal(above.lineColor, SKY_GRID.lineColor);
+});
+
+test("a stage render carries the sky grid with the view's position as its eye, and none when the grid is hidden", () => {
+  const camera = stageCamera(level(), 800, 400, 48);
+  const input = stageRenderInput({ camera, canvasWidth: 1600, canvasHeight: 800, background: null, ground: -1.6, gridHidden: false });
+  // The pole dot goes by the view's own forward (docs/threejs-spark-integration.md "新しい UI のステージの描画").
+  const turned = stageCamera({ ...level(), yaw_deg: 30, pitch_deg: 20 }, 800, 400, 48);
+  const sky = stageRenderInput({ camera: turned, canvasWidth: 2, canvasHeight: 2, background: null, ground: -1.6, gridHidden: false }).space.sky;
+  sky.forward.forEach((v, i) => assert.ok(Math.abs(v - viewAxes(30, 20).forward[i]) < 1e-9));
+  assert.deepEqual(input.space.sky, { ...skyGrid({ ground: -1.6, eye: camera.position, forward: input.space.sky.forward }), scale: STAGE_RENDER_SCALE });
+  assert.equal(stageRenderInput({ camera, canvasWidth: 2, canvasHeight: 2, background: null, ground: -1.6, gridHidden: true }).space.sky, null);
 });

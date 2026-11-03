@@ -1,7 +1,7 @@
 {
   "id": "7948a314-2081-4258-a30e-ea80e78fbafc",
   "revision": 0,
-  "last_node_id": 87,
+  "last_node_id": 88,
   "last_link_id": 188,
   "nodes": [
     {
@@ -20,13 +20,11 @@
       "mode": 0,
       "inputs": [
         {
-          "localized_name": "samples",
           "name": "samples",
           "type": "LATENT",
           "link": 35
         },
         {
-          "localized_name": "vae",
           "name": "vae",
           "type": "VAE",
           "link": 76
@@ -34,7 +32,6 @@
       ],
       "outputs": [
         {
-          "localized_name": "IMAGE",
           "name": "IMAGE",
           "type": "IMAGE",
           "slot_index": 0,
@@ -64,29 +61,9 @@
       "flags": {},
       "order": 0,
       "mode": 0,
-      "inputs": [
-        {
-          "localized_name": "unet_name",
-          "name": "unet_name",
-          "type": "COMBO",
-          "widget": {
-            "name": "unet_name"
-          },
-          "link": null
-        },
-        {
-          "localized_name": "weight_dtype",
-          "name": "weight_dtype",
-          "type": "COMBO",
-          "widget": {
-            "name": "weight_dtype"
-          },
-          "link": null
-        }
-      ],
+      "inputs": [],
       "outputs": [
         {
-          "localized_name": "MODEL",
           "name": "MODEL",
           "type": "MODEL",
           "slot_index": 0,
@@ -132,39 +109,9 @@
       "flags": {},
       "order": 1,
       "mode": 0,
-      "inputs": [
-        {
-          "localized_name": "clip_name",
-          "name": "clip_name",
-          "type": "COMBO",
-          "widget": {
-            "name": "clip_name"
-          },
-          "link": null
-        },
-        {
-          "localized_name": "type",
-          "name": "type",
-          "type": "COMBO",
-          "widget": {
-            "name": "type"
-          },
-          "link": null
-        },
-        {
-          "localized_name": "device",
-          "name": "device",
-          "shape": 7,
-          "type": "COMBO",
-          "widget": {
-            "name": "device"
-          },
-          "link": null
-        }
-      ],
+      "inputs": [],
       "outputs": [
         {
-          "localized_name": "CLIP",
           "name": "CLIP",
           "type": "CLIP",
           "slot_index": 0,
@@ -214,7 +161,6 @@
       "mode": 0,
       "inputs": [
         {
-          "localized_name": "width",
           "name": "width",
           "type": "INT",
           "widget": {
@@ -223,27 +169,16 @@
           "link": 171
         },
         {
-          "localized_name": "height",
           "name": "height",
           "type": "INT",
           "widget": {
             "name": "height"
           },
           "link": 172
-        },
-        {
-          "localized_name": "batch_size",
-          "name": "batch_size",
-          "type": "INT",
-          "widget": {
-            "name": "batch_size"
-          },
-          "link": null
         }
       ],
       "outputs": [
         {
-          "localized_name": "LATENT",
           "name": "LATENT",
           "type": "LATENT",
           "links": [
@@ -283,87 +218,28 @@
       "mode": 0,
       "inputs": [
         {
-          "localized_name": "model",
           "name": "model",
           "type": "MODEL",
           "link": 180
         },
         {
-          "localized_name": "positive",
           "name": "positive",
           "type": "CONDITIONING",
           "link": 157
         },
         {
-          "localized_name": "negative",
           "name": "negative",
           "type": "CONDITIONING",
           "link": 158
         },
         {
-          "localized_name": "latent_image",
           "name": "latent_image",
           "type": "LATENT",
           "link": 148
-        },
-        {
-          "localized_name": "seed",
-          "name": "seed",
-          "type": "INT",
-          "widget": {
-            "name": "seed"
-          },
-          "link": null
-        },
-        {
-          "localized_name": "steps",
-          "name": "steps",
-          "type": "INT",
-          "widget": {
-            "name": "steps"
-          },
-          "link": null
-        },
-        {
-          "localized_name": "cfg",
-          "name": "cfg",
-          "type": "FLOAT",
-          "widget": {
-            "name": "cfg"
-          },
-          "link": null
-        },
-        {
-          "localized_name": "sampler_name",
-          "name": "sampler_name",
-          "type": "COMBO",
-          "widget": {
-            "name": "sampler_name"
-          },
-          "link": null
-        },
-        {
-          "localized_name": "scheduler",
-          "name": "scheduler",
-          "type": "COMBO",
-          "widget": {
-            "name": "scheduler"
-          },
-          "link": null
-        },
-        {
-          "localized_name": "denoise",
-          "name": "denoise",
-          "type": "FLOAT",
-          "widget": {
-            "name": "denoise"
-          },
-          "link": null
         }
       ],
       "outputs": [
         {
-          "localized_name": "LATENT",
           "name": "LATENT",
           "type": "LATENT",
           "slot_index": 0,
@@ -412,24 +288,13 @@
       "mode": 0,
       "inputs": [
         {
-          "localized_name": "images",
           "name": "images",
           "type": "IMAGE",
           "link": 101
-        },
-        {
-          "localized_name": "filename_prefix",
-          "name": "filename_prefix",
-          "type": "STRING",
-          "widget": {
-            "name": "filename_prefix"
-          },
-          "link": null
         }
       ],
       "outputs": [
         {
-          "localized_name": "images",
           "name": "images",
           "type": "IMAGE",
           "links": null
@@ -486,20 +351,9 @@
       "flags": {},
       "order": 3,
       "mode": 0,
-      "inputs": [
-        {
-          "localized_name": "vae_name",
-          "name": "vae_name",
-          "type": "COMBO",
-          "widget": {
-            "name": "vae_name"
-          },
-          "link": null
-        }
-      ],
+      "inputs": [],
       "outputs": [
         {
-          "localized_name": "VAE",
           "name": "VAE",
           "type": "VAE",
           "slot_index": 0,
@@ -546,70 +400,37 @@
       "mode": 0,
       "inputs": [
         {
-          "localized_name": "clip",
           "name": "clip",
           "type": "CLIP",
           "link": 115
         },
         {
-          "localized_name": "image_1",
           "name": "images.image_1",
           "shape": 7,
           "type": "IMAGE",
           "link": 183
         },
         {
-          "localized_name": "image_2",
           "name": "images.image_2",
           "shape": 7,
           "type": "IMAGE",
           "link": null
         },
         {
-          "localized_name": "image_3",
           "name": "images.image_3",
           "shape": 7,
           "type": "IMAGE",
           "link": null
         },
         {
-          "localized_name": "vae",
           "name": "vae",
           "shape": 7,
           "type": "VAE",
           "link": 159
-        },
-        {
-          "localized_name": "prompt",
-          "name": "prompt",
-          "type": "STRING",
-          "widget": {
-            "name": "prompt"
-          },
-          "link": null
-        },
-        {
-          "localized_name": "negative_prompt",
-          "name": "negative_prompt",
-          "type": "STRING",
-          "widget": {
-            "name": "negative_prompt"
-          },
-          "link": null
-        },
-        {
-          "localized_name": "resolution",
-          "name": "resolution",
-          "type": "INT",
-          "widget": {
-            "name": "resolution"
-          },
-          "link": null
         }
       ],
       "outputs": [
         {
-          "localized_name": "positive",
           "name": "positive",
           "type": "CONDITIONING",
           "links": [
@@ -617,7 +438,6 @@
           ]
         },
         {
-          "localized_name": "negative",
           "name": "negative",
           "type": "CONDITIONING",
           "links": [
@@ -625,7 +445,6 @@
           ]
         },
         {
-          "localized_name": "latent",
           "name": "latent",
           "type": "LATENT",
           "links": null
@@ -636,12 +455,12 @@
         "cnr_id": "comfy-core"
       },
       "widgets_values": [
-        "Fill the green areas to complete a seamless 360° equirectangular panorama. Fill the green area with the rest of a small fishing port breakwater on the Sea of Japan at dusk, just after sunset. Continue the flat, weathered concrete pier from the placed photo across the whole ground, with its low concrete parapet wall running along the edge and a thin navigation light pole with a red lamp near its end. On the sea side, scatter broken concrete blocks, rough rubble and patches of sand down to the calm water. The open sea is flat and silvery, meeting a straight, level horizon all the way around. The sky is a clear gradient from deep teal overhead to orange and pink near the horizon, with thin streaks of glowing cloud in the direction of the sunset, and darker blue on the opposite side. Soft, low light from the sunset side, long shadows, cool blue tones in the shadows. Keep the placed photo as it is, including the seated person, only aligning it with the surrounding scene.",
+        "Fill the green areas to complete a seamless 360° equirectangular panorama. Continue the existing scene in exactly the same art style: low-poly 3D look with visible flat triangular facets, soft shading on each facet, hand-painted textures, matte surfaces, soft even lighting, slightly muted colors and the same late-afternoon light. Extend the flooded rice paddies with young rice plants, narrow grassy footpaths, a few scattered old houses with dark tiled roofs, low green hills on the horizon all the way around, and the same soft evening sky with a few clouds. The filled areas contain only landscape, with the two students kept as the only people in the panorama. Match colors, scale and perspective so the edges join seamlessly.",
         "",
         0
       ],
       "widgets_values_named": {
-        "prompt": "Fill the green areas to complete a seamless 360° equirectangular panorama. Fill the green area with the rest of a small fishing port breakwater on the Sea of Japan at dusk, just after sunset. Continue the flat, weathered concrete pier from the placed photo across the whole ground, with its low concrete parapet wall running along the edge and a thin navigation light pole with a red lamp near its end. On the sea side, scatter broken concrete blocks, rough rubble and patches of sand down to the calm water. The open sea is flat and silvery, meeting a straight, level horizon all the way around. The sky is a clear gradient from deep teal overhead to orange and pink near the horizon, with thin streaks of glowing cloud in the direction of the sunset, and darker blue on the opposite side. Soft, low light from the sunset side, long shadows, cool blue tones in the shadows. Keep the placed photo as it is, including the seated person, only aligning it with the surrounding scene.",
+        "prompt": "Fill the green areas to complete a seamless 360° equirectangular panorama. Continue the existing scene in exactly the same art style: low-poly 3D look with visible flat triangular facets, soft shading on each facet, hand-painted textures, matte surfaces, soft even lighting, slightly muted colors and the same late-afternoon light. Extend the flooded rice paddies with young rice plants, narrow grassy footpaths, a few scattered old houses with dark tiled roofs, low green hills on the horizon all the way around, and the same soft evening sky with a few clouds. The filled areas contain only landscape, with the two students kept as the only people in the panorama. Match colors, scale and perspective so the edges join seamlessly.",
         "negative_prompt": "",
         "resolution": 0
       }
@@ -662,7 +481,6 @@
       "mode": 0,
       "inputs": [
         {
-          "localized_name": "image",
           "name": "image",
           "type": "IMAGE",
           "link": 177
@@ -670,7 +488,6 @@
       ],
       "outputs": [
         {
-          "localized_name": "width",
           "name": "width",
           "type": "INT",
           "links": [
@@ -678,7 +495,6 @@
           ]
         },
         {
-          "localized_name": "height",
           "name": "height",
           "type": "INT",
           "links": [
@@ -686,7 +502,6 @@
           ]
         },
         {
-          "localized_name": "batch_size",
           "name": "batch_size",
           "type": "INT",
           "links": []
@@ -713,95 +528,43 @@
       "mode": 0,
       "inputs": [
         {
-          "localized_name": "scene",
           "name": "scene",
           "shape": 7,
           "type": "PANO_SCENE",
           "link": null
         },
         {
-          "localized_name": "background",
           "name": "background",
           "shape": 7,
           "type": "IMAGE,VIDEO",
           "link": null
         },
         {
-          "localized_name": "world",
           "name": "world",
           "shape": 7,
           "type": "SPLAT,MESH,FILE_3D_GLB,FILE_3D_GLTF,FILE_3D_FBX,FILE_3D_OBJ,FILE_3D_STL,FILE_3D_USDZ,FILE_3D,FILE_3D_PLY,FILE_3D_SPLAT,FILE_3D_SPZ,FILE_3D_KSPLAT,FILE_3D_SPLAT_ANY,MOGE_GEOMETRY,DA3_GEOMETRY",
           "link": null
         },
         {
-          "localized_name": "sticker",
           "name": "sticker",
           "shape": 7,
           "type": "IMAGE,VIDEO,MESH,SPLAT,FILE_3D_GLB,FILE_3D_GLTF,FILE_3D_FBX,FILE_3D_OBJ,FILE_3D_STL,FILE_3D_USDZ,FILE_3D,FILE_3D_PLY,FILE_3D_SPLAT,FILE_3D_SPZ,FILE_3D_KSPLAT,FILE_3D_SPLAT_ANY,MOGE_GEOMETRY,DA3_GEOMETRY",
           "link": null
         },
         {
-          "localized_name": "sticker_state",
           "name": "sticker_state",
           "shape": 7,
           "type": "STRING",
-          "link": null
-        },
-        {
-          "localized_name": "background_color",
-          "name": "background_color",
-          "type": "COLOR",
-          "widget": {
-            "name": "background_color"
-          },
-          "link": null
-        },
-        {
-          "localized_name": "background_range",
-          "name": "background_range",
-          "type": "COMBO",
-          "widget": {
-            "name": "background_range"
-          },
-          "link": null
-        },
-        {
-          "localized_name": "megapixels",
-          "name": "megapixels",
-          "type": "FLOAT",
-          "widget": {
-            "name": "megapixels"
-          },
-          "link": null
-        },
-        {
-          "localized_name": "multiple",
-          "name": "multiple",
-          "type": "INT",
-          "widget": {
-            "name": "multiple"
-          },
-          "link": null
-        },
-        {
-          "localized_name": "state_json",
-          "name": "state_json",
-          "type": "STRING",
-          "widget": {
-            "name": "state_json"
-          },
           "link": null
         }
       ],
       "outputs": [
         {
-          "localized_name": "scene",
           "name": "scene",
           "type": "PANO_SCENE",
           "links": []
         },
         {
-          "localized_name": "first_frame",
           "name": "first_frame",
           "type": "IMAGE",
           "links": [
@@ -810,19 +573,16 @@
           ]
         },
         {
-          "localized_name": "first_frame_mask",
           "name": "first_frame_mask",
           "type": "MASK",
           "links": []
         },
         {
-          "localized_name": "video",
           "name": "video",
           "type": "VIDEO",
           "links": []
         },
         {
-          "localized_name": "sticker_state",
           "name": "sticker_state",
           "type": "STRING",
           "links": []
@@ -837,7 +597,7 @@
         "360",
         4,
         32,
-        "{\"version\":2,\"id\":\"LplkgY9Pw8VqFkxh\",\"timeline\":{\"fps\":24,\"length\":null},\"camera\":{\"aspect\":1.7777777777777777,\"projection\":\"erp\",\"position\":{\"value\":[0,0,0],\"keyframes\":[]},\"rotation\":{\"value\":{\"yaw_deg\":0,\"pitch_deg\":0,\"roll_deg\":0},\"keyframes\":[]},\"fov\":{\"value\":209.7,\"keyframes\":[]},\"curve\":{\"value\":0,\"keyframes\":[]}},\"scene\":{\"clip\":{\"start\":0,\"in\":0,\"duration\":null},\"position\":{\"value\":[0,0,0],\"keyframes\":[]},\"rotation\":{\"value\":{\"yaw_deg\":0,\"pitch_deg\":0,\"roll_deg\":0},\"keyframes\":[]},\"scale\":{\"value\":1,\"keyframes\":[]}},\"stickers\":[{\"id\":\"sticker_4\",\"placement\":\"sky\",\"source\":{\"kind\":\"file\",\"filename\":\"Emoquin - かつて海の底だった場所を眺めて@黒島漁港.png\",\"subfolder\":\"panorama_stickers\",\"storage\":\"input\"},\"clip\":{\"start\":0,\"in\":0,\"duration\":null},\"visible\":true,\"locked\":false,\"crop\":{\"x0\":0,\"y0\":0,\"x1\":1,\"y1\":1},\"direction\":{\"value\":{\"yaw_deg\":-4.959625435341309,\"pitch_deg\":-7.968076927106477},\"keyframes\":[]},\"roll\":{\"value\":-22.228806750688882,\"keyframes\":[]},\"size\":{\"value\":{\"hFOV_deg\":94.61847411483888,\"vFOV_deg\":54.20819684990575},\"keyframes\":[]},\"opacity\":{\"value\":1,\"keyframes\":[]},\"z_index\":1}],\"painting\":{\"version\":1,\"groups\":[],\"paint\":{\"strokes\":[]},\"mask\":{\"strokes\":[]},\"raster_objects\":[]},\"painting_layer\":null}",
+        "{\"version\":2,\"id\":\"LplkgY9Pw8VqFkxh\",\"timeline\":{\"fps\":24,\"length\":null},\"camera\":{\"aspect\":1.7777777777777777,\"projection\":\"erp\",\"position\":{\"value\":[0,0,0],\"keyframes\":[]},\"rotation\":{\"value\":{\"yaw_deg\":0,\"pitch_deg\":0,\"roll_deg\":0},\"keyframes\":[]},\"fov\":{\"value\":209.7,\"keyframes\":[]},\"curve\":{\"value\":0,\"keyframes\":[]}},\"scene\":{\"clip\":{\"start\":0,\"in\":0,\"duration\":null},\"position\":{\"value\":[0,0,0],\"keyframes\":[]},\"rotation\":{\"value\":{\"yaw_deg\":0,\"pitch_deg\":0,\"roll_deg\":0},\"keyframes\":[]},\"scale\":{\"value\":1,\"keyframes\":[]}},\"stickers\":[{\"id\":\"sticker_11\",\"placement\":\"sky\",\"source\":{\"kind\":\"file\",\"filename\":\"denen.png\",\"subfolder\":\"panorama_stickers\",\"storage\":\"input\"},\"clip\":{\"start\":0,\"in\":0,\"duration\":null},\"visible\":true,\"locked\":false,\"crop\":{\"x0\":0,\"y0\":0,\"x1\":1,\"y1\":1},\"direction\":{\"value\":{\"yaw_deg\":-9.02067379839616,\"pitch_deg\":-1.8274083948888786},\"keyframes\":[]},\"roll\":{\"value\":0,\"keyframes\":[]},\"size\":{\"value\":{\"hFOV_deg\":87.57782202746436,\"vFOV_deg\":59.1330066773554},\"keyframes\":[]},\"opacity\":{\"value\":1,\"keyframes\":[]},\"z_index\":1},{\"id\":\"sticker_12\",\"placement\":\"sky\",\"source\":{\"kind\":\"file\",\"filename\":\"denen2.png\",\"subfolder\":\"panorama_stickers\",\"storage\":\"input\"},\"clip\":{\"start\":0,\"in\":0,\"duration\":null},\"visible\":true,\"locked\":false,\"crop\":{\"x0\":0,\"y0\":0,\"x1\":1,\"y1\":1},\"direction\":{\"value\":{\"yaw_deg\":163.5951945819669,\"pitch_deg\":-20.958666399148424},\"keyframes\":[]},\"roll\":{\"value\":0,\"keyframes\":[]},\"size\":{\"value\":{\"hFOV_deg\":52.97982624741101,\"vFOV_deg\":70.02137313689738},\"keyframes\":[]},\"opacity\":{\"value\":1,\"keyframes\":[]},\"z_index\":2}],\"painting\":{\"version\":1,\"groups\":[],\"paint\":{\"strokes\":[]},\"mask\":{\"strokes\":[]},\"raster_objects\":[]},\"painting_layer\":null}",
         ""
       ],
       "widgets_values_named": {
@@ -845,7 +605,7 @@
         "background_range": "360",
         "megapixels": 4,
         "multiple": 32,
-        "state_json": "{\"version\":2,\"id\":\"LplkgY9Pw8VqFkxh\",\"timeline\":{\"fps\":24,\"length\":null},\"camera\":{\"aspect\":1.7777777777777777,\"projection\":\"erp\",\"position\":{\"value\":[0,0,0],\"keyframes\":[]},\"rotation\":{\"value\":{\"yaw_deg\":0,\"pitch_deg\":0,\"roll_deg\":0},\"keyframes\":[]},\"fov\":{\"value\":209.7,\"keyframes\":[]},\"curve\":{\"value\":0,\"keyframes\":[]}},\"scene\":{\"clip\":{\"start\":0,\"in\":0,\"duration\":null},\"position\":{\"value\":[0,0,0],\"keyframes\":[]},\"rotation\":{\"value\":{\"yaw_deg\":0,\"pitch_deg\":0,\"roll_deg\":0},\"keyframes\":[]},\"scale\":{\"value\":1,\"keyframes\":[]}},\"stickers\":[{\"id\":\"sticker_4\",\"placement\":\"sky\",\"source\":{\"kind\":\"file\",\"filename\":\"Emoquin - かつて海の底だった場所を眺めて@黒島漁港.png\",\"subfolder\":\"panorama_stickers\",\"storage\":\"input\"},\"clip\":{\"start\":0,\"in\":0,\"duration\":null},\"visible\":true,\"locked\":false,\"crop\":{\"x0\":0,\"y0\":0,\"x1\":1,\"y1\":1},\"direction\":{\"value\":{\"yaw_deg\":-4.959625435341309,\"pitch_deg\":-7.968076927106477},\"keyframes\":[]},\"roll\":{\"value\":-22.228806750688882,\"keyframes\":[]},\"size\":{\"value\":{\"hFOV_deg\":94.61847411483888,\"vFOV_deg\":54.20819684990575},\"keyframes\":[]},\"opacity\":{\"value\":1,\"keyframes\":[]},\"z_index\":1}],\"painting\":{\"version\":1,\"groups\":[],\"paint\":{\"strokes\":[]},\"mask\":{\"strokes\":[]},\"raster_objects\":[]},\"painting_layer\":null}",
+        "state_json": "{\"version\":2,\"id\":\"LplkgY9Pw8VqFkxh\",\"timeline\":{\"fps\":24,\"length\":null},\"camera\":{\"aspect\":1.7777777777777777,\"projection\":\"erp\",\"position\":{\"value\":[0,0,0],\"keyframes\":[]},\"rotation\":{\"value\":{\"yaw_deg\":0,\"pitch_deg\":0,\"roll_deg\":0},\"keyframes\":[]},\"fov\":{\"value\":209.7,\"keyframes\":[]},\"curve\":{\"value\":0,\"keyframes\":[]}},\"scene\":{\"clip\":{\"start\":0,\"in\":0,\"duration\":null},\"position\":{\"value\":[0,0,0],\"keyframes\":[]},\"rotation\":{\"value\":{\"yaw_deg\":0,\"pitch_deg\":0,\"roll_deg\":0},\"keyframes\":[]},\"scale\":{\"value\":1,\"keyframes\":[]}},\"stickers\":[{\"id\":\"sticker_11\",\"placement\":\"sky\",\"source\":{\"kind\":\"file\",\"filename\":\"denen.png\",\"subfolder\":\"panorama_stickers\",\"storage\":\"input\"},\"clip\":{\"start\":0,\"in\":0,\"duration\":null},\"visible\":true,\"locked\":false,\"crop\":{\"x0\":0,\"y0\":0,\"x1\":1,\"y1\":1},\"direction\":{\"value\":{\"yaw_deg\":-9.02067379839616,\"pitch_deg\":-1.8274083948888786},\"keyframes\":[]},\"roll\":{\"value\":0,\"keyframes\":[]},\"size\":{\"value\":{\"hFOV_deg\":87.57782202746436,\"vFOV_deg\":59.1330066773554},\"keyframes\":[]},\"opacity\":{\"value\":1,\"keyframes\":[]},\"z_index\":1},{\"id\":\"sticker_12\",\"placement\":\"sky\",\"source\":{\"kind\":\"file\",\"filename\":\"denen2.png\",\"subfolder\":\"panorama_stickers\",\"storage\":\"input\"},\"clip\":{\"start\":0,\"in\":0,\"duration\":null},\"visible\":true,\"locked\":false,\"crop\":{\"x0\":0,\"y0\":0,\"x1\":1,\"y1\":1},\"direction\":{\"value\":{\"yaw_deg\":163.5951945819669,\"pitch_deg\":-20.958666399148424},\"keyframes\":[]},\"roll\":{\"value\":0,\"keyframes\":[]},\"size\":{\"value\":{\"hFOV_deg\":52.97982624741101,\"vFOV_deg\":70.02137313689738},\"keyframes\":[]},\"opacity\":{\"value\":1,\"keyframes\":[]},\"z_index\":2}],\"painting\":{\"version\":1,\"groups\":[],\"paint\":{\"strokes\":[]},\"mask\":{\"strokes\":[]},\"raster_objects\":[]},\"painting_layer\":null}",
         "$$comfy_animation_preview": ""
       },
       "color": "#232",
@@ -867,33 +627,13 @@
       "mode": 0,
       "inputs": [
         {
-          "localized_name": "model",
           "name": "model",
           "type": "MODEL",
           "link": 179
-        },
-        {
-          "localized_name": "lora_name",
-          "name": "lora_name",
-          "type": "COMBO",
-          "widget": {
-            "name": "lora_name"
-          },
-          "link": null
-        },
-        {
-          "localized_name": "strength_model",
-          "name": "strength_model",
-          "type": "FLOAT",
-          "widget": {
-            "name": "strength_model"
-          },
-          "link": null
         }
       ],
       "outputs": [
         {
-          "localized_name": "MODEL",
           "name": "MODEL",
           "type": "MODEL",
           "links": [
@@ -939,24 +679,13 @@
       "mode": 0,
       "inputs": [
         {
-          "localized_name": "source",
           "name": "source",
           "type": "IMAGE,VIDEO,PANO_SCENE",
           "link": 187
-        },
-        {
-          "localized_name": "background_range",
-          "name": "background_range",
-          "type": "COMBO",
-          "widget": {
-            "name": "background_range"
-          },
-          "link": null
         }
       ],
       "outputs": [
         {
-          "localized_name": "output",
           "name": "output",
           "type": "IMAGE",
           "links": null
@@ -1100,13 +829,13 @@
   "config": {},
   "extra": {
     "ds": {
-      "scale": 0.630394086312872,
+      "scale": 0.6934334949441611,
       "offset": [
-        387.9769344593804,
-        266.8652564915081
+        806.7940419232718,
+        490.9979807636032
       ]
     },
-    "frontendVersion": "1.53.6",
+    "frontendVersion": "1.57.6",
     "VHS_latentpreview": false,
     "VHS_latentpreviewrate": 0,
     "VHS_MetadataImage": true,

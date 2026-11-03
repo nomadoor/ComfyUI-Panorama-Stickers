@@ -1,0 +1,378 @@
+{
+ "_doc": "How a paint stroke is drawn on the sphere (docs/render-contract.md \"\u30da\u30a4\u30f3\u30c8\u306e\u30b9\u30c8\u30ed\u30fc\u30af\u306e\u63cf\u304d\u65b9\"), read by tests/test_paint_stroke_sphere_parity.py (core/painting.py) and tests/pano_paint_stroke_sphere_parity.test.mjs (web_src/pano_paint_sphere.js). paths: the points a drawer walks ([u, v]), the stroke's base radius in pixels and the ERP size, and the path it walks after the great-circle points go in ([u, v], u continuous across the seam; or, for a long one, only how many points it has: count). widths: a stamp's vertical radius rv, aspect and ERP width, and its horizontal radius at rows v (unrounded). Numbers within 1e-6.",
+ "paths": {
+  "along_the_equator": {
+   "points": [
+    [
+     0.3,
+     0.5
+    ],
+    [
+     0.35,
+     0.5
+    ],
+    [
+     0.45,
+     0.5
+    ],
+    [
+     0.5,
+     0.5
+    ]
+   ],
+   "radius_px": 5,
+   "width": 2048,
+   "height": 1024,
+   "path": [
+    [
+     0.3,
+     0.5
+    ],
+    [
+     0.35,
+     0.5
+    ],
+    [
+     0.45,
+     0.5
+    ],
+    [
+     0.5,
+     0.5
+    ]
+   ]
+  },
+  "along_a_meridian": {
+   "points": [
+    [
+     0.5,
+     0.2
+    ],
+    [
+     0.5,
+     0.4
+    ],
+    [
+     0.5,
+     0.6
+    ]
+   ],
+   "radius_px": 5,
+   "width": 2048,
+   "height": 1024,
+   "path": [
+    [
+     0.5,
+     0.2
+    ],
+    [
+     0.5,
+     0.4
+    ],
+    [
+     0.5,
+     0.6
+    ]
+   ]
+  },
+  "near_the_pole": {
+   "points": [
+    [
+     0.5,
+     0.027777777777777776
+    ],
+    [
+     0.8333333333333333,
+     0.027777777777777776
+    ]
+   ],
+   "radius_px": 5,
+   "width": 2048,
+   "height": 1024,
+   "path": [
+    [
+     0.5,
+     0.027777777777777776
+    ],
+    [
+     0.5531864708903353,
+     0.0183883019487171
+    ],
+    [
+     0.6666666666666666,
+     0.013915381786314351
+    ],
+    [
+     0.7801468624429979,
+     0.0183883019487171
+    ],
+    [
+     0.8333333333333333,
+     0.027777777777777776
+    ]
+   ]
+  },
+  "through_the_pole": {
+   "points": [
+    [
+     0.5,
+     0.02
+    ],
+    [
+     0.0,
+     0.02
+    ]
+   ],
+   "radius_px": 5,
+   "width": 2048,
+   "height": 1024,
+   "path": [
+    [
+     0.5,
+     0.02
+    ],
+    [
+     0.49999999999999983,
+     0.010000000000000675
+    ],
+    [
+     0.4999999999999995,
+     0.005000000000002447
+    ],
+    [
+     0.25,
+     0.0
+    ],
+    [
+     4.440892098500626e-16,
+     0.005000000000002447
+    ],
+    [
+     1.6653345369377348e-16,
+     0.010000000000000675
+    ],
+    [
+     0.0,
+     0.02
+    ]
+   ]
+  },
+  "antipodal": {
+   "points": [
+    [
+     0.25,
+     0.5
+    ],
+    [
+     0.75,
+     0.5
+    ]
+   ],
+   "radius_px": 5,
+   "width": 2048,
+   "height": 1024,
+   "path": [
+    [
+     0.25,
+     0.5
+    ],
+    [
+     0.75,
+     0.5
+    ]
+   ]
+  },
+  "across_the_seam": {
+   "points": [
+    [
+     0.97,
+     0.15
+    ],
+    [
+     0.06,
+     0.1
+    ]
+   ],
+   "radius_px": 4,
+   "width": 1024,
+   "height": 512,
+   "path": [
+    [
+     0.97,
+     0.15
+    ],
+    [
+     1.0062234119062783,
+     0.12067202340719246
+    ],
+    [
+     1.06,
+     0.1
+    ]
+   ]
+  },
+  "a_painted_curve": {
+   "points": [
+    [
+     0.4,
+     0.3
+    ],
+    [
+     0.42,
+     0.29
+    ],
+    [
+     0.44,
+     0.285
+    ],
+    [
+     0.46,
+     0.29
+    ]
+   ],
+   "radius_px": 6,
+   "width": 2048,
+   "height": 1024,
+   "path": [
+    [
+     0.4,
+     0.3
+    ],
+    [
+     0.42,
+     0.29
+    ],
+    [
+     0.44,
+     0.285
+    ],
+    [
+     0.46,
+     0.29
+    ]
+   ]
+  },
+  "the_same_point_twice": {
+   "points": [
+    [
+     0.3,
+     0.4
+    ],
+    [
+     0.3,
+     0.4
+    ]
+   ],
+   "radius_px": 5,
+   "width": 2048,
+   "height": 1024,
+   "path": [
+    [
+     0.3,
+     0.4
+    ],
+    [
+     0.3,
+     0.4
+    ]
+   ]
+  },
+  "under_a_pixel_apart": {
+   "points": [
+    [
+     0.3,
+     0.4
+    ],
+    [
+     0.3002,
+     0.4003
+    ]
+   ],
+   "radius_px": 0.01,
+   "width": 2048,
+   "height": 1024,
+   "path": [
+    [
+     0.3,
+     0.4
+    ],
+    [
+     0.3002,
+     0.4003
+    ]
+   ]
+  },
+  "sixteen_deep": {
+   "points": [
+    [
+     0.1,
+     0.01
+    ],
+    [
+     0.4,
+     0.01
+    ]
+   ],
+   "radius_px": 1e-09,
+   "width": 1000000000,
+   "height": 500000000,
+   "count": 65537
+  }
+ },
+ "widths": {
+  "round": {
+   "rv": 5,
+   "aspect": 1.0,
+   "width": 2048,
+   "rows": [
+    [
+     0.5,
+     5.0
+    ],
+    [
+     0.3,
+     6.180339887498948
+    ],
+    [
+     0.1,
+     16.180339887498945
+    ],
+    [
+     0.02,
+     79.62985554954308
+    ],
+    [
+     0.0,
+     1024.0
+    ],
+    [
+     1.0,
+     1024.0
+    ]
+   ]
+  },
+  "wide_nib": {
+   "rv": 8,
+   "aspect": 2.6,
+   "width": 1024,
+   "rows": [
+    [
+     0.5,
+     20.8
+    ],
+    [
+     0.25,
+     29.415642097360376
+    ],
+    [
+     0.05,
+     132.96302700719292
+    ],
+    [
+     0.004,
+     512.0
+    ]
+   ]
+  }
+ }
+}

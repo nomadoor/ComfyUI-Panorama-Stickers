@@ -3,6 +3,7 @@
 // components/studio/StudioCameraFrame.vue and StudioEdgeRuler.vue use them.
 import { CAMERA_ROLL_DEFAULT } from "./inspector_actions.js";
 import { FINE_FACTOR } from "./ui_drag.js";
+import { CAMERA_TAB_LOCKED_TIP } from "./camera_ui.js";
 
 // The stage's margins around the area the frame is fitted into, in CSS px. The top keeps 30px clear under the tabs
 // (16 + 42 + 30); left and right keep the edge rulers' numbers clear of the left column and the view knobs
@@ -144,7 +145,8 @@ export function cameraRulers(card) {
       precision: box.precision,
       keyState: source.keyState ?? "",
       disabled: !!source.disabled,
-      tip: source.disabled ? source.tip : "",
+      // The card's "Locked" (inspector_model.js) says where to unlock on the Camera tab, which has no Lock (ADR 0055).
+      tip: source.disabled ? (source.tip === "Locked" ? CAMERA_TAB_LOCKED_TIP : source.tip) : "",
       reset: source.id,
       atDefault: !!source.disabled || !!source.atDefault,
       ...extra,

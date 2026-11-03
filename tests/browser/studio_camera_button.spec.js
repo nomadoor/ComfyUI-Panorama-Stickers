@@ -6,7 +6,7 @@ import { CAMERA } from "./pages/studio_camera_wired_scene.js";
 // step, its tooltip and when it is off) and the Lock of the bar at the bottom center (camera.locked, one Undo step;
 // while locked the gizmo, the Camera tab's drags and rulers and the inspector's Camera rows change nothing).
 
-const SHOTS = "/home/nomax/dev/nomadoor/worktrees/pst-proto-view/design-drafts/shots";
+const SHOTS = "test-results/shots";
 
 function watch(page) {
   const problems = [];
@@ -89,46 +89,51 @@ for (const [mode, projection, tip] of [["frame", "perspective", "Camera to view"
   });
 }
 
-// docs/design.md "動き": a move runs the viewfinder cue once (a CSS layer of four brackets and a vignette) and removes
-// it; with reduced motion the brackets only show still and fade. FRAMES are the contact sheet's moments.
-const FRAMES = [0, 30, 60, 90, 120, 200, 300, 370, 410, 450, 600, 700, 1000, 1100, 1180];
+// docs/design.md "動き" (ADR 0058): a move runs the viewfinder cue once (a CSS layer of four brackets and a flat fill
+// outside them, web/pano_studio.css .pano-studio-cue): in fast over 160ms, out at once over 700ms easing out; the
+// layer goes at 900ms. With reduced motion nothing moves. FRAMES are the contact sheet's moments.
+const FRAMES = [0, 40, 80, 120, 160, 250, 400, 600, 800, 880];
+const CUE_LIFE = 900;
 const cueAnimations = (page) => page.evaluate(() => document.getAnimations().filter((item) => item.animationName?.startsWith("pano-studio-cue-")).map((item) => item.animationName));
 
 // Every cue animation paused at the same moment from the press (each one's currentTime counts its delay).
 async function cueAt(page, ms) {
-  await page.evaluate((at) => {
+  await page.evaluate(({ at, life }) => {
     for (const item of document.getAnimations()) {
       if (!item.animationName?.startsWith("pano-studio-cue-")) continue;
       item.pause();
-      item.currentTime = Math.min(at, 1259);
+      item.currentTime = Math.min(at, life - 1);
     }
-  }, ms);
+  }, { at: ms, life: CUE_LIFE });
 }
 
 const cueStyle = (page) => page.evaluate(() => [...document.querySelectorAll("[data-cue-bracket]")].map((el) => {
   const style = getComputedStyle(el);
   return { opacity: Number(style.opacity), transform: style.transform, width: el.getBoundingClientRect().width };
 }));
+const fillOpacity = (page) => page.evaluate(() => Number(getComputedStyle(document.querySelector(".pano-studio-cue-fill")).opacity));
 
-test("a move runs the viewfinder cue once, a press mid-way restarts it, and a press that moves nothing runs none", async ({ page }) => {
+test("a move runs the viewfinder cue once and opens the Output window, a press mid-way restarts it, and a press that moves nothing runs none", async ({ page }) => {
   const problems = await load(page, "mode=frame");
+  await expect(page.locator('[data-region="output"]')).toHaveClass(/is-collapsed/);
   await rail(page).click();
+  // The Output window opens to show the shot.
+  await expect(page.locator('[data-region="output"]')).not.toHaveClass(/is-collapsed/);
   const cue = page.locator("[data-camera-cue]");
   await expect(cue).toHaveCount(1);
   await expect(cue.locator("[data-cue-bracket]")).toHaveCount(4);
-  await expect(cue.locator(".pano-studio-cue-vignette")).toHaveCount(1);
+  await expect(cue.locator(".pano-studio-cue-fill")).toHaveCount(1);
   await expect(page.locator(".pano-studio-notice")).toHaveAttribute("data-notice", "done");
-  await expect(page.locator(".pano-studio-notice .pano-studio-notice-dot")).toHaveCSS("background-color", "rgb(214, 231, 151)");
   expect((await cueAnimations(page)).sort()).toEqual([
-    "pano-studio-cue-glow", "pano-studio-cue-life",
-    ...Array(4).fill("pano-studio-cue-fade"), ...Array(4).fill("pano-studio-cue-move"),
+    "pano-studio-cue-life", "pano-studio-cue-fade", "pano-studio-cue-fill-in", "pano-studio-cue-fill-out",
+    ...Array(4).fill("pano-studio-cue-in"), ...Array(4).fill("pano-studio-cue-out"),
   ].sort());
   for (const at of FRAMES) {
     await cueAt(page, at);
-    await page.screenshot({ path: `${SHOTS}/camera-to-view-a-${String(at).padStart(4, "0")}ms.png` });
+    await page.screenshot({ path: `${SHOTS}/camera-to-view-proto-${String(at).padStart(4, "0")}ms.png` });
   }
-  // Settled and held at 700ms: all four fully shown at their rest, 8% of the stage's shorter side (28px to 56px).
-  await cueAt(page, 700);
+  // In at 160ms: all four fully shown at their rest, 8% of the stage's shorter side (28px to 56px), the fill full.
+  await cueAt(page, 160);
   const stage = await page.locator('[data-region="stage"]').boundingBox();
   const size = Math.min(56, Math.max(28, 0.08 * Math.min(stage.width, stage.height)));
   for (const bracket of await cueStyle(page)) {
@@ -136,11 +141,12 @@ test("a move runs the viewfinder cue once, a press mid-way restarts it, and a pr
     expect(bracket.transform).toBe("matrix(1, 0, 0, 1, 0, 0)");
     expect(Math.abs(bracket.width - size)).toBeLessThan(0.5);
   }
-  // Before the press and after the fade, nothing shows.
+  expect(await fillOpacity(page)).toBe(1);
+  // Before the press and at the end, nothing shows.
   await cueAt(page, 0);
   expect((await cueStyle(page)).every((bracket) => bracket.opacity === 0)).toBe(true);
-  await cueAt(page, 1259);
-  expect((await cueStyle(page)).every((bracket) => bracket.opacity < 0.02)).toBe(true);
+  await cueAt(page, CUE_LIFE);
+  expect(await page.evaluate(() => Number(getComputedStyle(document.querySelector("[data-camera-cue]")).opacity))).toBeLessThan(0.02);
   // Let it run out: the layer is removed.
   await page.evaluate(() => document.getAnimations().forEach((item) => item.animationName?.startsWith("pano-studio-cue-") && item.play()));
   await expect(cue).toHaveCount(0, { timeout: 3_000 });
@@ -148,7 +154,7 @@ test("a move runs the viewfinder cue once, a press mid-way restarts it, and a pr
   // A press mid-way (after an Undo, so the Camera moves again) starts it over: one layer, from the start.
   await page.locator('[data-tool="undo"]').click();
   await rail(page).click();
-  await page.waitForTimeout(400);
+  await page.waitForTimeout(300);
   await page.locator('[data-tool="undo"]').click();
   await rail(page).click();
   await expect(cue).toHaveCount(1);
@@ -163,21 +169,17 @@ test("a move runs the viewfinder cue once, a press mid-way restarts it, and a pr
   expect(problems).toEqual([]);
 });
 
-test("with reduced motion the cue's brackets show still and fade, with no vignette, then go", async ({ page }) => {
+test("with reduced motion the cue's brackets and fill do not move, only fade, then go", async ({ page }) => {
   const problems = await load(page, "mode=frame");
   await page.emulateMedia({ reducedMotion: "reduce" });
   await rail(page).click();
   await expect(page.locator(".pano-studio-notice")).toHaveText("Camera moved to this view");
   const cue = page.locator("[data-camera-cue]");
   await expect(cue).toHaveCount(1);
-  expect((await cueAnimations(page)).sort()).toEqual(["pano-studio-cue-life", ...Array(4).fill("pano-studio-cue-still")].sort());
-  await expect(cue.locator(".pano-studio-cue-vignette")).toBeHidden();
-  await cueAt(page, 100);
-  for (const bracket of await cueStyle(page)) {
-    expect(bracket.opacity).toBe(1);
-    expect(bracket.transform).toBe("none");
+  for (const at of [40, 500]) {
+    await cueAt(page, at);
+    for (const bracket of await cueStyle(page)) expect(bracket.transform).toBe("matrix(1, 0, 0, 1, 0, 0)");
   }
-  await page.screenshot({ path: `${SHOTS}/camera-to-view-a-reduced-motion.png` });
   await page.evaluate(() => document.getAnimations().forEach((item) => item.animationName?.startsWith("pano-studio-cue-") && item.play()));
   await expect(cue).toHaveCount(0, { timeout: 2_000 });
   expect(problems).toEqual([]);
@@ -247,14 +249,22 @@ test("the Lock locks the Camera as one Undo step: no gizmo, Camera tab and inspe
   await page.locator('.pano-studio-at-rail').hover();
   await page.screenshot({ path: `${SHOTS}/camera-button-lock-3d-locked.png` });
 
-  // The Camera tab: the rulers are grayed with "Locked", and a drag on the stage moves nothing.
+  // The Camera tab: the rulers, Frame Selected and the knobs are grayed, saying where to unlock (the Camera tab has no
+  // Lock, ADR 0055), and a drag on the stage moves nothing.
   await page.locator('[role="tablist"] button', { hasText: "Camera" }).click();
   await expect(page.locator("[data-frame-box]")).toHaveCount(1);
   await page.waitForTimeout(300);
+  const unlockTip = "Locked · Unlock in the 3D tab";
   for (const name of ["FOV", "Lens", "Roll"]) {
     await expect(page.locator(`[data-ruler="${name}"]`)).toHaveClass(/is-disabled/);
-    await expect(page.locator(`[data-ruler="${name}"]`)).toHaveAttribute("data-tip", "Locked");
+    await expect(page.locator(`[data-ruler="${name}"]`)).toHaveAttribute("data-tip", unlockTip);
+    // Its Keyframe dot and its reset say the same.
+    await expect(page.locator(`[data-ruler="${name}"] [data-ruler-acts] [aria-label="${name} Keyframe"]`)).toHaveAttribute("data-tip", unlockTip);
+    await expect(page.locator(`[data-ruler="${name}"] [data-ruler-acts] [aria-label="Reset ${name}"]`)).toHaveAttribute("data-tip", unlockTip);
   }
+  await expect(page.locator('[data-action="frame-selected"]')).toHaveAttribute("data-tip", unlockTip);
+  await expect(page.locator('[data-knob="orbit"]')).toHaveAttribute("data-tip", unlockTip);
+  await expect(page.locator('.pano-studio-at-bar [data-kind]')).toHaveCount(0);
   const frame = await page.locator("[data-frame-box]").boundingBox();
   await dragBy(page, { x: frame.x + frame.width / 2, y: frame.y + frame.height / 2 }, 80, 30);
   const roll = await page.locator('[data-ruler="Roll"] [data-ruler-track]').boundingBox();

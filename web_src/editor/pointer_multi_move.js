@@ -1,19 +1,29 @@
-// The move of a multi-selection ("move_multi"): every selected sky Sticker, stroke group and raster
-// object moves by the pointer's delta from where its center was on the screen. pointer_input.js starts it
-// on the selection's move area; letting go is pointer_transform.js endTransform.
+import { yawPitchToDir } from "../pano_camera_math.js";
+
+// The move of a multi-selection ("move_multi"): every selected sky Sticker, stroke group and raster object moves by the
+// pointer's delta from where its center was on the screen (a stroke group's center direction, its geometry's `anchor`,
+// goes on the sphere as a sky Sticker's; a raster object by the ERP difference, so the two no longer move by the same
+// ERP delta). pointer_input.js starts it on the selection's move area; letting go is pointer_transform.js endTransform.
 export function createPointerMultiMove(deps) {
   const { canvas, editor, type } = deps;
   // Bound by connect() to the other modules and showEditor.
   let applyRasterObjectOffset, applyStrokeGroupOffset, editUvAt, getCutoutSelectableItems, getList,
-    getRasterObjectCenterUv, getStrokeGroupCenterUv, isRasterObjectItem, isStickerItem, isStrokeGroupItem,
+    getRasterObjectCenterUv, isRasterObjectItem, isStickerItem, isStrokeGroupItem,
     markObjectVisualsDirty, markPaintCompositeVisualsDirty, markPaintStrokeVisualsDirty, objectGeom,
     parseRasterObjectSelectionId, poseOf, rasterObjectSnapshot, requestDraw, shortestWrappedDelta,
-    strokeGroupFrameSnapshot, strokeGroupSnapshot, updateCursor, writePoseAtScreenPoint;
+    strokeGroupFrameSnapshot, strokeGroupSnapshot, updateCursor, poseAtScreenPoint, writePoseAtScreenPoint;
 
   // The item's center on the screen as the move starts, or the press point when it is not shown.
   function screenCenterAt(item, p) {
     const geom = objectGeom(item);
     return geom?.visible ? { x: Number(geom.center?.x || 0), y: Number(geom.center?.y || 0) } : { x: p.x, y: p.y };
+  }
+
+  // A stroke group's center direction on the screen as the move starts (its geometry's `anchor`), or null when it has
+  // none there (it does not move).
+  function strokeAnchorAt(item) {
+    const geom = objectGeom(item);
+    return geom?.visible && geom.anchor ? { x: geom.anchor.x, y: geom.anchor.y } : null;
   }
 
   function startMultiMove(e, p, selectedItems, selGeom) {
@@ -37,8 +47,7 @@ export function createPointerMultiMove(deps) {
           layerKind: String(item.layerKind || "paint"),
           snapshot: strokeGroupSnapshot(item),
           frameSnapshot: strokeGroupFrameSnapshot(item),
-          center: screenCenterAt(item, p),
-          centerUv: getStrokeGroupCenterUv(item.actionGroupId, item.layerKind),
+          center: strokeAnchorAt(item),
         })),
       rasterSnapshots: selectedItems
         .filter((item) => isRasterObjectItem(item))
@@ -76,15 +85,10 @@ export function createPointerMultiMove(deps) {
         x: Number(snap.center?.x || 0) + dx,
         y: Number(snap.center?.y || 0) + dy,
       };
-      const currentUv = editUvAt(targetScreen);
-      const startUvForGroup = snap.centerUv || null;
-      if (currentUv && startUvForGroup) {
-        const du = shortestWrappedDelta(Number(currentUv.u || 0), Number(startUvForGroup.u || 0));
-        const dv = Number(currentUv.v || 0) - Number(startUvForGroup.v || 0);
-        if (applyStrokeGroupOffset(snap.id, du, dv, snap.snapshot, snap.layerKind, snap.frameSnapshot)) {
-          changed = true;
-          paintStrokeChanged = true;
-        }
+      const pose = snap.center ? poseAtScreenPoint(targetScreen.x, targetScreen.y) : null;
+      if (pose && applyStrokeGroupOffset(snap.id, yawPitchToDir(pose.yaw_deg, pose.pitch_deg), snap.snapshot, snap.layerKind, snap.frameSnapshot)) {
+        changed = true;
+        paintStrokeChanged = true;
       }
     }
     for (const snap of (Array.isArray(it.rasterSnapshots) ? it.rasterSnapshots : [])) {
@@ -119,10 +123,10 @@ export function createPointerMultiMove(deps) {
     connect(api) {
       ({
         applyRasterObjectOffset, applyStrokeGroupOffset, editUvAt, getCutoutSelectableItems, getList,
-        getRasterObjectCenterUv, getStrokeGroupCenterUv, isRasterObjectItem, isStickerItem, isStrokeGroupItem,
+        getRasterObjectCenterUv, isRasterObjectItem, isStickerItem, isStrokeGroupItem,
         markObjectVisualsDirty, markPaintCompositeVisualsDirty, markPaintStrokeVisualsDirty, objectGeom,
         parseRasterObjectSelectionId, poseOf, rasterObjectSnapshot, requestDraw, shortestWrappedDelta,
-        strokeGroupFrameSnapshot, strokeGroupSnapshot, updateCursor, writePoseAtScreenPoint,
+        strokeGroupFrameSnapshot, strokeGroupSnapshot, updateCursor, poseAtScreenPoint, writePoseAtScreenPoint,
       } = api);
     },
     startMultiMove, moveMulti,

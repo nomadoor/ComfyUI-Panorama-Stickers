@@ -5,6 +5,7 @@ import test from "node:test";
 
 import { ICON } from "../web_src/icons.js";
 import { loadSceneState } from "../web_src/pano_scene_state.js";
+import { upstreamWorkingLayers } from "../web_src/pano_upstream.js";
 import { gizmoModeOfKey, selectedKind, selectionBar, shownGizmoMode } from "../web_src/studio/selection_bar.js";
 
 const file = (filename) => ({ kind: "file", filename, subfolder: "", storage: "input" });
@@ -109,4 +110,120 @@ test("a paint group (a stroke group or a paint raster object) has the bar Bring 
   assert.deepEqual(locked.groups.flat().map((button) => [button.key, button.disabled]), [["front", true], ["back", true], ["lock", false], ["delete", true]]);
   assert.equal(locked.groups[1][0].icon, ICON.lock_closed);
   assert.ok(selectionBar({ state: painted, row: "raster:r1", readOnly: true }).groups.flat().every((button) => button.disabled));
+});
+
+// docs/studio-ui.md "上流の物の編集": the owner table's bar column.
+const upstream = upstreamWorkingLayers([
+  { sceneState: loadSceneState({ version: 2, id: "scene_up", stickers: [
+    { id: "sky_1", placement: "sky", source: file("up.png") },
+    { id: "plane_1", placement: "world", source: file("up_board.png") },
+    { id: "chair_1", placement: "world", source: file("up_chair.glb"), locked: true },
+  ] }), ui: {} },
+  { sceneState: loadSceneState({ version: 2, stickers: [{ id: "sky_9", placement: "sky", source: file("far.png") }] }), ui: {} },
+], [], 24);
+const button = (bar, key) => bar.groups.flat().find((item) => item.key === key);
+
+test("an upstream object's bar: Lock and Delete work, Back to source is there (below); Duplicate, Replace and the order say why they are off", () => {
+  assert.equal(selectedKind(state, "upstream:scene_up:sky_1"), null, "found only in the upstream layers given");
+  assert.equal(selectedKind(state, "upstream:scene_up:sky_1", upstream), "sky");
+  assert.equal(selectedKind(state, "upstream:scene_up:plane_1", upstream), "world-image");
+  const sky = selectionBar({ state, row: "upstream:scene_up:sky_1", upstream });
+  assert.equal(sky.name, "up.png");
+  assert.deepEqual(keys(sky), [["front", "back"], ["duplicate", "replace"], ["lock", "delete"], ["revert"]]);
+  assert.deepEqual(sky.groups.flat().map((item) => [item.key, item.disabled]), [
+    ["front", true], ["back", true], ["duplicate", true], ["replace", true], ["lock", false], ["delete", false], ["revert", true],
+  ]);
+  assert.equal(button(sky, "duplicate").tip, "Duplicate · not for an upstream object");
+  assert.equal(button(sky, "front").tip, "Bring to front · not for an upstream object");
+  assert.equal(button(sky, "replace").tip, "Replace · not for an upstream object");
+  const plane = selectionBar({ state, row: "upstream:scene_up:plane_1", upstream });
+  assert.deepEqual(keys(plane)[0], ["gizmo:translate", "gizmo:rotate", "gizmo:scale"]);
+  assert.ok(plane.groups[0].every((item) => !item.disabled), "the gizmo's modes work");
+  // Locked: Delete and Back to source are off, Lock shows it.
+  const chair = selectionBar({ state, row: "upstream:scene_up:chair_1", upstream });
+  assert.deepEqual(["lock", "delete", "revert"].map((key) => button(chair, key).disabled), [false, true, true]);
+  assert.equal(button(chair, "lock").icon, ICON.lock_closed);
+});
+
+test("an upstream object without a file name is named by its own id in the bar, as its Timeline row, not its working id", () => {
+  const layers = upstreamWorkingLayers([{ sceneState: loadSceneState({ version: 2, id: "scene_up", stickers: [
+    { id: "sky_7", placement: "sky", source: { kind: "file", data_url: "data:image/png;base64,AA==" } },
+  ] }), ui: {} }], [], 24);
+  assert.equal(selectionBar({ state, row: "upstream:scene_up:sky_7", upstream: layers }).name, "sky_7");
+});
+
+test("an object of an upstream layer whose overrides cannot be kept has its bar with every edit off, saying why", () => {
+  const bar = selectionBar({ state, row: "upstream:#1:sky_9", upstream });
+  for (const key of ["front", "back", "duplicate", "replace", "lock", "delete", "revert"]) {
+    assert.equal(button(bar, key).disabled, true, key);
+    assert.equal(button(bar, key).tip, "Inherited only: edit it in its own Panorama Studio", key);
+  }
+});
+
+test("an input's object cannot be duplicated or deleted and says so", () => {
+  const bar = selectionBar({ state, row: "port_1" });
+  assert.equal(button(bar, "duplicate").tip, "Duplicate · not for an input's object");
+  assert.equal(button(bar, "delete").tip, "Delete · not for an input's object");
+  assert.equal(button(bar, "revert").tip, "Back to source · as the input has it");
+});
+
+// docs/studio-ui.md "下の中央のバー": Back to source is pressable only with something to put back and the object
+// changeable, in the override colour (`overridden`) then; the tooltip says why it is not, in its order.
+const records = (stickers) => [{ layer: "scene_up", fps: 24, deleted: [], stickers, scene: {} }];
+const revertOf = (raw, row, extra = {}) => button(selectionBar({ state: raw, row, upstream, ...extra }), "revert");
+const pick = ({ disabled, overridden, tip }) => ({ disabled, overridden, tip });
+
+test("an upstream object's Back to source: off as upstream has it, on in the override colour with any entry of its record", () => {
+  const row = "upstream:scene_up:sky_1";
+  assert.deepEqual(pick(revertOf(state, row)), { disabled: true, overridden: false, tip: "Back to source · as upstream has it" });
+  // A Lock override alone, or one made for the other placement, is something to put back.
+  for (const entry of [{ id: "sky_1", placement: "sky", locked: false }, { id: "sky_1", placement: "world", scale: { value: 2, keyframes: [] } }]) {
+    assert.deepEqual(pick(revertOf({ ...state, upstream: records([entry]) }, row)), { disabled: false, overridden: true, tip: "Back to source · every value back to the upstream's" });
+  }
+  const overridden = { ...state, upstream: records([{ id: "sky_1", placement: "sky", opacity: { value: 0.5, keyframes: [] } }]) };
+  assert.deepEqual(pick(revertOf(overridden, row, { readOnly: true })), { disabled: true, overridden: false, tip: "Back to source · Read-only" });
+  // Locked (upstream's chair_1, or a Lock override).
+  const locked = { ...state, upstream: records([{ id: "chair_1", placement: "world", scale: { value: 2, keyframes: [] } }]) };
+  assert.deepEqual(pick(revertOf(locked, "upstream:scene_up:chair_1")), { disabled: true, overridden: false, tip: "Back to source · locked" });
+  assert.deepEqual(pick(revertOf(state, "upstream:#1:sky_9", { readOnly: true })), { disabled: true, overridden: false, tip: "Inherited only: edit it in its own Panorama Studio" });
+});
+
+test("an input's object's Back to source: off while every row is at the input's value, on in the override colour once one is not", () => {
+  // A node has one port Sticker: as it came, and moved.
+  const asCame = loadSceneState({ version: 2, stickers: [{ id: "port_1", placement: "world", source: { kind: "port" } }] });
+  const ports = loadSceneState({ version: 2, stickers: [{ id: "port_2", placement: "world", source: { kind: "port" }, position: { value: [1, 2, 3] } }] });
+  assert.deepEqual(pick(button(selectionBar({ state: asCame, row: "port_1" }), "revert")), { disabled: true, overridden: false, tip: "Back to source · as the input has it" });
+  assert.deepEqual(pick(button(selectionBar({ state: ports, row: "port_2" }), "revert")), { disabled: false, overridden: true, tip: "Back to source · every value back to the input's" });
+  assert.deepEqual(pick(button(selectionBar({ state: ports, row: "port_2", readOnly: true }), "revert")), { disabled: true, overridden: false, tip: "Back to source · Read-only" });
+  const locked = { ...ports, stickers: ports.stickers.map((item) => ({ ...item, locked: true })) };
+  assert.deepEqual(pick(button(selectionBar({ state: locked, row: "port_2" }), "revert")), { disabled: true, overridden: false, tip: "Back to source · locked" });
+});
+
+test("the name field: a fixed name (the Camera's, a paint group's) fits its text, a name the user gives keeps the one width", () => {
+  const points = [{ u: 0.5, v: 0.5 }];
+  const painted = loadSceneState({
+    version: 2,
+    painting: { paint: { strokes: [{ id: "st1", actionGroupId: "g1", layerKind: "paint", toolKind: "pen", size: 10, opacity: 1, color: { r: 1, g: 0, b: 0, a: 1 }, targetSpace: { kind: "ERP_GLOBAL" }, geometry: { geometryKind: "freehand_open", points, rawPoints: points } }] } },
+  });
+  assert.equal(selectionBar({ state, row: "camera" }).fixedName, true);
+  assert.equal(selectionBar({ state: painted, row: "paint_group:g1" }).fixedName, true);
+  for (const row of ["sky_1", "plane_1", "chair_1", "port_1"]) assert.equal(selectionBar({ state, row }).fixedName, false, row);
+});
+
+test("the Camera tab shows no bar for the Camera (ADR 0055), and the other objects' bars as in the 3D tab", () => {
+  assert.equal(selectionBar({ state, row: "camera", tab: "camera" }), null);
+  assert.equal(selectionBar({ state, row: "camera", tab: "3d" }).kind, "camera");
+  assert.equal(selectionBar({ state, row: "camera" }).kind, "camera", "the 3D tab by default");
+  assert.deepEqual(keys(selectionBar({ state, row: "plane_1", tab: "camera" })), keys(selectionBar({ state, row: "plane_1" })));
+  assert.equal(selectionBar({ state, row: "sky_1", tab: "camera" }).kind, "sky");
+});
+
+test("a port Sticker shown with a Pose handoff lights Back to source only while it has an override of a handed Lane (or another row away)", () => {
+  const handoff = { placement: "world", lanes: { position: { value: [0, 0, -2] }, rotation: { value: { yaw_deg: 0, pitch_deg: 0, roll_deg: 0 } }, scale: { value: 4 } }, fps: 24 };
+  const port = (overrides) => loadSceneState({ version: 2, stickers: [{ id: "port_1", placement: "world", source: { kind: "port" }, position: { value: [5, 1, 2] }, scale: { value: 3 }, handoff_overrides: overrides }] });
+  const revert = (s, inputs) => selectionBar({ state: s, row: "port_1", inputs }).groups.flat().find((button) => button.key === "revert");
+  assert.equal(revert(port([]), { handoff }).disabled, true);
+  assert.equal(revert(port(["scale"]), { handoff }).disabled, false);
+  // Without the handoff, the values away from the Lane defaults light it.
+  assert.equal(revert(port([]), {}).disabled, false);
 });

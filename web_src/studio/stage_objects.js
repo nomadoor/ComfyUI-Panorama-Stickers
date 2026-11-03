@@ -5,14 +5,19 @@
 //
 // A left press, in this order (docs/studio-ui.md "ペイントのまとまり" "押したときの順"):
 //   1. a handle of the gizmo of the selected World object or Camera (gizmo_overlay.js): drags it;
-//   2. a handle of the selected sky image (a corner scales both FOVs, an edge one, the rotate handle the Roll), or a
-//      corner of the selected paint group (scales it); not while locked;
+//   2. a handle of the selected sky image (a corner scales both FOVs, an edge one, the rotate handle the Roll), or the
+//      rotate handle (turns it) or a corner (scales it) of the selected paint group; not while locked;
 //   3. the World object under the pointer (objectUnder: the same test as the hover, hit_test.js coarseUnder): selects
 //      it (its drag does nothing: the gizmo moves it);
 //   4. the Camera's mark (3D tab; camera_marker.js: anywhere on its filled shape or near its lines): selects the Camera;
 //   5. the node's own Sky from the visual front (skyObjects: the sky images and the paint groups by the draw order,
-//      reversed): selects it and its drag turns a sky image (its direction) or moves a paint group (not a locked one);
+//      reversed), then the upstream sky images under it (from the downstream layer, in a layer from the front): selects
+//      it and its drag turns a sky image (its direction) or moves a paint group (not a locked one);
 //   6. nothing: the stage looks around, and a press let go without moving lets the selection go.
+// The upstream objects (docs/studio-ui.md "上流の物の編集") are found by their working ids in the working layers
+// (`upstream`) and count as the node's own: the upstream World objects in 3 (their guides, world_guides.js), the sky
+// images after 5, the selected one's gizmo or handles in 1 and 2. Their drags change their working copies (the session
+// writes them back as overrides); one of a layer whose overrides cannot be kept is locked.
 // The Camera tab's Frame view does the same for the selected object (its gizmo, its handles, its body: docs/studio-ui.md
 // "Camera タブ", ADR 0051); a press on any other object, or on a locked one, selects it and its drag is the stage's,
 // which moves the Camera (the handler says `passes`). The Camera selected there shows no gizmo (the view is inside it).
@@ -23,30 +28,34 @@
 // started from), edits.commit() at the end (one Undo step when it changed something), edits.cancel() when it is given
 // up. An object's drag writes its Lanes by the recording rule (docs/timeline-ui.md "記録の規則"); a paint group's writes
 // the painting as it is (it has no Lanes).
-import { viewProjection } from "../pano_editor_view.js";
+import { mediaSize, viewProjection } from "../pano_editor_view.js";
+import { rasterObjectTurnCenterUv } from "../pano_paint_display.js";
 import { lensPolylines } from "../pano_lens.js";
-import { setStickerPose, setWorldStickerTransform } from "../pano_editor_state.js";
-import { evaluateCamera, evaluateSticker } from "../pano_scene_eval.js";
+import { setStickerPose, setWorldStickerTransform, skyStickerVfov } from "../pano_editor_state.js";
+import { evaluateSticker } from "../pano_scene_eval.js";
+import { isUpstreamSticker, upstreamStickerLocked } from "../pano_upstream.js";
 import { gizmoDragLanes, sceneTransform } from "../pano_space.js";
-import { hitFrameAffordance } from "../pano_sticker_affordance.js";
+import { hitFrameAffordance, ROTATE_HANDLE_HIT_PX, STICKER_NODE_ROTATE_HANDLE_OFFSET_PX } from "../pano_sticker_affordance.js";
 import {
   buildStickerGeometry,
+  directionAtScreenPoint,
   moveStickerToScreenPoint,
   rotateStickerFromPointer,
   scaleStickerAxisFromPointer,
   scaleStickerFromPointer,
 } from "../pano_sticker_geometry.js";
-import { setLaneValue } from "../pano_timeline.js";
-import { pointInPoly } from "../pano_math.js";
+import { dist2, pointInPoly } from "../pano_math.js";
 import {
-  frameCornersUv, offsetRasterObject, offsetStrokeGroup, paintCornerHandle, paintObjectOf,
-  paintIndexOf, paintObjectRowOf, pointerDistance, pointerScaleRatio, rasterAlphaHits, rasterObjectAlphaAt, rasterObjectCornersUv,
-  scaleRasterObject, skyStickersOf, strokeDotHit, strokeHitLineWidth, strokePathsHit, strokePoints, transformStrokeGroup,
+  frameCornersUv, moveStrokeGroupTo, offsetRasterObject, paintCornerHandle, paintObjectOf,
+  paintIndexOf, paintObjectRowOf, pointerDistance, pointerScaleRatio, rasterAlphaHits, rasterObjectAlphaAt,
+  rasterObjectCornersUv, rotateRasterObject, scaleRasterObject, skyStickersOf, strokeDotHit,
+  strokeHitLineWidth, strokePathsHit, strokePoints, transformStrokeGroup, turnStrokeGroup,
 } from "../pano_paint_objects.js";
 import {
   brushPresetIdForTool, directionOfErpPoint, erpPointOfDirection, shortestWrappedDelta, syncPaintGroups,
 } from "../pano_paint_strokes.js";
-import { cameraOf } from "./defaults.js";
+import { cameraAt, cameraOf, editableCamera, setCameraLanes } from "./camera_state.js";
+import { findSticker } from "./row_object.js";
 import { ROTATE_SNAP_DEG } from "./view_scale.js";
 import { shownGizmoMode, selectedKind } from "./selection_bar.js";
 import { cameraMarkerHit, cameraMarkerLength, cameraMarkerScreen, cameraMarkerShape, cameraMarkerShown } from "./camera_marker.js";
@@ -57,6 +66,38 @@ import { coarseUnder } from "./hit_test.js";
 // The cursor over an object's body (hit_test.js's rule: the default arrow; handles bring their own).
 const BODY_CURSOR = "default";
 
+// A sky image as the geometry helpers read it (pano_sticker_geometry.js) from its evaluated pose `value`.
+function skyItem(sticker, value) {
+  return {
+    id: sticker.id,
+    yaw_deg: value.yaw_deg,
+    pitch_deg: value.pitch_deg,
+    rot_deg: value.roll_deg,
+    hFOV_deg: value.hFOV_deg,
+    vFOV_deg: value.vFOV_deg,
+    curve: value.curve,
+    z_index: Number(sticker.z_index || 0),
+    locked: upstreamStickerLocked(sticker),
+  };
+}
+
+// The upstream sky images drawn at `frame` as the geometry helpers read them, in the order a press hits them
+// (docs/studio-ui.md "上流の物の編集" "選ぶ"): from the downstream layer, in a layer from the front (the larger z_index,
+// a tie the later one, as drawn). Each pose is its working copy's at the frame, its vFOV as drawn (a port Sticker's
+// follows its media). `upstream` is the working layers (farthest first).
+function upstreamSkyItems(upstream, content, frame) {
+  if (!content || !upstream.length) return [];
+  const drawn = new Map(content.layers.filter((layer) => layer.kind === "sticker").map((layer) => [layer.id, layer]));
+  return [...upstream].reverse().flatMap((layer) => layer.sceneState.stickers
+    .map((sticker, index) => ({ sticker, index }))
+    .filter(({ sticker }) => sticker.placement === "sky" && drawn.has(sticker.id))
+    .sort((a, b) => Number(b.sticker.z_index || 0) - Number(a.sticker.z_index || 0) || b.index - a.index)
+    .map(({ sticker }) => {
+      const value = evaluateSticker(sticker, frame);
+      return skyItem(sticker, { ...value, vFOV_deg: skyStickerVfov(sticker, value, mediaSize(drawn.get(sticker.id).media)) });
+    }));
+}
+
 // The sky images drawn at the playhead as the geometry helpers read them (pano_sticker_geometry.js): their evaluated
 // pose, in list order.
 function skyItems(state, content) {
@@ -65,18 +106,7 @@ function skyItems(state, content) {
   const items = [];
   state.stickers.forEach((sticker, index) => {
     if (sticker.placement !== "sky" || !drawn.has(sticker.id)) return;
-    const value = content.evaluated.stickers[index];
-    items.push({
-      id: sticker.id,
-      yaw_deg: value.yaw_deg,
-      pitch_deg: value.pitch_deg,
-      rot_deg: value.roll_deg,
-      hFOV_deg: value.hFOV_deg,
-      vFOV_deg: value.vFOV_deg,
-      curve: value.curve,
-      z_index: Number(sticker.z_index || 0),
-      locked: sticker.locked === true,
-    });
+    items.push(skyItem(sticker, content.evaluated.stickers[index]));
   });
   return items;
 }
@@ -91,9 +121,9 @@ function paintIndex(state) {
 // images and the paint groups (paintIndex) by the order they are drawn (pano_editor_view.js skyLayers over
 // pano_paint_layers.js skyPaintLayers: by z_index, a paint group's truncated as drawn, ties the sky images, then the
 // stroke groups, then the raster objects, each in list order), reversed. Each is { kind: "sky", row, item } or
-// { kind: "group" | "raster", id, row, item, locked }. The upstream Stickers lie under the node's own Sky and are not
-// among them.
-function skyObjects(state, content) {
+// { kind: "group" | "raster", id, row, item, locked }. The upstream sky images (upstreamSkyItems, at `frame` of the
+// working layers `upstream`) lie under the node's own Sky and come after them.
+function skyObjects(state, content, upstream = [], frame = 0) {
   const entries = skyItems(state, content).map((item) => ({ kind: "sky", row: item.id, item, zIndex: item.z_index }));
   const index = paintIndex(state);
   for (const [id, { group }] of index.groups) {
@@ -102,15 +132,21 @@ function skyObjects(state, content) {
   for (const item of index.rasters) {
     entries.push({ kind: "raster", id: item.id, row: paintObjectRowOf("raster", item.id), item, locked: item.locked === true, zIndex: Math.trunc(Number(item.z_index) || 0) });
   }
-  return entries.map((entry, order) => ({ entry, order }))
+  const own = entries.map((entry, order) => ({ entry, order }))
     .sort((a, b) => b.entry.zIndex - a.entry.zIndex || b.order - a.order)
     .map(({ entry }) => entry);
+  return [...own, ...upstreamSkyItems(upstream, content, frame).map((item) => ({ kind: "sky", row: item.id, item }))];
 }
 
 // Where the ERP point `point` lands on the screen of `projection` (pano_editor_view.js viewProjection): { x, y }, or
 // null behind the view. The Sky lies at infinity, so only the direction counts.
 function screenOfErp(projection, point) {
-  const at = projection.project(directionOfErpPoint(point));
+  return screenOfDirection(projection, directionOfErpPoint(point));
+}
+
+// Where the direction `direction` lands on the screen of `projection`: { x, y }, or null behind the view.
+function screenOfDirection(projection, direction) {
+  const at = projection.project(direction);
   return at.z > 1e-4 ? { x: at.x, y: at.y } : null;
 }
 
@@ -121,7 +157,23 @@ function erpUnder(projection, point) {
   return direction ? erpPointOfDirection(direction) : null;
 }
 
-// A paint group's frame on the screen of `projection`: { visible, center, corners, outline } (a stroke group's frame is
+// The rotate handle of a paint group's frame on screen (docs/studio-ui.md "ペイントのまとまり" "回転のハンドル"):
+// { rotateStemBase, rotateHandle }, the middle of its top edge (its first two corners) and the handle
+// STICKER_NODE_ROTATE_HANDLE_OFFSET_PX out from it, on the way from its bottom edge's middle (straight up when the two
+// meet).
+function rotateSeat(corners) {
+  const top = { x: (corners[0].x + corners[1].x) / 2, y: (corners[0].y + corners[1].y) / 2 };
+  const bottom = { x: (corners[3].x + corners[2].x) / 2, y: (corners[3].y + corners[2].y) / 2 };
+  const length = Math.hypot(top.x - bottom.x, top.y - bottom.y);
+  const [ux, uy] = length > 1e-9 ? [(top.x - bottom.x) / length, (top.y - bottom.y) / length] : [0, -1];
+  return {
+    rotateStemBase: top,
+    rotateHandle: { x: top.x + ux * STICKER_NODE_ROTATE_HANDLE_OFFSET_PX, y: top.y + uy * STICKER_NODE_ROTATE_HANDLE_OFFSET_PX },
+  };
+}
+
+// A paint group's frame on the screen of `projection`: { visible, center, corners, outline, rotateStemBase,
+// rotateHandle (rotateSeat) } (a stroke group's frame is
 // its strokeGroupFrame, a raster object's its transformed box), as the old editor's editor/object_geometry.js. Not
 // visible when its center or a corner is behind the view: the frame and its handles are not drawn then (its strokes
 // are still hit, paintPaths). `outline` is the frame's edge through its corners: the corners themselves on a pinhole,
@@ -142,7 +194,7 @@ function paintFrame(state, object, projection) {
   if (corners.length < 4 || corners.some((corner) => !corner)) return { visible: false };
   if (object.kind === "raster") center = { x: corners.reduce((sum, p) => sum + p.x, 0) / 4, y: corners.reduce((sum, p) => sum + p.y, 0) / 4 };
   if (!center) return { visible: false };
-  if (!projection.bent) return { visible: true, center, corners, outline: corners };
+  if (!projection.bent) return { visible: true, center, corners, outline: corners, ...rotateSeat(corners) };
   const directions = cornersUv.map((point) => {
     const { x, y, z } = directionOfErpPoint(point);
     return [x, y, z];
@@ -157,7 +209,7 @@ function paintFrame(state, object, projection) {
     if (runs.length !== 1) return { visible: false };
     outline.push(...runs[0].slice(0, -1).map(({ x, y }) => ({ x, y })));
   }
-  return { visible: true, center, corners, outline };
+  return { visible: true, center, corners, outline, ...rotateSeat(corners) };
 }
 
 // A stroke group's strokes on the screen of `projection`, as pano_paint_objects.js strokePathsHit takes them: each
@@ -204,7 +256,8 @@ function viewKey(camera, width, height) {
 // Frame view one carrying its picture, pano_lens.js withLensImage) and its CSS size.
 // selection(): the selected row ("camera", a Sticker id, a paint group's `paint_group:` / `raster:` row, or null); select(row) selects (null lets go). mode(): the
 // gizmo's mode. tab(): "3d" or "camera". ground(): the ground
-// height. readOnly(): no edits. loading: load_reveal.js
+// height. readOnly(): no edits. upstream(): the upstream working layers (studio/upstream.js working(); [] without).
+// loading: load_reveal.js
 // createLoadReveal()'s for the guides of 3D files just placed (their stand-in box and band), or null.
 // rasterAlpha(item, u, v): the alpha (0..255) of a paint raster object's image at a point of its box (0..1 across), or
 // null while it cannot be read (studio/paint.js rasterAlpha); a raster object is then hit anywhere in its box.
@@ -224,6 +277,7 @@ export function createStageObjects({
   readOnly = () => false,
   loading = null,
   rasterAlpha = () => null,
+  upstream = () => [],
 }) {
   let hovered = null;
   // The gizmo's handle under the pointer, and the one being dragged (gizmo_overlay.js gizmoHit's names).
@@ -235,13 +289,20 @@ export function createStageObjects({
   // The objects can be edited on the stage: not read-only.
   const editable = () => !readOnly();
 
-  function stickerOf(id) {
-    return state().stickers.find((item) => item.id === id) ?? null;
+  function cameraValue() {
+    return cameraAt(state(), playhead());
   }
 
-  function cameraValue() {
-    const shown = cameraOf(state());
-    return { ...evaluateCamera(shown, playhead()), projection: shown.projection, visible: shown.visible !== false };
+  // The Sticker with the id `id`: the node's own, else an upstream working copy (a drag changes it in place).
+  const stickerOf = (scene, id) => findSticker(scene, upstream(), id);
+  // What a drag of the Sticker `id` copies of the state it started from (session.js gesture's copy): an upstream
+  // object's drag changes its working copy, not the state, so the state is only replaced.
+  const draftOf = (id) => (isUpstreamSticker(stickerOf(state(), id)) ? (base) => ({ ...base }) : undefined);
+  // The evaluated value of a World Sticker at the playhead: the node's own from what is drawn, an upstream one from its
+  // working copy.
+  function stickerValue(sticker) {
+    if (isUpstreamSticker(sticker)) return evaluateSticker(sticker, playhead());
+    return content()?.evaluated.stickers.find((item) => item.id === sticker.id) ?? null;
   }
 
   // The stage's view now ({ key, projection, state, frames, paths }), with the paint's screen shapes made in it for the
@@ -284,7 +345,7 @@ export function createStageObjects({
   function gizmo() {
     if (!editable()) return null;
     const row = selection();
-    const kind = selectedKind(state(), row);
+    const kind = selectedKind(state(), row, upstream());
     if (kind === "camera") {
       if (tab() !== "3d") return null;
       const value = cameraValue();
@@ -292,17 +353,19 @@ export function createStageObjects({
       return { mode: shownGizmoMode(kind, mode()), transform: sceneTransform({ ...value, scale: 1 }) };
     }
     if (kind !== "world-image" && kind !== "world-3d") return null;
-    const sticker = stickerOf(row);
-    const value = content()?.evaluated.stickers.find((item) => item.id === row);
-    if (!sticker || sticker.locked || !value?.active) return null;
+    const sticker = stickerOf(state(), row);
+    const value = sticker ? stickerValue(sticker) : null;
+    if (!sticker || upstreamStickerLocked(sticker) || !value?.active) return null;
     const guide = guides().find((item) => item.id === row);
     return { mode: shownGizmoMode(kind, mode()), transform: sceneTransform(value), center: guide ? [...guide.center] : null };
   }
 
-  // The selected sky image's geometry with its handles (pano_sticker_geometry.js), or null.
+  // The selected sky image's geometry with its handles (pano_sticker_geometry.js), or null: the node's own or an
+  // upstream one.
   function selectedSky() {
     const row = selection();
-    const item = skyItems(state(), content()).find((entry) => entry.id === row);
+    const item = skyItems(state(), content()).find((entry) => entry.id === row)
+      ?? (String(row ?? "").startsWith("upstream:") ? upstreamSkyItems(upstream(), content(), playhead()).find((entry) => entry.id === row) : null);
     if (!item) return null;
     const geometry = buildStickerGeometry(item, projection());
     return geometry.visible ? { item, geometry } : null;
@@ -319,23 +382,26 @@ export function createStageObjects({
     return geometry.visible ? { object, geometry } : null;
   }
 
-  // The corner handle of the selected paint group `paint` (selectedPaint) under `point`, or null: not on the dot of a
-  // stroke group that is only dots, whose corners lie about on it (pano_paint_objects.js strokeDotHit: the dot moves).
+  // The handle of the selected paint group `paint` (selectedPaint) under `point` ({ kind: "rotate" | "scale", cursor }),
+  // or null. The rotate handle comes first (a small frame turns too); a corner is not hit on the dot of a stroke group
+  // that is only dots, whose corners lie about on it (pano_paint_objects.js strokeDotHit: the dot moves).
   function paintHandleAt(paint, point) {
+    if (dist2(paint.geometry.rotateHandle, point) <= ROTATE_HANDLE_HIT_PX * ROTATE_HANDLE_HIT_PX) return { kind: "rotate", cursor: "grab" };
     if (paint.object.kind === "group" && strokeDotHit(point, pathsIn(stageView(), paint.object))) return null;
     return paintCornerHandle(paint.geometry, point);
   }
 
-  // The node's own Sky objects in order (skyObjects), made again only when the state or what is drawn changes.
+  // The Sky objects in order (skyObjects), made again only when the state or what is drawn changes (an edit of an
+  // upstream working copy replaces the state too).
   let ordered = { state: null, content: null, objects: [] };
   function skyObjectsNow() {
     const scene = state();
     const shown = content();
-    if (ordered.state !== scene || ordered.content !== shown) ordered = { state: scene, content: shown, objects: skyObjects(scene, shown) };
+    if (ordered.state !== scene || ordered.content !== shown) ordered = { state: scene, content: shown, objects: skyObjects(scene, shown, upstream(), playhead()) };
     return ordered.objects;
   }
 
-  // The node's own Sky object under `point`, front to back (skyObjects):
+  // The Sky object under `point`, front to back (skyObjects):
   // { object, geometry } or null (geometry: a sky image's, or a paint group's frame). A sky image is hit inside its
   // edge, a stroke group along its strokes wherever its frame is (pano_paint_objects.js strokePathsHit), a raster
   // object inside its box on the screen where its pixels show (rasterAlphaHits).
@@ -362,7 +428,7 @@ export function createStageObjects({
   }
 
   function guides() {
-    return worldGuideItems(state(), content(), (url) => editorView.sceneBox(url), (id) => loading?.pendingBox(id) ?? null);
+    return worldGuideItems(state(), content(), (url) => editorView.sceneBox(url), (id) => loading?.pendingBox(id) ?? null, upstream());
   }
 
   // The Camera's mark on screen (camera_marker.js cameraMarkerScreen), or null: in the 3D tab only, and not while it
@@ -433,7 +499,8 @@ export function createStageObjects({
     if (!grab) return null;
     const row = selection();
     const frame = playhead();
-    const base = row === "camera" ? cameraValue() : evaluateSticker(stickerOf(row), frame);
+    const base = row === "camera" ? cameraValue() : evaluateSticker(stickerOf(state(), row), frame);
+    const copy = row === "camera" ? undefined : draftOf(row);
     draggedAxis = axis;
     dragGuides = grab.guides ?? [];
     return {
@@ -450,15 +517,14 @@ export function createStageObjects({
         }
         edits.live((draft) => {
           if (row === "camera") {
-            draft.camera ??= cameraOf(draft);
-            for (const [name, value] of Object.entries(lanes)) setLaneValue(draft.camera, name, frame, value);
+            setCameraLanes(editableCamera(draft), frame, lanes);
             return true;
           }
-          const sticker = draft.stickers.find((item) => item.id === row);
+          const sticker = stickerOf(draft, row);
           if (!sticker) return false;
           setWorldStickerTransform(sticker, frame, lanes);
           return true;
-        });
+        }, copy);
       },
       end() {
         draggedAxis = null;
@@ -481,12 +547,13 @@ export function createStageObjects({
     const offset = { x: point.x - center.x, y: point.y - center.y };
     const startDistance = Math.max(1, Math.hypot(point.x - center.x, point.y - center.y));
     const startAngle = Math.atan2(point.y - center.y, point.x - center.x);
+    const copy = draftOf(item.id);
     const write = (pose) => edits.live((draft) => {
-      const sticker = draft.stickers.find((entry) => entry.id === item.id);
+      const sticker = stickerOf(draft, item.id);
       if (!sticker) return false;
       setStickerPose(sticker, frame, pose);
       return true;
-    });
+    }, copy);
     return {
       move(next, event = {}) {
         if (kind === "move") {
@@ -513,45 +580,102 @@ export function createStageObjects({
     };
   }
 
-  // A drag of a paint group (docs/studio-ui.md "ペイントのまとまり"): `kind` "move" (the body: the ERP difference between
-  // the press and the pointer, the seam crossed the short way, added to its points or its raster transform) or "scale"
-  // (a corner: the pointer's distance from the frame's screen center over the press's, about its frame's ERP center
-  // for a stroke group, on its transform's scale for a raster object), from `geometry` where it started. The painting
-  // is written as it is (no Lanes), with its counted groups, and drops the uploaded `painting_layer`.
+  // A drag of a paint group (docs/studio-ui.md "ペイントのまとまり"): `kind` "move" (the body: a stroke group as a sky image
+  // moves, paintCarry; a raster object by the ERP difference between the press and the pointer, the seam crossed the
+  // short way, added to its transform), "scale"
+  // (a corner: the pointer's distance from the frame's screen center over the press's, on its frame's tangent plane
+  // about its box's center for a stroke group, on its transform's scale for a raster object) or "rotate" (the rotate handle: paintTurn), from
+  // `geometry` where it started. The painting is written as it is (no Lanes), with its counted groups, and drops the
+  // uploaded `painting_layer`.
   function paintDrag(kind, object, geometry, point) {
+    if (kind === "rotate") return paintTurn(object, point);
+    if (kind === "move" && object.kind === "group") return paintCarry(object, point);
     const start = erpUnder(projection(), point);
     const center = geometry.center;
     const startDistance = center ? pointerDistance(center, point) : 1;
-    const pivot = object.kind === "group" ? paintIndex(state()).groups.get(object.id)?.frame.centerUv : null;
+    const frame = object.kind === "group" ? paintIndex(state()).groups.get(object.id)?.frame : null;
     return {
       move(next) {
         const at = erpUnder(projection(), next);
         if (!start || !at) return;
-        edits.live((draft) => {
-          const painting = draft.painting;
-          if (!painting) return false;
-          syncPaintGroups(painting, skyStickersOf(draft));
-          let changed;
+        editPaint(object, (painting) => {
           if (object.kind === "group") {
             const strokes = painting.paint.strokes;
-            changed = kind === "move"
-              ? offsetStrokeGroup(strokes, object.id, shortestWrappedDelta(at.u, start.u), at.v - start.v)
-              : transformStrokeGroup(strokes, object.id, pointerScaleRatio(center, startDistance, next), 0, null, pivot);
-          } else {
-            const item = painting.raster_objects.find((entry) => entry.id === object.id);
-            if (!item) return false;
-            changed = kind === "move"
-              ? offsetRasterObject(item, shortestWrappedDelta(at.u, start.u), at.v - start.v)
-              : scaleRasterObject(item, pointerScaleRatio(center, startDistance, next));
+            return transformStrokeGroup(strokes, object.id, pointerScaleRatio(center, startDistance, next), null, frame);
           }
-          if (!changed) return false;
-          draft.painting_layer = null;
-          return true;
-        }, (base) => paintDraft(base, object));
+          const item = painting.raster_objects.find((entry) => entry.id === object.id);
+          if (!item) return false;
+          return kind === "move"
+            ? offsetRasterObject(item, shortestWrappedDelta(at.u, start.u), at.v - start.v)
+            : scaleRasterObject(item, pointerScaleRatio(center, startDistance, next));
+        });
       },
       end: () => edits.commit(),
       cancel: () => edits.cancel(),
     };
+  }
+
+  // A stroke group's body drag, as a sky image's (skyDrag "move"): its center direction `c` (its frame's center, the
+  // points' mean direction) keeps the press's screen offset from it and goes to the direction under the pointer less
+  // that offset (pano_sticker_geometry.js directionAtScreenPoint), and its points are carried with it on the sphere
+  // (moveStrokeGroupTo). When `c` has no place on the screen the press only selects.
+  function paintCarry(object, point) {
+    const frame = paintIndex(state()).groups.get(object.id)?.frame;
+    const anchor = frame ? screenOfDirection(projection(), frame.center) : null;
+    if (!anchor) return selectOnly();
+    const offset = { x: point.x - anchor.x, y: point.y - anchor.y };
+    return {
+      move(next) {
+        const centerTo = directionAtScreenPoint(projection(), { x: next.x - offset.x, y: next.y - offset.y });
+        // Past a lens Camera's limit there is no direction: the group stays where it was last.
+        if (!centerTo) return;
+        editPaint(object, (painting) => {
+          const group = painting.groups.find((entry) => String(entry?.actionGroupId || "").trim() === object.id);
+          return moveStrokeGroupTo(painting.paint.strokes, object.id, frame, centerTo, null, group);
+        });
+      },
+      end: () => edits.commit(),
+      cancel: () => edits.cancel(),
+    };
+  }
+
+  // A turn of a paint group from its rotate handle (docs/studio-ui.md "ペイントのまとまり" "回す"): the pointer's angle
+  // about the turn's center on screen, from the press's (clockwise positive), adds to a stroke group's rot_deg and turns
+  // its points on the sphere about its frame's center direction as grabbed (turnStrokeGroup; the points' mean direction,
+  // which a turn does not move), or adds to a raster object's rot_deg about its box's center moved by du and dv. Shift
+  // stops either angle at ROTATE_SNAP_DEG multiples. The center is measured where it was at the press.
+  function paintTurn(object, point) {
+    const axis = object.kind === "group" ? paintIndex(state()).groups.get(object.id)?.frame.center : null;
+    const pivot = object.kind === "group" ? null : rasterObjectTurnCenterUv(object.item);
+    const center = axis ? screenOfDirection(projection(), axis) : screenOfErp(projection(), pivot);
+    const startAngle = center ? Math.atan2(point.y - center.y, point.x - center.x) : 0;
+    return {
+      move(next, event = {}) {
+        if (!center) return;
+        const delta = (Math.atan2(next.y - center.y, next.x - center.x) - startAngle) * (180 / Math.PI);
+        const snap = event.shiftKey ? ROTATE_SNAP_DEG : 0;
+        editPaint(object, (painting) => {
+          if (object.kind === "group") return turnStrokeGroup(painting, object.id, delta, axis, { snapDeg: snap });
+          const item = painting.raster_objects.find((entry) => entry.id === object.id);
+          return item ? rotateRasterObject(item, delta, { snapDeg: snap }) : false;
+        });
+      },
+      end: () => edits.commit(),
+      cancel: () => edits.cancel(),
+    };
+  }
+
+  // A paint drag's change: change(painting) writes the copy of the painting the drag started from (its counted groups
+  // written: syncPaintGroups) and returns whether it changed; a change drops the uploaded `painting_layer`.
+  function editPaint(object, change) {
+    edits.live((draft) => {
+      const painting = draft.painting;
+      if (!painting) return false;
+      syncPaintGroups(painting, skyStickersOf(draft));
+      if (!change(painting)) return false;
+      draft.painting_layer = null;
+      return true;
+    }, (base) => paintDraft(base, object));
   }
 
   // A press that selects and whose drag does nothing; and one whose drag the stage takes (it moves the Camera).
@@ -576,7 +700,8 @@ export function createStageObjects({
         }
       }
       const paint = selectedPaint();
-      if (paint && !paint.object.locked && paintHandleAt(paint, point)) return paintDrag("scale", paint.object, paint.geometry, point);
+      const paintHandle = paint && !paint.object.locked ? paintHandleAt(paint, point) : null;
+      if (paintHandle) return paintDrag(paintHandle.kind, paint.object, paint.geometry, point);
     }
     const picked = objectUnder(point);
     if (picked) {
@@ -612,6 +737,8 @@ export function createStageObjects({
         segments: item.segments,
         corners: item.corners,
         look: guideLook({ selected: item.id === row, hovered: item.id === hovered, locked: item.locked, altHeld, gridHidden }),
+        // An upstream object's selected guide is dashed (docs/studio-ui.md "上流の物の編集" "見せる").
+        dashed: !!item.upstream && item.id === row,
         ...(shimmer > 0 ? { shimmer, phase } : {}),
       };
     }).filter((item) => item.look);
@@ -635,10 +762,17 @@ export function createStageObjects({
         active: draggedAxis ?? (altHeld ? null : gizmoAxis),
         guides: guideLines,
       } : null,
-      sky: sky ? { geometry: sky.geometry, handles: editable() && !sky.item.locked } : null,
-      // The selected paint group's frame (its corners, its edge `outline` (bent on a lens Camera's picture) and screen
-      // center in CSS px), with its corner handles unless it is locked.
-      paint: paint ? { corners: paint.geometry.corners, outline: paint.geometry.outline, center: paint.geometry.center, handles: editable() && !paint.object.locked } : null,
+      sky: sky ? { geometry: sky.geometry, handles: editable() && !sky.item.locked, dashed: isUpstreamSticker(stickerOf(state(), sky.item.id)) } : null,
+      // The selected paint group's frame (its corners, its edge `outline` (bent on a lens Camera's picture), screen
+      // center and rotate handle with its stem's base in CSS px), with its corner and rotate handles unless it is locked.
+      paint: paint ? {
+        corners: paint.geometry.corners,
+        outline: paint.geometry.outline,
+        center: paint.geometry.center,
+        rotateStemBase: paint.geometry.rotateStemBase,
+        rotateHandle: paint.geometry.rotateHandle,
+        handles: editable() && !paint.object.locked,
+      } : null,
     };
   }
 

@@ -63,12 +63,6 @@ export function formatParamValue(v) {
   return Number(n.toFixed(3)).toString();
 }
 
-// Draws a raster object's image `img` where it lies on a width x height ERP (its bbox moved by its transform),
-// wrapped around the seam, on the 2D context ctx.
-// A raster object on an ERP canvas belongs to the lower paint layers (pano_paint_layers.js).
-export { drawRasterObjectErp } from "../pano_paint_layers.js";
-
-
 // The widget named `name`, or the first of the names `name` (a list) the node has, or null.
 export function getWidget(node, name) {
   for (const each of Array.isArray(name) ? name : [name]) {

@@ -55,13 +55,10 @@ const GROUPS = {
     studioInputs: null,
     scene: null,
     renderCache: null,
-    paintEngine: null,
-    paintDescriptorKey: "",
-    paintRevision: null,
-    paintRevisionKey: "",
+    // The paint the surface draws (pano_surface_paint.js): its display, what the last draw gave it, its normalized painting.
+    paintDisplay: null,
+    paintInput: null,
     paintState: null,
-    rasterCache: null,
-    rasterReady: null,
     bootMinHeightActive: false,
     bootMinHeightTimer: null,
     resizeSettleTimer: null,
@@ -176,7 +173,7 @@ const CLEAR = {
     try { surface.restore?.(); } catch { }
     clearTimeout(surface.bootMinHeightTimer);
     clearTimeout(surface.resizeSettleTimer);
-    surface.rasterCache?.dispose?.();
+    surface.paintDisplay?.dispose?.();
   },
   previewNode(preview) {
     preview.runtime?.teardown?.();

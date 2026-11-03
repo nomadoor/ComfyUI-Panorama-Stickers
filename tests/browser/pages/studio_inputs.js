@@ -3,10 +3,17 @@
 // as a run would leave it (docs/studio-node.md "実行結果の `ui`"); ComfyUI is not used. `?case=` picks the inputs:
 //   port      the `sticker` input's image, its port Sticker a sky image in front of the view
 //   port3d    the `sticker` input's GLB, its port Sticker a world object in front of the view
-//   upstream  another Studio's Scene on `scene`: a sky image, a world board and its background
+//   handoff   `sticker` and `sticker_state` linked: the port Sticker stored at yaw -25, the run's Pose handoff at yaw 25
+//   handoff-late  the same whose result comes after the editor opened (window.__studio.arrive() stores it and sends
+//             ComfyUI's `executed` event for the node)
+//   upstream  another Studio's Scene on `scene`: a sky image, a world board and its background, edited as overrides
 //   upstream-own  the same with the node's own `background` linked too
 //   upstream-world  the same with the node's own `world` linked too (its own `scene` row shows with the group)
 //   upstream-pending  a Scene linked to `scene`, the node not run yet
+//   upstream-clip  `upstream` whose background's Clip range starts at frame 24 (its bg_color magenta shows at frame 0)
+//   upstream-clip-nocolor  the same without the upstream bg_color, and the node's bg_color empty
+//   upstream-late  `upstream` whose result comes after the editor opened (window.__studio.arrive())
+//   upstream-late-clip  `upstream-clip` whose result comes after the editor opened
 //   moge      a MOGE_GEOMETRY VIDEO batch on `world` as the node writes it (a depth grid: a depth file per frame, a K per
 //             frame, a color proxy video); the `scene` clip starts at item 2, a plane across the view
 //   moge-item0  the same with the clip at item 0, whose depth is above 0 only in its left quarter
@@ -58,7 +65,7 @@ const storage = new Map();
 const memoryStorage = { getItem: (key) => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, String(value)) };
 
 // The colors the spec reads back.
-export const COLORS = { depth: "#c03030", port: "#d0302a", upstreamSky: "#2a9ad0", upstreamBoard: "#30b050", upstreamBg: "#40205a", ownBg: "#8a8a20" };
+export const COLORS = { depth: "#c03030", port: "#d0302a", upstreamSky: "#2a9ad0", upstreamBoard: "#30b050", upstreamBg: "#40205a", ownBg: "#8a8a20", upstreamColor: "#ff00ff", empty: "#00ff00" };
 
 function portCase() {
   return {
@@ -69,6 +76,25 @@ function portCase() {
     },
     inputs: [{ name: "sticker", type: "IMAGE" }],
     result: { pano_sticker_input_images: [dataUrl(200, 100, fill(COLORS.port))] },
+  };
+}
+
+// The run's Pose handoff (docs/studio-node.md "`sticker_state` で届く `port` の Sticker"): a sky Sticker at yaw 25.
+export const HANDOFF = {
+  placement: "sky",
+  lanes: { direction: { value: { yaw_deg: 25, pitch_deg: 0 }, keyframes: [] }, roll: { value: 0, keyframes: [] }, size: { value: { hFOV_deg: 20, vFOV_deg: 20 }, keyframes: [] } },
+  fps: 24,
+};
+
+function handoffCase() {
+  return {
+    state: {
+      version: 2,
+      timeline: { fps: 24 },
+      stickers: [{ id: "sticker_1", placement: "sky", source: { kind: "port" }, direction: { value: { yaw_deg: -25, pitch_deg: 0 } }, size: { value: { hFOV_deg: 20, vFOV_deg: 20 } } }],
+    },
+    inputs: [{ name: "sticker", type: "IMAGE" }, { name: "sticker_state", type: "STRING" }],
+    result: { pano_sticker_input_images: [dataUrl(100, 100, fill(COLORS.port))], pano_sticker_handoff: [HANDOFF] },
   };
 }
 
@@ -152,11 +178,20 @@ function worldCase(linked) {
 
 try {
   const setup = which === "port" ? portCase()
+    : which.startsWith("handoff") ? handoffCase()
     : which === "port3d" ? await port3dCase()
     : which === "moge" || which === "moge-item0" ? await mogeCase(which === "moge" ? 2 : 0)
     : which === "world" || which === "empty" ? worldCase(which === "world")
     : upstreamCase(which === "upstream-own", which === "upstream-world");
   if (which === "upstream-pending") setup.result = {};
+  if (which.startsWith("upstream-clip") || which === "upstream-late-clip") setup.result.pano_upstream_bg_clip = [{ clip: { start: 24, in: 0, duration: null }, fps: 24 }];
+  if (which === "upstream-clip" || which === "upstream-late-clip") setup.result.pano_upstream_bg_color = [[1, 0, 1]];
+  if (which === "upstream-clip-nocolor") delete setup.result.pano_upstream_bg_color;
+  // The run's result comes later (studio.arrive()).
+  const late = which.startsWith("upstream-late") || which === "handoff-late" ? setup.result : null;
+  if (late) setup.result = which === "handoff-late" ? { pano_sticker_input_images: late.pano_sticker_input_images } : {};
+  // ComfyUI's api, for the `executed` event of a result that comes later.
+  const api = which.startsWith("handoff") ? new EventTarget() : null;
   // Each input comes from a node of its own: ids 100, 101, ...
   const origins = setup.inputs.map((input, index) => ({ id: 100 + index, title: input.name, type: input.type, image: input.image ?? null }));
   const graphNodes = [...origins, ...(setup.upstreamNode ? [setup.upstreamNode] : [])];
@@ -167,7 +202,7 @@ try {
     __panoStudio: true,
     __panoSceneStateV2: true,
     inputs: setup.inputs.map((input, index) => ({ name: input.name, link: index + 1 })),
-    widgets: [{ name: "state_json", value: JSON.stringify(setup.state) }, { name: "bg_color", value: "#000000" }],
+    widgets: [{ name: "state_json", value: JSON.stringify(setup.state) }, { name: "bg_color", value: which === "upstream-clip-nocolor" ? "" : "#000000" }],
     graph: { getNodeById: (id) => graphNodes.find((item) => item.id === id) ?? null, _nodes: graphNodes, nodes: graphNodes },
     isInputConnected: (index) => !!origins[index],
     getInputLink: (index) => (origins[index] ? { origin_id: origins[index].id, origin_slot: 0, type: origins[index].type } : null),
@@ -181,9 +216,12 @@ try {
   };
   // The view stands at the origin looking at the front, where the sky images and the 3D object are.
   editorSession(node).view = rememberView({ position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0, target: [0, 0, -3] }, "panorama");
-  const editor = await openStudioEditor(node, { app, api: null, storage: memoryStorage });
+  const editor = await openStudioEditor(node, { app, api, storage: memoryStorage });
   studio.session = editor.session;
+  studio.stage = () => editor.stage();
   studio.close = () => editor.close();
+  // The node's state_json as the editor wrote it (on closing).
+  studio.stateText = () => node.widgets[0].value;
   studio.rendererOf = () => {
     const canvas = document.querySelector("[data-stage-canvas]");
     const gl = canvas.getContext("webgl2");
@@ -198,6 +236,11 @@ try {
     return Array.from(probe.getContext("2d").getImageData(0, 0, 1, 1).data.slice(0, 3));
   };
   studio.colors = COLORS;
+  // The run's result arrives in ComfyUI's store (the editor reads it on its next draw).
+  studio.arrive = () => {
+    if (late) app.nodeOutputs[31] = late;
+    api?.dispatchEvent(Object.assign(new Event("executed"), { detail: { node: "31", display_node: "31", output: late } }));
+  };
   studio.ready = true;
 } catch (error) {
   studio.error = String(error?.stack || error);

@@ -74,7 +74,7 @@ test("disposeNodeRuntime clears the timers and calls the teardown of every group
     calls.push("restore");
     surface.restore = null;
   };
-  surface.rasterCache = { dispose: () => calls.push("raster") };
+  surface.paintDisplay = { dispose: () => calls.push("raster") };
   previewNode(node).runtime = { teardown: () => calls.push("preview") };
   mediaCache(node).ownOutputVideo = { key: "k", player: { destroy: () => calls.push("video") } };
   editorSession(node).flushBeforeQueue = () => {};

@@ -334,8 +334,15 @@ function scale(value) {
   return Math.max(1e-6, value);
 }
 
-function clipFrame(clip, frame) {
-  return frame - (clip.start - clip.in);
+// Where a Clip range's material starts on the Timeline: start − in (docs/scene-state-v2.md "時間").
+export function clipOrigin(clip) {
+  return clip.start - clip.in;
+}
+
+// A Timeline frame as the frame from the Clip range's material start, as the evaluation's clip_frame
+// (core/scene_eval.py _clip_frame).
+export function clipFrame(clip, frame) {
+  return frame - clipOrigin(clip);
 }
 
 // Whether a Timeline frame is in the Clip range.
