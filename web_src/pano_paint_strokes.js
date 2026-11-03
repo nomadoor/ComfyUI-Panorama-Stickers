@@ -836,14 +836,17 @@ const FRAME_LIMIT_DEG = 89.5;
 // A center direction whose x and z are both under this lies on a pole: its longitude counts as 0.
 const POLE_EPS = 1e-9;
 
+// Whether the direction `d` lies on a pole (its x and z both under POLE_EPS), where it has no longitude.
+export function isPoleDirection(d) {
+  return Math.abs(d.x) < POLE_EPS && Math.abs(d.z) < POLE_EPS;
+}
+
 // The axes of a stroke group's frame of center direction `center` turned by rotationDeg (clockwise seen from inside):
 // cameraBasis at the center's longitude and latitude with the roll -rotationDeg (a sky Sticker's roll turns its picture
 // counter-clockwise, docs/scene-state-v2.md): { center, right, up } (center: the basis's forward). On a pole the
-// longitude is poleYawDeg (0 unless given: a move onto the pole keeps the one it came from, as a sky Sticker keeps its
-// yaw).
-export function strokeGroupAxes(center, rotationDeg = 0, { poleYawDeg = 0 } = {}) {
-  const onPole = Math.abs(center.x) < POLE_EPS && Math.abs(center.z) < POLE_EPS;
-  const yaw = onPole ? poleYawDeg : Math.atan2(center.x, center.z) / DEG2RAD;
+// longitude is 0.
+export function strokeGroupAxes(center, rotationDeg = 0) {
+  const yaw = isPoleDirection(center) ? 0 : Math.atan2(center.x, center.z) / DEG2RAD;
   const pitch = Math.asin(clamp(center.y, -1, 1)) / DEG2RAD;
   const basis = cameraBasis(yaw, pitch, -Number(rotationDeg || 0));
   return { center: basis.fwd, right: basis.right, up: basis.up };

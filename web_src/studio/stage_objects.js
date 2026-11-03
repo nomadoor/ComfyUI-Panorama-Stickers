@@ -583,7 +583,10 @@ export function createStageObjects({
         const centerTo = directionAtScreenPoint(projection(), { x: next.x - offset.x, y: next.y - offset.y });
         // Past a lens Camera's limit there is no direction: the group stays where it was last.
         if (!centerTo) return;
-        editPaint(object, (painting) => moveStrokeGroupTo(painting.paint.strokes, object.id, frame, centerTo, null));
+        editPaint(object, (painting) => {
+          const group = painting.groups.find((entry) => String(entry?.actionGroupId || "").trim() === object.id);
+          return moveStrokeGroupTo(painting.paint.strokes, object.id, frame, centerTo, null, group);
+        });
       },
       end: () => edits.commit(),
       cancel: () => edits.cancel(),

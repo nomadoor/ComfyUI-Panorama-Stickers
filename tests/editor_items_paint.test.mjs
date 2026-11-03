@@ -69,6 +69,20 @@ test("the old editor's Unwrap move onto the pole (latitude held at 90°) keeps t
   });
 });
 
+test("on the pole the frame worked out again matches the carried one: the longitude goes into rot_deg", () => {
+  const { state, items } = groupAt80();
+  const snapshot = structuredClone(state.painting.paint.strokes);
+  const frame = structuredClone(items.ensureGroupFrame("g1", "paint"));
+  const top = { x: 6e-17, y: 1, z: 1e-17 };
+  items.applyStrokeGroupOffset("g1", top, snapshot, "paint", frame);
+  // The carried right axis is the one it had (its longitude kept); the frame worked out again from the points and
+  // rot_deg (longitude 0 on the pole) has the same.
+  const after = items.ensureGroupFrame("g1", "paint");
+  for (const key of ["x", "y", "z"]) assert.ok(Math.abs(after.right[key] - frame.right[key]) < 1e-6, `right ${key}: ${after.right[key]} vs ${frame.right[key]}`);
+  const lon = Math.atan2(frame.center.x, frame.center.z) * 180 / Math.PI;
+  assert.ok(Math.abs(state.painting.groups[0].rot_deg - (0 - lon)) < 1e-9, `${state.painting.groups[0].rot_deg} vs ${-lon}`);
+});
+
 test("the old editor's move to where the group's center already is leaves its points where they are", () => {
   const { state, items, points } = groupAt80();
   const snapshot = structuredClone(state.painting.paint.strokes);

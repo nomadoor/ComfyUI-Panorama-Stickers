@@ -13,8 +13,8 @@ import { clamp, dist2, distToSegment2, pointInPoly } from "./pano_math.js";
 import { PAINT_GROUP_ROW, PAINT_RASTER_ROW, paintObjectRowOf } from "./pano_paint_layers.js";
 import { rasterObjectCornersUv, rasterObjectTurnCenterUv, unturnPaintOffset } from "./pano_paint_display.js";
 import {
-  directionOfErpPoint, erpPointOfDirection, frameDirectionAt, frameTangentOf, shortestWrappedDelta, strokeGroupAxes, strokeGroupFrame,
-  strokePoints, syncPaintGroups,
+  directionOfErpPoint, erpPointOfDirection, frameDirectionAt, frameTangentOf, isPoleDirection, shortestWrappedDelta, strokeGroupAxes,
+  strokeGroupFrame, strokePoints, syncPaintGroups,
 } from "./pano_paint_strokes.js";
 import { isUpstreamSticker } from "./pano_upstream.js";
 
@@ -99,12 +99,19 @@ function mapStrokeGroupPoints(strokes, gid, sources, map) {
 // `centerTo`, as a rigid body keeping its place in its axes: every point's direction is turned by
 // R = B_new · B_oldᵀ, B_old the frame's axes and B_new strokeGroupAxes(centerTo, its rot_deg) (so the frame worked out
 // again lies on it; its up stays toward the zenith and goes over a pole as a sky image's does). From `sources` (its
-// strokes as a drag started; null moves them from where they are). rot_deg does not change. Returns whether it changed
-// a point.
-export function moveStrokeGroupTo(strokes, gid, frame, centerTo, sources = null) {
-  // Onto a pole (the old editor's Unwrap view holds the latitude at ±90°) it keeps the longitude its center had.
-  const fromYaw = Math.atan2(frame.center.x, frame.center.z) * (180 / Math.PI);
-  const to = strokeGroupAxes(centerTo, frame.rot_deg, { poleYawDeg: fromYaw });
+// strokes as a drag started; null moves them from where they are). rot_deg does not change but on a pole. Returns whether it changed
+// a point. Onto a pole (the old editor's Unwrap view holds the latitude at ±90°) it keeps the longitude L its center had
+// and, since on a pole the axes turn with the longitude minus rot_deg (north) or plus it (south), puts L into rot_deg
+// (rot_deg - L, or + L) with the axes at longitude 0, as the frame is worked out again there: it writes that to `group`
+// (the stroke group's entry) when given.
+export function moveStrokeGroupTo(strokes, gid, frame, centerTo, sources = null, group = null) {
+  let rotation = frame.rot_deg;
+  if (isPoleDirection(centerTo) && !isPoleDirection(frame.center)) {
+    const longitude = Math.atan2(frame.center.x, frame.center.z) * (180 / Math.PI);
+    rotation = centerTo.y > 0 ? frame.rot_deg - longitude : frame.rot_deg + longitude;
+  }
+  if (group) group.rot_deg = rotation;
+  const to = strokeGroupAxes(centerTo, rotation);
   const axes = [["right", "right"], ["up", "up"], ["center", "center"]];
   return mapStrokeGroupPoints(strokes, gid, sources, (pt) => {
     const p = directionOfErpPoint(pt);

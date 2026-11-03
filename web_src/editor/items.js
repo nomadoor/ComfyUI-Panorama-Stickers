@@ -290,7 +290,7 @@ export function createItems(deps) {
     const entry = getPaintingGroupList().find((g) => String(g?.actionGroupId || "") === gid);
     const frame = frameSnapshot?.center ? frameSnapshot : strokeGroupFrame(sourceStrokes, getBrushPresetIdForTool, entry?.rot_deg);
     if (!frame) return false;
-    const changed = moveStrokeGroupTo(getPaintingLayerList(resolved.layerKind), gid, frame, centerTo, sourceStrokes);
+    const changed = moveStrokeGroupTo(getPaintingLayerList(resolved.layerKind), gid, frame, centerTo, sourceStrokes, entry);
     if (changed && frameSnapshot && entry) entry.frame = null;
     return changed;
   }
