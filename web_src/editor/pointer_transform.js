@@ -48,32 +48,39 @@ export function createPointerTransform(deps) {
     return cloneJson(getRasterObjectList().find((entry) => String(entry?.id || "") === parseRasterObjectSelectionId(item.rasterObjectId || item.id || "")));
   }
 
-  // Writes the yaw and pitch that put item at canvas point (x, y): through the active shot in a shot
-  // editor's Frame view, the Unwrap rect, or the view. Returns false when the Frame view has no shot, rect
-  // or direction there, and writes nothing.
-  function writePoseAtScreenPoint(item, x, y) {
+  // The yaw and pitch at canvas point (x, y) ({ yaw_deg, pitch_deg }): through the active shot in a shot editor's
+  // Frame view (held in its rect), the Unwrap rect (the latitude held in -90..90), or the view; null when the Frame
+  // view has no shot, rect or direction there. What a sky Sticker's move and a stroke group's move put their center at.
+  function poseAtScreenPoint(x, y) {
     if (editor.mode === "frame" && shotEditor) {
       const shot = getActiveCutoutShot();
       const rect = getFrameViewRect(shot);
-      if (!shot || !rect) return false;
+      if (!shot || !rect) return null;
       const framePoint = {
         x: clamp((x - rect.x) / Math.max(1, rect.w), 0, 1),
         y: clamp((y - rect.y) / Math.max(1, rect.h), 0, 1),
       };
       const dir = frameLocalPointToWorldDir(shot, framePoint);
-      if (!dir) return false;
+      if (!dir) return null;
       const yp = dirToYawPitch(dir);
-      writePose(item, { yaw_deg: yp.yaw, pitch_deg: yp.pitch });
-    } else if (editor.mode === "unwrap") {
+      return { yaw_deg: yp.yaw, pitch_deg: yp.pitch };
+    }
+    if (editor.mode === "unwrap") {
       const r = getUnwrapRect();
       const nx = clamp((x - r.x) / Math.max(r.w, 1), 0, 1);
       const ny = clamp((y - r.y) / Math.max(r.h, 1), 0, 1);
-      writePose(item, { yaw_deg: wrapYaw(nx * 360 - 180), pitch_deg: clamp(90 - ny * 180, -90, 90) });
-    } else {
-      const dir = screenToWorldDir(x, y);
-      const yp = dirToYawPitch(dir);
-      writePose(item, { yaw_deg: yp.yaw, pitch_deg: yp.pitch });
+      return { yaw_deg: wrapYaw(nx * 360 - 180), pitch_deg: clamp(90 - ny * 180, -90, 90) };
     }
+    const yp = dirToYawPitch(screenToWorldDir(x, y));
+    return { yaw_deg: yp.yaw, pitch_deg: yp.pitch };
+  }
+
+  // Writes the yaw and pitch that put item at canvas point (x, y) (poseAtScreenPoint). Returns false when there is
+  // none there, and writes nothing.
+  function writePoseAtScreenPoint(item, x, y) {
+    const pose = poseAtScreenPoint(x, y);
+    if (!pose) return false;
+    writePose(item, pose);
     return true;
   }
 
