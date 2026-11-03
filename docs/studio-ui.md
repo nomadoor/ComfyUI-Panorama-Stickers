@@ -312,7 +312,7 @@ Cursor の道具で、自分のペイントを古い UI と同じ単位でつか
     `actionGroupId` を付ける（`web_src/pano_paint_strokes.js` `freehandStrokeRecord`・`lassoFillStrokeRecord`）ので、ふつうは一本のストロークが一つのまとまり。
   - ラスタ：`painting.raster_objects[]` のうち `layerKind` が `paint` の一つ（消しゴムがストロークのまとまりを画素に変えたもの）。
   - マスク（`painting.mask` のストロークと、`layerKind` が `mask` のラスタ）はつかまない（古い UI と同じ）。マスクの上の押下は、その奥の物へ通る。
-  - 上流の層のペイントはつかまない（上流の物は今は読み取り専用。下の「ノードの入力から来た物」）。
+  - 上流の層のペイントはつかまない（ペイントの上書きは `painting_visible` だけ。下の「上流の物の編集」の「作らないもの」）。
   - まとまりの数え方は `pano_paint_strokes.js` `syncPaintGroups` を通した `groups` による：どの項目にも属さないストローク（`skyPaintLayers` が
     一番手前に描く分）には、一番手前の `z_index` で項目を足し、ストロークの無い項目（`strokeGroupFrame` が `null`）は除く。当たり・枠・
     並べ替えはこの数え方で行う。状態に書くのは、編集（ドラッグ、前面へ・背面へ、Lock、Delete）が状態を変えるときだけで、ホバーや押下だけでは書かない。
@@ -335,7 +335,8 @@ Cursor の道具で、自分のペイントを古い UI と同じ単位でつか
   | 5 | 自分の Sky の層の物を手前から：空に貼った画像とペイントのまとまりを、描く順の逆に（共通の `z_index` の大きい順。同じ値の物の順は `docs/scene-state-v2.md` の「Sky の重なり順」が持ち、その手前の物から） | 選び、本体のドラッグで動かす（ロックした物は選ぶだけ） |
   | 6 | 何も無い | 見回し。動かさずに離せば選択を外す |
 
-  上流の層の Sky の物は自分の Sky の下にあり、今は選べないので、どの順にも数えない（押下は 6 になる）。
+  上流の層の World の物は順の 3 に、自分の World の物と同じく数える。上流の層の空に貼った画像は自分の Sky の層の下にあるので、順の 5 の後、
+  6 の前に当たり、選んだ物のハンドルは順の 2 に数える（下の「上流の物の編集」の「選ぶ」）。上流の層のペイントはどの順にも数えない。
   同じ `z_index` の物の間で、見た目の一番手前に当てるのは古い UI との意図した違い。古い UI の `hitObjectAt` は Sticker・グループ・ラスタを
   並べた後に `z_index` だけで並べ替えるので、同じ値では奥に描いた Sticker が先に当たる。
 - まとまりの当たり（古い UI の式のまま。`web_src/editor/hit_test.js` `hitObjectAt`、`editor/paint_layers.js` `hitRasterObjectAt`）：
