@@ -35,30 +35,147 @@ function finite(value, fallback = 0) {
   return Number.isFinite(number) ? number : fallback;
 }
 
-// Where the raster object `item` (its bbox in ERP uv and its transform) lies on an ERP of width x height: its center,
-// size (at least `minPixel` pixels each way, grown from its top left), rotation, scale and the seam's copies. Null
-// when it has no box, an empty box, or the ERP has no size.
-export function placeRasterObjectErp(item, width, height, { minPixel = 1 } = {}) {
-  const erpWidth = finite(width);
-  const erpHeight = finite(height);
+// --- Where a raster object lies (docs/render-contract.md "ペイントのラスタの置き方"; Python: core/painting.py
+// raster_object_placement, raster_object_corners_uv, raster_object_pixel_ranges, held together by
+// tests/fixtures/paint_raster_place.json).
+//
+// The paint turns and scales on the plane that measures longitude and latitude in the same degrees: an ERP offset
+// (du, dv) is the point (2 du, dv) there. Positive degrees turn clockwise on the ERP picture (v grows downwards).
+
+// The ERP offset (du, dv) turned by rotationDeg and scaled by `scale` on the paint plane: [du', dv'].
+export function turnPaintOffset(du, dv, scale = 1, rotationDeg = 0) {
+  const rad = finite(rotationDeg) * (Math.PI / 180);
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  const x = 2 * du;
+  return [(scale * (x * cos - dv * sin)) / 2, scale * (x * sin + dv * cos)];
+}
+
+// The ERP offset turnPaintOffset takes to (du, dv): [du', dv'].
+export function unturnPaintOffset(du, dv, scale = 1, rotationDeg = 0) {
+  const rad = finite(rotationDeg) * (Math.PI / 180);
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  const x = (2 * du) / scale;
+  const y = dv / scale;
+  return [(x * cos + y * sin) / 2, -x * sin + y * cos];
+}
+
+// A raster object's box and transform as the placement reads them, or null without a box or with an empty one: the
+// scale at least 0.01 (the floor the painting is read with).
+function rasterBox(item) {
   const bbox = item?.bbox;
-  if (!bbox || erpWidth < 1 || erpHeight < 1) return null;
+  if (!bbox) return null;
   const u0 = finite(bbox.u0);
   const v0 = finite(bbox.v0);
   const u1 = finite(bbox.u1);
   const v1 = finite(bbox.v1);
   if (u1 <= u0 || v1 <= v0) return null;
   const transform = item.transform || {};
-  const boxWidth = Math.max(minPixel, (u1 - u0) * erpWidth);
-  const boxHeight = Math.max(minPixel, (v1 - v0) * erpHeight);
   return {
-    centerX: u0 * erpWidth + boxWidth * 0.5 + finite(transform.du) * erpWidth,
-    centerY: v0 * erpHeight + boxHeight * 0.5 + finite(transform.dv) * erpHeight,
+    u0, v0, u1, v1,
+    du: finite(transform.du),
+    dv: finite(transform.dv),
+    rotationDeg: finite(transform.rot_deg),
+    scale: Math.max(0.01, finite(transform.scale, 1)),
+  };
+}
+
+// The center a raster object turns and scales about, as it is drawn: its box's center moved by du and dv ({ u, v },
+// neither wrapped nor clamped), or null without a box.
+export function rasterObjectTurnCenterUv(item) {
+  const bbox = item?.bbox;
+  if (!bbox) return null;
+  const transform = item.transform || {};
+  return {
+    u: (finite(bbox.u0) + finite(bbox.u1)) * 0.5 + finite(transform.du),
+    v: (finite(bbox.v0) + finite(bbox.v1)) * 0.5 + finite(transform.dv),
+  };
+}
+
+// The four corners of a raster object's transformed box (top left, top right, bottom right, bottom left) with u not
+// wrapped, about its turn center (rasterObjectTurnCenterUv); none without a box.
+function rasterCornersUnwrapped(item) {
+  const box = rasterBox(item);
+  if (!box) return [];
+  const halfW = (box.u1 - box.u0) * 0.5;
+  const halfH = (box.v1 - box.v0) * 0.5;
+  const center = rasterObjectTurnCenterUv(item);
+  return [[-halfW, -halfH], [halfW, -halfH], [halfW, halfH], [-halfW, halfH]].map(([du, dv]) => {
+    const [tu, tv] = turnPaintOffset(du, dv, box.scale, box.rotationDeg);
+    return { u: center.u + tu, v: center.v + tv };
+  });
+}
+
+// The four ERP corners of a raster object's transformed box (top left, top right, bottom right, bottom left; u in 0..1,
+// v not clamped, so a box past a pole keeps its shape), none without a box. The box is not grown to a pixel.
+export function rasterObjectCornersUv(item) {
+  return rasterCornersUnwrapped(item).map(({ u, v }) => ({ u: ((u % 1) + 1) % 1, v }));
+}
+
+// A pixel bound within this much of a whole pixel counts as on it, so Python's and the browser's last bits of a sine
+// take the same pixels.
+const PIXEL_EDGE_EPS = 1e-6;
+
+// The pixels a raster object covers on an ERP of width x height: the box around its transformed corners, cut to the
+// ERP's top and bottom, as [{ x0, y0, x1, y1 }] (ends exclusive): one, or two across the seam (the whole width when it
+// is as wide). None without a box or past the ERP's top or bottom.
+export function rasterObjectPixelRanges(item, width, height) {
+  const corners = rasterCornersUnwrapped(item);
+  if (!corners.length || !(width >= 1) || !(height >= 1)) return [];
+  const xs = corners.map((corner) => corner.u * width);
+  const ys = corners.map((corner) => corner.v * height);
+  let x0 = Math.floor(Math.min(...xs) + PIXEL_EDGE_EPS);
+  let x1 = Math.ceil(Math.max(...xs) - PIXEL_EDGE_EPS);
+  const y0 = Math.max(0, Math.floor(Math.min(...ys) + PIXEL_EDGE_EPS));
+  const y1 = Math.min(height, Math.ceil(Math.max(...ys) - PIXEL_EDGE_EPS));
+  if (x1 <= x0 || y1 <= y0) return [];
+  const turns = Math.floor(x0 / width);
+  x0 -= turns * width;
+  x1 -= turns * width;
+  if (x1 - x0 >= width) return [{ x0: 0, y0, x1: width, y1 }];
+  if (x1 > width) return [{ x0, y0, x1: width, y1 }, { x0: 0, y0, x1: x1 - width, y1 }];
+  return [{ x0, y0, x1, y1 }];
+}
+
+// Whether a raster object's pixel ranges (rasterObjectPixelRanges) meet the pixel box `box` ({ minX, maxX, minY, maxY },
+// ends included).
+export function pixelRangesMeet(ranges, box) {
+  return ranges.some((range) => range.x0 <= box.maxX && box.minX < range.x1 && range.y0 <= box.maxY && box.minY < range.y1);
+}
+
+// Where the raster object `item` (its bbox in ERP uv and its transform) lies on an ERP of width x height: its center,
+// box size (at least `minPixel` pixels each way, grown from its top left), rotation, scale, `aspect` (the ERP's pixels
+// per degree down over across: 1 on 2:1), `matrix` [a, b, c, d] (a pixel offset (x, y) of the box from its center lands
+// at (a x + c y, b x + d y): the paint plane's turn and scale mapped to the ERP's pixels, width / 360 across and
+// height / 180 down, so an ERP not 2:1 places it the same) and the seam's copies (`wrapOffsets`: three x offsets
+// a turn apart, one of them putting the center on the ERP however many turns du has gathered). Null when it has no box, an empty
+// box, or the ERP has no size.
+export function placeRasterObjectErp(item, width, height, { minPixel = 1 } = {}) {
+  const erpWidth = finite(width);
+  const erpHeight = finite(height);
+  const box = rasterBox(item);
+  if (!box || erpWidth < 1 || erpHeight < 1) return null;
+  const boxWidth = Math.max(minPixel, (box.u1 - box.u0) * erpWidth);
+  const boxHeight = Math.max(minPixel, (box.v1 - box.v0) * erpHeight);
+  const rad = box.rotationDeg * (Math.PI / 180);
+  const cos = box.scale * Math.cos(rad);
+  const sin = box.scale * Math.sin(rad);
+  // Pixels per degree down over across.
+  const aspect = (erpHeight / 180) / (erpWidth / 360);
+  const centerX = box.u0 * erpWidth + boxWidth * 0.5 + box.du * erpWidth;
+  // The whole turns du has gathered: the copies sit around the one whose center is on the ERP.
+  const turns = Math.floor(centerX / erpWidth);
+  return {
+    centerX,
+    centerY: box.v0 * erpHeight + boxHeight * 0.5 + box.dv * erpHeight,
     width: boxWidth,
     height: boxHeight,
-    rotationRad: finite(transform.rot_deg) * (Math.PI / 180),
-    scale: Math.max(0.01, finite(transform.scale, 1)),
-    wrapOffsets: [-erpWidth, 0, erpWidth],
+    rotationDeg: box.rotationDeg,
+    scale: box.scale,
+    aspect,
+    matrix: [cos, sin * aspect, -sin / aspect, cos],
+    wrapOffsets: [-erpWidth, 0, erpWidth].map((offset) => offset - turns * erpWidth),
   };
 }
 
@@ -67,11 +184,15 @@ export function placeRasterObjectErp(item, width, height, { minPixel = 1 } = {})
 export function drawRasterObjectErp(ctx, image, item, width, height, { minPixel = 1 } = {}) {
   const placement = placeRasterObjectErp(item, width, height, { minPixel });
   if (!placement) return false;
+  const { aspect, scale } = placement;
   for (const wrapOffset of placement.wrapOffsets) {
     ctx.save();
+    // The placement's matrix, as the canvas's own turn between the paint plane's axes (scale(1, aspect) and its
+    // inverse are no-ops on a 2:1 ERP, which draws the pixels it drew with a plain turn).
     ctx.translate(placement.centerX + wrapOffset, placement.centerY);
-    ctx.rotate(placement.rotationRad);
-    ctx.scale(placement.scale, placement.scale);
+    ctx.scale(1, aspect);
+    ctx.rotate(placement.rotationDeg * (Math.PI / 180));
+    ctx.scale(scale, scale / aspect);
     ctx.drawImage(image, -placement.width * 0.5, -placement.height * 0.5, placement.width, placement.height);
     ctx.restore();
   }

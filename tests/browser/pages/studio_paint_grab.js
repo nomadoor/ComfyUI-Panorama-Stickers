@@ -35,7 +35,8 @@ async function makeErp() {
   return URL.createObjectURL(blob);
 }
 
-// The sky image is green, the board blue, so a red stroke shows over either.
+// The sky image is green, the board blue, so a red stroke shows over either. With `?raster` the painting has a red paint
+// raster object above the sky image, three times as wide as tall (21.6° by 7.2°).
 export const STATE = {
   version: 2,
   timeline: { fps: 24, length: 48 },
@@ -57,6 +58,20 @@ export const STATE = {
     },
   ],
 };
+
+if (new URLSearchParams(location.search).has("raster")) {
+  STATE.painting = {
+    raster_objects: [{
+      id: "r1",
+      type: "raster_frozen",
+      layerKind: "paint",
+      rasterDataUrl: canvasUrl(120, 40, "#e02020"),
+      bbox: { u0: 0.47, v0: 0.36, u1: 0.53, v1: 0.4 },
+      transform: { du: 0, dv: 0, rot_deg: 0, scale: 1 },
+      z_index: 2,
+    }],
+  };
+}
 
 const studio = (window.__studio = { ready: false, error: null });
 

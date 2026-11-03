@@ -29,9 +29,14 @@
 //
 //   ERP seam: stamps near the u=0 / u=1 wrap boundary are mirrored so the stroke
 //             renders correctly at the panorama seam.
+//
+//   On the sphere (docs/render-contract.md "ペイントのストロークの描き方"): the raw points get great-circle points
+//   between them (pano_paint_sphere.js strokeErpPath) before the midpoint / Catmull-Rom walk, live and on a rebuild
+//   alike, and each stamp is drawn wider across by 1 / cos(latitude) up to the whole width (stampHalfWidthPx).
 
 import { createPanoCanvas } from "./pano_diagnostics.js";
 import { addRect, createDamageLog, intersectRects, joinRects, shapeRect } from "./pano_paint_damage.js";
+import { stampHalfWidthPx, strokeErpPath } from "./pano_paint_sphere.js";
 
 // ─── Canvas Surface Utilities ─────────────────────────────────────────────────
 
@@ -505,8 +510,6 @@ function buildStampContext(ctx, stroke, descriptor) {
   const aspect    = Math.max(0.1, Number(stroke?.aspect ?? 1));
   const angle     = Number(stroke?.angle?.value ?? 0);
   const spacingPx = getSpacingPx(stroke, radiusPx);
-  const viewMode  = String(stroke?.targetSpace?.viewMode || "");
-  const latitudeCorrection = descriptor?.kind === "ERP_GLOBAL" && viewMode !== "unwrap";
   const rawSc     = stroke?.scatter;
   const scatter   = rawSc
     ? { radius: Number(rawSc.radius ?? 1.5), count: Math.max(1, Math.round(rawSc.count ?? 6)) }
@@ -529,7 +532,7 @@ function buildStampContext(ctx, stroke, descriptor) {
     stampTex = buildStampTexture(radiusPx, hardness, col.r, col.g, col.b, col.a);
   }
 
-  return { ctx, stampTex, radiusPx, spacingPx, desc: descriptor, aspect, angle, stampKind, scatter, latitudeCorrection };
+  return { ctx, stampTex, radiusPx, spacingPx, desc: descriptor, aspect, angle, stampKind, scatter };
 }
 
 // ─── Stamp Color ─────────────────────────────────────────────────────────────
@@ -572,33 +575,35 @@ function strokeStyleForKind(stroke) {
 
 // ─── Stamp Drawing ────────────────────────────────────────────────────────────
 
-// Place one stamp image at (ox, oy) applying latitude correction and angle rotation.
-// For chisel stamps the angle is baked via ctx.rotate so the nib stays oriented.
-// Seam width accounts for the bounding box of the rotated stamp.
-function _placeStamp(sc, ox, oy, rv, rh) {
+// Place one stamp image at (ox, oy): its shape (half sizes rx across, rv down) turned by the angle, then drawn
+// `stretch` times wider along the ERP's x (the 1 / cos(latitude) of stampHalfWidthPx; the stretch is outside the turn,
+// so an angled nib is widened across the ERP).
+// Seam width accounts for the bounding box of the turned, stretched stamp.
+function _placeStamp(sc, ox, oy, rv, rx, stretch) {
   const ang = sc.angle;
   const W   = sc.desc.width;
 
   function _draw(x, y) {
     if (ang === 0) {
-      sc.ctx.drawImage(sc.stampTex, x - rh, y - rv, rh * 2, rv * 2);
+      sc.ctx.drawImage(sc.stampTex, x - rx * stretch, y - rv, rx * stretch * 2, rv * 2);
     } else {
       sc.ctx.save();
       sc.ctx.translate(x, y);
+      sc.ctx.scale(stretch, 1);
       sc.ctx.rotate(ang);
-      sc.ctx.drawImage(sc.stampTex, -rh, -rv, rh * 2, rv * 2);
+      sc.ctx.drawImage(sc.stampTex, -rx, -rv, rx * 2, rv * 2);
       sc.ctx.restore();
     }
   }
 
-  // Seam wrap: use rotated bounding-box half-width so angled stamps near u=0/1 are mirrored.
+  // Seam wrap: use the turned, stretched bounding-box half-width so angled stamps near u=0/1 are mirrored.
   const seamW = ang === 0
-    ? rh
-    : rh * Math.abs(Math.cos(ang)) + rv * Math.abs(Math.sin(ang));
+    ? rx * stretch
+    : (rx * Math.abs(Math.cos(ang)) + rv * Math.abs(Math.sin(ang))) * stretch;
   // sc.bounds, when the caller keeps it, collects where the stamps land (pano_paint_damage.js).
   const seamH = ang === 0
     ? rv
-    : rh * Math.abs(Math.sin(ang)) + rv * Math.abs(Math.cos(ang));
+    : rx * Math.abs(Math.sin(ang)) + rv * Math.abs(Math.cos(ang));
   const place = (x, y) => {
     _draw(x, y);
     if (sc.bounds) sc.bounds = addRect(sc.bounds, shapeRect(x - seamW, y - seamH, x + seamW, y + seamH, W, sc.desc.height));
@@ -611,7 +616,7 @@ function _placeStamp(sc, ox, oy, rv, rh) {
 // Draw one stamp at (cx, cy) using the shared stamp context sc.
 // sc = { ctx, stampTex, radiusPx, spacingPx, desc, aspect, angle, stampKind, scatter }
 //
-// ERP latitude correction: horizontal radius is stretched by 1/cos(lat).
+// On the sphere: the horizontal radius is stretched by 1/cos(lat) up to the whole width (stampHalfWidthPx).
 // Preset aspect further scales the horizontal radius (e.g. 2.6 for a wide chisel marker).
 // For scatter brushes: each call spawns sc.scatter.count sub-stamps at random positions
 // within sc.scatter.radius × radiusPx, using a deterministic position-seeded PRNG.
@@ -628,19 +633,15 @@ function _drawSingleStamp(sc, cx, cy, widthScale) {
       const sx = cx + Math.cos(a) * d;
       const sy = cy + Math.sin(a) * d;
       const subRv = Math.max(0.5, sc.radiusPx * ws * 0.48);
-      const lat   = (0.5 - sy / Math.max(1, sc.desc.height)) * Math.PI;
-      const lonScale = sc.latitudeCorrection ? (1 / Math.max(0.05, Math.cos(lat))) : 1;
-      const rh    = subRv * sc.aspect * lonScale;
-      _placeStamp(sc, sx, sy, subRv, rh);
+      const rx    = subRv * sc.aspect;
+      _placeStamp(sc, sx, sy, subRv, rx, stampHalfWidthPx(subRv, sc.aspect, sy / Math.max(1, sc.desc.height), sc.desc.width) / rx);
     }
     return;
   }
 
   const rv = Math.max(0.5, sc.radiusPx * ws);
-  const lat = (0.5 - cy / Math.max(1, sc.desc.height)) * Math.PI;
-  const lonScale = sc.latitudeCorrection ? (1 / Math.max(0.05, Math.cos(lat))) : 1;
-  const rh  = rv * sc.aspect * lonScale;
-  _placeStamp(sc, cx, cy, rv, rh);
+  const rx = rv * sc.aspect;
+  _placeStamp(sc, cx, cy, rv, rx, stampHalfWidthPx(rv, sc.aspect, cy / Math.max(1, sc.desc.height), sc.desc.width) / rx);
 }
 
 // Draw a complete freehand stroke using the stamp engine.
@@ -648,12 +649,13 @@ function _drawSingleStamp(sc, cx, cy, widthScale) {
 // so rebuild (undo/redo) looks identical to the stroke as it was drawn.
 // Returns where it drew (pano_paint_damage.js rectangles).
 function drawStampStroke(ctx, stroke, descriptor) {
-  const points = getRawPoints(stroke);
-  if (!ctx || points.length === 0) return [];
+  if (!ctx || getRawPoints(stroke).length === 0) return [];
 
   const W = descriptor.width;
   const H = descriptor.height;
   const sc = { ...buildStampContext(ctx, stroke, descriptor), bounds: [] };
+  // The raw points with their great-circle points (u continuous across the seam).
+  const points = strokeErpPath(getRawPoints(stroke), sc.radiusPx, W, H);
 
   ctx.save();
   ctx.globalCompositeOperation = "source-over";
@@ -714,20 +716,21 @@ function drawLassoFillNative(ctx, stroke, descriptor) {
   const h = descriptor.height;
   const style = strokeStyleForKind(stroke);
 
-  // Convert to pixel space and seam-unwrap so the polygon takes the short path
-  // across any u=0/u=1 crossing (same strategy as drawStampStroke).
+  // Its edges (the closing one too) on great circles (strokeErpPath), in pixel space with u continuous across the
+  // seam, so the polygon takes the short path across any u=0/u=1 crossing.
+  const coords = points.map((point) => {
+    const c = getTargetCoord(point);
+    return { u: Number(c.x || 0), v: Number(c.y || 0) };
+  });
+  const path = strokeErpPath([...coords, coords[0]], getRadiusPx(stroke, descriptor), w, h).slice(0, -1);
   const px = [];
   let minX = Infinity;
   let maxX = -Infinity;
   let minY = Infinity;
   let maxY = -Infinity;
-  for (let i = 0; i < points.length; i++) {
-    const c = getTargetCoord(points[i]);
-    let x = Number(c.x || 0) * w;
-    if (i > 0 && Math.abs(x - px[i - 1].x) > w * 0.5) {
-      x += x < px[i - 1].x ? w : -w;
-    }
-    const y = Number(c.y || 0) * h;
+  for (const point of path) {
+    const x = point.u * w;
+    const y = point.v * h;
     px.push({ x, y });
     if (x < minX) minX = x;
     if (x > maxX) maxX = x;
@@ -913,7 +916,6 @@ function appendStrokePoint(target, x, y, stroke) {
       lastMidX: px, lastMidY: py,
       stampTex: sc0.stampTex, radiusPx: sc0.radiusPx, spacingPx: sc0.spacingPx,
       aspect: sc0.aspect, angle: sc0.angle, stampKind: sc0.stampKind, scatter: sc0.scatter,
-      latitudeCorrection: sc0.latitudeCorrection,
       strokeOpacity, velocityWidthFactor,
       distSinceStamp: 0,
       isEraser, layerKind,
@@ -931,7 +933,6 @@ function appendStrokePoint(target, x, y, stroke) {
     ctx,
     stampTex: as.stampTex, radiusPx: as.radiusPx, spacingPx: as.spacingPx,
     desc, aspect: as.aspect, angle: as.angle, stampKind: as.stampKind, scatter: as.scatter,
-    latitudeCorrection: as.latitudeCorrection,
     bounds: [],
   };
 
@@ -1346,9 +1347,17 @@ export function createPaintEngineManager(options = {}) {
     }
   }
 
-  // One point of the active freehand stroke into the shared stroke canvas (appendStrokePoint).
+  // One point of the active freehand stroke into the shared stroke canvas (appendStrokePoint), after the great-circle
+  // points between it and the point before (strokeErpPath, as a rebuild puts them in).
   function appendPoint(target, x, y, stroke) {
+    const before = target.activeStroke?.lastRaw;
+    if (before) {
+      const desc = target.descriptor;
+      const path = strokeErpPath([before, { u: x, v: y }], target.activeStroke.radiusPx, desc.width, desc.height);
+      for (const point of path.slice(1, -1)) inkStroke(appendStrokePoint(target, point.u, point.v, stroke));
+    }
     inkStroke(appendStrokePoint(target, x, y, stroke));
+    if (target.activeStroke) target.activeStroke.lastRaw = { u: x, v: y };
   }
 
   function commitActiveStroke(stroke, descriptor) {
@@ -1369,7 +1378,7 @@ export function createPaintEngineManager(options = {}) {
         ctx,
         stampTex: as.stampTex, radiusPx: as.radiusPx, spacingPx: as.spacingPx,
         desc: targetDesc, aspect: as.aspect, angle: as.angle,
-        stampKind: as.stampKind, scatter: as.scatter, latitudeCorrection: as.latitudeCorrection,
+        stampKind: as.stampKind, scatter: as.scatter,
         bounds: [],
       };
       if (as.pointCount === 2) {

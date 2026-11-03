@@ -29,7 +29,7 @@ export function createPaintLayers(deps) {
   function isPaintCompositeInteraction(interaction = editor.interaction) {
     const kind = String(interaction?.kind || "");
     if (kind === "paint_stroke" || kind === "paint_lasso_fill") return true;
-    if (kind === "move_stroke_group" || kind === "scale_stroke_group" || kind === "rotate_stroke_group") return true;
+    if (kind === "move_stroke_group" || kind === "scale_stroke_group") return true;
     if (kind === "move_raster_object" || kind === "scale_raster_object") return true;
     if (kind === "move_multi") {
       const hasStrokeSnapshots = Array.isArray(interaction?.strokeSnapshots) && interaction.strokeSnapshots.length > 0;

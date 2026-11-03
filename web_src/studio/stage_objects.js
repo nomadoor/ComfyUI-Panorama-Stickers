@@ -5,8 +5,8 @@
 //
 // A left press, in this order (docs/studio-ui.md "ペイントのまとまり" "押したときの順"):
 //   1. a handle of the gizmo of the selected World object or Camera (gizmo_overlay.js): drags it;
-//   2. a handle of the selected sky image (a corner scales both FOVs, an edge one, the rotate handle the Roll), or a
-//      corner of the selected paint group (scales it); not while locked;
+//   2. a handle of the selected sky image (a corner scales both FOVs, an edge one, the rotate handle the Roll), or the
+//      rotate handle (turns it) or a corner (scales it) of the selected paint group; not while locked;
 //   3. the World object under the pointer (objectUnder: the same test as the hover, hit_test.js coarseUnder): selects
 //      it (its drag does nothing: the gizmo moves it);
 //   4. the Camera's mark (3D tab; camera_marker.js: anywhere on its filled shape or near its lines): selects the Camera;
@@ -24,23 +24,26 @@
 // up. An object's drag writes its Lanes by the recording rule (docs/timeline-ui.md "記録の規則"); a paint group's writes
 // the painting as it is (it has no Lanes).
 import { viewProjection } from "../pano_editor_view.js";
+import { rasterObjectTurnCenterUv } from "../pano_paint_display.js";
 import { lensPolylines } from "../pano_lens.js";
 import { setStickerPose, setWorldStickerTransform } from "../pano_editor_state.js";
 import { evaluateSticker } from "../pano_scene_eval.js";
 import { gizmoDragLanes, sceneTransform } from "../pano_space.js";
-import { hitFrameAffordance } from "../pano_sticker_affordance.js";
+import { hitFrameAffordance, ROTATE_HANDLE_HIT_PX, STICKER_NODE_ROTATE_HANDLE_OFFSET_PX } from "../pano_sticker_affordance.js";
 import {
   buildStickerGeometry,
+  directionAtScreenPoint,
   moveStickerToScreenPoint,
   rotateStickerFromPointer,
   scaleStickerAxisFromPointer,
   scaleStickerFromPointer,
 } from "../pano_sticker_geometry.js";
-import { pointInPoly } from "../pano_math.js";
+import { dist2, pointInPoly } from "../pano_math.js";
 import {
-  frameCornersUv, offsetRasterObject, offsetStrokeGroup, paintCornerHandle, paintObjectOf,
-  paintIndexOf, paintObjectRowOf, pointerDistance, pointerScaleRatio, rasterAlphaHits, rasterObjectAlphaAt, rasterObjectCornersUv,
-  scaleRasterObject, skyStickersOf, strokeDotHit, strokeHitLineWidth, strokePathsHit, strokePoints, transformStrokeGroup,
+  frameCornersUv, moveStrokeGroupTo, offsetRasterObject, paintCornerHandle, paintObjectOf,
+  paintIndexOf, paintObjectRowOf, pointerDistance, pointerScaleRatio, rasterAlphaHits, rasterObjectAlphaAt,
+  rasterObjectCornersUv, rotateRasterObject, scaleRasterObject, skyStickersOf, strokeDotHit,
+  strokeHitLineWidth, strokePathsHit, strokePoints, transformStrokeGroup, turnStrokeGroup,
 } from "../pano_paint_objects.js";
 import {
   brushPresetIdForTool, directionOfErpPoint, erpPointOfDirection, shortestWrappedDelta, syncPaintGroups,
@@ -110,7 +113,12 @@ function skyObjects(state, content) {
 // Where the ERP point `point` lands on the screen of `projection` (pano_editor_view.js viewProjection): { x, y }, or
 // null behind the view. The Sky lies at infinity, so only the direction counts.
 function screenOfErp(projection, point) {
-  const at = projection.project(directionOfErpPoint(point));
+  return screenOfDirection(projection, directionOfErpPoint(point));
+}
+
+// Where the direction `direction` lands on the screen of `projection`: { x, y }, or null behind the view.
+function screenOfDirection(projection, direction) {
+  const at = projection.project(direction);
   return at.z > 1e-4 ? { x: at.x, y: at.y } : null;
 }
 
@@ -121,7 +129,23 @@ function erpUnder(projection, point) {
   return direction ? erpPointOfDirection(direction) : null;
 }
 
-// A paint group's frame on the screen of `projection`: { visible, center, corners, outline } (a stroke group's frame is
+// The rotate handle of a paint group's frame on screen (docs/studio-ui.md "ペイントのまとまり" "回転のハンドル"):
+// { rotateStemBase, rotateHandle }, the middle of its top edge (its first two corners) and the handle
+// STICKER_NODE_ROTATE_HANDLE_OFFSET_PX out from it, on the way from its bottom edge's middle (straight up when the two
+// meet).
+function rotateSeat(corners) {
+  const top = { x: (corners[0].x + corners[1].x) / 2, y: (corners[0].y + corners[1].y) / 2 };
+  const bottom = { x: (corners[3].x + corners[2].x) / 2, y: (corners[3].y + corners[2].y) / 2 };
+  const length = Math.hypot(top.x - bottom.x, top.y - bottom.y);
+  const [ux, uy] = length > 1e-9 ? [(top.x - bottom.x) / length, (top.y - bottom.y) / length] : [0, -1];
+  return {
+    rotateStemBase: top,
+    rotateHandle: { x: top.x + ux * STICKER_NODE_ROTATE_HANDLE_OFFSET_PX, y: top.y + uy * STICKER_NODE_ROTATE_HANDLE_OFFSET_PX },
+  };
+}
+
+// A paint group's frame on the screen of `projection`: { visible, center, corners, outline, rotateStemBase,
+// rotateHandle (rotateSeat) } (a stroke group's frame is
 // its strokeGroupFrame, a raster object's its transformed box), as the old editor's editor/object_geometry.js. Not
 // visible when its center or a corner is behind the view: the frame and its handles are not drawn then (its strokes
 // are still hit, paintPaths). `outline` is the frame's edge through its corners: the corners themselves on a pinhole,
@@ -142,7 +166,7 @@ function paintFrame(state, object, projection) {
   if (corners.length < 4 || corners.some((corner) => !corner)) return { visible: false };
   if (object.kind === "raster") center = { x: corners.reduce((sum, p) => sum + p.x, 0) / 4, y: corners.reduce((sum, p) => sum + p.y, 0) / 4 };
   if (!center) return { visible: false };
-  if (!projection.bent) return { visible: true, center, corners, outline: corners };
+  if (!projection.bent) return { visible: true, center, corners, outline: corners, ...rotateSeat(corners) };
   const directions = cornersUv.map((point) => {
     const { x, y, z } = directionOfErpPoint(point);
     return [x, y, z];
@@ -157,7 +181,7 @@ function paintFrame(state, object, projection) {
     if (runs.length !== 1) return { visible: false };
     outline.push(...runs[0].slice(0, -1).map(({ x, y }) => ({ x, y })));
   }
-  return { visible: true, center, corners, outline };
+  return { visible: true, center, corners, outline, ...rotateSeat(corners) };
 }
 
 // A stroke group's strokes on the screen of `projection`, as pano_paint_objects.js strokePathsHit takes them: each
@@ -315,9 +339,11 @@ export function createStageObjects({
     return geometry.visible ? { object, geometry } : null;
   }
 
-  // The corner handle of the selected paint group `paint` (selectedPaint) under `point`, or null: not on the dot of a
-  // stroke group that is only dots, whose corners lie about on it (pano_paint_objects.js strokeDotHit: the dot moves).
+  // The handle of the selected paint group `paint` (selectedPaint) under `point` ({ kind: "rotate" | "scale", cursor }),
+  // or null. The rotate handle comes first (a small frame turns too); a corner is not hit on the dot of a stroke group
+  // that is only dots, whose corners lie about on it (pano_paint_objects.js strokeDotHit: the dot moves).
   function paintHandleAt(paint, point) {
+    if (dist2(paint.geometry.rotateHandle, point) <= ROTATE_HANDLE_HIT_PX * ROTATE_HANDLE_HIT_PX) return { kind: "rotate", cursor: "grab" };
     if (paint.object.kind === "group" && strokeDotHit(point, pathsIn(stageView(), paint.object))) return null;
     return paintCornerHandle(paint.geometry, point);
   }
@@ -508,45 +534,102 @@ export function createStageObjects({
     };
   }
 
-  // A drag of a paint group (docs/studio-ui.md "ペイントのまとまり"): `kind` "move" (the body: the ERP difference between
-  // the press and the pointer, the seam crossed the short way, added to its points or its raster transform) or "scale"
-  // (a corner: the pointer's distance from the frame's screen center over the press's, about its frame's ERP center
-  // for a stroke group, on its transform's scale for a raster object), from `geometry` where it started. The painting
-  // is written as it is (no Lanes), with its counted groups, and drops the uploaded `painting_layer`.
+  // A drag of a paint group (docs/studio-ui.md "ペイントのまとまり"): `kind` "move" (the body: a stroke group as a sky image
+  // moves, paintCarry; a raster object by the ERP difference between the press and the pointer, the seam crossed the
+  // short way, added to its transform), "scale"
+  // (a corner: the pointer's distance from the frame's screen center over the press's, on its frame's tangent plane
+  // about its box's center for a stroke group, on its transform's scale for a raster object) or "rotate" (the rotate handle: paintTurn), from
+  // `geometry` where it started. The painting is written as it is (no Lanes), with its counted groups, and drops the
+  // uploaded `painting_layer`.
   function paintDrag(kind, object, geometry, point) {
+    if (kind === "rotate") return paintTurn(object, point);
+    if (kind === "move" && object.kind === "group") return paintCarry(object, point);
     const start = erpUnder(projection(), point);
     const center = geometry.center;
     const startDistance = center ? pointerDistance(center, point) : 1;
-    const pivot = object.kind === "group" ? paintIndex(state()).groups.get(object.id)?.frame.centerUv : null;
+    const frame = object.kind === "group" ? paintIndex(state()).groups.get(object.id)?.frame : null;
     return {
       move(next) {
         const at = erpUnder(projection(), next);
         if (!start || !at) return;
-        edits.live((draft) => {
-          const painting = draft.painting;
-          if (!painting) return false;
-          syncPaintGroups(painting, skyStickersOf(draft));
-          let changed;
+        editPaint(object, (painting) => {
           if (object.kind === "group") {
             const strokes = painting.paint.strokes;
-            changed = kind === "move"
-              ? offsetStrokeGroup(strokes, object.id, shortestWrappedDelta(at.u, start.u), at.v - start.v)
-              : transformStrokeGroup(strokes, object.id, pointerScaleRatio(center, startDistance, next), 0, null, pivot);
-          } else {
-            const item = painting.raster_objects.find((entry) => entry.id === object.id);
-            if (!item) return false;
-            changed = kind === "move"
-              ? offsetRasterObject(item, shortestWrappedDelta(at.u, start.u), at.v - start.v)
-              : scaleRasterObject(item, pointerScaleRatio(center, startDistance, next));
+            return transformStrokeGroup(strokes, object.id, pointerScaleRatio(center, startDistance, next), null, frame);
           }
-          if (!changed) return false;
-          draft.painting_layer = null;
-          return true;
-        }, (base) => paintDraft(base, object));
+          const item = painting.raster_objects.find((entry) => entry.id === object.id);
+          if (!item) return false;
+          return kind === "move"
+            ? offsetRasterObject(item, shortestWrappedDelta(at.u, start.u), at.v - start.v)
+            : scaleRasterObject(item, pointerScaleRatio(center, startDistance, next));
+        });
       },
       end: () => edits.commit(),
       cancel: () => edits.cancel(),
     };
+  }
+
+  // A stroke group's body drag, as a sky image's (skyDrag "move"): its center direction `c` (its frame's center, the
+  // points' mean direction) keeps the press's screen offset from it and goes to the direction under the pointer less
+  // that offset (pano_sticker_geometry.js directionAtScreenPoint), and its points are carried with it on the sphere
+  // (moveStrokeGroupTo). When `c` has no place on the screen the press only selects.
+  function paintCarry(object, point) {
+    const frame = paintIndex(state()).groups.get(object.id)?.frame;
+    const anchor = frame ? screenOfDirection(projection(), frame.center) : null;
+    if (!anchor) return selectOnly();
+    const offset = { x: point.x - anchor.x, y: point.y - anchor.y };
+    return {
+      move(next) {
+        const centerTo = directionAtScreenPoint(projection(), { x: next.x - offset.x, y: next.y - offset.y });
+        // Past a lens Camera's limit there is no direction: the group stays where it was last.
+        if (!centerTo) return;
+        editPaint(object, (painting) => {
+          const group = painting.groups.find((entry) => String(entry?.actionGroupId || "").trim() === object.id);
+          return moveStrokeGroupTo(painting.paint.strokes, object.id, frame, centerTo, null, group);
+        });
+      },
+      end: () => edits.commit(),
+      cancel: () => edits.cancel(),
+    };
+  }
+
+  // A turn of a paint group from its rotate handle (docs/studio-ui.md "ペイントのまとまり" "回す"): the pointer's angle
+  // about the turn's center on screen, from the press's (clockwise positive), adds to a stroke group's rot_deg and turns
+  // its points on the sphere about its frame's center direction as grabbed (turnStrokeGroup; the points' mean direction,
+  // which a turn does not move), or adds to a raster object's rot_deg about its box's center moved by du and dv. Shift
+  // stops either angle at ROTATE_SNAP_DEG multiples. The center is measured where it was at the press.
+  function paintTurn(object, point) {
+    const axis = object.kind === "group" ? paintIndex(state()).groups.get(object.id)?.frame.center : null;
+    const pivot = object.kind === "group" ? null : rasterObjectTurnCenterUv(object.item);
+    const center = axis ? screenOfDirection(projection(), axis) : screenOfErp(projection(), pivot);
+    const startAngle = center ? Math.atan2(point.y - center.y, point.x - center.x) : 0;
+    return {
+      move(next, event = {}) {
+        if (!center) return;
+        const delta = (Math.atan2(next.y - center.y, next.x - center.x) - startAngle) * (180 / Math.PI);
+        const snap = event.shiftKey ? ROTATE_SNAP_DEG : 0;
+        editPaint(object, (painting) => {
+          if (object.kind === "group") return turnStrokeGroup(painting, object.id, delta, axis, { snapDeg: snap });
+          const item = painting.raster_objects.find((entry) => entry.id === object.id);
+          return item ? rotateRasterObject(item, delta, { snapDeg: snap }) : false;
+        });
+      },
+      end: () => edits.commit(),
+      cancel: () => edits.cancel(),
+    };
+  }
+
+  // A paint drag's change: change(painting) writes the copy of the painting the drag started from (its counted groups
+  // written: syncPaintGroups) and returns whether it changed; a change drops the uploaded `painting_layer`.
+  function editPaint(object, change) {
+    edits.live((draft) => {
+      const painting = draft.painting;
+      if (!painting) return false;
+      syncPaintGroups(painting, skyStickersOf(draft));
+      if (!change(painting)) return false;
+      draft.painting_layer = null;
+      return true;
+    }, (base) => paintDraft(base, object));
   }
 
   // A press that selects and whose drag does nothing; and one whose drag the stage takes (it moves the Camera).
@@ -571,7 +654,8 @@ export function createStageObjects({
         }
       }
       const paint = selectedPaint();
-      if (paint && !paint.object.locked && paintHandleAt(paint, point)) return paintDrag("scale", paint.object, paint.geometry, point);
+      const paintHandle = paint && !paint.object.locked ? paintHandleAt(paint, point) : null;
+      if (paintHandle) return paintDrag(paintHandle.kind, paint.object, paint.geometry, point);
     }
     const picked = objectUnder(point);
     if (picked) {
@@ -631,9 +715,16 @@ export function createStageObjects({
         guides: guideLines,
       } : null,
       sky: sky ? { geometry: sky.geometry, handles: editable() && !sky.item.locked } : null,
-      // The selected paint group's frame (its corners, its edge `outline` (bent on a lens Camera's picture) and screen
-      // center in CSS px), with its corner handles unless it is locked.
-      paint: paint ? { corners: paint.geometry.corners, outline: paint.geometry.outline, center: paint.geometry.center, handles: editable() && !paint.object.locked } : null,
+      // The selected paint group's frame (its corners, its edge `outline` (bent on a lens Camera's picture), screen
+      // center and rotate handle with its stem's base in CSS px), with its corner and rotate handles unless it is locked.
+      paint: paint ? {
+        corners: paint.geometry.corners,
+        outline: paint.geometry.outline,
+        center: paint.geometry.center,
+        rotateStemBase: paint.geometry.rotateStemBase,
+        rotateHandle: paint.geometry.rotateHandle,
+        handles: editable() && !paint.object.locked,
+      } : null,
     };
   }
 

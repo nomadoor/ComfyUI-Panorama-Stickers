@@ -61,3 +61,9 @@ export function cameraBasis(yawDeg, pitchDeg, rollDeg = 0) {
     fwd: vec3(sy * cp, sp, cy * cp),
   };
 }
+
+// The direction of the point (x, y) of the tangent plane at basis.fwd, x along basis.right and y along basis.up (the
+// gnomonic projection's inverse; a sky Sticker's frame and a stroke group's frame map their corners with it).
+export function tangentDirection(basis, x, y) {
+  return norm(add(add(basis.fwd, mul(basis.right, x)), mul(basis.up, y)));
+}

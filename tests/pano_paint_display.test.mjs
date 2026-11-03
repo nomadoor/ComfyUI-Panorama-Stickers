@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createPaintDisplay, PAINT_DISPLAY_PLACES, placeRasterObjectErp } from "../web_src/pano_paint_display.js";
+import { createPaintDisplay, drawRasterObjectErp, PAINT_DISPLAY_PLACES, placeRasterObjectErp } from "../web_src/pano_paint_display.js";
 import { normalizePaintingState } from "../web_src/pano_paint_types.js";
 
 // The paint display (web_src/pano_paint_display.js, docs/editor-architecture.md "Paint layers"): the raster objects'
 // placement, and each rule column of PAINT_DISPLAY_PLACES on its own, the others held at BASE.
 
-test("raster object placement matches the modal ERP transform including seam copies", () => {
+test("raster object placement: its center, box, turn and scale on the ERP, with the seam's copies", () => {
   const placement = placeRasterObjectErp({
     bbox: { u0: 0.25, v0: 0.2, u1: 0.5, v1: 0.6 },
     transform: { du: 0.1, dv: -0.05, rot_deg: 90, scale: 1.5 },
@@ -16,9 +16,63 @@ test("raster object placement matches the modal ERP transform including seam cop
   assert.ok(Math.abs(placement.centerY - 175) < 1e-9);
   assert.ok(Math.abs(placement.width - 250) < 1e-9);
   assert.ok(Math.abs(placement.height - 200) < 1e-9);
-  assert.ok(Math.abs(placement.rotationRad - Math.PI / 2) < 1e-12);
+  assert.equal(placement.rotationDeg, 90);
   assert.equal(placement.scale, 1.5);
+  // A quarter turn clockwise on the 2:1 ERP, scaled 1.5: the box's right goes down.
+  [0, 1.5, -1.5, 0].forEach((value, index) => assert.ok(Math.abs(placement.matrix[index] - value) < 1e-12));
   assert.deepEqual(placement.wrapOffsets, [-1000, 0, 1000]);
+});
+
+// A context that keeps the matrix its translate, scale and rotate make, and the calls.
+function matrixContext() {
+  let m = [1, 0, 0, 1, 0, 0];
+  const calls = [];
+  const times = ([a, b, c, d, e, f], [g, h, i, j, k, l]) => [a * g + c * h, b * g + d * h, a * i + c * j, b * i + d * j, a * k + c * l + e, b * k + d * l + f];
+  return {
+    calls,
+    drawn: [],
+    save() {},
+    restore() { m = [1, 0, 0, 1, 0, 0]; },
+    translate(x, y) { calls.push(["translate", x, y]); m = times(m, [1, 0, 0, 1, x, y]); },
+    scale(x, y) { calls.push(["scale", x, y]); m = times(m, [x, 0, 0, y, 0, 0]); },
+    rotate(rad) { calls.push(["rotate", rad]); m = times(m, [Math.cos(rad), Math.sin(rad), -Math.sin(rad), Math.cos(rad), 0, 0]); },
+    drawImage() { this.drawn.push([...m]); },
+  };
+}
+
+test("a raster object is drawn by its placement's matrix: on an ERP not 2:1 the turn keeps its shape in degrees", () => {
+  const item = { bbox: { u0: 0.2, v0: 0.3, u1: 0.3, v1: 0.5 }, transform: { du: 0, dv: 0, rot_deg: 30, scale: 1.2 } };
+  const ctx = matrixContext();
+  assert.equal(drawRasterObjectErp(ctx, {}, item, 1000, 700), true);
+  const placement = placeRasterObjectErp(item, 1000, 700);
+  assert.ok(Math.abs(placement.aspect - 1.4) < 1e-12);
+  assert.equal(ctx.drawn.length, 3);
+  ctx.drawn.forEach((m, copy) => {
+    placement.matrix.forEach((value, index) => assert.ok(Math.abs(m[index] - value) < 1e-12, `copy ${copy} matrix[${index}]`));
+    assert.ok(Math.abs(m[4] - (placement.centerX + placement.wrapOffsets[copy])) < 1e-9 && Math.abs(m[5] - placement.centerY) < 1e-9);
+  });
+  // On a 2:1 ERP the paint plane's axes are the canvas's: a plain turn and scale (scale(1, 1) changes no bit).
+  const plain = matrixContext();
+  drawRasterObjectErp(plain, {}, item, 1000, 500);
+  const flat = placeRasterObjectErp(item, 1000, 500);
+  assert.deepEqual(plain.calls.slice(0, 4), [
+    ["translate", flat.centerX - 1000, flat.centerY],
+    ["scale", 1, 1],
+    ["rotate", 30 * (Math.PI / 180)],
+    ["scale", 1.2, 1.2],
+  ]);
+});
+
+test("a raster object moved past a whole turn is drawn where it lies within one, by a copy whose center is on the ERP", () => {
+  for (const du of [1.95, 2.4, -1.05]) {
+    const item = { bbox: { u0: 0, v0: 0.4, u1: 0.1, v1: 0.5 }, transform: { du, dv: 0, rot_deg: 0, scale: 1 } };
+    const ctx = matrixContext();
+    drawRasterObjectErp(ctx, {}, item, 400, 200);
+    const centers = ctx.drawn.map((m) => m[4]);
+    const within = (((0.05 + du) % 1) + 1) % 1 * 400;
+    assert.ok(centers.some((x) => Math.abs(x - within) < 1e-9), `du ${du}: copies at ${centers}`);
+    assert.deepEqual(centers.map((x) => x - centers[0]), [0, 400, 800], "three copies a turn apart");
+  }
 });
 
 test("invalid raster bounds are rejected before allocating a surface", () => {
