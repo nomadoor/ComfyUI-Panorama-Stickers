@@ -8,12 +8,11 @@
 import { portMediaMeta } from "../pano_port_media.js";
 import {
   layerUiList,
-  upstreamBaseline,
   upstreamDeletedCount,
   upstreamLayerEditable,
-  upstreamOverriddenEnds,
   upstreamPending,
 } from "../pano_upstream.js";
+import { createUpstreamEdits } from "../pano_upstream_edits.js";
 import { createUpstreamLayers } from "../pano_upstream_layers.js";
 
 // The paint of an upstream layer shows at the editor's default size, as the Preview shows it (pano_scene_viewer.js):
@@ -45,8 +44,6 @@ export function upstreamNodeName(nodes, key) {
 export function createStudioUpstream({
   list, linkType, uiList, state, nodeName = () => null, mediaSource, mediaAssetSource, revisionOf, playing, editorFile = null, onMedia = () => {},
 }) {
-  // The working copies as the last rebuild left them: the Auto length counts the Clip ranges overridden since.
-  let baseline = new Map();
   const layers = createUpstreamLayers({
     list,
     fps: () => state().timeline.fps,
@@ -58,9 +55,15 @@ export function createStudioUpstream({
     playing,
     editorFile,
     onMedia,
-    onRebuild: (working) => {
-      baseline = upstreamBaseline(working);
-    },
+    onRebuild: (working) => edits.rebuilt(working),
+  });
+  // The baseline of the working copies (pano_upstream_edits.js): the Auto length counts the Clip ranges overridden
+  // since.
+  const edits = createUpstreamEdits({
+    records: () => state().upstream ?? [],
+    setRecords: () => {},
+    layers,
+    fps: () => state().timeline.fps,
   });
 
   const entries = () => layers.entries();
@@ -100,7 +103,7 @@ export function createStudioUpstream({
       const portMeta = (index) => portMediaMeta((key) => layerUiList(current[index].layer.ui, key));
       return {
         frames: Number(frames) > 0 ? Number(frames) : 0,
-        ends: upstreamOverriddenEnds(working, state().upstream ?? [], baseline, portMeta, state().timeline.fps),
+        ends: edits.overriddenEnds(working, portMeta),
       };
     },
     // Whether a Scene is linked to `scene` and the node's result has no layers yet (it has not run since).
@@ -109,7 +112,7 @@ export function createStudioUpstream({
     rebuild: () => layers.rebuild(),
     dispose() {
       layers.dispose();
-      baseline = new Map();
+      edits.reset();
     },
   };
 }
