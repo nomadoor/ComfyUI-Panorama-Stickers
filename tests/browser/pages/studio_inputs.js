@@ -193,6 +193,7 @@ try {
   editorSession(node).view = rememberView({ position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0, target: [0, 0, -3] }, "panorama");
   const editor = await openStudioEditor(node, { app, api: null, storage: memoryStorage });
   studio.session = editor.session;
+  studio.stage = () => editor.stage();
   studio.close = () => editor.close();
   // The node's state_json as the editor wrote it (on closing).
   studio.stateText = () => node.widgets[0].value;

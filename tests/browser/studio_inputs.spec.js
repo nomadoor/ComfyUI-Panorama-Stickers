@@ -307,3 +307,67 @@ test("as it is: a result that comes after opening brings the upstream bg_color a
   expect(near(await stageAt(page, later), colors.upstreamBg, 30)).toBe(false);
   expect(problems).toEqual([]);
 });
+
+// docs/studio-ui.md "上流の物の編集": in the Camera tab's Frame view, the selected upstream sky image's body drag turns it,
+// as the node's own (docs/studio-ui.md "Camera タブ").
+test("Camera tab Frame view: the selected upstream sky image's body drag turns it, written as an override", async ({ page }, testInfo) => {
+  const problems = await open(page, testInfo, "upstream");
+  const colors = await page.evaluate(() => window.__studio.colors);
+  // The Camera to the view (the origin, looking at the front), in Frame mode, then the Camera tab.
+  await page.locator('.pano-studio-at-rail [data-tool="camera"]').click();
+  await page.locator('[role="tablist"] button', { hasText: "Camera" }).click();
+  await page.locator('[data-head="upstream:scene_up:sticker_1"] [data-part="name"]').click();
+  await expect.poll(() => selectedRow(page)).toBe("upstream:scene_up:sticker_1");
+  // The middle of the sky image's color on the stage.
+  const find = () => page.evaluate((color) => {
+    const canvas = document.querySelector("[data-stage-canvas]");
+    const rect = canvas.getBoundingClientRect();
+    const probe = document.createElement("canvas");
+    probe.width = canvas.width;
+    probe.height = canvas.height;
+    const g = probe.getContext("2d");
+    g.drawImage(canvas, 0, 0);
+    const data = g.getImageData(0, 0, probe.width, probe.height).data;
+    const want = [1, 3, 5].map((i) => parseInt(color.slice(i, i + 2), 16));
+    let sx = 0;
+    let sy = 0;
+    let n = 0;
+    for (let y = 0; y < probe.height; y += 3) {
+      for (let x = 0; x < probe.width; x += 3) {
+        const i = (y * probe.width + x) * 4;
+        if (want.every((v, k) => Math.abs(data[i + k] - v) < 30)) {
+          sx += x;
+          sy += y;
+          n += 1;
+        }
+      }
+    }
+    return n ? { x: rect.left + (sx / n) * rect.width / probe.width, y: rect.top + (sy / n) * rect.height / probe.height } : null;
+  }, colors.upstreamSky);
+  await expect.poll(find, { timeout: 10_000 }).not.toBeNull();
+  const at = await find();
+  await drag(page, at, { x: at.x - 60, y: at.y });
+  await expect.poll(async () => Object.keys((await overrideOf(page, "sticker_1")) ?? {}).sort()).toEqual(["direction", "id", "placement"]);
+  await expect.poll(async () => (await find())?.x ?? Infinity).toBeLessThan(at.x - 20);
+  await shot(page, "camera-tab");
+  expect(problems).toEqual([]);
+});
+
+// docs/studio-ui.md "上流の物の編集": a double-click on an upstream row's name frames it, as the node's own rows.
+test("a double-click on an upstream World object's row frames it on the stage", async ({ page }, testInfo) => {
+  const problems = await open(page, testInfo, "upstream");
+  const colors = await page.evaluate(() => window.__studio.colors);
+  const before = await page.evaluate(() => window.__studio.stage().destination());
+  await page.locator('[data-head="upstream:scene_up:sticker_2"] [data-part="name"]').dblclick();
+  // The view turns to the board at (1.6, 0, -3): the stage's middle shows it.
+  await expect.poll(async () => {
+    const destination = await page.evaluate(() => window.__studio.stage().destination());
+    return JSON.stringify(destination) !== JSON.stringify(before);
+  }, { timeout: 10_000 }).toBe(true);
+  const middle = await page.evaluate(() => {
+    const rect = document.querySelector("[data-stage-canvas]").getBoundingClientRect();
+    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+  });
+  await expect.poll(() => stageAt(page, middle).then((rgb) => near(rgb, colors.upstreamBoard)), { timeout: 10_000 }).toBe(true);
+  expect(problems).toEqual([]);
+});

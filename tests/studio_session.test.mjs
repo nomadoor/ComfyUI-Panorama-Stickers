@@ -7,7 +7,7 @@ import test from "node:test";
 import { newWorldSceneSticker } from "../web_src/pano_editor_state.js";
 import { loadSceneState, sceneStateText } from "../web_src/pano_scene_state.js";
 import { createStudioSession, inspectorSelection } from "../web_src/studio/session.js";
-import { keyRow } from "../web_src/studio/timeline_actions.js";
+import { copyKeys, keyRow, pasteKeys } from "../web_src/studio/timeline_actions.js";
 import { createStudioUpstream } from "../web_src/studio/upstream.js";
 
 globalThis.Image ??= class {};
@@ -610,7 +610,7 @@ const upLayer = {
 // A layer without a Scene id: only inherited.
 const inheritedLayer = { version: 2, timeline: { fps: 24 }, stickers: [sky("sky_9")] };
 
-function upstreamSession({ layers = [upLayer, inheritedLayer], records = [], list = null } = {}) {
+function upstreamSession({ layers = [upLayer, inheritedLayer], records = [], list = null, own = {} } = {}) {
   let session = null;
   const box = { list: list ?? layers.map((state) => ({ state, ui: {} })) };
   const upstream = createStudioUpstream({
@@ -624,7 +624,7 @@ function upstreamSession({ layers = [upLayer, inheritedLayer], records = [], lis
     revisionOf: () => "",
     playing: () => false,
   });
-  session = createStudioSession({ state: load({ upstream: records }), upstream });
+  session = createStudioSession({ state: load({ ...own, upstream: records }), upstream });
   const sticker = (id) => upstream.working().flatMap((layer) => layer.sceneState.stickers).find((item) => item.id === id) ?? null;
   const record = () => session.state.upstream.find((item) => item.layer === "scene_up") ?? null;
   const context = () => ({ playhead: 0, upstream: upstream.working() });
@@ -821,4 +821,16 @@ test("a cancel makes the upstream working copies again only when a gesture was u
   assert.equal(rebuilds, 1);
   assert.equal(session.cancelGesture().changed, false);
   assert.equal(rebuilds, 1);
+});
+
+test("Keyframes pasted onto an upstream row are written as that object's override, as one step", () => {
+  const records = load({ upstream: [{ layer: "scene_up", fps: 24, stickers: [{ id: "board_1", placement: "world", position: { value: [0, 0, -3], keyframes: [{ frame: 4, value: [1, 0, -3] }] } }] }] }).upstream;
+  const { session, record, upstream } = upstreamSession({ records, own: { timeline: { fps: 24, length: 100 } } });
+  const ctx = () => ({ state: session.state, upstream: upstream.timelineLayers(), media: {} });
+  const clipboard = copyKeys(ctx(), { row: BOARD_UP, keys: [{ row: BOARD_UP, lane: null, frame: 4 }] });
+  const result = pasteKeys(ctx(), clipboard, { row: BOARD_UP, keys: [] }, 30);
+  session.applyTimeline({ kind: "state", ...result.edit, selection: result.selection, phase: "commit", stopsPlayback: true });
+  assert.deepEqual(record().stickers[0].position.keyframes.map((key) => key.frame), [4, 30]);
+  session.undo();
+  assert.deepEqual(record().stickers[0].position.keyframes.map((key) => key.frame), [4]);
 });
