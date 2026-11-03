@@ -438,8 +438,9 @@ Camera である（表示が 1.00 なら pinhole と同じに扱う。保存し�
   「Nothing to focus on」を出す。どちらでも待ちは終わる。
 - 待っている間も、右ボタン・中ボタンのドラッグ、ホイール、WASD / QE はふだんどおり効く。Reset View と Frame Selected も効き、待ちは続く。
 - 待ちをやめる（何も動かさない）：Escape（`docs/studio-ui.md` の「閉じ方」の表。視点のドラッグの最中なら、Escape は先にそのドラッグが取る）、
-  ボタンをもう一度押す、タブを変える（撮り方のモードを変えたときも）、ウィンドウがフォーカスを失う（下の「ウィンドウがフォーカスを失ったとき」）、
-  `Set ground` の待ちを始める。逆に、Set orbit center の待ちを始めると `Set ground` の待ちをやめる（待ちは一度に一つ）。
+  ボタンをもう一度押す、タブを変える（撮り方のモードを変えたときも）、ウィンドウがフォーカスを失う（下の「ウィンドウがフォーカスを失ったとき」）。
+  `Set ground` の待ち（`docs/studio-ui.md` の「種類ごとの中身」。まだ作っていない）ができたら、待ちは一度に一つにする：`Set ground` の待ちを
+  始めると Set orbit center の待ちをやめ、逆も同じ。
 - tooltip：ふだんは「Set orbit center · or double-click a spot」、待っている間は「Click a spot to orbit around · Esc to cancel」。
 - Camera タブでは使えない（Frame 表示にはダブルクリックで `T` を決め直す操作が無い。上の「Frame 表示」）。同じ席に出したまま無効にし、
   tooltip は「Not available in the Camera view」。Preview のウィンドウでは 3D タブと同じに働く（下の「Preview のウィンドウ」）。
