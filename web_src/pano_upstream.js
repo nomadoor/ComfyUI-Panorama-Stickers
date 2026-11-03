@@ -311,13 +311,20 @@ export function upstreamOverrideOf(records, { layer, id }) {
   return records.find((item) => item.layer === layer)?.stickers.find((item) => item.id === id) ?? null;
 }
 
+// Whether the node's `upstream` records hold anything for the upstream element of the working Sticker `sticker`: its
+// layer's record has an entry for its id, of any field and either placement (what "Revert to upstream" of all its
+// overrides takes off; docs/studio-ui.md "下の中央のバー").
+export function upstreamStickerOverridden(records, sticker) {
+  return !!upstreamOverrideOf(records, sticker.origin);
+}
+
 // "Revert to upstream" (ADR 0030): the records without the override of the working Sticker `sticker`, or
 // without only its Lane `lane`, so it inherits them again; `records` itself when there is nothing to revert. A
 // Lane is reverted only from an override made for the Sticker's placement, the one that applies to it.
 export function upstreamRevertedRecords(records, sticker, lane = null) {
   const { origin } = sticker;
+  if (!upstreamStickerOverridden(records, sticker)) return records;
   const override = upstreamOverrideOf(records, origin);
-  if (!override) return records;
   if (lane !== null && !(OVERRIDE_LANES.has(lane) && override.placement === sticker.placement && Object.hasOwn(override, lane))) return records;
   return changedRecords(records, origin.layer, null, (record) => ({
     ...record,

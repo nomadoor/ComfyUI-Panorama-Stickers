@@ -540,3 +540,13 @@ test("an upstream object that cannot change: locked, or of a layer whose overrid
   assert.deepEqual([kept, inherited].map(upstreamStickerInherited), [false, true]);
   assert.deepEqual([kept, { ...kept, locked: true }, inherited].map(upstreamStickerLocked), [false, true, true]);
 });
+
+test("an upstream element is overridden when its layer's record has any entry for its id, of any field and placement", async () => {
+  const { upstreamStickerOverridden } = await import("../web_src/pano_upstream.js");
+  const sticker = { id: "upstream:scene_a:s", placement: "sky", origin: { layer: "scene_a", id: "s" } };
+  const records = (stickers) => [{ layer: "scene_a", fps: 24, deleted: [], stickers, scene: {} }];
+  assert.equal(upstreamStickerOverridden([], sticker), false);
+  assert.equal(upstreamStickerOverridden(records([{ id: "other", placement: "sky", visible: false }]), sticker), false);
+  assert.equal(upstreamStickerOverridden(records([{ id: "s", placement: "sky", locked: false }]), sticker), true);
+  assert.equal(upstreamStickerOverridden(records([{ id: "s", placement: "world", scale: { value: 2, keyframes: [] } }]), sticker), true);
+});
