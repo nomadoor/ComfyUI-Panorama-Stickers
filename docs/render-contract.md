@@ -330,10 +330,10 @@ RTX 4070 Ti、1 フレーム、κ = 0.5・hFOV 140°（4K は 4096 × 2048 相�
 - 板の縁はアンチエイリアスしない（ERP の出力の `sky` の Sticker と同じ。透視投影の `sky` の Sticker は縁をアンチエイリアスする。上記「Sky の描き方」）。光線が板と平行な画素と、Camera の後ろにある板は描かない。
 - Source を持たない Sticker、`active` でない Sticker、不透明度 0 の Sticker は描かない。VIDEO と IMAGE バッチの素材は `sky` と同じく `StickerSource.frame` のフレームを描く。
 - レンズ（`lens`。ADR 0042。`core/world_render.py` の `_lens_sticker_layer`）：`lens` を持たない Sticker は上のとおり平らな板。持つ Sticker は、κ = 1 も含めていつも、素材を κ と `lens.hFOV_deg` のレンズの像とみなし、レンズの中心のまわりの球面の一部に貼る（κ を Keyframe で 1 をまたいで動かしても形が跳ばない）。
-  - 形：レンズの中心 `L = position + ρ · (後ろの軸)`、半径 `ρ = scale ÷ (2 · g_κ(hFOV ÷ 2))`（`g_κ = lens_radius`）。球面の点のうち、`L` からの向きを Sticker の右・上・前の軸で見た角度 θ と方位 φ が、上の「Sky の描き方」の κ の Sticker と同じ写し方で `crop` の範囲（像の −1〜1）に入るものが板である。中心の点は `position`（θ = 0）。`scale` は κ = 0 では板の横の弧の長さになる。Pose handoff では `L` が Camera の位置、`ρ` が 2 になる（`docs/studio-node.md`）。
+  - 形：レンズの中心 `L = position + ρ · (後ろの軸)`、半径 `ρ = scale ÷ (2 · g_κ(hFOV ÷ 2))`（`g_κ = lens_radius`）。球面の点のうち、`L` からの向きを Sticker の右・上・前の軸で見た角度 θ と方位 φ が、上の「Sky の描き方」の κ の Sticker と同じ写し方で `crop` の範囲（像の −1〜1）に入るものが板である。中心の点は `position`（θ = 0）。`scale` は κ = 0 では板の横の弧の長さになる。ADR 0059 の前の実行の Pose handoff の結果では、`L` が Camera の位置、`ρ` が 2 だった（今の Pose handoff はいつも `sky` の Sticker）。
   - 180° を超える画角：θ が 180° を超える向きは板に入らない（Camera の規則と同じ）。`hFOV` が 360 なら、横は球を一周する帯になる。
   - 描き方：Sticker ごとに出力の全画素で光線と球（中心 `L`、半径 `ρ`）の交点を 2 つまで求め、光線の前方（`t > 0`）のものだけを、近い方から、交点の `L` からの向きが板に入るものを取る（両面）。素材の標本化と不透明度、縁は平らな板と同じ規則。奥行きは光線の長さ。
-  - 同じ姿勢（`L` から、同じ向きと κ と画角の Camera）で撮ると、素材の画素は撮った画素と同じ向きに戻る（輪が閉じる。`tests/test_pose_handoff.py` の `test_a_lens_shot_returns_where_it_was_shot`）。
+  - 同じ姿勢（`L` から、同じ向きと κ と画角の Camera）で撮ると、素材の画素は撮った画素と同じ向きに戻る（輪が閉じる）。
 
 ### `scene` の共通処理
 
