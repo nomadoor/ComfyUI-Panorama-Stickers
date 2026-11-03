@@ -1,7 +1,7 @@
 // A small software 2D canvas for tests that compare pixels: premultiplied RGBA in floats, a pixel drawn when its
 // center is inside the shape (no anti-aliasing), nearest sampling for drawImage. It does the operations the paint
 // engine uses (pano_paint_engine.js): clearRect, fillRect with a color, a radial gradient or a repeating pattern,
-// drawImage in its three forms under translate / rotate, paths filled (non-zero) and stroked, getImageData /
+// drawImage in its three forms under translate / rotate / scale, paths filled (non-zero) and stroked, getImageData /
 // putImageData, globalAlpha, and the composite operations source-over, destination-out and source-in (which, as
 // in a browser, clears what is outside the shape it draws). Sizing a canvas clears it.
 //
@@ -151,6 +151,7 @@ function createContext(canvas) {
     restore() { if (stack.length) state = stack.pop(); },
     translate(x, y) { state.matrix = multiply(state.matrix, [1, 0, 0, 1, x, y]); },
     rotate(angle) { state.matrix = multiply(state.matrix, [Math.cos(angle), Math.sin(angle), -Math.sin(angle), Math.cos(angle), 0, 0]); },
+    scale(x, y) { state.matrix = multiply(state.matrix, [x, 0, 0, y, 0, 0]); },
     clearRect(x, y, w, h) {
       const { width, height, pixels } = canvas;
       for (let py = Math.max(0, Math.round(y)); py < Math.min(height, Math.round(y + h)); py += 1) {

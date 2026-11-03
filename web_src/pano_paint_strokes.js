@@ -9,7 +9,7 @@ import { createPanoCanvas, releasePanoCanvas } from "./pano_diagnostics.js";
 import { cameraBasis, dot, tangentDirection } from "./pano_camera_math.js";
 import { clamp } from "./pano_math.js";
 import { pixelRangesMeet, rasterObjectPixelRanges } from "./pano_paint_display.js";
-import { directionOfErpPoint, erpPointOfDirection, shortestWrappedDelta } from "./pano_paint_sphere.js";
+import { directionOfErpPoint, erpPointOfDirection, shortestWrappedDelta, stampHalfWidthPx, strokeErpPath } from "./pano_paint_sphere.js";
 import { normalizePaintingState } from "./pano_paint_types.js";
 
 export { directionOfErpPoint, erpPointOfDirection, shortestWrappedDelta };
@@ -422,20 +422,26 @@ function configureStrokeFill(targetCtx, stroke, options = {}) {
   targetCtx.fillStyle = `rgba(${Math.round(Number(c.r || 0) * 255)}, ${Math.round(Number(c.g || 0) * 255)}, ${Math.round(Number(c.b || 0) * 255)}, ${alpha})`;
 }
 
-function drawDiscStamp(targetCtx, sample, maxRadiusPx) {
-  const r = Math.max(0.5, Math.min(maxRadiusPx, Number(sample?.radiusPx || 0.5)));
+// A stamp at the sample: an ellipse rv down and stampHalfWidthPx across (wider by 1 / cos(latitude), up to the whole
+// width; docs/render-contract.md "ペイントのストロークの描き方"), on an ERP of bounds.w x bounds.h.
+function drawDiscStamp(targetCtx, sample, bounds) {
+  const r = Math.max(0.5, Number(sample?.radiusPx || 0.5));
   if (!Number.isFinite(sample?.x) || !Number.isFinite(sample?.y) || !Number.isFinite(r)) return;
-  targetCtx.beginPath();
-  targetCtx.arc(Number(sample.x || 0), Number(sample.y || 0), r, 0, Math.PI * 2);
-  targetCtx.fill();
+  const across = stampHalfWidthPx(r, 1, Number(sample.y || 0) / Math.max(1, bounds.h), bounds.w);
+  for (const offset of [-bounds.w, 0, bounds.w]) {
+    const x = Number(sample.x || 0) + offset;
+    if (x + across < 0 || x - across > bounds.w) continue;
+    targetCtx.beginPath();
+    targetCtx.ellipse(x, Number(sample.y || 0), across, r, 0, 0, Math.PI * 2);
+    targetCtx.fill();
+  }
 }
 
 function drawStampedStroke(targetCtx, samples, stroke, bounds, options = {}) {
   if (!targetCtx || !Array.isArray(samples) || !samples.length) return;
-  const maxRadiusPx = Math.max(bounds.w, bounds.h) * 0.25;
   targetCtx.save();
   configureStrokeFill(targetCtx, stroke, options);
-  const drawSample = (sample) => drawDiscStamp(targetCtx, sample, maxRadiusPx);
+  const drawSample = (sample) => drawDiscStamp(targetCtx, sample, bounds);
   if (samples.length === 1) {
     drawSample(samples[0]);
     targetCtx.restore();
@@ -449,8 +455,8 @@ function drawStampedStroke(targetCtx, samples, stroke, bounds, options = {}) {
     const ay = Number(a.y || 0);
     const bx = Number(b.x || 0);
     const by = Number(b.y || 0);
-    const ar = Math.max(0.5, Math.min(maxRadiusPx, Number(a.radiusPx || 0.5)));
-    const br = Math.max(0.5, Math.min(maxRadiusPx, Number(b.radiusPx || 0.5)));
+    const ar = Math.max(0.5, Number(a.radiusPx || 0.5));
+    const br = Math.max(0.5, Number(b.radiusPx || 0.5));
     if (!Number.isFinite(ax) || !Number.isFinite(ay) || !Number.isFinite(bx) || !Number.isFinite(by)) continue;
     if (!Number.isFinite(ar) || !Number.isFinite(br)) continue;
     const dx = bx - ax;
@@ -460,7 +466,6 @@ function drawStampedStroke(targetCtx, samples, stroke, bounds, options = {}) {
       drawSample(a);
       continue;
     }
-    if (len > Math.max(bounds.w, bounds.h) * 0.5) continue;
     const minRadius = Math.max(0.5, Math.min(ar, br));
     const step = Math.max(0.35, Math.min(minRadius * 0.4, 2.25));
     const count = Math.max(1, Math.ceil(len / step));
@@ -491,14 +496,21 @@ function drawNativeLassoFill(targetCtx, points, stroke, bounds, axisKeys) {
     const c = stroke?.color || { r: 1, g: 0.25, b: 0.25, a: 1 };
     targetCtx.fillStyle = `rgba(${Math.round(Number(c.r || 0) * 255)}, ${Math.round(Number(c.g || 0) * 255)}, ${Math.round(Number(c.b || 0) * 255)}, ${Number(c.a ?? 1)})`;
   }
-  targetCtx.beginPath();
-  targetCtx.moveTo(Number(points[0]?.[xKey] || 0) * bounds.w, Number(points[0]?.[yKey] || 0) * bounds.h);
-  for (let i = 1; i < points.length; i += 1) {
-    targetCtx.lineTo(Number(points[i]?.[xKey] || 0) * bounds.w, Number(points[i]?.[yKey] || 0) * bounds.h);
+  // Its edges (the closing one too) on great circles, u continuous across the seam, with the seam's copies.
+  const coords = points.map((point) => ({ u: Number(point?.[xKey] || 0), v: Number(point?.[yKey] || 0) }));
+  const path = strokeErpPath([...coords, coords[0]], getNativeRadiusPxForStrokePoint(stroke, null, bounds.w, bounds.h), bounds.w, bounds.h).slice(0, -1);
+  const xs = path.map((point) => point.u * bounds.w);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  for (const offset of [0, ...(minX < 0 ? [bounds.w] : []), ...(maxX > bounds.w ? [-bounds.w] : [])]) {
+    targetCtx.beginPath();
+    path.forEach((point, index) => (index ? targetCtx.lineTo : targetCtx.moveTo).call(targetCtx, point.u * bounds.w + offset, point.v * bounds.h));
+    targetCtx.closePath();
+    targetCtx.fill();
   }
-  targetCtx.closePath();
-  targetCtx.fill();
   targetCtx.restore();
+  const ys = path.map((point) => point.v * bounds.h);
+  return { minX, maxX, minY: Math.min(...ys), maxY: Math.max(...ys) };
 }
 
 function getStrokeRasterPoints(stroke) {
@@ -514,9 +526,13 @@ function getStrokeRasterPoints(stroke) {
       : (Array.isArray(geometry.points) ? geometry.points : []));
 }
 
+// The stamps' samples along the stroke's path on the sphere (strokeErpPath: u continuous across the seam).
 function buildNativeStrokeSamples(stroke, bounds) {
-  const points = getStrokeRasterPoints(stroke);
-  if (!Array.isArray(points) || !points.length) return [];
+  const raw = getStrokeRasterPoints(stroke);
+  if (!Array.isArray(raw) || !raw.length) return [];
+  const w = Number(bounds?.w || 1);
+  const h = Number(bounds?.h || 1);
+  const points = strokeErpPath(raw, getNativeRadiusPxForStrokePoint(stroke, null, w, h), w, h);
   return points.map((point) => ({
     x: Number(point?.u || 0) * Number(bounds?.w || 1),
     y: Number(point?.v || 0) * Number(bounds?.h || 1),
@@ -548,31 +564,37 @@ export function rasterizeStrokeToSurface(surface, stroke, bounds = null) {
     if (!(out.x1 > out.x0 && out.y1 > out.y0)) return { x0: 0, y0: 0, x1: 0, y1: 0 };
     return out;
   };
+  // A shape past the left or right edge has a copy on the other side: the box goes the whole way across.
+  const across = (x0, x1) => (x0 < 0 || x1 > targetBounds.w ? [0, targetBounds.w] : [x0, x1]);
   if (geometryKind === "lasso_fill") {
-    const points = getStrokeRasterPoints(rasterStroke);
-    drawNativeLassoFill(surface.ctx, points, rasterStroke, targetBounds);
-    const xs = points.map((point) => Number(point?.u || 0) * targetBounds.w);
-    const ys = points.map((point) => Number(point?.v || 0) * targetBounds.h);
-    return xs.length ? box(Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)) : box(0, 0, -1, -1);
+    const drawn = drawNativeLassoFill(surface.ctx, getStrokeRasterPoints(rasterStroke), rasterStroke, targetBounds);
+    if (!drawn) return box(0, 0, -1, -1);
+    const [x0, x1] = across(drawn.minX, drawn.maxX);
+    return box(x0, drawn.minY, x1, drawn.maxY);
   }
   const samples = buildNativeStrokeSamples(rasterStroke, targetBounds);
   if (!samples.length) return false;
   drawStampedStroke(surface.ctx, samples, rasterStroke, targetBounds, { preview: false });
-  // Each disc drawn lies within the discs of the samples it is drawn between (drawStampedStroke).
-  const maxRadiusPx = Math.max(targetBounds.w, targetBounds.h) * 0.25;
+  // Each ellipse drawn lies within the ellipses of the samples it is drawn between (drawStampedStroke); at most a
+  // sample's half width across (stampHalfWidthPx at its row; the rows between take the wider of the two ends, so the
+  // widest of the stroke's rows bounds them).
   let x0 = Infinity;
   let y0 = Infinity;
   let x1 = -Infinity;
   let y1 = -Infinity;
+  let reach = 0;
   for (const sample of samples) {
-    const r = Math.max(0.5, Math.min(maxRadiusPx, Number(sample?.radiusPx || 0.5)));
+    const r = Math.max(0.5, Number(sample?.radiusPx || 0.5));
     if (!Number.isFinite(sample?.x) || !Number.isFinite(sample?.y) || !Number.isFinite(r)) continue;
-    x0 = Math.min(x0, sample.x - r);
+    reach = Math.max(reach, stampHalfWidthPx(r, 1, Math.min(sample.y, targetBounds.h - sample.y) / targetBounds.h, targetBounds.w));
+    x0 = Math.min(x0, sample.x);
     y0 = Math.min(y0, sample.y - r);
-    x1 = Math.max(x1, sample.x + r);
+    x1 = Math.max(x1, sample.x);
     y1 = Math.max(y1, sample.y + r);
   }
-  return Number.isFinite(x0) ? box(x0, y0, x1, y1) : box(0, 0, -1, -1);
+  if (!Number.isFinite(x0)) return box(0, 0, -1, -1);
+  const [left, right] = across(x0 - reach, x1 + reach);
+  return box(left, y0, right, y1);
 }
 
 // --- Raster objects made from a painted canvas.
@@ -986,7 +1008,8 @@ export function erasePaint(painting, eraserStroke, { descriptor: erpDesc, groupS
     return !(a.maxX < b.minX || b.maxX < a.minX || a.maxY < b.minY || b.maxY < a.minY);
   }
 
-  // The ERP box of a stroke group's points, padded by its frame's uvPad (docs/studio-ui.md "ペイントのまとまり": the
+  // The ERP box of a stroke group's points, padded by its frame's uvPad down and by a stamp's half width at its most
+  // polar row across (docs/studio-ui.md "ペイントのまとまり", docs/render-contract.md "ペイントのストロークの描き方": the
   // eraser's first test reads the points, not the frame): u from the points' mean u the short way round.
   function getGroupApproxBoundsPx(group, strokes) {
     const frame = groupFrame(group, strokes);
@@ -1005,10 +1028,19 @@ export function erasePaint(painting, eraserStroke, { descriptor: erpDesc, groupS
       minU = Math.min(minU, u); maxU = Math.max(maxU, u);
       minV = Math.min(minV, Number(pt?.v || 0)); maxV = Math.max(maxV, Number(pt?.v || 0));
     });
-    minU -= frame.uvPad; maxU += frame.uvPad;
-    minV -= frame.uvPad; maxV += frame.uvPad;
     const width = erpDesc.width;
     const height = erpDesc.height;
+    // Across, a stamp reaches stampHalfWidthPx at the group's most polar row (the whole width where that is half of it).
+    const polar = Math.min(minV, 1 - maxV);
+    const across = stampHalfWidthPx(frame.uvPad * width, 1, Math.max(0, polar - frame.uvPad), width);
+    if (across >= width * 0.5) {
+      minU = 0;
+      maxU = 1;
+    } else {
+      minU -= across / width;
+      maxU += across / width;
+    }
+    minV -= frame.uvPad; maxV += frame.uvPad;
     const minY = Math.floor(clamp(minV, 0, 1) * height);
     const maxY = Math.ceil(clamp(maxV, 0, 1) * height);
     // A range a turn wide or more covers the whole width.

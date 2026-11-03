@@ -66,26 +66,89 @@ def _stroke_width_px(stroke: dict, width: int, height: int) -> int:
     return max(1, int(round(base * scale)))
 
 
-def _unwrap_erp_points(points: list[dict]) -> list[list[dict]]:
-    if not points:
-        return []
-    group = [dict(points[0])]
-    offset = 0.0
-    out = []
-    prev_u = float(points[0]["u"])
-    for point in points[1:]:
-        cur_u = float(point["u"])
-        delta = cur_u - prev_u
-        if delta > 0.5:
-            offset -= 1.0
-        elif delta < -0.5:
-            offset += 1.0
-        next_point = dict(point)
-        next_point["u"] = cur_u + offset
-        group.append(next_point)
-        prev_u = cur_u
-    out.append(group)
+# --- A stroke drawn on the sphere (docs/render-contract.md "ペイントのストロークの描き方"; JS: web_src/pano_paint_sphere.js
+# strokeErpPath, stampHalfWidthPx, held together by tests/fixtures/paint_stroke_sphere.json).
+
+
+def _short_u(a: float, b: float) -> float:
+    d = a - b
+    while d > 0.5:
+        d -= 1.0
+    while d < -0.5:
+        d += 1.0
+    return d
+
+
+def _erp_direction(u: float, v: float) -> tuple[float, float, float]:
+    lon = (u - 0.5) * 2.0 * math.pi
+    lat = (0.5 - v) * math.pi
+    c = math.cos(lat)
+    return (c * math.sin(lon), math.sin(lat), c * math.cos(lon))
+
+
+def stroke_erp_path(points: list[dict], radius_px: float, width: int, height: int) -> list[dict]:
+    """The points a drawer walks for the stroke `points`, its base radius and a width x height ERP: u continuous across
+    the seam (each next one the short way from the one before), with a great circle's midpoint put between two
+    neighbours wherever their ERP line's midpoint lies farther from it than half the brush's vertical radius (as an
+    angle), again on each half (depth 16 at most; not between about the same directions, opposite ones, or ones under
+    a pixel apart). Points put in take the means of their neighbours' t, widthScale and pressureLike."""
+    continuous = []
+    for point in points or []:
+        raw = float(point.get("u") or 0.0)
+        u = raw if not continuous else continuous[-1]["u"] + _short_u(raw, continuous[-1]["u"] % 1.0)
+        continuous.append({**point, "u": u, "v": float(point.get("v") or 0.0)})
+    out: list[dict] = []
+    if not continuous:
+        return out
+    half_angle = float(radius_px) / max(1, height) * math.pi * 0.5
+
+    def between(a: dict, b: dict, depth: int) -> None:
+        if depth >= 16:
+            return
+        if math.hypot((b["u"] - a["u"]) * width, (b["v"] - a["v"]) * height) < 1:
+            return
+        da = _erp_direction(a["u"], a["v"])
+        db = _erp_direction(b["u"], b["v"])
+        if math.dist(da, db) < 1e-12:
+            return
+        if abs(sum(x * y for x, y in zip(da, db)) + 1.0) < 1e-12:
+            return
+        s = [x + y for x, y in zip(da, db)]
+        n = math.sqrt(sum(x * x for x in s))
+        g = [x / n for x in s]
+        mu, mv = (a["u"] + b["u"]) * 0.5, (a["v"] + b["v"]) * 0.5
+        dm = _erp_direction(mu, mv)
+        cross = math.sqrt((dm[1] * g[2] - dm[2] * g[1]) ** 2 + (dm[2] * g[0] - dm[0] * g[2]) ** 2 + (dm[0] * g[1] - dm[1] * g[0]) ** 2)
+        if math.atan2(cross, sum(x * y for x, y in zip(dm, g))) <= half_angle:
+            return
+        lat = math.asin(max(-1.0, min(1.0, g[1])))
+        if abs(lat) >= math.pi / 2 - 1e-9:
+            u = mu
+        else:
+            u = mu + _short_u(math.atan2(g[0], g[2]) / (2.0 * math.pi) + 0.5, mu % 1.0)
+        point = {**a, "u": u, "v": 0.5 - lat / math.pi, "t": (float(a.get("t") or 0.0) + float(b.get("t") or 0.0)) * 0.5}
+        for key in ("widthScale", "pressureLike"):
+            if key in a or key in b:
+                point[key] = (float(a.get(key, 1.0)) + float(b.get(key, 1.0))) * 0.5
+            else:
+                point.pop(key, None)
+        between(a, point, depth + 1)
+        out.append(point)
+        between(point, b, depth + 1)
+
+    out.append(continuous[0])
+    for i in range(1, len(continuous)):
+        between(continuous[i - 1], continuous[i], 0)
+        out.append(continuous[i])
     return out
+
+
+def stamp_half_width_px(rv: float, aspect: float, v: float, width: int) -> float:
+    """A brush stamp's horizontal radius in pixels on an ERP of `width`, for its vertical radius rv and aspect, at the
+    row v: rv · aspect ÷ cos(latitude), the whole width's half where it reaches that."""
+    across = float(rv) * float(aspect)
+    c = math.cos((0.5 - float(v)) * math.pi)
+    return width * 0.5 if across >= c * width * 0.5 else across / c
 
 
 def _catmull_rom_resample(coords: list[tuple[float, float]], spacing: float = 2.0) -> list[tuple[float, float]]:
@@ -136,7 +199,14 @@ def _stroke_segments_for_erp_geometry(stroke: dict, width: int, height: int) -> 
     use_processed = isinstance(processed, list) and len(processed) >= 1
     source_points = processed if use_processed else raw
     segments = []
-    for group in _unwrap_erp_points(source_points):
+    # On the sphere: great-circle points between neighbours (a lasso's closing edge too), in continuous u, before the
+    # seam's copies.
+    radius_px = _stroke_radius_px(stroke, width, height)
+    closed = kind == "lasso_fill" and len(source_points) >= 3
+    path = stroke_erp_path(list(source_points) + ([source_points[0]] if closed else []), radius_px, width, height)
+    if closed:
+        path = path[:-1]
+    for group in [path] if path else []:
         coords = [(float(pt["u"]) * width, float(pt["v"]) * height) for pt in group]
         shift_neg = [((float(pt["u"]) - 1.0) * width, float(pt["v"]) * height) for pt in group]
         shift_pos = [((float(pt["u"]) + 1.0) * width, float(pt["v"]) * height) for pt in group]
@@ -153,7 +223,8 @@ def _stroke_segments_for_erp_geometry(stroke: dict, width: int, height: int) -> 
     return segments
 
 
-def _stroke_point_paths_for_erp_geometry(stroke: dict) -> list[list[dict]]:
+def _stroke_point_paths_for_erp_geometry(stroke: dict, width: int, height: int) -> list[list[dict]]:
+    """The path a freehand stroke's stamps walk (stroke_erp_path: on the sphere, u continuous across the seam)."""
     geometry = stroke.get("geometry") or {}
     kind = str(geometry.get("geometryKind") or "")
     if kind not in {"freehand_open", "freehand_closed"}:
@@ -161,7 +232,8 @@ def _stroke_point_paths_for_erp_geometry(stroke: dict) -> list[list[dict]]:
     processed = geometry.get("processedPoints")
     raw = geometry.get("points") or []
     source_points = processed if isinstance(processed, list) and len(processed) >= 1 else raw
-    return _unwrap_erp_points(source_points)
+    path = stroke_erp_path(source_points, _stroke_radius_px(stroke, width, height), width, height)
+    return [path] if path else []
 
 
 def _stroke_radius_px(stroke: dict, width: int, height: int) -> float:
@@ -195,13 +267,17 @@ def _cached_stamp_alpha(cache_key: tuple, builder):
     return stamp
 
 
-def _build_round_stamp_alpha(radius_px: float, hardness: float, aspect: float = 1.0, angle_rad: float = 0.0) -> np.ndarray:
+def _build_round_stamp_alpha(radius_px: float, hardness: float, aspect: float = 1.0, angle_rad: float = 0.0,
+                             stretch: float = 1.0) -> np.ndarray:
+    """The stamp turned by angle_rad, then drawn `stretch` times wider along the ERP's x (stamp_half_width_px)."""
     rx = max(1.0, float(radius_px) * max(0.1, float(aspect)))
     ry = max(1.0, float(radius_px))
     pad = 1.0
-    half_w = int(math.ceil(rx + pad))
-    half_h = int(math.ceil(ry + pad))
+    reach_x = rx if abs(angle_rad) <= 1e-6 else max(rx, ry)
+    half_w = int(math.ceil(reach_x * stretch + pad))
+    half_h = int(math.ceil((ry if abs(angle_rad) <= 1e-6 else max(rx, ry)) + pad))
     yy, xx = np.mgrid[-half_h:half_h + 1, -half_w:half_w + 1].astype(np.float32)
+    xx = xx / np.float32(stretch)
     if abs(angle_rad) > 1e-6:
         ca = math.cos(angle_rad)
         sa = math.sin(angle_rad)
@@ -220,13 +296,17 @@ def _build_round_stamp_alpha(radius_px: float, hardness: float, aspect: float = 
     return np.clip(alpha, 0.0, 1.0)
 
 
-def _build_chisel_stamp_alpha(radius_px: float, hardness: float, aspect: float = 1.0, angle_rad: float = 0.0) -> np.ndarray:
+def _build_chisel_stamp_alpha(radius_px: float, hardness: float, aspect: float = 1.0, angle_rad: float = 0.0,
+                              stretch: float = 1.0) -> np.ndarray:
+    """The nib turned by angle_rad, then drawn `stretch` times wider along the ERP's x (stamp_half_width_px)."""
     ry = max(1.0, float(radius_px))
     rx = max(ry, float(radius_px) * max(1.0, float(aspect)))
     pad = 1.0
-    half_w = int(math.ceil(rx + pad))
-    half_h = int(math.ceil(ry + pad))
+    reach_x = rx if abs(angle_rad) <= 1e-6 else max(rx, ry)
+    half_w = int(math.ceil(reach_x * stretch + pad))
+    half_h = int(math.ceil((ry if abs(angle_rad) <= 1e-6 else max(rx, ry)) + pad))
     yy, xx = np.mgrid[-half_h:half_h + 1, -half_w:half_w + 1].astype(np.float32)
+    xx = xx / np.float32(stretch)
     if abs(angle_rad) > 1e-6:
         ca = math.cos(angle_rad)
         sa = math.sin(angle_rad)
@@ -255,17 +335,17 @@ def _brush_value(stroke: dict, key: str, default: float) -> float:
     return default if value is None else float(value)
 
 
-def _get_stamp_alpha(stroke: dict, radius_px: float) -> np.ndarray:
+def _get_stamp_alpha(stroke: dict, radius_px: float, stretch: float = 1.0) -> np.ndarray:
     stamp_kind = str(stroke.get("stampKind") or "round")
     hardness = max(0.0, min(1.0, _brush_value(stroke, "hardness", 0.9)))
     aspect = max(0.1, _brush_value(stroke, "aspect", 1.0))
     angle = stroke.get("angle") or {}
     angle_rad = float(angle.get("value", 0.0)) if str(angle.get("kind") or "fixed") == "fixed" else 0.0
     if stamp_kind == "chisel":
-        key = ("chisel", round(radius_px, 2), round(hardness, 2), round(aspect, 2), round(angle_rad, 4))
-        return _cached_stamp_alpha(key, lambda: _build_chisel_stamp_alpha(radius_px, hardness, aspect, angle_rad))
-    key = ("round", stamp_kind, round(radius_px, 2), round(hardness, 2), round(aspect, 2), round(angle_rad, 4))
-    return _cached_stamp_alpha(key, lambda: _build_round_stamp_alpha(radius_px, hardness, aspect, angle_rad))
+        key = ("chisel", round(radius_px, 2), round(hardness, 2), round(aspect, 2), round(angle_rad, 4), round(stretch, 4))
+        return _cached_stamp_alpha(key, lambda: _build_chisel_stamp_alpha(radius_px, hardness, aspect, angle_rad, stretch))
+    key = ("round", stamp_kind, round(radius_px, 2), round(hardness, 2), round(aspect, 2), round(angle_rad, 4), round(stretch, 4))
+    return _cached_stamp_alpha(key, lambda: _build_round_stamp_alpha(radius_px, hardness, aspect, angle_rad, stretch))
 
 
 def _blend_alpha_mask(dst: np.ndarray, src_alpha: np.ndarray, left: int, top: int):
@@ -346,14 +426,17 @@ def _stamp_positions_for_path(coords: list[tuple[float, float]], spacing_px: flo
 def _stroke_freehand_alpha(stroke: dict, width: int, height: int) -> np.ndarray:
     radius_px = _stroke_radius_px(stroke, width, height)
     spacing_px = _stroke_spacing_px(stroke, radius_px)
-    base_alpha = _get_stamp_alpha(stroke, radius_px)
-    stamp_alpha = np.clip(base_alpha * max(0.0, min(1.0, _brush_value(stroke, "flow", 1.0))), 0.0, 1.0)
+    flow = max(0.0, min(1.0, _brush_value(stroke, "flow", 1.0)))
+    aspect = max(0.1, _brush_value(stroke, "aspect", 1.0)) if str(stroke.get("stampKind") or "round") != "chisel" else max(1.0, _brush_value(stroke, "aspect", 1.0))
     stroke_alpha = np.zeros((height, width), dtype=np.float32)
-    half_h = stamp_alpha.shape[0] // 2
-    half_w = stamp_alpha.shape[1] // 2
-    for group in _stroke_point_paths_for_erp_geometry(stroke):
+    for group in _stroke_point_paths_for_erp_geometry(stroke, width, height):
         coords = [(float(pt["u"]) * width, float(pt["v"]) * height) for pt in group]
         for x, y in _stamp_positions_for_path(coords, spacing_px):
+            # Wider across by 1 / cos(latitude) (stamp_half_width_px), rounded to half a pixel for the stamp cache.
+            half_width = round(stamp_half_width_px(radius_px, aspect, y / height, width) * 2.0) / 2.0
+            stamp_alpha = np.clip(_get_stamp_alpha(stroke, radius_px, half_width / max(1e-6, radius_px * aspect)) * flow, 0.0, 1.0)
+            half_h = stamp_alpha.shape[0] // 2
+            half_w = stamp_alpha.shape[1] // 2
             # The stamp's center goes on the pixel whose center (i + 0.5) is nearest to (x, y).
             left = math.floor(x) - half_w
             top = math.floor(y) - half_h
