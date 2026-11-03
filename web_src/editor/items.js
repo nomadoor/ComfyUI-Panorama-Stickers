@@ -301,10 +301,7 @@ export function createItems(deps) {
     const frame = frameSnapshot?.center ? frameSnapshot : strokeGroupFrame(sourceStrokes, getBrushPresetIdForTool, entry?.rot_deg);
     if (!frame) return false;
     const changed = transformStrokeGroup(strokes, gid, scale, sourceStrokes, frame);
-    if (changed && frameSnapshot) {
-      const entry = getPaintingGroupList().find((g) => String(g?.actionGroupId || "") === gid);
-      if (entry) entry.frame = null;
-    }
+    if (changed && frameSnapshot && entry) entry.frame = null;
     return changed;
   }
   function rasterObjectOf(idOrRasterId) {
