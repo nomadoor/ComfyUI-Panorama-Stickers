@@ -11,12 +11,12 @@ import { WHEEL_STEP_PIXELS, frameSeconds } from "./view_scale.js";
 
 // --- Buttons and modifiers: the same table in the Panorama view and the Frame view (where the moves move the Camera).
 
-// button (MouseEvent.button) -> [without Alt, with Alt]: the right button pans, the middle looks around (ADR 0060).
-// Buttons and modifiers not here do nothing.
+// button (MouseEvent.button) -> [without Alt, with Alt]: the left and middle buttons turn the view (look, orbit), the
+// right moves it (pan, joystick); Alt takes the other of the pair (ADR 0060). Buttons and modifiers not here do nothing.
 const BUTTONS = Object.freeze({
   0: ["look", "orbit"],
-  1: ["look", "joystick"],
-  2: ["pan", "orbit"],
+  1: ["look", "orbit"],
+  2: ["pan", "joystick"],
 });
 
 // The operation a press starts, or null for none: a combination not in the table, or with Ctrl, Meta (left to range
