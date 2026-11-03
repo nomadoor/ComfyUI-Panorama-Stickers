@@ -1,6 +1,6 @@
 // The pointer gestures that transform one canvas item: move, scale (both axes, "scale_x", "scale_y") and
 // rotate of a sky Sticker or the shot ("move", "scale", "scale_x", "scale_y", "rotate"), of a stroke group
-// ("move_stroke_group", "scale_stroke_group", "rotate_stroke_group") and of a raster object
+// ("move_stroke_group", "scale_stroke_group") and of a raster object
 // ("move_raster_object", "scale_raster_object"). pointer_input.js decides from the handle under the press
 // which one starts. Letting go of any item edit that moved, a multi-selection move (pointer_multi_move.js)
 // too, is one Undo step (endTransform).
@@ -128,23 +128,15 @@ export function createPointerTransform(deps) {
     canvas.setPointerCapture(e.pointerId);
   }
 
+  // A stroke group has no rotate handle here (hit_test.js handleHit returns none for it; the new editor turns it).
   function startRotate(e, p, selected, selGeom) {
-    editor.interaction = isStrokeGroupItem(selected)
-      ? {
-        kind: "rotate_stroke_group",
-        item: selected,
-        center: selGeom.center,
-        startAng: Math.atan2(p.y - selGeom.center.y, p.x - selGeom.center.x),
-        snapshot: strokeGroupSnapshot(selected),
-        frameSnapshot: strokeGroupFrameSnapshot(selected),
-      }
-      : {
-        kind: "rotate",
-        item: selected,
-        center: selGeom.center,
-        startRot: Number(poseOf(selected).rot_deg || poseOf(selected).roll_deg || 0),
-        startAng: Math.atan2(p.y - selGeom.center.y, p.x - selGeom.center.x),
-      };
+    editor.interaction = {
+      kind: "rotate",
+      item: selected,
+      center: selGeom.center,
+      startRot: Number(poseOf(selected).rot_deg || poseOf(selected).roll_deg || 0),
+      startAng: Math.atan2(p.y - selGeom.center.y, p.x - selGeom.center.x),
+    };
     updateCursor(p);
     canvas.setPointerCapture(e.pointerId);
   }
@@ -256,15 +248,6 @@ export function createPointerTransform(deps) {
     }
   }
 
-  function rotateStrokeGroup(it, p, e) {
-    let delta = (Math.atan2(p.y - it.center.y, p.x - it.center.x) - Number(it.startAng || 0)) * RAD2DEG;
-    if (e.shiftKey) delta = Math.round(delta / 45) * 45;
-    if (applyStrokeGroupTransform(it.item?.actionGroupId, 1, delta, it.snapshot, it.item?.layerKind, it.frameSnapshot)) {
-      markPaintStrokeVisualsDirty({ rebuildPaintEngine: false });
-      requestDraw({ localOnly: true, reason: DRAW_REASON.PAINT });
-    }
-  }
-
   // "scale" writes both FOVs, "scale_x" the hFOV, "scale_y" the vFOV. Panorama Studio's Camera keeps its frame's
   // aspect (docs/editor-interaction.md): each handle changes its angle of view, its hFOV from the handle's axis.
   function scaleItem(it, p) {
@@ -308,8 +291,7 @@ export function createPointerTransform(deps) {
     if (!editor.interaction.moved) return;
     let compositeChanged = false;
     if (editor.interaction.kind === "move_stroke_group"
-      || editor.interaction.kind === "scale_stroke_group"
-      || editor.interaction.kind === "rotate_stroke_group") {
+      || editor.interaction.kind === "scale_stroke_group") {
       compositeChanged = true;
     }
     if (editor.interaction.kind === "move_raster_object" || editor.interaction.kind === "scale_raster_object") {
@@ -322,7 +304,7 @@ export function createPointerTransform(deps) {
       compositeChanged = true;
     }
     if (compositeChanged) {
-      const strokeDragKinds = ["move_stroke_group", "scale_stroke_group", "rotate_stroke_group"];
+      const strokeDragKinds = ["move_stroke_group", "scale_stroke_group"];
       const isStrokeDrag = strokeDragKinds.includes(editor.interaction.kind)
         || (editor.interaction.kind === "move_multi" && Array.isArray(editor.interaction.strokeSnapshots) && editor.interaction.strokeSnapshots.length);
       if (isStrokeDrag) {
@@ -364,7 +346,7 @@ export function createPointerTransform(deps) {
   function gestureRecords(it) {
     switch (it.kind) {
       case "move": case "scale": case "scale_x": case "scale_y": case "rotate":
-      case "move_stroke_group": case "scale_stroke_group": case "rotate_stroke_group":
+      case "move_stroke_group": case "scale_stroke_group":
       case "move_raster_object": case "scale_raster_object":
         return itemRecords(it.item);
       case "move_multi": return it.items.flatMap(itemRecords);
@@ -422,7 +404,7 @@ export function createPointerTransform(deps) {
     },
     editUvAt, strokeGroupSnapshot, strokeGroupFrameSnapshot, rasterObjectSnapshot, writePoseAtScreenPoint,
     startScale, startAxisScale, startRotate, startMove, startHitMove,
-    moveItem, moveStrokeGroup, moveRasterObject, scaleRasterObject, scaleStrokeGroup, rotateStrokeGroup, scaleItem,
+    moveItem, moveStrokeGroup, moveRasterObject, scaleRasterObject, scaleStrokeGroup, scaleItem,
     rotateItem, endTransform, takeGestureSnapshot, restoreGestureSnapshot,
   };
 }

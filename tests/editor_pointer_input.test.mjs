@@ -17,7 +17,6 @@ import { gizmoDragLanes, initialSpaceView } from "../web_src/pano_space.js";
 import { panCutoutShotByScreenDelta } from "../web_src/pano_cutout_node_surface.js";
 import { deriveCutoutAspectLabelFromFov } from "../web_src/pano_cutout_view_math.js";
 import { VIEW_CONTROL_PRESETS } from "../web_src/pano_view_controls.js";
-import { RAD2DEG } from "../web_src/editor/constants.js";
 import { dirToYawPitch } from "../web_src/editor/helpers.js";
 
 const EDITOR_DIR = new URL("../web_src/editor/", import.meta.url);
@@ -820,15 +819,6 @@ test("the rotate handle turns a sticker, a raster object from its roll, a stroke
   h = singleHarness(object, { kind: "rotate" });
   h.onCanvasPointerDown(h.event({ x: 90, y: 30 }));
   assert.deepEqual(h.editor.interaction, { kind: "rotate", item: object, center: { x: 90, y: 20 }, startRot: 25, startAng: Math.PI / 2 });
-
-  const group = strokeGroup("g");
-  h = singleHarness(group, { kind: "rotate" });
-  h.onCanvasPointerDown(h.event({ x: 70, y: 40 }));
-  assert.deepEqual(h.editor.interaction, {
-    kind: "rotate_stroke_group", item: group, center: { x: 70, y: 30 }, startAng: Math.PI / 2,
-    snapshot: [{ id: "g-group-stroke", layerKind: "paint" }],
-    frameSnapshot: { id: "g-group", layerKind: "paint", frame: true },
-  });
 });
 
 test("the move area of a selected sticker moves it by its offset", () => {
@@ -1577,7 +1567,7 @@ test("a multi-selection move in the Frame view goes through the shot, and skips 
   assert.deepEqual(h.calls("writePose"), [[a, { yaw_deg: 0, pitch_deg: 0 }]]);
 });
 
-test("a stroke group's scale and rotate transform it from its snapshot; Shift snaps the turn to 45 degrees", () => {
+test("a stroke group's scale transforms it from its snapshot", () => {
   const group = strokeGroup("g");
   let h = harness({ api: { applyStrokeGroupTransform: () => true } });
   h.editor.interaction = { kind: "scale_stroke_group", item: group, center: { x: 97, y: 46 }, startDist: 2, snapshot: "s", frameSnapshot: "f" };
@@ -1585,14 +1575,6 @@ test("a stroke group's scale and rotate transform it from its snapshot; Shift sn
   assert.deepEqual(h.calls("applyStrokeGroupTransform"), [["g-group", 2.5, 0, "s", "paint", "f"]]);
   assert.deepEqual(h.calls("markPaintStrokeVisualsDirty"), [[{ rebuildPaintEngine: false }]]);
   assert.deepEqual(h.calls("requestDraw"), [[{ localOnly: true, reason: DRAW_REASON.PAINT }]]);
-
-  h = harness({ api: { applyStrokeGroupTransform: () => true } });
-  h.editor.interaction = { kind: "rotate_stroke_group", item: group, center: { x: 90, y: 50 }, startAng: 0.1, snapshot: "s", frameSnapshot: "f" };
-  h.onCanvasPointerMove(h.event({ x: 90, y: 60 }));
-  assert.deepEqual(h.calls("applyStrokeGroupTransform"), [["g-group", 1, (Math.PI / 2 - 0.1) * RAD2DEG, "s", "paint", "f"]]);
-  h.clear();
-  h.onCanvasPointerMove(h.event({ x: 90, y: 60, shiftKey: true }));
-  assert.deepEqual(h.calls("applyStrokeGroupTransform")[0][2], 90);
 
   h = harness({ api: { applyStrokeGroupTransform: () => false } });
   h.editor.interaction = { kind: "scale_stroke_group", item: group, center: { x: 0, y: 0 }, startDist: 1 };
@@ -1868,7 +1850,6 @@ test("a release of a paint item edit rebuilds the strokes or the composite first
   for (const [interaction, mark, args] of [
     [{ kind: "move_stroke_group", moved: true }, "markPaintStrokeVisualsDirty", [{ rebuildPaintEngine: true }]],
     [{ kind: "scale_stroke_group", moved: true }, "markPaintStrokeVisualsDirty", [{ rebuildPaintEngine: true }]],
-    [{ kind: "rotate_stroke_group", moved: true }, "markPaintStrokeVisualsDirty", [{ rebuildPaintEngine: true }]],
     [{ kind: "move_raster_object", moved: true }, "markPaintCompositeVisualsDirty", []],
     [{ kind: "scale_raster_object", moved: true }, "markPaintCompositeVisualsDirty", []],
     [{ kind: "move_multi", moved: true, strokeSnapshots: [{}], rasterSnapshots: [{}] }, "markPaintStrokeVisualsDirty", [{ rebuildPaintEngine: true }]],
@@ -1938,7 +1919,7 @@ test("a pointercancel puts every edit gesture back to its start values, with no 
   const rasters = [{ id: "r", transform: { du: 0, dv: 0, scale: 1 } }];
   const paintApi = { getStrokeGroupStrokes: () => strokes, getPaintingGroupList: () => groups, getRasterObjectList: () => rasters };
   const writePaint = () => { strokes[0].geometry.points = [[0.5, 0.5]]; groups[0].frame = null; rasters[0].transform.du = 0.3; };
-  for (const kind of ["move_stroke_group", "scale_stroke_group", "rotate_stroke_group"]) {
+  for (const kind of ["move_stroke_group", "scale_stroke_group"]) {
     cases.push({ kind, it: { kind, item: strokeGroup("g") }, api: paintApi, records: [strokes, groups], write: writePaint, painting: true });
   }
   for (const kind of ["move_raster_object", "scale_raster_object"]) {
