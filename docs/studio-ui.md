@@ -607,7 +607,7 @@ Paint・Mask の道具を選んでいる間、下の中央のバーはペイン�
 - 軸の取っ手（Move と Scale の棒と玉と四角、Rotate の輪）をドラッグしている間は、つかんだときの物の中心を通る、その軸の向きの
   ガイドの線をステージの端から端まで描く（色はその軸の色。Move の平面の四角では上のとおり二本。Move の中心の点のドラッグでは描かない）。
 - ポインタの下の取っ手と、ドラッグしている取っ手は、軸の色のまま明るく（白へ寄せ）、太く描く（白にはしない。明るい背景で消えるため）。
-  Alt を押している間は明るくしない（Alt のドラッグは必ずオービット）。
+  Alt を押している間は明るくしない（Alt のドラッグは必ず視点の操作）。
 - 棒・玉・四角・輪・平面の四角・中心の点の下に、ガイドと同じ考えの暗い下敷きを描き、明るい背景（白い空の画像など）の上でも
   見えるようにする（値は `docs/design.md` の「新しい UI の見た目」）。
 - 重なり：平面の四角を先に、次に奥の取っ手から描く。当たりは、玉・四角（Scale の先）・中心の点を先に見て、その中で画面の上で最も
@@ -1028,7 +1028,7 @@ Camera を動かす。選んだ物は回る中心と Frame Selected にも使う
 
 | 群 | 行（出す条件） |
 |---|---|
-| View（`docs/space-and-view.md` の「マウスとキー」） | Look around：左ドラッグ・中ボタンのドラッグ。Orbit：Alt＋ドラッグ。Pan：右ドラッグ。Move forward / back：Alt＋中ボタンのドラッグ。Zoom to the pointer：ホイール。Move：W / S・A / D・Q / E。Move faster (hold)：Shift（移動のキーと一緒に押す）。Orbit around a point：ダブルクリック（そこを回る中心にして向く。Camera タブでは Camera が向く）。Camera タブの Frame モードでは群の頭に「These move the Camera.」の一行を添える。Camera タブの Panorama モードでは行を出さず、「Nothing moves the view in Panorama mode.」の一行だけを出す |
+| View（`docs/space-and-view.md` の「マウスとキー」） | Look around：左ドラッグ・中ボタンのドラッグ。Orbit：Alt＋左ドラッグ・Alt＋中ボタンのドラッグ。Pan：右ドラッグ。Move forward / back：Alt＋右ドラッグ。Zoom to the pointer：ホイール。Move：W / S・A / D・Q / E。Move faster (hold)：Shift（移動のキーと一緒に押す）。Orbit around a point：ダブルクリック（そこを回る中心にして向く。Camera タブでは Camera が向く）。Camera タブの Frame モードでは群の頭に「These move the Camera.」の一行を添える。Camera タブの Panorama モードでは行を出さず、「Nothing moves the view in Panorama mode.」の一行だけを出す |
 | Objects（この文書の「下の中央のバー」、`docs/space-and-view.md`） | Select：クリック。Move / Rotate / Scale：1 / 2 / 3（3D タブで、読み取り専用でないとき）。Rotate in 15° steps：Shift＋ギズモの Rotate と Sky の画像とペイントのまとまりの回転のハンドルのドラッグ（同じ条件。数は `ROTATE_SNAP_DEG`）。Delete：Delete・Backspace（Keyframe を選んでいればそれ、そうでなければ物。読み取り専用でないとき） |
 | Timeline（`docs/timeline-ui.md`） | Play / pause：Space。Add to selection：Shift＋クリック・Shift＋ドラッグ（Keyframe）。Copy keyframes：Ctrl＋C。Cut keyframes：Ctrl＋X。Paste at the playhead：Ctrl＋V（この三つは読み取り専用でないとき。`docs/timeline-ui.md` の「Keyframe のコピーと貼り付け」） |
 | Editor | Undo：Ctrl＋Z。Redo：Shift＋Ctrl＋Z（どちらも読み取り専用でないとき）。Fine steps (×0.1)：Shift＋値のドラッグ（欄と FOV・Lens の辺の目盛り。読み取り専用でないとき）。Roll in 15° steps：Shift＋Roll の目盛りのドラッグ（Camera タブで、読み取り専用でないとき）。Shortcuts：?。Step back / close：Escape（下の「閉じ方」） |
