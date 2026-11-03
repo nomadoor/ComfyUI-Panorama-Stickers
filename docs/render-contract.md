@@ -16,7 +16,7 @@ Panorama Studio のバックエンドの描画関数（`render_frame`、重な�
 | 描画の入口、層、`cache` の使い回し | `core/render.py` `render_frame`・`RenderLayer`・`Projection` | — | `tests/test_render.py`、`tests/test_memory_cache.py`、`tests/test_studio_scene.py` |
 | 重なり順と合成 | `render.py` `composite_frame`、`core/world_render.py` `over_by_depth` | — | `tests/test_render.py`、`tests/test_world_render.py` |
 | Sky の標本化（直接の標本化、縮めるときの平均、Sky の幅） | `render.py` `_sky_layers`・`_shoot_sky`・`_sample_filtered`・`_shrink`・`_sky_size` | — | `tests/test_render.py`、`tests/test_studio_node.py`、`tests/test_studio_scene.py` |
-| ペイントのラスタの置き方（ラスタオブジェクトを ERP に置く中心・大きさ・`scale`・`rot_deg`・継ぎ目、回す平面と向き、ラスタの占める画素の範囲。ストロークのまとまりを回す式も同じ平面と向き） | `core/painting.py` `raster_object_placement`・`raster_object_corners_uv`・`raster_object_pixel_ranges`、描くのは `_composite_one_raster_object`（画素を読むのは `_sample_box`） | `web_src/pano_paint_display.js` `turnPaintOffset`・`unturnPaintOffset`（回す平面の式）・`rasterObjectTurnCenterUv`（回す中心）・`placeRasterObjectErp`・`drawRasterObjectErp`・`rasterObjectCornersUv`・`rasterObjectPixelRanges`・`pixelRangesMeet`、`web_src/pano_paint_objects.js` `transformErpPointAround`・`inverseTransformErpPointAround`・`rasterObjectAlphaAt`（`rasterObjectCornersUv` もここから読める）、範囲を使う所は `web_src/pano_paint_strokes.js` `erasePaint`・`web_src/pano_raster_eraser.js` `rasterEraserDisplay` | フィクスチャ `tests/fixtures/paint_raster_place.json` を `tests/test_paint_raster_place_parity.py`（回したラスタ・大きくしたラスタ・継ぎ目をまたぐラスタの描いた画素も見る）と `tests/pano_paint_raster_place_parity.test.mjs` が読む。平面の上の回し方は `tests/pano_paint_objects.test.mjs`、消しゴムの届く範囲は `tests/pano_raster_eraser.test.mjs`。エディタの絵は `tests/browser/paint_rasters.spec.js` |
+| ペイントのラスタの置き方（ラスタオブジェクトを ERP に置く中心・大きさ・`scale`・`rot_deg`・継ぎ目、回す平面と向き、ラスタの占める画素の範囲。ストロークのまとまりは球面の上で回すので、この式を使わない） | `core/painting.py` `raster_object_placement`・`raster_object_corners_uv`・`raster_object_pixel_ranges`、描くのは `_composite_one_raster_object`（画素を読むのは `_sample_box`） | `web_src/pano_paint_display.js` `turnPaintOffset`・`unturnPaintOffset`（回す平面の式）・`rasterObjectTurnCenterUv`（回す中心）・`placeRasterObjectErp`・`drawRasterObjectErp`・`rasterObjectCornersUv`・`rasterObjectPixelRanges`・`pixelRangesMeet`、`web_src/pano_paint_objects.js` `inverseTransformErpPointAround`・`rasterObjectAlphaAt`（`rasterObjectCornersUv` もここから読める）、範囲を使う所は `web_src/pano_paint_strokes.js` `erasePaint`・`web_src/pano_raster_eraser.js` `rasterEraserDisplay` | フィクスチャ `tests/fixtures/paint_raster_place.json` を `tests/test_paint_raster_place_parity.py`（回したラスタ・大きくしたラスタ・継ぎ目をまたぐラスタの描いた画素も見る）と `tests/pano_paint_raster_place_parity.test.mjs` が読む。平面の上の回し方は `tests/pano_paint_objects.test.mjs`、消しゴムの届く範囲は `tests/pano_raster_eraser.test.mjs`。エディタの絵は `tests/browser/paint_rasters.spec.js` |
 | World の層と `world` の Sticker の板 | `world_render.py` `world_layer` | — | `tests/test_world_render.py`、`tests/test_stickers_world.py`、`tests/test_studio_upstream.py` |
 | 3D の `world` の Sticker | `world_render.py` `ContentSource`、`nodes.py` `_port_media`・`_resolve_sources`（3D ファイルの `file` の Source） | — | `tests/test_stickers_3d.py` |
 | `scene` の共通処理 | `world_render.py` `SceneContent`、`nodes.py` `_scene_content` | — | `tests/test_world_render.py`、`tests/test_scene_mesh.py` |
@@ -210,7 +210,8 @@ RTX 4070 Ti、1 フレーム、κ = 0.5・hFOV 140°（4K は 4096 × 2048 相�
   `rot_deg` 回して `scale` 倍するとき、`x = 2 · Δu`（`Δu` は `p.u − c.u` の継ぎ目をまたぐ短い向き）、`y = p.v − c.v` とし、
   `x' = scale · (x cos θ − y sin θ)`、`y' = scale · (x sin θ + y cos θ)`、`u' = c.u + x' / 2`（0〜1 で回る）、`v' = c.v + y'` とする
   （θ は `rot_deg` のラジアン）。逆の向き（当たりで画素を読むとき、Python が画素を読むとき）はこの逆の式。`rot_deg` が 0 のときは今の
-  拡大の式と同じ値になる。ストロークのまとまりを回すとき（`transformErpPointAround`）も同じ式で、ストロークの点の v だけは 0〜1 に寄せる。
+  拡大の式と同じ値になる。ストロークのまとまりは球面の上で回して大きさを変える（`docs/studio-ui.md` の「ペイントのまとまり」）ので、
+  この式を使わない。ERP の平面で回すので、極の近くで回したラスタは形が崩れる（`docs/studio-ui.md` の「まだ決めていないこと」）。
 - 描く ERP の画素への写し方：上の平面の度から、描く ERP の画素へ、横は幅 ÷ 360、縦は高さ ÷ 180 を掛けて写す（JS も Python も、この写し方を
   明示して使う）。エディタのペイントのキャンバスの高さは幅の半分を丸めた値（`paintTargetDescriptor` の `round(width · 0.5)`）で、奇数の幅
   では 2:1 から 1px 未満ずれ、Python の ERP の出力の大きさは使う人が決める。どちらも、canvas の `rotate`・`scale` を画素の上でそのまま掛ける
@@ -219,7 +220,7 @@ RTX 4070 Ti、1 フレーム、κ = 0.5・hFOV 140°（4K は 4096 × 2048 相�
   範囲に丸めない。
 - `scale` の下限：ラスタの `scale` は読み込み（`core/paint_state.py` `_normalize_raster_transform`・`web_src/pano_paint_types.js`
   `normalizeRasterTransform`。`docs/scene-state-v2.md` の「ペイントの数値」）が 0.01 以上にした値を、この式はそのまま使う。点を写す式
-  （`transformErpPointAround`・`inverseTransformErpPointAround`）は下限を持たない（今の 0.02 の下限は、ストロークのまとまりの大きさを変える
+  （`inverseTransformErpPointAround`）は下限を持たない（今の 0.02 の下限は、ストロークのまとまりの大きさを変える
   比の規則として `docs/studio-ui.md` の「ペイントのまとまり」に移す。ラスタの当たりが 0.01〜0.02 の `scale` で絵とずれないように）。
 - 中心：ラスタの枠（`bbox`）の中心に `transform.du`・`dv` を足した所。描くときは、描く ERP の画素で枠の幅と高さをそれぞれ 1px 以上とし
   （Python と、`placeRasterObjectErp` の `minPixel` 1。ノード上の面だけは `PAINT_DISPLAY_PLACES` の `surface` の `minPixel` 0 のまま）、
