@@ -8,7 +8,7 @@
 
 用图像生成模型修改拍下的画面，再放回原来的位置。这一往返流程都可以在 ComfyUI 的 workflow 中完成。
 
-https://github.com/user-attachments/assets/bf74e953-8ceb-4c7f-afa2-1c805f12c7af
+[![Panorama Stickers](https://img.youtube.com/vi/QnMhNTncaYI/maxresdefault.jpg)](https://youtu.be/QnMhNTncaYI)
 
 ## Panorama Studio
 
