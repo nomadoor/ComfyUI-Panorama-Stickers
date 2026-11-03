@@ -32,6 +32,7 @@ import { gizmoDragLanes, sceneTransform } from "../pano_space.js";
 import { hitFrameAffordance, ROTATE_HANDLE_HIT_PX, STICKER_NODE_ROTATE_HANDLE_OFFSET_PX } from "../pano_sticker_affordance.js";
 import {
   buildStickerGeometry,
+  directionAtScreenPoint,
   moveStickerToScreenPoint,
   rotateStickerFromPointer,
   scaleStickerAxisFromPointer,
@@ -39,7 +40,7 @@ import {
 } from "../pano_sticker_geometry.js";
 import { dist2, pointInPoly } from "../pano_math.js";
 import {
-  frameCornersUv, offsetRasterObject, offsetStrokeGroup, paintCornerHandle, paintObjectOf,
+  frameCornersUv, moveStrokeGroupTo, offsetRasterObject, paintCornerHandle, paintObjectOf,
   paintIndexOf, paintObjectRowOf, pointerDistance, pointerScaleRatio, rasterAlphaHits, rasterObjectAlphaAt,
   rasterObjectCornersUv, rotateRasterObject, scaleRasterObject, skyStickersOf, strokeDotHit,
   strokeHitLineWidth, strokePathsHit, strokePoints, transformStrokeGroup, turnStrokeGroup,
@@ -533,14 +534,16 @@ export function createStageObjects({
     };
   }
 
-  // A drag of a paint group (docs/studio-ui.md "ペイントのまとまり"): `kind` "move" (the body: the ERP difference between
-  // the press and the pointer, the seam crossed the short way, added to its points or its raster transform), "scale"
+  // A drag of a paint group (docs/studio-ui.md "ペイントのまとまり"): `kind` "move" (the body: a stroke group as a sky image
+  // moves, paintCarry; a raster object by the ERP difference between the press and the pointer, the seam crossed the
+  // short way, added to its transform), "scale"
   // (a corner: the pointer's distance from the frame's screen center over the press's, on its frame's tangent plane
   // about its box's center for a stroke group, on its transform's scale for a raster object) or "rotate" (the rotate handle: paintTurn), from
   // `geometry` where it started. The painting is written as it is (no Lanes), with its counted groups, and drops the
   // uploaded `painting_layer`.
   function paintDrag(kind, object, geometry, point) {
     if (kind === "rotate") return paintTurn(object, point);
+    if (kind === "move" && object.kind === "group") return paintCarry(object, point);
     const start = erpUnder(projection(), point);
     const center = geometry.center;
     const startDistance = center ? pointerDistance(center, point) : 1;
@@ -552,9 +555,7 @@ export function createStageObjects({
         editPaint(object, (painting) => {
           if (object.kind === "group") {
             const strokes = painting.paint.strokes;
-            return kind === "move"
-              ? offsetStrokeGroup(strokes, object.id, shortestWrappedDelta(at.u, start.u), at.v - start.v)
-              : transformStrokeGroup(strokes, object.id, pointerScaleRatio(center, startDistance, next), null, frame);
+            return transformStrokeGroup(strokes, object.id, pointerScaleRatio(center, startDistance, next), null, frame);
           }
           const item = painting.raster_objects.find((entry) => entry.id === object.id);
           if (!item) return false;
@@ -562,6 +563,27 @@ export function createStageObjects({
             ? offsetRasterObject(item, shortestWrappedDelta(at.u, start.u), at.v - start.v)
             : scaleRasterObject(item, pointerScaleRatio(center, startDistance, next));
         });
+      },
+      end: () => edits.commit(),
+      cancel: () => edits.cancel(),
+    };
+  }
+
+  // A stroke group's body drag, as a sky image's (skyDrag "move"): its center direction `c` (its frame's center, the
+  // points' mean direction) keeps the press's screen offset from it and goes to the direction under the pointer less
+  // that offset (pano_sticker_geometry.js directionAtScreenPoint), and its points are carried with it on the sphere
+  // (moveStrokeGroupTo). When `c` has no place on the screen the press only selects.
+  function paintCarry(object, point) {
+    const frame = paintIndex(state()).groups.get(object.id)?.frame;
+    const anchor = frame ? screenOfDirection(projection(), frame.center) : null;
+    if (!anchor) return selectOnly();
+    const offset = { x: point.x - anchor.x, y: point.y - anchor.y };
+    return {
+      move(next) {
+        const centerTo = directionAtScreenPoint(projection(), { x: next.x - offset.x, y: next.y - offset.y });
+        // Past a lens Camera's limit there is no direction: the group stays where it was last.
+        if (!centerTo) return;
+        editPaint(object, (painting) => moveStrokeGroupTo(painting.paint.strokes, object.id, frame, centerTo, null));
       },
       end: () => edits.commit(),
       cancel: () => edits.cancel(),

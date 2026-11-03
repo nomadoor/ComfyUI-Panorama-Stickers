@@ -4,6 +4,7 @@
 // ("move_raster_object", "scale_raster_object"). pointer_input.js decides from the handle under the press
 // which one starts. Letting go of any item edit that moved, a multi-selection move (pointer_multi_move.js)
 // too, is one Undo step (endTransform).
+import { yawPitchToDir } from "../pano_camera_math.js";
 import { deriveCutoutAspectLabelFromFov, deriveHorizontalFovDeg, getCutoutCameraParams } from "../pano_cutout_view_math.js";
 import { CAMERA_SHOT_ID } from "../pano_editor_state.js";
 import { DRAW_REASON } from "../pano_frame_scheduler.js";
@@ -84,6 +85,12 @@ export function createPointerTransform(deps) {
     return true;
   }
 
+  // The offset of the press `p` from a stroke group's center direction on the screen (its geometry's `anchor`), or null
+  // when that has no screen point (the press only selects; docs/studio-ui.md "ペイントのまとまり" "動かす").
+  function strokeGroupOffset(geom, p) {
+    return geom?.anchor ? { x: p.x - geom.anchor.x, y: p.y - geom.anchor.y } : null;
+  }
+
   // ---- Starting on a handle of the selected item (selGeom its geometry, h the handle).
 
   function startScale(e, p, selected, selGeom, h) {
@@ -150,11 +157,10 @@ export function createPointerTransform(deps) {
 
   function startMove(e, p, selected, selGeom) {
     if (isStrokeGroupItem(selected)) {
-      const startUv = editUvAt(p);
       editor.interaction = {
         kind: "move_stroke_group",
         item: selected,
-        startUv,
+        offset: strokeGroupOffset(selGeom, p),
         snapshot: strokeGroupSnapshot(selected),
         frameSnapshot: strokeGroupFrameSnapshot(selected),
       };
@@ -188,10 +194,8 @@ export function createPointerTransform(deps) {
     editor.interaction = {
       kind: isStrokeGroupItem(hit.item) ? "move_stroke_group" : (isRasterObjectItem(hit.item) ? "move_raster_object" : "move"),
       item: hit.item,
-      offset: { x: p.x - hit.geom.center.x, y: p.y - hit.geom.center.y },
-      startUv: (isStrokeGroupItem(hit.item) || isRasterObjectItem(hit.item))
-        ? editUvAt(p)
-        : null,
+      offset: isStrokeGroupItem(hit.item) ? strokeGroupOffset(hit.geom, p) : { x: p.x - hit.geom.center.x, y: p.y - hit.geom.center.y },
+      startUv: isRasterObjectItem(hit.item) ? editUvAt(p) : null,
       snapshot: isStrokeGroupItem(hit.item)
         ? strokeGroupSnapshot(hit.item)
         : (isRasterObjectItem(hit.item)
@@ -217,12 +221,15 @@ export function createPointerTransform(deps) {
     requestDraw({ localOnly: true });
   }
 
+  // A stroke group moves as a sky Sticker does (docs/studio-ui.md "ペイントのまとまり" "動かす"): its center direction goes
+  // where the pointer less the press's offset points (poseAtScreenPoint), and its points go with it on the sphere.
+  // Without an offset (its center direction had no screen point) the press only selected it.
   function moveStrokeGroup(it, p) {
-    const currentUv = editUvAt(p);
-    if (!currentUv || !it.startUv) return;
-    const du = shortestWrappedDelta(Number(currentUv.u || 0), Number(it.startUv.u || 0));
-    const dv = Number(currentUv.v || 0) - Number(it.startUv.v || 0);
-    if (applyStrokeGroupOffset(it.item?.actionGroupId, du, dv, it.snapshot, it.item?.layerKind, it.frameSnapshot)) {
+    if (!it.offset) return;
+    const pose = poseAtScreenPoint(p.x - it.offset.x, p.y - it.offset.y);
+    if (!pose) return;
+    const centerTo = yawPitchToDir(pose.yaw_deg, pose.pitch_deg);
+    if (applyStrokeGroupOffset(it.item?.actionGroupId, centerTo, it.snapshot, it.item?.layerKind, it.frameSnapshot)) {
       markPaintStrokeVisualsDirty({ rebuildPaintEngine: false });
       requestDraw({ localOnly: true, reason: DRAW_REASON.PAINT });
     }
@@ -409,7 +416,7 @@ export function createPointerTransform(deps) {
         syncSidePanelControls, updateCursor, updateSelectionMenu, writePose,
       } = api);
     },
-    editUvAt, strokeGroupSnapshot, strokeGroupFrameSnapshot, rasterObjectSnapshot, writePoseAtScreenPoint,
+    editUvAt, strokeGroupSnapshot, strokeGroupFrameSnapshot, rasterObjectSnapshot, poseAtScreenPoint, writePoseAtScreenPoint,
     startScale, startAxisScale, startRotate, startMove, startHitMove,
     moveItem, moveStrokeGroup, moveRasterObject, scaleRasterObject, scaleStrokeGroup, scaleItem,
     rotateItem, endTransform, takeGestureSnapshot, restoreGestureSnapshot,

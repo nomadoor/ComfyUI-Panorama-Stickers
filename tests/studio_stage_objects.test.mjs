@@ -10,7 +10,7 @@ import test from "node:test";
 import { evaluateLane } from "../web_src/pano_scene_eval.js";
 import { loadSceneState } from "../web_src/pano_scene_state.js";
 import { buildStickerGeometry } from "../web_src/pano_sticker_geometry.js";
-import { rasterObjectCenterUv, strokeHitLineWidth, strokeHitThreshold, transformStrokeGroup, turnErpPointOnSphere } from "../web_src/pano_paint_objects.js";
+import { moveStrokeGroupTo, rasterObjectCenterUv, strokeHitLineWidth, strokeHitThreshold, transformStrokeGroup, turnErpPointOnSphere } from "../web_src/pano_paint_objects.js";
 import { directionOfErpPoint, erpPointOfDirection, strokeGroupFrame } from "../web_src/pano_paint_strokes.js";
 import { viewProjection } from "../web_src/pano_editor_view.js";
 import { projectPoint } from "../web_src/pano_space.js";
@@ -516,21 +516,24 @@ function painted(groups = [{ id: "g1", actionGroupId: "g1", z_index: 3 }], strok
 }
 const groupPoints = (session) => session.state.painting.paint.strokes[0].geometry.points;
 
-test("a press on a stroke selects its group (paint_group:<id>); its drag adds the ERP difference to every point list, as one Undo step", () => {
+test("a press on a stroke selects its group (paint_group:<id>); its drag carries it as a sky image moves, every point list, as one Undo step", () => {
   const { session, objects } = setup({ painting: painted() });
   const before = structuredClone(session.state.painting.paint.strokes[0].geometry);
+  const grabbed = structuredClone(session.state.painting.paint.strokes);
+  const frame = strokeGroupFrame(grabbed);
   const drag = objects.press(strokeAt);
   assert.ok(drag);
   assert.equal(session.selection.row, "paint_group:g1");
   const to = { x: 420, y: 160 };
   drag.move(to);
-  const start = erpAt(strokeAt);
-  const now = erpAt(to);
-  const du = now.u - start.u;
-  const dv = now.v - start.v;
+  // Its center direction keeps the press's screen offset from it and goes under the pointer less that offset.
+  const anchor = screenAtDir(frame.center);
+  const centerTo = viewProjection(stageCam(), W, H).ray(to.x - (strokeAt.x - anchor.x), to.y - (strokeAt.y - anchor.y));
+  moveStrokeGroupTo(grabbed, "g1", frame, centerTo, null);
   for (const key of ["points", "rawPoints", "processedPoints"]) {
     session.state.painting.paint.strokes[0].geometry[key].forEach((point, index) => {
-      assert.ok(Math.abs(point.u - (before[key][index].u + du)) < 1e-9 && Math.abs(point.v - (before[key][index].v + dv)) < 1e-9, key);
+      const want = grabbed[0].geometry[key][index];
+      assert.ok(Math.abs(point.u - want.u) < 1e-9 && Math.abs(point.v - want.v) < 1e-9, key);
     });
   }
   assert.equal(session.state.painting_layer, null);
@@ -865,6 +868,56 @@ test("moving and scaling a turned stroke group keep its rot_deg; Escape during a
   turn.cancel();
   assert.equal(session.state, given);
   assert.equal(session.state.painting.groups[0].rot_deg, 20);
+});
+
+test("a stroke group dragged over the zenith goes over it as a sky image does: same shape, frame glued, rot_deg kept; Escape and Undo", () => {
+  // The view looks up, the zenith above the middle of the stage.
+  const up = stageCamera({ position: [0, 0, 0], yaw_deg: 0, pitch_deg: 75, roll_deg: 0, target: [0, 0, -5] }, W, H, 50);
+  const project = (d) => {
+    const at = viewProjection(up, W, H).project(d);
+    return { x: at.x, y: at.y };
+  };
+  const points = [{ u: 0.48, v: 0.06 }, { u: 0.5, v: 0.065 }, { u: 0.52, v: 0.06 }];
+  const strokes = [{ ...strokeOn("st1", "g1", left, leftEnd), size: 10, geometry: { geometryKind: "freehand_open", points, rawPoints: points, processedPoints: points } }];
+  const { session, objects } = setup({ stickers: [], camera: up, cameraAt: [0, 0, 50], painting: painted([{ id: "g1", actionGroupId: "g1", z_index: 3, rot_deg: 10 }], strokes) });
+  const before = strokeGroupFrame(session.state.painting.paint.strokes, undefined, 10);
+  const grab = project(directionOfErpPoint(points[1]));
+  const anchor = project(before.center);
+  // Its center to latitude 80° behind, over the zenith.
+  const target = project(directionOfErpPoint({ u: 0, v: 0.5 - 80 / 180 }));
+  const to = { x: grab.x + target.x - anchor.x, y: grab.y + target.y - anchor.y };
+  const start = session.state;
+  let drag = objects.press(grab);
+  assert.equal(session.selection.row, "paint_group:g1");
+  drag.move(to);
+  drag.cancel();
+  assert.equal(session.state, start, "Escape puts it back");
+  drag = objects.press(grab);
+  drag.move({ x: (grab.x + to.x) / 2, y: (grab.y + to.y) / 2 });
+  drag.move(to);
+  drag.end();
+  const after = strokeGroupFrame(session.state.painting.paint.strokes, undefined, session.state.painting.groups[0].rot_deg);
+  assert.equal(session.state.painting.groups[0].rot_deg, 10);
+  assert.ok(Math.abs(Math.abs(after.centerUv.u - 0.5) - 0.5) < 0.02, `behind: ${after.centerUv.u}`);
+  assert.ok(Math.abs(after.halfW - before.halfW) < 1e-6 && Math.abs(after.halfH - before.halfH) < 1e-6, "same shape in its frame");
+  session.state.painting.paint.strokes[0].geometry.points.forEach((p) => assert.ok(p.v > 0.02, `not on the pole's line: ${p.v}`));
+  session.undo();
+  assert.deepEqual(session.state.painting.paint.strokes[0].geometry.points.map(({ u, v }) => ({ u, v })), points, "one Undo step");
+});
+
+test("a stroke group whose center has no place on the screen is selected by a press but not moved", () => {
+  // An arc 300° long around the back: only its ends show in front, its mean direction is behind the view.
+  const points = Array.from({ length: 31 }, (_, k) => ({ u: (k * 10 - 150) / 360 + 1, v: 0.45 })).map((p) => ({ u: p.u % 1, v: p.v }));
+  const stroke = { ...strokeOn("st1", "g1", left, leftEnd), geometry: { geometryKind: "freehand_open", points, rawPoints: points, processedPoints: points } };
+  const { session, objects } = setup({ stickers: [], painting: painted(undefined, [stroke]) });
+  const end = screenAtDir(directionOfErpPoint(points[0]));
+  assert.ok(end.x > 0 && end.x < W && end.y > 0 && end.y < H, "an end shows");
+  const drag = objects.press(end);
+  assert.equal(session.selection.row, "paint_group:g1");
+  const before = session.state;
+  drag.move({ x: end.x + 40, y: end.y + 20 });
+  drag.end();
+  assert.equal(session.state, before);
 });
 
 test("with Shift a stroke group turns by multiples of 15°, a raster object to multiples of 15°", () => {

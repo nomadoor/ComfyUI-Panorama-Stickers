@@ -443,3 +443,52 @@ test("a wide stroke group near the top turns cleanly: its frame keeps its shape 
   expect((await shape()).rot).toBe(0);
   expect(problems).toEqual([]);
 });
+
+test("a stroke group dragged over the zenith goes over it as a sky image does: same shape, frame glued, rot_deg kept; Escape; Undo", async ({ page }) => {
+  const problems = await open(page);
+  // Look up (a drag on the empty stage looks around) and paint a short stroke high up.
+  for (let i = 0; i < 2; i += 1) {
+    await page.mouse.move(...(await at(page, 0.85, 0.2)));
+    await page.mouse.down();
+    await page.mouse.move(...(await at(page, 0.85, 0.75)), { steps: 12 });
+    await page.mouse.up();
+    await page.waitForTimeout(300);
+  }
+  await paintStroke(page, [[0.45, 0.6], [0.5, 0.6], [0.55, 0.6]]);
+  const shape = () => page.evaluate(async () => {
+    const { strokeGroupFrame } = await import("/web_src/pano_paint_strokes.js");
+    const painting = window.__studio.session.state.painting;
+    const frame = strokeGroupFrame(painting.paint.strokes, undefined, painting.groups[0].rot_deg ?? 0);
+    return { halfW: frame.halfW, halfH: frame.halfH, u: frame.centerUv.u, v: frame.centerUv.v, rot: painting.groups[0].rot_deg ?? 0, points: painting.paint.strokes[0].geometry.processedPoints };
+  });
+  const before = await shape();
+  expect(before.v).toBeLessThan(0.25);
+  // Escape during the drag puts it back.
+  await page.mouse.move(...(await at(page, 0.5, 0.6)));
+  await page.mouse.down();
+  await page.mouse.move(...(await at(page, 0.5, 0.05)), { steps: 20 });
+  await page.waitForTimeout(150);
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(200);
+  await page.mouse.up();
+  expect((await shape()).points).toEqual(before.points);
+  // Up the screen past the zenith: its center goes over to the other side of the pole.
+  await page.mouse.move(...(await at(page, 0.5, 0.6)));
+  await page.mouse.down();
+  await page.mouse.move(...(await at(page, 0.5, 0.05)), { steps: 20 });
+  await page.waitForTimeout(250);
+  // Drawn where it went while it goes: no longer at its old place.
+  expect(red(await pixel(page, 0.5, 0.6))).toBe(false);
+  await page.mouse.up();
+  await page.waitForTimeout(250);
+  const after = await shape();
+  const du = Math.abs(after.u - before.u);
+  expect(Math.min(du, 1 - du)).toBeGreaterThan(0.4);
+  expect(after.rot).toBe(before.rot);
+  expect(Math.abs(after.halfW - before.halfW)).toBeLessThan(1e-6);
+  expect(Math.abs(after.halfH - before.halfH)).toBeLessThan(1e-6);
+  await page.locator('[data-tool="undo"]').click();
+  await page.waitForTimeout(300);
+  expect((await shape()).points).toEqual(before.points);
+  expect(problems).toEqual([]);
+});

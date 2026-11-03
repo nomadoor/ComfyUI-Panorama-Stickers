@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  frameCornersUv, rasterObjectAlphaAt, rasterObjectCornersUv, rotateRasterObject, transformStrokeGroup,
+  frameCornersUv, moveStrokeGroupTo, rasterObjectAlphaAt, rasterObjectCornersUv, rotateRasterObject, transformStrokeGroup,
   turnErpPointOnSphere, turnStrokeGroup,
 } from "../web_src/pano_paint_objects.js";
 import { directionOfErpPoint, strokeGroupFrame } from "../web_src/pano_paint_strokes.js";
@@ -148,6 +148,55 @@ test("scaling leaves the points 89.5° or farther from the center where they are
   assert.equal(doubled[0].geometry.points[0].u, 0.2);
   assert.equal(doubled[0].geometry.points[12].u, 0.8);
   assert.ok(doubled[0].geometry.points[7].u > points[7].u + 1e-3);
+});
+
+// The angle (radians) between two ERP points on the sphere.
+const apart = (a, b) => Math.acos(Math.min(1, dot(directionOfErpPoint(a), directionOfErpPoint(b))));
+const fromLonLat = (lon, lat) => directionOfErpPoint({ u: lon / 360 + 0.5, v: 0.5 - lat / 180 });
+
+test("a stroke group moved across the pole goes over it as a rigid body, its frame glued, upside down as a sky image", () => {
+  // A small group around latitude 80° in front (u 0.5).
+  const points = [{ u: 0.49, v: 0.05 }, { u: 0.5, v: 0.06 }, { u: 0.515, v: 0.055 }, { u: 0.5, v: 0.045 }];
+  const strokes = [stroke(points)];
+  const frame = strokeGroupFrame(strokes, undefined, 20);
+  // Its center taken over the pole to latitude 80° behind (longitude 180°).
+  assert.equal(moveStrokeGroupTo(strokes, "g1", frame, fromLonLat(180, 80), null), true);
+  const moved = strokes[0].geometry.points;
+  for (let i = 0; i < points.length; i += 1) {
+    for (let j = i + 1; j < points.length; j += 1) near(apart(moved[i], moved[j]), apart(points[i], points[j]), `${i}-${j}`, 1e-9);
+  }
+  moved.forEach((p) => assert.ok(p.v > 0.02 && Math.abs(Math.abs(p.u - 0.5) - 0.5) < 0.05, `behind, not on the pole's line: ${p.u}, ${p.v}`));
+  const after = strokeGroupFrame(strokes, undefined, 20);
+  near(after.halfW, frame.halfW, "halfW", 1e-9);
+  near(after.halfH, frame.halfH, "halfH", 1e-9);
+  near(after.box.x, frame.box.x, "box x", 1e-9);
+  near(after.box.y, frame.box.y, "box y", 1e-9);
+  // Over the pole its up still points to the zenith, so it is upside down against how it was carried.
+  assert.ok(after.up.y > 0 && frame.up.y > 0);
+});
+
+test("a stroke group moved sideways keeps its up toward the zenith and its place in its frame; a point behind it is carried too", () => {
+  const points = [{ u: 0.45, v: 0.22 }, { u: 0.55, v: 0.25 }, { u: 0.5, v: 0.3 }, { u: 0, v: 0.75 }];
+  const strokes = [stroke(points)];
+  const frame = strokeGroupFrame(strokes, undefined, -15);
+  const target = fromLonLat(90, 50);
+  moveStrokeGroupTo(strokes, "g1", frame, target, null);
+  const after = strokeGroupFrame(strokes, undefined, -15);
+  near(after.center.x, target.x, "center x", 1e-9);
+  near(after.center.y, target.y, "center y", 1e-9);
+  near(after.center.z, target.z, "center z", 1e-9);
+  strokes[0].geometry.points.forEach((p, index) => {
+    const before = directionOfErpPoint(points[index]);
+    const now = directionOfErpPoint(p);
+    near(dot(now, after.right), dot(before, frame.right), `right ${index}`, 1e-9);
+    near(dot(now, after.up), dot(before, frame.up), `up ${index}`, 1e-9);
+    near(dot(now, after.center), dot(before, frame.center), `along ${index}`, 1e-9);
+  });
+  // From its source points (as a drag started) when given.
+  const source = [stroke(points)];
+  const live = [stroke([{ u: 0.1, v: 0.1 }, { u: 0.1, v: 0.1 }, { u: 0.1, v: 0.1 }, { u: 0.1, v: 0.1 }])];
+  moveStrokeGroupTo(live, "g1", strokeGroupFrame(source, undefined, -15), target, source);
+  near(live[0].geometry.points[0].u, strokes[0].geometry.points[0].u, "from the source", 1e-12);
 });
 
 test("a turned raster object is hit inside the frame its corners draw", () => {

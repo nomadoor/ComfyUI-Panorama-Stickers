@@ -3,6 +3,7 @@
 import { yawPitchToDir } from "../pano_camera_math.js";
 import { clamp } from "../pano_math.js";
 import { strokeHitLineWidth, strokePoints } from "../pano_paint_objects.js";
+import { erpPointOfDirection } from "../pano_paint_strokes.js";
 import { smoothstep } from "./helpers.js";
 
 // The points of each edge of an item's outline (buildSceneItemGeom).
@@ -50,6 +51,10 @@ export function createObjectGeometry(deps) {
       editor._strokeGeomCache.set(cacheKey, hidden);
       return hidden;
     }
+    // The screen point of its center direction (the points' mean direction): a move keeps the press's offset from it, as
+    // a sky Sticker's from its center (docs/studio-ui.md "ペイントのまとまり" "動かす"); null where it has none.
+    const anchorPoint = frame ? projectErpPointToEditor(erpPointOfDirection(frame.center), center.x, frameShot, frameRect, unwrapRefU) : null;
+    const anchor = anchorPoint && Number.isFinite(anchorPoint.x) && Number.isFinite(anchorPoint.y) ? { x: anchorPoint.x, y: anchorPoint.y } : null;
     const cornersUv = getFrameCornersUv(frame);
     const corners = cornersUv
       .map((pt) => projectErpPointToEditor(pt, center.x, frameShot, frameRect, unwrapRefU))
@@ -73,6 +78,7 @@ export function createObjectGeometry(deps) {
     const geom = {
       kind: "strokeGroup",
       center: { x: Number(center.x || 0), y: Number(center.y || 0) },
+      anchor,
       corners,
       edgeMidpoints: [
         { edge: "top", ...topMid },

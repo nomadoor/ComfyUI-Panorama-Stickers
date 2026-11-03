@@ -13,8 +13,8 @@ import { clamp, dist2, distToSegment2, pointInPoly } from "./pano_math.js";
 import { PAINT_GROUP_ROW, PAINT_RASTER_ROW, paintObjectRowOf } from "./pano_paint_layers.js";
 import { rasterObjectCornersUv, rasterObjectTurnCenterUv, unturnPaintOffset } from "./pano_paint_display.js";
 import {
-  directionOfErpPoint, erpPointOfDirection, frameDirectionAt, frameTangentOf, shortestWrappedDelta, strokeGroupFrame, strokePoints,
-  syncPaintGroups,
+  directionOfErpPoint, erpPointOfDirection, frameDirectionAt, frameTangentOf, shortestWrappedDelta, strokeGroupAxes, strokeGroupFrame,
+  strokePoints, syncPaintGroups,
 } from "./pano_paint_strokes.js";
 import { isUpstreamSticker } from "./pano_upstream.js";
 
@@ -28,16 +28,6 @@ export const RASTER_HIT_ALPHA = 8;
 export const STROKE_GROUP_MIN_SCALE = 0.02;
 
 // --- ERP points.
-
-// `point` moved by (du, dv): u wraps, v stays in 0..1.
-export function translateErpPoint(point, du, dv) {
-  if (!point || typeof point !== "object") return point;
-  return {
-    ...point,
-    u: ((Number(point.u || 0) + Number(du || 0)) % 1 + 1) % 1,
-    v: clamp(Number(point.v || 0) + Number(dv || 0), 0, 1),
-  };
-}
 
 // The point that rotationDeg and `scale` about `center` on the paint plane take to `point` (the inverse of a raster
 // object's turn, pano_paint_display.js unturnPaintOffset; docs/render-contract.md "ペイントのラスタの置き方"): u wraps,
@@ -104,10 +94,28 @@ function mapStrokeGroupPoints(strokes, gid, sources, map) {
   return changed;
 }
 
-// Moves the stroke group `gid` of the stroke list `strokes` by (du, dv) from `snapshots` (its strokes as a drag
-// started; null moves them from where they are). Returns whether it changed a point.
-export function offsetStrokeGroup(strokes, gid, du, dv, snapshots = null) {
-  return mapStrokeGroupPoints(strokes, gid, snapshots, (pt) => translateErpPoint(pt, du, dv));
+// Moves the stroke group `gid` of the stroke list `strokes` as a sky image moves (docs/studio-ui.md "ペイントのまとまり"
+// "動かす"): its frame `frame` (strokeGroupFrame, as the drag started) is carried so that its center direction becomes
+// `centerTo`, as a rigid body keeping its place in its axes: every point's direction is turned by
+// R = B_new · B_oldᵀ, B_old the frame's axes and B_new strokeGroupAxes(centerTo, its rot_deg) (so the frame worked out
+// again lies on it; its up stays toward the zenith and goes over a pole as a sky image's does). From `sources` (its
+// strokes as a drag started; null moves them from where they are). rot_deg does not change. Returns whether it changed
+// a point.
+export function moveStrokeGroupTo(strokes, gid, frame, centerTo, sources = null) {
+  const to = strokeGroupAxes(centerTo, frame.rot_deg);
+  const axes = [["right", "right"], ["up", "up"], ["center", "center"]];
+  return mapStrokeGroupPoints(strokes, gid, sources, (pt) => {
+    const p = directionOfErpPoint(pt);
+    // Its coordinates in the old axes, put on the new ones.
+    const out = { x: 0, y: 0, z: 0 };
+    for (const [from, onto] of axes) {
+      const k = p.x * frame[from].x + p.y * frame[from].y + p.z * frame[from].z;
+      out.x += k * to[onto].x;
+      out.y += k * to[onto].y;
+      out.z += k * to[onto].z;
+    }
+    return withDirection(pt, out);
+  });
 }
 
 // `point` written back from `direction` (pano_paint_strokes.js erpPointOfDirection): its u and v, its other fields kept.

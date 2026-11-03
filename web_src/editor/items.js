@@ -5,7 +5,7 @@ import { getCutoutAspectLabel } from "../pano_cutout_view_math.js";
 import { CAMERA_SHOT_ID, setCameraField, setStickerPose, stickerPose } from "../pano_editor_state.js";
 import { HIDDEN_PREVIEW_OPACITY } from "../pano_editor_view.js";
 import {
-  frameCornersUv, offsetRasterObject, offsetStrokeGroup, rasterObjectCenterUv, rasterObjectCornersUv,
+  frameCornersUv, moveStrokeGroupTo, offsetRasterObject, rasterObjectCenterUv, rasterObjectCornersUv,
   scaleRasterObject, skyDisplayOrder, strokeGroupCenterUv, transformStrokeGroup,
 } from "../pano_paint_objects.js";
 import { ensurePaintGroup, nextPaintZIndex, paintingGroups, shortestWrappedDelta, statePainting, strokeGroupFrame, syncPaintGroups } from "../pano_paint_strokes.js";
@@ -279,15 +279,19 @@ export function createItems(deps) {
     const strokes = Array.isArray(strokesOverride) ? strokesOverride : getStrokeGroupStrokes(resolved.actionGroupId, resolved.layerKind);
     return strokeGroupCenterUv(strokes);
   }
-  function applyStrokeGroupOffset(idOrActionGroupId, du, dv, snapshots = null, layerKind = null, frameSnapshot = null) {
+  // Moves the stroke group so that its center direction becomes `centerTo` (a unit direction), as a sky image moves
+  // (pano_paint_objects.js moveStrokeGroupTo), from `snapshots` (its strokes as the drag started) and the frame it
+  // started with (`frameSnapshot`; else the frame of its strokes).
+  function applyStrokeGroupOffset(idOrActionGroupId, centerTo, snapshots = null, layerKind = null, frameSnapshot = null) {
     const resolved = parseStrokeGroupSelectionId(idOrActionGroupId, layerKind);
     const gid = String(resolved.actionGroupId || "").trim();
-    if (!gid) return false;
-    const changed = offsetStrokeGroup(getPaintingLayerList(resolved.layerKind), gid, du, dv, snapshots);
-    if (changed && frameSnapshot) {
-      const entry = getPaintingGroupList().find((g) => String(g?.actionGroupId || "") === gid);
-      if (entry) entry.frame = null;
-    }
+    if (!gid || !centerTo) return false;
+    const sourceStrokes = Array.isArray(snapshots) ? snapshots : getStrokeGroupStrokes(gid, resolved.layerKind);
+    const entry = getPaintingGroupList().find((g) => String(g?.actionGroupId || "") === gid);
+    const frame = frameSnapshot?.center ? frameSnapshot : strokeGroupFrame(sourceStrokes, getBrushPresetIdForTool, entry?.rot_deg);
+    if (!frame) return false;
+    const changed = moveStrokeGroupTo(getPaintingLayerList(resolved.layerKind), gid, frame, centerTo, sourceStrokes);
+    if (changed && frameSnapshot && entry) entry.frame = null;
     return changed;
   }
   function applyStrokeGroupTransform(idOrActionGroupId, scale = 1, snapshots = null, layerKind = null, frameSnapshot = null) {
