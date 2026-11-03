@@ -432,9 +432,13 @@ def _stroke_freehand_alpha(stroke: dict, width: int, height: int) -> np.ndarray:
     for group in _stroke_point_paths_for_erp_geometry(stroke, width, height):
         coords = [(float(pt["u"]) * width, float(pt["v"]) * height) for pt in group]
         for x, y in _stamp_positions_for_path(coords, spacing_px):
-            # Wider across by 1 / cos(latitude) (stamp_half_width_px), rounded to half a pixel for the stamp cache.
-            half_width = round(stamp_half_width_px(radius_px, aspect, y / height, width) * 2.0) / 2.0
-            stamp_alpha = np.clip(_get_stamp_alpha(stroke, radius_px, half_width / max(1e-6, radius_px * aspect)) * flow, 0.0, 1.0)
+            # Wider across by 1 / cos(latitude) (stamp_half_width_px): the stamp's own half width (at least a pixel, as
+            # the stamp is made) times that, rounded to half a pixel (at least half) for the stamp cache.
+            across = radius_px * aspect
+            base = max(1.0, across)
+            factor = stamp_half_width_px(radius_px, aspect, y / height, width) / across
+            half_width = max(0.5, round(base * factor * 2.0) / 2.0)
+            stamp_alpha = np.clip(_get_stamp_alpha(stroke, radius_px, half_width / base) * flow, 0.0, 1.0)
             half_h = stamp_alpha.shape[0] // 2
             half_w = stamp_alpha.shape[1] // 2
             # The stamp's center goes on the pixel whose center (i + 0.5) is nearest to (x, y).

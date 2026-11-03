@@ -52,3 +52,12 @@ def test_a_stroke_across_the_seam_gets_its_points_before_its_copies_and_shows_on
     assert cols.min() == 0 and cols.max() == width - 1
     # Nothing in the middle of the ERP.
     assert not ((cols > 200) & (cols < 800)).any()
+
+
+def test_a_very_narrow_brush_still_paints_at_the_smallest_radius():
+    width, height = 512, 256
+    stroke = _stroke([{"u": 0.3, "v": 0.5}, {"u": 0.32, "v": 0.45}], size=1)
+    stroke["radiusValue"] = 0.1 / 2048
+    stroke["aspect"] = 0.1
+    paint, _mask = render_painting_to_erp({"paint": {"strokes": [stroke]}}, width, height)
+    assert (paint[..., 3] > 0.05).sum() > 0
