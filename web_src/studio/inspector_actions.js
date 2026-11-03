@@ -31,7 +31,7 @@ import {
 import { FRAME_EPSILON, evaluateLane } from "../pano_scene_eval.js";
 import { ANIMATION_DEFAULT, ANIMATION_SPEED_MAX, ANIMATION_SPEED_MIN, CAMERA_LANES, DEFAULT_EASING, SKY_STICKER_LANES, WORLD_STICKER_LANES } from "../pano_scene_state.js";
 import { deleteKeyframes, keyLanes, rowLaneNames, setLaneValue, setSegmentEasing } from "../pano_timeline.js";
-import { isUpstreamSticker, upstreamStickerEditable } from "../pano_upstream.js";
+import { isUpstreamSticker, upstreamStickerInherited } from "../pano_upstream.js";
 import { revertHandoffLane } from "../pano_port_handoff.js";
 import { editableCamera } from "./camera_state.js";
 import { defaultCamera } from "./defaults.js";
@@ -57,7 +57,7 @@ function resolve(state, target, { upstream, readOnly }) {
   }
   const sticker = findSticker(state, upstream, target.id);
   if (!sticker || sticker.locked) return null;
-  if (isUpstreamSticker(sticker) && !upstreamStickerEditable(sticker)) return null;
+  if (upstreamStickerInherited(sticker)) return null;
   return { kind: sticker.placement, owner: sticker };
 }
 
@@ -199,7 +199,7 @@ function applyEasing(state, keyframes, easing, upstream) {
   // editableCamera); whether to align it is an open decision of the owner.
   const owner = keyframes.owner === "camera" ? (state.camera ?? null) : keyframeOwner(state, upstream, keyframes.owner);
   if (!owner || owner.locked) return false;
-  if (isUpstreamSticker(owner) && !upstreamStickerEditable(owner)) return false;
+  if (upstreamStickerInherited(owner)) return false;
   const names = keyframes.lane ? [keyframes.lane] : rowLaneNames(owner);
   setSegmentEasing(owner, names, keyframes.frames, easing);
   return true;

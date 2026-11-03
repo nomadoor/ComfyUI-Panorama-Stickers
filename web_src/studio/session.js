@@ -19,7 +19,7 @@
 // gesture, Undo and Redo make the working copies again from the records.
 import { createEditorHistory, duplicateSceneSticker, editorStateWrite, restoredHistoryState, takeStickerId } from "../pano_editor_state.js";
 import { rebaseSceneState, stickerCounter } from "../pano_scene_state.js";
-import { isUpstreamSticker, upstreamStickerEditable } from "../pano_upstream.js";
+import { isUpstreamSticker, upstreamStickerInherited, upstreamStickerLocked } from "../pano_upstream.js";
 import { deletePaintObjects, numberSkyOrder, paintObjectOf, paintObjectRow, restackSkyOrder, skyDisplayList, skyStickersOf } from "../pano_paint_objects.js";
 import { syncPaintGroups } from "../pano_paint_strokes.js";
 import { normalizePaintingState } from "../pano_paint_types.js";
@@ -66,9 +66,6 @@ export function inspectorSelection(selection) {
 function rowInState(state, row, upstream) {
   return row === "camera" || !!findSticker(state, upstream, row) || !!paintObjectOf(state, row);
 }
-
-// Whether an upstream object `sticker` (a working copy) may change: not locked, in a layer whose overrides are kept.
-const upstreamChangeable = (sticker) => !sticker.locked && upstreamStickerEditable(sticker);
 
 const result = (changed, extra = {}) => ({ changed, history: false, stopPlayback: false, ...extra });
 
@@ -213,7 +210,7 @@ export function createStudioSession({ state: opening, readOnly = false, upstream
     }
     const theirs = selectedUpstream();
     if (theirs) {
-      if (gestureBase || !upstreamChangeable(theirs) || !upstream.edits.deleteStickers([theirs])) return { changed: false, notice: null };
+      if (gestureBase || upstreamStickerLocked(theirs) || !upstream.edits.deleteStickers([theirs])) return { changed: false, notice: null };
       selection = EMPTY_SELECTION;
       record();
       return { changed: true, notice: null };
@@ -349,7 +346,7 @@ export function createStudioSession({ state: opening, readOnly = false, upstream
   // whether it did; record() writes it back.
   function editUpstream(edit) {
     const sticker = selectedUpstream();
-    if (readOnly || !sticker || gestureBase || !upstreamStickerEditable(sticker) || !edit(sticker)) return result(false);
+    if (readOnly || !sticker || gestureBase || upstreamStickerInherited(sticker) || !edit(sticker)) return result(false);
     state = { ...state };
     keepSelection();
     record();
@@ -507,7 +504,7 @@ export function createStudioSession({ state: opening, readOnly = false, upstream
   function revertSelected(context = {}) {
     const theirs = selectedUpstream();
     if (theirs) {
-      if (readOnly || gestureBase || !upstreamChangeable(theirs) || !upstream.edits.revertSticker(theirs)) return result(false);
+      if (readOnly || gestureBase || upstreamStickerLocked(theirs) || !upstream.edits.revertSticker(theirs)) return result(false);
       keepSelection();
       record();
       return result(true, { history: true });

@@ -19,7 +19,7 @@ import {
   stickerLanes,
 } from "../pano_scene_state.js";
 import { EASING_PRESETS, rowLaneNames, selectedEasing } from "../pano_timeline.js";
-import { isUpstreamSticker, upstreamOverrideOf, upstreamStickerEditable } from "../pano_upstream.js";
+import { UPSTREAM_INHERITED_TIP, isUpstreamSticker, upstreamOverrideOf, upstreamStickerInherited } from "../pano_upstream.js";
 import { animationClipIndex } from "../pano_animation.js";
 import { cameraOf } from "./camera_state.js";
 import { findSticker, keyframeOwner } from "./row_object.js";
@@ -344,11 +344,11 @@ function stickerCard(state, sticker, { playhead, readOnly, upstream, animations,
   const frame = ownerFrame(sticker, playhead);
   const isWorld = sticker.placement === "world";
   const fromUpstream = isUpstreamSticker(sticker);
-  const editable = !fromUpstream || upstreamStickerEditable(sticker);
+  const editable = !upstreamStickerInherited(sticker);
   const rows = isWorld ? worldRows(sticker, playhead, animations[sticker.id]) : skyRows(sticker, playhead, portSize);
   let disabledTip = "";
   if (readOnly) disabledTip = "Read-only";
-  else if (!editable) disabledTip = "Inherited only: edit it in its own Panorama Studio";
+  else if (!editable) disabledTip = UPSTREAM_INHERITED_TIP;
   else if (sticker.locked) disabledTip = "Locked";
   const override = fromUpstream ? upstreamOverrideOf(state.upstream ?? [], sticker.origin) : null;
   return {

@@ -529,3 +529,14 @@ test("ownSceneLinked: `world` shows the own scene row with an upstream Scene too
   assert.equal(ownSceneLinked({ world: false, scene: true, upstream: false }), true);
   assert.equal(ownSceneLinked({ world: false, scene: false, upstream: false }), false);
 });
+
+test("an upstream object that cannot change: locked, or of a layer whose overrides cannot be kept (one rule for the new editor)", async () => {
+  const { upstreamStickerInherited, upstreamStickerLocked } = await import("../web_src/pano_upstream.js");
+  const own = { id: "sticker_1" };
+  assert.equal(upstreamStickerLocked(own), false);
+  assert.equal(upstreamStickerLocked({ ...own, locked: true }), true);
+  const kept = { id: "upstream:scene_a:s", origin: { layer: "scene_a", id: "s" } };
+  const inherited = { id: "upstream:#0:s", origin: { layer: "#0", id: "s" } };
+  assert.deepEqual([kept, inherited].map(upstreamStickerInherited), [false, true]);
+  assert.deepEqual([kept, { ...kept, locked: true }, inherited].map(upstreamStickerLocked), [false, true, true]);
+});

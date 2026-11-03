@@ -133,6 +133,20 @@ export function upstreamStickerEditable(sticker) {
   return upstreamLayerEditable(sticker.origin.layer);
 }
 
+// Whether `sticker` is an upstream working copy whose layer cannot keep overrides (upstreamStickerEditable): it is
+// only inherited, and changes as a locked one does not (docs/studio-ui.md "上流の物の編集").
+export function upstreamStickerInherited(sticker) {
+  return isUpstreamSticker(sticker) && !upstreamStickerEditable(sticker);
+}
+
+// Whether a Sticker (the node's own or an upstream working copy) does not change: locked, or only inherited.
+export function upstreamStickerLocked(sticker) {
+  return sticker.locked === true || upstreamStickerInherited(sticker);
+}
+
+// Why an only inherited upstream object's edits are off (the new editor's inspector and bar).
+export const UPSTREAM_INHERITED_TIP = "Inherited only: edit it in its own Panorama Studio";
+
 // Whether the node can keep overrides of the upstream layer with `key` (upstreamLayerKeys): its key is its Scene id.
 export function upstreamLayerEditable(key) {
   return !key.startsWith("#");

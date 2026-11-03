@@ -6,7 +6,7 @@
 import { boxCorners, planeCorners, planeOutlineSegments, projectPoint, sceneContentBox, transformPoint } from "../pano_space.js";
 import { lensPolylines } from "../pano_lens.js";
 import { quaternionToRotation } from "../pano_world.js";
-import { isUpstreamSticker, upstreamStickerEditable } from "../pano_upstream.js";
+import { upstreamStickerLocked } from "../pano_upstream.js";
 
 // The looks of a guide (docs/design.md "新しい UI の見た目"): a light line over a dark line 2px wider, so it shows on
 // a light and a dark picture alike. The selected look's color is the soft yellow of the World drop mark; a selected
@@ -47,7 +47,6 @@ export function worldGuideItems(state, content, sceneBox = () => null, pendingBo
   if (!content) return [];
   const byId = new Map(state.stickers.map((sticker) => [sticker.id, sticker]));
   for (const layer of upstream) for (const sticker of layer.sceneState.stickers) byId.set(sticker.id, sticker);
-  const lockedOf = (sticker) => sticker.locked === true || (isUpstreamSticker(sticker) && !upstreamStickerEditable(sticker));
   const items = [];
   for (const plane of [...(content.space?.stickers ?? []), ...(upstream.length ? content.space?.upstreamStickers ?? [] : [])]) {
     const sticker = byId.get(plane.id);
@@ -57,7 +56,7 @@ export function worldGuideItems(state, content, sceneBox = () => null, pendingBo
     items.push({
       id: plane.id,
       kind: "plane",
-      locked: lockedOf(sticker),
+      locked: upstreamStickerLocked(sticker),
       segments: plane.patch ? planeOutlineSegments(plane) : loop(corners),
       corners,
       center: [...plane.position],
@@ -68,7 +67,7 @@ export function worldGuideItems(state, content, sceneBox = () => null, pendingBo
     return {
       id: sticker.id,
       kind: "box",
-      locked: lockedOf(sticker),
+      locked: upstreamStickerLocked(sticker),
       loading,
       // The item's key and the Sticker's value, for the hit test through its grid (hit_test.js coarseUnder).
       url,

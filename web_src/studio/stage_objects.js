@@ -33,7 +33,7 @@ import { rasterObjectTurnCenterUv } from "../pano_paint_display.js";
 import { lensPolylines } from "../pano_lens.js";
 import { setStickerPose, setWorldStickerTransform, skyStickerVfov } from "../pano_editor_state.js";
 import { evaluateSticker } from "../pano_scene_eval.js";
-import { isUpstreamSticker, upstreamStickerEditable } from "../pano_upstream.js";
+import { isUpstreamSticker, upstreamStickerLocked } from "../pano_upstream.js";
 import { gizmoDragLanes, sceneTransform } from "../pano_space.js";
 import { hitFrameAffordance, ROTATE_HANDLE_HIT_PX, STICKER_NODE_ROTATE_HANDLE_OFFSET_PX } from "../pano_sticker_affordance.js";
 import {
@@ -66,11 +66,6 @@ import { coarseUnder } from "./hit_test.js";
 // The cursor over an object's body (hit_test.js's rule: the default arrow; handles bring their own).
 const BODY_CURSOR = "default";
 
-// Whether a Sticker does not move on the stage: locked, or an upstream object of a layer whose overrides cannot be kept.
-function lockedOf(sticker) {
-  return sticker.locked === true || (isUpstreamSticker(sticker) && !upstreamStickerEditable(sticker));
-}
-
 // A sky image as the geometry helpers read it (pano_sticker_geometry.js) from its evaluated pose `value`.
 function skyItem(sticker, value) {
   return {
@@ -82,7 +77,7 @@ function skyItem(sticker, value) {
     vFOV_deg: value.vFOV_deg,
     curve: value.curve,
     z_index: Number(sticker.z_index || 0),
-    locked: lockedOf(sticker),
+    locked: upstreamStickerLocked(sticker),
   };
 }
 
@@ -360,7 +355,7 @@ export function createStageObjects({
     if (kind !== "world-image" && kind !== "world-3d") return null;
     const sticker = stickerOf(state(), row);
     const value = sticker ? stickerValue(sticker) : null;
-    if (!sticker || lockedOf(sticker) || !value?.active) return null;
+    if (!sticker || upstreamStickerLocked(sticker) || !value?.active) return null;
     const guide = guides().find((item) => item.id === row);
     return { mode: shownGizmoMode(kind, mode()), transform: sceneTransform(value), center: guide ? [...guide.center] : null };
   }

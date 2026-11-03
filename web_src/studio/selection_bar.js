@@ -5,7 +5,7 @@ import { ICON } from "../icons.js";
 import { sceneStickerLabel } from "../pano_editor_state.js";
 import { paintObjectOf } from "../pano_paint_objects.js";
 import { is3dFileSource } from "../pano_scene_state.js";
-import { isUpstreamSticker, upstreamStickerEditable } from "../pano_upstream.js";
+import { UPSTREAM_INHERITED_TIP as INHERITED_TIP, isUpstreamSticker, upstreamStickerInherited } from "../pano_upstream.js";
 import { findSticker } from "./row_object.js";
 
 // The gizmo's modes (pano_three_view.js createGizmo) and their keys.
@@ -48,8 +48,6 @@ export function gizmoModeOfKey(kind, key) {
 }
 
 const LATER = "in development";
-// Why an upstream object's edits are off in a layer whose overrides cannot be kept (docs/studio-ui.md "上流の物の編集").
-const INHERITED_TIP = "Inherited only: edit it in its own Panorama Studio";
 
 // The bar for the row `row` of `state` with the gizmo in `mode`, in the tab `tab` ("3d" or "camera"): null when it is
 // not shown (nothing selected; the Camera in the Camera tab, ADR 0055), else
@@ -94,7 +92,7 @@ export function selectionBar({ state, row, mode = "translate", readOnly = false,
   const theirs = isUpstreamSticker(sticker);
   const port = sticker.source.kind === "port";
   // An object of a layer whose overrides cannot be kept: every edit off, as locked, Lock too.
-  const inherited = theirs && !upstreamStickerEditable(sticker);
+  const inherited = upstreamStickerInherited(sticker);
   const edits = readOnly || locked || inherited;
   // Off for an input's or an upstream object, with the reason in its tip.
   const notFor = theirs ? "not for an upstream object" : port ? "not for an input's object" : null;
