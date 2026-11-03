@@ -1008,8 +1008,8 @@ export function erasePaint(painting, eraserStroke, { descriptor: erpDesc, groupS
     return !(a.maxX < b.minX || b.maxX < a.minX || a.maxY < b.minY || b.maxY < a.minY);
   }
 
-  // The ERP box of a stroke group's points, padded by its frame's uvPad down and by a stamp's half width at its most
-  // polar row across (docs/studio-ui.md "ペイントのまとまり", docs/render-contract.md "ペイントのストロークの描き方": the
+  // The ERP box of a stroke group's points, padded by a stamp's radius down and by its half width at the most polar
+  // row across (docs/studio-ui.md "ペイントのまとまり", docs/render-contract.md "ペイントのストロークの描き方": the
   // eraser's first test reads the points, not the frame): u from the points' mean u the short way round.
   function getGroupApproxBoundsPx(group, strokes) {
     const frame = groupFrame(group, strokes);
@@ -1030,9 +1030,13 @@ export function erasePaint(painting, eraserStroke, { descriptor: erpDesc, groupS
     });
     const width = erpDesc.width;
     const height = erpDesc.height;
-    // Across, a stamp reaches stampHalfWidthPx at the group's most polar row (the whole width where that is half of it).
+    // A stamp's vertical radius on this ERP (the widest of the strokes', wider nibs counted) pads it down; across, a
+    // stamp reaches stampHalfWidthPx at the group's most polar row (the whole width where that is half of it).
+    const radius = strokes.reduce((max, stroke) => Math.max(max, getNativeRadiusPxForStrokePoint(stroke, null, width, height)
+      * Math.max(1, Number(stroke?.aspect ?? 1))), 0.5);
+    const pad = radius / height;
     const polar = Math.min(minV, 1 - maxV);
-    const across = stampHalfWidthPx(frame.uvPad * width, 1, Math.max(0, polar - frame.uvPad), width);
+    const across = stampHalfWidthPx(radius, 1, Math.max(0, polar - pad), width);
     if (across >= width * 0.5) {
       minU = 0;
       maxU = 1;
@@ -1040,7 +1044,7 @@ export function erasePaint(painting, eraserStroke, { descriptor: erpDesc, groupS
       minU -= across / width;
       maxU += across / width;
     }
-    minV -= frame.uvPad; maxV += frame.uvPad;
+    minV -= pad; maxV += pad;
     const minY = Math.floor(clamp(minV, 0, 1) * height);
     const maxY = Math.ceil(clamp(maxV, 0, 1) * height);
     // A range a turn wide or more covers the whole width.

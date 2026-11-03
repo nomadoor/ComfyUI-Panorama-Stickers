@@ -3,7 +3,8 @@ import test from "node:test";
 import { normalizePaintingState } from "../web_src/pano_paint_types.js";
 import {
   brushPresetIdForTool, brushStrokeSize, commitPaintStroke, ensurePaintGroup, erpPointOfDirection, freehandStrokeRecord,
-  erasePaint, lassoFillStrokeRecord, nextPaintZIndex, paintTargetDescriptor, strokeGroupFrame, syncPaintGroups, takesStrokePoint,
+  createRasterSurface, erasePaint, lassoFillStrokeRecord, nextPaintZIndex, paintTargetDescriptor, rasterizeStrokeToSurface, strokeGroupFrame,
+  syncPaintGroups, takesStrokePoint,
 } from "../web_src/pano_paint_strokes.js";
 import { turnPaintOffset } from "../web_src/pano_paint_display.js";
 import { withRasterCanvas } from "./raster_canvas.mjs";
@@ -172,4 +173,43 @@ test("the eraser reaches a stroke group that goes all the way round, wherever it
     });
     assert.deepEqual(seen, ["g1"], `the eraser at u ${eraserU}`);
   }
+}));
+
+test("what the eraser reaches of a stamp at a capped row, or over the seam, goes the whole way across", () => withRasterCanvas(() => {
+  const W = 256;
+  const H = 128;
+  const dot = (u, v) => ({ ...lineStroke([{ u, v }]), radiusModel: "erp_uv_norm", radiusValue: 4 / W });
+  for (const [label, u, v] of [["a capped row", 0.5, 0.004], ["over the seam", 0.002, 0.5]]) {
+    const surface = createRasterSurface(W, H, { readback: true });
+    const box = rasterizeStrokeToSurface(surface, dot(u, v), { w: W, h: H });
+    assert.equal(box.x0, 0, label);
+    assert.equal(box.x1, W, label);
+  }
+  // At the equator, away from the seam, it stays a stamp wide.
+  const surface = createRasterSurface(W, H, { readback: true });
+  const box = rasterizeStrokeToSurface(surface, dot(0.5, 0.5), { w: W, h: H });
+  assert.ok(box.x1 - box.x0 < 20, `${box.x0}..${box.x1}`);
+}));
+
+test("the eraser reaches a stroke group near the pole from the other side of the pole on the same row", () => withRasterCanvas(() => {
+  const W = 256;
+  const H = 128;
+  const points = [{ u: 0.2, v: 0.01 }, { u: 0.21, v: 0.01 }];
+  // A brush 4 px tall on this ERP: its stamps on that row go all the way round (stampHalfWidthPx at its cap).
+  const painting = normalizePaintingState({ groups: [{ id: "g1", actionGroupId: "g1", z_index: 0 }], paint: { strokes: [{ ...lineStroke(points), radiusModel: "erp_uv_norm", radiusValue: 4 / W }] } });
+  const square = [[-2, -1], [2, -1], [2, 1], [-2, 1]].map(([x, y]) => ({ u: 0.7 + x / W, v: 0.01 + y / H }));
+  const eraser = { ...lineStroke(square), id: "e1", toolKind: "eraser", geometry: { geometryKind: "lasso_fill", points: square } };
+  const asked = [];
+  erasePaint(painting, eraser, {
+    descriptor: { width: W, height: H },
+    groupStrokes: (gid) => painting.paint.strokes.filter((stroke) => stroke.actionGroupId === gid),
+    groupFrame: (group, strokes) => strokeGroupFrame(strokes, undefined, group.rot_deg),
+    groupCanvas: (gid) => {
+      asked.push(gid);
+      return null;
+    },
+    rasterCanvas: () => null,
+    topZ: () => 0,
+  });
+  assert.deepEqual(asked, ["g1"]);
 }));

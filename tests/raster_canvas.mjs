@@ -1,7 +1,7 @@
 // A small software 2D canvas for tests that compare pixels: premultiplied RGBA in floats, a pixel drawn when its
 // center is inside the shape (no anti-aliasing), nearest sampling for drawImage. It does the operations the paint
 // engine uses (pano_paint_engine.js): clearRect, fillRect with a color, a radial gradient or a repeating pattern,
-// drawImage in its three forms under translate / rotate / scale, paths filled (non-zero) and stroked, getImageData /
+// drawImage in its three forms under translate / rotate / scale, paths (lines and ellipses) filled (non-zero) and stroked, getImageData /
 // putImageData, globalAlpha, and the composite operations source-over, destination-out and source-in (which, as
 // in a browser, clears what is outside the shape it draws). Sizing a canvas clears it.
 //
@@ -191,6 +191,17 @@ function createContext(canvas) {
     moveTo(x, y) { path.push([apply(state.matrix, x, y)]); },
     lineTo(x, y) { path[path.length - 1].push(apply(state.matrix, x, y)); },
     closePath() {},
+    // An ellipse as a polygon of 64 sides (enough for a test's pixels).
+    ellipse(x, y, rx, ry, rotation, start, end) {
+      const ring = [];
+      for (let k = 0; k < 64; k += 1) {
+        const a = start + ((end - start) * k) / 64;
+        const ex = rx * Math.cos(a);
+        const ey = ry * Math.sin(a);
+        ring.push(apply(state.matrix, x + ex * Math.cos(rotation) - ey * Math.sin(rotation), y + ex * Math.sin(rotation) + ey * Math.cos(rotation)));
+      }
+      path.push(ring);
+    },
     fill() {
       const points = path.flat();
       const xs = points.map((point) => point[0]);
