@@ -1,37 +1,137 @@
-// The paint objects' turn on the paint plane (web_src/pano_paint_objects.js; docs/render-contract.md "ペイントのラスタの
-// 置き方"): a stroke's points and a raster object's frame and hits turn on the plane that measures longitude and latitude
-// in the same degrees, as the raster object is drawn (pano_paint_display.js placeRasterObjectErp).
+// The paint objects' turns (web_src/pano_paint_objects.js): a stroke group turns and scales on the sphere, about the
+// direction of its center, as a sky image does (docs/studio-ui.md "ペイントのまとまり"); a raster object's frame and hits
+// turn on the plane that measures longitude and latitude in the same degrees, as it is drawn (docs/render-contract.md
+// "ペイントのラスタの置き方").
 import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  frameCornersUv, rasterObjectAlphaAt, rasterObjectCornersUv, rotateRasterObject, transformErpPointAround, transformStrokeGroup,
-  turnStrokeGroup,
+  frameCornersUv, rasterObjectAlphaAt, rasterObjectCornersUv, rotateRasterObject, transformStrokeGroup,
+  turnErpPointOnSphere, turnStrokeGroup,
 } from "../web_src/pano_paint_objects.js";
-import { turnPaintOffset } from "../web_src/pano_paint_display.js";
+import { directionOfErpPoint, erpPointOfDirection, strokeGroupFrame } from "../web_src/pano_paint_strokes.js";
 import { normalizePaintingState } from "../web_src/pano_paint_types.js";
 
-const near = (actual, expected, label) => assert.ok(Math.abs(actual - expected) < 1e-9, `${label}: ${actual} vs ${expected}`);
+const near = (actual, expected, label, eps = 1e-9) => assert.ok(Math.abs(actual - expected) < eps, `${label}: ${actual} vs ${expected}`);
+const dot = (a, b) => a.x * b.x + a.y * b.y + a.z * b.z;
+// The point (x, y) of a frame's tangent plane, from its record.
+const tangent = (frame, p) => [dot(p, frame.right) / dot(p, frame.center), dot(p, frame.up) / dot(p, frame.center)];
+const stroke = (points, id = "s1") => ({ id, actionGroupId: "g1", layerKind: "paint", toolKind: "pen", size: 10, geometry: { geometryKind: "freehand_open", points, rawPoints: points, processedPoints: points } });
 
-test("a quarter turn keeps a stroke's shape on the 2:1 ERP: 0.1 of u right of the center goes 0.2 of v down", () => {
-  const center = { u: 0.5, v: 0.5 };
-  const turned = transformErpPointAround({ u: 0.6, v: 0.5 }, center, 1, 90);
+test("a point turns about a direction clockwise as seen from inside: right of the center goes down, at the equator and at a pole", () => {
+  // Straight ahead (u 0.5): 36° right of it, a quarter turn takes it 36° down.
+  const turned = turnErpPointOnSphere({ u: 0.6, v: 0.5, t: 3 }, directionOfErpPoint({ u: 0.5, v: 0.5 }), 90);
   near(turned.u, 0.5, "u");
   near(turned.v, 0.7, "v");
-  const back = transformErpPointAround({ u: 0.5, v: 0.7 }, center, 1, -90);
-  near(back.u, 0.6, "u back");
-  near(back.v, 0.5, "v back");
-  // A stroke's point stays on the ERP: past the pole it lies on the pole's line.
-  assert.equal(transformErpPointAround({ u: 0.5, v: 0.1 }, { u: 0.4, v: 0.1 }, 1, -90).v, 0);
+  assert.equal(turned.t, 3, "the point keeps its other fields");
+  // At the north pole the axes are cameraBasis's (longitude 0): a point toward the right (u 0.75) goes down (u 0.5).
+  const atPole = turnErpPointOnSphere({ u: 0.75, v: 10 / 180 }, { x: 1e-12, y: 1, z: -1e-12 }, 90);
+  near(atPole.u, 0.5, "u at the pole", 1e-6);
+  near(atPole.v, 10 / 180, "v at the pole", 1e-9);
 });
 
-test("the points are mapped at any scale; only a stroke group's scale stops at 0.02", () => {
-  const center = { u: 0.5, v: 0.5 };
-  near(transformErpPointAround({ u: 0.6, v: 0.5 }, center, 0.01, 0).u, 0.501, "scale 0.01");
-  const point = { u: 0.6, v: 0.5 };
-  const strokes = [{ id: "s1", actionGroupId: "g1", geometry: { points: [point] } }];
-  assert.equal(transformStrokeGroup(strokes, "g1", 0.001, 0, null, center), true);
-  near(strokes[0].geometry.points[0].u, 0.502, "a stroke group scaled by 0.02");
+test("a point turned by the group's turn keeps its place in the frame's turned axes (the sign matches the frame's)", () => {
+  const points = [{ u: 0.4, v: 0.3 }, { u: 0.55, v: 0.28 }, { u: 0.47, v: 0.36 }];
+  const before = strokeGroupFrame([stroke(points)], undefined, 10);
+  const turnedPoints = points.map((p) => turnErpPointOnSphere(p, before.center, 25));
+  const after = strokeGroupFrame([stroke(turnedPoints)], undefined, 35);
+  points.forEach((p, index) => {
+    const [x0, y0] = tangent(before, directionOfErpPoint(p));
+    const [x1, y1] = tangent(after, directionOfErpPoint(turnedPoints[index]));
+    near(x1, x0, `x ${index}`, 1e-9);
+    near(y1, y0, `y ${index}`, 1e-9);
+  });
+});
+
+test("a stroke group's frame is the box of its points on the tangent plane at their mean direction, padded by π·uvPad", () => {
+  // From 18° left to 18° right on the equator, ahead.
+  const points = Array.from({ length: 7 }, (_, k) => ({ u: 0.45 + k * (0.1 / 6), v: 0.5 }));
+  const frame = strokeGroupFrame([stroke(points)]);
+  const pad = Math.tan(Math.PI * frame.uvPad);
+  near(frame.center.z, 1, "center ahead");
+  near(frame.box.x, 0, "box x");
+  near(frame.box.y, 0, "box y");
+  near(frame.halfW, Math.tan(18 * Math.PI / 180) + pad, "halfW");
+  near(frame.halfH, pad, "halfH");
+  near(frame.rot_deg, 0, "rot_deg");
+  near(frame.centerUv.u, 0.5, "centerUv u");
+  near(frame.centerUv.v, 0.5, "centerUv v");
+  // Its corners are the box's, back on the sphere: top left, top right, bottom right, bottom left.
+  const corners = frameCornersUv(frame);
+  assert.ok(corners[0].u < 0.5 && corners[0].v < 0.5 && corners[1].u > 0.5 && corners[2].v > 0.5 && corners[3].u < 0.5);
+  near(corners[0].u + corners[1].u, 1, "symmetric");
+});
+
+test("a wide group near a pole keeps its frame's shape when it turns (no corner pressed onto the pole's line)", () => {
+  // 108° of longitude along latitude 45° (v 0.25).
+  const points = Array.from({ length: 13 }, (_, k) => ({ u: 0.35 + k * 0.025, v: 0.25 }));
+  const painting = { groups: [{ id: "g1", actionGroupId: "g1", z_index: 0, rot_deg: 0 }], paint: { strokes: [stroke(points)] } };
+  const before = strokeGroupFrame(painting.paint.strokes);
+  const beforeCorners = frameCornersUv(before);
+  assert.equal(turnStrokeGroup(painting, "g1", 30, before.center), true);
+  const after = strokeGroupFrame(painting.paint.strokes, undefined, painting.groups[0].rot_deg);
+  near(after.halfW, before.halfW, "halfW", 1e-9);
+  near(after.halfH, before.halfH, "halfH", 1e-9);
+  // Its corners are the old ones turned about the center.
+  frameCornersUv(after).forEach((corner, index) => {
+    const want = turnErpPointOnSphere(beforeCorners[index], before.center, 30);
+    near(corner.u, want.u, `corner ${index} u`, 1e-9);
+    near(corner.v, want.v, `corner ${index} v`, 1e-9);
+    assert.ok(corner.v > 0, `corner ${index} is not on the pole's line`);
+  });
+});
+
+test("a group across the seam has a frame across u 0, and points far from the center keep the frame finite", () => {
+  const across = strokeGroupFrame([stroke([{ u: 0.97, v: 0.5 }, { u: 0.03, v: 0.5 }])]);
+  near(across.centerUv.u === 0 ? 1 : across.centerUv.u, 1, "center on the seam");
+  const corners = frameCornersUv(across);
+  assert.ok(corners[0].u > 0.9 && corners[1].u < 0.1, `${corners[0].u} ${corners[1].u}`);
+  // Three points 120° apart on the equator and one at the north pole: the mean is the pole; the equator lies 90° away.
+  const spread = strokeGroupFrame([stroke([{ u: 0, v: 0.5 }, { u: 1 / 3, v: 0.5 }, { u: 2 / 3, v: 0.5 }, { u: 0.5, v: 0.02 }])]);
+  assert.ok(Number.isFinite(spread.halfW) && Number.isFinite(spread.halfH) && spread.halfW > 10);
+  frameCornersUv(spread).forEach((corner) => assert.ok(Number.isFinite(corner.u) && Number.isFinite(corner.v)));
+});
+
+test("turning a stroke group adds to its rot_deg and turns its points about the center by what the angle changed; a snap stops the angle", () => {
+  const painting = () => ({
+    groups: [{ id: "g1", actionGroupId: "g1", z_index: 0, rot_deg: 10 }],
+    paint: { strokes: [stroke([{ u: 0.6, v: 0.4 }])] },
+  });
+  const center = directionOfErpPoint({ u: 0.5, v: 0.5 });
+  let draft = painting();
+  assert.equal(turnStrokeGroup(draft, "g1", 25, center), true);
+  assert.equal(draft.groups[0].rot_deg, 35);
+  let want = turnErpPointOnSphere({ u: 0.6, v: 0.4 }, center, 25);
+  near(draft.paint.strokes[0].geometry.points[0].u, want.u, "u");
+  near(draft.paint.strokes[0].geometry.points[0].v, want.v, "v");
+  draft = painting();
+  turnStrokeGroup(draft, "g1", 25, center, { snapDeg: 15 });
+  assert.equal(draft.groups[0].rot_deg, 30);
+  want = turnErpPointOnSphere({ u: 0.6, v: 0.4 }, center, 20);
+  near(draft.paint.strokes[0].geometry.points[0].u, want.u, "snapped u");
+  // The point straight opposite the center does not move.
+  draft = { ...painting(), paint: { strokes: [stroke([{ u: 0, v: 0.5 }])] } };
+  turnStrokeGroup(draft, "g1", 40, center);
+  assert.equal(draft.paint.strokes[0].geometry.points[0].u, 0);
+});
+
+test("a stroke group scales on its frame's tangent plane about its box's center; the ratio stops at 0.02", () => {
+  const points = [{ u: 0.45, v: 0.5 }, { u: 0.55, v: 0.5 }];
+  const strokes = [stroke(points)];
+  const frame = strokeGroupFrame(strokes);
+  assert.equal(transformStrokeGroup(strokes, "g1", 2, null, frame), true);
+  const lon = (u) => (u - 0.5) * 360;
+  near(lon(strokes[0].geometry.points[1].u), Math.atan(2 * Math.tan(18 * Math.PI / 180)) * 180 / Math.PI, "twice as far on the plane", 1e-9);
+  near(strokes[0].geometry.points[1].v, 0.5, "v");
+  const tiny = [stroke(points)];
+  transformStrokeGroup(tiny, "g1", 0.001, null, strokeGroupFrame(tiny));
+  near(lon(tiny[0].geometry.points[1].u), Math.atan(0.02 * Math.tan(18 * Math.PI / 180)) * 180 / Math.PI, "by 0.02", 1e-9);
+  // Its source points (as a drag started) are read when given.
+  const source = [stroke(points)];
+  const moved = [stroke([{ u: 0.1, v: 0.1 }, { u: 0.2, v: 0.2 }])];
+  transformStrokeGroup(moved, "g1", 1, source, strokeGroupFrame(source));
+  near(moved[0].geometry.points[0].u, 0.45, "from the source", 1e-9);
+  void erpPointOfDirection;
 });
 
 test("a turned raster object is hit inside the frame its corners draw", () => {
@@ -75,32 +175,4 @@ test("a group's rot_deg is read as a finite JSON number, else 0 (old states have
     { id: "d", actionGroupId: "d", rot_deg: null },
   ] });
   assert.deepEqual(groups.map((group) => group.rot_deg), [397.5, 0, 0, 0]);
-});
-
-test("a stroke group's frame corners turn with its rot_deg about its center on the paint plane", () => {
-  const frame = { centerUv: { u: 0.5, v: 0.5 }, rot_deg: 30, halfW: 0.1, halfH: 0.05 };
-  const corners = frameCornersUv(frame);
-  [[-0.1, -0.05], [0.1, -0.05], [0.1, 0.05], [-0.1, 0.05]].forEach(([du, dv], index) => {
-    const [tu, tv] = turnPaintOffset(du, dv, 1, 30);
-    assert.ok(Math.abs(corners[index].u - (0.5 + tu)) < 1e-12 && Math.abs(corners[index].v - (0.5 + tv)) < 1e-12, `corner ${index}`);
-  });
-});
-
-test("turning a stroke group adds to its rot_deg and turns its points by what the angle changed; a snap stops the angle", () => {
-  const painting = () => ({
-    groups: [{ id: "g1", actionGroupId: "g1", z_index: 0, rot_deg: 10 }],
-    paint: { strokes: [{ id: "s1", actionGroupId: "g1", geometry: { points: [{ u: 0.6, v: 0.5 }] } }] },
-  });
-  const center = { u: 0.5, v: 0.5 };
-  let draft = painting();
-  assert.equal(turnStrokeGroup(draft, "g1", 25, center), true);
-  assert.equal(draft.groups[0].rot_deg, 35);
-  let want = transformErpPointAround({ u: 0.6, v: 0.5 }, center, 1, 25);
-  near(draft.paint.strokes[0].geometry.points[0].u, want.u, "u");
-  near(draft.paint.strokes[0].geometry.points[0].v, want.v, "v");
-  draft = painting();
-  turnStrokeGroup(draft, "g1", 25, center, { snapDeg: 15 });
-  assert.equal(draft.groups[0].rot_deg, 30);
-  want = transformErpPointAround({ u: 0.6, v: 0.5 }, center, 1, 20);
-  near(draft.paint.strokes[0].geometry.points[0].u, want.u, "snapped u");
 });

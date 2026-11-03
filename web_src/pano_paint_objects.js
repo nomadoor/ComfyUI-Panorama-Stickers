@@ -11,8 +11,11 @@
 import { BRUSH_PRESETS, DEFAULT_BRUSH_PRESET_ID } from "./pano_brush_presets.js";
 import { clamp, dist2, distToSegment2, pointInPoly } from "./pano_math.js";
 import { PAINT_GROUP_ROW, PAINT_RASTER_ROW, paintObjectRowOf } from "./pano_paint_layers.js";
-import { rasterObjectCornersUv, rasterObjectTurnCenterUv, turnPaintOffset, unturnPaintOffset } from "./pano_paint_display.js";
-import { frameCornerOffsets, shortestWrappedDelta, strokeGroupFrame, strokePoints, syncPaintGroups } from "./pano_paint_strokes.js";
+import { rasterObjectCornersUv, rasterObjectTurnCenterUv, unturnPaintOffset } from "./pano_paint_display.js";
+import {
+  directionOfErpPoint, erpPointOfDirection, frameDirectionAt, frameTangentOf, shortestWrappedDelta, strokeGroupFrame, strokePoints,
+  syncPaintGroups,
+} from "./pano_paint_strokes.js";
 import { isUpstreamSticker } from "./pano_upstream.js";
 
 export { paintObjectRowOf, rasterObjectCornersUv, strokePoints };
@@ -36,21 +39,9 @@ export function translateErpPoint(point, du, dv) {
   };
 }
 
-// `point` turned by rotationDeg and scaled by `scale` about `center` on the paint plane (pano_paint_display.js
-// turnPaintOffset; docs/render-contract.md "ペイントのラスタの置き方"): u wraps, v stays in 0..1 (a stroke's point).
-export function transformErpPointAround(point, center, scale = 1, rotationDeg = 0) {
-  if (!point || typeof point !== "object") return point;
-  const cu = Number(center?.u || 0);
-  const cv = Number(center?.v || 0);
-  const [du, dv] = turnPaintOffset(shortestWrappedDelta(Number(point.u || 0), cu), Number(point.v || 0) - cv, Number(scale || 1), rotationDeg);
-  return {
-    ...point,
-    u: ((cu + du) % 1 + 1) % 1,
-    v: clamp(cv + dv, 0, 1),
-  };
-}
-
-// The point transformErpPointAround takes to `point` (v not clamped).
+// The point that rotationDeg and `scale` about `center` on the paint plane take to `point` (the inverse of a raster
+// object's turn, pano_paint_display.js unturnPaintOffset; docs/render-contract.md "ペイントのラスタの置き方"): u wraps,
+// v not clamped.
 export function inverseTransformErpPointAround(point, center, scale = 1, rotationDeg = 0) {
   if (!point || typeof point !== "object") return point;
   const cu = Number(center?.u || 0);
@@ -119,35 +110,67 @@ export function offsetStrokeGroup(strokes, gid, du, dv, snapshots = null) {
   return mapStrokeGroupPoints(strokes, gid, snapshots, (pt) => translateErpPoint(pt, du, dv));
 }
 
-// Scales the stroke group `gid` of `strokes` by `scale` (at least STROKE_GROUP_MIN_SCALE) and turns it by rotationDeg
-// about `centerUv`, from `sources` (its strokes as a drag started; null transforms them where they are). Returns
-// whether it changed a point.
-export function transformStrokeGroup(strokes, gid, scale, rotationDeg, sources, centerUv) {
-  const ratio = Math.max(STROKE_GROUP_MIN_SCALE, Number(scale || 1));
-  return mapStrokeGroupPoints(strokes, gid, sources, (pt) => transformErpPointAround(pt, centerUv, ratio, rotationDeg));
+// `point` written back from `direction` (pano_paint_strokes.js erpPointOfDirection): its u and v, its other fields kept.
+function withDirection(point, direction) {
+  const { u, v } = erpPointOfDirection(direction);
+  return { ...point, u, v };
 }
 
-// Turns the stroke group `gid` of `painting` by deltaDeg about `centerUv` (docs/studio-ui.md "ペイントのまとまり" "回す"):
-// its group entry's rot_deg becomes the one it has plus deltaDeg (with snapDeg, stopped at its multiples; not wrapped),
-// and its points turn by what that angle changed. Returns whether it changed (false without the group entry).
-export function turnStrokeGroup(painting, gid, deltaDeg, centerUv, { snapDeg = 0 } = {}) {
+// Scales the stroke group `gid` of `strokes` by `scale` (at least STROKE_GROUP_MIN_SCALE) on the tangent plane of its
+// frame `frame` (pano_paint_strokes.js strokeGroupFrame) about the frame's box center (docs/studio-ui.md
+// "ペイントのまとまり" "大きさを変える"), from `sources` (its strokes as a drag started; null scales them where they are).
+// The point opposite the frame's center stays. Returns whether it changed a point.
+export function transformStrokeGroup(strokes, gid, scale, sources, frame) {
+  const ratio = Math.max(STROKE_GROUP_MIN_SCALE, Number(scale || 1));
+  const { box } = frame;
+  return mapStrokeGroupPoints(strokes, gid, sources, (pt) => {
+    const at = frameTangentOf(frame, directionOfErpPoint(pt));
+    if (!at) return pt;
+    return withDirection(pt, frameDirectionAt(frame, box.x + ratio * (at[0] - box.x), box.y + ratio * (at[1] - box.y)));
+  });
+}
+
+// `point` turned by deg about the unit direction `axis`, clockwise seen from inside looking along it (docs/studio-ui.md
+// "ペイントのまとまり" "回す": the right-handed Rodrigues formula with -deg, p cos θ - (c × p) sin θ + c (c·p)(1 - cos θ)),
+// its other fields kept.
+export function turnErpPointOnSphere(point, axis, deg) {
+  const p = directionOfErpPoint(point);
+  const rad = Number(deg || 0) * (Math.PI / 180);
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  const along = (axis.x * p.x + axis.y * p.y + axis.z * p.z) * (1 - cos);
+  const cross = { x: axis.y * p.z - axis.z * p.y, y: axis.z * p.x - axis.x * p.z, z: axis.x * p.y - axis.y * p.x };
+  return withDirection(point, {
+    x: p.x * cos - cross.x * sin + axis.x * along,
+    y: p.y * cos - cross.y * sin + axis.y * along,
+    z: p.z * cos - cross.z * sin + axis.z * along,
+  });
+}
+
+// Turns the stroke group `gid` of `painting` by deltaDeg about its center direction `axis` (its frame's center,
+// docs/studio-ui.md "ペイントのまとまり" "回す"): its group entry's rot_deg becomes the one it has plus deltaDeg (with
+// snapDeg, stopped at its multiples; not wrapped), and its points turn on the sphere by what that angle changed (the
+// point opposite the axis stays). Returns whether it changed (false without the group entry).
+export function turnStrokeGroup(painting, gid, deltaDeg, axis, { snapDeg = 0 } = {}) {
   const group = (painting.groups ?? []).find((entry) => String(entry?.actionGroupId || "").trim() === gid);
   if (!group) return false;
   const from = Number(group.rot_deg || 0);
   let to = from + Number(deltaDeg || 0);
   if (snapDeg > 0) to = Math.round(to / snapDeg) * snapDeg;
   group.rot_deg = to;
-  transformStrokeGroup(painting.paint.strokes, gid, 1, to - from, null, centerUv);
+  mapStrokeGroupPoints(painting.paint.strokes, gid, null, (pt) => turnErpPointOnSphere(pt, axis, to - from));
   return true;
 }
 
-// The four ERP corners (top left, top right, bottom right, bottom left) of a stroke group's frame (strokeGroupFrame,
-// turned by its rot_deg: frameCornerOffsets), u wrapped and v kept in 0..1; none without one.
+// The four ERP corners (top left, top right, bottom right, bottom left in its turned axes) of a stroke group's frame
+// (strokeGroupFrame): its box's corners on the tangent plane, back on the sphere; none without one.
 export function frameCornersUv(frame) {
-  if (!frame?.centerUv) return [];
-  const centerU = Number(frame.centerUv.u || 0);
-  const centerV = Number(frame.centerUv.v || 0);
-  return frameCornerOffsets(frame).map(([du, dv]) => ({ u: ((centerU + du) % 1 + 1) % 1, v: clamp(centerV + dv, 0, 1) }));
+  if (!frame?.center) return [];
+  const { box, halfW, halfH } = frame;
+  return [[-halfW, halfH], [halfW, halfH], [halfW, -halfH], [-halfW, -halfH]].map(([x, y]) => {
+    const { u, v } = erpPointOfDirection(frameDirectionAt(frame, box.x + x, box.y + y));
+    return { u, v };
+  });
 }
 
 // The width (px) a stroke is hit within on screen, from its size and its brush preset `presetId`.

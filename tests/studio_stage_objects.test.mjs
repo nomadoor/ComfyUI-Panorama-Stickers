@@ -10,7 +10,7 @@ import test from "node:test";
 import { evaluateLane } from "../web_src/pano_scene_eval.js";
 import { loadSceneState } from "../web_src/pano_scene_state.js";
 import { buildStickerGeometry } from "../web_src/pano_sticker_geometry.js";
-import { rasterObjectCenterUv, strokeGroupCenterUv, strokeHitLineWidth, strokeHitThreshold, transformErpPointAround } from "../web_src/pano_paint_objects.js";
+import { rasterObjectCenterUv, strokeHitLineWidth, strokeHitThreshold, transformStrokeGroup, turnErpPointOnSphere } from "../web_src/pano_paint_objects.js";
 import { directionOfErpPoint, erpPointOfDirection, strokeGroupFrame } from "../web_src/pano_paint_strokes.js";
 import { viewProjection } from "../web_src/pano_editor_view.js";
 import { projectPoint } from "../web_src/pano_space.js";
@@ -615,13 +615,15 @@ test("the selected stroke group's corner scales its points about its frame's cen
   const { corners, center: middle, handles } = objects.overlay().paint;
   assert.equal(handles, true);
   assert.equal(objects.hover(corners[1]).cursor, "nesw-resize");
-  const before = structuredClone(groupPoints(session));
-  const frame = strokeGroupFrame(session.state.painting.paint.strokes);
+  const strokesBefore = structuredClone(session.state.painting.paint.strokes);
+  const frame = strokeGroupFrame(strokesBefore);
   const drag = objects.press(corners[1]);
   drag.move({ x: middle.x + (corners[1].x - middle.x) * 2, y: middle.y + (corners[1].y - middle.y) * 2 });
   drag.end();
+  // Twice as far from its box's center on its frame's tangent plane.
+  transformStrokeGroup(strokesBefore, "g1", 2, null, frame);
   groupPoints(session).forEach((point, index) => {
-    const want = transformErpPointAround(before[index], frame.centerUv, 2, 0);
+    const want = strokesBefore[0].geometry.points[index];
     assert.ok(Math.abs(point.u - want.u) < 1e-9 && Math.abs(point.v - want.v) < 1e-9);
   });
   assert.equal(session.state.painting.paint.strokes[0].size, 10, "the brush size stays");
@@ -742,6 +744,12 @@ const turnedAbout = (point, center, deg) => {
   return { x: center.x + dx * Math.cos(rad) - dy * Math.sin(rad), y: center.y + dx * Math.sin(rad) + dy * Math.cos(rad) };
 };
 const angleAbout = (center, p) => Math.atan2(p.y - center.y, p.x - center.x) * 180 / Math.PI;
+const screenAtDir = (direction) => {
+  const at = viewProjection(stageCam(), W, H).project(direction);
+  return { x: at.x, y: at.y };
+};
+// The direction a stroke group turns about: its frame's center direction (strokeGroupFrame).
+const groupCenter = (session) => strokeGroupFrame(session.state.painting.paint.strokes, undefined, session.state.painting.groups[0]?.rot_deg).center;
 
 test("the selected paint group's rotate handle stands 24 px out from its top edge's middle, away from its bottom edge", () => {
   const { session, objects } = setup({ painting: painted() });
@@ -758,12 +766,12 @@ test("the selected paint group's rotate handle stands 24 px out from its top edg
   assert.equal(objects.hover({ x: rotateHandle.x, y: rotateHandle.y - 11.9 }).cursor, "grab", "hit within 12 px");
 });
 
-test("the rotate handle turns a stroke group's points about their mean on the paint plane, as one Undo step; Escape puts it back", () => {
+test("the rotate handle turns a stroke group's points on the sphere about its center direction, as one Undo step; Escape puts it back", () => {
   const { session, objects } = setup({ painting: painted() });
   session.selectObject("paint_group:g1");
   const before = structuredClone(session.state.painting.paint.strokes[0].geometry);
-  const pivot = strokeGroupCenterUv(session.state.painting.paint.strokes);
-  const center = screenAt(pivot);
+  const pivot = groupCenter(session);
+  const center = screenAtDir(pivot);
   const { rotateHandle } = objects.overlay().paint;
   const to = turnedAbout(rotateHandle, center, 40);
   const delta = angleAbout(center, to) - angleAbout(center, rotateHandle);
@@ -772,7 +780,7 @@ test("the rotate handle turns a stroke group's points about their mean on the pa
   assert.equal(session.state.painting_layer, null);
   for (const key of ["points", "rawPoints", "processedPoints"]) {
     session.state.painting.paint.strokes[0].geometry[key].forEach((point, index) => {
-      const want = transformErpPointAround(before[key][index], pivot, 1, delta);
+      const want = turnErpPointOnSphere(before[key][index], pivot, delta);
       assert.ok(Math.abs(point.u - want.u) < 1e-9 && Math.abs(point.v - want.v) < 1e-9, key);
     });
   }
@@ -794,8 +802,8 @@ test("the rotate handle turns a stroke group's points about their mean on the pa
 test("turning a stroke group saves its angle: its frame, corners and rotate handle turn with it, and a second turn goes on from it", () => {
   const { session, objects } = setup({ painting: painted() });
   session.selectObject("paint_group:g1");
-  const pivot = strokeGroupCenterUv(session.state.painting.paint.strokes);
-  const center = screenAt(pivot);
+  const pivot = groupCenter(session);
+  const center = screenAtDir(pivot);
   const edgeAngle = (corners) => angleAbout(corners[0], corners[1]);
   const first = objects.overlay().paint;
   const to = turnedAbout(first.rotateHandle, center, 30);
@@ -825,30 +833,52 @@ test("with Shift a stroke group's saved angle stops at multiples of 15°, and it
   const { session, objects } = setup({ painting: painted([{ id: "g1", actionGroupId: "g1", z_index: 3, rot_deg: 7 }]) });
   session.selectObject("paint_group:g1");
   const before = structuredClone(groupPoints(session));
-  const pivot = strokeGroupCenterUv(session.state.painting.paint.strokes);
+  const pivot = groupCenter(session);
   const { rotateHandle } = objects.overlay().paint;
   const drag = objects.press(rotateHandle);
-  drag.move(turnedAbout(rotateHandle, screenAt(pivot), 37), { shiftKey: true });
+  drag.move(turnedAbout(rotateHandle, screenAtDir(pivot), 37), { shiftKey: true });
   drag.end();
   assert.equal(session.state.painting.groups[0].rot_deg, 45);
   groupPoints(session).forEach((point, index) => {
-    const want = transformErpPointAround(before[index], pivot, 1, 38);
+    const want = turnErpPointOnSphere(before[index], pivot, 38);
     assert.ok(Math.abs(point.u - want.u) < 1e-9 && Math.abs(point.v - want.v) < 1e-9);
   });
+});
+
+test("moving and scaling a turned stroke group keep its rot_deg; Escape during a turn puts it back", () => {
+  const { session, objects } = setup({ painting: painted([{ id: "g1", actionGroupId: "g1", z_index: 3, rot_deg: 20 }]) });
+  session.selectObject("paint_group:g1");
+  const move = objects.press(strokeAt);
+  move.move({ x: strokeAt.x + 30, y: strokeAt.y + 10 });
+  move.end();
+  assert.equal(session.state.painting.groups[0].rot_deg, 20);
+  const { corners, center: middle } = objects.overlay().paint;
+  const scale = objects.press(corners[2]);
+  scale.move({ x: middle.x + (corners[2].x - middle.x) * 1.5, y: middle.y + (corners[2].y - middle.y) * 1.5 });
+  scale.end();
+  assert.equal(session.state.painting.groups[0].rot_deg, 20);
+  const given = session.state;
+  const { rotateHandle } = objects.overlay().paint;
+  const turn = objects.press(rotateHandle);
+  turn.move(turnedAbout(rotateHandle, screenAtDir(groupCenter(session)), 50));
+  assert.notEqual(session.state.painting.groups[0].rot_deg, 20);
+  turn.cancel();
+  assert.equal(session.state, given);
+  assert.equal(session.state.painting.groups[0].rot_deg, 20);
 });
 
 test("with Shift a stroke group turns by multiples of 15°, a raster object to multiples of 15°", () => {
   let { session, objects } = setup({ painting: painted() });
   session.selectObject("paint_group:g1");
   const before = structuredClone(groupPoints(session));
-  const pivot = strokeGroupCenterUv(session.state.painting.paint.strokes);
-  const center = screenAt(pivot);
+  const pivot = groupCenter(session);
+  const center = screenAtDir(pivot);
   let { rotateHandle } = objects.overlay().paint;
   let drag = objects.press(rotateHandle);
   drag.move(turnedAbout(rotateHandle, center, 37), { shiftKey: true });
   drag.end();
   groupPoints(session).forEach((point, index) => {
-    const want = transformErpPointAround(before[index], pivot, 1, 30);
+    const want = turnErpPointOnSphere(before[index], pivot, 30);
     assert.ok(Math.abs(point.u - want.u) < 1e-9 && Math.abs(point.v - want.v) < 1e-9);
   });
   const raster = rasterOn("r1", { x: 600, y: 100 }, { x: 700, y: 200 }, { transform: { du: 0, dv: 0, rot_deg: 7, scale: 1 } });
@@ -892,8 +922,8 @@ test("in the Camera tab's Frame view the selected paint group's rotate handle tu
   assert.equal(handles, true);
   const drag = objects.press(rotateHandle);
   assert.notEqual(drag.passes, true);
-  const pivot = strokeGroupCenterUv(session.state.painting.paint.strokes);
-  drag.move(turnedAbout(rotateHandle, screenAt(pivot), 45));
+  const pivot = groupCenter(session);
+  drag.move(turnedAbout(rotateHandle, screenAtDir(pivot), 45));
   drag.end();
   assert.notDeepEqual(groupPoints(session), before);
   assert.deepEqual(session.state.camera, camera);
@@ -925,14 +955,19 @@ test("no rotate handle on a locked paint group or in a read-only editor; a group
   assert.ok(Math.hypot(paint.rotateHandle.x - 101, paint.rotateHandle.y - 70) < reach, "the handle lies within a dot's reach");
   assert.equal(objects.hover(paint.rotateHandle).cursor, "grab");
   const before = structuredClone(session.state.painting.paint.strokes.map((stroke) => stroke.geometry.points[0]));
-  const at = smallProjection.project(directionOfErpPoint(strokeGroupCenterUv(session.state.painting.paint.strokes)));
+  const at = smallProjection.project(groupCenter(session));
   const drag = objects.press(paint.rotateHandle);
   drag.move(turnedAbout(paint.rotateHandle, { x: at.x, y: at.y }, 90));
   drag.end();
   const after = session.state.painting.paint.strokes.map((stroke) => stroke.geometry.points[0]);
   assert.ok(Math.abs(after[0].v - before[0].v) > 1e-4, "the dots turned about their mean");
-  const mean = (list, key) => (list[0][key] + list[1][key]) / 2;
-  assert.ok(Math.abs(mean(after, "u") - mean(before, "u")) < 1e-9 && Math.abs(mean(after, "v") - mean(before, "v")) < 1e-9, "not moved");
+  // Turned about their mean direction, which stays.
+  const meanOf = (list) => {
+    const [a, b] = list.map(directionOfErpPoint);
+    return { x: a.x + b.x, y: a.y + b.y, z: a.z + b.z };
+  };
+  const [m0, m1] = [meanOf(before), meanOf(after)];
+  assert.ok(Math.abs(m0.x - m1.x) < 1e-9 && Math.abs(m0.y - m1.y) < 1e-9 && Math.abs(m0.z - m1.z) < 1e-9, "not moved");
 });
 
 // A stage with the Camera's rotation as `rotation`, the view at `viewAt` looking down -Z, and the selection `row`.

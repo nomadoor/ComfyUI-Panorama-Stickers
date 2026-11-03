@@ -242,7 +242,7 @@ export function createPointerTransform(deps) {
 
   function scaleStrokeGroup(it, p) {
     const ratio = pointerScaleRatio(it.center, it.startDist, p);
-    if (applyStrokeGroupTransform(it.item?.actionGroupId, ratio, 0, it.snapshot, it.item?.layerKind, it.frameSnapshot)) {
+    if (applyStrokeGroupTransform(it.item?.actionGroupId, ratio, it.snapshot, it.item?.layerKind, it.frameSnapshot)) {
       markPaintStrokeVisualsDirty({ rebuildPaintEngine: false });
       requestDraw({ localOnly: true, reason: DRAW_REASON.PAINT });
     }

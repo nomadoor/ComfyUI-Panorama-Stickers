@@ -6,8 +6,9 @@
 // canvases a raster needs; the paint engine's pixels (pano_paint_engine.js) are the caller's.
 import { BRUSH_PRESETS, DEFAULT_BRUSH_PRESET_ID, applyPresetToStroke } from "./pano_brush_presets.js";
 import { createPanoCanvas, releasePanoCanvas } from "./pano_diagnostics.js";
+import { cameraBasis, dot, tangentDirection } from "./pano_camera_math.js";
 import { clamp } from "./pano_math.js";
-import { pixelRangesMeet, rasterObjectPixelRanges, turnPaintOffset, unturnPaintOffset } from "./pano_paint_display.js";
+import { pixelRangesMeet, rasterObjectPixelRanges } from "./pano_paint_display.js";
 import { normalizePaintingState } from "./pano_paint_types.js";
 
 const DEG2RAD = Math.PI / 180;
@@ -853,14 +854,52 @@ export function strokePoints(stroke) {
     : (geometry?.processedPoints || geometry?.rawPoints || geometry?.points || []);
 }
 
-// The frame of a stroke group's points in its own axes (docs/studio-ui.md "ペイントのまとまり" "選んだ形"; rotationDeg is
-// the group's rot_deg): { centerUv, rot_deg, halfW, halfH, uvPad }, or null with no points. Its points turned back by
-// rotationDeg on the paint plane are boxed (u and v padded by uvPad), and the box's center turned again; the half sizes
-// are along its own axes (frameCornerOffsets turns them). The turn's center does not change the box, so it turns about
-// (the points' mean u, v 0), which at 0° gives the ERP-axis box exactly. `presetIdOf(toolKind)` gives a stroke's brush
-// preset (for its width).
+// A stroke group's frame on the sphere (docs/studio-ui.md "ペイントのまとまり" "選んだ形"), as a sky image's.
+
+// How far (degrees) from its center a point lies at most in a stroke group's frame: the half of a sky image's widest
+// angle of view (179°), past which the tangent plane does not reach.
+const FRAME_LIMIT_DEG = 89.5;
+// A center direction whose x and z are both under this lies on a pole: its longitude counts as 0.
+const POLE_EPS = 1e-9;
+
+// The axes of a stroke group's frame of center direction `center` turned by rotationDeg (clockwise seen from inside):
+// cameraBasis at the center's longitude and latitude with the roll -rotationDeg (a sky Sticker's roll turns its picture
+// counter-clockwise, docs/scene-state-v2.md): { center, right, up } (center: the basis's forward).
+export function strokeGroupAxes(center, rotationDeg = 0) {
+  const onPole = Math.abs(center.x) < POLE_EPS && Math.abs(center.z) < POLE_EPS;
+  const yaw = onPole ? 0 : Math.atan2(center.x, center.z) / DEG2RAD;
+  const pitch = Math.asin(clamp(center.y, -1, 1)) / DEG2RAD;
+  const basis = cameraBasis(yaw, pitch, -Number(rotationDeg || 0));
+  return { center: basis.fwd, right: basis.right, up: basis.up };
+}
+
+// The point (x, y) of the tangent plane of `axes` ({ center, right, up }) where the direction `p` lies (gnomonic), a
+// point FRAME_LIMIT_DEG or farther from the center taken at that angle on its own bearing; null for the direction
+// opposite the center.
+export function frameTangentOf(axes, p) {
+  const along = dot(p, axes.center);
+  const x = dot(p, axes.right);
+  const y = dot(p, axes.up);
+  const limit = Math.cos(FRAME_LIMIT_DEG * DEG2RAD);
+  if (along > limit) return [x / along, y / along];
+  const length = Math.hypot(x, y);
+  if (length < 1e-12) return null;
+  const reach = Math.tan(FRAME_LIMIT_DEG * DEG2RAD);
+  return [(x / length) * reach, (y / length) * reach];
+}
+
+// The direction of the point (x, y) of the tangent plane of `axes` (pano_camera_math.js tangentDirection, as a sky
+// image's corners).
+export function frameDirectionAt(axes, x, y) {
+  return tangentDirection({ fwd: axes.center, right: axes.right, up: axes.up }, x, y);
+}
+
+// The frame of a stroke group's points (rotationDeg is the group's rot_deg), or null with no points: { center, right, up
+// (its axes, strokeGroupAxes), box: { x, y } (the box's center on the tangent plane), halfW, halfH (its half sizes there,
+// padded), rot_deg, uvPad, centerUv (the ERP point of the box's center) }, all plain numbers. The center is the points'
+// mean direction (their ERP mean's when that is about zero); the box holds the points on the tangent plane, padded by
+// tan(π · uvPad) each way (uvPad from the widest brush). `presetIdOf(toolKind)` gives a stroke's brush preset.
 export function strokeGroupFrame(strokes, presetIdOf = (toolKind) => brushPresetIdForTool(toolKind), rotationDeg = 0) {
-  const turn = Number(rotationDeg || 0);
   const normalizeU = (u) => ((Number(u || 0) % 1) + 1) % 1;
   const sourcePoints = [];
   for (const stroke of strokes) {
@@ -868,24 +907,32 @@ export function strokeGroupFrame(strokes, presetIdOf = (toolKind) => brushPreset
     if (Array.isArray(pts)) sourcePoints.push(...pts);
   }
   if (!sourcePoints.length) return null;
-  const baseU = normalizeU(sourcePoints[0]?.u || 0);
-  let sumU = 0;
-  let sumV = 0;
-  sourcePoints.forEach((pt) => {
-    const u = normalizeU(pt?.u || 0);
-    sumU += baseU + shortestWrappedDelta(u, baseU);
-    sumV += Number(pt?.v || 0);
+  const directions = sourcePoints.map((pt) => directionOfErpPoint(pt));
+  const sum = directions.reduce((acc, d) => ({ x: acc.x + d.x, y: acc.y + d.y, z: acc.z + d.z }), { x: 0, y: 0, z: 0 });
+  const length = Math.hypot(sum.x, sum.y, sum.z);
+  let center;
+  if (length >= 1e-9) {
+    center = { x: sum.x / length, y: sum.y / length, z: sum.z / length };
+  } else {
+    const baseU = normalizeU(sourcePoints[0]?.u || 0);
+    let sumU = 0;
+    let sumV = 0;
+    sourcePoints.forEach((pt) => {
+      sumU += baseU + shortestWrappedDelta(normalizeU(pt?.u || 0), baseU);
+      sumV += Number(pt?.v || 0);
+    });
+    center = directionOfErpPoint({ u: normalizeU(sumU / sourcePoints.length), v: sumV / sourcePoints.length });
+  }
+  const turn = Number(rotationDeg || 0);
+  const axes = strokeGroupAxes(center, turn);
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  directions.forEach((d) => {
+    const at = frameTangentOf(axes, d);
+    if (!at) return;
+    minX = Math.min(minX, at[0]); maxX = Math.max(maxX, at[0]);
+    minY = Math.min(minY, at[1]); maxY = Math.max(maxY, at[1]);
   });
-  const centU = ((sumU / sourcePoints.length) % 1 + 1) % 1;
-  const centV = sumV / sourcePoints.length;
-  let minDU = Infinity, maxDU = -Infinity, minV = Infinity, maxV = -Infinity;
-  sourcePoints.forEach((pt) => {
-    const u = normalizeU(pt?.u || 0);
-    // The point in the group's own axes.
-    const [du, v] = unturnPaintOffset(shortestWrappedDelta(u, centU), Number(pt?.v || 0), 1, turn);
-    minDU = Math.min(minDU, du); maxDU = Math.max(maxDU, du);
-    minV = Math.min(minV, v); maxV = Math.max(maxV, v);
-  });
+  if (!Number.isFinite(minX)) minX = maxX = minY = maxY = 0;
   const maxStrokeWidth = strokes.reduce((max, stroke) => {
     const presetId = presetIdOf(String(stroke?.toolKind || "pen"));
     const preset = BRUSH_PRESETS[presetId] || BRUSH_PRESETS[DEFAULT_BRUSH_PRESET_ID];
@@ -893,25 +940,20 @@ export function strokeGroupFrame(strokes, presetIdOf = (toolKind) => brushPreset
     return Math.max(max, size);
   }, 0);
   const uvPad = Math.max(0.0035, maxStrokeWidth / 2048);
-  const [centerDU, centerV] = turnPaintOffset((minDU + maxDU) * 0.5, (minV + maxV) * 0.5, 1, turn);
+  const pad = Math.tan(Math.PI * uvPad);
+  const box = { x: (minX + maxX) * 0.5, y: (minY + maxY) * 0.5 };
+  const { u, v } = erpPointOfDirection(frameDirectionAt(axes, box.x, box.y));
   return {
-    centerUv: { u: ((centU + centerDU) % 1 + 1) % 1, v: clamp(centerV, 0, 1) },
+    center: { ...axes.center },
+    right: { ...axes.right },
+    up: { ...axes.up },
+    box,
+    halfW: (maxX - minX) * 0.5 + pad,
+    halfH: (maxY - minY) * 0.5 + pad,
     rot_deg: turn,
-    halfW: (maxDU - minDU) * 0.5 + uvPad,
-    halfH: (maxV - minV) * 0.5 + uvPad,
     uvPad,
+    centerUv: { u, v },
   };
-}
-
-// The four corners of a stroke group's frame (strokeGroupFrame) as ERP offsets [du, dv] from its center (top left, top
-// right, bottom right, bottom left in its own axes): its half sizes turned by its rot_deg on the paint plane
-// (pano_paint_display.js turnPaintOffset; at 0° the half sizes themselves).
-export function frameCornerOffsets(frame) {
-  const halfW = Number(frame.halfW || 0);
-  const halfH = Number(frame.halfH || 0);
-  const rotationDeg = Number(frame.rot_deg || 0);
-  return [[-halfW, -halfH], [halfW, -halfH], [halfW, halfH], [-halfW, halfH]]
-    .map(([du, dv]) => turnPaintOffset(du, dv, 1, rotationDeg));
 }
 
 // --- The paint eraser.
@@ -964,15 +1006,27 @@ export function erasePaint(painting, eraserStroke, { descriptor: erpDesc, groupS
     return !(a.maxX < b.minX || b.maxX < a.minX || a.maxY < b.minY || b.maxY < a.minY);
   }
 
+  // The ERP box of a stroke group's points, padded by its frame's uvPad (docs/studio-ui.md "ペイントのまとまり": the
+  // eraser's first test reads the points, not the frame): u from the points' mean u the short way round.
   function getGroupApproxBoundsPx(group, strokes) {
     const frame = groupFrame(group, strokes);
     if (!frame) return null;
-    // The box around the frame's corners (frameCornerOffsets).
-    const offsets = frameCornerOffsets(frame);
-    const minU = frame.centerUv.u + Math.min(...offsets.map(([du]) => du));
-    const maxU = frame.centerUv.u + Math.max(...offsets.map(([du]) => du));
-    const minV = frame.centerUv.v + Math.min(...offsets.map(([, dv]) => dv));
-    const maxV = frame.centerUv.v + Math.max(...offsets.map(([, dv]) => dv));
+    const points = strokes.flatMap((stroke) => {
+      const pts = strokePoints(stroke);
+      return Array.isArray(pts) ? pts : [];
+    });
+    if (!points.length) return null;
+    const baseU = Number(points[0]?.u || 0);
+    const offsets = points.map((pt) => shortestWrappedDelta(Number(pt?.u || 0), baseU));
+    const meanU = baseU + offsets.reduce((sum, du) => sum + du, 0) / offsets.length;
+    let minU = Infinity, maxU = -Infinity, minV = Infinity, maxV = -Infinity;
+    points.forEach((pt) => {
+      const u = meanU + shortestWrappedDelta(Number(pt?.u || 0), meanU);
+      minU = Math.min(minU, u); maxU = Math.max(maxU, u);
+      minV = Math.min(minV, Number(pt?.v || 0)); maxV = Math.max(maxV, Number(pt?.v || 0));
+    });
+    minU -= frame.uvPad; maxU += frame.uvPad;
+    minV -= frame.uvPad; maxV += frame.uvPad;
     const width = erpDesc.width;
     const height = erpDesc.height;
     return {
@@ -980,7 +1034,7 @@ export function erasePaint(painting, eraserStroke, { descriptor: erpDesc, groupS
       maxX: Math.ceil((((maxU % 1 + 1) % 1) * width)),
       minY: Math.floor(clamp(minV, 0, 1) * height),
       maxY: Math.ceil(clamp(maxV, 0, 1) * height),
-      wraps: (maxU - minU) >= 1 || minU < 0 || maxU > 1,
+      wraps: (maxU - minU) >= 1 || ((minU % 1 + 1) % 1) > ((maxU % 1 + 1) % 1),
     };
   }
 

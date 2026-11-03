@@ -1572,7 +1572,7 @@ test("a stroke group's scale transforms it from its snapshot", () => {
   let h = harness({ api: { applyStrokeGroupTransform: () => true } });
   h.editor.interaction = { kind: "scale_stroke_group", item: group, center: { x: 97, y: 46 }, startDist: 2, snapshot: "s", frameSnapshot: "f" };
   h.onCanvasPointerMove(h.event());
-  assert.deepEqual(h.calls("applyStrokeGroupTransform"), [["g-group", 2.5, 0, "s", "paint", "f"]]);
+  assert.deepEqual(h.calls("applyStrokeGroupTransform"), [["g-group", 2.5, "s", "paint", "f"]]);
   assert.deepEqual(h.calls("markPaintStrokeVisualsDirty"), [[{ rebuildPaintEngine: false }]]);
   assert.deepEqual(h.calls("requestDraw"), [[{ localOnly: true, reason: DRAW_REASON.PAINT }]]);
 

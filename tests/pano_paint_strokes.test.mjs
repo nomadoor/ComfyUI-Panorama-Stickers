@@ -88,8 +88,7 @@ test("the groups follow the strokes: one without strokes goes, a missing one com
   assert.equal(painting.groups, groups);
 });
 
-// --- A stroke group's turned frame (docs/studio-ui.md "ペイントのまとまり" "選んだ形"): the box of its points in its own
-// axes (the group's rot_deg), turned back.
+// --- The eraser's reach over a turned stroke group (docs/studio-ui.md "ペイントのまとまり" "選んだ形"): from its points.
 
 // Eleven points on a line 0.2 long through (0.5, 0.5), turned 45° on the paint plane.
 const turnedLine = () => Array.from({ length: 11 }, (_, k) => {
@@ -98,24 +97,7 @@ const turnedLine = () => Array.from({ length: 11 }, (_, k) => {
 });
 const lineStroke = (points) => ({ id: "s1", actionGroupId: "g1", layerKind: "paint", toolKind: "pen", size: 10, opacity: 1, color: { r: 1, g: 0, b: 0, a: 1 }, targetSpace: { kind: "ERP_GLOBAL" }, geometry: { geometryKind: "freehand_open", points, rawPoints: points, processedPoints: points } });
 
-test("a stroke group's frame is the box of its points in its own axes: thin along a line turned as the group, and as before at 0°", () => {
-  const strokes = [lineStroke(turnedLine())];
-  const turned = strokeGroupFrame(strokes, undefined, 45);
-  const pad = turned.uvPad;
-  assert.equal(turned.rot_deg, 45);
-  assert.ok(Math.abs(turned.halfW - (0.1 + pad)) < 1e-9, `halfW ${turned.halfW}`);
-  assert.ok(Math.abs(turned.halfH - pad) < 1e-9, `halfH ${turned.halfH}`);
-  assert.ok(Math.abs(turned.centerUv.u - 0.5) < 1e-9 && Math.abs(turned.centerUv.v - 0.5) < 1e-9);
-  // At 0° the box is the ERP-axis box it always was.
-  const flat = strokeGroupFrame(strokes);
-  const us = turnedLine().map((p) => p.u);
-  const vs = turnedLine().map((p) => p.v);
-  assert.equal(flat.rot_deg, 0);
-  assert.ok(Math.abs(flat.halfW - ((Math.max(...us) - Math.min(...us)) / 2 + pad)) < 1e-12);
-  assert.ok(Math.abs(flat.halfH - ((Math.max(...vs) - Math.min(...vs)) / 2 + pad)) < 1e-12);
-});
-
-test("the eraser reaches the end of a turned stroke group, outside the ERP-axis band of its own-axes box", () => withRasterCanvas(() => {
+test("the eraser reaches the end of a turned stroke group, wherever its frame lies", () => withRasterCanvas(() => {
   const W = 256;
   const H = 128;
   const points = turnedLine();
@@ -138,4 +120,31 @@ test("the eraser reaches the end of a turned stroke group, outside the ERP-axis 
     topZ: () => 0,
   });
   assert.deepEqual(asked, ["g1"]);
+}));
+
+test("the eraser reaches a stroke group across the seam on either side, and not one it does not touch", () => withRasterCanvas(() => {
+  const W = 256;
+  const H = 128;
+  const points = [{ u: 0.97, v: 0.5 }, { u: 0.99, v: 0.5 }, { u: 0.01, v: 0.5 }, { u: 0.03, v: 0.5 }];
+  const asked = (eraserU) => {
+    const painting = normalizePaintingState({ groups: [{ id: "g1", actionGroupId: "g1", z_index: 0 }], paint: { strokes: [lineStroke(points)] } });
+    const square = [[-3, -3], [3, -3], [3, 3], [-3, 3]].map(([x, y]) => ({ u: eraserU + x / W, v: 0.5 + y / H }));
+    const eraser = { ...lineStroke(square), id: "e1", toolKind: "eraser", geometry: { geometryKind: "lasso_fill", points: square } };
+    const seen = [];
+    erasePaint(painting, eraser, {
+      descriptor: { width: W, height: H },
+      groupStrokes: (gid) => painting.paint.strokes.filter((stroke) => stroke.actionGroupId === gid),
+      groupFrame: (group, strokes) => strokeGroupFrame(strokes, undefined, group.rot_deg),
+      groupCanvas: (gid) => {
+        seen.push(gid);
+        return null;
+      },
+      rasterCanvas: () => null,
+      topZ: () => 0,
+    });
+    return seen;
+  };
+  assert.deepEqual(asked(0.985), ["g1"]);
+  assert.deepEqual(asked(0.02), ["g1"]);
+  assert.deepEqual(asked(0.5), []);
 }));

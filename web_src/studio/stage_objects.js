@@ -41,7 +41,7 @@ import { dist2, pointInPoly } from "../pano_math.js";
 import {
   frameCornersUv, offsetRasterObject, offsetStrokeGroup, paintCornerHandle, paintObjectOf,
   paintIndexOf, paintObjectRowOf, pointerDistance, pointerScaleRatio, rasterAlphaHits, rasterObjectAlphaAt,
-  rasterObjectCornersUv, rotateRasterObject, scaleRasterObject, skyStickersOf, strokeDotHit, strokeGroupCenterUv,
+  rasterObjectCornersUv, rotateRasterObject, scaleRasterObject, skyStickersOf, strokeDotHit,
   strokeHitLineWidth, strokePathsHit, strokePoints, transformStrokeGroup, turnStrokeGroup,
 } from "../pano_paint_objects.js";
 import {
@@ -112,7 +112,12 @@ function skyObjects(state, content) {
 // Where the ERP point `point` lands on the screen of `projection` (pano_editor_view.js viewProjection): { x, y }, or
 // null behind the view. The Sky lies at infinity, so only the direction counts.
 function screenOfErp(projection, point) {
-  const at = projection.project(directionOfErpPoint(point));
+  return screenOfDirection(projection, directionOfErpPoint(point));
+}
+
+// Where the direction `direction` lands on the screen of `projection`: { x, y }, or null behind the view.
+function screenOfDirection(projection, direction) {
+  const at = projection.project(direction);
   return at.z > 1e-4 ? { x: at.x, y: at.y } : null;
 }
 
@@ -530,8 +535,8 @@ export function createStageObjects({
 
   // A drag of a paint group (docs/studio-ui.md "ペイントのまとまり"): `kind` "move" (the body: the ERP difference between
   // the press and the pointer, the seam crossed the short way, added to its points or its raster transform), "scale"
-  // (a corner: the pointer's distance from the frame's screen center over the press's, about its frame's ERP center
-  // for a stroke group, on its transform's scale for a raster object) or "rotate" (the rotate handle: paintTurn), from
+  // (a corner: the pointer's distance from the frame's screen center over the press's, on its frame's tangent plane
+  // about its box's center for a stroke group, on its transform's scale for a raster object) or "rotate" (the rotate handle: paintTurn), from
   // `geometry` where it started. The painting is written as it is (no Lanes), with its counted groups, and drops the
   // uploaded `painting_layer`.
   function paintDrag(kind, object, geometry, point) {
@@ -539,7 +544,7 @@ export function createStageObjects({
     const start = erpUnder(projection(), point);
     const center = geometry.center;
     const startDistance = center ? pointerDistance(center, point) : 1;
-    const pivot = object.kind === "group" ? paintIndex(state()).groups.get(object.id)?.frame.centerUv : null;
+    const frame = object.kind === "group" ? paintIndex(state()).groups.get(object.id)?.frame : null;
     return {
       move(next) {
         const at = erpUnder(projection(), next);
@@ -549,7 +554,7 @@ export function createStageObjects({
             const strokes = painting.paint.strokes;
             return kind === "move"
               ? offsetStrokeGroup(strokes, object.id, shortestWrappedDelta(at.u, start.u), at.v - start.v)
-              : transformStrokeGroup(strokes, object.id, pointerScaleRatio(center, startDistance, next), 0, null, pivot);
+              : transformStrokeGroup(strokes, object.id, pointerScaleRatio(center, startDistance, next), null, frame);
           }
           const item = painting.raster_objects.find((entry) => entry.id === object.id);
           if (!item) return false;
@@ -565,14 +570,13 @@ export function createStageObjects({
 
   // A turn of a paint group from its rotate handle (docs/studio-ui.md "ペイントのまとまり" "回す"): the pointer's angle
   // about the turn's center on screen, from the press's (clockwise positive), adds to a stroke group's rot_deg and turns
-  // its points about their mean as grabbed (turnStrokeGroup; strokeGroupCenterUv, which a turn does not move), or adds
-  // to a raster object's rot_deg about its box's center moved by du and dv. Shift stops either angle at ROTATE_SNAP_DEG
-  // multiples. The center is measured where it was at the press.
+  // its points on the sphere about its frame's center direction as grabbed (turnStrokeGroup; the points' mean direction,
+  // which a turn does not move), or adds to a raster object's rot_deg about its box's center moved by du and dv. Shift
+  // stops either angle at ROTATE_SNAP_DEG multiples. The center is measured where it was at the press.
   function paintTurn(object, point) {
-    const pivot = object.kind === "group"
-      ? strokeGroupCenterUv(paintIndex(state()).groups.get(object.id)?.strokes ?? [])
-      : rasterObjectTurnCenterUv(object.item);
-    const center = screenOfErp(projection(), pivot);
+    const axis = object.kind === "group" ? paintIndex(state()).groups.get(object.id)?.frame.center : null;
+    const pivot = object.kind === "group" ? null : rasterObjectTurnCenterUv(object.item);
+    const center = axis ? screenOfDirection(projection(), axis) : screenOfErp(projection(), pivot);
     const startAngle = center ? Math.atan2(point.y - center.y, point.x - center.x) : 0;
     return {
       move(next, event = {}) {
@@ -580,7 +584,7 @@ export function createStageObjects({
         const delta = (Math.atan2(next.y - center.y, next.x - center.x) - startAngle) * (180 / Math.PI);
         const snap = event.shiftKey ? ROTATE_SNAP_DEG : 0;
         editPaint(object, (painting) => {
-          if (object.kind === "group") return turnStrokeGroup(painting, object.id, delta, pivot, { snapDeg: snap });
+          if (object.kind === "group") return turnStrokeGroup(painting, object.id, delta, axis, { snapDeg: snap });
           const item = painting.raster_objects.find((entry) => entry.id === object.id);
           return item ? rotateRasterObject(item, delta, { snapDeg: snap }) : false;
         });

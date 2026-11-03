@@ -233,7 +233,7 @@ const strokeTurn = (before, after) => {
   return angle(after) - angle(before);
 };
 
-test("the rotate handle turns a stroke group about its points' mean as it goes; Shift stops at 15°; Escape puts it back; Undo takes one step", async ({ page }) => {
+test("the rotate handle turns a stroke group on the sphere about its center as it goes; Shift stops at 15°; Escape puts it back; Undo takes one step", async ({ page }) => {
   const problems = await open(page);
   await paintStroke(page, [[0.35, 0.3], [0.4, 0.3], [0.45, 0.3]]);
   await page.mouse.click(...(await at(page, 0.4, 0.3)));
@@ -268,8 +268,8 @@ test("the rotate handle turns a stroke group about its points' mean as it goes; 
   await page.mouse.up();
   await page.keyboard.up("Shift");
   await page.waitForTimeout(250);
-  const snapped = strokeTurn(before[0], (await strokes(page))[0]);
-  expect(Math.abs(snapped - 30)).toBeLessThan(1e-6);
+  expect(await page.evaluate(() => window.__studio.session.state.painting.groups[0].rot_deg)).toBe(30);
+  expect(Math.abs(strokeTurn(before[0], (await strokes(page))[0]) - 30)).toBeLessThan(5);
 
   // Escape during a turn puts it back with no step.
   const kept = await strokes(page);
@@ -393,5 +393,53 @@ test("a turned stroke group keeps its angle: its frame and rotate handle turn wi
   const after = await page.evaluate(() => window.__studio.session.state.painting);
   expect(after.paint.strokes).toHaveLength(0);
   expect(after.raster_objects.length).toBeGreaterThanOrEqual(1);
+  expect(problems).toEqual([]);
+});
+
+test("a wide stroke group near the top turns cleanly: its frame keeps its shape and its strokes keep their angles on the sphere", async ({ page }) => {
+  const problems = await open(page);
+  // Look up toward the zenith first (a drag on the empty stage looks around).
+  await page.mouse.move(...(await at(page, 0.85, 0.2)));
+  await page.mouse.down();
+  await page.mouse.move(...(await at(page, 0.85, 0.75)), { steps: 12 });
+  await page.mouse.up();
+  await page.waitForTimeout(300);
+  await paintStroke(page, [[0.2, 0.12], [0.35, 0.1], [0.5, 0.09], [0.65, 0.1], [0.8, 0.12]]);
+  // Near the top of the sphere: above 60° of latitude.
+  const highest = await page.evaluate(() => Math.min(...window.__studio.session.state.painting.paint.strokes[0].geometry.processedPoints.map((p) => p.v)));
+  expect(highest).toBeLessThan(1 / 6);
+  await page.mouse.click(...(await at(page, 0.5, 0.09)));
+  await page.waitForTimeout(150);
+  expect(await row(page)).toMatch(/^paint_group:/);
+  // The frame's half sizes and each point's angle from the center, read with the editor's own modules.
+  const shape = () => page.evaluate(async () => {
+    const { strokeGroupFrame, directionOfErpPoint } = await import("/web_src/pano_paint_strokes.js");
+    const painting = window.__studio.session.state.painting;
+    const frame = strokeGroupFrame(painting.paint.strokes, undefined, painting.groups[0].rot_deg ?? 0);
+    const angles = painting.paint.strokes[0].geometry.processedPoints.map((p) => {
+      const d = directionOfErpPoint(p);
+      return Math.acos(Math.min(1, d.x * frame.center.x + d.y * frame.center.y + d.z * frame.center.z));
+    });
+    return { halfW: frame.halfW, halfH: frame.halfH, angles, rot: painting.groups[0].rot_deg ?? 0 };
+  });
+  const before = await shape();
+  const center = await at(page, 0.5, 0.15);
+  const handle = await rotateHandle(page, 0.5, 0.09);
+  await page.mouse.move(...handle);
+  await page.mouse.down();
+  await page.keyboard.down("Shift");
+  await page.mouse.move(...turned(handle, center, 33), { steps: 10 });
+  await page.mouse.up();
+  await page.keyboard.up("Shift");
+  await page.waitForTimeout(250);
+  const after = await shape();
+  expect(after.rot % 15).toBe(0);
+  expect(after.rot).not.toBe(0);
+  expect(Math.abs(after.halfW - before.halfW)).toBeLessThan(1e-6);
+  expect(Math.abs(after.halfH - before.halfH)).toBeLessThan(1e-6);
+  after.angles.forEach((angle, index) => expect(Math.abs(angle - before.angles[index])).toBeLessThan(1e-6));
+  await page.locator('[data-tool="undo"]').click();
+  await page.waitForTimeout(300);
+  expect((await shape()).rot).toBe(0);
   expect(problems).toEqual([]);
 });

@@ -290,15 +290,17 @@ export function createItems(deps) {
     }
     return changed;
   }
-  function applyStrokeGroupTransform(idOrActionGroupId, scale = 1, rotationDeg = 0, snapshots = null, layerKind = null, frameSnapshot = null) {
+  function applyStrokeGroupTransform(idOrActionGroupId, scale = 1, snapshots = null, layerKind = null, frameSnapshot = null) {
     const resolved = parseStrokeGroupSelectionId(idOrActionGroupId, layerKind);
     const gid = String(resolved.actionGroupId || "").trim();
     if (!gid) return false;
     const strokes = getPaintingLayerList(resolved.layerKind);
     const sourceStrokes = Array.isArray(snapshots) ? snapshots : getStrokeGroupStrokes(gid, resolved.layerKind);
-    // Use the frame's bbox center as pivot when available — it matches what objectGeom() draws.
-    const centerUv = frameSnapshot?.centerUv ?? strokeGroupCenterUv(sourceStrokes);
-    const changed = transformStrokeGroup(strokes, gid, scale, rotationDeg, sourceStrokes, centerUv);
+    // Scales on the frame the drag started with (what objectGeom() draws), else on the frame of its strokes.
+    const entry = getPaintingGroupList().find((g) => String(g?.actionGroupId || "") === gid);
+    const frame = frameSnapshot?.center ? frameSnapshot : strokeGroupFrame(sourceStrokes, getBrushPresetIdForTool, entry?.rot_deg);
+    if (!frame) return false;
+    const changed = transformStrokeGroup(strokes, gid, scale, sourceStrokes, frame);
     if (changed && frameSnapshot) {
       const entry = getPaintingGroupList().find((g) => String(g?.actionGroupId || "") === gid);
       if (entry) entry.frame = null;
