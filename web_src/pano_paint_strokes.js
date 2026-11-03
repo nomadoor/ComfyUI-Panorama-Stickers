@@ -874,14 +874,15 @@ export function strokeGroupAxes(center, rotationDeg = 0) {
 }
 
 // The point (x, y) of the tangent plane of `axes` ({ center, right, up }) where the direction `p` lies (gnomonic), a
-// point FRAME_LIMIT_DEG or farther from the center taken at that angle on its own bearing; null for the direction
-// opposite the center.
-export function frameTangentOf(axes, p) {
+// point FRAME_LIMIT_DEG or farther from the center taken at that angle on its own bearing (with `clamp` false, null
+// for it); null for the direction opposite the center.
+export function frameTangentOf(axes, p, { clamp: clampFar = true } = {}) {
   const along = dot(p, axes.center);
   const x = dot(p, axes.right);
   const y = dot(p, axes.up);
   const limit = Math.cos(FRAME_LIMIT_DEG * DEG2RAD);
   if (along > limit) return [x / along, y / along];
+  if (!clampFar) return null;
   const length = Math.hypot(x, y);
   if (length < 1e-12) return null;
   const reach = Math.tan(FRAME_LIMIT_DEG * DEG2RAD);

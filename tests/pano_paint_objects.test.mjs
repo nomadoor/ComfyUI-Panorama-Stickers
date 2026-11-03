@@ -9,7 +9,7 @@ import {
   frameCornersUv, rasterObjectAlphaAt, rasterObjectCornersUv, rotateRasterObject, transformStrokeGroup,
   turnErpPointOnSphere, turnStrokeGroup,
 } from "../web_src/pano_paint_objects.js";
-import { directionOfErpPoint, erpPointOfDirection, strokeGroupFrame } from "../web_src/pano_paint_strokes.js";
+import { directionOfErpPoint, strokeGroupFrame } from "../web_src/pano_paint_strokes.js";
 import { normalizePaintingState } from "../web_src/pano_paint_types.js";
 
 const near = (actual, expected, label, eps = 1e-9) => assert.ok(Math.abs(actual - expected) < eps, `${label}: ${actual} vs ${expected}`);
@@ -131,7 +131,23 @@ test("a stroke group scales on its frame's tangent plane about its box's center;
   const moved = [stroke([{ u: 0.1, v: 0.1 }, { u: 0.2, v: 0.2 }])];
   transformStrokeGroup(moved, "g1", 1, source, strokeGroupFrame(source));
   near(moved[0].geometry.points[0].u, 0.45, "from the source", 1e-9);
-  void erpPointOfDirection;
+});
+
+test("scaling leaves the points 89.5° or farther from the center where they are: ratio 1 changes nothing in a 216°-wide group", () => {
+  const points = Array.from({ length: 13 }, (_, k) => ({ u: 0.2 + k * 0.05, v: 0.5 }));
+  const strokes = [stroke(points)];
+  const frame = strokeGroupFrame(strokes);
+  transformStrokeGroup(strokes, "g1", 1, null, frame);
+  strokes[0].geometry.points.forEach((point, index) => {
+    near(point.u, points[index].u, `u ${index}`, 1e-9);
+    near(point.v, points[index].v, `v ${index}`, 1e-9);
+  });
+  // At twice the size the far ends (108° from the center) stay; the near ones move out.
+  const doubled = [stroke(points)];
+  transformStrokeGroup(doubled, "g1", 2, null, strokeGroupFrame(doubled));
+  assert.equal(doubled[0].geometry.points[0].u, 0.2);
+  assert.equal(doubled[0].geometry.points[12].u, 0.8);
+  assert.ok(doubled[0].geometry.points[7].u > points[7].u + 1e-3);
 });
 
 test("a turned raster object is hit inside the frame its corners draw", () => {

@@ -19387,13 +19387,14 @@ function L3(e, t = 0) {
   const r = Math.abs(e.x) < Lv && Math.abs(e.z) < Lv ? 0 : Math.atan2(e.x, e.z) / tc, i = Math.asin(Ve(e.y, -1, 1)) / tc, o = Qo(r, i, -Number(t || 0));
   return { center: o.fwd, right: o.right, up: o.up };
 }
-function LM(e, t) {
-  const n = Ia(t, e.center), r = Ia(t, e.right), i = Ia(t, e.up), o = Math.cos(Dv * tc);
-  if (n > o) return [r / n, i / n];
-  const a = Math.hypot(r, i);
-  if (a < 1e-12) return null;
-  const s = Math.tan(Dv * tc);
-  return [r / a * s, i / a * s];
+function LM(e, t, { clamp: n = !0 } = {}) {
+  const r = Ia(t, e.center), i = Ia(t, e.right), o = Ia(t, e.up), a = Math.cos(Dv * tc);
+  if (r > a) return [i / r, o / r];
+  if (!n) return null;
+  const s = Math.hypot(i, o);
+  if (s < 1e-12) return null;
+  const l = Math.tan(Dv * tc);
+  return [i / s * l, o / s * l];
 }
 function Ry(e, t, n) {
   return Z1({ fwd: e.center, right: e.right, up: e.up }, t, n);
@@ -20362,7 +20363,7 @@ function GM(e, t) {
 function WM(e, t, n, r, i) {
   const o = Math.max(yV, Number(n || 1)), { box: a } = i;
   return Vy(e, t, r, (s) => {
-    const l = LM(i, ps(s));
+    const l = LM(i, ps(s), { clamp: !1 });
     return l ? GM(s, Ry(i, a.x + o * (l[0] - a.x), a.y + o * (l[1] - a.y))) : s;
   });
 }

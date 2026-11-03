@@ -119,12 +119,13 @@ function withDirection(point, direction) {
 // Scales the stroke group `gid` of `strokes` by `scale` (at least STROKE_GROUP_MIN_SCALE) on the tangent plane of its
 // frame `frame` (pano_paint_strokes.js strokeGroupFrame) about the frame's box center (docs/studio-ui.md
 // "ペイントのまとまり" "大きさを変える"), from `sources` (its strokes as a drag started; null scales them where they are).
-// The point opposite the frame's center stays. Returns whether it changed a point.
+// A point FRAME_LIMIT_DEG (89.5°) or farther from the frame's center stays where it is. Returns whether it changed a
+// point.
 export function transformStrokeGroup(strokes, gid, scale, sources, frame) {
   const ratio = Math.max(STROKE_GROUP_MIN_SCALE, Number(scale || 1));
   const { box } = frame;
   return mapStrokeGroupPoints(strokes, gid, sources, (pt) => {
-    const at = frameTangentOf(frame, directionOfErpPoint(pt));
+    const at = frameTangentOf(frame, directionOfErpPoint(pt), { clamp: false });
     if (!at) return pt;
     return withDirection(pt, frameDirectionAt(frame, box.x + ratio * (at[0] - box.x), box.y + ratio * (at[1] - box.y)));
   });
