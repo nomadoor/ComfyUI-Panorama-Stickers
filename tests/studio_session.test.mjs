@@ -793,3 +793,32 @@ test("each Undo step prunes the overrides of elements no longer upstream, and op
   assert.deepEqual(record().deleted, []);
   assert.deepEqual(record().stickers.map((item) => item.id), ["board_1"]);
 });
+
+test("keeping the selection on each redraw searches the upstream layers again only when something changed", () => {
+  let searches = 0;
+  const stickers = [{ id: "upstream:scene_up:sky_1", origin: { layer: "scene_up", id: "sky_1" } }];
+  const box = { list: [{ key: "scene_up", get sceneState() { searches += 1; return { stickers }; } }] };
+  const session = createStudioSession({ state: load({}), upstream: { working: () => box.list, edits: {} } });
+  session.selectObject("upstream:scene_up:sky_1");
+  session.keepSelection();
+  const after = searches;
+  for (let index = 0; index < 20; index += 1) session.keepSelection();
+  assert.equal(searches, after);
+  assert.equal(session.selection.row, "upstream:scene_up:sky_1");
+  // A new result without it: a new list, searched again.
+  box.list = [{ key: "scene_up", sceneState: { stickers: [] } }];
+  session.keepSelection();
+  assert.equal(session.selection.row, null);
+});
+
+test("a cancel makes the upstream working copies again only when a gesture was under way", () => {
+  let rebuilds = 0;
+  const session = createStudioSession({ state: load({ stickers: [world("sticker_1")] }), upstream: { working: () => [], edits: { rebuild: () => { rebuilds += 1; }, sync() {}, prune() {} } } });
+  session.applyInspector({ ...field("sticker_1", "position_x", 2), phase: "cancel" }, { playhead: 0 });
+  assert.equal(rebuilds, 0);
+  session.applyInspector(field("sticker_1", "position_x", 2, "input"), { playhead: 0 });
+  session.applyInspector({ ...field("sticker_1", "position_x", 2), phase: "cancel" }, { playhead: 0 });
+  assert.equal(rebuilds, 1);
+  assert.equal(session.cancelGesture().changed, false);
+  assert.equal(rebuilds, 1);
+});

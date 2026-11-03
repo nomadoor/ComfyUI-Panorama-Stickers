@@ -86,6 +86,8 @@ export function createStudioSession({ state: opening, readOnly = false, upstream
   const unsettled = new Set();
   const history = createEditorHistory(state);
   const working = () => upstream?.working() ?? [];
+  // What the last keepSelection() of the editor checked.
+  let kept = { state: null, list: null, selection: null };
 
   // An Undo step: the upstream objects' edits are written back and the records pruned first (docs/studio-ui.md
   // "上流の物の編集" "書き戻し").
@@ -108,9 +110,11 @@ export function createStudioSession({ state: opening, readOnly = false, upstream
   function applyInspector(edit, context = {}) {
     if (readOnly) return result(false);
     if (edit.phase === "cancel") {
-      if (gestureBase) state = gestureBase;
+      if (gestureBase) {
+        state = gestureBase;
+        upstream?.edits.rebuild();
+      }
       gestureBase = null;
-      upstream?.edits.rebuild();
       return result(true, { cancel: true });
     }
     const draft = structuredClone(state);
@@ -577,8 +581,14 @@ export function createStudioSession({ state: opening, readOnly = false, upstream
       selection = { row: next, keys: [] };
       return true;
     },
-    // A selection whose object is gone (a new result without the upstream object) lets it go.
-    keepSelection: () => keepSelection(),
+    // A selection whose object is gone (a new result without the upstream object) lets it go. The editor calls it on
+    // each redraw: it searches again only when the state, the upstream working layers or the selection changed.
+    keepSelection() {
+      const list = working();
+      if (kept.state === state && kept.list === list && kept.selection === selection) return;
+      keepSelection();
+      kept = { state, list, selection };
+    },
     // The upstream edits write the state's `upstream` records (pano_upstream_edits.js setRecords).
     setUpstreamRecords(records) {
       if (!readOnly) state = { ...state, upstream: records };

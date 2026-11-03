@@ -18,7 +18,7 @@ const layerState = {
   stickers: [{ id: "sticker_1", placement: "world", source: { kind: "file", filename: "a.png", subfolder: "", storage: "input" }, position: { value: [0, 0, -3] } }],
 };
 
-function setup({ list = [{ state: layerState, ui: {} }], linkType = "PANO_SCENE", state = loadSceneState({ version: 2 }), frames = [48] } = {}) {
+function setup({ list = [{ state: layerState, ui: {} }], linkType = "PANO_SCENE", state = loadSceneState({ version: 2 }), frames = [48], nodeName = (key) => (key === "scene_up" ? "Studio Up" : null) } = {}) {
   const box = { state };
   return createStudioUpstream({
     list: () => list,
@@ -28,7 +28,7 @@ function setup({ list = [{ state: layerState, ui: {} }], linkType = "PANO_SCENE"
     setRecords: (records) => {
       box.state = { ...box.state, upstream: records };
     },
-    nodeName: (key) => (key === "scene_up" ? "Studio Up" : null),
+    nodeName,
     mediaSource: (entry) => entry,
     mediaAssetSource: (asset) => `/view?filename=${asset.filename}`,
     revisionOf: () => "r",
@@ -88,3 +88,35 @@ test("the upstream Studio's name is the title of the Panorama Studio on the grap
   assert.equal(upstreamNodeName(nodes, "#0"), null);
 });
 
+
+// The stage reads the working layers on each draw and pointer move: the Studios' names (each a parse of every
+// Panorama Studio's state_json) are found once per result, and the list stays one object until the copies change.
+test("the working layers keep their names and their list across reads, until a new result or a rebuild", () => {
+  let lookups = 0;
+  const box = { list: [{ state: layerState, ui: {} }] };
+  const upstream = setup({ list: null, nodeName: () => { lookups += 1; return "Studio Up"; } });
+  const counted = createStudioUpstream({
+    list: () => box.list,
+    linkType: () => "PANO_SCENE",
+    uiList: () => [],
+    state: () => loadSceneState({ version: 2 }),
+    setRecords() {},
+    nodeName: () => { lookups += 1; return "Studio Up"; },
+    mediaSource: (entry) => entry,
+    mediaAssetSource: () => "",
+    revisionOf: () => "r",
+    playing: () => false,
+  });
+  const first = counted.working();
+  for (let index = 0; index < 50; index += 1) assert.equal(counted.working(), first);
+  assert.equal(lookups, 1);
+  assert.equal(first[0].name, "Studio Up");
+  counted.edits.rebuild();
+  const rebuilt = counted.working();
+  assert.notEqual(rebuilt, first, "made again: a new list");
+  assert.equal(lookups, 1, "the same result: its names are kept");
+  box.list = [{ state: layerState, ui: {} }];
+  counted.working();
+  assert.equal(lookups, 2, "a new result: its names are found again");
+  assert.deepEqual(upstream.working(), []);
+});

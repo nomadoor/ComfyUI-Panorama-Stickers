@@ -69,11 +69,30 @@ export function createStudioUpstream({
 
   const entries = () => layers.entries();
 
+  // The Studios' names by layer key, found once per result (nodeName parses every Panorama Studio's state_json), and
+  // the working layers as last handed out: the same list while each layer's working copy is the same object (the stage
+  // reads it on each draw and pointer move; an edit in place keeps the copy, a rebuild or setWorking replaces it).
+  let names = { list: null, byKey: new Map() };
+  let handed = { copies: [], list: [] };
+  function nameOf(key) {
+    const current = layers.current().list;
+    if (names.list !== current) names = { list: current, byKey: new Map() };
+    if (!names.byKey.has(key)) names.byKey.set(key, nodeName(key));
+    return names.byKey.get(key);
+  }
+  function working() {
+    const copies = (entries() ?? []).map((entry) => entry.working);
+    if (copies.length !== handed.copies.length || copies.some((copy, index) => copy !== handed.copies[index])) {
+      handed = { copies, list: copies.map((copy) => ({ ...copy, name: nameOf(copy.key) })) };
+    }
+    return handed.list;
+  }
+
   return {
     // The working copies of the layers (pano_upstream.js upstreamWorkingLayers), each with the `name` of the Studio it
     // came from (nodeName, or null), none without a result. Their `sceneState` is the working copy itself: an edit
     // of it is written back by `edits`.
-    working: () => (entries() ?? []).map((entry) => ({ ...entry.working, name: nodeName(entry.working.key) })),
+    working,
     edits,
     // What the stage draws of the layers at Timeline `frame` ({ sky, stickers, items }), or null without layers.
     viewInput: (frame) => (entries() ? layers.viewInput(frame) : null),
@@ -84,7 +103,7 @@ export function createStudioUpstream({
         const editable = upstreamLayerEditable(working.key);
         return {
           key: working.key,
-          name: nodeName(working.key),
+          name: nameOf(working.key),
           sceneState: working.sceneState,
           editable,
           record: editable ? records.find((item) => item.layer === working.key) ?? null : null,
