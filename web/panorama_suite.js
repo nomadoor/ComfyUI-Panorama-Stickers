@@ -10007,7 +10007,7 @@ function dy(e, t, n, { media: r, evaluated: i = Is(e, t) }) {
   }), a;
 }
 function y_() {
-  return import("./.lazy/pano_three_view-C1Cp3aDd.js").then((e) => e.$);
+  return import("./.lazy/pano_three_view-C_fedVm1.js").then((e) => e.$);
 }
 function fy({ canvas: e, onReady: t, onFailed: n, onUpdate: r = () => {
 }, onSplats: i = () => {
@@ -10173,7 +10173,7 @@ function kF(e) {
   };
 }
 const hy = kF(
-  ({ onUpdate: e, onSplats: t }) => import("./.lazy/pano_three_view-C1Cp3aDd.js").then((n) => n.$).then((n) => sk(n.createThreeView({ onUpdate: e, onSplats: t, ownWorlds: !0, createCanvas: () => Gt({ label: "three.node" }) }), "node"))
+  ({ onUpdate: e, onSplats: t }) => import("./.lazy/pano_three_view-C_fedVm1.js").then((n) => n.$).then((n) => sk(n.createThreeView({ onUpdate: e, onSplats: t, ownWorlds: !0, createCanvas: () => Gt({ label: "three.node" }) }), "node"))
 ), Kh = Object.freeze({
   editor: Object.freeze({ outputByExecutionId: !1, executionIdKeepsEmptyTail: !1, viewType: "type", trimFilename: !1, tupleNeedsStringName: !1 }),
   nodeSurface: Object.freeze({ outputByExecutionId: !0, executionIdKeepsEmptyTail: !1, viewType: "storage", trimFilename: !1, tupleNeedsStringName: !1 }),

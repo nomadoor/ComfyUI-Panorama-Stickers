@@ -131,7 +131,6 @@ void main() {
   gl_FragColor = vec4(color.rgb * color.a, color.a);
 }`;
 
-const vec4Of = (rgba) => new Vector4(rgba[0], rgba[1], rgba[2], rgba[3]);
 const RAD = Math.PI / 180;
 
 // The sky grid on `geometry` (the background's dome). show(sky) sets it for `sky` (grid.js skyGrid() with `scale`: the
@@ -184,16 +183,16 @@ export function createSkyGrid(geometry) {
       const scale = sky.scale ?? 1;
       uniforms.stepRad.value = sky.stepDeg * RAD;
       uniforms.linePx.value = sky.linePx * scale;
-      uniforms.lineColor.value.copy(vec4Of(sky.lineColor));
+      uniforms.lineColor.value.set(...sky.lineColor);
       uniforms.lineFade.value.set(sky.lineFadeDeg[0] * RAD, sky.lineFadeDeg[1] * RAD);
       uniforms.axisPx.value = sky.axisPx * scale;
-      uniforms.axisX.value.copy(vec4Of(sky.axisX));
-      uniforms.axisZ.value.copy(vec4Of(sky.axisZ));
+      uniforms.axisX.value.set(...sky.axisX);
+      uniforms.axisZ.value.set(...sky.axisZ);
       uniforms.axisRise.value.set(sky.axisRiseDeg[0] * RAD, sky.axisRiseDeg[1] * RAD);
       uniforms.horizonPx.value = sky.horizonPx * scale;
-      uniforms.horizonColor.value.copy(vec4Of(sky.horizonColor));
+      uniforms.horizonColor.value.set(...sky.horizonColor);
       uniforms.poleDot.value = sky.poleDotDeg * RAD;
-      uniforms.poleColor.value.copy(vec4Of(sky.poleColor));
+      uniforms.poleColor.value.set(...sky.poleColor);
       uniforms.poleNear.value.set(sky.poleNearDeg[0] * RAD, sky.poleNearDeg[1] * RAD);
       uniforms.side.value = sky.side;
       uniforms.groundOn.value = sky.groundAxes ? 1 : 0;
@@ -202,8 +201,8 @@ export function createSkyGrid(geometry) {
         uniforms.groundBelow.value = sky.ground - sky.eye[1];
         uniforms.groundReach.value = sky.groundReach;
         uniforms.groundAxisPx.value = sky.groundAxisPx * scale;
-        uniforms.groundAxisX.value.copy(vec4Of(sky.groundAxisColors.x));
-        uniforms.groundAxisZ.value.copy(vec4Of(sky.groundAxisColors.z));
+        uniforms.groundAxisX.value.set(...sky.groundAxisColors.x);
+        uniforms.groundAxisZ.value.set(...sky.groundAxisColors.z);
       }
       return mesh;
     },
