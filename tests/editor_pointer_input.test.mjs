@@ -17,7 +17,6 @@ import { gizmoDragLanes, initialSpaceView } from "../web_src/pano_space.js";
 import { panCutoutShotByScreenDelta } from "../web_src/pano_cutout_node_surface.js";
 import { deriveCutoutAspectLabelFromFov } from "../web_src/pano_cutout_view_math.js";
 import { VIEW_CONTROL_PRESETS } from "../web_src/pano_view_controls.js";
-import { RAD2DEG } from "../web_src/editor/constants.js";
 import { dirToYawPitch } from "../web_src/editor/helpers.js";
 
 const EDITOR_DIR = new URL("../web_src/editor/", import.meta.url);
@@ -203,7 +202,7 @@ const sticker = (id, extra = {}) => ({
 });
 const strokeGroup = (id, extra = {}) => ({
   id, kind: "stroke", actionGroupId: `${id}-group`, layerKind: "paint",
-  geom: { visible: true, center: { x: 70, y: 30 } },
+  geom: { visible: true, center: { x: 70, y: 30 }, anchor: { x: 72, y: 28 } },
   ...extra,
 });
 const raster = (id, extra = {}) => ({
@@ -718,8 +717,7 @@ test("a press on the move area of a multi-selection moves all of it, with a snap
     id: "b-group", layerKind: "paint",
     snapshot: [{ id: "b-group-stroke", layerKind: "paint" }],
     frameSnapshot: { id: "b-group", layerKind: "paint", frame: true },
-    center: { x: 70, y: 30 },
-    centerUv: { u: 0.25, v: 0.5, id: "b-group" },
+    center: { x: 72, y: 28 },
   }]);
   assert.deepEqual(it.rasterSnapshots, [{
     id: "c", snapshot: { id: "c", w: 3 }, center: { x: 90, y: 20 }, centerUv: { u: 0.75, v: 0.5, id: "raster:c" },
@@ -820,15 +818,6 @@ test("the rotate handle turns a sticker, a raster object from its roll, a stroke
   h = singleHarness(object, { kind: "rotate" });
   h.onCanvasPointerDown(h.event({ x: 90, y: 30 }));
   assert.deepEqual(h.editor.interaction, { kind: "rotate", item: object, center: { x: 90, y: 20 }, startRot: 25, startAng: Math.PI / 2 });
-
-  const group = strokeGroup("g");
-  h = singleHarness(group, { kind: "rotate" });
-  h.onCanvasPointerDown(h.event({ x: 70, y: 40 }));
-  assert.deepEqual(h.editor.interaction, {
-    kind: "rotate_stroke_group", item: group, center: { x: 70, y: 30 }, startAng: Math.PI / 2,
-    snapshot: [{ id: "g-group-stroke", layerKind: "paint" }],
-    frameSnapshot: { id: "g-group", layerKind: "paint", frame: true },
-  });
 });
 
 test("the move area of a selected sticker moves it by its offset", () => {
@@ -841,15 +830,20 @@ test("the move area of a selected sticker moves it by its offset", () => {
   assert.equal(h.called("pushHistory"), false);
 });
 
-test("the move area of a selected stroke group or raster object moves it from its start UV", () => {
+test("the move area of a selected stroke group moves it from its center direction's screen point, a raster object from its start UV", () => {
   const group = strokeGroup("g");
   let h = singleHarness(group, { kind: "move" });
   h.onCanvasPointerDown(h.event({ x: 200, y: 100 }));
   assert.deepEqual(h.editor.interaction, {
-    kind: "move_stroke_group", item: group, startUv: { u: 0.2, v: 0.1 },
+    kind: "move_stroke_group", item: group, offset: { x: 128, y: 72 },
     snapshot: [{ id: "g-group-stroke", layerKind: "paint" }],
     frameSnapshot: { id: "g-group", layerKind: "paint", frame: true },
   });
+  // Without a screen point of its center direction the press only selects: no offset, so no move.
+  const behind = strokeGroup("g", { geom: { visible: true, center: { x: 70, y: 30 }, anchor: null } });
+  h = singleHarness(behind, { kind: "move" });
+  h.onCanvasPointerDown(h.event({ x: 200, y: 100 }));
+  assert.equal(h.editor.interaction.offset, null);
   const object = raster("r");
   h = singleHarness(object, { kind: "move" });
   h.onCanvasPointerDown(h.event({ x: 200, y: 100 }));
@@ -858,7 +852,7 @@ test("the move area of a selected stroke group or raster object moves it from it
 
 test("in the Frame view a paint item's start UV goes through the active shot, or is null without one", () => {
   const shot = { id: "shot" };
-  for (const item of [strokeGroup("g"), raster("r")]) {
+  for (const item of [raster("r")]) {
     let h = singleHarness(item, { kind: "move" }, { editor: { mode: "frame", primaryTool: "select" }, api: { getActiveCutoutShot: () => shot } });
     h.onCanvasPointerDown(h.event({ x: 200, y: 100 }));
     assert.deepEqual(h.editor.interaction.startUv, { u: 0.1, v: 0.05 });
@@ -932,10 +926,10 @@ test("a press on a locked item selects it and starts nothing", () => {
 
 test("a press on an unselected stroke group or raster object moves it from its start UV and snapshot", () => {
   const group = strokeGroup("g");
-  let h = harness({ api: { hitObjectAt: () => ({ item: group, geom: { center: { x: 90, y: 45 } } }) } });
+  let h = harness({ api: { hitObjectAt: () => ({ item: group, geom: { center: { x: 90, y: 45 }, anchor: { x: 92, y: 44 } } }) } });
   h.onCanvasPointerDown(h.event({ x: 200, y: 100 }));
   assert.deepEqual(h.editor.interaction, {
-    kind: "move_stroke_group", item: group, offset: { x: 110, y: 55 }, startUv: { u: 0.2, v: 0.1 },
+    kind: "move_stroke_group", item: group, offset: { x: 108, y: 56 }, startUv: null,
     snapshot: [{ id: "g-group-stroke", layerKind: "paint" }],
     frameSnapshot: { id: "g-group", layerKind: "paint", frame: true },
   });
@@ -1258,14 +1252,17 @@ test("in the Frame view without a shot or rect a stroke keeps every point", () =
   assert.equal(h.calls("appendPaintPoint").length, 1);
 });
 
-test("in the Frame view a paint item's move goes through the active shot", () => {
+test("in the Frame view a stroke group's move goes through the active shot's rect, as a sticker's", () => {
   const shot = { id: "shot" };
-  const h = harness({ editor: { mode: "frame" }, api: { getActiveCutoutShot: () => shot, applyStrokeGroupOffset: () => true } });
-  h.editor.interaction = { kind: "move_stroke_group", item: strokeGroup("g"), startUv: { u: 0, v: 0 } };
-  h.onCanvasPointerMove(h.event({ x: 200, y: 100 }));
-  assert.deepEqual(h.calls("screenPosToFrameAsErpPoint")[0].slice(0, 2), [{ x: 200, y: 100 }, shot]);
-  const [[, du, dv]] = h.calls("applyStrokeGroupOffset");
-  assert.deepEqual([du, dv], [0.1, 0.05]);
+  const h = harness({ deps: { shotEditor: true }, editor: { mode: "frame" }, api: {
+    getActiveCutoutShot: () => shot, getFrameViewRect: () => ({ x: 0, y: 0, w: 100, h: 100 }),
+    frameLocalPointToWorldDir: () => ({ x: 0, y: 0, z: 1 }), applyStrokeGroupOffset: () => true,
+  } });
+  h.editor.interaction = { kind: "move_stroke_group", item: strokeGroup("g"), offset: { x: 0, y: 0 } };
+  h.onCanvasPointerMove(h.event({ x: 20, y: 30 }));
+  assert.deepEqual(h.calls("frameLocalPointToWorldDir"), [[shot, { x: 0.2, y: 0.3 }]]);
+  const [[, centerTo]] = h.calls("applyStrokeGroupOffset");
+  assert.ok(Math.abs(centerTo.z - 1) < 1e-12);
 });
 
 test("in the Frame view without a shot a stroke keeps every point", () => {
@@ -1438,33 +1435,34 @@ test("a move in the Frame view without a shot editor goes through the view", () 
   assert.equal(h.calls("screenToWorldDir").length, 1);
 });
 
-test("a stroke group's move offsets it by the wrapped UV delta from its start", () => {
+test("a stroke group's move carries its center direction to the direction under the pointer less its offset", () => {
   const group = strokeGroup("g");
-  let h = harness({ api: { applyStrokeGroupOffset: () => true } });
-  h.editor.interaction = { kind: "move_stroke_group", item: group, startUv: { u: 0.05, v: 0.02 }, snapshot: "snap", frameSnapshot: "fsnap" };
+  const ahead = () => ({ x: 0, y: 0, z: 1 });
+  let h = harness({ api: { applyStrokeGroupOffset: () => true, screenToWorldDir: ahead } });
+  h.editor.interaction = { kind: "move_stroke_group", item: group, offset: { x: 10, y: 5 }, snapshot: "snap", frameSnapshot: "fsnap" };
   h.onCanvasPointerMove(h.event());
-  assert.deepEqual(h.calls("shortestWrappedDelta"), [[0.1, 0.05]]);
-  const [[id, du, dv, snap, layer, fsnap]] = h.calls("applyStrokeGroupOffset");
+  assert.deepEqual(h.calls("screenToWorldDir"), [[90, 45]]);
+  const [[id, centerTo, snap, layer, fsnap]] = h.calls("applyStrokeGroupOffset");
   assert.deepEqual([id, snap, layer, fsnap], ["g-group", "snap", "paint", "fsnap"]);
-  assert.ok(Math.abs(du - 0.05) < 1e-12 && Math.abs(dv - 0.03) < 1e-12);
+  assert.ok(Math.abs(centerTo.z - 1) < 1e-12 && Math.abs(centerTo.x) < 1e-12 && Math.abs(centerTo.y) < 1e-12);
   assert.deepEqual(h.calls("markPaintStrokeVisualsDirty"), [[{ rebuildPaintEngine: false }]]);
   assert.deepEqual(h.calls("requestDraw"), [[{ localOnly: true, reason: DRAW_REASON.PAINT }]]);
 
-  h = harness({ api: { applyStrokeGroupOffset: () => false } });
-  h.editor.interaction = { kind: "move_stroke_group", item: group, startUv: { u: 0, v: 0 } };
+  h = harness({ api: { applyStrokeGroupOffset: () => false, screenToWorldDir: ahead } });
+  h.editor.interaction = { kind: "move_stroke_group", item: group, offset: { x: 0, y: 0 } };
   h.onCanvasPointerMove(h.event());
   assert.equal(h.called("requestDraw"), false);
 
+  // A press that only selected (no offset), and the Frame view without a shot, move nothing.
   h = harness();
-  h.editor.interaction = { kind: "move_stroke_group", item: group, startUv: null };
+  h.editor.interaction = { kind: "move_stroke_group", item: group, offset: null };
   h.onCanvasPointerMove(h.event());
   assert.equal(h.called("applyStrokeGroupOffset"), false);
 
-  h = harness({ editor: { mode: "frame" } });
-  h.editor.interaction = { kind: "move_stroke_group", item: group, startUv: { u: 0, v: 0 } };
+  h = harness({ deps: { shotEditor: true }, editor: { mode: "frame" } });
+  h.editor.interaction = { kind: "move_stroke_group", item: group, offset: { x: 0, y: 0 } };
   h.onCanvasPointerMove(h.event());
   assert.equal(h.called("applyStrokeGroupOffset"), false);
-  assert.equal(h.called("screenPosToErpPoint"), false);
 });
 
 test("a raster object's move offsets it from its start UV, in the Frame view through the shot", () => {
@@ -1512,17 +1510,17 @@ test("a multi-selection move writes the stickers' poses and offsets the paint it
   h.editor.interaction = {
     kind: "move_multi", offset: { x: 10, y: 10 }, startCenter: { x: 80, y: 30 },
     stickerSnapshots: [{ id: "a", center: { x: 50, y: 50 } }, { id: "missing", center: { x: 0, y: 0 } }],
-    strokeSnapshots: [{ id: "g", center: { x: 100, y: 100 }, centerUv: { u: 0.1, v: 0.1 }, snapshot: "s", layerKind: "mask", frameSnapshot: "f" }],
+    strokeSnapshots: [{ id: "g", center: { x: 100, y: 100 }, snapshot: "s", layerKind: "mask", frameSnapshot: "f" }],
     rasterSnapshots: [{ id: "r", center: { x: 200, y: 100 }, centerUv: { u: 0.2, v: 0.1 }, snapshot: "rs" }],
   };
   h.onCanvasPointerMove(h.event());
-  // The pointer moved the selection by (10, 10).
-  assert.deepEqual(h.calls("screenToWorldDir"), [[60, 60]]);
+  // The pointer moved the selection by (10, 10): the sticker's and the stroke group's centers go by the same screen rule.
+  assert.deepEqual(h.calls("screenToWorldDir"), [[60, 60], [110, 110]]);
   assert.equal(h.calls("writePose")[0][0], a);
-  assert.deepEqual(h.calls("screenPosToErpPoint").map((args) => args[0]), [{ x: 110, y: 110 }, { x: 210, y: 110 }]);
-  const [[gid, gdu, gdv, gs, gl, gf]] = h.calls("applyStrokeGroupOffset");
+  assert.deepEqual(h.calls("screenPosToErpPoint").map((args) => args[0]), [{ x: 210, y: 110 }]);
+  const [[gid, centerTo, gs, gl, gf]] = h.calls("applyStrokeGroupOffset");
   assert.deepEqual([gid, gs, gl, gf], ["g", "s", "mask", "f"]);
-  assert.ok(Math.abs(gdu - 0.01) < 1e-12 && Math.abs(gdv - 0.01) < 1e-12);
+  assert.ok(Math.abs(centerTo.z - 1) < 1e-12);
   assert.deepEqual(h.calls("applyRasterObjectOffset").map((args) => [args[0], args[3]]), [["r", "rs"]]);
   // A stroke change wins the dirty flag.
   assert.deepEqual(h.calls("markPaintStrokeVisualsDirty"), [[{ rebuildPaintEngine: false }]]);
@@ -1544,8 +1542,9 @@ test("a multi-selection move marks the composite for rasters only, the objects f
   assert.equal(h.calls("markObjectVisualsDirty").length, 1);
   assert.equal(h.called("getList"), false);
 
-  h = harness({ api: { applyStrokeGroupOffset: () => false } });
-  h.editor.interaction = { kind: "move_multi", offset: {}, startCenter: {}, stickerSnapshots: [{ id: "x" }], strokeSnapshots: [{ id: "g", centerUv: { u: 0, v: 0 } }, { id: "h", centerUv: null }] };
+  h = harness({ api: { applyStrokeGroupOffset: () => false, screenToWorldDir: () => ({ x: 0, y: 0, z: 1 }) } });
+  // A stroke group whose center direction had no screen point (center null) does not move.
+  h.editor.interaction = { kind: "move_multi", offset: {}, startCenter: {}, stickerSnapshots: [{ id: "x" }], strokeSnapshots: [{ id: "g", center: { x: 0, y: 0 } }, { id: "h", center: null }] };
   h.onCanvasPointerMove(h.event());
   assert.equal(h.calls("applyStrokeGroupOffset").length, 1);
   assert.equal(h.called("requestDraw"), false);
@@ -1558,11 +1557,12 @@ test("a multi-selection move in the Frame view goes through the shot, and skips 
     frameLocalPointToWorldDir: () => ({ x: 0, y: 0, z: 1 }), applyStrokeGroupOffset: () => true,
   } });
   h.editor.interaction = { kind: "move_multi", offset: { x: 0, y: 0 }, startCenter: { x: 100, y: 50 },
-    stickerSnapshots: [{ id: "a", center: { x: 20, y: 30 } }], strokeSnapshots: [{ id: "g", center: { x: 1, y: 2 }, centerUv: { u: 0, v: 0 } }],
+    stickerSnapshots: [{ id: "a", center: { x: 20, y: 30 } }], strokeSnapshots: [{ id: "g", center: { x: 1, y: 2 } }],
     rasterSnapshots: [{ id: "r", center: { x: 3, y: 4 }, centerUv: { u: 0, v: 0 } }] };
   h.onCanvasPointerMove(h.event());
-  assert.deepEqual(h.calls("frameLocalPointToWorldDir"), [[{ id: "shot" }, { x: 0.2, y: 0.3 }]]);
-  assert.deepEqual(h.calls("screenPosToFrameAsErpPoint").map((args) => args.slice(0, 2)), [[{ x: 1, y: 2 }, { id: "shot" }], [{ x: 3, y: 4 }, { id: "shot" }]]);
+  assert.deepEqual(h.calls("frameLocalPointToWorldDir"), [[{ id: "shot" }, { x: 0.2, y: 0.3 }], [{ id: "shot" }, { x: 0.01, y: 0.02 }]]);
+  assert.deepEqual(h.calls("screenPosToFrameAsErpPoint").map((args) => args.slice(0, 2)), [[{ x: 3, y: 4 }, { id: "shot" }]]);
+  assert.equal(h.calls("applyStrokeGroupOffset").length, 1);
   assert.equal(h.calls("applyRasterObjectOffset").length, 1);
 
   h = harness({ deps: { shotEditor: true }, editor: { mode: "frame" }, api: { getList: () => [a], getActiveCutoutShot: () => ({}) } });
@@ -1577,22 +1577,14 @@ test("a multi-selection move in the Frame view goes through the shot, and skips 
   assert.deepEqual(h.calls("writePose"), [[a, { yaw_deg: 0, pitch_deg: 0 }]]);
 });
 
-test("a stroke group's scale and rotate transform it from its snapshot; Shift snaps the turn to 45 degrees", () => {
+test("a stroke group's scale transforms it from its snapshot", () => {
   const group = strokeGroup("g");
   let h = harness({ api: { applyStrokeGroupTransform: () => true } });
   h.editor.interaction = { kind: "scale_stroke_group", item: group, center: { x: 97, y: 46 }, startDist: 2, snapshot: "s", frameSnapshot: "f" };
   h.onCanvasPointerMove(h.event());
-  assert.deepEqual(h.calls("applyStrokeGroupTransform"), [["g-group", 2.5, 0, "s", "paint", "f"]]);
+  assert.deepEqual(h.calls("applyStrokeGroupTransform"), [["g-group", 2.5, "s", "paint", "f"]]);
   assert.deepEqual(h.calls("markPaintStrokeVisualsDirty"), [[{ rebuildPaintEngine: false }]]);
   assert.deepEqual(h.calls("requestDraw"), [[{ localOnly: true, reason: DRAW_REASON.PAINT }]]);
-
-  h = harness({ api: { applyStrokeGroupTransform: () => true } });
-  h.editor.interaction = { kind: "rotate_stroke_group", item: group, center: { x: 90, y: 50 }, startAng: 0.1, snapshot: "s", frameSnapshot: "f" };
-  h.onCanvasPointerMove(h.event({ x: 90, y: 60 }));
-  assert.deepEqual(h.calls("applyStrokeGroupTransform"), [["g-group", 1, (Math.PI / 2 - 0.1) * RAD2DEG, "s", "paint", "f"]]);
-  h.clear();
-  h.onCanvasPointerMove(h.event({ x: 90, y: 60, shiftKey: true }));
-  assert.deepEqual(h.calls("applyStrokeGroupTransform")[0][2], 90);
 
   h = harness({ api: { applyStrokeGroupTransform: () => false } });
   h.editor.interaction = { kind: "scale_stroke_group", item: group, center: { x: 0, y: 0 }, startDist: 1 };
@@ -1868,7 +1860,6 @@ test("a release of a paint item edit rebuilds the strokes or the composite first
   for (const [interaction, mark, args] of [
     [{ kind: "move_stroke_group", moved: true }, "markPaintStrokeVisualsDirty", [{ rebuildPaintEngine: true }]],
     [{ kind: "scale_stroke_group", moved: true }, "markPaintStrokeVisualsDirty", [{ rebuildPaintEngine: true }]],
-    [{ kind: "rotate_stroke_group", moved: true }, "markPaintStrokeVisualsDirty", [{ rebuildPaintEngine: true }]],
     [{ kind: "move_raster_object", moved: true }, "markPaintCompositeVisualsDirty", []],
     [{ kind: "scale_raster_object", moved: true }, "markPaintCompositeVisualsDirty", []],
     [{ kind: "move_multi", moved: true, strokeSnapshots: [{}], rasterSnapshots: [{}] }, "markPaintStrokeVisualsDirty", [{ rebuildPaintEngine: true }]],
@@ -1938,7 +1929,7 @@ test("a pointercancel puts every edit gesture back to its start values, with no 
   const rasters = [{ id: "r", transform: { du: 0, dv: 0, scale: 1 } }];
   const paintApi = { getStrokeGroupStrokes: () => strokes, getPaintingGroupList: () => groups, getRasterObjectList: () => rasters };
   const writePaint = () => { strokes[0].geometry.points = [[0.5, 0.5]]; groups[0].frame = null; rasters[0].transform.du = 0.3; };
-  for (const kind of ["move_stroke_group", "scale_stroke_group", "rotate_stroke_group"]) {
+  for (const kind of ["move_stroke_group", "scale_stroke_group"]) {
     cases.push({ kind, it: { kind, item: strokeGroup("g") }, api: paintApi, records: [strokes, groups], write: writePaint, painting: true });
   }
   for (const kind of ["move_raster_object", "scale_raster_object"]) {

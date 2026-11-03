@@ -22,7 +22,7 @@ export function createPointerInput(deps) {
     invalidateLivePaintPreviewCaches, isFreeFrameView, isFreeSpaceView, isItemLocked, isSpaceView,
     moveLassoFill, moveLookDrag, moveMarquee, moveMulti, movePaintStroke, movePanFrame, moveRasterObject,
     moveRollFrame, moveSpaceDrag, moveStrokeGroup, moveItem, objectGeom, paintingShown, playback, poseOf,
-    pushHistory, releaseWorldGizmo, requestDraw, restoreGestureSnapshot, rotateItem, rotateStrokeGroup, scaleItem, scaleRasterObject, scaleStrokeGroup,
+    pushHistory, releaseWorldGizmo, requestDraw, restoreGestureSnapshot, rotateItem, scaleItem, scaleRasterObject, scaleStrokeGroup,
     screenPos, screenPosCss, setPointerPos, setSelectedItem, startAxisScale, startCameraPress,
     startEmptyDrag, startFrameDrag, startFrameRoll, startHitMove, startLookDrag, startMove,
     startMultiMove, startPaintStroke, startPanFrame, startRotate, startScale, startSpaceDrag,
@@ -332,10 +332,6 @@ export function createPointerInput(deps) {
       scaleStrokeGroup(it, p);
       return;
     }
-    if (it.kind === "rotate_stroke_group") {
-      rotateStrokeGroup(it, p, e);
-      return;
-    }
     if (it.kind === "marquee_select") {
       moveMarquee(it, p);
       return;
@@ -464,7 +460,7 @@ export function createPointerInput(deps) {
         invalidateLivePaintPreviewCaches, isFreeFrameView, isFreeSpaceView, isItemLocked, isSpaceView,
         moveLassoFill, moveLookDrag, moveMarquee, moveMulti, movePaintStroke, movePanFrame, moveRasterObject,
         moveRollFrame, moveSpaceDrag, moveStrokeGroup, moveItem, objectGeom, paintingShown, playback, poseOf,
-        pushHistory, releaseWorldGizmo, requestDraw, restoreGestureSnapshot, rotateItem, rotateStrokeGroup, scaleItem, scaleRasterObject, scaleStrokeGroup,
+        pushHistory, releaseWorldGizmo, requestDraw, restoreGestureSnapshot, rotateItem, scaleItem, scaleRasterObject, scaleStrokeGroup,
         screenPos, screenPosCss, setPointerPos, setSelectedItem, startAxisScale, startCameraPress,
         startEmptyDrag, startFrameDrag, startFrameRoll, startHitMove, startLookDrag, startMove,
         startMultiMove, startPaintStroke, startPanFrame, startRotate, startScale, startSpaceDrag,

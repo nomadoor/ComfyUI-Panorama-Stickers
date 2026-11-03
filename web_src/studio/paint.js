@@ -161,7 +161,7 @@ export function createStudioPaint({ state, tools, edit, onStart = () => {}, onCh
       descriptor,
       groupStrokes: (gid) => groupStrokes(draft.painting.paint.strokes, gid),
       groupFrame: (group, strokes) => {
-        group.frame = strokeGroupFrame(strokes, presetIdOf);
+        group.frame = strokeGroupFrame(strokes, presetIdOf, group.rot_deg);
         return group.frame;
       },
       groupCanvas: (gid) => engine?.getGroupTarget(gid)?.committedPaint?.canvas || null,

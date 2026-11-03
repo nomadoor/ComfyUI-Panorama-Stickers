@@ -38,6 +38,8 @@ function normalizeGroups(raw) {
       actionGroupId,
       z_index: Math.max(0, Math.round(z ?? out.length)),
       locked: item.locked === true,
+      // The frame's turn (docs/scene-state-v2.md `painting`): editor-only, not wrapped, 0 when missing.
+      rot_deg: finiteNumber(item.rot_deg, 0),
     });
   }
   return out;

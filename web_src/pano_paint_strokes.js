@@ -6,8 +6,13 @@
 // canvases a raster needs; the paint engine's pixels (pano_paint_engine.js) are the caller's.
 import { BRUSH_PRESETS, DEFAULT_BRUSH_PRESET_ID, applyPresetToStroke } from "./pano_brush_presets.js";
 import { createPanoCanvas, releasePanoCanvas } from "./pano_diagnostics.js";
+import { cameraBasis, dot, tangentDirection } from "./pano_camera_math.js";
 import { clamp } from "./pano_math.js";
+import { pixelRangesMeet, rasterObjectPixelRanges } from "./pano_paint_display.js";
+import { directionOfErpPoint, erpPointOfDirection, shortestWrappedDelta, stampHalfWidthPx, strokeErpPath } from "./pano_paint_sphere.js";
 import { normalizePaintingState } from "./pano_paint_types.js";
+
+export { directionOfErpPoint, erpPointOfDirection, shortestWrappedDelta };
 
 const DEG2RAD = Math.PI / 180;
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -85,35 +90,6 @@ export function rgb01ToHsv(color) {
 
 export function makePaintId(prefix) {
   return `${prefix}_${Math.random().toString(16).slice(2, 10)}`;
-}
-
-// The difference a - b of two ERP u values the short way round, in [-0.5, 0.5].
-export function shortestWrappedDelta(a, b) {
-  let d = Number(a || 0) - Number(b || 0);
-  while (d > 0.5) d -= 1;
-  while (d < -0.5) d += 1;
-  return d;
-}
-
-// The ERP point of a direction in the panorama convention (pano_editor_view.js viewProjection's rays: the old
-// editor's view and the new UI's stage both give one), at time `t`.
-export function erpPointOfDirection(d, t = 0) {
-  const lon = Math.atan2(d.x, d.z);
-  const lat = Math.asin(clamp(d.y, -1, 1));
-  return {
-    targetKind: "ERP_GLOBAL",
-    u: ((lon / (2 * Math.PI)) + 0.5 + 1) % 1,
-    v: clamp(0.5 - (lat / Math.PI), 0, 1),
-    t: Number(t || 0),
-  };
-}
-
-// The unit direction of an ERP point in the panorama convention (erpPointOfDirection's inverse).
-export function directionOfErpPoint(point) {
-  const lon = (Number(point.u || 0) - 0.5) * (2 * Math.PI);
-  const lat = (0.5 - Number(point.v || 0)) * Math.PI;
-  const cp = Math.cos(lat);
-  return { x: cp * Math.sin(lon), y: Math.sin(lat), z: cp * Math.cos(lon) };
 }
 
 // The paint target of the editors: an ERP of the node's output preset width (2048 when the node has none, as
@@ -446,20 +422,26 @@ function configureStrokeFill(targetCtx, stroke, options = {}) {
   targetCtx.fillStyle = `rgba(${Math.round(Number(c.r || 0) * 255)}, ${Math.round(Number(c.g || 0) * 255)}, ${Math.round(Number(c.b || 0) * 255)}, ${alpha})`;
 }
 
-function drawDiscStamp(targetCtx, sample, maxRadiusPx) {
-  const r = Math.max(0.5, Math.min(maxRadiusPx, Number(sample?.radiusPx || 0.5)));
+// A stamp at the sample: an ellipse rv down and stampHalfWidthPx across (wider by 1 / cos(latitude), up to the whole
+// width; docs/render-contract.md "ペイントのストロークの描き方"), on an ERP of bounds.w x bounds.h.
+function drawDiscStamp(targetCtx, sample, bounds) {
+  const r = Math.max(0.5, Number(sample?.radiusPx || 0.5));
   if (!Number.isFinite(sample?.x) || !Number.isFinite(sample?.y) || !Number.isFinite(r)) return;
-  targetCtx.beginPath();
-  targetCtx.arc(Number(sample.x || 0), Number(sample.y || 0), r, 0, Math.PI * 2);
-  targetCtx.fill();
+  const across = stampHalfWidthPx(r, 1, Number(sample.y || 0) / Math.max(1, bounds.h), bounds.w);
+  for (const offset of [-bounds.w, 0, bounds.w]) {
+    const x = Number(sample.x || 0) + offset;
+    if (x + across < 0 || x - across > bounds.w) continue;
+    targetCtx.beginPath();
+    targetCtx.ellipse(x, Number(sample.y || 0), across, r, 0, 0, Math.PI * 2);
+    targetCtx.fill();
+  }
 }
 
 function drawStampedStroke(targetCtx, samples, stroke, bounds, options = {}) {
   if (!targetCtx || !Array.isArray(samples) || !samples.length) return;
-  const maxRadiusPx = Math.max(bounds.w, bounds.h) * 0.25;
   targetCtx.save();
   configureStrokeFill(targetCtx, stroke, options);
-  const drawSample = (sample) => drawDiscStamp(targetCtx, sample, maxRadiusPx);
+  const drawSample = (sample) => drawDiscStamp(targetCtx, sample, bounds);
   if (samples.length === 1) {
     drawSample(samples[0]);
     targetCtx.restore();
@@ -473,8 +455,8 @@ function drawStampedStroke(targetCtx, samples, stroke, bounds, options = {}) {
     const ay = Number(a.y || 0);
     const bx = Number(b.x || 0);
     const by = Number(b.y || 0);
-    const ar = Math.max(0.5, Math.min(maxRadiusPx, Number(a.radiusPx || 0.5)));
-    const br = Math.max(0.5, Math.min(maxRadiusPx, Number(b.radiusPx || 0.5)));
+    const ar = Math.max(0.5, Number(a.radiusPx || 0.5));
+    const br = Math.max(0.5, Number(b.radiusPx || 0.5));
     if (!Number.isFinite(ax) || !Number.isFinite(ay) || !Number.isFinite(bx) || !Number.isFinite(by)) continue;
     if (!Number.isFinite(ar) || !Number.isFinite(br)) continue;
     const dx = bx - ax;
@@ -484,7 +466,6 @@ function drawStampedStroke(targetCtx, samples, stroke, bounds, options = {}) {
       drawSample(a);
       continue;
     }
-    if (len > Math.max(bounds.w, bounds.h) * 0.5) continue;
     const minRadius = Math.max(0.5, Math.min(ar, br));
     const step = Math.max(0.35, Math.min(minRadius * 0.4, 2.25));
     const count = Math.max(1, Math.ceil(len / step));
@@ -515,14 +496,21 @@ function drawNativeLassoFill(targetCtx, points, stroke, bounds, axisKeys) {
     const c = stroke?.color || { r: 1, g: 0.25, b: 0.25, a: 1 };
     targetCtx.fillStyle = `rgba(${Math.round(Number(c.r || 0) * 255)}, ${Math.round(Number(c.g || 0) * 255)}, ${Math.round(Number(c.b || 0) * 255)}, ${Number(c.a ?? 1)})`;
   }
-  targetCtx.beginPath();
-  targetCtx.moveTo(Number(points[0]?.[xKey] || 0) * bounds.w, Number(points[0]?.[yKey] || 0) * bounds.h);
-  for (let i = 1; i < points.length; i += 1) {
-    targetCtx.lineTo(Number(points[i]?.[xKey] || 0) * bounds.w, Number(points[i]?.[yKey] || 0) * bounds.h);
+  // Its edges (the closing one too) on great circles, u continuous across the seam, with the seam's copies.
+  const coords = points.map((point) => ({ u: Number(point?.[xKey] || 0), v: Number(point?.[yKey] || 0) }));
+  const path = strokeErpPath([...coords, coords[0]], getNativeRadiusPxForStrokePoint(stroke, null, bounds.w, bounds.h), bounds.w, bounds.h).slice(0, -1);
+  const xs = path.map((point) => point.u * bounds.w);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  for (const offset of [0, ...(minX < 0 ? [bounds.w] : []), ...(maxX > bounds.w ? [-bounds.w] : [])]) {
+    targetCtx.beginPath();
+    path.forEach((point, index) => (index ? targetCtx.lineTo : targetCtx.moveTo).call(targetCtx, point.u * bounds.w + offset, point.v * bounds.h));
+    targetCtx.closePath();
+    targetCtx.fill();
   }
-  targetCtx.closePath();
-  targetCtx.fill();
   targetCtx.restore();
+  const ys = path.map((point) => point.v * bounds.h);
+  return { minX, maxX, minY: Math.min(...ys), maxY: Math.max(...ys) };
 }
 
 function getStrokeRasterPoints(stroke) {
@@ -538,9 +526,13 @@ function getStrokeRasterPoints(stroke) {
       : (Array.isArray(geometry.points) ? geometry.points : []));
 }
 
+// The stamps' samples along the stroke's path on the sphere (strokeErpPath: u continuous across the seam).
 function buildNativeStrokeSamples(stroke, bounds) {
-  const points = getStrokeRasterPoints(stroke);
-  if (!Array.isArray(points) || !points.length) return [];
+  const raw = getStrokeRasterPoints(stroke);
+  if (!Array.isArray(raw) || !raw.length) return [];
+  const w = Number(bounds?.w || 1);
+  const h = Number(bounds?.h || 1);
+  const points = strokeErpPath(raw, getNativeRadiusPxForStrokePoint(stroke, null, w, h), w, h);
   return points.map((point) => ({
     x: Number(point?.u || 0) * Number(bounds?.w || 1),
     y: Number(point?.v || 0) * Number(bounds?.h || 1),
@@ -572,31 +564,37 @@ export function rasterizeStrokeToSurface(surface, stroke, bounds = null) {
     if (!(out.x1 > out.x0 && out.y1 > out.y0)) return { x0: 0, y0: 0, x1: 0, y1: 0 };
     return out;
   };
+  // A shape past the left or right edge has a copy on the other side: the box goes the whole way across.
+  const across = (x0, x1) => (x0 < 0 || x1 > targetBounds.w ? [0, targetBounds.w] : [x0, x1]);
   if (geometryKind === "lasso_fill") {
-    const points = getStrokeRasterPoints(rasterStroke);
-    drawNativeLassoFill(surface.ctx, points, rasterStroke, targetBounds);
-    const xs = points.map((point) => Number(point?.u || 0) * targetBounds.w);
-    const ys = points.map((point) => Number(point?.v || 0) * targetBounds.h);
-    return xs.length ? box(Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)) : box(0, 0, -1, -1);
+    const drawn = drawNativeLassoFill(surface.ctx, getStrokeRasterPoints(rasterStroke), rasterStroke, targetBounds);
+    if (!drawn) return box(0, 0, -1, -1);
+    const [x0, x1] = across(drawn.minX, drawn.maxX);
+    return box(x0, drawn.minY, x1, drawn.maxY);
   }
   const samples = buildNativeStrokeSamples(rasterStroke, targetBounds);
   if (!samples.length) return false;
   drawStampedStroke(surface.ctx, samples, rasterStroke, targetBounds, { preview: false });
-  // Each disc drawn lies within the discs of the samples it is drawn between (drawStampedStroke).
-  const maxRadiusPx = Math.max(targetBounds.w, targetBounds.h) * 0.25;
+  // Each ellipse drawn lies within the ellipses of the samples it is drawn between (drawStampedStroke); at most a
+  // sample's half width across (stampHalfWidthPx at its row; the rows between take the wider of the two ends, so the
+  // widest of the stroke's rows bounds them).
   let x0 = Infinity;
   let y0 = Infinity;
   let x1 = -Infinity;
   let y1 = -Infinity;
+  let reach = 0;
   for (const sample of samples) {
-    const r = Math.max(0.5, Math.min(maxRadiusPx, Number(sample?.radiusPx || 0.5)));
+    const r = Math.max(0.5, Number(sample?.radiusPx || 0.5));
     if (!Number.isFinite(sample?.x) || !Number.isFinite(sample?.y) || !Number.isFinite(r)) continue;
-    x0 = Math.min(x0, sample.x - r);
+    reach = Math.max(reach, stampHalfWidthPx(r, 1, Math.min(sample.y, targetBounds.h - sample.y) / targetBounds.h, targetBounds.w));
+    x0 = Math.min(x0, sample.x);
     y0 = Math.min(y0, sample.y - r);
-    x1 = Math.max(x1, sample.x + r);
+    x1 = Math.max(x1, sample.x);
     y1 = Math.max(y1, sample.y + r);
   }
-  return Number.isFinite(x0) ? box(x0, y0, x1, y1) : box(0, 0, -1, -1);
+  if (!Number.isFinite(x0)) return box(0, 0, -1, -1);
+  const [left, right] = across(x0 - reach, x1 + reach);
+  return box(left, y0, right, y1);
 }
 
 // --- Raster objects made from a painted canvas.
@@ -852,9 +850,58 @@ export function strokePoints(stroke) {
     : (geometry?.processedPoints || geometry?.rawPoints || geometry?.points || []);
 }
 
-// The axis-aligned box of a stroke group's points (rot_deg 0): { centerUv, rot_deg, halfW, halfH, uvPad }, or null
-// with no points. `presetIdOf(toolKind)` gives a stroke's brush preset (for its width).
-export function strokeGroupFrame(strokes, presetIdOf = (toolKind) => brushPresetIdForTool(toolKind)) {
+// A stroke group's frame on the sphere (docs/studio-ui.md "ペイントのまとまり" "選んだ形"), as a sky image's.
+
+// How far (degrees) from its center a point lies at most in a stroke group's frame: the half of a sky image's widest
+// angle of view (179°), past which the tangent plane does not reach.
+const FRAME_LIMIT_DEG = 89.5;
+// A center direction whose x and z are both under this lies on a pole: its longitude counts as 0.
+const POLE_EPS = 1e-9;
+
+// Whether the direction `d` lies on a pole (its x and z both under POLE_EPS), where it has no longitude.
+export function isPoleDirection(d) {
+  return Math.abs(d.x) < POLE_EPS && Math.abs(d.z) < POLE_EPS;
+}
+
+// The axes of a stroke group's frame of center direction `center` turned by rotationDeg (clockwise seen from inside):
+// cameraBasis at the center's longitude and latitude with the roll -rotationDeg (a sky Sticker's roll turns its picture
+// counter-clockwise, docs/scene-state-v2.md): { center, right, up } (center: the basis's forward). On a pole the
+// longitude is 0.
+export function strokeGroupAxes(center, rotationDeg = 0) {
+  const yaw = isPoleDirection(center) ? 0 : Math.atan2(center.x, center.z) / DEG2RAD;
+  const pitch = Math.asin(clamp(center.y, -1, 1)) / DEG2RAD;
+  const basis = cameraBasis(yaw, pitch, -Number(rotationDeg || 0));
+  return { center: basis.fwd, right: basis.right, up: basis.up };
+}
+
+// The point (x, y) of the tangent plane of `axes` ({ center, right, up }) where the direction `p` lies (gnomonic), a
+// point FRAME_LIMIT_DEG or farther from the center taken at that angle on its own bearing (with `clamp` false, null
+// for it); null for the direction opposite the center.
+export function frameTangentOf(axes, p, { clamp: clampFar = true } = {}) {
+  const along = dot(p, axes.center);
+  const x = dot(p, axes.right);
+  const y = dot(p, axes.up);
+  const limit = Math.cos(FRAME_LIMIT_DEG * DEG2RAD);
+  if (along > limit) return [x / along, y / along];
+  if (!clampFar) return null;
+  const length = Math.hypot(x, y);
+  if (length < 1e-12) return null;
+  const reach = Math.tan(FRAME_LIMIT_DEG * DEG2RAD);
+  return [(x / length) * reach, (y / length) * reach];
+}
+
+// The direction of the point (x, y) of the tangent plane of `axes` (pano_camera_math.js tangentDirection, as a sky
+// image's corners).
+export function frameDirectionAt(axes, x, y) {
+  return tangentDirection({ fwd: axes.center, right: axes.right, up: axes.up }, x, y);
+}
+
+// The frame of a stroke group's points (rotationDeg is the group's rot_deg), or null with no points: { center, right, up
+// (its axes, strokeGroupAxes), box: { x, y } (the box's center on the tangent plane), halfW, halfH (its half sizes there,
+// padded), rot_deg, uvPad, centerUv (the ERP point of the box's center) }, all plain numbers. The center is the points'
+// mean direction (their ERP mean's when that is about zero); the box holds the points on the tangent plane, padded by
+// tan(π · uvPad) each way (uvPad from the widest brush). `presetIdOf(toolKind)` gives a stroke's brush preset.
+export function strokeGroupFrame(strokes, presetIdOf = (toolKind) => brushPresetIdForTool(toolKind), rotationDeg = 0) {
   const normalizeU = (u) => ((Number(u || 0) % 1) + 1) % 1;
   const sourcePoints = [];
   for (const stroke of strokes) {
@@ -862,24 +909,32 @@ export function strokeGroupFrame(strokes, presetIdOf = (toolKind) => brushPreset
     if (Array.isArray(pts)) sourcePoints.push(...pts);
   }
   if (!sourcePoints.length) return null;
-  const baseU = normalizeU(sourcePoints[0]?.u || 0);
-  let sumU = 0;
-  let sumV = 0;
-  sourcePoints.forEach((pt) => {
-    const u = normalizeU(pt?.u || 0);
-    sumU += baseU + shortestWrappedDelta(u, baseU);
-    sumV += Number(pt?.v || 0);
+  const directions = sourcePoints.map((pt) => directionOfErpPoint(pt));
+  const sum = directions.reduce((acc, d) => ({ x: acc.x + d.x, y: acc.y + d.y, z: acc.z + d.z }), { x: 0, y: 0, z: 0 });
+  const length = Math.hypot(sum.x, sum.y, sum.z);
+  let center;
+  if (length >= 1e-9) {
+    center = { x: sum.x / length, y: sum.y / length, z: sum.z / length };
+  } else {
+    const baseU = normalizeU(sourcePoints[0]?.u || 0);
+    let sumU = 0;
+    let sumV = 0;
+    sourcePoints.forEach((pt) => {
+      sumU += baseU + shortestWrappedDelta(normalizeU(pt?.u || 0), baseU);
+      sumV += Number(pt?.v || 0);
+    });
+    center = directionOfErpPoint({ u: normalizeU(sumU / sourcePoints.length), v: sumV / sourcePoints.length });
+  }
+  const turn = Number(rotationDeg || 0);
+  const axes = strokeGroupAxes(center, turn);
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  directions.forEach((d) => {
+    const at = frameTangentOf(axes, d);
+    if (!at) return;
+    minX = Math.min(minX, at[0]); maxX = Math.max(maxX, at[0]);
+    minY = Math.min(minY, at[1]); maxY = Math.max(maxY, at[1]);
   });
-  const centU = ((sumU / sourcePoints.length) % 1 + 1) % 1;
-  const centV = sumV / sourcePoints.length;
-  let minDU = Infinity, maxDU = -Infinity, minV = Infinity, maxV = -Infinity;
-  sourcePoints.forEach((pt) => {
-    const u = normalizeU(pt?.u || 0);
-    const du = shortestWrappedDelta(u, centU);
-    minDU = Math.min(minDU, du); maxDU = Math.max(maxDU, du);
-    const v = Number(pt?.v || 0);
-    minV = Math.min(minV, v); maxV = Math.max(maxV, v);
-  });
+  if (!Number.isFinite(minX)) minX = maxX = minY = maxY = 0;
   const maxStrokeWidth = strokes.reduce((max, stroke) => {
     const presetId = presetIdOf(String(stroke?.toolKind || "pen"));
     const preset = BRUSH_PRESETS[presetId] || BRUSH_PRESETS[DEFAULT_BRUSH_PRESET_ID];
@@ -887,12 +942,19 @@ export function strokeGroupFrame(strokes, presetIdOf = (toolKind) => brushPreset
     return Math.max(max, size);
   }, 0);
   const uvPad = Math.max(0.0035, maxStrokeWidth / 2048);
+  const pad = Math.tan(Math.PI * uvPad);
+  const box = { x: (minX + maxX) * 0.5, y: (minY + maxY) * 0.5 };
+  const { u, v } = erpPointOfDirection(frameDirectionAt(axes, box.x, box.y));
   return {
-    centerUv: { u: ((centU + (minDU + maxDU) * 0.5) % 1 + 1) % 1, v: clamp((minV + maxV) * 0.5, 0, 1) },
-    rot_deg: 0,
-    halfW: (maxDU - minDU) * 0.5 + uvPad,
-    halfH: (maxV - minV) * 0.5 + uvPad,
+    center: { ...axes.center },
+    right: { ...axes.right },
+    up: { ...axes.up },
+    box,
+    halfW: (maxX - minX) * 0.5 + pad,
+    halfH: (maxY - minY) * 0.5 + pad,
+    rot_deg: turn,
     uvPad,
+    centerUv: { u, v },
   };
 }
 
@@ -946,40 +1008,53 @@ export function erasePaint(painting, eraserStroke, { descriptor: erpDesc, groupS
     return !(a.maxX < b.minX || b.maxX < a.minX || a.maxY < b.minY || b.maxY < a.minY);
   }
 
+  // The ERP box of a stroke group's points, padded by a stamp's radius down and by its half width at the most polar
+  // row across (docs/studio-ui.md "ペイントのまとまり", docs/render-contract.md "ペイントのストロークの描き方": the
+  // eraser's first test reads the points, not the frame): u from the points' mean u the short way round.
   function getGroupApproxBoundsPx(group, strokes) {
     const frame = groupFrame(group, strokes);
     if (!frame) return null;
-    const minU = frame.centerUv.u - frame.halfW;
-    const maxU = frame.centerUv.u + frame.halfW;
-    const minV = frame.centerUv.v - frame.halfH;
-    const maxV = frame.centerUv.v + frame.halfH;
+    const points = strokes.flatMap((stroke) => {
+      const pts = strokePoints(stroke);
+      return Array.isArray(pts) ? pts : [];
+    });
+    if (!points.length) return null;
+    const baseU = Number(points[0]?.u || 0);
+    const offsets = points.map((pt) => shortestWrappedDelta(Number(pt?.u || 0), baseU));
+    const meanU = baseU + offsets.reduce((sum, du) => sum + du, 0) / offsets.length;
+    let minU = Infinity, maxU = -Infinity, minV = Infinity, maxV = -Infinity;
+    points.forEach((pt) => {
+      const u = meanU + shortestWrappedDelta(Number(pt?.u || 0), meanU);
+      minU = Math.min(minU, u); maxU = Math.max(maxU, u);
+      minV = Math.min(minV, Number(pt?.v || 0)); maxV = Math.max(maxV, Number(pt?.v || 0));
+    });
     const width = erpDesc.width;
     const height = erpDesc.height;
+    // A stamp's vertical radius on this ERP (the widest of the strokes', wider nibs counted) pads it down; across, a
+    // stamp reaches stampHalfWidthPx at the group's most polar row (the whole width where that is half of it).
+    const radius = strokes.reduce((max, stroke) => Math.max(max, getNativeRadiusPxForStrokePoint(stroke, null, width, height)
+      * Math.max(1, Number(stroke?.aspect ?? 1))), 0.5);
+    const pad = radius / height;
+    const polar = Math.min(minV, 1 - maxV);
+    const across = stampHalfWidthPx(radius, 1, Math.max(0, polar - pad), width);
+    if (across >= width * 0.5) {
+      minU = 0;
+      maxU = 1;
+    } else {
+      minU -= across / width;
+      maxU += across / width;
+    }
+    minV -= pad; maxV += pad;
+    const minY = Math.floor(clamp(minV, 0, 1) * height);
+    const maxY = Math.ceil(clamp(maxV, 0, 1) * height);
+    // A range a turn wide or more covers the whole width.
+    if (maxU - minU >= 1) return { minX: 0, maxX: width - 1, minY, maxY, wraps: false };
     return {
       minX: Math.floor(((minU % 1 + 1) % 1) * width),
       maxX: Math.ceil((((maxU % 1 + 1) % 1) * width)),
-      minY: Math.floor(clamp(minV, 0, 1) * height),
-      maxY: Math.ceil(clamp(maxV, 0, 1) * height),
-      wraps: (maxU - minU) >= 1 || minU < 0 || maxU > 1,
-    };
-  }
-
-  function getRasterApproxBoundsPx(item) {
-    const bbox = item?.bbox || null;
-    if (!bbox) return null;
-    const tf = item?.transform || {};
-    const width = erpDesc.width;
-    const height = erpDesc.height;
-    const u0 = Number(bbox.u0 || 0) + Number(tf.du || 0);
-    const u1 = Number(bbox.u1 || 0) + Number(tf.du || 0);
-    const v0 = Number(bbox.v0 || 0) + Number(tf.dv || 0);
-    const v1 = Number(bbox.v1 || 0) + Number(tf.dv || 0);
-    return {
-      minX: Math.floor((((u0 % 1) + 1) % 1) * width),
-      maxX: Math.ceil((((u1 % 1) + 1) % 1) * width),
-      minY: Math.floor(clamp(v0, 0, 1) * height),
-      maxY: Math.ceil(clamp(v1, 0, 1) * height),
-      wraps: (u1 - u0) >= 1 || u0 < 0 || u1 > 1,
+      minY,
+      maxY,
+      wraps: ((minU % 1 + 1) % 1) > ((maxU % 1 + 1) % 1),
     };
   }
 
@@ -1053,7 +1128,8 @@ export function erasePaint(painting, eraserStroke, { descriptor: erpDesc, groupS
   }
 
   for (const rasterObject of rasterList().filter((item) => String(item?.layerKind || "paint") === "paint")) {
-    if (!approxBoundsHit(getRasterApproxBoundsPx(rasterObject))) {
+    // The pixels it covers (pano_paint_display.js rasterObjectPixelRanges); one without a box is tried whole.
+    if (rasterObject?.bbox && !pixelRangesMeet(rasterObjectPixelRanges(rasterObject, erpDesc.width, erpDesc.height), eraserBoundsPx)) {
       nextRasterObjects.push(rasterObject);
       continue;
     }

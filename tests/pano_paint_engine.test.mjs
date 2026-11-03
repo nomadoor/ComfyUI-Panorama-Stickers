@@ -164,3 +164,31 @@ test("a rebuild told that strokes do not change in place reads only the strokes 
     assert.equal(reads, 0, "the stroke kept is not read again");
   });
 });
+
+// docs/render-contract.md "ペイントのストロークの描き方": the great-circle points go in between the same neighbours
+// while a stroke is drawn as when it is drawn again, so the live stroke and a rebuild paint the same pixels.
+test("a stroke whose neighbours get great-circle points paints the same pixels live as on a rebuild", async () => {
+  const { withRasterCanvas } = await import("./raster_canvas.mjs");
+  const { strokeErpPath } = await import("../web_src/pano_paint_sphere.js");
+  withRasterCanvas(() => {
+    // Near latitude 85°, its points far apart in longitude.
+    const rawPoints = [{ u: 0.1, v: 0.03 }, { u: 0.35, v: 0.028 }, { u: 0.6, v: 0.031 }, { u: 0.7, v: 0.04 }];
+    const stroke = {
+      targetSpace: { kind: "ERP_GLOBAL" }, layerKind: "paint", toolKind: "pen", actionGroupId: "g1", size: 3, hardness: 0.5,
+      color: { r: 1, g: 0, b: 0, a: 1 }, geometry: { geometryKind: "freehand", rawPoints },
+    };
+    const descriptor = { width: 256, height: 128 };
+    assert.ok(strokeErpPath(rawPoints, 1.5, 256, 128).length > rawPoints.length, "points go in");
+    const live = createPaintEngineManager(descriptor);
+    live.beginStroke(stroke);
+    for (const { u, v } of rawPoints) live.appendStrokePoint(live.ensureTarget(), u, v, stroke);
+    live.commitActiveStroke(stroke);
+    const rebuilt = createPaintEngineManager(descriptor);
+    rebuilt.rebuildCommitted({ painting: { groups: [{ id: "g1", actionGroupId: "g1", z_index: 0 }], paint: { strokes: [stroke] } } });
+    const pixels = (engine) => Array.from(engine.getGroupTarget("g1").committedPaint.canvas.getContext("2d").getImageData(0, 0, 256, 128).data);
+    const a = pixels(live);
+    const b = pixels(rebuilt);
+    assert.ok(a.some((value, index) => index % 4 === 3 && value > 0), "it paints");
+    assert.deepEqual(a, b);
+  });
+});

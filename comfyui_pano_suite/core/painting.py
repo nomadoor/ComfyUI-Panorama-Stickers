@@ -66,26 +66,89 @@ def _stroke_width_px(stroke: dict, width: int, height: int) -> int:
     return max(1, int(round(base * scale)))
 
 
-def _unwrap_erp_points(points: list[dict]) -> list[list[dict]]:
-    if not points:
-        return []
-    group = [dict(points[0])]
-    offset = 0.0
-    out = []
-    prev_u = float(points[0]["u"])
-    for point in points[1:]:
-        cur_u = float(point["u"])
-        delta = cur_u - prev_u
-        if delta > 0.5:
-            offset -= 1.0
-        elif delta < -0.5:
-            offset += 1.0
-        next_point = dict(point)
-        next_point["u"] = cur_u + offset
-        group.append(next_point)
-        prev_u = cur_u
-    out.append(group)
+# --- A stroke drawn on the sphere (docs/render-contract.md "ペイントのストロークの描き方"; JS: web_src/pano_paint_sphere.js
+# strokeErpPath, stampHalfWidthPx, held together by tests/fixtures/paint_stroke_sphere.json).
+
+
+def _short_u(a: float, b: float) -> float:
+    d = a - b
+    while d > 0.5:
+        d -= 1.0
+    while d < -0.5:
+        d += 1.0
+    return d
+
+
+def _erp_direction(u: float, v: float) -> tuple[float, float, float]:
+    lon = (u - 0.5) * 2.0 * math.pi
+    lat = (0.5 - v) * math.pi
+    c = math.cos(lat)
+    return (c * math.sin(lon), math.sin(lat), c * math.cos(lon))
+
+
+def stroke_erp_path(points: list[dict], radius_px: float, width: int, height: int) -> list[dict]:
+    """The points a drawer walks for the stroke `points`, its base radius and a width x height ERP: u continuous across
+    the seam (each next one the short way from the one before), with a great circle's midpoint put between two
+    neighbours wherever their ERP line's midpoint lies farther from it than half the brush's vertical radius (as an
+    angle), again on each half (depth 16 at most; not between about the same directions, opposite ones, or ones under
+    a pixel apart). Points put in take the means of their neighbours' t, widthScale and pressureLike."""
+    continuous = []
+    for point in points or []:
+        raw = float(point.get("u") or 0.0)
+        u = raw if not continuous else continuous[-1]["u"] + _short_u(raw, continuous[-1]["u"] % 1.0)
+        continuous.append({**point, "u": u, "v": float(point.get("v") or 0.0)})
+    out: list[dict] = []
+    if not continuous:
+        return out
+    half_angle = float(radius_px) / max(1, height) * math.pi * 0.5
+
+    def between(a: dict, b: dict, depth: int) -> None:
+        if depth >= 16:
+            return
+        if math.hypot((b["u"] - a["u"]) * width, (b["v"] - a["v"]) * height) < 1:
+            return
+        da = _erp_direction(a["u"], a["v"])
+        db = _erp_direction(b["u"], b["v"])
+        if math.dist(da, db) < 1e-12:
+            return
+        if abs(sum(x * y for x, y in zip(da, db)) + 1.0) < 1e-12:
+            return
+        s = [x + y for x, y in zip(da, db)]
+        n = math.sqrt(sum(x * x for x in s))
+        g = [x / n for x in s]
+        mu, mv = (a["u"] + b["u"]) * 0.5, (a["v"] + b["v"]) * 0.5
+        dm = _erp_direction(mu, mv)
+        cross = math.sqrt((dm[1] * g[2] - dm[2] * g[1]) ** 2 + (dm[2] * g[0] - dm[0] * g[2]) ** 2 + (dm[0] * g[1] - dm[1] * g[0]) ** 2)
+        if math.atan2(cross, sum(x * y for x, y in zip(dm, g))) <= half_angle:
+            return
+        lat = math.asin(max(-1.0, min(1.0, g[1])))
+        if abs(lat) >= math.pi / 2 - 1e-9:
+            u = mu
+        else:
+            u = mu + _short_u(math.atan2(g[0], g[2]) / (2.0 * math.pi) + 0.5, mu % 1.0)
+        point = {**a, "u": u, "v": 0.5 - lat / math.pi, "t": (float(a.get("t") or 0.0) + float(b.get("t") or 0.0)) * 0.5}
+        for key in ("widthScale", "pressureLike"):
+            if key in a or key in b:
+                point[key] = (float(a.get(key, 1.0)) + float(b.get(key, 1.0))) * 0.5
+            else:
+                point.pop(key, None)
+        between(a, point, depth + 1)
+        out.append(point)
+        between(point, b, depth + 1)
+
+    out.append(continuous[0])
+    for i in range(1, len(continuous)):
+        between(continuous[i - 1], continuous[i], 0)
+        out.append(continuous[i])
     return out
+
+
+def stamp_half_width_px(rv: float, aspect: float, v: float, width: int) -> float:
+    """A brush stamp's horizontal radius in pixels on an ERP of `width`, for its vertical radius rv and aspect, at the
+    row v: rv · aspect ÷ cos(latitude), the whole width's half where it reaches that."""
+    across = float(rv) * float(aspect)
+    c = math.cos((0.5 - float(v)) * math.pi)
+    return width * 0.5 if across >= c * width * 0.5 else across / c
 
 
 def _catmull_rom_resample(coords: list[tuple[float, float]], spacing: float = 2.0) -> list[tuple[float, float]]:
@@ -136,7 +199,14 @@ def _stroke_segments_for_erp_geometry(stroke: dict, width: int, height: int) -> 
     use_processed = isinstance(processed, list) and len(processed) >= 1
     source_points = processed if use_processed else raw
     segments = []
-    for group in _unwrap_erp_points(source_points):
+    # On the sphere: great-circle points between neighbours (a lasso's closing edge too), in continuous u, before the
+    # seam's copies.
+    radius_px = _stroke_radius_px(stroke, width, height)
+    closed = kind == "lasso_fill" and len(source_points) >= 3
+    path = stroke_erp_path(list(source_points) + ([source_points[0]] if closed else []), radius_px, width, height)
+    if closed:
+        path = path[:-1]
+    for group in [path] if path else []:
         coords = [(float(pt["u"]) * width, float(pt["v"]) * height) for pt in group]
         shift_neg = [((float(pt["u"]) - 1.0) * width, float(pt["v"]) * height) for pt in group]
         shift_pos = [((float(pt["u"]) + 1.0) * width, float(pt["v"]) * height) for pt in group]
@@ -153,7 +223,8 @@ def _stroke_segments_for_erp_geometry(stroke: dict, width: int, height: int) -> 
     return segments
 
 
-def _stroke_point_paths_for_erp_geometry(stroke: dict) -> list[list[dict]]:
+def _stroke_point_paths_for_erp_geometry(stroke: dict, width: int, height: int) -> list[list[dict]]:
+    """The path a freehand stroke's stamps walk (stroke_erp_path: on the sphere, u continuous across the seam)."""
     geometry = stroke.get("geometry") or {}
     kind = str(geometry.get("geometryKind") or "")
     if kind not in {"freehand_open", "freehand_closed"}:
@@ -161,7 +232,8 @@ def _stroke_point_paths_for_erp_geometry(stroke: dict) -> list[list[dict]]:
     processed = geometry.get("processedPoints")
     raw = geometry.get("points") or []
     source_points = processed if isinstance(processed, list) and len(processed) >= 1 else raw
-    return _unwrap_erp_points(source_points)
+    path = stroke_erp_path(source_points, _stroke_radius_px(stroke, width, height), width, height)
+    return [path] if path else []
 
 
 def _stroke_radius_px(stroke: dict, width: int, height: int) -> float:
@@ -195,13 +267,17 @@ def _cached_stamp_alpha(cache_key: tuple, builder):
     return stamp
 
 
-def _build_round_stamp_alpha(radius_px: float, hardness: float, aspect: float = 1.0, angle_rad: float = 0.0) -> np.ndarray:
+def _build_round_stamp_alpha(radius_px: float, hardness: float, aspect: float = 1.0, angle_rad: float = 0.0,
+                             stretch: float = 1.0) -> np.ndarray:
+    """The stamp turned by angle_rad, then drawn `stretch` times wider along the ERP's x (stamp_half_width_px)."""
     rx = max(1.0, float(radius_px) * max(0.1, float(aspect)))
     ry = max(1.0, float(radius_px))
     pad = 1.0
-    half_w = int(math.ceil(rx + pad))
-    half_h = int(math.ceil(ry + pad))
+    reach_x = rx if abs(angle_rad) <= 1e-6 else max(rx, ry)
+    half_w = int(math.ceil(reach_x * stretch + pad))
+    half_h = int(math.ceil((ry if abs(angle_rad) <= 1e-6 else max(rx, ry)) + pad))
     yy, xx = np.mgrid[-half_h:half_h + 1, -half_w:half_w + 1].astype(np.float32)
+    xx = xx / np.float32(stretch)
     if abs(angle_rad) > 1e-6:
         ca = math.cos(angle_rad)
         sa = math.sin(angle_rad)
@@ -220,13 +296,17 @@ def _build_round_stamp_alpha(radius_px: float, hardness: float, aspect: float = 
     return np.clip(alpha, 0.0, 1.0)
 
 
-def _build_chisel_stamp_alpha(radius_px: float, hardness: float, aspect: float = 1.0, angle_rad: float = 0.0) -> np.ndarray:
+def _build_chisel_stamp_alpha(radius_px: float, hardness: float, aspect: float = 1.0, angle_rad: float = 0.0,
+                              stretch: float = 1.0) -> np.ndarray:
+    """The nib turned by angle_rad, then drawn `stretch` times wider along the ERP's x (stamp_half_width_px)."""
     ry = max(1.0, float(radius_px))
     rx = max(ry, float(radius_px) * max(1.0, float(aspect)))
     pad = 1.0
-    half_w = int(math.ceil(rx + pad))
-    half_h = int(math.ceil(ry + pad))
+    reach_x = rx if abs(angle_rad) <= 1e-6 else max(rx, ry)
+    half_w = int(math.ceil(reach_x * stretch + pad))
+    half_h = int(math.ceil((ry if abs(angle_rad) <= 1e-6 else max(rx, ry)) + pad))
     yy, xx = np.mgrid[-half_h:half_h + 1, -half_w:half_w + 1].astype(np.float32)
+    xx = xx / np.float32(stretch)
     if abs(angle_rad) > 1e-6:
         ca = math.cos(angle_rad)
         sa = math.sin(angle_rad)
@@ -255,17 +335,17 @@ def _brush_value(stroke: dict, key: str, default: float) -> float:
     return default if value is None else float(value)
 
 
-def _get_stamp_alpha(stroke: dict, radius_px: float) -> np.ndarray:
+def _get_stamp_alpha(stroke: dict, radius_px: float, stretch: float = 1.0) -> np.ndarray:
     stamp_kind = str(stroke.get("stampKind") or "round")
     hardness = max(0.0, min(1.0, _brush_value(stroke, "hardness", 0.9)))
     aspect = max(0.1, _brush_value(stroke, "aspect", 1.0))
     angle = stroke.get("angle") or {}
     angle_rad = float(angle.get("value", 0.0)) if str(angle.get("kind") or "fixed") == "fixed" else 0.0
     if stamp_kind == "chisel":
-        key = ("chisel", round(radius_px, 2), round(hardness, 2), round(aspect, 2), round(angle_rad, 4))
-        return _cached_stamp_alpha(key, lambda: _build_chisel_stamp_alpha(radius_px, hardness, aspect, angle_rad))
-    key = ("round", stamp_kind, round(radius_px, 2), round(hardness, 2), round(aspect, 2), round(angle_rad, 4))
-    return _cached_stamp_alpha(key, lambda: _build_round_stamp_alpha(radius_px, hardness, aspect, angle_rad))
+        key = ("chisel", round(radius_px, 2), round(hardness, 2), round(aspect, 2), round(angle_rad, 4), round(stretch, 4))
+        return _cached_stamp_alpha(key, lambda: _build_chisel_stamp_alpha(radius_px, hardness, aspect, angle_rad, stretch))
+    key = ("round", stamp_kind, round(radius_px, 2), round(hardness, 2), round(aspect, 2), round(angle_rad, 4), round(stretch, 4))
+    return _cached_stamp_alpha(key, lambda: _build_round_stamp_alpha(radius_px, hardness, aspect, angle_rad, stretch))
 
 
 def _blend_alpha_mask(dst: np.ndarray, src_alpha: np.ndarray, left: int, top: int):
@@ -346,14 +426,21 @@ def _stamp_positions_for_path(coords: list[tuple[float, float]], spacing_px: flo
 def _stroke_freehand_alpha(stroke: dict, width: int, height: int) -> np.ndarray:
     radius_px = _stroke_radius_px(stroke, width, height)
     spacing_px = _stroke_spacing_px(stroke, radius_px)
-    base_alpha = _get_stamp_alpha(stroke, radius_px)
-    stamp_alpha = np.clip(base_alpha * max(0.0, min(1.0, _brush_value(stroke, "flow", 1.0))), 0.0, 1.0)
+    flow = max(0.0, min(1.0, _brush_value(stroke, "flow", 1.0)))
+    aspect = max(0.1, _brush_value(stroke, "aspect", 1.0)) if str(stroke.get("stampKind") or "round") != "chisel" else max(1.0, _brush_value(stroke, "aspect", 1.0))
     stroke_alpha = np.zeros((height, width), dtype=np.float32)
-    half_h = stamp_alpha.shape[0] // 2
-    half_w = stamp_alpha.shape[1] // 2
-    for group in _stroke_point_paths_for_erp_geometry(stroke):
+    for group in _stroke_point_paths_for_erp_geometry(stroke, width, height):
         coords = [(float(pt["u"]) * width, float(pt["v"]) * height) for pt in group]
         for x, y in _stamp_positions_for_path(coords, spacing_px):
+            # Wider across by 1 / cos(latitude) (stamp_half_width_px): the stamp's own half width (at least a pixel, as
+            # the stamp is made) times that, rounded to half a pixel (at least half) for the stamp cache.
+            across = radius_px * aspect
+            base = max(1.0, across)
+            factor = stamp_half_width_px(radius_px, aspect, y / height, width) / across
+            half_width = max(0.5, round(base * factor * 2.0) / 2.0)
+            stamp_alpha = np.clip(_get_stamp_alpha(stroke, radius_px, half_width / base) * flow, 0.0, 1.0)
+            half_h = stamp_alpha.shape[0] // 2
+            half_w = stamp_alpha.shape[1] // 2
             # The stamp's center goes on the pixel whose center (i + 0.5) is nearest to (x, y).
             left = math.floor(x) - half_w
             top = math.floor(y) - half_h
@@ -386,94 +473,227 @@ def _decode_raster_data_url(data_url: str) -> np.ndarray | None:
         return None
 
 
-def _blend_rgba_band(paint: np.ndarray, src: np.ndarray, src_alpha: np.ndarray,
-                     y0: int, y1: int, x0: int, x1: int, sx0: int, sx1: int) -> None:
-    sh, sw = y1 - y0, x1 - x0
-    if sh <= 0 or sw <= 0:
+def _finite(value, fallback: float = 0.0) -> float:
+    """A finite float of `value`, else `fallback` (the editor's `finite`)."""
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return fallback
+    return number if math.isfinite(number) else fallback
+
+
+# --- Where a raster object lies (docs/render-contract.md "ペイントのラスタの置き方"; JS: web_src/pano_paint_display.js
+# placeRasterObjectErp, rasterObjectCornersUv, rasterObjectPixelRanges, held together by
+# tests/fixtures/paint_raster_place.json).
+#
+# The paint turns and scales on the plane that measures longitude and latitude in the same degrees: an ERP offset
+# (du, dv) is the point (2 du, dv) there. Positive degrees turn clockwise on the ERP picture (v grows downwards).
+
+# A pixel bound within this much of a whole pixel counts as on it, so Python's and the browser's last bits of a sine
+# take the same pixels.
+_PIXEL_EDGE_EPS = 1e-6
+
+
+def _raster_box(obj: dict) -> dict | None:
+    """The raster object's box and transform as the placement reads them, or None without a box or with an empty one:
+    the scale at least 0.01 (the floor the painting is read with)."""
+    bbox = obj.get("bbox") if isinstance(obj, dict) else None
+    if not isinstance(bbox, dict):
+        return None
+    u0, v0 = _finite(bbox.get("u0")), _finite(bbox.get("v0"))
+    u1, v1 = _finite(bbox.get("u1")), _finite(bbox.get("v1"))
+    if u1 <= u0 or v1 <= v0:
+        return None
+    tf = obj.get("transform") if isinstance(obj.get("transform"), dict) else {}
+    return {
+        "u0": u0, "v0": v0, "u1": u1, "v1": v1,
+        "du": _finite(tf.get("du")),
+        "dv": _finite(tf.get("dv")),
+        "rotation_deg": _finite(tf.get("rot_deg")),
+        "scale": max(0.01, _finite(tf.get("scale"), 1.0)),
+    }
+
+
+def _turn_paint_offset(du: float, dv: float, scale: float, rotation_deg: float) -> tuple[float, float]:
+    """The ERP offset (du, dv) turned by rotation_deg and scaled by `scale` on the paint plane."""
+    rad = rotation_deg * (math.pi / 180)
+    cos, sin = math.cos(rad), math.sin(rad)
+    x = 2 * du
+    return (scale * (x * cos - dv * sin)) / 2, scale * (x * sin + dv * cos)
+
+
+def _raster_corners_unwrapped(obj: dict) -> list[tuple[float, float]]:
+    """The four corners of the raster object's transformed box (top left, top right, bottom right, bottom left) with u
+    not wrapped, about its box's center moved by du and dv; none without a box."""
+    box = _raster_box(obj)
+    if box is None:
+        return []
+    half_w = (box["u1"] - box["u0"]) * 0.5
+    half_h = (box["v1"] - box["v0"]) * 0.5
+    center_u = box["u0"] + half_w + box["du"]
+    center_v = box["v0"] + half_h + box["dv"]
+    corners = []
+    for du, dv in ((-half_w, -half_h), (half_w, -half_h), (half_w, half_h), (-half_w, half_h)):
+        tu, tv = _turn_paint_offset(du, dv, box["scale"], box["rotation_deg"])
+        corners.append((center_u + tu, center_v + tv))
+    return corners
+
+
+def raster_object_corners_uv(obj: dict) -> list[tuple[float, float]]:
+    """The four ERP corners (u, v) of the raster object's transformed box (top left, top right, bottom right, bottom
+    left; u in 0..1, v not clamped), none without a box. The box is not grown to a pixel."""
+    return [(u % 1.0, v) for u, v in _raster_corners_unwrapped(obj)]
+
+
+def _raster_pixel_span(obj: dict, width: int, height: int) -> tuple[int, int, int, int] | None:
+    """(x0, x1, y0, y1) of the pixels the raster object covers, ends exclusive, x not wrapped and y cut to the ERP, or
+    None when it covers none."""
+    corners = _raster_corners_unwrapped(obj)
+    if not corners or width < 1 or height < 1:
+        return None
+    xs = [u * width for u, _ in corners]
+    ys = [v * height for _, v in corners]
+    x0 = math.floor(min(xs) + _PIXEL_EDGE_EPS)
+    x1 = math.ceil(max(xs) - _PIXEL_EDGE_EPS)
+    y0 = max(0, math.floor(min(ys) + _PIXEL_EDGE_EPS))
+    y1 = min(height, math.ceil(max(ys) - _PIXEL_EDGE_EPS))
+    if x1 <= x0 or y1 <= y0:
+        return None
+    return x0, x1, y0, y1
+
+
+def raster_object_pixel_ranges(obj: dict, width: int, height: int) -> list[tuple[int, int, int, int]]:
+    """The pixels the raster object covers on a width x height ERP: the box around its transformed corners, cut to the
+    ERP's top and bottom, as (x0, y0, x1, y1) (ends exclusive): one, or two across the seam (the whole width when it is
+    as wide)."""
+    span = _raster_pixel_span(obj, width, height)
+    if span is None:
+        return []
+    x0, x1, y0, y1 = span
+    turns = x0 // width
+    x0, x1 = x0 - turns * width, x1 - turns * width
+    if x1 - x0 >= width:
+        return [(0, y0, width, y1)]
+    if x1 > width:
+        return [(x0, y0, width, y1), (0, y0, x1 - width, y1)]
+    return [(x0, y0, x1, y1)]
+
+
+def raster_object_placement(obj: dict, width: int, height: int, min_pixel: float = 1.0) -> dict | None:
+    """Where the raster object lies on a width x height ERP: its center and box size in pixels (at least `min_pixel`
+    each way, grown from its top left), rotation, scale and `matrix` (a, b, c, d): a pixel offset (x, y) of the box from
+    its center lands at (a x + c y, b x + d y), the paint plane's turn and scale mapped to the ERP's pixels (width / 360
+    across, height / 180 down), and `wrap_offsets`: the seam's three copies a turn apart, one of them putting the center
+    on the ERP however many turns du has gathered. None without a box, with an empty one, or on an ERP with no size."""
+    box = _raster_box(obj)
+    if box is None or width < 1 or height < 1:
+        return None
+    box_width = max(min_pixel, (box["u1"] - box["u0"]) * width)
+    box_height = max(min_pixel, (box["v1"] - box["v0"]) * height)
+    rad = box["rotation_deg"] * (math.pi / 180)
+    cos = box["scale"] * math.cos(rad)
+    sin = box["scale"] * math.sin(rad)
+    # Pixels per degree down over across.
+    aspect = (height / 180) / (width / 360)
+    center_x = box["u0"] * width + box_width * 0.5 + box["du"] * width
+    # The whole turns du has gathered: the copies sit around the one whose center is on the ERP.
+    turns = math.floor(center_x / width)
+    return {
+        "center_x": center_x,
+        "center_y": box["v0"] * height + box_height * 0.5 + box["dv"] * height,
+        "width": box_width,
+        "height": box_height,
+        "rotation_deg": box["rotation_deg"],
+        "scale": box["scale"],
+        "matrix": (cos, sin * aspect, -sin / aspect, cos),
+        "wrap_offsets": tuple(offset - turns * width for offset in (-width, 0, width)),
+    }
+
+
+def _premultiplied_texels(image: np.ndarray) -> np.ndarray:
+    """The straight RGBA `image` (H, W, 4) with its alpha multiplied in, as (H * W, 4) float32 texels."""
+    return np.concatenate([image[..., :3] * image[..., 3:4], image[..., 3:4]], axis=-1).astype(np.float32).reshape(-1, 4)
+
+
+def _sample_box(texels: np.ndarray, size: tuple[int, int], local_u: np.ndarray, local_v: np.ndarray) -> np.ndarray:
+    """The image of `size` (H, W) whose premultiplied texels are `texels` (_premultiplied_texels), read as straight RGBA
+    at the points (local_u, local_v) of its box (0..1 across, an image pixel k's center at (k + 0.5) / its size):
+    bilinearly with alpha multiplied in while it is mixed, the edge pixels held out to the box's edge, and transparent
+    outside the box (only the points inside are read)."""
+    h, w = size
+    out = np.zeros(local_u.shape + (4,), dtype=np.float32)
+    inside = np.flatnonzero((local_u >= 0.0) & (local_u <= 1.0) & (local_v >= 0.0) & (local_v <= 1.0))
+    if not inside.size:
+        return out
+    sx = np.clip(local_u.ravel()[inside] * w - 0.5, 0.0, w - 1.0)
+    sy = np.clip(local_v.ravel()[inside] * h - 0.5, 0.0, h - 1.0)
+    x0 = sx.astype(np.int64)
+    y0 = sy.astype(np.int64)
+    fx = (sx - x0)[:, None]
+    fy = (sy - y0)[:, None]
+    right = np.minimum(x0 + 1, w - 1) - x0
+    row = y0 * w + x0
+    below = (np.minimum(y0 + 1, h - 1) - y0) * w
+    top = np.take(texels, row, axis=0)
+    top += (np.take(texels, row + right, axis=0) - top) * fx
+    bottom = np.take(texels, row + below, axis=0)
+    bottom += (np.take(texels, row + below + right, axis=0) - bottom) * fx
+    top += (bottom - top) * fy
+    alpha = top[:, 3:4]
+    top[:, :3] = np.where(alpha > 1e-6, top[:, :3] / np.maximum(alpha, 1e-6), 0.0)
+    out.reshape(-1, 4)[inside] = top
+    return out
+
+
+def _composite_raster_patch(paint: np.ndarray, mask: np.ndarray, patch: np.ndarray, layer_kind: str,
+                            y0: int, y1: int, x0: int, x1: int) -> None:
+    """Lays the straight RGBA `patch` over paint[y0:y1, x0:x1] (or its alpha over the mask)."""
+    src_alpha = patch[..., 3:4]
+    if layer_kind == "mask":
+        dst = mask[y0:y1, x0:x1]
+        mask[y0:y1, x0:x1] = np.clip(dst + src_alpha[..., 0] * (1.0 - dst), 0.0, 1.0)
         return
-    sc = src[:sh, sx0:sx1]
-    sa = src_alpha[:sh, sx0:sx1]
     dst = paint[y0:y1, x0:x1]
     da = dst[..., 3:4]
-    out_a = sa + da * (1.0 - sa)
+    out_a = src_alpha + da * (1.0 - src_alpha)
     safe = np.where(out_a > 0, out_a, 1.0)
-    paint[y0:y1, x0:x1, :3] = (sc[..., :3] * sa + dst[..., :3] * da * (1.0 - sa)) / safe
+    paint[y0:y1, x0:x1, :3] = (patch[..., :3] * src_alpha + dst[..., :3] * da * (1.0 - src_alpha)) / safe
     paint[y0:y1, x0:x1, 3:4] = out_a
-
-
-def _blend_mask_band(mask: np.ndarray, src_alpha: np.ndarray,
-                     y0: int, y1: int, x0: int, x1: int, sx0: int, sx1: int) -> None:
-    sh, sw = y1 - y0, x1 - x0
-    if sh <= 0 or sw <= 0:
-        return
-    sa = src_alpha[:sh, sx0:sx1, 0]
-    mask[y0:y1, x0:x1] = np.clip(mask[y0:y1, x0:x1] + sa * (1.0 - mask[y0:y1, x0:x1]), 0.0, 1.0)
-
-
-def _composite_raster_band(paint: np.ndarray, mask: np.ndarray, src: np.ndarray, src_alpha: np.ndarray,
-                            layer_kind: str, y0: int, y1: int, x0: int, x1: int, sx0: int, sx1: int) -> None:
-    if layer_kind == "mask":
-        _blend_mask_band(mask, src_alpha, y0, y1, x0, x1, sx0, sx1)
-    else:
-        _blend_rgba_band(paint, src, src_alpha, y0, y1, x0, x1, sx0, sx1)
-
-
-def _place_raster_object(paint: np.ndarray, mask: np.ndarray, src: np.ndarray,
-                         layer_kind: str, x0: int, y0: int, x1: int, y1: int,
-                         dst_w: int, width: int, height: int) -> None:
-    y0c = max(0, min(height, y0))
-    y1c = max(0, min(height, y1))
-    if y1c <= y0c:
-        return
-    sy0 = max(0, y0c - y0)
-    sy1 = sy0 + (y1c - y0c)
-    src = src[sy0:sy1, ...]
-    src_alpha = src[..., 3:4]
-    if x1 > x0:
-        # No horizontal wrap.
-        _composite_raster_band(paint, mask, src, src_alpha, layer_kind,
-                                y0c, y1c, max(0, x0), min(width, x1), 0, min(width, x1) - max(0, x0))
-    else:
-        # Horizontal wrap: right band then left band.
-        right_w = width - x0
-        _composite_raster_band(paint, mask, src, src_alpha, layer_kind,
-                                y0c, y1c, x0, width, 0, right_w)
-        _composite_raster_band(paint, mask, src, src_alpha, layer_kind,
-                                y0c, y1c, 0, x1, right_w, dst_w)
-
-
-def _uv_bbox_to_pixels(bbox: dict, tf: dict, width: int, height: int) -> tuple[int, int, int, int, int, int]:
-    """Return (x0, y0, x1, y1, dst_w, dst_h) after applying translation transform."""
-    du = float(tf.get("du") or 0.0)
-    dv = float(tf.get("dv") or 0.0)
-    u0 = ((float(bbox.get("u0", 0.0)) + du) % 1.0 + 1.0) % 1.0
-    v0 = float(bbox.get("v0", 0.0)) + dv
-    u1 = ((float(bbox.get("u1", 1.0)) + du) % 1.0 + 1.0) % 1.0
-    v1 = float(bbox.get("v1", 1.0)) + dv
-    wraps = u1 <= u0
-    x0, y0 = int(round(u0 * width)), int(round(v0 * height))
-    x1, y1 = int(round(u1 * width)), int(round(v1 * height))
-    dst_w = (width - x0 + x1) if wraps else max(1, x1 - x0)
-    dst_w = max(1, dst_w)
-    dst_h = max(1, y1 - y0)
-    return x0, y0, x1, y1, dst_w, dst_h
 
 
 def _composite_one_raster_object(
     paint: np.ndarray, mask: np.ndarray, obj: dict, width: int, height: int
 ) -> None:
+    """Draws the raster object over paint (or the mask) as the editor places it: each pixel of the ERP it covers
+    (raster_object_pixel_ranges, with the seam's copies at the placement's wrap_offsets) reads its image (_sample_box) at the
+    point of its box under the pixel's center, through the inverse of the placement's matrix."""
+    placement = raster_object_placement(obj, width, height)
+    span = _raster_pixel_span(obj, width, height)
+    if placement is None or span is None:
+        return
     raster = _decode_raster_data_url(obj.get("rasterDataUrl") or "")
     if raster is None:
         return
-    x0, y0, x1, y1, dst_w, dst_h = _uv_bbox_to_pixels(
-        obj.get("bbox") or {}, obj.get("transform") or {}, width, height
-    )
-    if dst_h <= 0:
-        return
-    src_img = Image.fromarray((np.clip(raster, 0.0, 1.0) * 255).astype(np.uint8), "RGBA")
-    src = np.asarray(src_img.resize((dst_w, dst_h), Image.LANCZOS), dtype=np.float32) / 255.0
-    _place_raster_object(paint, mask, src, str(obj.get("layerKind") or "paint"),
-                         x0, y0, x1, y1, dst_w, width, height)
+    image = np.clip(raster, 0.0, 1.0)
+    a, b, c, d = placement["matrix"]
+    det = a * d - b * c
+    x0, x1, y0, y1 = span
+    texels = _premultiplied_texels(image)
+    layer_kind = str(obj.get("layerKind") or "paint")
+    py = (np.arange(y0, y1, dtype=np.float32) + np.float32(0.5 - placement["center_y"]))[:, None]
+    # Each seam copy reads only its columns that land on the ERP ([0, width)): a raster scaled up can span many ERP
+    # widths, and only these are drawn. A column's offset from the box's center is the same in every copy (a copy moves
+    # the pixels and the center alike).
+    for offset in placement["wrap_offsets"]:
+        left = max(0, x0 + offset)
+        right = min(width, x1 + offset)
+        if right <= left:
+            continue
+        px = (np.arange(left - offset, right - offset, dtype=np.float32) + np.float32(0.5 - placement["center_x"]))[None, :]
+        local_u = (np.float32(d / det) * px - np.float32(c / det) * py) / np.float32(placement["width"]) + np.float32(0.5)
+        local_v = (np.float32(-b / det) * px + np.float32(a / det) * py) / np.float32(placement["height"]) + np.float32(0.5)
+        patch = _sample_box(texels, image.shape[:2], local_u, local_v)
+        _composite_raster_patch(paint, mask, patch, layer_kind, y0, y1, left, right)
 
 
 def _composite_raster_objects(
