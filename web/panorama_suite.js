@@ -22004,7 +22004,7 @@ function AM({
     return lA(j, G, e.viewMoved ? null : (X = n()) == null ? void 0 : X.center, p());
   }
   function T() {
-    return JSON.stringify([e.viewPosition, e.viewYaw, e.viewPitch]);
+    return JSON.stringify([e.viewPosition, e.viewYaw, e.viewPitch, e.viewFov]);
   }
   function x(j, G) {
     const X = performance.now(), W = { x: j.x, y: j.y, time: X, key: r.contentRevision(), view: T() };

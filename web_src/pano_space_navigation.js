@@ -158,7 +158,7 @@ export function createSpaceNavigation({
   }
 
   function spaceViewKey() {
-    return JSON.stringify([view.viewPosition, view.viewYaw, view.viewPitch]);
+    return JSON.stringify([view.viewPosition, view.viewYaw, view.viewPitch, view.viewFov]);
   }
 
   // One 6DoF wheel step at canvas point p toward the point under it (direction > 0) or away. A step reuses the

@@ -128,3 +128,13 @@ test("a zoom step changes the view's FOV by one step within the range, and stops
   moving.navigation.zoomFov(1);
   assert.equal(moving.view.viewTransition, null);
 });
+
+// docs/editor-interaction.md "ホイール" reuseWheelPick (ADR 0061): a zoom changes what is under the pointer, so the next
+// wheel step picks again.
+test("a wheel step after a zoom step picks again", () => {
+  const h = harness({ hit: [0, 0, -4] });
+  h.navigation.zoomSpaceAt({ x: 400, y: 200 }, 1);
+  h.navigation.zoomFov(1);
+  h.navigation.zoomSpaceAt({ x: 400, y: 200 }, 1);
+  assert.equal(h.picks.length, 2);
+});
