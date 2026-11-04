@@ -139,7 +139,7 @@ Panorama Studio のエディタで、`world` の Sticker（画像・動画の板
 - 置く距離：`d = max(fitDistance(r, fov), d_min)`。下限 `d_min` は、小さな中身を視点のすぐ前（near 面の内側）に置かないためのもので、エディタは `max(FIT_3D_MIN_DISTANCE, near × 2)`（`near` は置いたときの視点の three.js のカメラの near。決め方は `docs/threejs-spark-integration.md` の「空間の表示」の near・far）、ノードは `FIT_3D_MIN_DISTANCE` を使う。`FIT_3D_MIN_DISTANCE` は 0.1（World の単位）。
 - 位置：`position = eye + d · dir̂ − R · c`（`dir̂` は `dir` を長さ 1 にしたもの）。中身の位置は合わせ直さず、中身の原点が `position` に来るので、球の中心 `position + R · c` が、視点から `dir` の向きに `d` の点に来る。球を視点から見た角度は `fov` より少し小さい（余白 1.1 倍。下限が効くときはさらに小さい）。`dir` がビューの中心なら、球は視野の短い方の辺の少し内側に収まる。中心から外れた点にドロップすると、その点が球の中心になるので、中身の一部が画面の外に出ることがある。
 - 中身が無いとき・壊れているとき：箱が無い（要素が空）、または `c`・`r` が有限の数でないときは、`c = 0`、`d = NEW_WORLD_STICKER_DISTANCE`（2。JS は `pano_space.js`、Python は `core/world.py` の同じ名前の定数）として同じ式で置く（中身の原点が、視点から `dir` の向きに 2 の点に来る）。`r = 0`（点が一つ）は壊れていない中身として扱い、`d` は `d_min` になる。
-- ノードの画角：ノードにはビューが無いので、エディタの Viewport camera の既定の横の画角 100° を横長 16:9 のビューの縦にした `2 atan(tan 50° × 9 ÷ 16)`（約 67.67°）を使う（`nodes.py` の `PORT_3D_FIT_FOV_DEG`）。既定の横の画角は一つの定数 `DEFAULT_VIEW_HFOV`（`pano_space.js`、100）で、Panorama Studio のエディタ（`pano_editor.js` の `editor` の `viewFov` と、見回しの `setView` の既定、Reset View の `editor/modal_events.js` の `hFOV_deg`）と Studio のノード上の表示（`pano_preview_runtime.js` の既定の `view` の `fov`）が使う。`pano_editor.js` は旧ノードのモーダルのエディタも使うが、値は同じである。旧ノードの表示（`pano_preview_previewnode.js`・`pano_cutout_node_surface.js` の `100`、`docs/legacy-node-surfaces.md`）は変えない。
+- ノードの画角：ノードにはビューが無いので、エディタの Viewport camera の既定の横の画角 100° を横長 16:9 のビューの縦にした `2 atan(tan 50° × 9 ÷ 16)`（約 67.67°）を使う（`nodes.py` の `PORT_3D_FIT_FOV_DEG`）。既定の横の画角は一つの定数 `DEFAULT_VIEW_HFOV`（`pano_space.js`、100）で、Panorama Studio のエディタ（`pano_editor.js` の `editor` の `viewFov` と、見回しの `setView` の既定、Reset View の `editor/modal_events.js` の `hFOV_deg`）と Studio のノード上の表示（`node_surface/*.js` の既定の `view` の `fov`）が使う。`pano_editor.js` は旧ノードのモーダルのエディタも使うが、値は同じである。旧ノードの表示（`pano_preview_previewnode.js`・`pano_cutout_node_surface.js` の `100`、`docs/legacy-node-surfaces.md`）は変えない。
 - fixture：`tests/fixtures/place_3d/fit.json`。各 case は入力 `eye`・`dir`・`center`・`radius`（中身が無い case は `center` と `radius` が `null`）・`rotation`（`yaw_deg`・`pitch_deg`・`roll_deg`）・`fov_deg`（有限でない画角は JSON に書けないので `null` で表す）・`min_distance`（`d_min`）と、期待する `fit_distance`（`fitDistance(r, fov)`。中身が無い case は `null`）と `position` を持つ。少なくとも、ノードの正面の case（`eye` は原点、`dir` は `[0, 0, -1]`、回転 0、`fov_deg` はノードの画角、`min_distance` は 0.1）、pitch のある `dir`、yaw のある回転と中心の外れた中身、下限が効く小さな中身（0.1 と、エディタの near × 2 が勝つ値の両方）、中身が無い case（距離が `NEW_WORLD_STICKER_DISTANCE` になる）、`fov_deg` が 0 以下・有限でない case（ノードの画角で置く）を入れる。`tests/test_place_3d_parity.py` が Python と JS の両方で同じ case を読んで一致を確かめ（箱から球を求める `box_sphere` も確かめる）、`tests/pano_space.test.mjs` は、`frameView` の距離が同じ case の `fit_distance` になること、`FIT_FALLBACK_FOV_DEG` が `DEFAULT_VIEW_HFOV` と 16:9 から求めた値であること、`DEFAULT_VIEW_HFOV` と 16:9 から正面の case の `fov_deg` が出ることを確かめ、Python の test は `PORT_3D_FIT_FOV_DEG` がその値であることを確かめる。中身の箱は `docs/studio-node.md` の Python の関数 `content_box` が一つだけ持ち、エディタは経路の応答で受け取る。
 
 ## Camera の編集
@@ -234,7 +234,7 @@ Panorama Studio のエディタとノード上の UI は、`sticker` 入力の�
 - エディタを開いている間は、エディタだけがこの同期で状態を書く（`pano_external_sticker_sync.js` の `runExternalStickerSync`。
   エディタが `{ editor: true }` で登録した処理が、後からノード上の UI が登録し直しても優先される）。
 - 同期は、入力のつなぎ替え・素材の読み込み・取り付けのときと、実行結果が届いたときに走る。実行結果が届くと、ノードの `onExecuted`
-  （`pano_preview_runtime.js`）が実行結果 1 回につき一度だけ呼ぶ。エディタは自分では呼ばない。
+  （`node_surface/lifecycle.js` の `chainNodeHooks`）が実行結果 1 回につき一度だけ呼ぶ。エディタは自分では呼ばない。
 
 #### `port` の Sticker の Pose handoff の表示と記録
 

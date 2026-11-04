@@ -18,14 +18,14 @@ Panorama Studio（`PanoramaStudio`）のノード上の表示（node surface）�
 
 | 規則 | Python | JS | test |
 |---|---|---|---|
-| 表示の構成（DOM canvas、Vue overlay、Node 2.0 と Legacy renderer、標準の `Open Studio Editor` widget、絵と一行の置き方） | — | `web_src/pano_editor_extension.js` `createPanoEditorExtension`（`PanoramaStudio`）、`web_src/pano_preview_runtime.js` `attachPanoramaPreviewImpl`（`studioSurface`）、`web_src/pano_studio_surface.js` `studioSurfaceLayout`、`web_src/components/PanoStudioNodeSurface.vue`（再生のボタンを含む） | `tests/pano_editor_extension.test.mjs`、`tests/pano_studio_node_surface_contract.test.mjs`、`tests/pano_studio_surface.test.mjs`、`tests/browser/studio_node_surface.spec.js` |
-| 撮る Camera の出力をその場で描く（描く物、描く部品、いつ描き直すか） | — | `pano_preview_runtime.js` `drawStudioPicture`、`web_src/studio/output_picture.js` `outputFrameInput`・`outputErpInput`（エディタの Output の小窓と共有）、`web_src/pano_preview_view.js` の `renderLiveErp`、深度の格子の色 `web_src/pano_depth_color.js` `createDepthColors`、上流の層の素材 `web_src/pano_upstream_layers.js` `createUpstreamLayers`（エディタと Preview の Scene のビューアと共有） | `tests/output_picture.test.mjs`、`tests/browser/studio_node_surface.spec.js` |
-| 一行の状態（撮り方、出力の大きさ、上限） | `nodes.py` `PanoramaStudioNode.execute`（`pano_output_size`）・`_studio_run_key` | `web_src/pano_studio_status.js` `studioNodeStatus`・`studioOutputSize`・`studioRunKey`・`createStudioStatus`、`pano_preview_runtime.js` `studioStatusOptions` | `tests/pano_studio_status.test.mjs`、`tests/test_studio_status_parity.py`、`tests/test_studio_node.py`、`tests/browser/studio_node_surface.spec.js` |
+| 表示の構成（DOM canvas、Vue overlay、Node 2.0 と Legacy renderer、標準の `Open Studio Editor` widget、絵と一行の置き方） | — | `web_src/pano_editor_extension.js` `createPanoEditorExtension`（`PanoramaStudio`）、`web_src/node_surface/lifecycle.js` `attachPanoramaPreviewImpl`（`studioSurface`、組み立ての順と context）・`node_surface/dom.js` `createSurfaceDom`・`mountSurfaceVue`（`pano_preview_runtime.js` は外から import される入口）、`web_src/pano_studio_surface.js` `studioSurfaceLayout`、`web_src/components/PanoStudioNodeSurface.vue`（再生のボタンを含む） | `tests/pano_editor_extension.test.mjs`、`tests/pano_studio_node_surface_contract.test.mjs`、`tests/pano_studio_surface.test.mjs`、`tests/browser/studio_node_surface.spec.js` |
+| 撮る Camera の出力をその場で描く（描く物、描く部品、いつ描き直すか） | — | `web_src/node_surface/studio_picture.js` `drawStudioPicture`、`web_src/studio/output_picture.js` `outputFrameInput`・`outputErpInput`（エディタの Output の小窓と共有）、`web_src/pano_preview_view.js` の `renderLiveErp`、深度の格子の色 `web_src/pano_depth_color.js` `createDepthColors`、上流の層の素材 `web_src/pano_upstream_layers.js` `createUpstreamLayers`（エディタと Preview の Scene のビューアと共有） | `tests/output_picture.test.mjs`、`tests/browser/studio_node_surface.spec.js` |
+| 一行の状態（撮り方、出力の大きさ、上限） | `nodes.py` `PanoramaStudioNode.execute`（`pano_output_size`）・`_studio_run_key` | `web_src/pano_studio_status.js` `studioNodeStatus`・`studioOutputSize`・`studioRunKey`・`createStudioStatus`、`node_surface/studio_picture.js` `studioStatusOptions` | `tests/pano_studio_status.test.mjs`、`tests/test_studio_status_parity.py`、`tests/test_studio_node.py`、`tests/browser/studio_node_surface.spec.js` |
 | widget の変更を受けて描き直す（callback の連ね方） | — | `web_src/pano_widget_callback.js` `chainWidgetCallback` | `tests/pano_widget_callback.test.mjs`、`tests/browser/studio_node_surface.spec.js` |
 | wheel の捕捉（旧ノードと Preview の Scene のビューアが使う） | — | `web_src/pano_interaction_controller.js` `createPanoInteractionController`、`web_src/pano_wheel.js` `PANO_FOV_WHEEL_STEP_DEG`・`bindWheelCaptureRoot` | `tests/pano_wheel.test.mjs` |
-| 表示フレームと背景の VIDEO・`port` の素材 | — | `web_src/pano_node_playback.js` `createNodePlayback`・`createSoloPlayback`（同時に再生するのは一つのノード）、`web_src/pano_stickers_node_surface.js` `NODE_SURFACE_FRAME`、どの背景を出すか・背景の VIDEO の候補・Auto の長さに数える背景は `web_src/pano_background_choice.js` `chooseBackground`・`backgroundShowsAt`・`backgroundAt`・`backgroundVideoCandidates`・`backgroundLength`（規則は `docs/timeline-ui.md` の「どの背景を出すか」の行）、上流の背景の画像は `pano_preview_runtime.js` `upstreamBackgroundMedia`、背景以外の入力は `pano_preview_runtime.js` `portStickerMedia`・`surfaceTimelineMedia` | `tests/pano_node_playback.test.mjs`、`tests/pano_background_choice.test.mjs`、`tests/browser/studio_node_surface.spec.js` |
-| 見えないときとエディタを開いている間 | — | `pano_node_playback.js` `surfaceShown`、`web_src/pano_node_bridge.js` `editorOpen`、`pano_preview_runtime.js` `attachPanoramaPreviewImpl`（`syncSurfacePlayback`） | `tests/pano_node_playback.test.mjs`、`tests/pano_node_bridge.test.mjs`、`tests/browser/studio_node_surface.spec.js`（深度の格子の色の VIDEO、上流の層の素材、上流の Scene の背景の画像） |
-| 描画と後始末（animation frame、DOM canvas だけの再描画、revision、media の失効、teardown、raster object の大きさ） | — | `pano_preview_runtime.js` `attachPanoramaPreviewImpl`、`web_src/pano_preview_video.js` `isNodeOutputMediaCurrent`・`isTrackedMediaInputConnectionChange`、`web_src/pano_surface_paint.js` `surfacePaintLayers`・`resolveRasterPreviewSize`（ラスタのキャンバスとその寿命は `web_src/pano_paint_display.js` `createPaintDisplay`、`docs/editor-architecture.md` の「Paint layers」） | `tests/pano_preview_video.test.mjs`、`tests/pano_surface_paint.test.mjs`、`tests/pano_paint_display.test.mjs` |
+| 表示フレームと背景の VIDEO・`port` の素材 | — | `web_src/pano_node_playback.js` `createNodePlayback`・`createSoloPlayback`（同時に再生するのは一つのノード）、`web_src/pano_stickers_node_surface.js` `NODE_SURFACE_FRAME`、どの背景を出すか・背景の VIDEO の候補・Auto の長さに数える背景は `web_src/pano_background_choice.js` `chooseBackground`・`backgroundShowsAt`・`backgroundAt`・`backgroundVideoCandidates`・`backgroundLength`（規則は `docs/timeline-ui.md` の「どの背景を出すか」の行）、上流の背景の画像は `web_src/node_surface/studio_picture.js` `upstreamBackgroundMedia`、背景以外の入力は `web_src/node_surface/playback.js` `portStickerMedia`・`surfaceTimelineMedia` | `tests/pano_node_playback.test.mjs`、`tests/pano_background_choice.test.mjs`、`tests/browser/studio_node_surface.spec.js` |
+| 見えないときとエディタを開いている間 | — | `pano_node_playback.js` `surfaceShown`、`web_src/pano_node_bridge.js` `editorOpen`、`web_src/node_surface/playback.js` `syncSurfacePlayback` | `tests/pano_node_playback.test.mjs`、`tests/pano_node_bridge.test.mjs`、`tests/browser/studio_node_surface.spec.js`（深度の格子の色の VIDEO、上流の層の素材、上流の Scene の背景の画像） |
+| 描画と後始末（animation frame、DOM canvas だけの再描画、revision、media の失効、teardown、raster object の大きさ） | — | `web_src/node_surface/lifecycle.js`（animation frame の `tickSurface`、hook の `chainNodeHooks`、teardown の `restoreDom`）、media の失効は `node_surface/media.js` `executedRefreshMonitor`・`showOwnNodeOutput`、`web_src/pano_preview_video.js` `isNodeOutputMediaCurrent`・`isTrackedMediaInputConnectionChange`、`web_src/pano_surface_paint.js` `surfacePaintLayers`・`resolveRasterPreviewSize`（ラスタのキャンバスとその寿命は `web_src/pano_paint_display.js` `createPaintDisplay`、`docs/editor-architecture.md` の「Paint layers」） | `tests/pano_preview_video.test.mjs`、`tests/pano_surface_paint.test.mjs`、`tests/pano_paint_display.test.mjs` |
 | `port` の Sticker の素材の読み込みと実行の一致 | — | `pano_stickers_node_surface.js` `reconcilePortStickerState`、`web_src/pano_editor_ui_state.js` `stickerParamEnabled`、`web_src/editor/external_stickers.js`（素材の読み込みでインスペクタを更新） | `tests/pano_stickers_node_surface.test.mjs`、`tests/pano_editor_ui_state.test.mjs` |
 
 ## 表示の構成
@@ -145,7 +145,7 @@ Timeline のフレーム（表示フレーム）の背景の VIDEO と `port` �
   エディタと同じく再生ヘッドに従う（`createVideoFollower`）。
 - Timelineの長さはエディタと同じく出力の長さちょうどで（最小の長さは無い）、Auto の長さは実行結果が示す入力の長さ
   （背景の `pano_input_video_meta`、`port` の素材、`scene` の要素、上流の `pano_upstream_frames` と上書きした
-  Clip range の終わり。`pano_preview_runtime.js` の `surfaceTimelineMedia`）から求める。実行結果に背景が無い間は、
+  Clip range の終わり。`node_surface/playback.js` の `surfaceTimelineMedia`）から求める。実行結果に背景が無い間は、
   読み込んだ VIDEO の長さを背景のフレーム数とする（`docs/timeline-ui.md` の「タイムラインの長さ」）。
 - 背景の Clip range の外と、背景の素材が終わった先（既定の Clip range でも）は `bg_color` を出す（エディタ・出力と同じ。
   `docs/timeline-ui.md` の「背景の行」）。
@@ -200,7 +200,7 @@ Timeline のフレーム（表示フレーム）の背景の VIDEO と `port` �
 
 ## 描画と後始末
 
-- 表示のレイアウトを、実行時に `node.size` を書き換えて直さない。`node.size` を書くのは、大きさが不正なとき（10 未満）の初期化だけ（`pano_preview_runtime.js` の `initNodeSizeIfInvalid`）。
+- 表示のレイアウトを、実行時に `node.size` を書き換えて直さない。`node.size` を書くのは、大きさが不正なとき（10 未満）の初期化だけ（`node_surface/dom.js` の `initNodeSizeIfInvalid`）。
 - shared render coreとdescriptorを使い、第二rendererを作らない。
 - image / video、state、paint、external inputを独立したrevisionとして扱い、draw loop内でstateを再生成しない。
 - image / video replacement、connection change、executeで古いmedia cacheを無効化する。replace、disconnect、
@@ -216,3 +216,9 @@ Timeline のフレーム（表示フレーム）の背景の VIDEO と `port` �
 - teardownはVue app、RAF、ResizeObserver、media callback、render core、listener、widget hookを破棄・復元する。
   remove / reconfigure / re-addで二重mount、listener、RAF、media callbackを残さない。
 - raster objectのnode preview用surfaceは最大1024×512とし、objectごとに最新revisionだけを保持する。
+- コードは `web_src/node_surface/` に分かれ（`lifecycle.js` が取り付けと teardown、`dom.js`・`state.js`・`media.js`・`playback.js`・
+  `editing.js`・`pointer.js`・`studio_picture.js`・`legacy_picture.js` が部品）、ほかのファイルが import するのは入口の
+  `web_src/pano_preview_runtime.js` だけとする。ComfyUI の `app`・`api` は `web_src` 直下のファイルしか import できない
+  （ビルドは `../../scripts/` を書いたままの外部として扱う）ので、入口が `node_surface/media.js` の `installSurfaceComfy` に渡す。
+  一回の取り付けの状態は一つの context（`attachPanoramaPreviewImpl` の `ctx`）にまとめ、部品の factory が決まった順に読んで足す。
+  組み立ての順と teardown（`restoreDom`）の順は変えない。

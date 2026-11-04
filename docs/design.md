@@ -22,7 +22,7 @@ inline の `style` と custom property（`--pano-segment-count`・`--pano-timeli
 | 規則 | Python | JS / CSS | test |
 |---|---|---|---|
 | デザインの値の custom property（`--pano-*`。ノード上の表示だけの値の `--pano-node-*` を含む）とその値。一つの名前は一つの値を持ち、どこでも定義し直さない | — | `web/pano_editor.css` の `:root` | — |
-| ノード上の表示の枠（`.pano-node-frame`） | — | `web/pano_editor.css` の `.pano-node-frame`、`web_src/pano_preview_runtime.js` の `attachPanoramaPreviewImpl` と `web_src/pano_preview_previewnode.js` の `attachDom`（class を付ける） | — |
+| ノード上の表示の枠（`.pano-node-frame`） | — | `web/pano_editor.css` の `.pano-node-frame`、`web_src/node_surface/dom.js` の `createSurfaceDom` と `web_src/pano_preview_previewnode.js` の `attachDom`（class を付ける） | — |
 | stylesheet の読み込み | — | `web_src/pano_styles.js` `installStylesheet`・`installPanoSuiteStylesheet`、新しい UI は `web_src/studio/stylesheet.js` `installStudioStylesheet` | — |
 | 共有のボタン（`.pano-btn` 系）の大きさと状態の見た目 | — | `web/pano_editor.css` の `.pano-btn`・`.pano-btn-icon`・`.pano-btn-texticon`・`.pano-btn-primary`・`.pano-btn.subtle`、`web_src/components/shared/PanoIconButton.vue` | — |
 | 共有の部品（モーダル、HUD、切り替え、サイドパネル、値の行、選択肢、ツールチップ、確認のダイアログ、ペイント）の値と、部品の中だけの custom property（`.pano-segments` の `--pano-segment-pad: 3px`、`.pano-modal` の `--pano-side-w: 300px`） | — | `web/pano_editor.css` | — |
