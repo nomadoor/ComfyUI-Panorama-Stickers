@@ -27,9 +27,9 @@ from .core_adapters import (
     load_gltf,
     parse_container,
     read_accessor,
+    triangulate_grid_mesh,
 )
 from .node_runtime import NodeRuntime
-from .scene_files import moge_grid_mesh
 
 _log = logging.getLogger(__name__)
 
@@ -342,6 +342,18 @@ def moge_to_gltf(geometry: dict, vertices: torch.Tensor, faces: torch.Tensor | N
         return vertices[:, [1, 2, 0]].contiguous(), faces
     vertices = vertices * vertices.new_tensor([1.0, -1.0, -1.0])
     return vertices, None if faces is None else faces[:, [0, 2, 1]].contiguous()
+
+
+def moge_grid_mesh(geometry: dict, index: int):
+    """Frame `index` of a MOGE_GEOMETRY as a grid mesh (vertices, faces, uvs) in glTF, as the core's
+    MoGePointMapToMesh converts it: a panorama (no `intrinsics`) from MoGe's Z up, a perspective frame from
+    OpenCV. Reads `points`, `mask` when present, and whether there are `intrinsics`; pixels outside the mask
+    are dropped. The kept pixels are `moge_keep`'s (the core's parts in its order), so the core's
+    `triangulate_grid_mesh` gets them as its mask with no discontinuity check of its own, and `moge_to_gltf` turns
+    the result into glTF."""
+    vertices, faces, uvs = triangulate_grid_mesh(geometry["points"][index], moge_keep(geometry, index), discontinuity_threshold=0.0)
+    vertices, faces = moge_to_gltf(geometry, vertices, faces)
+    return vertices, faces, uvs
 
 
 def moge_points(geometry: dict, index: int, keep: torch.Tensor) -> torch.Tensor:
