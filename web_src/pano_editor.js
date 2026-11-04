@@ -506,7 +506,7 @@ async function showEditor(node, type, options = {}) {
   };
   // Every frame of the editor goes through one scheduler (pano_frame_scheduler.js): the stage draws when
   // something asks for it, and keeps drawing only while something animates (editorAnimating). The
-  // playback and a drag's batched work take their frames from it too.
+  // playback takes its frames from it too.
   const scheduler = createFrameScheduler({
     requestAnimationFrame: (callback) => requestAnimationFrame(callback),
     cancelAnimationFrame: (id) => cancelAnimationFrame(id),

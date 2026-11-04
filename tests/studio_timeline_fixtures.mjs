@@ -32,7 +32,7 @@ export function studioState(patch = {}) {
   });
 }
 
-// An upstream layer as the shell gives it (editor/upstream.js upstreamTimelineLayers plus the node's title).
+// An upstream layer as the shell gives it (studio/upstream.js working(), with the node's title).
 export function upstreamLayer({ key = "scene_up", name = "Studio #4", editable = true, record = null, deleted = 0, scene = false } = {}) {
   const sceneState = loadSceneState({
     version: 2,

@@ -7,7 +7,7 @@
 //   state       the working state v2 (a snapshot; nothing here changes it). Its `camera` may be null: the Camera row
 //               then shows the default Camera (camera_state.js cameraOf)
 //   upstream    the upstream layers, farthest first: [{ key, name, sceneState, editable, record, scene, deleted,
-//               portMeta }] (editor/upstream.js upstreamTimelineLayers, with `name` the upstream node's title and
+//               portMeta }] (studio/upstream.js working(), with `name` the upstream node's title and
 //               `portMeta` the media meta of its port Sticker, studio/upstream.js; optional `sceneItems`, the number of
 //               items of its 3D content, and `animations`, its animated 3D files' clips as media.animations)
 //   media       what timelineSpan knows of the inputs (pano_timeline.js autoTimelineLength), `port` the node's own port
