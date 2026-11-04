@@ -49,7 +49,7 @@ from .core.scene_eval import clip_active, evaluate_scene_state, segment_easing
 from .core.scene_inherit import apply_upstream_overrides
 from .core.scene_state import CAMERA_LANES, DEFAULT_ANIMATION, DEFAULT_CLIP, DEFAULT_EASING, STICKER_NUMBER_MAX, STICKER_STATE_KIND, is_3d_file_source, load_scene_state, load_sticker_state, round_frame
 from .core.state import merge_state, normalize_coverage, parse_sticker_state
-from .core.stickers import comfy_file_path, load_source_rgba
+from .core.stickers import load_source_rgba
 from .core.video import (
     editor_ready,
     encode_editor_mp4,
@@ -64,24 +64,21 @@ from .core.video_source import MaterializedVideo, StreamedVideo, pts_tolerance, 
 from .core.world import FIT_3D_MIN_DISTANCE, box_sphere, fit_3d_position
 from .core.gltf_animation import clip_time
 from .core.world_render import ContentSource, SceneContent
+from . import file_3d
+from .file_3d import FILE_NOT_FOUND, NEITHER_3D_READER, _check_da3_inputs, _check_moge_inputs, _file_3d_error, _read_file_3d, _read_scene_file, _scene_content
 from .scene_files import write_editor_files
 from .scene_mesh import (
-    check_da3,
     da3_device_bytes,
     da3_key,
     depth_grid_intrinsics,
     is_da3,
-    is_mesh_file,
     is_moge,
     is_unlit,
     mesh_animation,
-    moge_uses_depth_grid,
-    needs_default_k,
     read_mesh_file,
 )
 from .scene_video import SceneVideo
-from .splat_render import read_splat_file
-from .sticker_media import OPENED_VIDEOS, PortMedia, batch_index, content_box, content_of, is_3d_media, open_video, stream_video
+from .sticker_media import OPENED_VIDEOS, PortMedia, batch_index, content_box, is_3d_media, open_video, stream_video
 _log = logging.getLogger(__name__)
 
 
@@ -1011,84 +1008,6 @@ class PanoSceneValue:
         return float(self.rate)
 
 
-def _scene_content(scene) -> SceneContent | None:
-    """The `scene` input as World content, or None without one."""
-    return None if scene is None else content_of(scene)
-
-
-# Why a 3D file that neither reader takes is not read (`docs/studio-node.md`, "3D ファイルの `file` の Source").
-NEITHER_3D_READER = "neither a splat file (a PLY with 3DGS properties, SPLAT, SPZ, KSPLAT) nor a mesh file (GLB, GLTF, OBJ, STL)"
-# Why a 3D file `file` Source outside ComfyUI's folders, or not there, is not read.
-FILE_NOT_FOUND = "the file was not found"
-
-
-def _read_scene_file(scene, name: str | None):
-    """A 3D file on the `scene` or `sticker` input (`name`) as what is read from it: a splat file (told by its
-    contents, as Load3D does) as its SPLAT, else a mesh file (by its format) as its MESH; other inputs as given. A 3D
-    file that neither reads (a PLY without 3DGS properties, a non-splat file without a format) is a ValueError naming
-    the input, or for a 3D file `file` Source (`name` None) a ValueError of the reason alone.
-    What is read is kept per file (on disk by its path and modification, else by the object) in the cache of its
-    kind, so the same file is not parsed again and keeps its editor files; concurrent readers of one file (a prompt
-    and the editor's route) read it once."""
-    if not isinstance(scene, Types.File3D):
-        return scene
-    if scene.is_disk_backed:
-        cache_key = file_key(scene.get_source())
-    else:
-        cache_key = NODE_RUNTIME.object_identity(scene)
-    mesh = NODE_RUNTIME.cache.get("mesh_files", cache_key)
-    if mesh is not None:
-        return mesh
-    splat = NODE_RUNTIME.cache.get_or_put("splat_files", cache_key, lambda: read_splat_file(scene))
-    if splat is not None:
-        return splat
-    if not is_mesh_file(scene):
-        if name is None:
-            raise ValueError(f"it is {NEITHER_3D_READER}")
-        raise ValueError(f"Panorama Stickers: the 3D file on the {name} input is {NEITHER_3D_READER}.")
-    return NODE_RUNTIME.cache.get_or_put("mesh_files", cache_key, lambda: read_mesh_file(scene))
-
-
-def _check_da3_inputs(*inputs):
-    """At the entry, as for an unreadable 3D file: refuse a multiview DA3_GEOMETRY without poses (`check_da3`), and
-    say once per run when a mono one is drawn with the core's default K."""
-    da3 = [value for value in inputs if is_da3(value)]
-    for geometry in da3:
-        check_da3(geometry)
-    if any(needs_default_k(geometry) for geometry in da3):
-        _log.warning("Panorama Stickers: a DA3_GEOMETRY has no intrinsics (a mono model), so its meshes use the core's default "
-                     "camera of about 71 degrees across; if the photo's field of view differs, the shapes stretch in depth.")
-
-
-def _check_moge_inputs(*inputs):
-    """Say once per run why a MOGE_GEOMETRY goes to the editor as GLB, not as a depth grid (`moge_uses_depth_grid`):
-    it is drawn all the same, the editor only plays it slower."""
-    reasons = [reason for value in inputs if is_moge(value) for uses, reason in [moge_uses_depth_grid(value)] if not uses]
-    if reasons:
-        _log.warning("Panorama Stickers: a MOGE_GEOMETRY goes to the editor as one GLB per frame, not as a depth grid, because "
-                     + "; ".join(dict.fromkeys(reasons)) + ". It is drawn the same; the editor plays it slower.")
-
-
-def _file_3d_error(source: dict, reason: str) -> str:
-    """The text that says why a 3D file `file` Source is not read, for the node's warning and the route's error."""
-    name = f"{source['subfolder']}/{source['filename']}" if source.get("subfolder") else source["filename"]
-    reason = str(reason).strip()
-    return f"Could not read the 3D file {name}: {reason}{'' if reason.endswith(('.', '!', '?')) else '.'}"
-
-
-def _read_file_3d(source: dict) -> tuple[object, str | None]:
-    """A 3D file `file` Source read as `scene` and `sticker` read theirs (`_read_scene_file`): its SPLAT or MESH and
-    None, or None and why it was not read: a path outside ComfyUI's folders or no file there, or the reader's
-    ValueError or OSError. Other errors are raised."""
-    path = comfy_file_path(source["filename"], source["subfolder"], source["storage"])
-    if path is None:
-        return None, FILE_NOT_FOUND
-    try:
-        return _read_scene_file(Types.File3D(str(path)), None), None
-    except (ValueError, OSError) as error:
-        return None, str(error)
-
-
 def _take_sticker_id(state: dict) -> str:
     """A new Sticker id from the state's `next_sticker_id` counter, which it advances, as the editor does. Like the
     normalization of the ids (`_stickers`, core/scene_state.py), a number whose id is in use is skipped (ids past
@@ -1562,7 +1481,7 @@ def _decide_timeline(state: dict, bg, port: PortMedia | None, scene: SceneConten
             length = max([length, len(upstream.frames), *(round_frame(end * fps / layer_fps) for end, layer_fps in overridden_ends)])
 
     times = _output_times(given, rate, length)
-    layers = [] if upstream is None else [(layer.state, layer.port, _scene_content(layer.scene)) for layer in upstream.layers]
+    layers = [] if upstream is None else [(layer.state, layer.port, file_3d._scene_content(layer.scene)) for layer in upstream.layers]
     layers.append((state, port, scene))
     per_layer = [_layer_frames(layer_state, layer_port, content, times, fps, time_base) for layer_state, layer_port, content in layers]
     frames = tuple(zip(_bg_frames(bg, times, time_base, upstream is None, place, fps), zip(*per_layer)))
@@ -1646,12 +1565,12 @@ def _render_frames(built: PanoSceneValue, bg, capture, device, size: tuple[int, 
         port_frames = None if port is None else port.frames()
         others = layer.sources.stickers if port is None else {key: value for key, value in layer.sources.stickers.items() if key != port.sticker_id}
         world = {item["id"] for item in layer.state["stickers"] if item["placement"] == "world"}
-        files = {key: ContentSource(_scene_content(value), 0) for key, value in layer.sources.contents.items() if key in world}
+        files = {key: ContentSource(file_3d._scene_content(value), 0) for key, value in layer.sources.contents.items() if key in world}
         if files:
             others = {**others, **files}
         # The 3D file Stickers with glTF clips, posed at each frame.
         animated = {key: source for key, source in files.items() if source.content.animation is not None}
-        opened.append((port_frames, others, _scene_content(layer.scene), animated))
+        opened.append((port_frames, others, file_3d._scene_content(layer.scene), animated))
     cache = {}
     port_sources = [None] * len(built.layers)
     for bg_index, entries in built.frames:
@@ -1885,7 +1804,6 @@ def _view_entry(path, media_type: str) -> dict | None:
     return None
 
 
-
 def _depth_grid_meta(geometry: dict, fps: float) -> dict:
     """The meta of the depth files of a DA3_GEOMETRY mono or a MOGE_GEOMETRY perspective sequence (docs/studio-node.md,
     "`DA3_GEOMETRY` mono のエディタ用ファイル"): the grid's size, the files' layout, each frame's K of pixel numbers
@@ -1942,7 +1860,7 @@ def _build_scene(state_json: str, background, world, scene, sticker, sticker_sta
         layers, overridden_ends = _override_layers(upstream, state["upstream"], warnings)
         applied = replace(upstream, layers=layers)
     _animation_warnings(state, world, port, sources.contents, warnings)
-    rate, times, time_base, frames = _decide_timeline(state, bg, port, _scene_content(world), upstream=applied, overridden_ends=overridden_ends,
+    rate, times, time_base, frames = _decide_timeline(state, bg, port, file_3d._scene_content(world), upstream=applied, overridden_ends=overridden_ends,
                                                       contents=sources.contents, inherited_bg=inherited_bg)
     fps = float(rate)
     # The `ui` shows the input media in the editor and on the node, under the legacy node's keys.

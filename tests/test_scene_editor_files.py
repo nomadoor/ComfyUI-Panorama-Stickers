@@ -230,7 +230,7 @@ def test_studio_shows_the_scene_files_after_running(monkeypatch):
         height, width = view.projection.height, view.projection.width
         return torch.zeros((height, width, 4), device=device), torch.full((height, width), math.inf, device=device)
 
-    monkeypatch.setattr(nodes, "_scene_content", lambda scene: None if scene is None else SceneContent(2, render))
+    monkeypatch.setattr("comfyui_pano_suite.file_3d._scene_content", lambda scene: None if scene is None else SceneContent(2, render))
     mesh = _mesh([[[0.0, 0.0, -1.0], [1.0, 0.0, -1.0], [0.0, 1.0, -1.0]]] * 2)
 
     output = nodes.PanoramaStudioNode.execute(background_color="#00ff00", background_range="360", megapixels=0.5, multiple=8, state_json="", world=mesh)
