@@ -219,7 +219,7 @@ def test_preview_decides_its_timeline_with_the_stickers_rules(monkeypatch, tmp_p
         decided.append(result[0])
         return result
 
-    monkeypatch.setattr(nodes, "_decide_timeline", recording)
+    monkeypatch.setattr("comfyui_pano_suite.preview_node._decide_timeline", recording)
     _preview(_solid([0.2, 0.4, 0.6], batch=2))
     _preview(_video(tmp_path))
 
