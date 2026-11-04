@@ -416,3 +416,15 @@ test("the FOV number drags and steps the view's FOV in a fixed width; its reset 
   expect((await places()).frame.x).toBe(start.frame.x);
   expect(problems).toEqual([]);
 });
+
+// docs/space-and-view.md "Sky だけのときのホイール" (ADR 0061): no World content: the wheel moves and says Sky only.
+test("a wheel step with only the background says Sky only and Alt+wheel zooms", async ({ page }, testInfo) => {
+  const { problems, stage } = await open(page, testInfo);
+  const at = await stageCenter(stage);
+  await page.mouse.move(at.x, at.y);
+  await page.mouse.wheel(0, -100);
+  const notice = page.locator(".pano-studio-notice");
+  await expect(notice).toHaveText("Sky only · Alt+wheel zooms");
+  await expect(notice).toHaveAttribute("data-notice", "info");
+  expect(problems).toEqual([]);
+});

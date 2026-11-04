@@ -1,6 +1,6 @@
 // The one line at the top center of the stage (docs/studio-ui.md "画面の区画", "読み込み中と空の画面", "一行の知らせの
 // 種類"): which line shows, one at a time, and its kind, which sets the mark on its left. A notice of an operation
-// that did nothing comes before one that was done, before Set orbit center's wait, before what the stage waits for, before a warning that stays, before the empty stage's hint.
+// that did nothing comes before the Sky-only wheel notice, before one that was done, before Set orbit center's wait, before what the stage waits for, before a warning that stays, before the empty stage's hint.
 import { DEPTH_VIDEO_LOADING } from "../pano_depth_color.js";
 import { STUDIO_BACKGROUND_INPUT_NAMES } from "../pano_preview_video.js";
 import { VIEW_UNAVAILABLE_MESSAGE } from "../pano_preview_view.js";
@@ -42,7 +42,8 @@ export function stageEmpty({ background = "none", stickers = 0, paint = 0, linke
 }
 
 // ui: the stage's and the editor's report (stage.js stageUi() with `background` and `empty`): `notice` the text of an
-// operation that did nothing (null without one), `view` "loading" | "ready" | "failed", `background` "none" |
+// operation that did nothing (null without one), `skyOnly` the stage's Sky-only wheel notice (docs/space-and-view.md
+// "Sky だけのときのホイール"; null without one), `view` "loading" | "ready" | "failed", `background` "none" |
 // "loading" | "ready" | "failed", `empty`; and add_files.js's `adding` (a placed 3D file is loading) and `addWarning`
 // (why the last file could not be placed, or null); the editor's `stateUnreadable` (the node's state_json cannot be
 // read, docs/studio-ui.md "閉じ方"); `done` the short notice of an operation that was done (the left column's Camera
@@ -52,6 +53,7 @@ export function stageEmpty({ background = "none", stickers = 0, paint = 0, linke
 // DEPTH_VIDEO_LOADING while one waits for its colors, else why one is too large for the GPU, else ""). Returns { kind, text }; text "" shows nothing.
 export function topLine(ui) {
   if (ui.notice) return { kind: "stopped", text: String(ui.notice) };
+  if (ui.skyOnly) return { kind: "info", text: String(ui.skyOnly) };
   if (ui.done) return { kind: "done", text: String(ui.done) };
   if (ui.pickingCenter) return { kind: "info", text: LINE_TEXT.pickCenter };
   if (ui.view === "loading") return { kind: "loading", text: LINE_TEXT.viewLoading };

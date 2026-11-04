@@ -19,13 +19,13 @@ const DOUBLE_CLICK_AFTER_PICK_MS = 600;
 const CLICK_SLOP = 3;
 
 // canvas, root, world, selected, onEscape, follow, paint, win, now, objectDeps (createStage's `objects`): createStage's.
-// report(result): shows a move's notice (stage.js).
+// report(result): shows a move's notice; skyWheel(view, result): a plain wheel step's Sky-only notice (stage.js).
 // camera, input, wheelSteps, editorView, scheduler, objects: the stage's viewpoint, keys, wheel, three.js view, render
 // loop and objects. The rest are the functions of stage.js and stage_frame_view.js the gestures call.
 export function createStageInput(shared, {
   canvas, root, world, selected, onEscape, follow, paint, win, now, objectDeps,
   camera, input, wheelSteps, editorView, scheduler, objects,
-  viewMode, viewport, navCamera, commitFrame, cancelFrame, zoomFrame, report,
+  viewMode, viewport, navCamera, commitFrame, cancelFrame, zoomFrame, report, skyWheel,
   stopCoast, local, objectsOn, paintOn, directionsOf, samplesOf, moved, setPicking, setCenterAt, syncUi, requestDraw, resize,
 }) {
   // When (now(), ms) the wait's press last set T: the double click its clicks may make is not a second one.
@@ -310,7 +310,9 @@ export function createStageInput(shared, {
     // A wheel run in the Frame view is a gesture of its own: another one under way is one step first (one during a
     // drag joins the drag's).
     if (view === shared.frameCamera && shared.frameGesture && shared.frameGesture !== "wheel" && !shared.drag) commitFrame();
-    moved(view, view.wheel(step, hitAt(pointOf(event))), "wheel");
+    const result = view.wheel(step, hitAt(pointOf(event)));
+    moved(view, result, "wheel");
+    skyWheel(view, result);
     if (view === shared.frameCamera && shared.frameGesture === "wheel" && !shared.drag) {
       clearTimeout(shared.wheelTimer);
       shared.wheelTimer = setTimeout(commitFrame, FRAME_WHEEL_REST_MS);

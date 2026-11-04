@@ -322,3 +322,31 @@ test("the window's View group: the FOV number zooms with Alt + wheel at once, an
   await expect(page.locator("[data-action=reset-view]")).toHaveAttribute("aria-disabled", "true");
   expect(problems).toEqual([]);
 });
+
+// docs/space-and-view.md "Sky だけのときのホイール" (ADR 0061): an IMAGE has no World content: a wheel step moves the view
+// and the top line says Sky only (info) for BOUND_NOTICE_SECONDS; Alt + wheel says nothing. With nothing linked to
+// `source` there is nothing to zoom into and nothing is said.
+test("a wheel step over an IMAGE says Sky only for a while; with nothing linked it says nothing", async ({ page }) => {
+  const problems = await open(page);
+  const canvas = page.locator("[data-stage-canvas]");
+  const box = await canvas.boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.keyboard.down("Alt");
+  await page.mouse.wheel(0, -100);
+  await page.keyboard.up("Alt");
+  await expect(page.locator(".pano-studio-notice")).toHaveCount(0);
+  const before = await page.evaluate(() => window.__preview.pose().position);
+  await page.mouse.wheel(0, -100);
+  const notice = page.locator(".pano-studio-notice");
+  await expect(notice).toHaveText("Sky only · Alt+wheel zooms");
+  await expect(notice).toHaveAttribute("data-notice", "info");
+  await expect.poll(() => page.evaluate(() => window.__preview.pose().position)).not.toEqual(before);
+  await expect(notice).toHaveCount(0, { timeout: 4000 });
+  await page.keyboard.press("Escape");
+  await open(page, "?unlinked");
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.wheel(0, -100);
+  await page.waitForTimeout(300);
+  await expect(page.locator(".pano-studio-notice")).toHaveCount(0);
+  expect(problems).toEqual([]);
+});

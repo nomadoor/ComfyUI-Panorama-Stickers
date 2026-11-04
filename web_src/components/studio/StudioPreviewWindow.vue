@@ -1,7 +1,8 @@
 <script setup>
 // The new Preview window's shell (docs/studio-ui.md "Preview のウィンドウ"): the stage fills the window; ✕ at the top
 // right, the view knobs, Set orbit center and "?" at the right middle, the View group (StudioViewButtons.vue: the FOV
-// number and its reset, Reset View, the grid switch) with Fullscreen at the bottom right; at the top center only Set orbit center's waiting line (docs/space-and-view.md "Set orbit center").
+// number and its reset, Reset View, the grid switch) with Fullscreen at the bottom right; at the top center only the
+// Sky-only wheel notice and Set orbit center's waiting line (docs/space-and-view.md).
 // No inspector, timeline, left rail or bottom bar. A VIDEO source has the playback strip at the bottom: play / pause,
 // the loop switch, the seek bar and the time, in the node surface's order. web_src/studio/preview_window.js owns what
 // it shows. `playback`: { video, frame, frames, fps, playing, loop }. `controller`: onStage({ canvas, overlay, root }), close(),
@@ -57,8 +58,9 @@ function onBackdropUp(event) {
 const isMac = isMacPlatform();
 const shortcuts = computed(() => shortcutGroups({ context: "preview", playable: props.playback.video, mac: isMac }));
 const helpButton = () => nav.value?.helpButton() ?? null;
-// The window has no top line but Set orbit center's waiting one (docs/studio-ui.md "Preview のウィンドウ").
-const waitLine = computed(() => topLine({ pickingCenter: !!props.ui.pickingCenter }));
+// The window has no top line but the Sky-only wheel notice and Set orbit center's waiting one, in the editor's order
+// (docs/studio-ui.md "Preview のウィンドウ").
+const waitLine = computed(() => topLine({ skyOnly: props.ui.skyOnly, pickingCenter: !!props.ui.pickingCenter }));
 
 // --- The playback strip's time: "m:ss / m:ss" (the frame shown, the length).
 function clock(seconds) {

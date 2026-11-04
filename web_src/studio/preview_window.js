@@ -16,7 +16,7 @@ import { backgroundVideoMedia, createBackgroundVideo, isDecodedImageReady, media
 import { peekPreviewNode, peekSceneViewer, sceneViewerWindowClosed, sceneViewerWindowOpened } from "../pano_node_bridge.js";
 import { backgroundPlace } from "../pano_port_media.js";
 import { stageOwnsKey } from "../pano_key_focus.js";
-import { isNodeOutputMediaCurrent, linkedInputType, videoLinked } from "../pano_preview_video.js";
+import { inputLinked, isNodeOutputMediaCurrent, linkedInputType, videoLinked } from "../pano_preview_video.js";
 import { loadSceneState } from "../pano_scene_state.js";
 import { PANO_SCENE_TYPE } from "../pano_upstream.js";
 import { createDepthColors } from "../pano_depth_color.js";
@@ -308,7 +308,9 @@ export async function openPreviewWindow(node, { app = null, api = null, storage 
       const opening = previewOpening({ scene: sceneRecord?.view, image: imageRuntime?.view }, { ...world, boxes: [], content: null });
       const follow = createPreviewMotion({ pose: opening.pose });
       // The overlay draws the orbit center's mark (docs/space-and-view.md "オービットの中心の印").
-      stage = createStage({ canvas, overlay, root, opening, world, background, content, ui, follow, onEscape: () => close() });
+      // With nothing linked to `source` there is nothing to zoom into: no Sky-only notice (docs/space-and-view.md "Sky
+      // だけのときのホイール").
+      stage = createStage({ canvas, overlay, root, opening, world, background, content, ui, follow, skyOnlyNotice: inputLinked(node, SOURCE_INPUTS), onEscape: () => close() });
       return stage;
     },
     close: () => close(),

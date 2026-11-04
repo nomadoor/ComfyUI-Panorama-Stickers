@@ -30,8 +30,9 @@ export function stageUi() {
   return {
     // The three.js view: "loading", "ready" or "failed" (the chunk or WebGL is unavailable).
     view: "loading",
-    // The one-line notice (VIEW_NOTICES' text) or null.
+    // The one-line notice (VIEW_NOTICES' text) or null, and the Sky-only wheel notice (its own, which only tells).
     notice: null,
+    skyOnly: null,
     // The stage's CSS cursor.
     cursor: "",
     // The knobs lit now ("orbit", "pan", "move").
@@ -85,6 +86,8 @@ export function stageUi() {
 // animating() the stage draws each frame, and while revealing() an item fades in, so the Output window draws again too.
 // follow: the Preview window's feel (preview_motion.js createPreviewMotion): the view shown follows the moved view and a
 // drag let go coasts. Without it (the editor) the view shown is the moved view.
+// skyOnlyNotice: whether a plain wheel step with no World content says Sky only (docs/space-and-view.md "Sky だけのときの
+// ホイール"); false for a Preview window with nothing linked to `source`, which has nothing to zoom into.
 export function createStage({
   canvas,
   overlay = null,
@@ -101,6 +104,7 @@ export function createStage({
   motion: ownMotion = null,
   paint = null,
   follow = null,
+  skyOnlyNotice = true,
   view: makeView = createEditorView,
   win = window,
   now = () => performance.now(),
@@ -109,7 +113,9 @@ export function createStage({
   camera.setWorld({ ground: world.ground, boxes: content()?.boxes ?? [], content: null, camera: world.camera ?? null });
   const input = createViewInput();
   const wheelSteps = createWheelSteps();
-  const notice = createNotice();
+  // The stage's notices, each shown BOUND_NOTICE_SECONDS after its last time: what did not work, and Sky only.
+  const notices = { notice: createNotice(), skyOnly: createNotice() };
+  const noticeTimers = { notice: 0, skyOnly: 0 };
   // The state the stage's parts share (stage_frame_view.js, stage_output.js, stage_input.js).
   const shared = {
     size: { width: 1, height: 1 },
@@ -134,7 +140,6 @@ export function createStage({
     keysCamera: null,
   };
   let lastFrame = 0;
-  let noticeTimer = 0;
   // When (now(), ms) a double click or Set orbit center last set T, for the orbit center's mark (orbit_marker.js), or null.
   let setAt = null;
   // The viewpoint T was set on (the 3D tab's or the Frame view's): the mark shows on that one only.
@@ -488,14 +493,26 @@ export function createStage({
 
   // --- The notice, the cursor and the knobs.
 
-  function report(result) {
-    if (!result?.notice) return;
-    notice.show(result.notice, now() / 1000);
-    ui.notice = notice.current(now() / 1000);
-    clearTimeout(noticeTimer);
-    noticeTimer = setTimeout(() => {
-      ui.notice = notice.current(now() / 1000);
+  // Shows the notice `code` (VIEW_NOTICES') in `ui[field]` ("notice" or "skyOnly") until BOUND_NOTICE_SECONDS after it.
+  function showNotice(field, code) {
+    notices[field].show(code, now() / 1000);
+    ui[field] = notices[field].current(now() / 1000);
+    clearTimeout(noticeTimers[field]);
+    noticeTimers[field] = setTimeout(() => {
+      ui[field] = notices[field].current(now() / 1000);
     }, BOUND_NOTICE_SECONDS * 1000 + 20);
+  }
+
+  function report(result) {
+    if (result?.notice) showNotice("notice", result.notice);
+  }
+
+  // A plain wheel step on `view` (the Frame view's moves the Camera) that moved it with no World content (no sphere for
+  // Frame Selected's whole content): it says Sky only and where zooming is (docs/space-and-view.md "Sky だけのときの
+  // ホイール"). A step that stopped says that instead; one that moved nothing says nothing.
+  function skyWheel(view, result) {
+    if (!skyOnlyNotice || !result?.moved || result.notice || content()?.sphere) return;
+    showNotice("skyOnly", view === shared.frameCamera ? "sky-only-frame" : "sky-only");
   }
 
   function syncUi() {
@@ -524,7 +541,7 @@ export function createStage({
   const { pointOf, hitAt, hoverAt, begin, end, endKeys, objectSelection, listen, unlisten } = createStageInput(shared, {
     canvas, root, world, selected, onEscape, follow, paint, win, now, objectDeps,
     camera, input, wheelSteps, editorView, scheduler, objects,
-    viewMode, viewport, navCamera, commitFrame, cancelFrame, zoomFrame, report,
+    viewMode, viewport, navCamera, commitFrame, cancelFrame, zoomFrame, report, skyWheel,
     stopCoast, local, objectsOn, paintOn, directionsOf, samplesOf, moved, setPicking, setCenterAt, syncUi, requestDraw, resize,
   });
 
@@ -635,7 +652,7 @@ export function createStage({
       commitFrame();
       stopOutput();
       camera.stop();
-      clearTimeout(noticeTimer);
+      Object.values(noticeTimers).forEach(clearTimeout);
       scheduler.stop();
       unlisten();
       editorView.dispose();

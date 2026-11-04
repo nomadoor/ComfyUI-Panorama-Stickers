@@ -666,3 +666,48 @@ test("Frame mode: Alt + wheel does nothing to a locked Camera", async ({ page },
   expect(await history(page)).toEqual({ undo: false, redo: false });
   expect(problems).toEqual([]);
 });
+
+// docs/space-and-view.md "Sky だけのときのホイール": with no World content the wheel still moves the Camera, and the top
+// line says Sky only (the info kind) until BOUND_NOTICE_SECONDS after the last step; with World content nothing is said.
+test("Frame mode, sky only: the wheel moves the Camera and the line says Sky only", async ({ page }, testInfo) => {
+  const problems = await open(page, testInfo, "aspect=16:9&mode=frame&sky=1");
+  const stage = await stageBox(page);
+  const frame = await frameBox(page);
+  const before = await camera(page);
+  await page.mouse.move(stage.x + frame.x + frame.width / 2, stage.y + frame.y + frame.height / 2);
+  await page.mouse.wheel(0, -100);
+  const notice = page.locator(".pano-studio-notice");
+  await expect(notice).toHaveText("Sky only · Alt+wheel changes the FOV");
+  await expect(notice).toHaveAttribute("data-notice", "info");
+  expect((await camera(page)).position).not.toEqual(before.position);
+  await expect(notice).toHaveCount(0, { timeout: 4000 });
+  expect(problems).toEqual([]);
+});
+
+test("Frame mode with World content: the wheel says nothing", async ({ page }, testInfo) => {
+  const problems = await open(page, testInfo);
+  const stage = await stageBox(page);
+  const frame = await frameBox(page);
+  await page.mouse.move(stage.x + frame.x + frame.width / 2, stage.y + frame.y + frame.height / 2);
+  await page.mouse.wheel(0, -100);
+  await page.waitForTimeout(300);
+  await expect(page.locator(".pano-studio-notice")).toHaveCount(0);
+  expect(problems).toEqual([]);
+});
+
+// docs/studio-ui.md "一行の知らせの種類": the editor's notice of an operation that did not work comes before the Sky-only one.
+test("Frame mode, sky only: Delete on the Camera after the Sky-only notice is a stopped notice", async ({ page }, testInfo) => {
+  const problems = await open(page, testInfo, "aspect=16:9&mode=frame&sky=1");
+  const stage = await stageBox(page);
+  const frame = await frameBox(page);
+  await page.mouse.move(stage.x + frame.x + frame.width / 2, stage.y + frame.y + frame.height / 2);
+  await page.mouse.wheel(0, -100);
+  const notice = page.locator(".pano-studio-notice");
+  await expect(notice).toHaveAttribute("data-notice", "info");
+  await page.locator('.pano-studio-tl-head[data-head="camera"] [data-part="name"]').click();
+  await page.locator(".pano-studio-editor").focus();
+  await page.keyboard.press("Delete");
+  await expect(notice).toHaveText(/The camera can't be deleted/);
+  await expect(notice).toHaveAttribute("data-notice", "stopped");
+  expect(problems).toEqual([]);
+});

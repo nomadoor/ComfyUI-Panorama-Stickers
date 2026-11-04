@@ -112,3 +112,12 @@ test("while Set orbit center waits the line says what to do, as info, after what
   assert.equal(topLine({ pickingCenter: true, view: "loading" }).text, LINE_TEXT.pickCenter);
   assert.equal(topLine({ pickingCenter: false }).text, "");
 });
+
+// docs/studio-ui.md "一行の知らせの種類" (ADR 0061): the Sky-only wheel notice only tells (info); it comes after a notice
+// of an operation that did not work and before a done notice and Set orbit center's wait.
+test("the Sky-only wheel notice is info, after a stopped notice and before a done one", () => {
+  const sky = "Sky only · Alt+wheel zooms";
+  assert.deepEqual(topLine(ui({ skyOnly: sky })), { kind: "info", text: sky });
+  assert.deepEqual(topLine(ui({ skyOnly: sky, notice: "The view can't go farther" })), { kind: "stopped", text: "The view can't go farther" });
+  assert.deepEqual(topLine(ui({ skyOnly: sky, done: LINE_TEXT.cameraMoved, pickingCenter: true })), { kind: "info", text: sky });
+});

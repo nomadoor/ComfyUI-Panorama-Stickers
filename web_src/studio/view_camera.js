@@ -30,13 +30,17 @@ import {
   worldBoundRadius,
 } from "./view_scale.js";
 
-// The stage's one-line notices (docs/space-and-view.md "世界の境界", "黙って何もしない操作"): "fov-panorama" is Alt + wheel
-// in the Camera tab's Panorama mode (ADR 0061).
+// The stage's one-line notices (docs/space-and-view.md "世界の境界", "黙って何もしない操作", "Sky だけのときのホイール"):
+// "fov-panorama" is Alt + wheel in the Camera tab's Panorama mode; "sky-only" and "sky-only-frame" are a plain wheel step
+// that moved with no World content, in the 3D tab and the Preview window, and in the Camera tab's Frame view (ADR 0061;
+// those only tell, notice_line.js `skyOnly`).
 export const VIEW_NOTICES = Object.freeze({
   bound: "The view can't go farther",
   "nothing-to-focus": "Nothing to focus on",
   "nothing-to-frame": "Nothing to frame",
   "fov-panorama": PANORAMA_MODE_TIP,
+  "sky-only": "Sky only · Alt+wheel zooms",
+  "sky-only-frame": "Sky only · Alt+wheel changes the FOV",
 });
 
 const add = (a, b, s = 1) => [a[0] + b[0] * s, a[1] + b[1] * s, a[2] + b[2] * s];
