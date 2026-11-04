@@ -122,9 +122,10 @@ const gestureRow = (label, keys, ref) => ({ label, keys, refs: [`pointer:${ref}`
 // The groups of the list for the screen now: [{ id, title, note, rows: [{ label, keys: [[cap]], refs }] }].
 // context: "editor" (Panorama Studio's editor) | "preview" (the Preview window: nothing to select or edit, the 3D tab's
 // view, no timeline; docs/studio-ui.md "ショートカットの一覧"). tab: "3d" | "camera"; panorama: the Camera's mode is
-// Panorama; readOnly: the editor edits nothing; playable: the Preview window has its playback strip; mac: Ctrl shows
-// as ⌘. A row's `keys` are the combinations that do it; `refs` name the table entries they come from.
-export function shortcutGroups({ context = "editor", tab = "3d", panorama = false, readOnly = false, playable = false, mac = false } = {}) {
+// Panorama; readOnly: the editor edits nothing; locked: the Camera is locked; playable: the Preview window has its
+// playback strip; mac: Ctrl shows as ⌘. A row's `keys` are the combinations that do it; `refs` name the table entries
+// they come from.
+export function shortcutGroups({ context = "editor", tab = "3d", panorama = false, readOnly = false, locked = false, playable = false, mac = false } = {}) {
   const preview = context === "preview";
   const space = preview || tab !== "camera";
   const still = !space && panorama;
@@ -140,7 +141,10 @@ export function shortcutGroups({ context = "editor", tab = "3d", panorama = fals
       nav.joystick,
       moveRow("Move", [["forward", 1], ["forward", -1], ["right", -1], ["right", 1], ["up", -1], ["up", 1]]),
       gestureRow("Move faster (hold)", [["Shift"]], "move-fast"),
-      gestureRow("Zoom to the pointer", [["Wheel"]], "wheel"),
+      gestureRow("Move toward the pointer", [["Wheel"]], "wheel"),
+      // Alt + wheel and a pinch (docs/space-and-view.md "寄る"): the view's FOV, or in the Frame view the Camera's H FOV,
+      // which a read-only editor or a locked Camera does not change. Ctrl + wheel is the pinch and not shown.
+      ...(space || (!readOnly && !locked) ? [{ label: space ? "Zoom (change FOV)" : "Change Camera FOV", keys: [["Alt", "Wheel"], ["Pinch"]], refs: ["pointer:alt-wheel", "pointer:pinch"] }] : []),
       ...(space ? [gestureRow("Look at a point", [["Double-click"]], "double-click")] : []),
     ];
   const objects = preview ? [] : [

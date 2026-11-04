@@ -140,3 +140,23 @@ test("the Preview window's list (context preview) has no selection or editing ro
   const still = shortcutGroups({ context: "preview", playable: false });
   assert.deepEqual(still.map((group) => group.id), ["view", "editor"]);
 });
+
+// docs/studio-ui.md "ショートカットの一覧" (ADR 0061): the wheel moves toward the pointer; Alt + wheel and a pinch zoom
+// (always in the 3D tab and the Preview window; named Change Camera FOV in the Camera tab's Frame mode, and only where the
+// Camera moves); Panorama mode has no rows; Ctrl + wheel is never shown.
+test("the View group: Move toward the pointer, and Zoom (change FOV) or Change Camera FOV where it works", () => {
+  const row = (groups, label) => groups[0].rows.find((item) => item.label === label);
+  const space = shortcutGroups({ tab: "3d" });
+  assert.deepEqual(row(space, "Move toward the pointer")?.keys, [["Wheel"]]);
+  assert.equal(row(space, "Zoom to the pointer"), undefined);
+  assert.deepEqual(row(space, "Zoom (change FOV)")?.keys, [["Alt", "Wheel"], ["Pinch"]]);
+  assert.ok(row(shortcutGroups({ tab: "3d", readOnly: true }), "Zoom (change FOV)"));
+  assert.ok(row(shortcutGroups({ context: "preview" }), "Zoom (change FOV)"));
+  const frame = shortcutGroups({ tab: "camera", panorama: false });
+  assert.equal(row(frame, "Zoom (change FOV)"), undefined);
+  assert.deepEqual(row(frame, "Change Camera FOV")?.keys, [["Alt", "Wheel"], ["Pinch"]]);
+  assert.equal(row(shortcutGroups({ tab: "camera", panorama: false, readOnly: true }), "Change Camera FOV"), undefined);
+  assert.equal(row(shortcutGroups({ tab: "camera", panorama: false, locked: true }), "Change Camera FOV"), undefined);
+  assert.deepEqual(shortcutGroups({ tab: "camera", panorama: true })[0].rows, []);
+  assert.ok(!space[0].rows.some((item) => item.keys.some((combo) => combo.includes("Ctrl") && combo.includes("Wheel"))));
+});

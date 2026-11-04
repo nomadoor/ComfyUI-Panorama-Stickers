@@ -148,7 +148,7 @@ const fovOffTip = computed(() => (panorama.value ? PANORAMA_MODE_TIP : CAMERA_FO
 // --- The list of shortcuts (docs/studio-ui.md "ショートカットの一覧"): what works on the screen now.
 const nav = ref(null);
 const isMac = isMacPlatform();
-const shortcuts = computed(() => shortcutGroups({ tab: props.view.tab, panorama: panorama.value, readOnly: props.view.readOnly, mac: isMac }));
+const shortcuts = computed(() => shortcutGroups({ tab: props.view.tab, panorama: panorama.value, readOnly: props.view.readOnly, locked: camera.value.locked === true, mac: isMac }));
 const helpButton = () => nav.value?.helpButton() ?? null;
 const erpCanvas = ref(null);
 watch(erpCanvas, (element) => props.controller.erpCanvas?.(element ?? null));
