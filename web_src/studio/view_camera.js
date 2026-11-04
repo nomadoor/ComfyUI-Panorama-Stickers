@@ -10,7 +10,7 @@
 //
 // createViewCamera() holds one viewpoint: the Panorama view's (and the Preview window's), or, with `frame`, the Frame
 // view's, where the pose is the Camera itself and its moves go to the Camera's Lane (the caller writes them).
-import { DEG2RAD, RAD2DEG, VIEW_FOV_STEP_DEG, VIEW_HFOV_MAX_DEG, VIEW_HFOV_MIN_DEG, clamp, fovStepValue, fovZoomStep, shortestYawDelta, wrapYaw } from "../pano_camera_math.js";
+import { DEG2RAD, RAD2DEG, VIEW_FOV_FINE_STEP_DEG, VIEW_HFOV_MAX_DEG, VIEW_HFOV_MIN_DEG, clamp, fovStepValue, fovZoomStep, shortestYawDelta, stepWithin, wrapYaw } from "../pano_camera_math.js";
 import { rayBoxDepth } from "../pano_ray_box.js";
 import { DEFAULT_VIEW_HFOV, START_VIEW, frameView, orbitView, sameViewpoint, viewAxes } from "../pano_space.js";
 import { KEY_MOVE_FAST, keyMoveView } from "../pano_view_keys.js";
@@ -57,10 +57,11 @@ export function viewFovValue(value) {
   return Math.round(clamp(value, VIEW_HFOV_MIN_DEG, VIEW_HFOV_MAX_DEG));
 }
 
-// The FOV number's arrow key (docs/space-and-view.md "寄る"): `value` one FOV step (pano_camera_math.js fovStepValue) in
-// `dir`, or with `fine` (Shift) one whole degree, the least the view holds.
+// The FOV number's arrow key (docs/space-and-view.md "寄る"): `value` one FOV step in `dir` (pano_camera_math.js
+// fovStepValue), or with `fine` (Shift) VIEW_FOV_FINE_STEP_DEG, the least the view holds.
 export function viewFovKeyStep(value, dir, fine = false) {
-  return fovStepValue(value, dir, { fine: fine ? 1 / VIEW_FOV_STEP_DEG : 1 });
+  if (!fine) return fovStepValue(value, dir);
+  return stepWithin(value, dir, { step: VIEW_FOV_FINE_STEP_DEG, min: VIEW_HFOV_MIN_DEG, max: VIEW_HFOV_MAX_DEG });
 }
 
 function copyPose(p) {

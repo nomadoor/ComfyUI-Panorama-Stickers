@@ -16,15 +16,22 @@ export const VIEW_HFOV_MAX_DEG = 140;
 // the FOV number's drag and arrow keys, and the Preview node's zoom read these (docs/space-and-view.md "寄る").
 export const VIEW_FOV_STEP_DEG = 2;
 export const VIEW_FOV_DRAG_PX_PER_DEG = 4;
+// The FOV number's Shift + arrow step, in degrees: the view holds whole degrees (docs/space-and-view.md "寄る").
+export const VIEW_FOV_FINE_STEP_DEG = 1;
 
-// `value` moved one FOV step (VIEW_FOV_STEP_DEG) in `dir` (+1 larger, -1 smaller), `fine` times a step (the share Shift
-// keeps, studio/ui_drag.js FINE_FACTOR; 1 without Shift), stopped at [min, max] and rounded to `precision` decimals
-// (no "-0"). A value at an end stays there.
-export function fovStepValue(value, dir, { min = VIEW_HFOV_MIN_DEG, max = VIEW_HFOV_MAX_DEG, precision = 0, fine = 1 } = {}) {
-  const next = Math.min(max, Math.max(min, value + dir * VIEW_FOV_STEP_DEG * fine));
+// `value` moved `step` in `dir` (+1 larger, -1 smaller), `fine` times it (the share Shift keeps, studio/ui_drag.js
+// FINE_FACTOR; 1 without Shift), stopped at [min, max] and rounded to `precision` decimals (no "-0"). A value at an end
+// stays there. The arrow key of every Camera tab ruler (its small tick) and every FOV step go by this.
+export function stepWithin(value, dir, { step, min = -Infinity, max = Infinity, precision = 0, fine = 1 }) {
+  const next = Math.min(max, Math.max(min, value + dir * step * fine));
   const scale = 10 ** Math.max(0, Math.round(precision));
   const rounded = Math.round(next * scale) / scale;
   return Object.is(rounded, -0) ? 0 : rounded;
+}
+
+// `value` moved one FOV step (VIEW_FOV_STEP_DEG; stepWithin), within the view's FOV range unless given another.
+export function fovStepValue(value, dir, { min = VIEW_HFOV_MIN_DEG, max = VIEW_HFOV_MAX_DEG, precision = 0, fine = 1 } = {}) {
+  return stepWithin(value, dir, { step: VIEW_FOV_STEP_DEG, min, max, precision, fine });
 }
 
 // One zoom step of a FOV (docs/space-and-view.md "寄る"): a wheel step rolled away (`step` > 0: nearer, a pinch spreading)

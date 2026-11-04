@@ -6,7 +6,6 @@ import { cameraOf } from "../../studio/camera_state.js";
 import { liveErpRatio } from "../../studio/erp_preview.js";
 import { cameraRulers, rulerEdit } from "../../studio/frame_layout.js";
 import { ROTATE_SNAP_DEG } from "../../studio/view_scale.js";
-import { fovStepValue } from "../../pano_camera_math.js";
 import { buildCameraCard } from "../../studio/inspector_model.js";
 import { TIMELINE_BAR_HEIGHT, loadTimelineHeight, saveTimelineHeight, timelineHeight } from "../../studio/layout.js";
 import { topLine } from "../../studio/notice_line.js";
@@ -288,7 +287,6 @@ function setCollapsed(value) {
                 :tip="rulers.fov.tip"
                 :value-chars="rulers.fov.scale.valueChars"
                 :at-default="rulers.fov.atDefault"
-                :step-value="fovStepValue"
                 :lit="ui.fovLit"
                 :style="stripStyle(place.vertical, true)"
                 @reset="onRuler('fov', 'reset')"

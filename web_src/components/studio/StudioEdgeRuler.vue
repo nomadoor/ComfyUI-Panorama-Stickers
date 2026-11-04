@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { CAMERA_RULERS, rulerDragValue, rulerMarks, rulerSnapStep, rulerSnapValue } from "../../studio/frame_layout.js";
 import { FINE_FACTOR, roundValue } from "../../studio/ui_drag.js";
+import { stepWithin } from "../../pano_camera_math.js";
 import StudioKeyDot from "./StudioKeyDot.vue";
 import StudioResetButton from "./StudioResetButton.vue";
 
@@ -43,9 +44,6 @@ const props = defineProps({
   tip: { type: String, default: "" },
   // With Shift, stop at multiples of this (0: Shift makes the movement finer instead).
   snap: { type: Number, default: 0 },
-  // The value an arrow key gives, stepValue(value, dir, { min, max, precision, fine }) (`fine` the share of a step
-  // Shift keeps, 1 without it): the FOV ruler's is pano_camera_math.js fovStepValue. Null: one small tick (`minor`).
-  stepValue: { type: Function, default: null },
   // Looks as the keyboard's focus does (Alt held in the Frame view: Alt + wheel changes this ruler; docs/studio-ui.md
   // "Camera タブ").
   lit: { type: Boolean, default: false },
@@ -159,11 +157,9 @@ function onKeydown(event) {
   let next;
   if (event.shiftKey && props.snap > 0) {
     next = roundValue(rulerSnapStep(props.value, dir, props.snap, { min: props.min, max: props.max }), props.precision);
-  } else if (props.stepValue) {
-    next = props.stepValue(props.value, dir, { min: props.min, max: props.max, precision: props.precision, fine: event.shiftKey ? FINE_FACTOR : 1 });
   } else {
-    const step = props.minor * (event.shiftKey ? FINE_FACTOR : 1);
-    next = roundValue(Math.min(props.max, Math.max(props.min, props.value + dir * step)), props.precision);
+    // One small tick (the FOV ruler's is VIEW_FOV_STEP_DEG: pano_camera_math.js fovStepValue gives the same).
+    next = stepWithin(props.value, dir, { step: props.minor, min: props.min, max: props.max, precision: props.precision, fine: event.shiftKey ? FINE_FACTOR : 1 });
   }
   if (next === props.value) return;
   emit("input", next);

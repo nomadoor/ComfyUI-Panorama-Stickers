@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { VIEW_FOV_DRAG_PX_PER_DEG, VIEW_FOV_STEP_DEG, VIEW_HFOV_MAX_DEG, VIEW_HFOV_MIN_DEG, cameraBasis, fovStepValue, fovZoomStep } from "../web_src/pano_camera_math.js";
+import { VIEW_FOV_DRAG_PX_PER_DEG, VIEW_FOV_STEP_DEG, VIEW_HFOV_MAX_DEG, VIEW_HFOV_MIN_DEG, VIEW_FOV_FINE_STEP_DEG, cameraBasis, fovStepValue, fovZoomStep } from "../web_src/pano_camera_math.js";
 
 function closeVector(actual, expected, tolerance = 1e-12) {
   for (const axis of ["x", "y", "z"]) {
@@ -124,4 +124,8 @@ test("fovZoomStep: rolled away is one FOV step smaller, back is larger", () => {
   assert.equal(fovZoomStep(100, 3), 98);
   assert.equal(fovZoomStep(60, 1, { min: 1, max: 120, precision: 1 }), 58);
   assert.equal(fovZoomStep(VIEW_HFOV_MIN_DEG, 1), VIEW_HFOV_MIN_DEG);
+});
+
+test("the FOV number's fine step is one degree", () => {
+  assert.equal(VIEW_FOV_FINE_STEP_DEG, 1);
 });

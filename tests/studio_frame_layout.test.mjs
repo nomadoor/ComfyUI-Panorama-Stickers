@@ -200,3 +200,19 @@ test("the FOV ruler's tooltip names Alt + wheel while it works", () => {
   assert.equal(rulersOf(cameraState({ projection: "perspective" }), { readOnly: true }).fov.tip, "Read-only");
   assert.equal(rulersOf(cameraState({ projection: "perspective", locked: true })).fov.tip, "Locked · Unlock in the 3D tab");
 });
+
+// docs/studio-ui.md "Camera タブ" 辺の目盛りの「一段の値」: every ruler's arrow key is one small tick (stepWithin); the FOV
+// ruler's small tick is the FOV step, so its key gives what fovStepValue gives.
+test("the FOV ruler's arrow key, one small tick, is fovStepValue", async () => {
+  const { fovStepValue, stepWithin } = await import("../web_src/pano_camera_math.js");
+  const fov = { step: CAMERA_RULERS.fov.minor, min: 1, max: 120, precision: 1 };
+  for (const value of [1, 1.5, 59.96, 60, 119.5, 120]) {
+    for (const dir of [1, -1]) {
+      for (const fine of [1, FINE_FACTOR]) {
+        assert.equal(stepWithin(value, dir, { ...fov, fine }), fovStepValue(value, dir, { min: 1, max: 120, precision: 1, fine }), `${value} ${dir} ${fine}`);
+      }
+    }
+  }
+  // Lens: its own small tick and digits.
+  assert.equal(stepWithin(0.333, 1, { step: CAMERA_RULERS.lens.minor, min: 0, max: 2, precision: 2 }), 0.35);
+});
