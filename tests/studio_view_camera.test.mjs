@@ -22,6 +22,7 @@ import {
   recallView,
   rememberView,
   skyOnlyNotice,
+  viewFovKeyStep,
 } from "../web_src/studio/view_camera.js";
 
 const SCREEN = { width: 1000, height: 500, hFOV_deg: 100 };
@@ -808,4 +809,15 @@ test("the Sky-only notice: a plain wheel step that moved with no World content; 
   assert.equal(skyOnlyNotice({ moved: true, notice: "bound" }, { content: null }), null);
   assert.equal(skyOnlyNotice({ moved: false, notice: null }, { content: null }), null);
   assert.equal(skyOnlyNotice({ moved: true, notice: null }, { content: { center: [0, 0, 0], radius: 1 } }), null);
+});
+
+// docs/space-and-view.md "寄る" 右下の画角の数字の矢印キー: one FOV step, with Shift one whole degree (the view holds whole
+// degrees, so a tenth of a step would not move it).
+test("the FOV number's arrow key: one step, with Shift one degree, within the range", () => {
+  assert.equal(viewFovKeyStep(100, 1), 102);
+  assert.equal(viewFovKeyStep(100, -1), 98);
+  assert.equal(viewFovKeyStep(100, 1, true), 101);
+  assert.equal(viewFovKeyStep(100, -1, true), 99);
+  assert.equal(viewFovKeyStep(35, -1, true), 35);
+  assert.equal(viewFovKeyStep(140, 1), 140);
 });

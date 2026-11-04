@@ -1,15 +1,16 @@
 <script setup>
 import { onBeforeUnmount, ref } from "vue";
-import { VIEW_FOV_DRAG_PX_PER_DEG, VIEW_HFOV_MAX_DEG, VIEW_HFOV_MIN_DEG, fovStepValue } from "../../pano_camera_math.js";
+import { VIEW_FOV_DRAG_PX_PER_DEG, VIEW_HFOV_MAX_DEG, VIEW_HFOV_MIN_DEG } from "../../pano_camera_math.js";
 import { rulerDragValue } from "../../studio/frame_layout.js";
-import { FINE_FACTOR } from "../../studio/ui_drag.js";
+import { viewFovKeyStep } from "../../studio/view_camera.js";
 
 // The FOV number of the View group at the stage's bottom right (docs/studio-ui.md "右下の View の群"; how it changes the
 // view: docs/space-and-view.md "寄る"; looks: docs/design.md "右下の画角の数字と画角のリセット"). It shows `text` (the
 // view's FOV as "100°", or what the Camera tab gives) in a fixed width. A left and right drag changes it, right larger,
 // by the FOV ruler's drag (frame_layout.js rulerDragValue at VIEW_FOV_DRAG_PX_PER_DEG, the movement's sign turned),
-// Shift finer; a press that does not move does nothing. With the keyboard's focus, the arrow keys step it as the FOV
-// ruler's do (pano_camera_math.js fovStepValue), Shift finer. Disabled, it takes neither the pointer nor the focus.
+// Shift finer (the unrounded value adds up, the view rounds it on applying, so a fine drag still moves); a press that
+// does not move does nothing. With the keyboard's focus, the arrow keys step it as the FOV ruler's do, Shift by one
+// degree (view_camera.js viewFovKeyStep). Disabled, it takes neither the pointer nor the focus.
 //
 // Presentational: `value` in, `change` (the value wanted, unrounded during a drag; the view holds it as it holds its
 // FOV) out.
@@ -57,7 +58,7 @@ function onKeydown(event) {
   const dir = { ArrowRight: 1, ArrowUp: 1, ArrowLeft: -1, ArrowDown: -1 }[event.key];
   if (!dir) return;
   event.preventDefault();
-  const next = fovStepValue(props.value, dir, { fine: event.shiftKey ? FINE_FACTOR : 1 });
+  const next = viewFovKeyStep(props.value, dir, event.shiftKey);
   if (next !== props.value) emit("change", next);
 }
 

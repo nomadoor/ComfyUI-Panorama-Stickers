@@ -381,8 +381,9 @@ test("the FOV number drags and steps the view's FOV in a fixed width; its reset 
   await page.mouse.move(box.x + box.width / 2 + 10, box.y + box.height / 2);
   await page.mouse.move(box.x + box.width / 2 + 20, box.y + box.height / 2);
   await expect.poll(fov).toBe(105);
+  // Shift keeps a tenth: a slow fine drag (small moves, each well under a degree) still adds up to whole degrees.
   await page.keyboard.down("Shift");
-  await page.mouse.move(box.x + box.width / 2 + 60, box.y + box.height / 2);
+  for (let x = 24; x <= 60; x += 4) await page.mouse.move(box.x + box.width / 2 + x, box.y + box.height / 2);
   await page.keyboard.up("Shift");
   await expect.poll(fov).toBe(106);
   await page.mouse.move(box.x + box.width / 2 - 140, box.y + box.height / 2);
@@ -400,6 +401,12 @@ test("the FOV number drags and steps the view's FOV in a fixed width; its reset 
   expect(await fov()).toBe(60);
   await page.keyboard.press("ArrowDown");
   expect(await fov()).toBe(58);
+  // Shift: one degree (the view holds whole degrees).
+  await page.keyboard.press("Shift+ArrowUp");
+  expect(await fov()).toBe(59);
+  await page.keyboard.press("Shift+ArrowLeft");
+  await page.keyboard.press("Shift+ArrowLeft");
+  expect(await fov()).toBe(57);
   // The width holds "140°": the buttons stay where they were at 35°, 100° and 140°.
   for (const value of [35, 140]) {
     await page.evaluate((v) => window.__studio.stage().setFov(v), value);
