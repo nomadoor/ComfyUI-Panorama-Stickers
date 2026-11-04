@@ -1,22 +1,29 @@
+"""A painting (its strokes and raster objects) drawn on the ERP in the editor's order (`render_painting_to_erp`), and
+the entry its readers import from. The strokes are drawn by `paint_strokes.py`, the raster objects placed by
+`paint_rasters.py`, and the uploaded paint rasters read by `paint_payload.py`; the names readers use from those
+are re-exported here. Each raster object is composited here (`_composite_one_raster_object`, which reads its pixels
+with `_sample_box`)."""
 import hashlib
 import json
 
 import numpy as np
-from PIL import Image
 
 from .cache import CACHE
 from .math import over_rgb
-from .paint_state import normalize_painting_state
-from .paint_rasters import (  # noqa: F401
+from .paint_rasters import (
     _composite_raster_patch,
     _decode_raster_data_url,
     _premultiplied_texels,
     _raster_pixel_span,
-    raster_object_corners_uv,
-    raster_object_pixel_ranges,
     raster_object_placement,
 )
-from .paint_strokes import _composite_one_erp_stroke, stamp_half_width_px, stroke_erp_path  # noqa: F401
+from .paint_state import normalize_painting_state
+from .paint_strokes import _composite_one_erp_stroke
+
+# Read from here by the renderers, the legacy nodes, and the tests.
+from .paint_payload import load_painting_layer_payload  # noqa: F401
+from .paint_rasters import raster_object_corners_uv, raster_object_pixel_ranges  # noqa: F401
+from .paint_strokes import stamp_half_width_px, stroke_erp_path  # noqa: F401
 
 
 def _hash_render_payload(payload) -> str:
@@ -213,77 +220,6 @@ def render_painting_to_erp(painting_state: dict, width: int, height: int) -> tup
         np.clip(paint, 0.0, 1.0).astype(np.float32),
         np.clip(mask, 0.0, 1.0).astype(np.float32),
     ))
-
-
-def _resize_layer(layer: np.ndarray, width: int, height: int, mode: str) -> np.ndarray:
-    """A layer (0..1 float, or uint8 as an 8-bit image is read) at `width` x `height`, bilinear through 8 bits as the
-    editor's uploads are. An 8-bit layer stays 8-bit (the same size is the layer itself); a float one is float."""
-    target_w = max(1, int(width))
-    target_h = max(1, int(height))
-    if layer.dtype == np.uint8:
-        if layer.shape[1] == target_w and layer.shape[0] == target_h:
-            return layer
-        return np.asarray(Image.fromarray(layer, mode=mode).resize((target_w, target_h), Image.BILINEAR))
-    if layer.shape[1] == target_w and layer.shape[0] == target_h:
-        return np.clip(layer.astype(np.float32), 0.0, 1.0)
-    resized = Image.fromarray((np.clip(layer, 0.0, 1.0) * 255.0).astype(np.uint8), mode=mode).resize(
-        (target_w, target_h),
-        Image.BILINEAR,
-    )
-    return np.asarray(resized, dtype=np.float32) / 255.0
-
-
-def _resize_rgba_layer(layer: np.ndarray | None, width: int, height: int) -> np.ndarray | None:
-    if layer is None or layer.ndim != 3 or layer.shape[-1] != 4:
-        return None
-    return _resize_layer(layer, width, height, "RGBA")
-
-
-def _resize_mask_layer(layer: np.ndarray | None, width: int, height: int) -> np.ndarray | None:
-    if layer is None or layer.ndim != 2:
-        return None
-    return _resize_layer(layer, width, height, "L")
-
-
-def load_painting_layer_payload(
-    painting_layer: dict | None,
-    *,
-    erp_width: int | None = None,
-    erp_height: int | None = None,
-) -> dict | None:
-    """The uploaded paint rasters of `painting_layer` (`paint` RGBA, `mask`, and `groups` RGBA by action group), at
-    `erp_width` x `erp_height` when given. Rasters read from 8-bit images stay uint8 (`unit_float` reads them); the
-    arrays are those of `painting_layer` when no size changes and must not be written to."""
-    if not isinstance(painting_layer, dict):
-        return None
-    revision = str(painting_layer.get("revision") or "").strip()
-    target_w = int(erp_width) if erp_width is not None else None
-    target_h = int(erp_height) if erp_height is not None else None
-    paint_erp = painting_layer.get("paint") if isinstance(painting_layer.get("paint"), np.ndarray) else None
-    mask_erp = painting_layer.get("mask") if isinstance(painting_layer.get("mask"), np.ndarray) else None
-    if target_w is not None and target_h is not None:
-        paint_erp = _resize_rgba_layer(paint_erp, target_w, target_h)
-        mask_erp = _resize_mask_layer(mask_erp, target_w, target_h)
-
-    groups = {}
-    raw_groups = painting_layer.get("groups")
-    if isinstance(raw_groups, dict):
-        for action_group_id, layer in raw_groups.items():
-            key = str(action_group_id or "").strip()
-            if not key or not isinstance(layer, np.ndarray):
-                continue
-            resized = _resize_rgba_layer(layer, target_w, target_h) if target_w is not None and target_h is not None else _resize_rgba_layer(layer, layer.shape[1], layer.shape[0])
-            if resized is not None:
-                groups[key] = resized
-
-    if paint_erp is None and mask_erp is None and not groups:
-        return None
-    return {
-        "paint": paint_erp,
-        "mask": mask_erp,
-        "groups": groups,
-        "revision": revision,
-    }
 
 
 def alpha_composite_over_rgb(base_rgb: np.ndarray, paint_rgba: np.ndarray) -> np.ndarray:
