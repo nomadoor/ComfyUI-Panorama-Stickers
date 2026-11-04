@@ -478,3 +478,8 @@ test("the Timeline plays when its span is longer than one frame", () => {
   // A depth grid sequence on `world` (four items) is as long as its items.
   assert.equal(timelinePlayable(timelineSpan(state, { sceneItems: 4 })), true);
 });
+
+test("a background Clip range makes the state timed", () => {
+  assert.equal(isTimed(loadSceneState({ version: 2 })), false);
+  assert.equal(isTimed(loadSceneState({ version: 2, background: { clip: { start: 4 } } })), true);
+});

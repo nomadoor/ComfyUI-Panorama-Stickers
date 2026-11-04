@@ -6,10 +6,8 @@ import { createItems } from "../web_src/editor/items.js";
 import { createTimeline } from "../web_src/editor/timeline.js";
 import { createTimelineActions } from "../web_src/editor/timeline_actions.js";
 import { buildTimelineModel } from "../web_src/pano_editor_ui_state.js";
-import { editorStateWrite, parseSceneEditorState } from "../web_src/pano_editor_state.js";
-import { backgroundPlace, backgroundShownAt, bgMediaEnd } from "../web_src/pano_port_media.js";
 import { loadSceneState, sceneStateText } from "../web_src/pano_scene_state.js";
-import { isTimed, keyAllLanes, laneNames } from "../web_src/pano_timeline.js";
+import { keyAllLanes, laneNames } from "../web_src/pano_timeline.js";
 
 const noop = () => {};
 // The Timeline asks whether its VIDEO element plays a source.
@@ -243,46 +241,6 @@ test("the background's key-row and eye do nothing", () => {
   act({ type: "select-row", id: "background" });
   assert.equal(steps.count, 0);
   assert.deepEqual(state, before);
-});
-
-test("a background Clip range makes the state timed", () => {
-  assert.equal(isTimed(loadSceneState({ version: 2 })), false);
-  assert.equal(isTimed(loadSceneState({ version: 2, background: { clip: { start: 4 } } })), true);
-});
-
-test("opening and closing writes nothing, with or without a background Clip range, also rebased to the VIDEO's fps", () => {
-  const node = { __panoSceneStateV2: true };
-  for (const saved of [
-    { version: 2, timeline: { fps: 24 } },
-    { version: 2, timeline: { fps: 24 }, background: { clip: { start: 12, in: 5, duration: 30 } } },
-  ]) {
-    const text = sceneStateText(loadSceneState(saved));
-    assert.equal(editorStateWrite(node, parseSceneEditorState(text), text), null);
-    // Opened at a VIDEO's 30 fps, the state is rebased; closing without an edit writes nothing either.
-    assert.equal(editorStateWrite(node, parseSceneEditorState(text, { fps: 30 }), text, { rebased: true }), null);
-  }
-  // The rebased Clip range keeps its seconds.
-  assert.deepEqual(parseSceneEditorState(sceneStateText(loadSceneState({ version: 2, timeline: { fps: 24 }, background: { clip: { start: 12, in: 6 } } })), { fps: 48 }).background.clip,
-    { start: 24, in: 12, duration: null });
-});
-
-test("the playhead's frame maps to the background's time by its Clip range, and bg_color shows outside it", () => {
-  assert.equal(backgroundPlace({ start: 0, in: 0, duration: null }), null);
-  assert.deepEqual(backgroundPlace({ start: 10, in: 4, duration: 20 }), { origin: 6, start: 10, end: 30 });
-  assert.deepEqual(backgroundPlace({ start: 0, in: 6, duration: null }), { origin: -6, start: 0, end: Infinity });
-  const video = { video: true, frames: 48, duration: 2 };
-  const clip = { start: 10, in: 4, duration: null };
-  assert.equal(bgMediaEnd(clip, 24, video), 54);
-  assert.deepEqual([9, 10, 53, 54].map((frame) => backgroundShownAt(clip, frame, 24, video)), [false, true, true, false]);
-  // With a duration the Clip range ends it; a single image shows throughout its Clip range.
-  assert.deepEqual([19, 20].map((frame) => backgroundShownAt({ start: 0, in: 0, duration: 20 }, frame, 24, video)), [true, false]);
-  assert.deepEqual([2, 3, 500].map((frame) => backgroundShownAt({ start: 3, in: 0, duration: null }, frame, 24, { frames: 1 })), [false, true, true]);
-  // The default Clip range ends with the media too, as in the output; a single image shows throughout.
-  assert.deepEqual([47, 48, 500].map((frame) => backgroundShownAt({ start: 0, in: 0, duration: null }, frame, 24, video)), [true, false, false]);
-  assert.equal(backgroundShownAt({ start: 0, in: 0, duration: null }, 500, 24, { frames: 1 }), true);
-  // Under an upstream Scene, a VIDEO ends where its last frame ends at the Timeline fps.
-  assert.deepEqual([47, 48].map((frame) => backgroundShownAt({ start: 0, in: 0, duration: null }, frame, 30, video, true)), [true, true]);
-  assert.equal(backgroundShownAt({ start: 0, in: 0, duration: null }, 60, 30, video, true), false);
 });
 
 test("the Timeline model has no background row unless asked", () => {

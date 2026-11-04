@@ -41,7 +41,7 @@ import {
 import { applyStickersNodeSurfaceAction } from "../web_src/pano_stickers_node_surface.js";
 import { cutoutFilmPointToWorldDir, worldDirToCutoutFilmPoint } from "../web_src/pano_cutout_view_math.js";
 import { evaluateCamera, evaluateSceneState } from "../web_src/pano_scene_eval.js";
-import { defaultCamera, loadSceneState, rebaseSceneState } from "../web_src/pano_scene_state.js";
+import { defaultCamera, loadSceneState, rebaseSceneState, sceneStateText } from "../web_src/pano_scene_state.js";
 
 const readFixture = (name) => readFileSync(new URL(`./fixtures/scene_state/${name}.json`, import.meta.url), "utf8");
 const sceneNode = () => ({ __panoSceneStateV2: true });
@@ -966,4 +966,20 @@ test("an aspect written to the Camera is held to the range the state keeps, as t
     setCameraField(camera, 0, "aspect", value);
     assert.equal(camera.aspect, expected);
   }
+});
+
+test("opening and closing writes nothing, with or without a background Clip range, also rebased to the VIDEO's fps", () => {
+  const node = { __panoSceneStateV2: true };
+  for (const saved of [
+    { version: 2, timeline: { fps: 24 } },
+    { version: 2, timeline: { fps: 24 }, background: { clip: { start: 12, in: 5, duration: 30 } } },
+  ]) {
+    const text = sceneStateText(loadSceneState(saved));
+    assert.equal(editorStateWrite(node, parseSceneEditorState(text), text), null);
+    // Opened at a VIDEO's 30 fps, the state is rebased; closing without an edit writes nothing either.
+    assert.equal(editorStateWrite(node, parseSceneEditorState(text, { fps: 30 }), text, { rebased: true }), null);
+  }
+  // The rebased Clip range keeps its seconds.
+  assert.deepEqual(parseSceneEditorState(sceneStateText(loadSceneState({ version: 2, timeline: { fps: 24 }, background: { clip: { start: 12, in: 6 } } })), { fps: 48 }).background.clip,
+    { start: 24, in: 12, duration: null });
 });

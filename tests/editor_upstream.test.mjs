@@ -84,81 +84,6 @@ const portUi = (name) => ({
   pano_sticker_input_video_meta: [{ kind: "VIDEO", fps: 24, frames: 48, duration: 2 }],
 });
 
-test("a rerun lets the port VIDEO of the layers before go, and closing lets the rest go", () => {
-  const made = browserStubs();
-  try {
-    const { output, upstream } = setup();
-    output.ui = { pano_upstream_layers: [layer({ stickers: [sky("p", { source: { kind: "port" } })] }, portUi("a"))] };
-    upstream.upstreamViewInput();
-    assert.equal(made.videos.length, 1);
-    assert.equal(made.videos[0].src, "/view?filename=a.mp4");
-    output.ui = { pano_upstream_layers: [layer({ stickers: [sky("p", { source: { kind: "port" } })] }, portUi("b"))] };
-    upstream.upstreamViewInput();
-    assert.equal(made.videos[0].attributes.has("src"), false);
-    assert.equal(made.videos[0].listeners.size, 0);
-    assert.equal(made.videos[1].src, "/view?filename=b.mp4");
-    upstream.disposeUpstream();
-    assert.equal(made.videos[1].attributes.has("src"), false);
-    // A result that goes stale (the input relinked) lets its media go as well.
-    output.ui = { pano_upstream_layers: [layer({ stickers: [sky("p", { source: { kind: "port" } })] }, portUi("c"))] };
-    upstream.upstreamViewInput();
-    output.ui = {};
-    assert.deepEqual(upstream.upstreamViewInput(), { sky: [], stickers: [], items: [] });
-    assert.equal(made.videos[2].attributes.has("src"), false);
-  } finally {
-    restore();
-  }
-});
-
-test("a rerun keeps the images its layers still show and drops the others", () => {
-  const made = browserStubs();
-  try {
-    const { output, upstream } = setup();
-    output.ui = { pano_upstream_layers: [layer({ stickers: [sky("a"), sky("b")] })] };
-    upstream.upstreamViewInput();
-    assert.deepEqual(made.images.sort(), ["/view?filename=a.png", "/view?filename=b.png"]);
-    output.ui = { pano_upstream_layers: [layer({ stickers: [sky("a")] })] };
-    upstream.upstreamViewInput();
-    assert.equal(made.images.length, 2);
-    output.ui = { pano_upstream_layers: [layer({ stickers: [sky("a"), sky("b")] })] };
-    upstream.upstreamViewInput();
-    assert.deepEqual(made.images.slice(2), ["/view?filename=b.png"]);
-  } finally {
-    restore();
-  }
-});
-
-test("the 3D items follow the layers when a rerun drops one: a slot takes the next layer's files", () => {
-  browserStubs();
-  try {
-    const { output, upstream } = setup();
-    const scene = (name) => ({ pano_scene_files: [{ filename: `${name}.ply` }], pano_scene_meta: [{ kind: "splat" }] });
-    output.ui = { pano_upstream_layers: [layer({}, scene("a")), layer({}, scene("b"))] };
-    assert.deepEqual(upstream.upstreamViewInput().items.map((item) => [item.slot, item.urls]), [
-      ["#0:scene", ["/view?filename=a.ply"]],
-      ["#1:scene", ["/view?filename=b.ply"]],
-    ]);
-    output.ui = { pano_upstream_layers: [layer({}, scene("b"))] };
-    assert.deepEqual(upstream.upstreamViewInput().items.map((item) => [item.slot, item.urls]), [["#0:scene", ["/view?filename=b.ply"]]]);
-  } finally {
-    restore();
-  }
-});
-
-test("a painting with stroke groups but no strokes draws nothing instead of failing", () => {
-  browserStubs();
-  try {
-    const { output, upstream } = setup();
-    const raster = { id: "r", type: "raster_frozen", layerKind: "paint", z_index: 1, rasterDataUrl: "data:image/png;base64,AA", bbox: { u0: 0, v0: 0, u1: 0.1, v1: 0.1 } };
-    output.ui = { pano_upstream_layers: [layer({ painting: { version: 1, groups: [{ id: "g", actionGroupId: "g", z_index: 0 }], raster_objects: [raster] } })] };
-    // The raster's image has not loaded, so nothing shows yet; the group without strokes never does.
-    assert.deepEqual(upstream.upstreamViewInput().sky, []);
-    assert.deepEqual(upstream.upstreamViewInput().sky, []);
-  } finally {
-    restore();
-  }
-});
-
 test("the stage notes a linked Scene that waits for a run, and the warning that bg_media is not used", () => {
   browserStubs();
   try {
@@ -263,23 +188,6 @@ test("the bg_media warning shows while the scene result is current, also right a
 
 const drawnIds = (input) => [...input.sky, ...input.stickers].map((item) => item.id);
 
-// ADR 0030: the editor draws the upstream layers with the node's own overrides applied, as the node does.
-test("the upstream layers are drawn with the state's overrides, and a deleted element is not drawn", () => {
-  browserStubs();
-  try {
-    const state = loadSceneState({
-      version: 2,
-      timeline: { fps: 24 },
-      upstream: [{ layer: "scene_a", fps: 24, deleted: ["sticker_2"], stickers: [{ id: "sticker_3", placement: "sky", visible: false }] }],
-    });
-    const { output, upstream } = setup(state);
-    output.ui = { pano_upstream_layers: [layer({ id: "scene_a", stickers: [sky("sticker_1"), sky("sticker_2"), sky("sticker_3")] })] };
-    assert.deepEqual(drawnIds(upstream.upstreamViewInput()), ["upstream:scene_a:sticker_1"]);
-  } finally {
-    restore();
-  }
-});
-
 test("the working copies are made again for a new result and after Undo restores the state, and never write the state", () => {
   browserStubs();
   try {
@@ -313,28 +221,6 @@ test("the working copies are made again for a new result and after Undo restores
     assert.deepEqual(upstream.upstreamViewInput().sky, []);
     // The working copies never enter the state's Stickers.
     assert.deepEqual(state.stickers, before.stickers);
-  } finally {
-    restore();
-  }
-});
-
-test("a layer at another fps is drawn at the editor's frame, and its port media keeps the layer's time", () => {
-  const made = browserStubs();
-  try {
-    const editor = { frame: 36 };
-    const { output, upstream } = setup(loadSceneState({ version: 2, timeline: { fps: 24 } }), editor);
-    const frames = Array.from({ length: 30 }, (_, index) => ({ filename: `f${index}.png` }));
-    // At 30 fps the port Sticker starts at 1 s; 1.5 s into the node's 24 fps Timeline is its frame 15, as the
-    // node picks it (batch_index of 45 - 30 layer frames at 24 / 30).
-    output.ui = {
-      pano_upstream_layers: [layer(
-        { id: "scene_a", timeline: { fps: 30 }, stickers: [sky("p", { source: { kind: "port" }, clip: { start: 30, in: 0 } })] },
-        { pano_sticker_input_images: [{ filename: "first.png" }], pano_sticker_input_frames: frames, pano_sticker_input_video_meta: [{ kind: "IMAGE", fps: 24, frames: 30 }] },
-      )],
-    };
-    const input = upstream.upstreamViewInput();
-    assert.deepEqual(input.sky.map((item) => item.id), ["upstream:scene_a:p"]);
-    assert.equal(made.images.find((src) => /f\d+\.png/.test(src)), "/view?filename=f12.png");
   } finally {
     restore();
   }

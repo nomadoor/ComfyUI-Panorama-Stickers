@@ -15,6 +15,7 @@ import {
   SPLAT_TO_SCENE,
   boundingSphere,
   cameraFrustumSegments,
+  cameraFrustumShape,
   planeCorners,
   planeOutlineSegments,
   cameraTrajectory,
@@ -500,20 +501,22 @@ test("the grid spacing follows the content size by powers of ten", () => {
 
 test("a Camera's frustum spans its hFOV and aspect, with a mark on its up side", () => {
   const camera = { position: [1, 2, 3], yaw_deg: 0, pitch_deg: 0, roll_deg: 0, hFOV_deg: 90, aspect: 2 };
-  const segments = cameraFrustumSegments(camera, 2);
-  assert.equal(segments.length, 11);
-  closeVec(segments[0][0], [1, 2, 3]);
-  closeVec(segments[0][1], [-1, 1, 1]);
-  closeVec(segments[2][1], [3, 3, 1]);
-  assert.ok(segments[9][0][1] > 3);
+  const { apex, outline, spokes, top, lens } = cameraFrustumShape(camera, 2);
+  assert.equal(lens, false);
+  closeVec(apex, [1, 2, 3]);
+  assert.equal(outline.length, 4);
+  assert.deepEqual(spokes, [0, 1, 2, 3]);
+  closeVec(outline[0], [-1, 1, 1]);
+  closeVec(outline[2], [3, 3, 1]);
+  assert.equal(top.length, 3);
+  assert.ok(top[1][1] > 3);
 });
 
 // A lens Camera's mark goes through its lens like its edge, so only the plain one is a flat triangle to measure.
 test("a Camera's up mark keeps its shape whatever the aspect", () => {
   const shape = (aspect, curve) => {
     const camera = { position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0, roll_deg: 0, hFOV_deg: 60, aspect, curve };
-    const segments = cameraFrustumSegments(camera, 1);
-    const [left, apex, right] = segments.slice(-3).map(([a]) => a);
+    const [left, apex, right] = cameraFrustumShape(camera, 1).top;
     return (apex[1] - left[1]) / (right[0] - left[0]);
   };
   const wide = shape(16 / 9);
@@ -1184,8 +1187,10 @@ test("a depth grid loads DEPTH_GRID_PREFETCH items ahead, and its color comes fr
 // 180° no pyramid could show.
 test("a lens Camera's frustum follows the rays of its image's edges", () => {
   const camera = { position: [1, 2, 3], yaw_deg: 0, pitch_deg: 0, roll_deg: 0, hFOV_deg: 300, aspect: 1.5, curve: 0.3 };
-  const segments = cameraFrustumSegments(camera, 2);
-  const ends = segments.flat().filter((point) => point.some((value, axis) => value !== camera.position[axis]));
+  const shape = cameraFrustumShape(camera, 2);
+  assert.equal(shape.lens, true);
+  const ends = [...shape.outline.filter(Boolean), ...(shape.top ?? [])];
+  assert.ok(ends.length > 4);
   const angles = ends.map((point) => {
     const d = point.map((value, axis) => value - camera.position[axis]);
     assert.ok(Math.abs(Math.hypot(...d) - 2) < 1e-9, "every edge point is `length` out along its ray");
