@@ -913,22 +913,22 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     else if (action === "shortcuts") view.shortcuts = !view.shortcuts;
   }
 
-  // Escape with no view drag to let go (docs/studio-ui.md "閉じ方"): the Sky / World choice, the list of shortcuts, the
-  // Keyframe selection, then the object's, then the editor closes.
+  // Escape with no view drag to let go (docs/studio-ui.md "閉じ方"): Clear's question, the Sky / World choice, the list
+  // of shortcuts, a painting tool, the Keyframe selection, then the object's, then the editor closes.
   function onEscape() {
-    // Clear's question is answered "Cancel".
+    // Step 4: Clear's question is answered "Cancel".
     if (view.confirm) {
       answerClear(false);
       return;
     }
-    // [add-drop] Step 3: the Sky / World choice closes, placing nothing.
+    // [add-drop] Step 5: the Sky / World choice closes, placing nothing.
     if (addFiles.escape()) return;
-    // Step 4: the list of shortcuts closes.
+    // Step 6: the list of shortcuts closes.
     if (view.shortcuts) {
       view.shortcuts = false;
       return;
     }
-    // Step 5: the Custom color's popover closes, then a painting tool goes back to Cursor.
+    // Step 7: the Custom color's popover closes, then a painting tool goes back to Cursor.
     if (tools.colorStart) {
       closeColor(tools, true);
       syncTools();

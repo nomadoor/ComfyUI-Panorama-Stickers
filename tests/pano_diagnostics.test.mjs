@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
@@ -15,7 +14,7 @@ import {
   watchThreeView,
 } from "../web_src/pano_diagnostics.js";
 import { createPanoEditorExtension } from "../web_src/pano_editor_extension.js";
-import { EDITOR_FILES } from "./editor_source.mjs";
+import { readWebSource, webSourceFiles } from "./editor_source.mjs";
 
 function fakeElement(tag) {
   const listeners = new Map();
@@ -555,12 +554,11 @@ test("the setting is off by default and the export command is in the Extensions 
 });
 
 test("the suite makes its canvases and VIDEO elements through the diagnostics factories", () => {
-  const files = readdirSync(new URL("../web_src/", import.meta.url))
-    .filter((name) => name.endsWith(".js") && name !== "pano_diagnostics.js")
-    .concat(EDITOR_FILES.filter((name) => name.startsWith("editor/")));
-  assert.ok(files.includes("pano_editor.js"));
+  // Every frontend file, wherever it sits, so the rule holds when a file is split or moved.
+  const files = webSourceFiles().filter((name) => name !== "pano_diagnostics.js");
+  assert.ok(files.includes("pano_editor.js") && files.includes("editor/modal_events.js"));
   for (const name of files) {
-    const source = readFileSync(new URL(`../web_src/${name}`, import.meta.url), "utf8");
+    const source = readWebSource(name);
     assert.doesNotMatch(source, /createElement\??\.?\(\s*["'](canvas|video)["']/, name);
     assert.doesNotMatch(source, /new OffscreenCanvas\(/, name);
   }

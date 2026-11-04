@@ -122,28 +122,3 @@ def sample_cutout_from_sampling_map(erp_layer: np.ndarray, sampling_map: dict) -
     if valid is not None:
         sampled[~valid] = 0.0
     return sampled
-
-
-def cutout_from_erp(
-    erp_rgb: np.ndarray,
-    yaw_deg: float,
-    pitch_deg: float,
-    h_fov_deg: float,
-    v_fov_deg: float,
-    roll_deg: float,
-    out_w: int,
-    out_h: int,
-    coverage_deg: int = 360,
-) -> np.ndarray:
-    sampling_map = build_cutout_sampling_map(
-        erp_rgb.shape,
-        yaw_deg,
-        pitch_deg,
-        h_fov_deg,
-        v_fov_deg,
-        roll_deg,
-        out_w,
-        out_h,
-        coverage_deg,
-    )
-    return sample_cutout_from_sampling_map(erp_rgb, sampling_map)

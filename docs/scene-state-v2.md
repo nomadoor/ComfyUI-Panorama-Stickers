@@ -61,7 +61,7 @@ Python と JS の両方の test が同じファイルを読む。Python と JS �
 パノラマの角度規約（`core/math.py` の `camera_basis`・`ray_directions`・`dir_to_lon_lat`・`lon_lat_to_erp`、JS は `web_src/pano_camera_math.js`）：
 
 - 角度の座標は +X が右、+Y が上、+Z が正面（左手系）。World の glTF 座標とは Z が逆で、変換は上の一か所だけで行う。
-- yaw（経度）は `atan2(x, z)`。0 が正面、+90 が右、−90 が左、±180 が背面（ERP の左右の端の継ぎ目）。範囲に丸めて表すときは −180 以上 180 未満（`wrap_yaw_deg`）。状態の yaw は丸めない（下の Lane の規則）。
+- yaw（経度）は `atan2(x, z)`。0 が正面、+90 が右、−90 が左、±180 が背面（ERP の左右の端の継ぎ目）。範囲に丸めて表すときは −180 以上 180 未満（`core/state.py` の `_wrap_yaw`）。状態の yaw は丸めない（下の Lane の規則）。
 - pitch（緯度）は −90〜90 で、0 が水平線、+90 が天頂。
 - ERP の画像は、左から右へ経度 −180〜180（`coverage` 180 では −90〜90）、上から下へ緯度 90〜−90。画素の中心で標本化する。
 - Camera の向きは `Ry(yaw) @ Rx(−pitch) @ Rz(roll)`。正の yaw は右を、正の pitch は上を向き、正の roll は画像を時計回りに回す。同じ基底を、Camera は見る側として、`sky` の Sticker は空に貼る側として使うので、正の roll で Camera の写す絵は時計回りに回り、`sky` の Sticker の画像は中から見て反時計回りに回る。
@@ -101,7 +101,7 @@ Python と JS の両方の test が同じファイルを読む。Python と JS �
 | `timeline.fps` | 数値 | `24.0` | 0 以下は既定値。1〜1000 に寄せる（`TIMELINE_FPS_MIN`・`TIMELINE_FPS_MAX`）。記録された Timeline fps |
 | `timeline.length` | 整数 または `null` | `null` | エディタでの長さの上書き。1 未満は `null`。10,000,000 を超える値は 10,000,000 に寄せる（`TIMELINE_LENGTH_MAX`。`TIMELINE_FRAME_MAX` と同じ値なので、高い fps に再基準化しても長さの秒は縮まない）。`null` なら入力から決める（`docs/studio-node.md` の「Scene の組み立てと撮影の入口」） |
 | `camera` | オブジェクト | 既定の Camera | Camera（下記）。欠け・`null`・オブジェクトでない値は既定の Camera（下記「既定の Camera」）として読む。Panorama Studio の Camera はいつも一台ある（ADR 0048。ADR 0029 の「`null` は Camera が無い」を置き換える） |
-| `camera.aspect` | 数値 | `1.0` | 0 以下は既定値。Camera の画面の幅 ÷ 高さ。`projection` が `erp` のときは使わない。1/2048〜2048 に寄せる（`scene_state.py` の `camera_aspect`・`CAMERA_ASPECT_LIMIT`、`pano_scene_state.js` の `cameraAspect`・`CAMERA_ASPECT_LIMIT`。フィクスチャ `camera_aspect`）。新しい UI の出力の大きさ（`docs/studio-node.md`。`STUDIO_MAX_OUTPUT_SIDE` 8192、短い辺は `multiple`（8 以上）より小さくならない）では、比が 8192 ÷ 8 ＝ 1024 より細いと短い辺は `multiple` に張り付くので、2048 より細い比は出力の大きさを変えない（範囲の外の値を端に寄せても出力は同じ）。切り替えまでの今の出力（上限 4096、短い辺 2 画素）でも、2048 は `2 : 4096` の比なので同じく変えない。プリセット（1:1・4:3・3:2・16:9 とその縦向き）、インスペクタの Aspect の欄（0.25〜4、`CAMERA_ASPECT_MIN`・`CAMERA_ASPECT_MAX`）はこの中にある。Frame の比の入力（任意の正の数の組）と v1 の Cutout の読み替え（FOV 1〜179 からの比で、最大約 13,131）はこの範囲に寄せ、寄せても出力は変わらない |
+| `camera.aspect` | 数値 | `1.0` | 0 以下は既定値。Camera の画面の幅 ÷ 高さ。`projection` が `erp` のときは使わない。1/2048〜2048 に寄せる（`scene_state.py` の `camera_aspect`・`CAMERA_ASPECT_LIMIT`、`pano_scene_state.js` の `cameraAspect`・`CAMERA_ASPECT_LIMIT`。フィクスチャ `camera_aspect`）。新しい UI の出力の大きさ（`docs/studio-node.md`。`STUDIO_MAX_OUTPUT_SIDE` 8192、短い辺は `multiple`（8 以上）より小さくならない）では、比が 8192 ÷ 8 ＝ 1024 より細いと短い辺は `multiple` に張り付くので、2048 より細い比は出力の大きさを変えない（範囲の外の値を端に寄せても出力は同じ）。プリセット（1:1・4:3・3:2・16:9 とその縦向き）、インスペクタの Aspect の欄（0.25〜4、`CAMERA_ASPECT_MIN`・`CAMERA_ASPECT_MAX`）はこの中にある。Frame の比の入力（任意の正の数の組）と v1 の Cutout の読み替え（FOV 1〜179 からの比で、最大約 13,131）はこの範囲に寄せ、寄せても出力は変わらない |
 | `camera.projection` | `"perspective"` または `"erp"` | `"perspective"` | それ以外は既定値。撮り方のモードで、Keyframe を持たない。使う人が選ぶ（表示名は `erp` が Panorama、`perspective` が Frame。ADR 0048）。モードを変えても、もう一方のモードの値（`fov`・`aspect`・`curve`・`erp_range`）は保つ。`erp` は Camera の位置と回転から ERP を撮り、`fov` と `aspect` と `curve` を読まない。`perspective` は Camera の画像で、レンズの曲線 `curve`（κ）で直線の像から魚眼までをつなぐ（`docs/render-contract.md` の「カメラのレンズ」） |
 | `camera.erp_range` | `360` または `180` | `360` | それ以外は既定値。Panorama モードで撮る範囲（180 は Camera の前方の半球）。Keyframe を持たない。`perspective` では読まない。背景の範囲（Panorama Studio の `background_range`）とは独立（ADR 0048） |
 | `camera.visible` | 真偽値 | `true` | 真偽値でなければ既定値。`false` は Camera を置いたまま非表示にする。表示だけの切り替えで、Panorama Studio は非表示の Camera でも同じに撮る（ADR 0048。下記） |

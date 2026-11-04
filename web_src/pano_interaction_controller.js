@@ -3,11 +3,11 @@ import { PANO_FOV_WHEEL_STEP_DEG, readWheelDirection } from "./pano_wheel.js";
 
 const DEG2RAD = Math.PI / 180;
 
-export const PANO_DRAG_SENSITIVITY = 0.12;
-export const PANO_WHEEL_STEP = PANO_FOV_WHEEL_STEP_DEG;
-export const PANO_FOV_MIN = 35;
-export const PANO_FOV_MAX = 140;
-export const PANO_INITIAL_FOV = 100;
+const PANO_DRAG_SENSITIVITY = 0.12;
+const PANO_WHEEL_STEP = PANO_FOV_WHEEL_STEP_DEG;
+const PANO_FOV_MIN = 35;
+const PANO_FOV_MAX = 140;
+const PANO_INITIAL_FOV = 100;
 export const PANO_INERTIA_DAMPING = 5.5;
 export const PANO_INERTIA_START_SPEED = 20;
 export const PANO_INERTIA_STOP_SPEED = 0.8;

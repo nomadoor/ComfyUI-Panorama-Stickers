@@ -24,7 +24,7 @@
 | fps と長さの欄（上限、リセット、目盛り） | — | `pano_timeline.js` `enteredTimelineFps`・`enteredTimelineLength`・`timelineTicks`、`web_src/components/PanoTimeline.vue` `lengthText` | `pano_timeline.test.mjs`、`pano_editor_ui_state.test.mjs` |
 | 再生できるか（Timeline の長さ `timelineSpan` が 1 フレームより長い。エディタとノード上の表示で同じ。`isTimed`・`ownerTimed` はタイムラインを自動で開くかに使う） | — | `pano_timeline.js` `timelinePlayable`・`timelineSpan`・`isTimed`・`ownerTimed`、`web_src/studio/timeline_model.js`、`web_src/pano_node_playback.js` `createNodePlayback` | `pano_timeline.test.mjs`、`pano_node_playback.test.mjs`、`editor_background_clip.test.mjs` |
 | Space キー | — | `web_src/editor/keyboard.js` `onSpaceKey`・`onSpaceKeyUp` | `pano_timeline.test.mjs` |
-| 行の並びと形（Camera・背景・`scene`・ペイントの行、目の場所、`port` の Sticker のバー） | — | `pano_editor_ui_state.js` `buildTimelineModel`、`PanoTimeline.vue` | `pano_editor_ui_state.test.mjs`、`editor_background_clip.test.mjs` |
+| 行の並びと形（Camera・背景・`scene`・ペイントの行、目の場所、`port` の Sticker のバー） | — | 新しい UI は `web_src/studio/timeline_model.js`、旧 UI は `pano_editor_ui_state.js` `buildTimelineModel`・`PanoTimeline.vue` | `pano_editor_ui_state.test.mjs`、`editor_background_clip.test.mjs` |
 | 目のアイコン | — | `timeline_actions.js` の `toggle-visible`、`buildTimelineModel` の `hideable` | `pano_editor_ui_state.test.mjs`、`editor_upstream.test.mjs`、`editor_background_clip.test.mjs`（`hideable`） |
 | ドラッグ中の更新を 1 フレームにまとめる | — | `web_src/pano_frame_batch.js` `createFrameBatch` | `tests/pano_frame_batch.test.mjs`、`editor_background_clip.test.mjs` |
 | 編集せずに閉じたときに `state_json` を書かない、読めない `state_json` を空の状態で上書きしない | — | `pano_editor_state.js` `sameEditorStateText`・`editorStateWrite` | `pano_editor_state.test.mjs` |

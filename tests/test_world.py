@@ -5,8 +5,6 @@ import pytest
 
 from comfyui_pano_suite.core.math import camera_basis
 from comfyui_pano_suite.core.world import (
-    camera_from_camera_info,
-    camera_info_from_camera,
     pano_to_world,
     panorama_angles,
     quaternion_to_rotation,
@@ -99,119 +97,7 @@ def test_quaternion_matches_a_rotation_about_world_y():
     assert _same_rotation(quaternion_to_rotation(quaternion), world_rotation(90.0, 0.0, 0.0))
 
 
-def test_camera_info_round_trips_through_the_state_camera():
-    camera = {
-        "position": [1.5, -0.25, 3.0],
-        "yaw_deg": 37.0,
-        "pitch_deg": -28.0,
-        "roll_deg": 19.0,
-        "hFOV_deg": 90.0,
-    }
-    camera_info = camera_info_from_camera(camera, aspect=16.0 / 9.0)
-
-    assert camera_info["cameraType"] == "perspective"
-    assert camera_info["zoom"] == 1.0
-    assert np.isclose(camera_info["aspect"], 16.0 / 9.0)
-    assert camera_info["position"] == {"x": 1.5, "y": -0.25, "z": 3.0}
-    target = np.array([camera_info["target"][axis] for axis in "xyz"])
-    forward = -world_rotation(37.0, -28.0, 19.0)[:, 2]
-    assert np.allclose(target, np.array(camera["position"]) + forward, atol=1e-6)
-    expected_vfov = math.degrees(2.0 * math.atan(math.tan(math.radians(45.0)) * 9.0 / 16.0))
-    assert np.isclose(camera_info["fov"], expected_vfov)
-
-    restored = camera_from_camera_info(camera_info, aspect=16.0 / 9.0)
-    assert np.allclose(restored["position"], camera["position"])
-    for key in ("yaw_deg", "pitch_deg", "roll_deg", "hFOV_deg"):
-        assert np.isclose(restored[key], camera[key], atol=1e-4), key
-
-
-def test_camera_info_vertical_fov_and_zoom_become_the_horizontal_fov_for_the_capture_aspect():
-    camera_info = {
-        "position": {"x": 0.0, "y": 0.0, "z": 0.0},
-        "target": {"x": 0.0, "y": 0.0, "z": -1.0},
-        "zoom": 2.0,
-        "cameraType": "perspective",
-        "fov": 60.0,
-    }
-    camera = camera_from_camera_info(camera_info, aspect=2.0)
-
-    vertical_half = math.atan(math.tan(math.radians(30.0)) / 2.0)
-    expected = math.degrees(2.0 * math.atan(math.tan(vertical_half) * 2.0))
-    assert np.isclose(camera["hFOV_deg"], expected)
-
-
-def test_camera_info_without_quaternion_looks_at_its_target_with_world_up():
-    camera_info = {
-        "position": {"x": 1.0, "y": 2.0, "z": 3.0},
-        "target": {"x": 2.0, "y": 2.0, "z": 3.0},
-        "zoom": 1.0,
-        "cameraType": "perspective",
-        "fov": 50.0,
-    }
-    camera = camera_from_camera_info(camera_info, aspect=1.0)
-
-    assert camera["position"] == [1.0, 2.0, 3.0]
-    # World +X is screen right at zero rotation, so looking at +X is yaw +90.
-    assert np.allclose(
-        (camera["yaw_deg"], camera["pitch_deg"], camera["roll_deg"]),
-        (90.0, 0.0, 0.0),
-        atol=1e-6,
-    )
-    assert np.isclose(camera["hFOV_deg"], 50.0)
-
-
-def test_orthographic_camera_info_is_rejected():
-    camera_info = {
-        "position": {"x": 0.0, "y": 0.0, "z": 5.0},
-        "target": {"x": 0.0, "y": 0.0, "z": 0.0},
-        "zoom": 1.0,
-        "cameraType": "orthographic",
-    }
-    with pytest.raises(ValueError):
-        camera_from_camera_info(camera_info, aspect=1.0)
-
-
-OPTIONAL_KEY_CASES = [
-    # Missing fov and zoom take core's 35 degrees and 1.
-    (
-        {"position": {"x": 0.0, "y": 0.0, "z": 0.0}, "target": {"x": 0.0, "y": 0.0, "z": -1.0}, "cameraType": "perspective"},
-        (0.0, 0.0, 0.0, 35.0),
-    ),
-    # Zero fov and zoom are treated as missing, as core does.
-    (
-        {"position": {"x": 0.0, "y": 0.0, "z": 0.0}, "target": {"x": 1.0, "y": 0.0, "z": 0.0}, "fov": 0, "zoom": 0, "cameraType": "perspective"},
-        (90.0, 0.0, 0.0, 35.0),
-    ),
-    # An empty quaternion falls back to the look-at target; a missing cameraType is perspective.
-    (
-        {"position": {"x": 0.0, "y": 0.0, "z": 0.0}, "target": {"x": -1.0, "y": 0.0, "z": 0.0}, "quaternion": {}, "fov": 50.0, "zoom": 1.0},
-        (-90.0, 0.0, 0.0, 50.0),
-    ),
-    # A null quaternion also uses the target.
-    (
-        {"position": {"x": 0.0, "y": 0.0, "z": 0.0}, "target": {"x": 0.0, "y": 1.0, "z": -1.0}, "quaternion": None, "zoom": 1.0, "cameraType": "perspective", "fov": 40.0},
-        (0.0, 45.0, 0.0, 40.0),
-    ),
-]
-
-
-@pytest.mark.parametrize("camera_info,expected", OPTIONAL_KEY_CASES)
-def test_optional_camera_info_keys_take_core_defaults(camera_info, expected):
-    camera = camera_from_camera_info(camera_info, aspect=1.0)
-    assert np.allclose(
-        (camera["yaw_deg"], camera["pitch_deg"], camera["roll_deg"], camera["hFOV_deg"]),
-        expected,
-        atol=1e-6,
-    )
-
-
 def test_camera_looking_straight_down_keeps_yaw_zero():
-    look_at = camera_from_camera_info(
-        {"position": {"x": 0.0, "y": 2.0, "z": 0.0}, "target": {"x": 0.0, "y": 0.0, "z": 0.0}, "cameraType": "perspective"},
-        aspect=1.0,
-    )
-    assert (look_at["yaw_deg"], look_at["pitch_deg"], look_at["roll_deg"]) == (0.0, -90.0, 0.0)
-
     # Camera looking down -Y with its up axis toward World -Z: a -90 degree turn about +X.
     straight_down = np.array([[1.0, 0.0, 0.0], [0.0, 0.0, 1.0], [0.0, -1.0, 0.0]])
     assert np.allclose(panorama_angles(straight_down), (0.0, -90.0, 0.0))

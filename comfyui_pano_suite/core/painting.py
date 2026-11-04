@@ -8,32 +8,7 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 from .cache import CACHE
-from .cutout import build_cutout_sampling_map, cutout_from_erp, sample_cutout_from_sampling_map
-from .math import unit_float
 from .paint_state import normalize_painting_state
-
-
-def _composite_group_layers_to_rgba(groups: dict | None, width: int, height: int) -> np.ndarray | None:
-    if not isinstance(groups, dict) or not groups:
-        return None
-    canvas = None
-    for layer in groups.values():
-        if not isinstance(layer, np.ndarray):
-            continue
-        src = _resize_rgba_layer(layer, width, height)
-        if src is None:
-            continue
-        if canvas is None:
-            canvas = _empty_rgba(width, height)
-        src = np.clip(unit_float(src), 0.0, 1.0)
-        dst = canvas
-        sa = src[..., 3:4]
-        da = dst[..., 3:4]
-        out_a = sa + da * (1.0 - sa)
-        safe = np.where(out_a > 0, out_a, 1.0)
-        dst[..., :3] = (src[..., :3] * sa + dst[..., :3] * da * (1.0 - sa)) / safe
-        dst[..., 3:4] = out_a
-    return canvas
 
 
 def _hash_render_payload(payload) -> str:
@@ -696,18 +671,6 @@ def _composite_one_raster_object(
         _composite_raster_patch(paint, mask, patch, layer_kind, y0, y1, left, right)
 
 
-def _composite_raster_objects(
-    paint: np.ndarray, mask: np.ndarray, raster_objects: list, width: int, height: int
-) -> None:
-    """Composite raster_frozen objects onto paint/mask ERP arrays in-place."""
-    ordered = sorted(
-        [obj for obj in raster_objects if isinstance(obj, dict)],
-        key=lambda obj: float(obj.get("z_index") or 0.0),
-    )
-    for obj in ordered:
-        _composite_one_raster_object(paint, mask, obj, width, height)
-
-
 def _stroke_opacity(stroke: dict) -> float:
     """The stroke's opacity, 0 to 1, as the editor's paint engine reads it (`stroke.opacity ?? 1`): only a missing one is
     1, so an opacity of 0 draws nothing."""
@@ -881,52 +844,6 @@ def render_painting_to_erp(painting_state: dict, width: int, height: int) -> tup
     ))
 
 
-def _warp_erp_layer_to_cutout(
-    erp_layer: np.ndarray,
-    shot: dict,
-    width: int,
-    height: int,
-    coverage: int = 360,
-    sampling_map: dict | None = None,
-) -> np.ndarray:
-    yaw = float(shot.get("yaw_deg", 0.0))
-    pitch = float(shot.get("pitch_deg", 0.0))
-    roll = float(shot.get("roll_deg", 0.0))
-    h_fov = max(0.1, float(shot.get("hFOV_deg", 90.0)))
-    v_fov = max(0.1, float(shot.get("vFOV_deg", 60.0)))
-    coverage_value = 180 if int(coverage) == 180 else 360
-    active_sampling_map = sampling_map
-    if active_sampling_map is None:
-        active_sampling_map = build_cutout_sampling_map(
-            erp_layer.shape,
-            yaw,
-            pitch,
-            h_fov,
-            v_fov,
-            roll,
-            width,
-            height,
-            coverage_value,
-        )
-    if erp_layer.ndim == 2:
-        rgb = np.repeat(np.clip(erp_layer[..., None].astype(np.float32), 0.0, 1.0), 3, axis=2)
-        warped = sample_cutout_from_sampling_map(rgb, active_sampling_map)
-        return np.clip(warped[..., 0], 0.0, 1.0).astype(np.float32)
-    if erp_layer.ndim == 3 and erp_layer.shape[2] in {3, 4}:
-        src = np.clip(erp_layer[..., :3].astype(np.float32), 0.0, 1.0)
-        if erp_layer.shape[2] == 4:
-            alpha = np.clip(erp_layer[..., 3].astype(np.float32), 0.0, 1.0)
-            premult = src * alpha[..., None]
-            warped_premult = sample_cutout_from_sampling_map(premult, active_sampling_map)
-            warped_alpha = _warp_erp_layer_to_cutout(alpha, shot, width, height, coverage_value, sampling_map=active_sampling_map)
-            safe_alpha = np.maximum(warped_alpha[..., None], 1e-6)
-            warped_rgb = np.where(warped_alpha[..., None] > 1e-6, warped_premult / safe_alpha, 0.0)
-            return np.dstack([np.clip(warped_rgb, 0.0, 1.0), np.clip(warped_alpha, 0.0, 1.0)]).astype(np.float32)
-        warped_rgb = sample_cutout_from_sampling_map(src, active_sampling_map)
-        return np.clip(warped_rgb, 0.0, 1.0).astype(np.float32)
-    return _empty_rgba(width, height) if erp_layer.ndim == 3 else _empty_mask(width, height)
-
-
 def _resize_layer(layer: np.ndarray, width: int, height: int, mode: str) -> np.ndarray:
     """A layer (0..1 float, or uint8 as an 8-bit image is read) at `width` x `height`, bilinear through 8 bits as the
     editor's uploads are. An 8-bit layer stays 8-bit (the same size is the layer itself); a float one is float."""
@@ -996,88 +913,6 @@ def load_painting_layer_payload(
         "groups": groups,
         "revision": revision,
     }
-
-
-def render_painting_to_cutout(
-    painting_state: dict,
-    shot: dict,
-    width: int,
-    height: int,
-    *,
-    erp_width: int = 2048,
-    erp_height: int = 1024,
-    painting_layer_payload: dict | None = None,
-    coverage: int = 360,
-    sampling_map: dict | None = None,
-) -> tuple[np.ndarray, np.ndarray]:
-    def _sampling_map_matches_erp_shape(active_map: dict | None, expected_w: int, expected_h: int) -> bool:
-        if not isinstance(active_map, dict):
-            return False
-        return (
-            int(active_map.get("erp_w", 0)) == int(expected_w)
-            and int(active_map.get("erp_h", 0)) == int(expected_h)
-        )
-
-    coverage_value = 180 if int(coverage) == 180 else 360
-    active_sampling_map = sampling_map
-    if active_sampling_map is None:
-        active_sampling_map = build_cutout_sampling_map(
-            (erp_height, erp_width),
-            float(shot.get("yaw_deg", 0.0)),
-            float(shot.get("pitch_deg", 0.0)),
-            float(shot.get("hFOV_deg", 90.0)),
-            float(shot.get("vFOV_deg", 60.0)),
-            float(shot.get("roll_deg", 0.0)),
-            width,
-            height,
-            coverage_value,
-        )
-    payload = load_painting_layer_payload(
-        painting_layer_payload,
-        erp_width=erp_width,
-        erp_height=erp_height,
-    )
-    payload_has_layers = payload is not None and (
-        payload.get("paint") is not None
-        or payload.get("mask") is not None
-        or bool(payload.get("groups"))
-    )
-    if payload_has_layers:
-        paint_erp = None if payload.get("paint") is None else unit_float(payload["paint"])
-        mask_erp = None if payload.get("mask") is None else unit_float(payload["mask"])
-        group_paint_erp = _composite_group_layers_to_rgba(payload.get("groups"), erp_width, erp_height)
-        if paint_erp is None and isinstance(group_paint_erp, np.ndarray):
-            paint_erp = group_paint_erp
-        if paint_erp is None:
-            paint_erp = _empty_rgba(erp_width, erp_height)
-        if mask_erp is None:
-            mask_erp = _empty_mask(erp_width, erp_height)
-        paint = _warp_erp_layer_to_cutout(paint_erp, shot, width, height, coverage_value, sampling_map=active_sampling_map)
-        mask = _warp_erp_layer_to_cutout(mask_erp, shot, width, height, coverage_value, sampling_map=active_sampling_map)
-        return paint, mask
-    if not painting_state_has_renderables(painting_state):
-        return _empty_rgba(width, height), _empty_mask(width, height)
-    normalized = normalize_painting_state(painting_state)
-    # Render from stroke records with 2× supersampling for antialiasing.
-    ss_w = min(max(64, int(erp_width)) * 2, 8192)
-    ss_h = min(max(32, int(erp_height)) * 2, 4096)
-    ss_sampling_map = active_sampling_map
-    if not _sampling_map_matches_erp_shape(ss_sampling_map, ss_w, ss_h):
-        ss_sampling_map = build_cutout_sampling_map(
-            (ss_h, ss_w),
-            float(shot.get("yaw_deg", 0.0)),
-            float(shot.get("pitch_deg", 0.0)),
-            float(shot.get("hFOV_deg", 90.0)),
-            float(shot.get("vFOV_deg", 60.0)),
-            float(shot.get("roll_deg", 0.0)),
-            width,
-            height,
-            coverage_value,
-        )
-    paint_erp, mask_erp = render_painting_to_erp(normalized, ss_w, ss_h)
-    paint = _warp_erp_layer_to_cutout(paint_erp, shot, width, height, coverage_value, sampling_map=ss_sampling_map)
-    mask = _warp_erp_layer_to_cutout(mask_erp, shot, width, height, coverage_value, sampling_map=ss_sampling_map)
-    return paint.astype(np.float32), mask.astype(np.float32)
 
 
 def alpha_composite_over_rgb(base_rgb: np.ndarray, paint_rgba: np.ndarray) -> np.ndarray:

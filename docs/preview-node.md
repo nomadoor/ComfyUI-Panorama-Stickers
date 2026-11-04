@@ -20,8 +20,8 @@ Python のファイルは `comfyui_pano_suite/` の下にある。
 
 - Python のクラスは `PanoramaPreviewSceneNode`、表示名は「Panorama Preview」。旧 `PanoramaPreview` はこのノードに置き換えたので、表示名を「Panorama Preview (legacy)」にして `is_deprecated` を付ける。登録は続けるので、旧 Preview を使う保存済みのワークフローは読めて動くが、ノードの検索と追加には出ない（ADR 0029 の「旧ノードは残す」はそのまま。2026-10-11、オーナー承認）。表示名と deprecated の印は `tests/test_node_schema_contract.py` が見る。
 - `source` は `io.MatchType`（テンプレート `source`、IMAGE・VIDEO・`PANO_SCENE`）で、出力は入力と同じ型の同じオブジェクトを返す。`is_output_node` は `True`。
-- 二つ目の入力 `coverage`（`360`・`180`）は、新しい UI への切り替え（ADR 0044・0048）で `background_range` に名前を変える（意味は同じ：IMAGE・VIDEO の
-  パノラマが球のどこまでを覆うか。Panorama Studio の `background_range` と同じ名前と意味。`source` は変えない）。旧 Panorama Preview (legacy) の `coverage` は変えない。
+- 二つ目の入力は `background_range`（`360`・`180`、既定 `360`。ADR 0048）。意味は IMAGE・VIDEO のパノラマが球のどこまでを覆うかで、
+  Panorama Studio の `background_range` と同じ名前と意味。旧 Panorama Preview (legacy) の入力は `coverage` のまま変えない。
 - Timeline は `source` から Studio と同じ `_decide_timeline` で決める。IMAGE と VIDEO は既定の状態（`timeline.fps` 24）に対して決める。`PANO_SCENE` の Timeline はその `fps`・`times`・`frames`。
 - IMAGE と VIDEO の実行結果の `ui` は旧 Preview と同じキー（`pano_input_images`、2 フレーム以上なら `pano_videos`・`pano_video_meta`）。`pano_video_meta` の fps は Timeline fps、`frames` は Timeline の長さ。
   - 画面（ノード上の表示と大きなウィンドウ）は IMAGE の絵をこの `pano_input_images` から読む。つないだ先のファイルは、実行の前と、これが読めないときだけ（`docs/adr/0003-external-input-sticker-failure-boundaries.md` の Amendment 2026-03-11。ウィンドウは `docs/studio-ui.md` の「Preview のウィンドウ」）。
@@ -83,7 +83,7 @@ Scene を見る表示（ビューア）は、エディタの部品を、エデ�
 
 #### 大きなウィンドウ
 
-- `Open viewer`（ノード上）か、Legacy canvas の `Open Preview` ボタンで開く。`PanoModal.vue` の `viewer` の配置（`modal_shell_presets.js`、`pano_scene_viewer_window.js`）で、エディタのモーダルの外枠をそのまま使う（AGENTS.md の「Modal UI must be Vue」）。
+- `Open viewer`（ノード上）か、ノード上の表示を付けられなかったときに残る `Open Preview` のボタン（widget。表示を付けたときは隠す、`pano_editor_extension.js`）で開く。`PanoModal.vue` の `viewer` の配置（`modal_shell_presets.js`、`pano_scene_viewer_window.js`）で、エディタのモーダルの外枠をそのまま使う（AGENTS.md の「Modal UI must be Vue」）。
 - 置くもの：ステージ、右下の視点の操作のボタン群（`PanoFloatingRight.vue`。空間の群（3DoF | 6DoF と、Frame Selected と同じ場所の `Frame all`。選べるものが無いので、いつも全体を収める）、Reset View、Hide Grid、Fullscreen）、下端の再生の帯、閉じるボタンだけ。サイドパネル、ツール、インスペクタ、タイムライン、Undo、選択メニューは出さない。
 - キー：エディタと同じ WASD・QE の移動（`docs/editor-interaction.md` の「キーボードの移動」）と、Space の再生と一時停止。Escape で閉じる。
 - 開くと、ノードと同じ視点と再生の位置から続ける。閉じるとノードはウィンドウの最後の視点と位置を引き継ぐ。ウィンドウはエディタと同じく自分の WebGL の context を持ち、開いている間だけ使う。
@@ -111,6 +111,6 @@ Python（Preview の `ui`）と JS（分けた視点と上流の層のモジュ�
 - data の流れ：`PANO_SCENE` → `_preview_scene_ui`（`_upstream_ui`）→ 実行結果の `ui` → `pano_upstream_layers.js`（上流の層）＋ `pano_space_navigation.js`（視点）→ `createSceneViewer` → ノード上は共有のビュー、ウィンドウは `PanoModal.vue` の `viewer`。出力のポートには入力をそのまま返す。
 - 一致を守る test：`tests/test_pano_scene_preview.py` の `test_a_pano_scene_preview_gives_the_upstream_keys`（Studio に同じ `PANO_SCENE` をつないだときの上流のキーと同じ値、出力が入力と同じオブジェクト、描画しない）、`tests/pano_editor_extension.test.mjs`（新しい id に表示が付き、`image` 出力が増えない）、`tests/pano_editor_ui_state.test.mjs`（`viewer` でサイドパネル・タイムライン・ツール・ギズモ・選択が出ない、右下の群の位置が変わらない）、`tests/pano_scene_viewer.test.mjs`（最後に操作したノードだけ描き直す、ほかは写した絵のまま、ノードごとの視点と再生の位置、要素の読み込みの知らせ、404 の問い合わせ直し）、`tests/editor_space_navigation.test.mjs`（分けた視点の操作）、`tests/browser/scene_viewer.spec.js`（2 つの Preview が 1 つの WebGL context で描け、6DoF で動かしても描ける）。
 - 考えた別案：ADR 0041。
-- `coverage` 入力は `execute` では読まない（フロントエンドのウィジェットが読む）。`PANO_SCENE` のときは `PanoSceneValue.coverage` が正で、ウィジェットの値は使わない。
+- `background_range` 入力は `execute` では読まない（フロントエンドのウィジェットが読む）。`PANO_SCENE` のときは `PanoSceneValue.coverage` が正で、ウィジェットの値は使わない。
 - MatchType はバックエンドで型を検証しないので、`source` が IMAGE（4 次元のテンソル）・VIDEO・`PanoSceneValue` のどれでもなければ `TypeError` にする。
 - 旧 Preview 用の `ensurePanoramaPreviewImageOutput`（`web_src/pano_editor_extension.js`）は、足りない `image` 出力を足す。新しいノード（`PanoramaPreviewNode`）には適用しない（適用すると MatchType の `output` とは別に `image` 出力が増える）。

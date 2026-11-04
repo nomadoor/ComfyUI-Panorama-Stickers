@@ -51,7 +51,7 @@ Python のファイルは `comfyui_pano_suite/` の下にある。
   - `splat_files`・`mesh_files`：3D ファイルから読んだ SPLAT・MESH。`scene`・`sticker` の入力の 3D ファイルも、3D ファイルの `file` の Source も、エディタ用ファイルの問い合わせ（`docs/studio-node.md`）も、同じキー（パス・更新時刻・大きさ）で引く。同じキーを同時に求める呼び出し（実行中のプロンプトと経路）は、キーごとのロックで待ち合わせ、1 回だけ読む（`MemoryCache.get_or_put`）。`scene_files` も同じく 1 回だけ書く。
 - 持たないもの：
   - 旧 `PanoramaStickers` の背景のバッチ。プレビューの MP4 を作る間だけ持つ。
-  - 旧 Cutout のペイントの描画結果（本番の呼び出し元がない）と、アップロード済みのペイントの拡大縮小の結果（元の画像は `image_file` にあり、拡大縮小はパスごとに一度で軽い）。
+  - アップロード済みのペイントの拡大縮小の結果（元の画像は `image_file` にあり、拡大縮小はパスごとに一度で軽い）。
 - 素材の型：8 ビットの画像から読んだもの（Sticker の `file` の Source、アップロード済みのペイント）は uint8 のまま持ち（`StickerSource.rgba`、`load_painting_layer_payload` の戻り値）、使うところで 0〜1 の float32 にする（GPU では uint8 で上げてからデバイスで 255 で割る。`core/math.py` の `unit_float`・`unit_float_tensor`）。元の値が 8 ビットなので、値は float で持っていたときと同じになる。IMAGE の入力（float のテンソル）は float のまま持つ。
 
 ## 一時ファイル

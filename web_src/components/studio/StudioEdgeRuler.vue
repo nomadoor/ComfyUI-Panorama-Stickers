@@ -29,9 +29,8 @@ const props = defineProps({
   minor: { type: Number, default: 1 },
   major: { type: Number, default: 10 },
   labelPrecision: { type: Number, default: 0 },
-  // The decimals of the values sent, and the value an arrow key moves (default: a small tick).
+  // The decimals of the values sent (an arrow key moves the value by a small tick).
   precision: { type: Number, default: 2 },
-  step: { type: Number, default: 0 },
   name: { type: String, default: "" },
   valueText: { type: String, default: "" },
   // The value text's width in digits (frame_layout.js CAMERA_RULERS valueChars), enough for the widest value.
@@ -155,7 +154,7 @@ function onKeydown(event) {
   if (event.shiftKey && props.snap > 0) {
     next = roundValue(rulerSnapStep(props.value, dir, props.snap, { min: props.min, max: props.max }), props.precision);
   } else {
-    const step = (props.step || props.minor) * (event.shiftKey ? FINE_FACTOR : 1);
+    const step = props.minor * (event.shiftKey ? FINE_FACTOR : 1);
     next = roundValue(Math.min(props.max, Math.max(props.min, props.value + dir * step)), props.precision);
   }
   if (next === props.value) return;

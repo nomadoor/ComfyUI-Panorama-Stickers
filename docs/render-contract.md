@@ -191,7 +191,7 @@ RTX 4070 Ti、1 フレーム、κ = 0.5・hFOV 140°（4K は 4096 × 2048 相�
   - ERP の出力：幅は出力の幅、高さは `coverage` 360 なら出力の高さ、180 なら幅の半分。旧ノードが重ねの層を描いた大きさと同じで、Camera の回転の無い 360 の出力は画素どうしで標本化する。2 のべき乗にせず、4096 の上限も `bg_width` も使わない。
   - 透視投影の出力：幅は次の大きいほうを 4096 までに抑えたもの、高さは幅の半分。ストロークを 8192 の ERP に描くと、描き直すたびに CPU で約 7 秒・3GB を使うためである。
     - 画素の細かさが出力の中央の画素とほぼ同じになる幅（`π × 出力の幅 ÷ g_κ(hFOV/2)`。κ = 1 では `tan`）を 2 のべき乗に切り上げたもの（64 以上）。FOV をアニメーションさせても、この幅が変わるときだけ描き直す。
-    - `bg_media` があるとき、その画素の細かさの 360 の幅（`bg_width` × 360 ÷ `coverage`）。
+    - `bg_media` があるとき、その画素の細かさの 360 の幅（`bg_width` × 360 ÷ `bg_coverage`）。
   - Sky のキー（`_sky_key`）は、この大きさと、`sky` の Sticker の値と素材のフレーム。Camera の向きのキーに Projection を入れる。キーが変われば層の並びを組み直し（ペイントの層と MASK は、`device` に置いたものを `cache` の `sky_paint` に大きさごとに持ち、大きさが変わるまで使い回す）、向きのキーが変われば写し直す。
 - 旧 Cutout は ERP の画素 i を `u = i`（画素の中心ではなく端）とみなして標本化していたので、Panorama Studio の透視投影の出力は旧 Cutout から ERP の半画素ずれる（`docs/legacy-baselines.md`）。
 - `bg_media` は `coverage` の範囲の ERP とみなし、Sky と同じく Camera の向きで写す。360 では 360 の ERP、180 では旧ノード・Cutout と同じく Scene の前方（経度 −90°〜90°）の半球の ERP とする。180 の出力で、Camera を回して `bg_media` の半球の外が見える画素は、`bg_media` がない画素として `bg_color` になる。Sky と MASK はその上にも描く。出力の範囲が Camera の前方の半球だけであることは変わらない。
@@ -300,8 +300,8 @@ RTX 4070 Ti、1 フレーム、κ = 0.5・hFOV 140°（4K は 4096 × 2048 相�
 - 出力が変わるもの（意図した変更）：ノードの出力では、赤道から離れたストロークが横に `1 ÷ cos φ` 倍太くなり、エディタで見る太さと揃う
   （今はノードだけが細い）。基準画像：`stickers_paint`（緯度およそ 9〜36° の二本。横に 1〜24% 太くなり、点の少ない古いストローク（3 点）の
   曲がり方も大円に寄って、はっきり形が変わる大きな見た目の変化）は焼き直した（`docs/legacy-baselines.md`）。`stickers_paint_mask`・
-  `stickers_paint_interleaved`・`studio_paint_interleaved`（緯度 9° 以内）は、許容の中で変わらなかった。`render_painting_to_cutout` は同じ描き方を通るが、旧 Cutout の基準画像
-  （`cutout_single_shot`）はペイントを持たないので変わらない。ペイントを持たない基準画像は変わらない。エディタでは、緯度 87° より極に近い所、
+  `stickers_paint_interleaved`・`studio_paint_interleaved`（緯度 9° 以内）は、許容の中で変わらなかった。
+  ペイントを持たない基準画像は変わらない。エディタでは、緯度 87° より極に近い所、
   極の近くで点が大きく離れた区間、古い UI の Unwrap の表示で描いたストローク（横に広がるようになる）が変わる
   （`tests/fixtures/paint_rasters_golden.json` の `paint_group:g1` は変わらなかった）。
 

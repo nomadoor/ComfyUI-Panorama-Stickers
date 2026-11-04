@@ -13,15 +13,12 @@ import { CAMERA_FRAME_MARGIN, frameRect, rulerStrips } from "../../studio/frame_
 const props = defineProps({
   // The output's width / height.
   aspect: { type: Number, default: 16 / 9 },
-  margin: { type: Object, default: () => CAMERA_FRAME_MARGIN },
-  // Dim the picture outside the box.
-  dim: { type: Boolean, default: true },
 });
 const emit = defineEmits(["rect"]);
 
 const root = ref(null);
 const size = ref({ width: 0, height: 0 });
-const rect = computed(() => frameRect(size.value.width, size.value.height, props.aspect, props.margin));
+const rect = computed(() => frameRect(size.value.width, size.value.height, props.aspect, CAMERA_FRAME_MARGIN));
 const rulers = computed(() => rulerStrips(rect.value));
 // The dim outside the box: four bands (above, below, left, right), so nothing needs a shadow (docs/design.md).
 const dims = computed(() => {
@@ -59,9 +56,7 @@ watch(rect, (value) => emit("rect", { ...value }), { immediate: true });
 
 <template>
   <div ref="root" class="pano-studio-camera-frame" data-camera-frame>
-    <template v-if="dim">
-      <div v-for="(style, index) in dims" :key="index" class="pano-studio-camera-frame-dim" :style="style" />
-    </template>
+    <div v-for="(style, index) in dims" :key="index" class="pano-studio-camera-frame-dim" :style="style" />
     <div class="pano-studio-camera-frame-box" :style="boxStyle" data-frame-box>
       <slot :rect="rect" :rulers="rulers" />
     </div>

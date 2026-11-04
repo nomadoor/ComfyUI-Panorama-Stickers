@@ -12,8 +12,6 @@
 //               items of its 3D content, and `animations`, its animated 3D files' clips as media.animations)
 //   media       what timelineSpan knows of the inputs (pano_timeline.js autoTimelineLength), `port` the node's own port
 //               Sticker's media meta
-//   spanOf      optional (ctx, openClip) => span, in place of timelineSpan(state, media) (for an upstream layer's
-//               Clip range that sets the Auto length)
 //   background  null, or { end, video } while the node's own bg_media has a row (`end` where its media ends, or null;
 //               `video` whether a VIDEO is linked to it, before its length is known too)
 //   sceneRow    whether the node's own 3D content is linked (pano_upstream.js ownSceneLinked)
@@ -54,7 +52,6 @@ export const SCENE_ROW = "scene";
 
 // The Timeline's span (the output's length) for ctx, `openClip` counted as a Clip range without a duration.
 export function spanOf(ctx, openClip = null) {
-  if (ctx.spanOf) return ctx.spanOf(ctx, openClip);
   return timelineSpan(ctx.state, { ...(ctx.media || {}), camera: true, openClip });
 }
 

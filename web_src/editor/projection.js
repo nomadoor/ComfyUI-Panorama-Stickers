@@ -24,16 +24,6 @@ export function createProjection(deps) {
     return studio && cameraShoots() && state.camera.projection === "erp";
   }
 
-  function stickerCornerOrderSanity() {
-    const test = {
-      yaw_deg: 0, pitch_deg: 0, hFOV_deg: 20, vFOV_deg: 20, rot_deg: 0,
-    };
-    const dirs = stickerCornersDir(test);
-    if (!dirs || dirs.length !== 4) return false;
-    // top-left y should be >= bottom-left y in world-up axis
-    return dirs[0].y >= dirs[3].y;
-  }
-
   // The panorama view's three.js camera. The overlays and hit testing use its projection, so they
   // match the drawn frame.
   function currentViewCamera() {
@@ -345,7 +335,7 @@ export function createProjection(deps) {
     },
     isErpCamera, currentViewCamera, currentViewProjection, projectDir, screenToWorldDir, getUnwrapRect,
     projectDirUnwrap, getStickerFrame, stickerDirFromFrame, stickerCornersDir, stickerSampleDir,
-    stickerCornerOrderSanity, projectEditorPoints, projectErpPointToEditor, frameLocalPointToWorldDir,
+    projectEditorPoints, projectErpPointToEditor, frameLocalPointToWorldDir,
     erpPointToWorldDir, worldDirToFrameLocalPoint, projectLassoPointsToCurrentView,
     projectErpLassoPointsToFrameRect, screenPos, screenPosCss, screenPosToErpPoint, screenPosToFrameAsErpPoint,
     deviceRect,

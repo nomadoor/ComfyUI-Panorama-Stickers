@@ -30,7 +30,7 @@ import StudioTimelineHead from "./StudioTimelineHead.vue";
 //
 // Props: the working state (a snapshot it never changes), the selection { row, keys }, the playhead frame, whether
 // it plays, the loop switch, read-only, the upstream layers, and what the Timeline needs of the inputs (`media`,
-// `spanOf`, `background`, `sceneRow`, `fpsLocked`); timeline_model.js describes each. `collapsed` folds it to its bar.
+// `background`, `sceneRow`, `fpsLocked`); timeline_model.js describes each. `collapsed` folds it to its bar.
 //
 // Events:
 //   seek(frame, { phase })   "start" / "move" / "end" of a ruler scrub (move at most once per frame), "jump" for prev /
@@ -61,7 +61,6 @@ const props = defineProps({
   readOnly: { type: Boolean, default: false },
   upstream: { type: Array, default: () => [] },
   media: { type: Object, default: () => ({}) },
-  spanOf: { type: Function, default: null },
   background: { type: Object, default: null },
   sceneRow: { type: Boolean, default: false },
   fpsLocked: { type: Boolean, default: false },
@@ -77,7 +76,6 @@ const ctx = computed(() => ({
   state: props.state,
   upstream: props.upstream,
   media: props.media,
-  spanOf: props.spanOf,
   background: props.background,
   sceneRow: props.sceneRow,
   fpsLocked: props.fpsLocked,
