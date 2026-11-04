@@ -401,8 +401,11 @@ stylesheet の読み込みは上の「この文書が owner である規則」�
 
 - 地・文字・線の色は、`design-drafts` の見本（`specimen-11.html`・`timeline-2.html`・`frame-4.html`）の値をそのまま持つ。ComfyUI の
   フロントエンドの役割の色（`--interface-stroke` など）には乗せない（ComfyUI のダークの線は明るく、窓と浮かせる部品の縁が目立ったため。
-  持ち主の決定、2026-10-30）。ライトとダークは ComfyUI のテーマ（`<html>` の `.dark-theme`）で切り替える。値の置き場所は一か所
-  （`web/pano_studio.css` の `.pano-studio` と `.dark-theme .pano-studio`）。
+  持ち主の決定、2026-10-30）。ライトとダークは ComfyUI のテーマで切り替える。ComfyUI のフロントエンドは 1.58 から `<html>` の
+  `color-scheme`（`dark` / `light`）でテーマを示すので、新しい UI の色の値は CSS の `light-dark()` で持ち、受け継いだ
+  `color-scheme` で決まる（OS の設定は見ない。何も示されていなければライト）。1.58 より前のフロントエンドは `<html>`（または
+  `<body>`）に `.dark-theme` を付けるので、そのときは `.pano-studio` を `color-scheme: dark` にする。値の置き場所は一か所
+  （`web/pano_studio.css` の `.pano-studio`）。test は `tests/browser/studio_theme.spec.js`。
 - 灰の段は Geist の色の段の役目に倣う：部品の地 / hover / 押したとき / 線 / 線の hover / 強い塗り / 二次の文字 / 主の文字。
   選ばれている状態は、色ではなく灰の強い塗りで示す。
 

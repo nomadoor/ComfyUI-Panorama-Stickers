@@ -348,15 +348,15 @@ test("a pressed button shows no outline and no focus fill, even refocused; the k
     const style = getComputedStyle(el);
     return { focused: document.activeElement === el, outline: style.outlineStyle, background: style.backgroundColor };
   });
-  const fill = await page.locator(".pano-studio-editor").evaluate((el) => getComputedStyle(el).getPropertyValue("--studio-fill-hover").trim());
-  const rgb = await page.evaluate((hex) => {
+  // The hover fill token (light-dark(light, dark)) resolved inside the editor, where its color-scheme applies.
+  const rgb = await page.locator(".pano-studio-editor").evaluate((el) => {
     const probe = document.createElement("i");
-    probe.style.color = hex;
-    document.body.append(probe);
+    probe.style.color = "var(--studio-fill-hover)";
+    el.append(probe);
     const value = getComputedStyle(probe).color;
     probe.remove();
     return value;
-  }, fill);
+  });
   for (const selector of ['[data-action="grid"]', '[data-action="output-fold"]']) {
     await page.locator(selector).click();
     await page.mouse.move(5, 5);
