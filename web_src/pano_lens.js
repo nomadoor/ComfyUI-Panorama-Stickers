@@ -2,6 +2,7 @@
 // optical axis lands at `r = f·lens_radius(θ, κ)` from the image center, where `lens_radius(θ, κ) = tan(κθ) ÷ κ`
 // (θ at κ = 0). κ = 1 is the pinhole (rectilinear) image, 0 the equidistant fisheye, 0.5 the stereographic one.
 // comfyui_pano_suite/core/math.py has the same pair; tests/fixtures/lens/ binds the two.
+import { DEG2RAD } from "./pano_camera_math.js";
 
 export const LENS_CURVE_DEFAULT = 1;
 export const LENS_CURVE_MIN = 0;
@@ -17,7 +18,6 @@ export function lensCurveBent(curve) {
   return Math.round(Number(curve) * scale) / scale !== LENS_CURVE_DEFAULT;
 }
 
-const DEG2RAD = Math.PI / 180;
 
 // Below this |κθ| (or |κρ|) the ratios take their series, as core/math.py's do (`_LENS_SERIES`).
 const LENS_SERIES = 1e-4;

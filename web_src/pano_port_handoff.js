@@ -29,6 +29,22 @@ export function portHandoff(value) {
   return { placement: entry.placement, lanes: entry.lanes, fps: timelineFps(entry.fps) };
 }
 
+// Whether the LiteGraph node's input `name` has a link.
+export function isInputConnected(node, name) {
+  const slot = (Array.isArray(node?.inputs) ? node.inputs : []).findIndex((input) => input?.name === name);
+  return slot >= 0 && node.isInputConnected(slot);
+}
+
+// Whether the Pose handoff of a node's result can apply: `sticker` and `sticker_state` are connected.
+export function portHandoffLinked(node) {
+  return isInputConnected(node, "sticker") && isInputConnected(node, "sticker_state");
+}
+
+// The Pose handoff of a node's current result (`value`, its `pano_sticker_handoff`) while it can apply, or null.
+export function nodePortHandoff(node, value) {
+  return portHandoffLinked(node) ? portHandoff(value) : null;
+}
+
 function clone(value) {
   return structuredClone(value);
 }

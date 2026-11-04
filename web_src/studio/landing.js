@@ -2,6 +2,7 @@
 // (docs/space-and-view.md "Add とドロップ", "着く所", "ドラッグ中の印"; the mark's look: docs/design.md "新しい UI の見た目"
 // "大きさ"). Pure: rays, hits and the stage's camera (stage_view.js stageCamera()) in, World values and screen
 // polylines out. add_files.js places with it; StudioDropMarker.vue draws the mark.
+import { RAD2DEG, clamp } from "../pano_camera_math.js";
 import { stickerVfovFromAspect } from "../pano_editor_state.js";
 import { viewProjection } from "../pano_editor_view.js";
 import { NEW_STICKER_HFOV, boxCorners, projectPoint, sceneContentBox, transformPoint } from "../pano_space.js";
@@ -11,7 +12,6 @@ import { groundDepth } from "./stage_view.js";
 import { boxDepth } from "./view_camera.js";
 import { DROP_PREVIEW_BOX, eyeHeight, eyeLengths } from "./view_scale.js";
 
-const RAD2DEG = 180 / Math.PI;
 const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const along = (origin, direction, t) => origin.map((value, axis) => value + direction[axis] * t);
@@ -309,7 +309,6 @@ export function dropLabelPlace({ mark, pointer, size, stage }) {
   const gap = DROP_LOOK.labelGap;
   const margin = DROP_LOOK.labelMargin;
   const { width, height } = size;
-  const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
   const box = markRect(mark) ?? { left: pointer.x, top: pointer.y, right: pointer.x, bottom: pointer.y };
   const fitX = (x) => clamp(x, margin, stage.width - margin - width);
   const fitY = (y) => clamp(y, margin, stage.height - margin - height);

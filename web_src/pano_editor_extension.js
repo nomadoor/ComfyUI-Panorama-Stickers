@@ -7,6 +7,10 @@ import { chainWidgetCallback } from "./pano_widget_callback.js";
 import { VIEW_CONTROLS_SETTING } from "./pano_view_controls.js";
 import { DIAGNOSTICS_EXPORT_COMMAND, DIAGNOSTICS_SETTING } from "./pano_diagnostics.js";
 import { disposeNodeRuntime, editorSession, nodeSurface, peekSceneViewer, previewNode, stateSync } from "./pano_node_bridge.js";
+import { waitForPendingStickerUploads } from "./pano_sticker_operations.js";
+
+// The queue of Sticker operations is pano_sticker_operations.js's; tests/pano_editor_extension.test.mjs still imports it here.
+export { queuePendingStickerOperation } from "./pano_sticker_operations.js";
 
 const STATE_WIDGET = "state_json";
 
@@ -137,47 +141,6 @@ function ensureActionButtonWidget(node, buttonText, callback) {
   widget = node.addWidget("button", buttonText, null, callback);
   if (widget) widget.serialize = false;
   return widget;
-}
-
-async function waitForPendingStickerUploads(node, { tolerateOperationFailure = false } = {}) {
-  const pending = stateSync(node)?.pendingStickerUploads;
-  if (!pending) return;
-  while (pending.size > 0) {
-    const entries = Array.from(pending.entries());
-    if (tolerateOperationFailure) {
-      await Promise.allSettled(entries.map(([, promise]) => promise));
-    } else {
-      await Promise.all(entries.map(([, promise]) => promise));
-    }
-    entries.forEach(([assetId, promise]) => {
-      if (pending.get(assetId) === promise) pending.delete(assetId);
-    });
-  }
-}
-
-export function queuePendingStickerOperation(node, operationId, operation) {
-  if (!node || typeof operation !== "function") {
-    return Promise.reject(new TypeError("A node and sticker operation are required."));
-  }
-  const sync = stateSync(node);
-  const previous = sync.stickerOperationTail;
-  const ready = previous && typeof previous.then === "function"
-    ? previous.catch(() => undefined)
-    : Promise.resolve();
-  const pending = ready.then(() => operation());
-  const tail = pending.catch(() => undefined);
-  sync.stickerOperationTail = tail;
-  sync.pendingStickerUploads.set(operationId, pending);
-  const cleanup = () => {
-    if (sync.pendingStickerUploads.get(operationId) === pending) {
-      sync.pendingStickerUploads.delete(operationId);
-    }
-  };
-  pending.then(cleanup, cleanup);
-  tail.then(() => {
-    if (sync.stickerOperationTail === tail) sync.stickerOperationTail = null;
-  });
-  return pending;
 }
 
 export async function flushPanoStateProducers(node, options = {}) {

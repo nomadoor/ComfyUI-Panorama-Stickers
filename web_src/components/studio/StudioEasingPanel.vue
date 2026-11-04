@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onBeforeUnmount, ref, watch } from "vue";
+import { clamp } from "../../pano_math.js";
 import { formatBezier, parseBezier } from "../../studio/inspector_model.js";
 import StudioResetButton from "./StudioResetButton.vue";
 import StudioSegmented from "./StudioSegmented.vue";
@@ -58,9 +59,8 @@ let drag = null;
 function pointAt(event) {
   const rect = svg.value.getBoundingClientRect();
   const scale = rect.width / props.graphSide;
-  const clamp01 = (v) => Math.min(1, Math.max(0, v));
-  const x = clamp01(((event.clientX - rect.left) / scale - PAD) / inner.value);
-  const y = clamp01(1 - ((event.clientY - rect.top) / scale - PAD) / inner.value);
+  const x = clamp(((event.clientX - rect.left) / scale - PAD) / inner.value, 0, 1);
+  const y = clamp(1 - ((event.clientY - rect.top) / scale - PAD) / inner.value, 0, 1);
   return [Math.round(x * 100) / 100, Math.round(y * 100) / 100];
 }
 

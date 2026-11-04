@@ -8,6 +8,8 @@ const LABEL = "Camera to view";
 // The tooltip of the Camera tab's parts a locked Camera grays (the edge rulers, Frame Selected, the view knobs): the
 // Camera tab has no Lock of the Camera, so it says where to unlock it (ADR 0055, docs/studio-ui.md "Camera タブ").
 export const CAMERA_TAB_LOCKED_TIP = "Locked · Unlock in the 3D tab";
+// The tooltip of what the Camera tab grays whatever the Camera (the left column, the Output window, the view knobs).
+export const CAMERA_TAB_TIP = "Not available in the Camera view";
 
 // The Camera button for a Camera of `projection` ("erp" is Panorama mode), `locked`, in a `readOnly` editor:
 // { disabled, tip }. The Camera tab's disabling is the left column's (StudioToolRail.vue cameraTab).

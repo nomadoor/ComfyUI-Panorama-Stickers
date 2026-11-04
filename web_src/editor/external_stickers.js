@@ -7,13 +7,13 @@ import { clamp, wrapYaw } from "../pano_math.js";
 import {
   handoffRowLanes,
   NO_PORT_HANDOFF_PAIR,
+  nodePortHandoff,
   revertPortHandoffPairLane,
   storedPortState,
   syncPortHandoffPair,
 } from "../pano_port_handoff.js";
 import { isNodeOutputMediaCurrent } from "../pano_preview_video.js";
 import {
-  nodePortHandoff,
   portStickerSyncValue,
   reconcileExternalStickerState,
   reconcilePortStickerState,

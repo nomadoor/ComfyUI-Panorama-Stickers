@@ -19,6 +19,12 @@ export const HANDOFF_INPUT_NAMES = ["sticker", "sticker_state"];
 // `background_range` (ADR 0048), the legacy nodes' `bg_color` and `coverage`. A node has one of each pair.
 export const BACKGROUND_COLOR_WIDGET_NAMES = ["background_color", "bg_color"];
 export const BACKGROUND_RANGE_WIDGET_NAMES = ["background_range", "coverage"];
+// The node's background color widget through `widget(name)` (a widget, or null when the node has none by that name):
+// the one of BACKGROUND_COLOR_WIDGET_NAMES it has. Each caller keeps its own default color.
+export function backgroundColorWidget(widget) {
+  const [name, legacyName] = BACKGROUND_COLOR_WIDGET_NAMES;
+  return widget(name) ?? widget(legacyName);
+}
 
 const CHANNEL_INPUT_NAMES = {
   background: BACKGROUND_INPUT_NAMES,

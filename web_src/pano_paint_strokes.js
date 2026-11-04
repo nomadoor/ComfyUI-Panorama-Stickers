@@ -6,7 +6,7 @@
 // canvases a raster needs; the paint engine's pixels (pano_paint_engine.js) are the caller's.
 import { BRUSH_PRESETS, DEFAULT_BRUSH_PRESET_ID, applyPresetToStroke } from "./pano_brush_presets.js";
 import { createPanoCanvas, releasePanoCanvas } from "./pano_diagnostics.js";
-import { cameraBasis, dot, tangentDirection } from "./pano_camera_math.js";
+import { DEG2RAD, cameraBasis, dot, tangentDirection } from "./pano_camera_math.js";
 import { clamp } from "./pano_math.js";
 import { pixelRangesMeet, rasterObjectPixelRanges } from "./pano_paint_display.js";
 import { directionOfErpPoint, erpPointOfDirection, shortestWrappedDelta, stampHalfWidthPx, strokeErpPath } from "./pano_paint_sphere.js";
@@ -14,7 +14,6 @@ import { normalizePaintingState } from "./pano_paint_types.js";
 
 export { directionOfErpPoint, erpPointOfDirection, shortestWrappedDelta };
 
-const DEG2RAD = Math.PI / 180;
 const lerp = (a, b, t) => a + (b - a) * t;
 
 // --- Colors.

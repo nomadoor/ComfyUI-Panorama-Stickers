@@ -7,6 +7,11 @@ import { FINE_FACTOR } from "./ui_drag.js";
 import { navigationAction } from "./view_input.js";
 import { ROTATE_SNAP_DEG } from "./view_scale.js";
 
+// Whether the page runs on a Mac (or an iPhone / iPad): the list of shortcuts names Cmd and Option there.
+export function isMacPlatform() {
+  return /Mac|iPhone|iPad/.test(globalThis.navigator?.platform || globalThis.navigator?.userAgent || "");
+}
+
 const ctrlOrMeta = (event) => !!(event.ctrlKey || event.metaKey);
 const keyOf = (event) => String(event.key || "");
 

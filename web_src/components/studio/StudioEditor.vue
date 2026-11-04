@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { createBackdropClose } from "../../studio/backdrop.js";
-import { CAMERA_TAB_LOCKED_TIP, cameraButton } from "../../studio/camera_ui.js";
+import { CAMERA_TAB_LOCKED_TIP, CAMERA_TAB_TIP, cameraButton } from "../../studio/camera_ui.js";
 import { cameraOf } from "../../studio/camera_state.js";
 import { liveErpRatio } from "../../studio/erp_preview.js";
 import { cameraRulers, rulerEdit } from "../../studio/frame_layout.js";
@@ -10,7 +10,7 @@ import { buildCameraCard } from "../../studio/inspector_model.js";
 import { TIMELINE_BAR_HEIGHT, loadTimelineHeight, saveTimelineHeight, timelineHeight } from "../../studio/layout.js";
 import { topLine } from "../../studio/notice_line.js";
 import { selectionBar } from "../../studio/selection_bar.js";
-import { shortcutGroups } from "../../studio/shortcuts.js";
+import { isMacPlatform, shortcutGroups } from "../../studio/shortcuts.js";
 import { trackInputMode } from "../../studio/input_modality.js";
 import { inspectorSelection } from "../../studio/session.js";
 import { WORLD_FILE_ACCEPT } from "../../pano_sticker_file_import.js";
@@ -112,7 +112,6 @@ const bar = computed(() => selectionBar({ state: props.view.state, row: props.vi
 // --- The Camera tab (docs/studio-ui.md "Camera タブ"): the frame of the output's ratio (the ERP's in Panorama mode)
 // with the edge rulers, which are the Camera card's rows and send the inspector's edits. Each tick strip has its fixed
 // length, centered on its edge (frame_layout.js rulerStrips, from the frame's slot).
-const CAMERA_TAB_TIP = "Not available in the Camera view";
 const camera = computed(() => cameraOf(props.view.state));
 const panorama = computed(() => camera.value.projection === "erp");
 const frameAspect = computed(() => (panorama.value ? liveErpRatio(camera.value.erp_range) : camera.value.aspect));
@@ -144,7 +143,7 @@ const navOff = computed(() => {
 });
 // --- The list of shortcuts (docs/studio-ui.md "ショートカットの一覧"): what works on the screen now.
 const nav = ref(null);
-const isMac = /Mac|iPhone|iPad/.test(globalThis.navigator?.platform || globalThis.navigator?.userAgent || "");
+const isMac = isMacPlatform();
 const shortcuts = computed(() => shortcutGroups({ tab: props.view.tab, panorama: panorama.value, readOnly: props.view.readOnly, mac: isMac }));
 const helpButton = () => nav.value?.helpButton() ?? null;
 const erpCanvas = ref(null);

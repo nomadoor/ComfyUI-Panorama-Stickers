@@ -310,6 +310,20 @@ def _scalar_lane(keyframes, frames, k, p):
 INTERPOLATIONS = {"position": _position, "rotation": _rotation, "direction": _direction, "size": _size, "lens": _lens}
 
 
+def _left_keyframe(frames, frame):
+    """The index of the last of the sorted Keyframe `frames` at or before `frame` (within FRAME_EPSILON): the one
+    that starts the segment `frame` is in."""
+    return bisect_right(frames, frame + FRAME_EPSILON) - 1
+
+
+def segment_easing(keyframes, frame):
+    """The Easing of the segment of the (sorted, non-empty) `keyframes` that `frame` is in, from a Keyframe to the
+    next; None before the first Keyframe and from the last one on (each less FRAME_EPSILON)."""
+    if not keyframes[0]["frame"] - FRAME_EPSILON <= frame < keyframes[-1]["frame"] - FRAME_EPSILON:
+        return None
+    return keyframes[_left_keyframe([key["frame"] for key in keyframes], frame)]["easing"]
+
+
 def _evaluate_lane(owner, name, frame):
     """The value of the Lane `name` of `owner` at a fractional frame of its own time base."""
     keyframes = owner[name]["keyframes"]
@@ -320,7 +334,7 @@ def _evaluate_lane(owner, name, frame):
     if frame >= keyframes[-1]["frame"] - FRAME_EPSILON:
         return _copy_value(keyframes[-1]["value"])
     frames = [key["frame"] for key in keyframes]
-    k = bisect_right(frames, frame + FRAME_EPSILON) - 1
+    k = _left_keyframe(frames, frame)
     left = keyframes[k]
     if abs(frame - left["frame"]) <= FRAME_EPSILON or left["easing"] == "hold":
         return _copy_value(left["value"])

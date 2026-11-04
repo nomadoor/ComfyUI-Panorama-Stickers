@@ -105,9 +105,14 @@ def _clamp(value, lo, hi):
     return max(lo, min(hi, value))
 
 
+def round_frame(value):
+    """`value` (frames) to the nearest whole frame, a half up: floor(value + 0.5)."""
+    return math.floor(value + 0.5)
+
+
 def _frame(value):
     out = _number(value, None)
-    return None if out is None else int(math.floor(out + 0.5))
+    return None if out is None else int(round_frame(out))
 
 
 def _event_frame(value):
@@ -318,6 +323,8 @@ def is_3d_file_source(source) -> bool:
     return isinstance(filename, str) and filename.lower().endswith(FILE_3D_EXTENSIONS)
 
 
+# A 3D file's animation when its state has none (ADR 0043): the first clip at speed 1. A state does not hold it.
+DEFAULT_ANIMATION = {"clip": None, "speed": 1.0}
 # A 3D file's glTF animation (ADR 0043): the clip by name (None: the first) and the speed, 0.1 to 10.
 ANIMATION_SPEED_MIN = 0.1
 ANIMATION_SPEED_MAX = 10.0
@@ -330,8 +337,8 @@ def _animation(raw):
     if not isinstance(raw, dict):
         return None
     clip = raw.get("clip")
-    animation = {"clip": clip if isinstance(clip, str) else None, "speed": _clamp(_number(raw.get("speed"), 1.0), ANIMATION_SPEED_MIN, ANIMATION_SPEED_MAX)}
-    return None if animation == {"clip": None, "speed": 1.0} else animation
+    animation = {"clip": clip if isinstance(clip, str) else None, "speed": _clamp(_number(raw.get("speed"), DEFAULT_ANIMATION["speed"]), ANIMATION_SPEED_MIN, ANIMATION_SPEED_MAX)}
+    return None if animation == DEFAULT_ANIMATION else animation
 
 
 def _sticker(raw):

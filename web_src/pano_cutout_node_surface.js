@@ -16,12 +16,9 @@ import {
   shortestAngleDeltaRad,
   wrapRollDeg,
 } from "./pano_cutout_view_math.js";
-import { cameraBasis, dot } from "./pano_camera_math.js";
+import { DEG2RAD, RAD2DEG, cameraBasis, dot } from "./pano_camera_math.js";
 import { clamp, wrapYaw } from "./pano_math.js";
 import { createNodeSurfaceSession } from "./pano_node_surface_session.js";
-
-const DEG2RAD = Math.PI / 180;
-const RAD2DEG = 180 / Math.PI;
 
 export const CUTOUT_NODE_FRAME_PADDING = Object.freeze({
   top: 58,

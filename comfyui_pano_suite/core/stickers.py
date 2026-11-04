@@ -7,8 +7,9 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from .cache import CACHE
-from .math import DEG2RAD, camera_basis, unit_float
+from .cache import CACHE, file_key
+from .math import DEG2RAD, camera_basis, over_rgb, over_rgba, unit_float
+from .state import normalize_coverage
 
 try:
     import folder_paths
@@ -29,8 +30,7 @@ def _decode_rgba8(source) -> np.ndarray:
 def read_image_file_rgba8(path: Path) -> np.ndarray:
     """An image file as straight-alpha RGBA uint8 (h, w, 4), decoded once per version of the file (its path,
     modification time, and size) and kept read-only in the shared cache (`cache.py`)."""
-    stat = path.stat()
-    return CACHE.get_or_put("image_file", (str(path), stat.st_mtime_ns, stat.st_size), lambda: _decode_rgba8(path))
+    return CACHE.get_or_put("image_file", file_key(path), lambda: _decode_rgba8(path))
 
 
 def _load_dataurl_rgba8(v: str) -> np.ndarray:
@@ -155,18 +155,11 @@ def _sample_rgba_bilinear(img: np.ndarray, x: np.ndarray, y: np.ndarray) -> np.n
 
 
 def _alpha_over_straight(dst_rgb: np.ndarray, src_rgba: np.ndarray) -> np.ndarray:
-    src_a = src_rgba[..., 3:4]
-    src_rgb = src_rgba[..., :3]
-    return src_rgb * src_a + dst_rgb * (1.0 - src_a)
+    return over_rgb(dst_rgb, src_rgba[..., :3], src_rgba[..., 3:4])
 
 
 def _alpha_over_rgba(dst_rgba: np.ndarray, src_rgba: np.ndarray) -> np.ndarray:
-    src_a = np.clip(src_rgba[..., 3:4], 0.0, 1.0)
-    dst_a = np.clip(dst_rgba[..., 3:4], 0.0, 1.0)
-    out_a = src_a + dst_a * (1.0 - src_a)
-    numer_rgb = src_rgba[..., :3] * src_a + dst_rgba[..., :3] * dst_a * (1.0 - src_a)
-    safe_out_a = np.maximum(out_a, 1e-6)
-    out_rgb = np.where(out_a > 1e-6, numer_rgb / safe_out_a, 0.0)
+    out_rgb, out_a = over_rgba(dst_rgba[..., :3], np.clip(dst_rgba[..., 3:4], 0.0, 1.0), src_rgba[..., :3], np.clip(src_rgba[..., 3:4], 0.0, 1.0))
     return np.concatenate([out_rgb, out_a], axis=-1)
 
 
@@ -181,13 +174,6 @@ def _iter_u_ranges(center_u: float, half_u: int, w: int):
         yield (0, end - w)
     else:
         yield (start, end)
-
-
-def _normalize_coverage(value) -> int:
-    try:
-        return 180 if int(value) == 180 else 360
-    except Exception:
-        return 360
 
 
 def _normalize_runtime_sticker_image(st: dict, assets: dict, base_dir: Path | None = None) -> np.ndarray | None:
@@ -325,7 +311,7 @@ def render_stickers_to_rgba_erp(
     assets_override: dict | None = None,
     coverage_override: int | None = None,
 ) -> np.ndarray:
-    coverage = _normalize_coverage(coverage_override if coverage_override is not None else state.get("coverage"))
+    coverage = normalize_coverage(coverage_override if coverage_override is not None else state.get("coverage"))
     canvas = np.zeros((output_h, output_w, 4), dtype=np.float32)
     stickers = stickers_override if isinstance(stickers_override, list) else state.get("stickers", [])
     assets = assets_override if isinstance(assets_override, dict) else state.get("assets", {})
@@ -383,6 +369,6 @@ def compose_single_sticker_to_canvas_erp(
         int(canvas.shape[1]),
         int(canvas.shape[0]),
         quality=quality,
-        coverage=_normalize_coverage(coverage),
+        coverage=normalize_coverage(coverage),
     )
     return canvas

@@ -10,7 +10,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { ICON } from "../../icons.js";
 import { createBackdropClose } from "../../studio/backdrop.js";
 import { trackInputMode } from "../../studio/input_modality.js";
-import { shortcutGroups } from "../../studio/shortcuts.js";
+import { isMacPlatform, shortcutGroups } from "../../studio/shortcuts.js";
 import { topLine } from "../../studio/notice_line.js";
 import StudioFloatGroup from "./StudioFloatGroup.vue";
 import StudioIconButton from "./StudioIconButton.vue";
@@ -53,7 +53,7 @@ const backdrop = createBackdropClose();
 function onBackdropUp(event) {
   if (backdrop.up(event)) props.controller.close();
 }
-const isMac = /Mac|iPhone|iPad/.test(globalThis.navigator?.platform || globalThis.navigator?.userAgent || "");
+const isMac = isMacPlatform();
 const shortcuts = computed(() => shortcutGroups({ context: "preview", playable: props.playback.video, mac: isMac }));
 const helpButton = () => nav.value?.helpButton() ?? null;
 // The window has no top line but Set orbit center's waiting one (docs/studio-ui.md "Preview のウィンドウ").

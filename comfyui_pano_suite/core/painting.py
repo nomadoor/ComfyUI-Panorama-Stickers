@@ -8,6 +8,7 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 from .cache import CACHE
+from .math import over_rgb, over_rgba
 from .paint_state import normalize_painting_state
 
 
@@ -345,19 +346,9 @@ def _composite_color_layer(dst: np.ndarray, stroke_alpha: np.ndarray, color_rgb:
     src_a = np.clip(stroke_alpha * max(0.0, min(1.0, float(opacity))), 0.0, 1.0)
     if not np.any(src_a > 1e-6):
         return
-    dst_a = dst[..., 3]
-    out_a = src_a + dst_a * (1.0 - src_a)
-    out_rgb_num = (
-        color_rgb[None, None, :] * src_a[..., None]
-        + dst[..., :3] * dst_a[..., None] * (1.0 - src_a[..., None])
-    )
-    safe_out_a = np.where(out_a > 1e-6, out_a, 1.0)
-    dst[..., :3] = np.where(
-        out_a[..., None] > 1e-6,
-        out_rgb_num / safe_out_a[..., None],
-        0.0,
-    )
-    dst[..., 3] = out_a
+    out_rgb, out_a = over_rgba(dst[..., :3], dst[..., 3:4], color_rgb[None, None, :], src_a[..., None])
+    dst[..., :3] = out_rgb
+    dst[..., 3] = out_a[..., 0]
 
 
 def _erase_from_rgba(dst: np.ndarray, erase_alpha: np.ndarray):
@@ -920,6 +911,5 @@ def alpha_composite_over_rgb(base_rgb: np.ndarray, paint_rgba: np.ndarray) -> np
         return _empty_rgba(paint_rgba.shape[1], paint_rgba.shape[0])[..., :3]
     src = np.clip(base_rgb.astype(np.float32), 0.0, 1.0)
     overlay = np.clip(paint_rgba.astype(np.float32), 0.0, 1.0)
-    alpha = overlay[..., 3:4]
-    out = overlay[..., :3] * alpha + src * (1.0 - alpha)
+    out = over_rgb(src, overlay[..., :3], overlay[..., 3:4])
     return np.clip(out, 0.0, 1.0).astype(np.float32)

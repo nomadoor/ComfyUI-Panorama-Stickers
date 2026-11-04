@@ -1,7 +1,9 @@
 // State v2 (`state_json`) and `sticker_state` loading.
 // The contract is documented in docs/scene-state-v2.md. comfyui_pano_suite/core/scene_state.py
 // must produce the same result for the same input.
+import { DEG2RAD } from "./pano_camera_math.js";
 import { LENS_CURVE_DEFAULT, LENS_CURVE_MAX, LENS_CURVE_MIN } from "./pano_lens.js";
+import { clamp } from "./pano_math.js";
 import { normalizePaintingState } from "./pano_paint_types.js";
 
 export const STATE_VERSION = 2;
@@ -56,10 +58,6 @@ function number(value, fallback) {
 function positive(value, fallback) {
   const out = number(value, fallback);
   return out !== null && out > 0 ? out : fallback;
-}
-
-function clamp(value, lo, hi) {
-  return Math.max(lo, Math.min(hi, value));
 }
 
 function frameNumber(value) {
@@ -542,9 +540,8 @@ function v1Camera(shots) {
   if (!shot) return null;
   const hFov = clamp(number(shot.hFOV_deg, 90), 1, 179);
   const vFov = clamp(number(shot.vFOV_deg, 60), 1, 179);
-  const deg2rad = Math.PI / 180;
   return {
-    aspect: Math.tan(hFov * deg2rad * 0.5) / Math.tan(vFov * deg2rad * 0.5),
+    aspect: Math.tan(hFov * DEG2RAD * 0.5) / Math.tan(vFov * DEG2RAD * 0.5),
     rotation: { value: { yaw_deg: shot.yaw_deg, pitch_deg: shot.pitch_deg, roll_deg: shot.roll_deg } },
     fov: { value: hFov },
   };

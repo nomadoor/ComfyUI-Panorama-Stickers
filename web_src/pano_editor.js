@@ -9,6 +9,7 @@ import {
 } from "./pano_node_preview.js";
 import { createPanoInteractionController } from "./pano_interaction_controller.js";
 import { clamp, wrapYaw } from "./pano_math.js";
+import { VIEW_HFOV_MAX_DEG, VIEW_HFOV_MIN_DEG, VIEW_PITCH_LIMIT_DEG } from "./pano_camera_math.js";
 import { DEFAULT_BRUSH_PRESET_ID } from "./pano_brush_presets.js";
 import { createFrameBatch } from "./pano_frame_batch.js";
 import { DRAW_REASON, createFrameScheduler } from "./pano_frame_scheduler.js";
@@ -651,8 +652,8 @@ async function showEditor(node, type, options = {}) {
     getView: () => ({ yaw: editor.viewYaw, pitch: editor.viewPitch, fov: editor.viewFov }),
     setView: (next) => {
       editor.viewYaw = wrapYaw(Number(next.yaw || 0));
-      editor.viewPitch = clamp(Number(next.pitch || 0), -89.9, 89.9);
-      editor.viewFov = clamp(Number(next.fov || editor.viewFov || DEFAULT_VIEW_HFOV), 35, 140);
+      editor.viewPitch = clamp(Number(next.pitch || 0), -VIEW_PITCH_LIMIT_DEG, VIEW_PITCH_LIMIT_DEG);
+      editor.viewFov = clamp(Number(next.fov || editor.viewFov || DEFAULT_VIEW_HFOV), VIEW_HFOV_MIN_DEG, VIEW_HFOV_MAX_DEG);
     },
     getViewportSize: () => {
       const rect = canvas.getBoundingClientRect();

@@ -47,6 +47,7 @@ ComfyUI の `get_extensions` は `glob.glob(os.path.join(dir, "**/*.js"), recurs
 - `npm run build:web` は古いチャンクを消さない。ハッシュが変わったら古いファイルを消す（`check:web` が報告する）。
 - チャンクの読み込みか WebGL の初期化に失敗したときは、コンソールにエラーを出し、画面にもそのことを表示する。
 - `pano_three_view.js` が import するのは、three.js（`TransformControls` を含む）と、チャンクの中だけで使うモジュール（`pano_pick.js`・`pano_scene_items.js`・`pano_scene_loaders.js`・`pano_spark_views.js`・`pano_depth_grid.js`・`pano_lens_glsl.js`・`pano_ground_grid.js`・`pano_sky_grid.js`・`pano_live_erp.js`・`pano_coarse_grid.js`）だけである。GLTFLoader と Spark は `pano_scene_loaders.js` が読み込む（Spark は動的 import の `loadSpark`）。計算は即時に読み込まれる側（`pano_editor_view.js`）で行い、チャンクが `panorama_suite.js` から import し返さないようにしている。
+- そのためチャンクは、四元数でベクトルを回す計算（`pano_pick.js` の `rotate`、即時の側は `pano_lens.js` `rotateByQuaternion`）とメディアの大きさ（`pano_three_view.js` `mediaSize`、即時の側は `pano_editor_view.js` `mediaSize`）を、意図して自分の写しとして持つ。二つの写しが同じ答えを返すことは `tests/chunk_copies.test.mjs` が守る（`rayBoxDepth` の写しは `tests/pano_ray_box.test.mjs`）。
 - `npm run check:web` は `panorama_suite.js` と `web/.lazy/` の全チャンクを再ビルドした結果と比べ、ビルドが出力しない古いチャンクも報告する。
 - three.js の GLTFLoader は同じチャンクに静的に入れる（チャンクは約 1.0MB、gzip で約 0.22MB）。Spark は別のチャンク（`web/.lazy/spark.module-<ハッシュ>.js`、約 5.2MB、gzip で約 1.8MB）で、SPLAT の `scene` を初めて読み込むときだけ `import()` する（`pano_scene_loaders.js` の `loadSpark`）。3D を使わないエディタとノード上の表示は Spark を読まない。Spark のチャンクは three.js を最初のチャンクから import する。
 

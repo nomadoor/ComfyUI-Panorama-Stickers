@@ -1,6 +1,6 @@
 import { normalizePaintingState } from "./pano_paint_types.js";
 import { wrapYaw } from "./pano_math.js";
-import { DEG2RAD, RAD2DEG, clamp } from "./pano_camera_math.js";
+import { DEG2RAD, clamp, vFovFromHfov } from "./pano_camera_math.js";
 import { deriveVerticalFovDeg, normalizeCutoutShotItem } from "./pano_cutout_view_math.js";
 import { lensAngle, lensFovKeepingCenter, lensFovLimit, lensRadius } from "./pano_lens.js";
 import { clipFrame, evaluateCamera, evaluateLane, evaluateSticker } from "./pano_scene_eval.js";
@@ -266,9 +266,7 @@ export function skyStickerVfov(sticker, value, size) {
 export function stickerVfovFromAspect(hFovDeg, width, height) {
   const w = Math.max(1, Number(width || 1));
   const h = Math.max(1, Number(height || 1));
-  const hf = clamp(Number(hFovDeg || NEW_STICKER_HFOV), 0.1, 179) * DEG2RAD;
-  const vf = 2 * Math.atan(Math.tan(hf * 0.5) * (h / w));
-  return clamp(vf * RAD2DEG, 0.1, 179);
+  return clamp(vFovFromHfov(clamp(Number(hFovDeg || NEW_STICKER_HFOV), 0.1, 179), h / w), 0.1, 179);
 }
 
 // The editor moves, scales and turns Stickers in the v1 pose fields. These map them to the Lanes

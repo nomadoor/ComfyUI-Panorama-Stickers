@@ -16,7 +16,7 @@ import { createComfyMediaAdapter, executionIdMatches } from "../pano_comfy_media
 import { watchComfyRunning } from "../pano_comfy_running.js";
 import { createPanoCanvas, createPanoVideo, releasePanoCanvas } from "../pano_diagnostics.js";
 import { studioSizeWidgets } from "../pano_studio_status.js";
-import { queuePendingStickerOperation } from "../pano_editor_extension.js";
+import { queuePendingStickerOperation } from "../pano_sticker_operations.js";
 import { cameraShot, readableStateText } from "../pano_editor_state.js";
 import { preloadEditorView } from "../pano_editor_view.js";
 import { DRAW_REASON } from "../pano_frame_scheduler.js";
@@ -31,10 +31,10 @@ import {
   videoMetaEntry,
 } from "../pano_media_session.js";
 import { backgroundAt, backgroundLength, backgroundShowsAt, backgroundVideoCandidates, chooseBackground } from "../pano_background_choice.js";
+import { nodePortHandoff } from "../pano_port_handoff.js";
 import { backgroundBarEnd, backgroundPlace } from "../pano_port_media.js";
 import { STUDIO_BACKGROUND_INPUT_NAMES, isNodeOutputMediaCurrent, linkedInputType, videoLinked } from "../pano_preview_video.js";
 import { PANO_SCENE_TYPE, ownSceneLinked } from "../pano_upstream.js";
-import { nodePortHandoff } from "../pano_stickers_node_surface.js";
 import { loadSceneState } from "../pano_scene_state.js";
 import { sceneFilesOf, stateAnimationClips } from "../pano_space.js";
 import { sceneAtVideoFps, timelineFpsLocked, videoTimelineFps } from "../pano_video_fps.js";

@@ -10,8 +10,8 @@ export { EXTERNAL_STICKER_PREVIEW_KEY, PORT_FRAMES_KEY, PORT_VIDEO_KEY, PORT_VID
 export const ENABLE_STICKERS_NODE_PREVIEW = true;
 // The paint colors belong to the lower paint strokes (pano_paint_strokes.js).
 export { PAINT_COLOR_SWATCHES } from "../pano_paint_strokes.js";
-export const DEG2RAD = Math.PI / 180;
-export const RAD2DEG = 180 / Math.PI;
+// The angle conversions belong to pano_camera_math.js.
+export { DEG2RAD, RAD2DEG } from "../pano_camera_math.js";
 // Fraction of the UI-safe rect the camera gate fills. The gate is always
 // aspect-fitted to that rect, so every aspect gets the largest frame the
 // viewport allows. 1 means "touch the safe edges"; the safe rect already

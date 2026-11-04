@@ -8,6 +8,7 @@ import {
 import { frameViewContext } from "../pano_editor_view.js";
 import { lensFilm, lensPickWindow } from "../pano_lens.js";
 import { clamp, wrapYaw } from "../pano_math.js";
+import { VIEW_HFOV_MAX_DEG, VIEW_HFOV_MIN_DEG, VIEW_PITCH_LIMIT_DEG } from "../pano_camera_math.js";
 import {
   DEFAULT_DISTANCE,
   navigationTarget,
@@ -56,8 +57,8 @@ export function createFrameView(deps) {
     cancelViewTransition();
     const distance = spaceViewState().distance;
     editor.viewYaw = wrapYaw(shot.yaw_deg);
-    editor.viewPitch = clamp(shot.pitch_deg, -89.9, 89.9);
-    editor.viewFov = clamp(shot.hFOV_deg, 35, 140);
+    editor.viewPitch = clamp(shot.pitch_deg, -VIEW_PITCH_LIMIT_DEG, VIEW_PITCH_LIMIT_DEG);
+    editor.viewFov = clamp(shot.hFOV_deg, VIEW_HFOV_MIN_DEG, VIEW_HFOV_MAX_DEG);
     if (editor.spaceMode === "6dof") applySpaceMode({ mode: "6dof", position: [...shot.position], moved: true });
     editor.viewDistance = distance;
     runtime.backgroundDirty = true;

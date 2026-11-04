@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
-import { rulerDragValue, rulerMarks, rulerSnapStep, rulerSnapValue } from "../../studio/frame_layout.js";
+import { CAMERA_RULERS, rulerDragValue, rulerMarks, rulerSnapStep, rulerSnapValue } from "../../studio/frame_layout.js";
 import { FINE_FACTOR, roundValue } from "../../studio/ui_drag.js";
 import StudioKeyDot from "./StudioKeyDot.vue";
 import StudioResetButton from "./StudioResetButton.vue";
@@ -25,10 +25,10 @@ const props = defineProps({
   min: { type: Number, default: -Infinity },
   max: { type: Number, default: Infinity },
   // The scale (frame_layout.js CAMERA_RULERS): px per unit, units per small tick and per number, the numbers' decimals.
-  unitPx: { type: Number, default: 8 },
-  minor: { type: Number, default: 1 },
-  major: { type: Number, default: 10 },
-  labelPrecision: { type: Number, default: 0 },
+  unitPx: { type: Number, default: CAMERA_RULERS.roll.unitPx },
+  minor: { type: Number, default: CAMERA_RULERS.roll.minor },
+  major: { type: Number, default: CAMERA_RULERS.roll.major },
+  labelPrecision: { type: Number, default: CAMERA_RULERS.roll.precision },
   // The decimals of the values sent (an arrow key moves the value by a small tick).
   precision: { type: Number, default: 2 },
   name: { type: String, default: "" },

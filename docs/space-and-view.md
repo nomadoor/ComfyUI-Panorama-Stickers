@@ -82,7 +82,7 @@ Python はこの文書の規則を持たない（列は `—`）。「（未実�
 | `ORBIT_MARK_FADE_SECONDS` | 絶対 | 0.5 秒 | その後、印が消えるまでの長さ（線形に薄れる） |
 | `JOYSTICK_PIXELS` | `d`（絶対の px） | 100 px | 前後のジョイスティックで、1 秒に `d` 進むずれ |
 | `WHEEL_FACTOR` | `d`（絶対の比） | 1.2 | ホイールの一段の縮尺（Blender の一段と同じ） |
-| `PITCH_LIMIT` | 絶対 | 89.9° | 視点の pitch の上限と下限（±） |
+| `PITCH_LIMIT` | 絶対 | 89.9° | 視点の pitch の上限と下限（±）。値は古いエディタとノード上の視点と共通で、`web_src/pano_camera_math.js` `VIEW_PITCH_LIMIT_DEG` が持つ |
 | `ORBIT_DEG_PER_PIXEL` | 絶対 | 0.3° | オービットの 1 CSS px あたりの角度（yaw と pitch で同じ） |
 | `WHEEL_EASE_SECONDS` | 絶対 | 0.4 秒 | ホイールの一段の動きの長さ |
 | `ACTION_EASE_SECONDS` | 絶対 | 0.4 秒 | ダブルクリックの向き直し・Frame Selected・Reset View の動きの長さ |

@@ -1,7 +1,7 @@
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 import { createApp, reactive } from "vue";
-import { clamp, wrapYaw } from "./pano_camera_math.js";
+import { VIEW_HFOV_MAX_DEG, VIEW_HFOV_MIN_DEG, VIEW_PITCH_LIMIT_DEG, clamp, wrapYaw } from "./pano_camera_math.js";
 import { createPanoCanvas, createPanoVideo } from "./pano_diagnostics.js";
 import { createPanoInteractionController } from "./pano_interaction_controller.js";
 import { surfaceShown } from "./pano_node_playback.js";
@@ -24,6 +24,7 @@ import PanoPreviewNodeSurface from "./components/PanoPreviewNodeSurface.vue";
 import { isRenderableMediaReady, mediaPlayheadRevisionToken } from "./pano_media_session.js";
 import { peekPreviewNode, previewNode } from "./pano_node_bridge.js";
 import { createComfyMediaAdapter } from "./pano_comfy_media.js";
+import { normalizeCoverageValue } from "./pano_editor_state.js";
 
 const PREVIEW_MIN_HEIGHT = 140;
 const PREVIEW_MIN_WIDTH = 180;
@@ -58,7 +59,7 @@ function drawPreview(node, ctx, width, height, view, img, previewView) {
     drawGrid(ctx, width, height);
     return;
   }
-  const coverageDeg = Number(node?.widgets?.find?.((w) => w?.name === "background_range" || w?.name === "coverage")?.value || 360) === 180 ? 180 : 360;
+  const coverageDeg = normalizeCoverageValue(node?.widgets?.find?.((w) => w?.name === "background_range" || w?.name === "coverage")?.value || 360);
   const surface = previewView.render({
     width,
     height,
@@ -105,8 +106,8 @@ class PreviewNodeRuntime {
       setView: (next) => {
         this.view = {
           yaw: wrapYaw(Number(next?.yaw || 0)),
-          pitch: clamp(Number(next?.pitch || 0), -89.9, 89.9),
-          fov: clamp(Number(next?.fov || 100), 35, 140),
+          pitch: clamp(Number(next?.pitch || 0), -VIEW_PITCH_LIMIT_DEG, VIEW_PITCH_LIMIT_DEG),
+          fov: clamp(Number(next?.fov || 100), VIEW_HFOV_MIN_DEG, VIEW_HFOV_MAX_DEG),
         };
       },
       getViewportSize: () => {

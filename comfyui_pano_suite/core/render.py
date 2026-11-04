@@ -16,12 +16,8 @@ from .display_layers import render_group_layer_from_state, render_raster_layer_f
 from .display_list import build_display_entries
 from .math import camera_basis, lens_drawn, lens_radius, ray_directions, unit_float_tensor, vfov_from_hfov
 from .painting import load_painting_layer_payload, render_painting_to_erp
+from .state import coverage_span
 from .world_render import SceneContent, over_by_depth, world_key, world_layer
-
-
-def _range(value) -> int:
-    """A span of longitude: 180, or else 360."""
-    return 180 if int(value) == 180 else 360
 
 
 @dataclass(frozen=True)
@@ -51,12 +47,12 @@ class Projection:
 
     @classmethod
     def erp(cls, width: int, height: int, coverage: int = 360, bg_coverage: int | None = None) -> "Projection":
-        coverage = _range(coverage)
-        return cls("erp", int(width), int(height), coverage=coverage, bg_coverage=coverage if bg_coverage is None else _range(bg_coverage))
+        coverage = coverage_span(coverage)
+        return cls("erp", int(width), int(height), coverage=coverage, bg_coverage=coverage if bg_coverage is None else coverage_span(bg_coverage))
 
     @classmethod
     def perspective(cls, width: int, height: int, hfov_deg: float, coverage: int = 360, curve: float = 1.0) -> "Projection":
-        return cls("perspective", int(width), int(height), coverage=_range(coverage), hfov_deg=float(hfov_deg), curve=float(curve))
+        return cls("perspective", int(width), int(height), coverage=coverage_span(coverage), hfov_deg=float(hfov_deg), curve=float(curve))
 
 
 @dataclass(frozen=True)

@@ -18,6 +18,7 @@ import { CAMERA_SHOT_ID, cameraShot, newStudioCamera, setCameraShot } from "../p
 import { cameraAspect } from "../pano_scene_state.js";
 import { ASPECT_PRESETS, ERP_ASPECT, aspectPreset } from "../pano_editor_ui_state.js";
 import { clamp, wrapYaw } from "../pano_math.js";
+import { VIEW_PITCH_LIMIT_DEG } from "../pano_camera_math.js";
 import { cameraFrustumSegments, segmentsHit } from "../pano_space.js";
 import { FRAME_GATE_OCCUPANCY } from "./constants.js";
 import { formatParamValue } from "./helpers.js";
@@ -68,7 +69,7 @@ export function createCamera(deps) {
     if (existing) {
       setSelectedItem(existing);
       editor.mode = "pano";
-      turnViewTo(wrapYaw(Number(existing.yaw_deg || 0)), clamp(Number(existing.pitch_deg || 0), -89.9, 89.9));
+      turnViewTo(wrapYaw(Number(existing.yaw_deg || 0)), clamp(Number(existing.pitch_deg || 0), -VIEW_PITCH_LIMIT_DEG, VIEW_PITCH_LIMIT_DEG));
       updateSidePanel();
       updateSelectionMenu();
       requestDraw({ cause: "cutout_frame" });

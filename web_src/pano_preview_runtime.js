@@ -6,7 +6,7 @@ import { clamp } from "./pano_math.js";
 import { createPanoCanvas, createPanoVideo, releasePanoCanvas } from "./pano_diagnostics.js";
 import { yawPitchToDir } from "./pano_camera_math.js";
 import { isPanoramaPreviewNodeName } from "./pano_preview_identity.js";
-import { cameraShot, editorActive, editorStateWrite, parsePanoEditorState, setEditorActive, sourceAsset } from "./pano_editor_state.js";
+import { cameraShot, editorActive, editorStateWrite, normalizeCoverageValue, parsePanoEditorState, setEditorActive, sourceAsset } from "./pano_editor_state.js";
 import { loadSceneState, sceneGround } from "./pano_scene_state.js";
 import { surfacePaintLayers } from "./pano_surface_paint.js";
 import { shotCamera, viewProjection, workingSkyLayers } from "./pano_editor_view.js";
@@ -51,7 +51,6 @@ import { eyeHeight, worldBoundRadius } from "./studio/view_scale.js";
 import {
   NODE_SURFACE_FRAME,
   createStickersNodeSurfaceSession,
-  portHandoffLinked,
   portStickerSyncValue,
   stickersNodeSurfaceModel,
   surfacePoseStickers,
@@ -77,8 +76,10 @@ import {
   nextMediaRevision,
 } from "./pano_shared_image_cache.js";
 import {
+  BACKGROUND_COLOR_WIDGET_NAMES,
   BACKGROUND_INPUT_NAMES,
   HANDOFF_INPUT_NAMES,
+  backgroundColorWidget,
   STICKER_INPUT_NAMES,
   createLoopingPreviewVideo,
   isNodeOutputMediaCurrent,
@@ -97,7 +98,8 @@ import {
 } from "./pano_preview_video.js";
 import { bindWheelCaptureRoot, readWheelDirection } from "./pano_wheel.js";
 import { chainWidgetCallback } from "./pano_widget_callback.js";
-import { queuePendingStickerOperation } from "./pano_editor_extension.js";
+import { portHandoffLinked } from "./pano_port_handoff.js";
+import { queuePendingStickerOperation } from "./pano_sticker_operations.js";
 import {
   bindStickerDropTarget,
   decodeStickerImageFile,
@@ -377,7 +379,7 @@ function parseState(value, bg = "#00ff00") {
     return {
       ...base,
       ...p,
-      coverage: Number(p.coverage) === 180 ? 180 : 360,
+      coverage: normalizeCoverageValue(p.coverage),
       assets: p.assets && typeof p.assets === "object" ? p.assets : {},
       stickers: Array.isArray(p.stickers) ? p.stickers : [],
       shots: Array.isArray(p.shots) ? p.shots : [],
@@ -403,8 +405,8 @@ function getCachedState(node) {
   const liveVersion = sync.liveStateVersion;
   // Panorama Studio and the Preview name these `background_color` and `background_range` (ADR 0048); the legacy nodes
   // `bg_color` and `coverage`.
-  const bg = String((getWidget(node, "background_color") ?? getWidget(node, "bg_color"))?.value || "#1a1a1e");
-  const coverage = Number((getWidget(node, "background_range") ?? getWidget(node, "coverage"))?.value || 360) === 180 ? 180 : 360;
+  const bg = String(backgroundColorWidget((name) => getWidget(node, name))?.value || "#1a1a1e");
+  const coverage = normalizeCoverageValue((getWidget(node, "background_range") ?? getWidget(node, "coverage"))?.value || 360);
   const sceneText = node.__panoSceneStateV2 && typeof source === "string";
   // The handoff applies while the inputs it came from are linked as they were (the cache follows that too).
   const handoff = sceneText && portHandoffLinked(node) && isNodeOutputMediaCurrent(node, "sticker-handoff")
@@ -903,7 +905,7 @@ function studioStatusOptions(node) {
   return {
     stateText: String(getWidget(node, "state_json")?.value ?? ""),
     ...studioSizeWidgets((name) => getWidget(node, name)?.value),
-    backgroundRange: Number(getWidget(node, "background_range")?.value) === 180 ? 180 : 360,
+    backgroundRange: normalizeCoverageValue(getWidget(node, "background_range")?.value),
     backgroundColor: String(getWidget(node, "background_color")?.value ?? ""),
     run: (current && ownOutputUiValue(node, "pano_output_size")) || null,
   };
@@ -911,7 +913,7 @@ function studioStatusOptions(node) {
 
 // The node's background_color (Panorama Studio; the legacy nodes' bg_color).
 function surfaceBackgroundColor(node, fallback = "#000000") {
-  return String((getWidget(node, "background_color") ?? getWidget(node, "bg_color"))?.value || fallback);
+  return String(backgroundColorWidget((name) => getWidget(node, name))?.value || fallback);
 }
 
 // The layer media of a Sticker of the node's state (`item`, a working Sticker or a loaded state v2 one) as the view
@@ -941,7 +943,7 @@ function surfaceStickerMedia(node, state, item) {
 // The background a legacy on-node surface draws (`bgImg`, its looping VIDEO or the linked image) once it has a picture,
 // over the node's coverage; null while it loads or without one.
 function surfaceBackground(state, bgImg) {
-  return isRenderableMediaReady(bgImg) ? { media: bgImg, revision: getRenderableMediaRevisionToken(bgImg), coverage: Number(state.coverage) === 180 ? 180 : 360 } : null;
+  return isRenderableMediaReady(bgImg) ? { media: bgImg, revision: getRenderableMediaRevisionToken(bgImg), coverage: normalizeCoverageValue(state.coverage) } : null;
 }
 
 // Panorama Studio's background at the display frame (pano_background_choice.js backgroundAt): background_color (an
@@ -1058,7 +1060,7 @@ function drawStudioPicture(node, canvas, surfaceView, layout, erpCanvas) {
   if (kind === "erp") {
     const drawnErp = surfaceView.renderLiveErp(outputErpInput({
       shot,
-      erpRange: sceneState.camera.erp_range === 180 ? 180 : 360,
+      erpRange: normalizeCoverageValue(sceneState.camera.erp_range),
       ground,
       radius,
       width: box.w,
@@ -2445,7 +2447,7 @@ function attachPanoramaPreviewImpl(node, options = {}) {
   // its size and background widgets too.
   const watchedWidgets = (studioSurface
     ? ["state_json", "background_color", "background_range", "megapixels", "multiple"]
-    : ["state_json", "background_color", "bg_color"]
+    : ["state_json", ...BACKGROUND_COLOR_WIDGET_NAMES]
   ).map((name) => getWidget(node, name)).filter(Boolean);
   const widgetRestores = watchedWidgets.map((widget) => chainWidgetCallback(widget, () => requestDraw()));
 
