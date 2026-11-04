@@ -249,8 +249,8 @@ def test_same_3d_file_on_the_sticker_input_is_read_once_and_keeps_its_editor_fil
     file = _obj_file(tmp_path / "square.obj")
     reads, writes = [], []
     read, write = nodes.read_mesh_file, nodes.write_editor_files
-    monkeypatch.setattr(nodes, "read_mesh_file", lambda model: reads.append(model) or read(model))
-    monkeypatch.setattr(nodes, "write_editor_files", lambda value, progress=None: writes.append(value) or write(value, progress))
+    monkeypatch.setattr("comfyui_pano_suite.file_3d.read_mesh_file", lambda model: reads.append(model) or read(model))
+    monkeypatch.setattr("comfyui_pano_suite.media_ui.write_editor_files", lambda value, progress=None: writes.append(value) or write(value, progress))
 
     first = _execute(sticker=file)
     again = _execute(sticker=Types.File3D(str(tmp_path / "square.obj")))
@@ -379,7 +379,7 @@ def test_a_3d_file_source_is_read_once_across_runs(input_dir, monkeypatch):
     _lit_glb(input_dir / "3d" / "model.glb")
     reads = []
     read = nodes.read_mesh_file
-    monkeypatch.setattr(nodes, "read_mesh_file", lambda file: reads.append(file) or read(file))
+    monkeypatch.setattr("comfyui_pano_suite.file_3d.read_mesh_file", lambda file: reads.append(file) or read(file))
     state = {"version": 2, "stickers": [_file_sticker("model.glb")]}
 
     first = _execute(state)
@@ -440,7 +440,7 @@ def test_other_errors_of_the_reader_stop_the_run(input_dir, monkeypatch):
     def broken(file):
         raise RuntimeError("broken reader")
 
-    monkeypatch.setattr(nodes, "read_mesh_file", broken)
+    monkeypatch.setattr("comfyui_pano_suite.file_3d.read_mesh_file", broken)
     with pytest.raises(RuntimeError, match="broken reader"):
         _execute({"version": 2, "stickers": [_file_sticker("model.glb")]})
 

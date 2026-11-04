@@ -204,7 +204,7 @@ def test_same_input_reuses_its_files(monkeypatch):
     written = path.stat().st_mtime_ns
     calls = []
     original = nodes.write_editor_files
-    monkeypatch.setattr(nodes, "write_editor_files", lambda value, progress=None: calls.append(value) or original(value, progress))
+    monkeypatch.setattr("comfyui_pano_suite.media_ui.write_editor_files", lambda value, progress=None: calls.append(value) or original(value, progress))
 
     assert nodes._scene_ui(splat) == first
     assert calls == [] and path.stat().st_mtime_ns == written
@@ -230,7 +230,7 @@ def test_studio_shows_the_scene_files_after_running(monkeypatch):
         height, width = view.projection.height, view.projection.width
         return torch.zeros((height, width, 4), device=device), torch.full((height, width), math.inf, device=device)
 
-    monkeypatch.setattr(nodes, "_scene_content", lambda scene: None if scene is None else SceneContent(2, render))
+    monkeypatch.setattr("comfyui_pano_suite.file_3d._scene_content", lambda scene: None if scene is None else SceneContent(2, render))
     mesh = _mesh([[[0.0, 0.0, -1.0], [1.0, 0.0, -1.0], [0.0, 1.0, -1.0]]] * 2)
 
     output = nodes.PanoramaStudioNode.execute(background_color="#00ff00", background_range="360", megapixels=0.5, multiple=8, state_json="", world=mesh)

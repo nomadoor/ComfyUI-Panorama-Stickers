@@ -114,7 +114,7 @@ def fit_3d_position(eye, direction, center, radius, rotation: dict, fov_deg, min
     """The `position` of a new 3D Sticker whose content (bounding sphere `center`, `radius` in its own glTF frame)
     is turned by `rotation` (yaw, pitch, roll) and fits a view `fov_deg` wide (the smaller of its two angles) from
     `eye` looking along `direction`: the sphere's center goes `max(fit_distance, min_distance)` along `direction`.
-    A `fov_deg` that is not a positive finite number takes `fallback_fov_deg` (the node's, `nodes.py`
+    A `fov_deg` that is not a positive finite number takes `fallback_fov_deg` (the node's, `port_sticker.py`
     PORT_3D_FIT_FOV_DEG). Without content (`center` or `radius` None or not finite) the content's origin goes
     NEW_WORLD_STICKER_DISTANCE ahead."""
     eye = np.asarray(eye, dtype=np.float64)

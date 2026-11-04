@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from comfyui_pano_suite import nodes
+from comfyui_pano_suite import nodes, studio_node
 from comfyui_pano_suite.core.scene_state import load_scene_state
 from comfyui_pano_suite.node_runtime import NodeRuntime
 from comfyui_pano_suite.nodes import PanoramaCutoutNode, PanoramaStickersNode, PanoramaStudioNode
@@ -43,11 +43,17 @@ def render_only_runtime():
     Those paths write into ComfyUI's temp directory and are not part of the rendered output.
     """
     host_runtime = nodes.NODE_RUNTIME
-    nodes.NODE_RUNTIME = NodeRuntime()
+    # Every node module holds the one runtime (`node_runtime.NODE_RUNTIME`); each is given the bare one.
+    holders = [module for name, module in list(sys.modules.items())
+               if name.startswith(f"{nodes.__package__}.") and getattr(module, "NODE_RUNTIME", None) is host_runtime]
+    bare = NodeRuntime()
+    for module in holders:
+        module.NODE_RUNTIME = bare
     try:
         yield
     finally:
-        nodes.NODE_RUNTIME = host_runtime
+        for module in holders:
+            module.NODE_RUNTIME = host_runtime
 
 
 def build_background_erp() -> torch.Tensor:
@@ -163,12 +169,12 @@ STUDIO_SHOT_SIZE = (224, 128)
 @contextmanager
 def studio_shot_size(size: tuple[int, int]):
     """Panorama Studio with its Camera output at `size`, whatever megapixels and multiple give."""
-    output_size = nodes._studio_output_size
-    nodes._studio_output_size = lambda *_args, **_kwargs: (*size, None)
+    output_size = studio_node._studio_output_size
+    studio_node._studio_output_size = lambda *_args, **_kwargs: (*size, None)
     try:
         yield
     finally:
-        nodes._studio_output_size = output_size
+        studio_node._studio_output_size = output_size
 
 
 def _run_studio_shot(shot: dict):

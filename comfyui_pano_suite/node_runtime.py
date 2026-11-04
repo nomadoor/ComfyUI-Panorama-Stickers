@@ -428,9 +428,11 @@ def create_default_runtime(*, logger=None) -> NodeRuntime:
         comfy_nodes = None
 
     def save_preview(images):
-        if comfy_nodes is None:
-            return {}
-        return comfy_nodes.PreviewImage().save_images(images)
+        # ComfyUI's `nodes` module is looked up on each call, as it was when every import of the node module made
+        # its own runtime: a stand-in for it installed later (the tests') is the one used.
+        import nodes as current_nodes
+
+        return current_nodes.PreviewImage().save_images(images)
 
     return NodeRuntime(
         progress_bar_factory=ComfyProgressBar,
@@ -441,3 +443,20 @@ def create_default_runtime(*, logger=None) -> NodeRuntime:
         make_video_payload=make_video_ui_payload,
         logger=logger,
     )
+
+
+# The one runtime of the package's nodes, made when this module is first imported and shared by every node module;
+# its logger keeps the name it had when `nodes.py` made it.
+NODE_RUNTIME = create_default_runtime(logger=logging.getLogger(f"{__package__}.nodes"))
+
+
+def _NodeProgress(node_id: str | None, total: float, label: str = "Node") -> NodeProgress:
+    return NODE_RUNTIME.progress(node_id, total, label)
+
+
+def _audio_signature(audio) -> tuple:
+    return NODE_RUNTIME.audio_signature(audio)
+
+
+def _tensor_cache_identity(image) -> tuple | None:
+    return NODE_RUNTIME.tensor_identity(image)

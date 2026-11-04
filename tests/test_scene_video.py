@@ -33,7 +33,7 @@ def _count_renders(monkeypatch):
         passes.append(1)
         return original(*args, **kwargs)
 
-    monkeypatch.setattr(nodes, "_render_frames", counted)
+    monkeypatch.setattr("comfyui_pano_suite.scene_render._render_frames", counted)
     return passes
 
 
@@ -176,7 +176,7 @@ def test_a_camera_shot_of_the_studio_video_renders_its_frames_exactly(monkeypatc
     expected = _shot_frames(studio_video.get_components().images)
     _forbid_encoding(monkeypatch)
     # The editor still receives the MP4 of the video; the frames are rendered.
-    monkeypatch.setattr(nodes, "_bg_media_ui", lambda *args: {})
+    monkeypatch.setattr("comfyui_pano_suite.scene_build._bg_media_ui", lambda *args: {})
 
     assert isinstance(open_video(studio_video, "bg_media"), RenderedVideo)
     assert torch.equal(_shot_frames(studio_video), expected)

@@ -83,7 +83,7 @@ def test_legacy_stickers_chunks_by_comfys_free_memory(monkeypatch):
         seen.append(device)
         return 1
 
-    monkeypatch.setattr(nodes, "_estimate_sticker_chunk_size", chunk_size)
+    monkeypatch.setattr("comfyui_pano_suite.legacy_nodes._estimate_sticker_chunk_size", chunk_size)
     PanoramaStickersNode.execute("256", "360", "#00ff00", json.dumps({"version": 1, "stickers": []}), bg_erp=torch.rand(2, 32, 64, 3))
 
     # The legacy path follows ComfyUI's device instead of picking CUDA by itself.
@@ -102,7 +102,7 @@ def test_legacy_stickers_does_not_empty_the_cache_per_chunk(monkeypatch):
     emptied = []
     monkeypatch.setattr(nodes.comfy.model_management, "get_torch_device", lambda: torch.device("cpu"))
     monkeypatch.setattr(torch.cuda, "empty_cache", lambda: emptied.append(1))
-    monkeypatch.setattr(nodes, "_estimate_sticker_chunk_size", lambda *args, **kwargs: 1)
+    monkeypatch.setattr("comfyui_pano_suite.legacy_nodes._estimate_sticker_chunk_size", lambda *args, **kwargs: 1)
 
     PanoramaStickersNode.execute("256", "360", "#00ff00", json.dumps({"version": 1, "stickers": []}), bg_erp=torch.rand(3, 32, 64, 3))
 

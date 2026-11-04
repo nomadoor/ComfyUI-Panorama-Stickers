@@ -265,7 +265,7 @@ def _record_projections(monkeypatch):
         projections.append((camera, projection))
         return original(layers, camera, projection, **kwargs)
 
-    monkeypatch.setattr(nodes, "render_frame", recording)
+    monkeypatch.setattr("comfyui_pano_suite.scene_render.render_frame", recording)
     return projections
 
 
@@ -463,9 +463,9 @@ def test_world_sticker_is_shot_from_the_camera_position():
 
 def test_scene_input_content_is_shot_at_the_scene_item_of_each_frame(monkeypatch):
     content, _views = _ball()
-    monkeypatch.setattr(nodes, "_scene_content", lambda scene: None if scene is None else SceneContent(3, content.render))
+    monkeypatch.setattr("comfyui_pano_suite.file_3d._scene_content", lambda scene: None if scene is None else SceneContent(3, content.render))
     # The stand-in input has no editor files.
-    monkeypatch.setattr(nodes, "_scene_ui", lambda scene, **_options: {})
+    monkeypatch.setattr("comfyui_pano_suite.media_ui._scene_ui", lambda scene, **_options: {})
     scene = _upstream({"version": 2}, world=object())[0]
 
     cut = _frames(_shoot(scene, _camera(hFOV_deg=30.0)))

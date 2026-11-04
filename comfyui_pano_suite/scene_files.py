@@ -9,22 +9,19 @@ from PIL import Image
 from comfy_api.latest import Types
 
 from .core.temp_files import TEMP_FILES, temp_file_path
-from .core_adapters import SplatToFile3D, mesh_item_to_glb_bytes, save_glb, triangulate_grid_mesh
-
-
-def moge_grid_mesh(geometry: dict, index: int):
-    """Frame `index` of a MOGE_GEOMETRY as a grid mesh (vertices, faces, uvs) in glTF, as the core's
-    MoGePointMapToMesh converts it: a panorama (no `intrinsics`) from MoGe's Z up, a perspective frame from
-    OpenCV. Reads `points`, `mask` when present, and whether there are `intrinsics`; pixels outside the mask
-    are dropped. The kept pixels are `moge_keep`'s (the core's parts in its order), so the core's
-    `triangulate_grid_mesh` gets them as its mask with no discontinuity check of its own, and `moge_to_gltf` turns
-    the result into glTF."""
-    # scene_mesh reads this module's grid for drawing, so it is imported here.
-    from .scene_mesh import moge_keep, moge_to_gltf
-
-    vertices, faces, uvs = triangulate_grid_mesh(geometry["points"][index], moge_keep(geometry, index), discontinuity_threshold=0.0)
-    vertices, faces = moge_to_gltf(geometry, vertices, faces)
-    return vertices, faces, uvs
+from .core_adapters import SplatToFile3D, mesh_item_to_glb_bytes, save_glb
+from .scene_mesh import (
+    da3_count,
+    da3_keep,
+    da3_meshes,
+    is_da3,
+    is_moge,
+    is_multiview,
+    keep_is_empty,
+    moge_grid_mesh,
+    moge_keep,
+    moge_uses_depth_grid,
+)
 
 
 def _moge_glb(geometry: dict, index: int) -> bytes | None:
@@ -49,9 +46,6 @@ def _splat_ply(splat: Types.SPLAT, index: int) -> bytes | None:
 def _da3_glbs(geometry: dict, index: int):
     """Item `index` of a DA3_GEOMETRY as the GLB of its frame's mesh (mono) or a list of its views' GLBs (multiview),
     written from the same MESHes that are drawn (`da3_meshes`); None when it is empty."""
-    # scene_mesh reads this module's MoGe grid, so it is imported here.
-    from .scene_mesh import da3_meshes, is_multiview
-
     glbs = [mesh_item_to_glb_bytes(mesh, 0) for mesh in da3_meshes(geometry, index)]
     if not glbs:
         return None
@@ -78,8 +72,6 @@ def _write_depth_files(count: int, frame_depth, progress=None) -> list:
 
 
 def _kept_depth(depth: torch.Tensor, keep: torch.Tensor):
-    from .scene_mesh import keep_is_empty
-
     if keep_is_empty(keep):
         return None
     depth = depth.detach().cpu().float()
@@ -90,16 +82,12 @@ def _da3_depth_files(geometry: dict, progress=None) -> list:
     """The editor files of a DA3_GEOMETRY mono (ADR 0039; docs/studio-node.md, "`DA3_GEOMETRY` mono のエディタ用ファイル"):
     per frame its depth with the pixels outside `da3_keep` set to 0 (a kept pixel's depth is always > 0), or None for
     an empty frame. Nothing is converted."""
-    from .scene_mesh import da3_count, da3_keep
-
     return _write_depth_files(da3_count(geometry), lambda index: _kept_depth(geometry["depth"][index], da3_keep(geometry, index)), progress)
 
 
 def _moge_depth_files(geometry: dict, progress=None) -> list:
     """The editor files of a MOGE_GEOMETRY perspective sequence (ADR 0040): per frame its points' z with the pixels
     outside `moge_keep` set to 0 (a kept z is > 0 by `moge_uses_depth_grid`), or None for an empty frame."""
-    from .scene_mesh import moge_keep
-
     return _write_depth_files(geometry["points"].shape[0], lambda index: _kept_depth(geometry["points"][index][..., 2], moge_keep(geometry, index)), progress)
 
 
@@ -114,9 +102,7 @@ def write_editor_files(value, progress=None) -> tuple[str, list]:
     elif isinstance(value, Types.MESH):
         kind, extension, count, item = "mesh", "glb", value.vertices.shape[0], mesh_item_to_glb_bytes
     else:
-        # scene_mesh reads this module's MoGe grid, so it is imported here; it owns how the dicts are told apart.
-        from .scene_mesh import da3_count, is_da3, is_moge, is_multiview, moge_uses_depth_grid
-
+        # scene_mesh owns how the dicts are told apart.
         if is_moge(value) and moge_uses_depth_grid(value)[0]:
             return "depth_grid", _moge_depth_files(value, progress)
         if is_moge(value):

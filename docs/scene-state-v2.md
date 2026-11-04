@@ -25,7 +25,7 @@ Panorama Studio の `state_json`（状態 v2）、Camera を持つ Panorama Stud
 | 上書きを当てる | `core/scene_inherit.py` `apply_upstream_overrides` | `web_src/pano_scene_inherit.js` `applyUpstreamOverrides` | `test_scene_inherit.py`、`pano_scene_inherit.test.mjs` |
 | 保存するテキスト（既定値を書かない） | — | `pano_scene_state.js` `sceneStateText` | `pano_scene_state.test.mjs`、`test_scene_state_parity.py` |
 | Scene の id を振る | — | `web_src/pano_editor_state.js` `editorStateWrite`・`newSceneId` | `tests/pano_editor_state.test.mjs` |
-| Sticker の id の採番 | 正規化は `load_scene_state`、加えるときは `nodes.py` `_take_sticker_id` | 正規化は `loadSceneState`、加えるときは `pano_editor_state.js` `takeStickerId` | `pano_editor_state.test.mjs`、`tests/test_studio_node.py`、フィクスチャ `v2_upstream` |
+| Sticker の id の採番 | 正規化は `load_scene_state`、加えるときは `port_sticker.py` `_take_sticker_id` | 正規化は `loadSceneState`、加えるときは `pano_editor_state.js` `takeStickerId` | `pano_editor_state.test.mjs`、`tests/test_studio_node.py`、フィクスチャ `v2_upstream` |
 | `port` の Sticker の vFOV | `core/render.py` の `StickerSource`（`derive_vfov`）、式は `core/math.py` `vfov_from_hfov` | `pano_editor_state.js` `skyStickerVfov` | `tests/test_sky_sticker_vfov_parity.py` |
 | ペイントの `version` と group の `z_index` の読み方 | `core/paint_state.py` `normalize_painting_state`・`_js_round` | `web_src/pano_paint_types.js` `normalizePaintingState` | フィクスチャ `tests/fixtures/painting_normalize.json` を読む `tests/test_paint_state_parity.py`・`tests/pano_paint_state_parity.test.mjs` |
 | ペイントのストロークの筆の値（`hardness`・`flow`・`spacing` の `null`、筆の形の項目の既定値と範囲） | `core/paint_state.py` `_normalize_brush` | `web_src/pano_paint_types.js` `normalizeBrush` | フィクスチャ `tests/fixtures/paint_stroke_brush.json` を読む `tests/test_paint_state_parity.py`・`tests/pano_paint_state_parity.test.mjs` |
@@ -117,7 +117,7 @@ Python と JS の両方の test が同じファイルを読む。Python と JS �
 | `painting` | オブジェクト | 空のペイント | 既存の `normalize_painting_state` / `normalizePaintingState` で正規化する。`sky` の静的な層。`version` は保存された値によらず常に `1`。group とラスタ（`raster_objects`）の `z_index` は、`z_index`、次に `zIndex` のうち最初の有限の JSON の数値（真偽値と文字列は数えない。double にできない大きな整数は有限でない）で、どちらにも無いときは groups（raster_objects）の中の順番にする。エディタは数値を書くので、文字列はテキストを手で書いた状態にだけ現れる。group の値は `Math.round` と同じ丸め（半分は +∞ の向き。−2.5 は −2）、ラスタの値は丸めず、どちらも 0 以上に寄せる。group の `locked` はエディタだけが使う（ノードは描画に使わない）ので、Python の読み込みは持たない。group の `rot_deg`（任意。まとまりの枠の向き：中心の向きのまわりの回転で、正は中から見て時計回り。roll との向きの関係は上の角度規約の項、枠の作り方は `docs/studio-ui.md` の「ペイントのまとまり」。点はすでに回してあり、枠と回転のハンドルを点と一緒に回して描くためだけに持つ）も同じくエディタだけが使い、Python の読み込みは持たない。JS の読み込みは、有限の JSON の数値ならそのまま（範囲に丸めない。360° の差は同じ向き）、無いときと不正なときは 0 にする（下記「ペイントの数値」の `finiteNumber`。この項目が無い古い状態は 0 で読む）。ラスタの `locked` もエディタだけが使い（ノードは描画に使わない）、Python の読み込みはその値を保つ。ほかの数値は下記「ペイントの数値」 |
 | `painting_layer` | オブジェクト または `null` | `null` | ペイントのラスタ画像の参照。中身はそのまま保つ |
 | `painting_visible` | 真偽値 | `true` | 真偽値でなければ既定値。`false` ならペイント（ストローク・ラスタ・マスク）を描かず、MASK にも出さない |
-| `ground` | 数値 または欠け | 欠け | 地面の高さ（World の y。ADR 0046）。数でない値・有限でない値は欠けとして読む。欠けているときは、上流の Scene があれば上流の層の `ground`（最も下流で `ground` を持つ層のもの）、無ければ `GROUND_DEFAULT`（-1.6）として読む。正規化の結果には欠けのまま残し、読む側（評価関数と、下の読む場所）が既定の規則で値を求める。使う人が「ここを地面にする」で変えたときだけ値が入る（`docs/studio-ui.md` の Scene のカード、`docs/space-and-view.md` の目の高さ `E`）。読む場所：エディタのグリッドと置く物の位置（JS）、ノードが置く 3D の `port` の Sticker の位置（Python `nodes.py` の `_world_port_sticker`。ADR 0046 の「ノードが置く 3D の `port` の Sticker も地面の上に置く」）、`PANO_SCENE` の下流での上流の層の `ground`（Python・JS） |
+| `ground` | 数値 または欠け | 欠け | 地面の高さ（World の y。ADR 0046）。数でない値・有限でない値は欠けとして読む。欠けているときは、上流の Scene があれば上流の層の `ground`（最も下流で `ground` を持つ層のもの）、無ければ `GROUND_DEFAULT`（-1.6）として読む。正規化の結果には欠けのまま残し、読む側（評価関数と、下の読む場所）が既定の規則で値を求める。使う人が「ここを地面にする」で変えたときだけ値が入る（`docs/studio-ui.md` の Scene のカード、`docs/space-and-view.md` の目の高さ `E`）。読む場所：エディタのグリッドと置く物の位置（JS）、ノードが置く 3D の `port` の Sticker の位置（Python `port_sticker.py` の `_world_port_sticker`。ADR 0046 の「ノードが置く 3D の `port` の Sticker も地面の上に置く」）、`PANO_SCENE` の下流での上流の層の `ground`（Python・JS） |
 | `upstream` | 配列 | `[]` | 上流の Scene の要素への上書き。下記「上流の上書き（`upstream`）」 |
 | `background.clip` | Clip range | 下記 | 自分の `bg_media` が Timeline 上で有効な範囲（下記「背景の Clip range」）。`background` が欠け・オブジェクトでないときも既定の Clip range |
 
@@ -141,7 +141,7 @@ Python と JS の両方の test が同じファイルを読む。Python と JS �
 表示（`visible`）は、Camera・`scene`・Sticker・ペイントのそれぞれが持つ。エディタのタイムラインの各行の目のアイコンで切り替える（`docs/timeline-ui.md`）。ペイントの表示は、旧ノードと共有する `painting` の形（`normalize_painting_state`）を変えないように、`painting` の中ではなく最上位の `painting_visible` に置く。
 
 - 非表示の `scene` と Sticker は、評価関数の `active` が偽になる（下記「評価関数」）ので描かれない。Clip range・Keyframe・値はそのまま保ち、出力の長さにも今までどおり数える（表示の切り替えで長さは変わらない）。
-- 非表示のペイントは描かない（`nodes.py` の `_resolve_sources` が空のペイントを渡す）。
+- 非表示のペイントは描かない（`scene_build.py` の `_resolve_sources` が空のペイントを渡す）。
 - 非表示の Camera は状態に残り、今までどおり撮る（表示だけの切り替え。ADR 0048。`docs/studio-node.md`）。評価関数は今までどおり値を返す。Camera の Keyframe は表示によらず出力の長さに数える。
 
 - ノードでの扱い：状態 v2 を読み書きするのは Panorama Studio だけで、欠け・`null` の `camera` は既定の Camera として読む（`docs/studio-node.md` の「Panorama Studio」）。エディタは Camera を消さない（消す操作は無い）。Camera のボタンで Camera を今の視点へ持ってくるのは、Camera の Lane の編集である（`docs/studio-ui.md`）。
@@ -271,7 +271,7 @@ Keyframe を持つ単位である。パラメータごとに一つあり、ど�
 
 Sticker の `id` は、一度使った値を別の Sticker に使い直さない。下流の Studio の上書き（`upstream`）と消した記録は上流の Sticker の `id` を指すので、消した Sticker の `id` を新しい Sticker が使うと、上書きが別の Sticker に当たるためである（ADR 0030）。
 
-- `next_sticker_id` は、次に加える Sticker の番号 `n` である。新しい Sticker（エディタとノード上の UI で投入した画像、複製、`port` の Sticker）は、`next_sticker_id` から数えて、今ある Sticker の `id` が使っていない最初の番号 `n` の `sticker_<n>` を受け取り、`next_sticker_id` を `n + 1` にする（使っている番号は飛ばす。`takeStickerId`、`pano_editor_state.js`）。番号は上限を超えても正確な整数で数える（JS は `BigInt`。`pano_scene_state.js` の `freeStickerNumber`、Python は `scene_state.py` の整数）ので、`2^53 − 1` の先でも使っている番号を正しく飛ばす。上限 `STICKER_NUMBER_MAX`（`2^53 − 1`）に寄せるのは `next_sticker_id` だけである（`stickerCounter`）。フィクスチャ `tests/fixtures/scene_state/sticker_ids.json`。Undo で戻しても `next_sticker_id` は戻さない（`restoredHistoryState`）。ノードが状態にない `port` の Sticker を加えるとき（`nodes.py` の `_take_sticker_id`）も同じ番号を使う。ノードは状態を保存しないので、進めた値は実行の中だけのものである。
+- `next_sticker_id` は、次に加える Sticker の番号 `n` である。新しい Sticker（エディタとノード上の UI で投入した画像、複製、`port` の Sticker）は、`next_sticker_id` から数えて、今ある Sticker の `id` が使っていない最初の番号 `n` の `sticker_<n>` を受け取り、`next_sticker_id` を `n + 1` にする（使っている番号は飛ばす。`takeStickerId`、`pano_editor_state.js`）。番号は上限を超えても正確な整数で数える（JS は `BigInt`。`pano_scene_state.js` の `freeStickerNumber`、Python は `scene_state.py` の整数）ので、`2^53 − 1` の先でも使っている番号を正しく飛ばす。上限 `STICKER_NUMBER_MAX`（`2^53 − 1`）に寄せるのは `next_sticker_id` だけである（`stickerCounter`）。フィクスチャ `tests/fixtures/scene_state/sticker_ids.json`。Undo で戻しても `next_sticker_id` は戻さない（`restoredHistoryState`）。ノードが状態にない `port` の Sticker を加えるとき（`port_sticker.py` の `_take_sticker_id`）も同じ番号を使う。ノードは状態を保存しないので、進めた値は実行の中だけのものである。
 - 正規化：`sticker_<数字>` の形の `id`（数字は ASCII の `0`〜`9`）の最大の番号 + 1（なければ `1`）を最小値とする。保存された値が数値なら `floor(x + 0.5)` に丸め、最小値より小さければ最小値にする。数値でなければ最小値とする。番号と `next_sticker_id` は JS で正確に表せる `2^53 − 1` までとし、それ以上の番号の `id` と、数字が 17 桁以上の `id` は数えず、`next_sticker_id` はそこに寄せる。
 - 空・重複・文字列でない `id` は、`next_sticker_id` の番号から順に振り直し、そのぶん `next_sticker_id` を進める。数えない番号の `id` がすでにあれば、その番号は飛ばす。読み直すと、振り直した `id` が最大の番号になり、同じ結果になる。
 - 保存するテキストには、最小値と同じときは書かない。一番大きい番号を振った Sticker がテキストにないとき（消したとき）だけ、最小値より大きくなって書かれる。毎回 Sticker から求めるだけにすると、一番大きい番号の Sticker を消して次に加えた Sticker が同じ `id` を使い直すので、保存する。最小値と同じときに書かないので、この項目より前に保存した状態は、開いて閉じてもテキストが変わらず、ノードのキャッシュも外れない。
@@ -390,7 +390,7 @@ evaluateSceneState(state, frame) // -> object
 | フィールド | 意味 |
 |---|---|
 | `frame` | 受け取った Timeline frame |
-| `camera` | `position`、`yaw_deg`・`pitch_deg`・`roll_deg`（`rotation`）、`hFOV_deg`（`fov`、κ による上限に寄せた値）、`curve`、`aspect`。`camera` は自分の状態ではいつもある（読み込みが既定の Camera を入れる。ADR 0048）。上流の層（`PanoSceneValue` の層）の `camera` は `None` のままで、評価関数は `None` を返す（`nodes.py` の `_scene_output` が `None` にする。下流は上流の Camera を使わない）。JS の上流の層の読み込み（`pano_upstream.js` が `loadSceneState` を通す）は、既定の Camera が入っても使わず捨てる。この違いは Python と JS の一致の対象外とする。`projection`・`erp_range` は時間で変わらないので、状態の `camera` のものを読む |
+| `camera` | `position`、`yaw_deg`・`pitch_deg`・`roll_deg`（`rotation`）、`hFOV_deg`（`fov`、κ による上限に寄せた値）、`curve`、`aspect`。`camera` は自分の状態ではいつもある（読み込みが既定の Camera を入れる。ADR 0048）。上流の層（`PanoSceneValue` の層）の `camera` は `None` のままで、評価関数は `None` を返す（`scene_build.py` の `_scene_output` が `None` にする。下流は上流の Camera を使わない）。JS の上流の層の読み込み（`pano_upstream.js` が `loadSceneState` を通す）は、既定の Camera が入っても使わず捨てる。この違いは Python と JS の一致の対象外とする。`projection`・`erp_range` は時間で変わらないので、状態の `camera` のものを読む |
 | `scene` | `active`（`visible` かつ `frame` が `scene.clip` の範囲内）、`clip_frame`、`position`、`yaw_deg`・`pitch_deg`・`roll_deg`（`rotation`）、`scale` |
 | `clip_frame` | 素材の先頭からの経過（Timeline frame、端数あり）。`frame − (start − in)`。素材の時刻（秒）は `clip_frame ÷ timeline.fps` |
 | `stickers[]` | `state.stickers` と同じ順。`id`・`placement`、`active`（`visible` かつ Clip range の範囲内）、`clip_frame`、各 Lane の値のフィールド（`sky` は `yaw_deg`・`pitch_deg`・`roll_deg`・`hFOV_deg`・`vFOV_deg`・`curve`、`world` は `position`・`yaw_deg`・`pitch_deg`・`roll_deg`・`scale` と、`lens` の Lane を持つ Sticker だけ `lens`（`curve`・`hFOV_deg`））、`opacity` |
@@ -557,7 +557,7 @@ applyUpstreamOverrides(layerState, record) // -> object, web_src/pano_scene_inhe
 - 層に無い `id` の上書きと消した記録は何もしない。Sticker の並び順は変えない。そうした記録は、エディタが編集を書き戻すとき（Undo の段を積むとき）に、今の実行結果にその層があれば捨てる（上流で消した要素の上書きと消した記録。結果に無い層の記録は捨てない。開いて閉じただけでは捨てない。`docs/editor-interaction.md` の「上流の Scene の表示と編集」）。
 - 当てたときの結果の `upstream` は `[]`、`id`・`timeline`・`next_sticker_id` は層のまま。結果は正規化済みの状態で、`load_scene_state` に通しても同じになる。
 - 鎖（A → B → C）では、B の記録を A に当てた結果に、C の記録を当てる。後に当てた記録が勝つ。
-- `PANO_SCENE` の層の状態は、自分の `upstream` を持たない（`[]`）。Panorama Studio が `scene` 出力で自分の層の `upstream` を空にするためである（`nodes.py` の `_scene_output`。上流の層はすでに上流の Studio が空にしている）。下流が層に当てる記録は、下流の状態の `upstream` だけである。
+- `PANO_SCENE` の層の状態は、自分の `upstream` を持たない（`[]`）。Panorama Studio が `scene` 出力で自分の層の `upstream` を空にするためである（`scene_build.py` の `_scene_output`。上流の層はすでに上流の Studio が空にしている）。下流が層に当てる記録は、下流の状態の `upstream` だけである。
 - フィクスチャは `tests/fixtures/scene_inherit/`（`layer`・`records`・`expected`。`records` を順に当てる。`layer_anchor`・`chained_anchor` は層の Sticker の素材の先頭からの相対）で、`tests/test_scene_inherit.py`（Python と、JS との一致）と `tests/pano_scene_inherit.test.mjs`（JS）で固定する。
 
 ## 版の判定
