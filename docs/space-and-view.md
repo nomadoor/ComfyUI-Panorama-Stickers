@@ -9,8 +9,9 @@ Add とドロップの着く所、Preview のウィンドウの違い、ウィ�
 新しく置く物の行き先）、0058（`docs/adr/0058-orbit-center-mark-and-sky-grid.md`。オービットの中心を見せて決めること、Reset View の行き先、
 空のグリッド）、0060（`docs/adr/0060-right-drag-pans-middle-drag-looks.md`。右ドラッグのパンと中ボタンの見回し）にある。
 
-新しい UI に切り替えるまで、Panorama Studio と Preview は古い UI で開き、その視点の規則は `docs/editor-interaction.md` の
-「視点の操作」と `docs/preview-node.md` の「`PANO_SCENE` を見る」が持つ（ADR 0044 の「置き換えの進め方」）。
+Panorama Studio のエディタと新しい Preview のウィンドウは、いつも新しい UI で開く（ADR 0062）。この文書の規則は
+その二つのもので、`docs/editor-interaction.md` の「視点の操作」は、旧ノードのエディタと Preview のノード上の Scene のビューア
+（`docs/preview-node.md` の「`PANO_SCENE` を見る」）に当てはまる。
 
 この文書が持たない規則：`ground` の状態の形・欠けたときの読み方・上流からの受け継ぎ（`docs/scene-state-v2.md`。ADR 0046）、
 選択・ギズモ・選択メニュー・インスペクタ・Camera の Lane の記録（新しい UI の「選択と編集」の画面の spec。それまでは
@@ -99,7 +100,7 @@ Python はこの文書の規則を持たない（列は `—`）。「（未実�
 | 名前 | 値 | 持ち主 |
 |---|---|---|
 | `DEFAULT_VIEW_HFOV`（参照） | 100° | `space/fit.js`、`docs/editor-interaction.md`。Panorama 表示と Preview の視点の横の画角で、どの操作も変えない |
-| `KEY_MOVE_FAST`（参照） | 4 | `pano_view_keys.js`、`docs/editor-interaction.md`。WASD / QE の速さに Shift で掛ける数。新しい UI では Alt で遅くする `KEY_MOVE_SLOW` を使わない（下の「直接の操作」の WASD / QE。ADR 0048） |
+| `KEY_MOVE_FAST` | 4 | `pano_view_keys.js`。WASD / QE の速さに Shift で掛ける数。Alt では遅くしない（下の「直接の操作」の WASD / QE。ADR 0048） |
 | `NEW_STICKER_HFOV`（参照） | 30° | `space/placement.js`。新しい Sky の Sticker の横の画角 |
 | `CAMERA_HIT_PIXELS` | 6 px | `web_src/studio/camera_marker.js`。Camera の印の線の当たりの幅（下の「ホバーの判定」。古い UI の `space/guides.js` `segmentsHit` と同じ値） |
 | `COARSE_GRID_CELLS` | 16 | `web_src/pano_coarse_grid.js`。3D の Sticker の当たりの粗い占有グリッドの、各辺のマスの数（下の「ホバーの判定」） |
@@ -238,8 +239,7 @@ Camera そのものを動かす。
 | W / S・A / D・Q / E のキー | 前後・左右・下上（近道。同じことはマウスでもできる） |
 | ダブルクリック（Panorama 表示と Camera タブの Frame 表示。Alt を押していても同じ） | そこを `T` にして向く（上の「注視点 `T`」。Frame 表示は Camera が向く。下の「Frame 表示」） |
 
-- 物に触るのは Alt なしの左ボタンだけ。物の上の左ボタンは選択と編集（「選択と編集」の画面の spec。それまでは
-  `docs/editor-interaction.md`）。動かさずに離した何もないところの左クリックは、今と同じく選択を外す。
+- 物に触るのは Alt なしの左ボタンだけ。物の上の左ボタンは選択と編集（`docs/studio-ui.md`）。動かさずに離した何もないところの左クリックは、今と同じく選択を外す。
 - Alt を押している間は、物とギズモのホバーの強調をしない（押した瞬間に今の強調も消す）。Alt + ドラッグは必ず視点の
   操作（オービットか前後）なので、強調は誤った合図になる。
 - ステージは右クリックのメニューを出さない（右ドラッグを使うため。キャンバスに右クリックだけの操作は無い）。
@@ -267,9 +267,17 @@ Camera そのものを動かす。
 - ジョイスティック：押した点からの縦のずれ（上が前）を速さにし、ボタンを押している間、ポインタを止めていても動き続ける。
   速さは 1 秒に `d` × ずれ ÷ `JOYSTICK_PIXELS`（下へずらすと後ろへ）で、`forward`（pitch を含む）に沿って進む。`T` は付いて動く
   ので、進んでも `d` は変わらない。描画のループが前のフレームからの時間（`FRAME_GAP_LIMIT` まで）だけ動かす。世界の境界で止める。
-- WASD / QE：向きと受けないときは今の規則（`docs/editor-interaction.md` の「キーボードの移動」：W / S は水平に倒した向き、
-  A / D は水平の右、Q / E は World の下・上、`KeyboardEvent.code`、`stageOwnsKey`）。速さは 1 秒に `d`（Shift で
-  `KEY_MOVE_FAST` 倍。Alt は遅くしない：Alt はオービットの近道なので、二つの意味を持たせない。ADR 0048）。時間の数え方はジョイスティックと同じ。`P` と `T` を一緒に動かす。世界の境界で止める。
+- WASD / QE：キーを押している間、視点（Camera タブでは Camera）が動く。ドラッグの途中でも使え、キーはドラッグの動きを変えない。
+  - 向き：W / S は視点の向きを水平面に倒した向き（y = 0）に前後、A / D は水平の右の軸に沿って左右、Q / E は World の下・上（glTF の +Y）。
+    真下を向いていても前に進む。2 つのキーを同時に押しても、1 つのときと同じ速さで斜めに進む。キーは物理的な位置（`KeyboardEvent.code`）で
+    受けるので、他の配列のキーボードと macOS の Option でも同じ位置のキーになる（`pano_view_keys.js` の `keyMoveView`・`createMoveKeys`）。
+  - 受けないとき：文字や数を入力している欄、確認のダイアログが出ているとき、エディタの外にフォーカスがあるときは受けない（`pano_key_focus.js` の
+    `stageOwnsKey`）。ステージがキーを受けるときは WASD / QE を ComfyUI とブラウザに渡さない（`preventDefault`・`stopPropagation`。
+    ComfyUI の W はワークフロー、A はアセットのサイドバーをエディタの裏で開くため）。Ctrl・Meta との組み合わせは渡す。
+  - 止める：ウィンドウがフォーカスを失ったとき、ページが隠れたとき（`visibilitychange`）、Meta を離したとき（macOS は Meta を押している間に
+    離したキーの keyup を送らない）、右クリックのメニューが開いたときは、全部のキーを離したものとする。押したままのキーのリピートが
+    ステージのものでない所（入力欄など）に来たときは、そのキーを離したものとする（`web_src/studio/stage_input.js`・`view_input.js`）。
+  - 速さは 1 秒に `d`（Shift で `KEY_MOVE_FAST` 倍。Alt は遅くしない：Alt はオービットの近道なので、二つの意味を持たせない。ADR 0048）。時間の数え方はジョイスティックと同じ。`P` と `T` を一緒に動かす。世界の境界で止める。
 - GPU の当たりを読むのは、パンを押したとき、ホイールの一段、ダブルクリック、ドロップを離したときだけ。見回し・オービット・
   ジョイスティックの押下、ホバー、ファイルのドラッグ中は読まない。
 
@@ -301,8 +309,8 @@ Camera そのものを動かす。
   いる所から新しい行き先へ動く。
 - 描画のループが動かし、独自のタイマーを持たない。エディタを閉じると止まる。
 - Frame Selected：向きを保ったまま、収める球が画面に収まる位置へ動き（`pano_space.js` の `frameView`。距離は `fitDistance`）、
-  `T` を球の中心にする（`d` は距離の範囲に寄せる）。球は、選んでいる World の物の外接球（今の `frameSphere`。
-  `docs/editor-interaction.md`）、何も選んでいない・Sky の Sticker かペイントのまとまりを選んでいるときは World の内容の全体、Camera を選んでいる
+  `T` を球の中心にする（`d` は距離の範囲に寄せる）。球は、選んでいる World の物の外接球（`frameSphere`。
+  `docs/editor-interaction.md` の「視点の操作」の「Frame Selected の外接球」）、何も選んでいない・Sky の Sticker かペイントのまとまりを選んでいるときは World の内容の全体、Camera を選んでいる
   ときは Camera の位置を中心に半径 `CAMERA_FRAME_RADIUS` の球。World の内容が無く、球が決まらないときは動かさず、「黙って何もしない
   操作」の知らせを出す。
 
@@ -330,7 +338,7 @@ Camera そのものを動かす。
   同じに動く。
 - Frame Selected は Camera を動かす（選んだ物、または World の内容の全体が枠に収まる位置へ、向きを保って）。ホイールと同じ理由で
   なめらかにせずその場で当て、Undo の 1 段にする。Reset View は Camera タブでは無効（`docs/studio-ui.md` の「Camera タブ」）。
-- 記録：どの操作も最初の動きで再生を止め、Camera の Lane に記録の規則で書く（`docs/editor-interaction.md` の「Camera の編集」と
+- 記録：どの操作も最初の動きで再生を止め、Camera の Lane に記録の規則で書く（`docs/editor-interaction.md` の「Camera の記録」と
   `docs/timeline-ui.md`）。一つのドラッグ、続けて回したホイール（`FRAME_WHEEL_REST_MS` 止まるまで）、押してから全部のキーを離すまでが、それぞれ Undo の 1 段。
   ドラッグの途中のキーとホイールは、そのドラッグの 1 段に入る。物のドラッグ（選んだ物のギズモ・ハンドル・本体）の間は、キーとホイールで
   Camera は動かない（物と Camera が同じ 1 段に書かれないように）。キーで Camera を動かしている途中に物をドラッグすると、キーの 1 段は
@@ -444,7 +452,7 @@ Camera である（表示が 1.00 なら pinhole と同じに扱う。保存し�
 - 待っている間も、右ボタン・中ボタンのドラッグ、ホイール、WASD / QE はふだんどおり効く。Reset View と Frame Selected も効き、待ちは続く。
 - 待ちをやめる（何も動かさない）：Escape（`docs/studio-ui.md` の「閉じ方」の表。視点のドラッグの最中なら、Escape は先にそのドラッグが取る）、
   ボタンをもう一度押す、タブを変える（撮り方のモードを変えたときも）、ウィンドウがフォーカスを失う（下の「ウィンドウがフォーカスを失ったとき」）。
-  `Set ground` の待ち（`docs/studio-ui.md` の「種類ごとの中身」。まだ作っていない）ができたら、待ちは一度に一つにする：`Set ground` の待ちを
+  `Set ground` の待ち（`docs/studio-ui.md` の「種類ごとの中身」。まだ作っておらず、ボタンも出していない）ができたら、待ちは一度に一つにする：`Set ground` の待ちを
   始めると Set orbit center の待ちをやめ、逆も同じ。
 - tooltip：ふだんは「Set orbit center · or double-click a spot」、待っている間は「Click a spot to orbit around · Esc to cancel」。
 - Camera タブでは使えない（Camera タブで `T` を決め直すのはダブルクリックだけにする。上の「Frame 表示」）。同じ席に出したまま無効にし、
