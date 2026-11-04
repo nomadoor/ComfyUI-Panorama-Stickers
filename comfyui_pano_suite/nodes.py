@@ -18,7 +18,7 @@ from comfy_api.latest import ComfyExtension, Input, Types, io
 from typing_extensions import override
 
 from .comfy_image_resolver import resolve_painting_layer_payload
-from .node_runtime import NodeProgress, create_default_runtime
+from .node_runtime import NODE_RUNTIME, _NodeProgress, _audio_signature, _tensor_cache_identity
 from .progress import loop_progress
 from .core.cache import file_key, nbytes
 from .core.cutout import build_cutout_sampling_map, sample_cutout_from_sampling_map
@@ -83,19 +83,6 @@ from .scene_video import SceneVideo
 from .splat_render import read_splat_file
 from .sticker_media import OPENED_VIDEOS, PortMedia, batch_index, content_box, content_of, is_3d_media, open_video, stream_video
 _log = logging.getLogger(__name__)
-NODE_RUNTIME = create_default_runtime(logger=_log)
-
-
-def _NodeProgress(node_id: str | None, total: float, label: str = "Node") -> NodeProgress:
-    return NODE_RUNTIME.progress(node_id, total, label)
-
-
-def _audio_signature(audio) -> tuple:
-    return NODE_RUNTIME.audio_signature(audio)
-
-
-def _tensor_cache_identity(image) -> tuple | None:
-    return NODE_RUNTIME.tensor_identity(image)
 
 
 def _common_video_preview_inputs(*, default_fps: float = 24.0) -> list:
