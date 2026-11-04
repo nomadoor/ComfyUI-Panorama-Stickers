@@ -8,7 +8,7 @@ import { MOVE_KEY_CODES, isMoveKey } from "../pano_view_keys.js";
 import { editorKeyAction } from "./shortcuts.js";
 import { lensPickView, lensPinholePoint, surfaceHit } from "./stage_view.js";
 import { orbitCenter } from "./view_camera.js";
-import { navigationAction } from "./view_input.js";
+import { navigationAction, wheelMeaning } from "./view_input.js";
 import { FRAME_WHEEL_REST_MS } from "./view_scale.js";
 
 // A double click that comes within this long after Set orbit center's press is the one its clicks made (a browser's
@@ -292,9 +292,17 @@ export function createStageInput(shared, {
   }
 
   function onWheel(event) {
+    const meaning = wheelMeaning(event);
+    // Meta + wheel stays the browser's; Ctrl + wheel (a pinch) zooms and is not the page's zoom (docs/space-and-view.md
+    // "マウスとキー").
+    if (!meaning) return;
     event.preventDefault();
     const step = wheelSteps.push(event);
     if (!step) return;
+    if (meaning === "zoom") {
+      zoom(step);
+      return;
+    }
     const view = navCamera();
     if (!view) return;
     stopCoast();
@@ -307,6 +315,14 @@ export function createStageInput(shared, {
       shared.wheelTimer = setTimeout(commitFrame, FRAME_WHEEL_REST_MS);
     }
     requestDraw();
+  }
+
+  // One zoom step (docs/space-and-view.md "寄る"): the 3D tab's and the Preview window's view changes its FOV at once (a
+  // coast stops, as another operation starts).
+  function zoom(step) {
+    if (viewMode() !== "space") return;
+    stopCoast();
+    if (camera.zoom(step).moved) requestDraw();
   }
 
   // A double click turns the view to what is under the pointer (World image planes included, the one exception); in the

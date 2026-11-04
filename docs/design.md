@@ -609,7 +609,7 @@ Set orbit center の待ちの輪は明滅させずに出す）。
   見分けるため、目盛りの線は付けない）。
 - Reset View（ステージの右下と Preview のウィンドウ）は Tabler の `home`（ADR 0061。行き先が World の原点なので「原点へ帰る」を家で示す）。
   回る矢印（`refresh`）は「この値を既定に戻す」（インスペクタの行のリセット、辺の目盛りのリセット、右下の画角のリセット）にだけ使う。
-  Preview のノードの上の Scene のビューアの Reset view も `home` にする（`docs/preview-node.md`）。`web_src/icons.js` に `home` を足す（未実装）。
+  Preview のノードの上の Scene のビューアの Reset view も `home` にする（`docs/preview-node.md`）。`web_src/icons.js` の `home`。
 - ループ（タイムラインのバー）とグリッド（ステージの右下）は、一つのアイコンのボタンで、今の状態をアイコンの形で示す（ループ
   `repeat` ／ `repeat-off`、グリッド `table` ／ `table-off`）。オンでも強い塗りにしない（`docs/agents/ux-principles.md` の例外）。
 - 下の中央のバーの前面へ・背面へ（空に貼った画像）は、Tabler の線の形にならって描いた二つの角丸の四角（`web_src/icons.js`

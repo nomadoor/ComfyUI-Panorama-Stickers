@@ -317,6 +317,9 @@ test("the Preview window has Set orbit center: its wait line at the top center, 
 test("Reset View and Frame Selected keep Set orbit center's wait", async ({ page }) => {
   const { problems } = await open(page);
   const button = page.locator('[data-action="orbit-center"]');
+  // Away from the start view (a zoom step), so Reset View can be pressed (ADR 0061).
+  await page.evaluate(() => document.querySelector("[data-stage-canvas]").dispatchEvent(new WheelEvent("wheel", { deltaY: -100, altKey: true, bubbles: true, cancelable: true })));
+  await expect(page.locator('[data-action="reset-view"]')).not.toHaveAttribute("aria-disabled", "true");
   await button.click();
   await page.locator('[data-action="reset-view"]').click();
   await expect(button).toHaveClass(/is-waiting/);

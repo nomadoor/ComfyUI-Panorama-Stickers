@@ -107,7 +107,14 @@ const timeText = computed(() => `${clock(props.playback.frame / props.playback.f
         </div>
         <div class="pano-studio-at-buttons">
           <StudioFloatGroup layout="row" label="View">
-            <StudioIconButton data-action="reset-view" :icon="ICON.reset" label="Reset view" @press="controller.resetView()" />
+            <StudioIconButton
+              data-action="reset-view"
+              :icon="ICON.home"
+              label="Reset view"
+              :tip="ui.atStart ? 'Reset view · Already at the start' : ''"
+              :disabled="ui.atStart"
+              @press="controller.resetView()"
+            />
             <StudioIconButton
               data-action="grid"
               role="switch"

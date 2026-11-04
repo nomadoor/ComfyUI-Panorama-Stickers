@@ -1,6 +1,6 @@
 // The Preview window's view (docs/space-and-view.md "Preview のウィンドウ"): its feel and what it takes from the node and
 // gives back. The operations move the view (view_camera.js createViewCamera, the destination); the view shown follows it
-// by PREVIEW_DAMPING ^ (1000 dt) of the difference each frame, except during an eased action, which keeps its length. A
+// by PREVIEW_DAMPING ^ (1000 dt) of the difference each frame (its FOV at once), except during an eased action, which keeps its length. A
 // look, orbit or pan drag let go while moving coasts at the speed of its last moves (ADR 0010's window, as
 // pano_interaction_controller.js) and slows as the look's inertia does. stage.js takes this as its `follow`.
 import { clamp, shortestYawDelta, wrapYaw } from "../pano_camera_math.js";
@@ -22,7 +22,7 @@ const finite = (value) => typeof value === "number" && Number.isFinite(value);
 const angular = (pxPerSecond) => Math.abs(pxPerSecond) * ORBIT_DEG_PER_PIXEL;
 
 function copyPose(p) {
-  return { position: [...p.position], yaw_deg: p.yaw_deg, pitch_deg: p.pitch_deg, roll_deg: p.roll_deg ?? 0, target: [...p.target] };
+  return { position: [...p.position], yaw_deg: p.yaw_deg, pitch_deg: p.pitch_deg, roll_deg: p.roll_deg ?? 0, hFOV_deg: p.hFOV_deg, target: [...p.target] };
 }
 
 // pose: the view shown at first (the view camera's pose).
@@ -54,7 +54,8 @@ export function createPreviewMotion({ pose: start }) {
       settled = true;
       return;
     }
-    shown = { position, yaw_deg: wrapYaw(goal.yaw_deg + yaw), pitch_deg: goal.pitch_deg + pitch, roll_deg: goal.roll_deg ?? 0, target };
+    // The FOV is not followed: a zoom shows at once (docs/space-and-view.md "寄る").
+    shown = { position, yaw_deg: wrapYaw(goal.yaw_deg + yaw), pitch_deg: goal.pitch_deg + pitch, roll_deg: goal.roll_deg ?? 0, hFOV_deg: goal.hFOV_deg, target };
     settled = false;
   }
 

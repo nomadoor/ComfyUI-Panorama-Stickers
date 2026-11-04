@@ -86,13 +86,29 @@ export function stageCursor({ gesture = null, altHeld = false, objectCursor = nu
 
 // --- The wheel.
 
-// The wheel's steps: push(event) gives 1 (nearer: rolled away, deltaY < 0), -1 (farther) or 0. A line or page event
-// (deltaMode != 0) and a pixel event of WHEEL_STEP_PIXELS or more are one step each. Finer pixel events (a trackpad)
-// add up in one direction to a step every WHEEL_STEP_PIXELS; a change of direction drops what was added up.
+// What a wheel event does (docs/space-and-view.md "マウスとキー", "寄る"; ADR 0061): "move" (toward the pointer), or
+// "zoom" (the view's FOV) with Alt or Ctrl (a trackpad's pinch comes as Ctrl + wheel, which a mouse's Ctrl + wheel
+// cannot be told from); null with Meta, which stays the browser's. Shift changes nothing (some browsers make Shift +
+// wheel a sideways scroll).
+export function wheelMeaning(event) {
+  if (event.metaKey) return null;
+  return event.altKey || event.ctrlKey ? "zoom" : "move";
+}
+
+// The wheel's steps: push(event) gives 1 (nearer: rolled away, deltaY < 0; a smaller FOV for a zoom), -1 (farther) or
+// 0. A line or page event (deltaMode != 0) and a pixel event of WHEEL_STEP_PIXELS or more are one step each. Finer
+// pixel events (a trackpad) add up in one direction to a step every WHEEL_STEP_PIXELS; a change of direction or of the
+// wheel's meaning (wheelMeaning: Alt or Ctrl went down or up) drops what was added up.
 export function createWheelSteps() {
   let added = 0;
+  let meaning = "move";
   return {
     push(event) {
+      const now = wheelMeaning(event);
+      if (now !== meaning) {
+        added = 0;
+        meaning = now;
+      }
       const fine = (event.deltaMode ?? 0) === 0 && Math.abs(event.deltaY) < WHEEL_STEP_PIXELS;
       if (!fine) {
         added = 0;

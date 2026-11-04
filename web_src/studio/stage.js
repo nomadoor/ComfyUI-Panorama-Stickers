@@ -15,10 +15,10 @@ import { LIVE_ERP_OWNER, OUTPUT_ERP_OWNER, OUTPUT_OWNER, createStageOutput } fro
 import { liveErpSize } from "./erp_preview.js";
 import { outputErpInput } from "./output_picture.js";
 import { STAGE_CLEAR_COLOR, stageCamera, stageRenderInput, stageRenderSize } from "./stage_view.js";
-import { createNotice, createViewCamera, frameSelectedSphere, orbitCenter } from "./view_camera.js";
+import { atResetView, createNotice, createViewCamera, frameSelectedSphere, orbitCenter } from "./view_camera.js";
 import { KNOB_CURSOR, createViewInput, createWheelSteps, knobAction, litKnobs, stageCursor } from "./view_input.js";
 import { BOUND_NOTICE_SECONDS, frameSeconds } from "./view_scale.js";
-import { projectPoint } from "../pano_space.js";
+import { DEFAULT_VIEW_HFOV, projectPoint } from "../pano_space.js";
 import { markOnView, orbitMarkPoint, orbitMarkerAlpha, orbitMarkerFading } from "./orbit_marker.js";
 
 // The owners (pano_three_view.js) the live ERP of the Camera tab's Panorama mode, the Output window's Frame picture and
@@ -45,6 +45,10 @@ export function stageUi() {
     // Set orbit center waits for a click on the stage (docs/space-and-view.md "Set orbit center"): the button shows it,
     // the top line says what to do, the stage's cursor is a crosshair.
     pickingCenter: false,
+    // The 3D tab's view FOV as it shows, in whole degrees (the FOV number, docs/studio-ui.md "右下の View の群"), and
+    // whether the view is (going to) the start view, where Reset View is off (view_camera.js atResetView).
+    fov: DEFAULT_VIEW_HFOV,
+    atStart: true,
   };
 }
 
@@ -491,6 +495,8 @@ export function createStage({
   }
 
   function syncUi() {
+    ui.fov = Math.round(shownPose().hFOV_deg);
+    ui.atStart = atResetView(camera.destination());
     const gesture = input.gesture();
     ui.lit = litKnobs({ gesture, keysMoving: shared.keysMoving, altHeld: input.altHeld() });
     ui.knobDrag = !!shared.drag?.knob;
@@ -555,6 +561,17 @@ export function createStage({
       stopCoast();
       report(camera.reset());
       requestDraw();
+    },
+    // The FOV number (docs/space-and-view.md "寄る"): the 3D tab's view FOV set to `value` at once, or back to
+    // DEFAULT_VIEW_HFOV (its reset). P, the direction and T stay. Not in the Camera tab.
+    setFov(value) {
+      if (viewMode() !== "space") return;
+      stopCoast();
+      camera.setFov(value);
+      requestDraw();
+    },
+    resetFov() {
+      this.setFov(DEFAULT_VIEW_HFOV);
     },
     // Frame Selected: the selected object (selected(), or `selection` when given: a Timeline row's double click), else
     // the whole World content; with nothing to frame it says so. In the Frame view it moves the Camera at once, as one

@@ -2,15 +2,17 @@
 // "なめらかに動く操作", "Frame 表示"): the view's position P, its direction (yaw, pitch; roll only for the Frame view's
 // Camera) and its target T, and how every operation moves them. The quantities are view_scale.js's.
 //
-// A pose is { position, yaw_deg, pitch_deg, roll_deg, target } (World glTF arrays, degrees; pano_space.js viewAxes).
+// A pose is { position, yaw_deg, pitch_deg, roll_deg, hFOV_deg, target } (World glTF arrays, degrees; pano_space.js
+// viewAxes); hFOV_deg is the view's horizontal FOV (docs/space-and-view.md "寄る"; the Frame view's is the Camera's,
+// given by setScreen).
 // d is |P - T|. Nothing here reads the GPU: the hits a pan's press, a wheel step and a double click need (the GPU
 // pick, pano_three_view.js pick) come in as arguments, so the rules stay pure. The first T is found here on the CPU.
 //
 // createViewCamera() holds one viewpoint: the Panorama view's (and the Preview window's), or, with `frame`, the Frame
 // view's, where the pose is the Camera itself and its moves go to the Camera's Lane (the caller writes them).
-import { DEG2RAD, RAD2DEG, clamp, shortestYawDelta, wrapYaw } from "../pano_camera_math.js";
+import { DEG2RAD, RAD2DEG, VIEW_HFOV_MAX_DEG, VIEW_HFOV_MIN_DEG, clamp, fovStepValue, shortestYawDelta, wrapYaw } from "../pano_camera_math.js";
 import { rayBoxDepth } from "../pano_ray_box.js";
-import { DEFAULT_VIEW_HFOV, frameView, orbitView, viewAxes } from "../pano_space.js";
+import { DEFAULT_VIEW_HFOV, frameView, orbitView, sameView, viewAxes } from "../pano_space.js";
 import { KEY_MOVE_FAST, keyMoveView } from "../pano_view_keys.js";
 import { restoredView, viewMemory } from "../pano_view_memory.js";
 import { worldRotation } from "../pano_world.js";
@@ -41,8 +43,15 @@ const length = (a) => Math.hypot(a[0], a[1], a[2]);
 const lerp = (a, b, t) => a + (b - a) * t;
 const EPSILON = 1e-12;
 
+// The view's FOV as it is held (docs/space-and-view.md "寄る" 値の桁): whole degrees within [VIEW_HFOV_MIN_DEG,
+// VIEW_HFOV_MAX_DEG]; DEFAULT_VIEW_HFOV for none.
+export function viewFovValue(value) {
+  if (!Number.isFinite(value)) return DEFAULT_VIEW_HFOV;
+  return Math.round(clamp(value, VIEW_HFOV_MIN_DEG, VIEW_HFOV_MAX_DEG));
+}
+
 function copyPose(p) {
-  return { position: [...p.position], yaw_deg: p.yaw_deg, pitch_deg: p.pitch_deg, roll_deg: p.roll_deg ?? 0, target: [...p.target] };
+  return { position: [...p.position], yaw_deg: p.yaw_deg, pitch_deg: p.pitch_deg, roll_deg: p.roll_deg ?? 0, hFOV_deg: p.hFOV_deg ?? DEFAULT_VIEW_HFOV, target: [...p.target] };
 }
 
 function forwardOf(p) {
@@ -50,7 +59,7 @@ function forwardOf(p) {
 }
 
 // The pose as pano_space.js and pano_view_keys.js take a view.
-function asView(p, hFovDeg = DEFAULT_VIEW_HFOV) {
+function asView(p, hFovDeg = p.hFOV_deg ?? DEFAULT_VIEW_HFOV) {
   return { position: p.position, yaw_deg: p.yaw_deg, pitch_deg: p.pitch_deg, roll_deg: p.roll_deg ?? 0, hFOV_deg: hFovDeg, distance: length(sub(p.target, p.position)) };
 }
 
@@ -175,14 +184,21 @@ export function frameSelectedSphere({ selection, content, ground }) {
   return content ?? null;
 }
 
-// Where Reset View goes: the World origin, level, yaw 0 (ADR 0058; not the Camera).
-export const RESET_VIEW = Object.freeze({ position: Object.freeze([0, 0, 0]), yaw_deg: 0, pitch_deg: 0 });
+// Where Reset View goes: the World origin, level, yaw 0 (ADR 0058; not the Camera), at DEFAULT_VIEW_HFOV (ADR 0061).
+export const RESET_VIEW = Object.freeze({ position: Object.freeze([0, 0, 0]), yaw_deg: 0, pitch_deg: 0, hFOV_deg: DEFAULT_VIEW_HFOV });
+
+// Whether the pose `p` is the start view, where Reset View is off (docs/space-and-view.md "開いたときの視点と Reset
+// View" 始めの視点): P, yaw, pitch and the FOV are RESET_VIEW's (pano_space.js sameView). Pass the pose an eased move
+// goes to (the destination).
+export function atResetView(p) {
+  return sameView({ ...p, hFOV_deg: p.hFOV_deg ?? DEFAULT_VIEW_HFOV }, RESET_VIEW);
+}
 
 // --- Opening and the view memory (kept per node for the page, pano_node_bridge.js editorSession(node).view).
 
 const TABS = { panorama: "pano", frame: "frame" };
 
-// What the memory keeps of a pose closed in `tab` ("panorama" or "frame"): P, yaw, pitch and d (pass the pose an
+// What the memory keeps of a pose closed in `tab` ("panorama" or "frame"): P, yaw, pitch, the FOV and d (pass the pose an
 // eased move goes to, so a move under way is remembered where it ends). The shape is pano_view_memory.js viewMemory's.
 export function rememberView(p, tab) {
   return viewMemory({
@@ -191,27 +207,28 @@ export function rememberView(p, tab) {
     viewPosition: p.position,
     viewYaw: p.yaw_deg,
     viewPitch: p.pitch_deg,
-    viewFov: DEFAULT_VIEW_HFOV,
+    viewFov: p.hFOV_deg ?? DEFAULT_VIEW_HFOV,
     viewDistance: length(sub(p.target, p.position)),
     viewMoved: true,
   });
 }
 
-// The { tab, pose } a memory opens with, T d ahead; null when it cannot be used (a value that is no number, a tab the
+// The { tab, pose } a memory opens with, T d ahead; null when it cannot be used (a value that is no number, a FOV out of
+// the range, a tab the
 // new UI does not have, the Frame view when it cannot open), and then everything opens at the output.
 export function recallView(memory, { frameAvailable, ground }) {
   const restored = restoredView(memory, { frame: frameAvailable });
   if (!restored || (restored.mode !== "pano" && restored.mode !== "frame")) return null;
-  const p = { position: restored.viewPosition, yaw_deg: wrapYaw(restored.viewYaw), pitch_deg: restored.viewPitch, roll_deg: 0, target: restored.viewPosition };
+  const p = { position: restored.viewPosition, yaw_deg: wrapYaw(restored.viewYaw), pitch_deg: restored.viewPitch, roll_deg: 0, hFOV_deg: viewFovValue(restored.viewFov), target: restored.viewPosition };
   return { tab: restored.mode === "frame" ? "frame" : "panorama", pose: centered(p, restored.viewDistance, eyeHeight(ground)) };
 }
 
 // The view the editor opens with: the memory's when it can be used, else the output's (`output`: the Camera's
-// position and yaw at the playhead) looking level, with the first T.
+// position and yaw at the playhead) looking level at DEFAULT_VIEW_HFOV (not the Camera's H FOV), with the first T.
 export function openingView({ memory = null, output, world, frameAvailable = false }) {
   const recalled = memory ? recallView(memory, { frameAvailable, ground: world.ground }) : null;
   if (recalled) return recalled;
-  const p = { position: [...output.position], yaw_deg: wrapYaw(output.yaw_deg), pitch_deg: 0, roll_deg: 0 };
+  const p = { position: [...output.position], yaw_deg: wrapYaw(output.yaw_deg), pitch_deg: 0, roll_deg: 0, hFOV_deg: DEFAULT_VIEW_HFOV };
   return { tab: "panorama", pose: { ...p, target: initialTarget({ ...p, target: p.position }, world) } };
 }
 
@@ -279,6 +296,7 @@ export function createViewCamera({ pose: start, frame = false }) {
       yaw_deg: wrapYaw(from.yaw_deg + shortestYawDelta(from.yaw_deg, to.yaw_deg) * k),
       pitch_deg: lerp(from.pitch_deg, to.pitch_deg, k),
       roll_deg: to.roll_deg,
+      hFOV_deg: lerp(from.hFOV_deg, to.hFOV_deg, k),
       target: from.target.map((value, axis) => lerp(value, to.target[axis], k)),
     };
   }
@@ -317,8 +335,9 @@ export function createViewCamera({ pose: start, frame = false }) {
     return result(moved, stopped ? "bound" : null);
   }
 
+  // The FOV the amounts go by: the view's own (the pose's, as it shows), the Camera's in the Frame view.
   function hFov() {
-    return screen.hFOV_deg;
+    return frame ? screen.hFOV_deg : shown().hFOV_deg;
   }
 
   function tanHalf() {
@@ -332,8 +351,8 @@ export function createViewCamera({ pose: start, frame = false }) {
     setWorld(next) {
       world = { ...world, ...next };
     },
-    // The view's size in CSS px and its horizontal FOV (DEFAULT_VIEW_HFOV; in the Frame view the Camera's H FOV and
-    // the width of the Camera's frame on the stage).
+    // The view's size in CSS px (in the Frame view the width of the Camera's frame on the stage, with the Camera's H FOV
+    // as hFOV_deg; the Panorama view's FOV is its pose's).
     setScreen(next) {
       screen = { ...screen, ...next };
     },
@@ -347,7 +366,7 @@ export function createViewCamera({ pose: start, frame = false }) {
     // Starts the pose at `next` at once, with T at its first T (entering the Frame view, opening).
     enter(next) {
       ease = null;
-      const p = { position: [...next.position], yaw_deg: wrapYaw(next.yaw_deg), pitch_deg: clamp(next.pitch_deg, -PITCH_LIMIT, PITCH_LIMIT), roll_deg: frame ? (next.roll_deg ?? 0) : 0 };
+      const p = { position: [...next.position], yaw_deg: wrapYaw(next.yaw_deg), pitch_deg: clamp(next.pitch_deg, -PITCH_LIMIT, PITCH_LIMIT), roll_deg: frame ? (next.roll_deg ?? 0) : 0, hFOV_deg: viewFovValue(next.hFOV_deg) };
       pose = { ...p, target: initialTarget({ ...p, target: p.position }, world, bound()) };
     },
 
@@ -433,6 +452,29 @@ export function createViewCamera({ pose: start, frame = false }) {
       panDepth = null;
     },
 
+    // --- Zoom (docs/space-and-view.md "寄る"): the view's FOV, at the screen's center (P, the direction and T stay),
+    // at once, a direct operation (an eased move stops where it shows). Not the Frame view's (its FOV is the Camera's).
+
+    // One zoom step: smaller by VIEW_FOV_STEP_DEG (pano_camera_math.js fovStepValue) rolled away (step > 0), larger
+    // back. At the range's end nothing changes and nothing is said.
+    zoom(step) {
+      if (!step || frame) return result(false);
+      const base = direct();
+      const next = fovStepValue(base.hFOV_deg, -Math.sign(step));
+      if (next === base.hFOV_deg) return result(false);
+      pose = { ...base, hFOV_deg: next };
+      return result(true);
+    },
+    // The FOV set to `value` (the FOV number's drag and keys, its reset), held as viewFovValue() holds it.
+    setFov(value) {
+      if (frame) return result(false);
+      const base = direct();
+      const next = viewFovValue(value);
+      if (next === base.hFOV_deg) return result(false);
+      pose = { ...base, hFOV_deg: next };
+      return result(true);
+    },
+
     // --- Wheel and eased actions.
 
     // One wheel step toward the pointer (step > 0) or away, about `hit`, the surface hit under the pointer: P and T
@@ -496,11 +538,11 @@ export function createViewCamera({ pose: start, frame = false }) {
       return result(true);
     },
 
-    // Reset View: eases to `to` (RESET_VIEW: the World origin, level, yaw 0), T at the first T found there. Not in the
-    // Frame view.
+    // Reset View: eases to `to` (RESET_VIEW: the World origin, level, yaw 0, DEFAULT_VIEW_HFOV; the FOV eased with the
+    // rest), T at the first T found there. Not in the Frame view.
     reset(to = RESET_VIEW) {
       if (frame) return result(false);
-      const p = { position: [...to.position], yaw_deg: wrapYaw(to.yaw_deg), pitch_deg: clamp(to.pitch_deg, -PITCH_LIMIT, PITCH_LIMIT), roll_deg: 0 };
+      const p = { position: [...to.position], yaw_deg: wrapYaw(to.yaw_deg), pitch_deg: clamp(to.pitch_deg, -PITCH_LIMIT, PITCH_LIMIT), roll_deg: 0, hFOV_deg: viewFovValue(to.hFOV_deg) };
       destination = [...p.position];
       const target = initialTarget({ ...p, target: p.position }, world, bound());
       go({ ...p, target }, ACTION_EASE_SECONDS);

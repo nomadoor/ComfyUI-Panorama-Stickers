@@ -305,3 +305,54 @@ test("the Output window opens and folds with a short size and opacity move, its 
   expect(await win.evaluate((el) => getComputedStyle(el).pointerEvents)).toBe("none");
   expect(problems).toEqual([]);
 });
+
+// docs/space-and-view.md "寄る", "マウスとキー" (ADR 0061): Alt + wheel and a pinch (Ctrl + wheel) change the view's FOV
+// at the screen's center, P staying; Meta + wheel is the browser's; Reset View is off at the start view, on once the
+// view zoomed, and brings the FOV back to 100°; the memory keeps the FOV.
+test("Alt + wheel and a pinch zoom the view's FOV; Reset View is off at the start and brings the FOV back", async ({ page }, testInfo) => {
+  const { problems, stage } = await open(page, testInfo);
+  const reset = page.locator('[data-action="reset-view"]');
+  const fov = async () => (await page.evaluate(() => window.__studio.pose())).hFOV_deg;
+  await expect(reset).toHaveAttribute("aria-disabled", "true");
+  await expect(reset).toHaveAttribute("data-tip", "Reset view · Already at the start");
+  const at = await stageCenter(stage);
+  await page.mouse.move(at.x, at.y);
+  const before = await settled(page);
+  const start = await page.evaluate(() => window.__studio.pose());
+  await page.keyboard.down("Alt");
+  for (let i = 0; i < 3; i += 1) await page.mouse.wheel(0, -100);
+  await page.keyboard.up("Alt");
+  expect(await fov()).toBe(94);
+  const zoomed = await page.evaluate(() => window.__studio.pose());
+  expect(zoomed.position).toEqual(start.position);
+  expect(zoomed.yaw_deg).toBeCloseTo(start.yaw_deg, 9);
+  // The picture is drawn nearer.
+  expect(diff(await settled(page), before)).toBeGreaterThan(1);
+  await expect(reset).not.toHaveAttribute("aria-disabled", "true");
+  // A pinch comes as Ctrl + wheel, a trackpad's fine events added up to steps; its default (the page's zoom) is stopped.
+  const prevented = await page.evaluate(({ x, y }) => {
+    const canvas = document.querySelector("[data-stage-canvas]");
+    const pinch = (deltaY, mods) => {
+      const event = new WheelEvent("wheel", { deltaY, deltaMode: 0, clientX: x, clientY: y, bubbles: true, cancelable: true, ...mods });
+      canvas.dispatchEvent(event);
+      return event.defaultPrevented;
+    };
+    const results = [];
+    for (let i = 0; i < 4; i += 1) results.push(pinch(25, { ctrlKey: true }));
+    // Meta + wheel is left to the browser and changes nothing.
+    results.push(pinch(-100, { metaKey: true }));
+    return results;
+  }, at);
+  expect(prevented).toEqual([true, true, true, true, false]);
+  expect(await fov()).toBe(96);
+  // The memory keeps the FOV and opens with it.
+  await page.evaluate(() => window.__studio.close());
+  expect((await memory(page)).hFOV_deg).toBe(96);
+  await page.evaluate(() => window.__studio.open());
+  await expect.poll(fov).toBe(96);
+  // Reset View eases back to the start view, the FOV with the rest; then it is off again.
+  await page.locator('[data-action="reset-view"]').click();
+  await expect.poll(fov).toBe(100);
+  await expect(page.locator('[data-action="reset-view"]')).toHaveAttribute("aria-disabled", "true");
+  expect(problems).toEqual([]);
+});

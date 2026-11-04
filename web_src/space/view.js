@@ -1,7 +1,7 @@
 // The Viewport camera's navigation in space (docs/editor-interaction.md "視点のモード", "ピボット・パン・ホイールの規則",
 // Frame Selected's distance, the Camera's orbit and zoom): the view modes, the pivot, orbit, pan, wheel steps and the
 // fit of a sphere. The view is { position, yaw_deg, pitch_deg, hFOV_deg, distance } (pano_space.js).
-import { DEG2RAD, RAD2DEG, VIEW_PITCH_LIMIT_DEG, clamp, wrapYaw } from "../pano_camera_math.js";
+import { DEG2RAD, RAD2DEG, VIEW_PITCH_LIMIT_DEG, clamp, shortestYawDelta, wrapYaw } from "../pano_camera_math.js";
 import { worldRotation } from "../pano_world.js";
 import { fitDistance } from "./fit.js";
 import { add, apply, column, dot, sub } from "./vec.js";
@@ -22,6 +22,19 @@ const WHEEL_PICK_MS = 250;
 const WHEEL_PICK_BUDGET_MS = 16;
 // Pivot distance of a view that has nothing to frame yet.
 export const DEFAULT_DISTANCE = 1;
+
+// The difference two views may have and still be the same view (the numbers' error).
+const SAME_VIEW_EPSILON = 1e-6;
+
+// Whether views a and b ({ position, yaw_deg, pitch_deg, hFOV_deg }) are the same: the position, pitch and FOV within
+// the numbers' error, the yaw too round 360° (docs/space-and-view.md "開いたときの視点と Reset View" 始めの視点; a
+// pivot or T is not compared). Reset View is off at its start view by this (studio/view_camera.js atResetView,
+// pano_scene_viewer.js).
+export function sameView(a, b) {
+  const close = (x, y) => Math.abs(x - y) <= SAME_VIEW_EPSILON;
+  return a.position.every((value, axis) => close(value, b.position[axis]))
+    && close(shortestYawDelta(a.yaw_deg, b.yaw_deg), 0) && close(a.pitch_deg, b.pitch_deg) && close(a.hFOV_deg, b.hFOV_deg);
+}
 
 // The World axes of a view turned yaw / pitch / roll: right, up and forward (local -Z).
 export function viewAxes(yawDeg, pitchDeg, rollDeg = 0) {

@@ -407,6 +407,7 @@ function setCollapsed(value) {
             :grid-shown="!ui.gridHidden"
             :reset-disabled="cameraTab"
             :reset-tip="CAMERA_TAB_TIP"
+            :at-start="ui.atStart"
             :frame-tip="cameraTab ? 'Frame selected · Moves the camera' : ''"
             :frame-disabled="!!navOff"
             :frame-disabled-tip="navOff"

@@ -3,10 +3,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { ACTION_EASE_SECONDS } from "../web_src/studio/view_scale.js";
+
 import { fitDistance, viewAxes, viewFitFov } from "../web_src/pano_space.js";
 import { KEY_MOVE_FAST } from "../web_src/pano_view_keys.js";
 import {
   VIEW_NOTICES,
+  atResetView,
   clipToBound,
   createNotice,
   createViewCamera,
@@ -473,7 +476,7 @@ test("an eased destination is not cut by the bound, and the bound grows to hold 
 
 test("Reset View eases to the World origin, level, yaw 0 (not the Camera), with the first T found there (ADR 0058)", () => {
   const view = camera(pose({ position: [5, 1, 5], yaw_deg: 120, pitch_deg: 30 }), { world: { ...WORLD, camera: [3, 0.4, 2.6] } });
-  assert.deepEqual(RESET_VIEW, { position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0 });
+  assert.deepEqual(RESET_VIEW, { position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0, hFOV_deg: 100 });
   view.reset();
   view.step(0.4);
   const shown = view.pose();
@@ -700,4 +703,92 @@ test("an orbit's center at P itself becomes T TARGET_MIN_DISTANCE ahead", () => 
   const view = camera(pose({ position: [1, 0, 2] }));
   view.beginOrbit([1, 0, 2]);
   closeVec(view.destination().target, [1, 0, 2 - 0.008]);
+});
+
+const ACTION_EASE_HALF = ACTION_EASE_SECONDS / 2;
+
+// --- Zoom (docs/space-and-view.md "寄る", ADR 0061).
+
+test("the view opens at DEFAULT_VIEW_HFOV, and a zoom step changes its FOV by VIEW_FOV_STEP_DEG at the center", () => {
+  const view = camera(pose({ position: [1, 0, 2], yaw_deg: 30 }));
+  assert.equal(view.pose().hFOV_deg, 100);
+  const before = view.pose();
+  // Rolled away (a step > 0): smaller, nearer.
+  assert.deepEqual(view.zoom(1), { moved: true, notice: null });
+  assert.equal(view.pose().hFOV_deg, 98);
+  view.zoom(-1);
+  view.zoom(-1);
+  assert.equal(view.pose().hFOV_deg, 102);
+  // P, the direction and T stay.
+  const after = view.pose();
+  closeVec(after.position, before.position);
+  close(after.yaw_deg, before.yaw_deg);
+  closeVec(after.target, before.target);
+});
+
+test("a zoom step at the range's end changes nothing and says nothing", () => {
+  const view = camera(pose({ hFOV_deg: 35 }));
+  assert.deepEqual(view.zoom(1), { moved: false, notice: null });
+  assert.equal(view.pose().hFOV_deg, 35);
+  view.setFov(140);
+  assert.deepEqual(view.zoom(-1), { moved: false, notice: null });
+});
+
+test("setting the FOV keeps it to whole degrees within the range", () => {
+  const view = camera();
+  view.setFov(57.4);
+  assert.equal(view.pose().hFOV_deg, 57);
+  view.setFov(10);
+  assert.equal(view.pose().hFOV_deg, 35);
+  view.setFov(300);
+  assert.equal(view.pose().hFOV_deg, 140);
+});
+
+test("a zoom step during an eased move stops it where it shows and applies at once", () => {
+  const view = camera(pose({ position: [5, 0, 5], hFOV_deg: 60 }));
+  view.reset();
+  view.step(0.1);
+  const shown = view.pose();
+  view.zoom(1);
+  assert.equal(view.animating(), false);
+  closeVec(view.pose().position, shown.position);
+  assert.equal(view.pose().hFOV_deg, Math.round(shown.hFOV_deg) - 2);
+});
+
+test("the look and the pan go by the view's FOV", () => {
+  const view = camera(pose({ hFOV_deg: 50 }));
+  view.look(100, 0);
+  close(view.pose().yaw_deg, -100 / 1000 * 50);
+});
+
+test("Reset View eases the FOV to DEFAULT_VIEW_HFOV with the position and the direction", () => {
+  const view = camera(pose({ position: [5, 0, 5], hFOV_deg: 40 }));
+  view.reset();
+  view.step(ACTION_EASE_HALF);
+  const half = view.pose().hFOV_deg;
+  assert.ok(half > 40 && half < 100, `${half}`);
+  view.step(1);
+  assert.equal(view.pose().hFOV_deg, 100);
+});
+
+test("the start view: the position, yaw, pitch and FOV are Reset View's, yaw round 360, T not counted", () => {
+  assert.equal(atResetView(pose()), true);
+  assert.equal(atResetView(pose({ yaw_deg: 360 })), true);
+  assert.equal(atResetView(pose({ yaw_deg: 1e-9, position: [1e-9, 0, 0] })), true);
+  assert.equal(atResetView({ ...pose(), target: [3, 3, 3] }), true);
+  assert.equal(atResetView(pose({ hFOV_deg: 98 })), false);
+  assert.equal(atResetView(pose({ yaw_deg: 5 })), false);
+  assert.equal(atResetView(pose({ pitch_deg: -2 })), false);
+  assert.equal(atResetView(pose({ position: [0, 0.5, 0] })), false);
+});
+
+test("the memory keeps the FOV, and a FOV out of the range opens all at the output", () => {
+  const view = camera(pose({ position: [1, 0, 0] }));
+  view.zoom(1);
+  const memory = rememberView(view.destination(), "panorama");
+  assert.equal(memory.hFOV_deg, 98);
+  assert.equal(recallView(memory, { frameAvailable: false, ground: -1.6 }).pose.hFOV_deg, 98);
+  assert.equal(recallView({ ...memory, hFOV_deg: 20 }, { frameAvailable: false, ground: -1.6 }), null);
+  const opened = openingView({ memory: null, output: { position: [0, 0, 0], yaw_deg: 0 }, world: WORLD });
+  assert.equal(opened.pose.hFOV_deg, 100);
 });

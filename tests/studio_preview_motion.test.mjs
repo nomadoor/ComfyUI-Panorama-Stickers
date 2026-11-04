@@ -35,6 +35,17 @@ test("the view shown follows the moved view by PREVIEW_DAMPING ^ (1000 dt) of th
   assert.equal(motion.animating(), false);
 });
 
+// docs/space-and-view.md "寄る" (ADR 0061): a zoom is not damped in the Preview window either.
+test("the view shown takes the moved view's FOV at once, while the rest follows", () => {
+  const view = camera();
+  const motion = createPreviewMotion({ pose: view.pose() });
+  view.look(-100, 0);
+  view.zoom(1);
+  motion.step(0.016, view);
+  assert.equal(motion.pose().hFOV_deg, 98);
+  assert.ok(motion.pose().yaw_deg < view.pose().yaw_deg);
+});
+
 test("a frame after a pause counts FRAME_FALLBACK_SECONDS, and a frame without time counts it too", () => {
   const view = camera();
   const a = createPreviewMotion({ pose: view.pose() });

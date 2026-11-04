@@ -13,6 +13,7 @@ import {
   litKnobs,
   navigationAction,
   stageCursor,
+  wheelMeaning,
 } from "../web_src/studio/view_input.js";
 
 const press = (button, mods = {}, over = {}) => navigationAction({ button, altKey: false, shiftKey: false, ctrlKey: false, metaKey: false, ...mods, ...over });
@@ -131,6 +132,35 @@ test("a change of direction drops what was added up", () => {
   assert.equal(wheel.push({ deltaY: -20, deltaMode: 0 }), 0);
   assert.equal(wheel.push({ deltaY: -79, deltaMode: 0 }), 0);
   assert.equal(wheel.push({ deltaY: -1, deltaMode: 0 }), 1);
+});
+
+// docs/space-and-view.md "マウスとキー", "寄る" (ADR 0061): the wheel moves forward; Alt + wheel and a pinch (Ctrl + wheel,
+// a mouse's Ctrl + wheel too) zoom; with Meta it stays the browser's. Shift changes nothing.
+test("the wheel moves, Alt or Ctrl + wheel zooms, Meta + wheel is the browser's", () => {
+  const wheel = (mods = {}) => ({ deltaY: -100, deltaMode: 0, altKey: false, ctrlKey: false, metaKey: false, shiftKey: false, ...mods });
+  assert.equal(wheelMeaning(wheel()), "move");
+  assert.equal(wheelMeaning(wheel({ shiftKey: true })), "move");
+  assert.equal(wheelMeaning(wheel({ altKey: true })), "zoom");
+  assert.equal(wheelMeaning(wheel({ ctrlKey: true })), "zoom");
+  assert.equal(wheelMeaning(wheel({ altKey: true, shiftKey: true })), "zoom");
+  assert.equal(wheelMeaning(wheel({ metaKey: true })), null);
+  assert.equal(wheelMeaning(wheel({ metaKey: true, altKey: true })), null);
+});
+
+test("a change of the wheel's meaning drops what was added up", () => {
+  const wheel = createWheelSteps();
+  wheel.push({ deltaY: -90, deltaMode: 0 });
+  // Alt went down: the 90 px of moving forward do not count toward the zoom.
+  assert.equal(wheel.push({ deltaY: -20, deltaMode: 0, altKey: true }), 0);
+  assert.equal(wheel.push({ deltaY: -79, deltaMode: 0, altKey: true }), 0);
+  assert.equal(wheel.push({ deltaY: -1, deltaMode: 0, altKey: true }), 1);
+  // Alt and Ctrl are the same meaning: nothing is dropped between them.
+  assert.equal(wheel.push({ deltaY: -60, deltaMode: 0, altKey: true }), 0);
+  assert.equal(wheel.push({ deltaY: -40, deltaMode: 0, ctrlKey: true }), 1);
+  // Ctrl came off: the pinch's 50 px do not move forward.
+  wheel.push({ deltaY: -50, deltaMode: 0, ctrlKey: true });
+  assert.equal(wheel.push({ deltaY: -60, deltaMode: 0 }), 0);
+  assert.equal(wheel.push({ deltaY: -40, deltaMode: 0 }), 1);
 });
 
 // --- Keys.
