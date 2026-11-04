@@ -28475,7 +28475,7 @@ function wl(r, e, t) {
 }
 let Rl = null;
 function fc() {
-  return Rl || (Rl = import("./spark.module-CeYb2l2H.js")), Rl;
+  return Rl || (Rl = import("./spark.module-M_pdH7v3.js")), Rl;
 }
 function q_(r) {
   const e = [], t = /* @__PURE__ */ new Set();
@@ -28700,25 +28700,7 @@ function s0(r) {
     direction: [-e[8] / t, -e[9] / t, -e[10] / t].map(Cl)
   };
 }
-const Wa = `
-float lensAngle(float rho, float curve) {
-  float x = curve * rho;
-  return abs(x) < 1e-4 ? rho * (1.0 - x * x / 3.0) : atan(x) / curve;
-}
-float lensRadius(float theta, float curve) {
-  float x = curve * theta;
-  return abs(x) < 1e-4 ? theta * (1.0 + x * x / 3.0) : tan(x) / curve;
-}
-// The film point of a direction (any length) at the curve, or false where the lens does not reach it.
-bool lensFilm(vec3 direction, float curve, out vec2 film) {
-  vec3 d = normalize(direction);
-  float side = length(d.xy);
-  float theta = atan(side, -d.z);
-  if (curve * theta >= 1.5707963267948966) return false;
-  film = side > 0.0 ? d.xy / side * lensRadius(theta, curve) : vec2(0.0);
-  return true;
-}
-`, a0 = `
+const a0 = `
 varying vec3 vWorld;
 void main() {
   vec4 world = modelMatrix * vec4(position, 1.0);
@@ -29096,42 +29078,30 @@ function x0({ renderer: r, canvas: e, near: t = 0.01, far: n = 1e3 }) {
     dispose: D
   };
 }
-const bi = (r, e, t = null) => Object.freeze({
-  type: r,
-  color: Object.freeze([1, 1, 1]),
-  intensity: e,
-  ...t ? { position: Object.freeze(t) } : {}
-}), _c = Object.freeze([
-  bi("ambient", 1.5),
-  bi("directional", 2.4, [0, 10, 10]),
-  bi("directional", 1.5, [0, 10, -10]),
-  bi("directional", 0.9, [-10, 0, 0]),
-  bi("directional", 0.9, [10, 0, 0]),
-  bi("directional", 0.6, [0, -10, 0])
-]);
-function xc(r = _c) {
-  const e = new nn();
-  for (const { type: t, color: n, intensity: i, position: s } of r) {
-    const a = new Ne(...n);
-    if (t === "ambient") {
-      e.add(new eh(a, i));
-      continue;
-    }
-    const o = new Zl(a, i);
-    o.position.set(...s), o.target.position.set(0, 0, 0), e.add(o, o.target);
-  }
-  return e;
+const Wa = `
+float lensAngle(float rho, float curve) {
+  float x = curve * rho;
+  return abs(x) < 1e-4 ? rho * (1.0 - x * x / 3.0) : atan(x) / curve;
 }
-function vc(r) {
-  const e = [...r.sticker ? [r.sticker] : [], ...r.fileStickers ?? []];
-  return { drawn: e, inputs: [...e, { urls: [...r.stickerUrls ?? [], ...r.fileStickerKeys ?? []] }] };
+float lensRadius(float theta, float curve) {
+  float x = curve * theta;
+  return abs(x) < 1e-4 ? theta * (1.0 + x * x / 3.0) : tan(x) / curve;
 }
-const v0 = 100, da = 50, S0 = 16768343, Sc = `
+// The film point of a direction (any length) at the curve, or false where the lens does not reach it.
+bool lensFilm(vec3 direction, float curve, out vec2 film) {
+  vec3 d = normalize(direction);
+  float side = length(d.xy);
+  float theta = atan(side, -d.z);
+  if (curve * theta >= 1.5707963267948966) return false;
+  film = side > 0.0 ? d.xy / side * lensRadius(theta, curve) : vec2(0.0);
+  return true;
+}
+`, _c = `
 varying vec3 vDirection;
 void main() {
   vDirection = position;
   gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-}`, M0 = `
+}`, v0 = `
 uniform sampler2D map;
 uniform float opacity;
 uniform bool halfCoverage;
@@ -29155,13 +29125,13 @@ varying vec2 vUv;
 void main() {
   vUv = uv;
   gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-}`, y0 = `
+}`, S0 = `
 uniform sampler2D map;
 uniform float opacity;
 varying vec2 vUv;
 void main() {
   gl_FragColor = texture2D(map, vUv) * opacity;
-}`, E0 = `
+}`, M0 = `
 uniform sampler2D map;
 uniform float opacity;
 uniform vec4 crop;
@@ -29170,7 +29140,7 @@ void main() {
   vec4 color = texture2D(map, vec2(mix(crop.x, crop.z, vUv.x), mix(crop.y, crop.w, vUv.y))) * opacity;
   if (color.a <= 0.0) discard;
   gl_FragColor = color;
-}`, T0 = `
+}`, y0 = `
 varying vec2 vUv;
 void main() {
   vUv = uv;
@@ -29181,7 +29151,7 @@ uniform float opacity;
 varying vec2 vUv;
 void main() {
   gl_FragColor = texture2D(map, vec2(vUv.x, 1.0 - vUv.y)) * opacity;
-}`, Mc = `
+}`, xc = `
 ${Wa}
 uniform mat3 toSticker;
 uniform vec4 rect;
@@ -29198,11 +29168,11 @@ bool stickerImage(vec3 local, out vec2 uv) {
   uv = (plane - rect.xy) / (rect.zw - rect.xy);
   return true;
 }
-`, b0 = `
+`, E0 = `
 uniform sampler2D map;
 uniform float opacity;
 varying vec2 vUv;
-${Mc}
+${xc}
 const float PI = 3.1415926535897932384626433832795;
 void main() {
   float lon = (vUv.x - 0.5) * 2.0 * PI;
@@ -29210,21 +29180,21 @@ void main() {
   vec2 uv;
   if (!stickerImage(toSticker * vec3(cos(lat) * sin(lon), sin(lat), -cos(lat) * cos(lon)), uv)) discard;
   gl_FragColor = texture2D(map, uv) * opacity;
-}`, A0 = `
+}`, T0 = `
 uniform sampler2D map;
 uniform float opacity;
 varying vec3 vDirection;
-${Mc}
+${xc}
 void main() {
   vec2 uv;
   if (!stickerImage(toSticker * normalize(vDirection), uv)) discard;
   gl_FragColor = texture2D(map, uv) * opacity;
-}`, w0 = `
+}`, b0 = `
 varying vec3 vLocal;
 void main() {
   vLocal = position;
   gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-}`, yc = `
+}`, vc = `
 ${Wa}
 uniform float curve;
 uniform vec2 patchHalf;
@@ -29235,11 +29205,11 @@ bool patchPoint(out vec2 at) {
   at = film / patchHalf;
   return abs(at.x) <= 1.0 && abs(at.y) <= 1.0;
 }
-`, R0 = `
+`, A0 = `
 uniform sampler2D map;
 uniform float opacity;
 uniform vec4 crop;
-${yc}
+${vc}
 void main() {
   vec2 at;
   if (!patchPoint(at)) discard;
@@ -29247,7 +29217,7 @@ void main() {
   vec4 color = texture2D(map, vec2(mix(crop.x, crop.z, uv.x), mix(crop.y, crop.w, uv.y))) * opacity;
   if (color.a <= 0.0) discard;
   gl_FragColor = color;
-}`, C0 = `
+}`, w0 = `
 varying vec3 vLocal;
 varying float vDepth;
 void main() {
@@ -29255,166 +29225,10 @@ void main() {
   vec4 view = modelViewMatrix * vec4(position, 1.0);
   vDepth = -view.z;
   gl_Position = projectionMatrix * view;
-}`, P0 = Va.replace("varying float vDepth;", `varying float vDepth;
-${yc}`).replace("void main() {", `void main() {
+}`, R0 = Va.replace("varying float vDepth;", `varying float vDepth;
+${vc}`).replace("void main() {", `void main() {
   vec2 at;
-  if (!patchPoint(at)) discard;`);
-function Ec(r, e) {
-  const { quaternion: t } = e;
-  r.quaternion.set(t.x, t.y, t.z, t.w), r.fov = e.fovY_deg, r.aspect = e.aspect, r.updateProjectionMatrix(), r.updateMatrixWorld();
-}
-function Tc(r, e) {
-  const { rect: t, quaternion: n } = e;
-  r.quaternion.set(n.x, n.y, n.z, n.w), r.position.set((t.x0 + t.x1) * 0.5, (t.y0 + t.y1) * 0.5, -1).multiplyScalar(da).applyQuaternion(r.quaternion), r.scale.set((t.x1 - t.x0) * da, (t.y1 - t.y0) * da, 1);
-}
-function ba(r) {
-  const { quaternion: e, rect: t } = r, n = new We().makeRotationFromQuaternion(new yt(e.x, e.y, e.z, e.w));
-  return {
-    toSticker: new Ge().setFromMatrix4(n).transpose(),
-    rect: new Xe(t.x0, t.y0, t.x1, t.y1),
-    curve: r.curve ?? 1
-  };
-}
-function _s(r) {
-  return {
-    width: Number(r.videoWidth || r.naturalWidth || r.width || 0),
-    height: Number(r.videoHeight || r.naturalHeight || r.height || 0)
-  };
-}
-function I0(r, e) {
-  const t = r instanceof HTMLVideoElement ? new zl(r) : new wt(r);
-  return t.premultiplyAlpha = !0, t.generateMipmaps = !1, t.minFilter = 1006, t.magFilter = 1006, t.wrapT = 1001, t.flipY = e, t.needsUpdate = !0, t;
-}
-const Ll = /* @__PURE__ */ new WeakMap(), fa = new xh(), L0 = new De();
-function D0(r, e, t) {
-  const n = e.image, i = r.capabilities.maxTextureSize;
-  if (e.isVideoTexture || e.flipY || e.colorSpace !== "" || e.version === 0 || !r.properties.has(e) || !((n == null ? void 0 : n.width) <= i && (n == null ? void 0 : n.height) <= i)) return !1;
-  let s = Ll.get(e);
-  (s == null ? void 0 : s.image) !== n && Ll.set(e, s = new wt(n));
-  const a = r.getContext();
-  r.state.pixelStorei(a.UNPACK_COLORSPACE_CONVERSION_WEBGL, a.NONE);
-  for (const o of t)
-    fa.min.set(o.x0, o.y0), fa.max.set(o.x1, o.y1), r.copyTextureToTexture(s, e, fa, L0.set(o.x0, o.y0));
-  return r.state.pixelStorei(a.UNPACK_PREMULTIPLY_ALPHA_WEBGL, !1), r.state.pixelStorei(a.UNPACK_FLIP_Y_WEBGL, !1), !0;
-}
-function F0(r) {
-  const e = r instanceof HTMLVideoElement ? new zl(r) : new wt(r);
-  return e.colorSpace = Ft, e.minFilter = 1006, e.magFilter = 1006, e.generateMipmaps = !1, e.wrapS = 1001, e.wrapT = 1001, e.flipY = !1, e.needsUpdate = !0, e;
-}
-function bc(r) {
-  const e = /* @__PURE__ */ new Map(), t = /* @__PURE__ */ new Map();
-  function n(i, s) {
-    const a = t.get(i), o = a == null ? void 0 : a.get(s);
-    if (!o || (a.delete(s), a.size || t.delete(i), o.owners.delete(i), o.owners.size)) return;
-    o.texture.dispose();
-    const l = e.get(s).filter((c) => c !== o);
-    l.length ? e.set(s, l) : e.delete(s);
-  }
-  return {
-    texture(i, s, { media: a, revision: o }) {
-      var d;
-      const l = _s(a), c = (f) => f.media === a && f.width === l.width && f.height === l.height, u = (d = t.get(i)) == null ? void 0 : d.get(s);
-      let h = u && c(u) ? u : (e.get(s) ?? []).find(c);
-      return u && u !== h && n(i, s), h ? h.revision !== o && (h.revision = o, h.texture.needsUpdate = !0) : (h = { slot: s, media: a, revision: o, texture: r(a), ...l, owners: /* @__PURE__ */ new Set() }, e.set(s, [...e.get(s) ?? [], h])), h.owners.add(i), t.has(i) || t.set(i, /* @__PURE__ */ new Map()), t.get(i).set(s, h), h.texture;
-    },
-    retain(i, s) {
-      var a;
-      for (const o of [...((a = t.get(i)) == null ? void 0 : a.keys()) ?? []]) s.includes(o) || n(i, o);
-    },
-    release(i) {
-      this.retain(i, []);
-    },
-    get size() {
-      let i = 0;
-      return e.forEach((s) => {
-        i += s.length;
-      }), i;
-    },
-    dispose() {
-      e.forEach((i) => i.forEach((s) => s.texture.dispose())), e.clear(), t.clear();
-    }
-  };
-}
-function N0(r) {
-  return typeof HTMLVideoElement < "u" && r instanceof HTMLVideoElement;
-}
-function Dl(r) {
-  const e = _s(r);
-  return e.width > 0 && e.height > 0 ? !(r instanceof HTMLVideoElement) || r.readyState >= HTMLVideoElement.HAVE_CURRENT_DATA : !1;
-}
-function Ac({ uploadRegions: r = null } = {}) {
-  const e = /* @__PURE__ */ new Map(), t = /* @__PURE__ */ new Set(), n = /* @__PURE__ */ new Map();
-  function i(o) {
-    o.texture.dispose(), t.delete(o);
-    const l = e.get(o.media);
-    (l == null ? void 0 : l.get(o.key)) === o && (l.delete(o.key), l.size || e.delete(o.media));
-  }
-  function s(o, l) {
-    o.users.delete(l), o.users.size || i(o);
-  }
-  function a(o, l, { id: c, media: u, revision: h, changed: d, source: f }, g, x) {
-    const m = f ?? u, p = _s(u), _ = o.get(c);
-    if ((_ == null ? void 0 : _.source) === m && _.media !== u && !Dl(u))
-      return l.set(c, _), _.texture;
-    let T = e.get(u);
-    T || e.set(u, T = /* @__PURE__ */ new Map());
-    const y = `${x}:${g}`;
-    let A = T.get(y);
-    if (!A && r && d && _ && _.key === y && _.media !== u && T.size === 0 && _.width === p.width && _.height === p.height && !N0(_.media)) {
-      const b = d(_.revision);
-      if (b) {
-        const L = e.get(_.media);
-        return (L == null ? void 0 : L.get(y)) === _ && (L.delete(y), L.size || e.delete(_.media)), _.media = u, _.source = m, _.texture.image = u, T.set(y, _), _.revision = h, b.length && !r(_.texture, b) && (_.texture.needsUpdate = !0), l.set(c, _), _.texture;
-      }
-    }
-    if (A && (A.source !== m || A.width !== p.width || A.height !== p.height) && (T.delete(y), A.users.size || i(A), A = null), A) {
-      if (A.revision !== h) {
-        const b = r && d ? d(A.revision) : null;
-        A.revision = h, (!b || b.length && !r(A.texture, b)) && (A.texture.needsUpdate = !0);
-      }
-    } else {
-      const b = I0(u, x);
-      b.wrapS = g, A = { texture: b, media: u, key: y, source: m, revision: h, ...p, users: /* @__PURE__ */ new Set() }, T.set(y, A), t.add(A);
-    }
-    return l.set(c, A), A.texture;
-  }
-  return {
-    draw(o) {
-      const l = n.get(o) ?? /* @__PURE__ */ new Map(), c = /* @__PURE__ */ new Map();
-      return {
-        // The owner drawing (the depth grids' color textures are held by it too).
-        owner: o,
-        // Whether a layer draws: once its media has a picture, or with the texture its source had in the
-        // owner's draw before while the new media has none.
-        drawable: ({ id: u, media: h, source: d }) => {
-          var f;
-          return Dl(h) || ((f = l.get(u)) == null ? void 0 : f.source) === (d ?? h);
-        },
-        texture: (u, h, d) => a(l, c, u, h, d),
-        end() {
-          const u = new Set(c.values());
-          u.forEach((h) => h.users.add(o)), l.forEach((h) => {
-            !u.has(h) && h.users.has(o) && s(h, o);
-          }), n.set(o, c);
-        }
-      };
-    },
-    release(o) {
-      var l;
-      (l = n.get(o)) == null || l.forEach((c) => {
-        c.users.has(o) && s(c, o);
-      }), n.delete(o);
-    },
-    // How many textures it holds (the diagnostics' layerTextures).
-    get size() {
-      return t.size;
-    },
-    dispose() {
-      t.forEach((o) => o.texture.dispose()), t.clear(), e.clear(), n.clear();
-    }
-  };
-}
-const qn = 6, U0 = `
+  if (!patchPoint(at)) discard;`), qn = 6, C0 = `
 ${Array.from({ length: qn }, (r, e) => `uniform sampler2D face${e};`).join(`
 `)}
 uniform mat3 cameraTurn;
@@ -29455,7 +29269,192 @@ void main() {
     return;
   }
   gl_FragColor = background;
-}`;
+}`, bi = (r, e, t = null) => Object.freeze({
+  type: r,
+  color: Object.freeze([1, 1, 1]),
+  intensity: e,
+  ...t ? { position: Object.freeze(t) } : {}
+}), Sc = Object.freeze([
+  bi("ambient", 1.5),
+  bi("directional", 2.4, [0, 10, 10]),
+  bi("directional", 1.5, [0, 10, -10]),
+  bi("directional", 0.9, [-10, 0, 0]),
+  bi("directional", 0.9, [10, 0, 0]),
+  bi("directional", 0.6, [0, -10, 0])
+]);
+function Mc(r = Sc) {
+  const e = new nn();
+  for (const { type: t, color: n, intensity: i, position: s } of r) {
+    const a = new Ne(...n);
+    if (t === "ambient") {
+      e.add(new eh(a, i));
+      continue;
+    }
+    const o = new Zl(a, i);
+    o.position.set(...s), o.target.position.set(0, 0, 0), e.add(o, o.target);
+  }
+  return e;
+}
+function yc(r) {
+  const e = [...r.sticker ? [r.sticker] : [], ...r.fileStickers ?? []];
+  return { drawn: e, inputs: [...e, { urls: [...r.stickerUrls ?? [], ...r.fileStickerKeys ?? []] }] };
+}
+const P0 = 100, da = 50, I0 = 16768343;
+function Ec(r, e) {
+  const { quaternion: t } = e;
+  r.quaternion.set(t.x, t.y, t.z, t.w), r.fov = e.fovY_deg, r.aspect = e.aspect, r.updateProjectionMatrix(), r.updateMatrixWorld();
+}
+function Tc(r, e) {
+  const { rect: t, quaternion: n } = e;
+  r.quaternion.set(n.x, n.y, n.z, n.w), r.position.set((t.x0 + t.x1) * 0.5, (t.y0 + t.y1) * 0.5, -1).multiplyScalar(da).applyQuaternion(r.quaternion), r.scale.set((t.x1 - t.x0) * da, (t.y1 - t.y0) * da, 1);
+}
+function ba(r) {
+  const { quaternion: e, rect: t } = r, n = new We().makeRotationFromQuaternion(new yt(e.x, e.y, e.z, e.w));
+  return {
+    toSticker: new Ge().setFromMatrix4(n).transpose(),
+    rect: new Xe(t.x0, t.y0, t.x1, t.y1),
+    curve: r.curve ?? 1
+  };
+}
+function _s(r) {
+  return {
+    width: Number(r.videoWidth || r.naturalWidth || r.width || 0),
+    height: Number(r.videoHeight || r.naturalHeight || r.height || 0)
+  };
+}
+function L0(r, e) {
+  const t = r instanceof HTMLVideoElement ? new zl(r) : new wt(r);
+  return t.premultiplyAlpha = !0, t.generateMipmaps = !1, t.minFilter = 1006, t.magFilter = 1006, t.wrapT = 1001, t.flipY = e, t.needsUpdate = !0, t;
+}
+const Ll = /* @__PURE__ */ new WeakMap(), fa = new xh(), D0 = new De();
+function F0(r, e, t) {
+  const n = e.image, i = r.capabilities.maxTextureSize;
+  if (e.isVideoTexture || e.flipY || e.colorSpace !== "" || e.version === 0 || !r.properties.has(e) || !((n == null ? void 0 : n.width) <= i && (n == null ? void 0 : n.height) <= i)) return !1;
+  let s = Ll.get(e);
+  (s == null ? void 0 : s.image) !== n && Ll.set(e, s = new wt(n));
+  const a = r.getContext();
+  r.state.pixelStorei(a.UNPACK_COLORSPACE_CONVERSION_WEBGL, a.NONE);
+  for (const o of t)
+    fa.min.set(o.x0, o.y0), fa.max.set(o.x1, o.y1), r.copyTextureToTexture(s, e, fa, D0.set(o.x0, o.y0));
+  return r.state.pixelStorei(a.UNPACK_PREMULTIPLY_ALPHA_WEBGL, !1), r.state.pixelStorei(a.UNPACK_FLIP_Y_WEBGL, !1), !0;
+}
+function N0(r) {
+  const e = r instanceof HTMLVideoElement ? new zl(r) : new wt(r);
+  return e.colorSpace = Ft, e.minFilter = 1006, e.magFilter = 1006, e.generateMipmaps = !1, e.wrapS = 1001, e.wrapT = 1001, e.flipY = !1, e.needsUpdate = !0, e;
+}
+function bc(r) {
+  const e = /* @__PURE__ */ new Map(), t = /* @__PURE__ */ new Map();
+  function n(i, s) {
+    const a = t.get(i), o = a == null ? void 0 : a.get(s);
+    if (!o || (a.delete(s), a.size || t.delete(i), o.owners.delete(i), o.owners.size)) return;
+    o.texture.dispose();
+    const l = e.get(s).filter((c) => c !== o);
+    l.length ? e.set(s, l) : e.delete(s);
+  }
+  return {
+    texture(i, s, { media: a, revision: o }) {
+      var d;
+      const l = _s(a), c = (f) => f.media === a && f.width === l.width && f.height === l.height, u = (d = t.get(i)) == null ? void 0 : d.get(s);
+      let h = u && c(u) ? u : (e.get(s) ?? []).find(c);
+      return u && u !== h && n(i, s), h ? h.revision !== o && (h.revision = o, h.texture.needsUpdate = !0) : (h = { slot: s, media: a, revision: o, texture: r(a), ...l, owners: /* @__PURE__ */ new Set() }, e.set(s, [...e.get(s) ?? [], h])), h.owners.add(i), t.has(i) || t.set(i, /* @__PURE__ */ new Map()), t.get(i).set(s, h), h.texture;
+    },
+    retain(i, s) {
+      var a;
+      for (const o of [...((a = t.get(i)) == null ? void 0 : a.keys()) ?? []]) s.includes(o) || n(i, o);
+    },
+    release(i) {
+      this.retain(i, []);
+    },
+    get size() {
+      let i = 0;
+      return e.forEach((s) => {
+        i += s.length;
+      }), i;
+    },
+    dispose() {
+      e.forEach((i) => i.forEach((s) => s.texture.dispose())), e.clear(), t.clear();
+    }
+  };
+}
+function U0(r) {
+  return typeof HTMLVideoElement < "u" && r instanceof HTMLVideoElement;
+}
+function Dl(r) {
+  const e = _s(r);
+  return e.width > 0 && e.height > 0 ? !(r instanceof HTMLVideoElement) || r.readyState >= HTMLVideoElement.HAVE_CURRENT_DATA : !1;
+}
+function Ac({ uploadRegions: r = null } = {}) {
+  const e = /* @__PURE__ */ new Map(), t = /* @__PURE__ */ new Set(), n = /* @__PURE__ */ new Map();
+  function i(o) {
+    o.texture.dispose(), t.delete(o);
+    const l = e.get(o.media);
+    (l == null ? void 0 : l.get(o.key)) === o && (l.delete(o.key), l.size || e.delete(o.media));
+  }
+  function s(o, l) {
+    o.users.delete(l), o.users.size || i(o);
+  }
+  function a(o, l, { id: c, media: u, revision: h, changed: d, source: f }, g, x) {
+    const m = f ?? u, p = _s(u), _ = o.get(c);
+    if ((_ == null ? void 0 : _.source) === m && _.media !== u && !Dl(u))
+      return l.set(c, _), _.texture;
+    let T = e.get(u);
+    T || e.set(u, T = /* @__PURE__ */ new Map());
+    const y = `${x}:${g}`;
+    let A = T.get(y);
+    if (!A && r && d && _ && _.key === y && _.media !== u && T.size === 0 && _.width === p.width && _.height === p.height && !U0(_.media)) {
+      const b = d(_.revision);
+      if (b) {
+        const L = e.get(_.media);
+        return (L == null ? void 0 : L.get(y)) === _ && (L.delete(y), L.size || e.delete(_.media)), _.media = u, _.source = m, _.texture.image = u, T.set(y, _), _.revision = h, b.length && !r(_.texture, b) && (_.texture.needsUpdate = !0), l.set(c, _), _.texture;
+      }
+    }
+    if (A && (A.source !== m || A.width !== p.width || A.height !== p.height) && (T.delete(y), A.users.size || i(A), A = null), A) {
+      if (A.revision !== h) {
+        const b = r && d ? d(A.revision) : null;
+        A.revision = h, (!b || b.length && !r(A.texture, b)) && (A.texture.needsUpdate = !0);
+      }
+    } else {
+      const b = L0(u, x);
+      b.wrapS = g, A = { texture: b, media: u, key: y, source: m, revision: h, ...p, users: /* @__PURE__ */ new Set() }, T.set(y, A), t.add(A);
+    }
+    return l.set(c, A), A.texture;
+  }
+  return {
+    draw(o) {
+      const l = n.get(o) ?? /* @__PURE__ */ new Map(), c = /* @__PURE__ */ new Map();
+      return {
+        // The owner drawing (the depth grids' color textures are held by it too).
+        owner: o,
+        // Whether a layer draws: once its media has a picture, or with the texture its source had in the
+        // owner's draw before while the new media has none.
+        drawable: ({ id: u, media: h, source: d }) => {
+          var f;
+          return Dl(h) || ((f = l.get(u)) == null ? void 0 : f.source) === (d ?? h);
+        },
+        texture: (u, h, d) => a(l, c, u, h, d),
+        end() {
+          const u = new Set(c.values());
+          u.forEach((h) => h.users.add(o)), l.forEach((h) => {
+            !u.has(h) && h.users.has(o) && s(h, o);
+          }), n.set(o, c);
+        }
+      };
+    },
+    release(o) {
+      var l;
+      (l = n.get(o)) == null || l.forEach((c) => {
+        c.users.has(o) && s(c, o);
+      }), n.delete(o);
+    },
+    // How many textures it holds (the diagnostics' layerTextures).
+    get size() {
+      return t.size;
+    },
+    dispose() {
+      t.forEach((o) => o.texture.dispose()), t.clear(), e.clear(), n.clear();
+    }
+  };
+}
 function wi(r, e, t, n = 5) {
   return new Bt({
     vertexShader: r,
@@ -29472,11 +29471,11 @@ function wi(r, e, t, n = 5) {
   });
 }
 function Fl(r, e) {
-  const t = wi(Sc, M0, { halfCoverage: { value: !1 } }, e);
+  const t = wi(_c, v0, { halfCoverage: { value: !1 } }, e);
   return t.side = 1, new pe(r, t);
 }
 function Qr(r, e, t, n = 5) {
-  const i = new pe(r, wi(T0, e, t, n));
+  const i = new pe(r, wi(y0, e, t, n));
   return i.frustumCulled = !1, i;
 }
 function O0({ segments: r, color: e }) {
@@ -29589,11 +29588,11 @@ function k0({ onUpdate: r = () => {
   });
   a.setClearColor(0, 0);
   const o = a.getContext(), l = Math.min(a.capabilities.maxTextureSize, o.getParameter(o.MAX_RENDERBUFFER_SIZE)), c = new Dt(60, 1, 0.1, 1e5), u = new ts(), h = new Dt(), d = new ts(), f = [], g = () => {
-    const v = wi(Pl, E0, { crop: { value: new Xe() } });
+    const v = wi(Pl, M0, { crop: { value: new Xe() } });
     return v.side = 2, v.depthTest = !0, v.depthWrite = !0, new pe(st, v);
   };
   let x = null, m = null, p = null;
-  const _ = xc(), T = { sets: null, lines: [] }, y = /* @__PURE__ */ new WeakMap();
+  const _ = Mc(), T = { sets: null, lines: [] }, y = /* @__PURE__ */ new WeakMap();
   let A = [], b = [], L = [], S = 0, C = { key: null, hit: null }, N = null, D = !0, V = !1;
   const X = new Dt(), F = [];
   let P = null;
@@ -29622,7 +29621,7 @@ function k0({ onUpdate: r = () => {
     }
   }), ne = (v) => {
     v.kind === "splat" && v.object && Y.forget(v.object), Q_(v);
-  }, ae = bc(F0), Te = (v, w, I, O) => mc(v, w, I, { ...O, maxTextureSize: a.capabilities.maxTextureSize });
+  }, ae = bc(N0), Te = (v, w, I, O) => mc(v, w, I, { ...O, maxTextureSize: a.capabilities.maxTextureSize });
   let be = !1, Ue = null;
   const Ke = () => u_({ load: Te, dispose: ne, onUpdate: r, concurrency: G0 });
   function Oe() {
@@ -29654,16 +29653,16 @@ function k0({ onUpdate: r = () => {
   }, Ce = () => [...J.values()].flatMap((v) => v.all()), Le = /* @__PURE__ */ new Map(), ct = a_({
     schedule: (v) => typeof requestIdleCallback == "function" ? requestIdleCallback(v, { timeout: jg }) : setTimeout(v, 0),
     now: () => performance.now()
-  }), Ye = new Ci(v0, 64, 32), st = new Nn(1, 1), ot = new Nn(2, 2), Ve = {
+  }), Ye = new Ci(P0, 64, 32), st = new Nn(1, 1), ot = new Nn(2, 2), Ve = {
     background: Fl(Ye, 0),
     erp: [],
     sticker: [],
     createErp: () => Fl(Ye, 5),
-    createSticker: () => new pe(st, wi(Pl, y0, {})),
+    createSticker: () => new pe(st, wi(Pl, S0, {})),
     // A sky Sticker of a lens curve other than 1, on the dome (ADR 0042).
     lensSticker: [],
     createLensSticker: () => {
-      const v = wi(Sc, A0, { toSticker: { value: null }, rect: { value: null }, curve: { value: 1 } });
+      const v = wi(_c, T0, { toSticker: { value: null }, rect: { value: null }, curve: { value: 1 } });
       return v.side = 1, new pe(Ye, v);
     },
     placeLensSticker(v, w) {
@@ -29681,7 +29680,7 @@ function k0({ onUpdate: r = () => {
     erp: [],
     sticker: [],
     createErp: () => Qr(ot, Il, {}),
-    createSticker: () => Qr(ot, b0, { toSticker: { value: null }, rect: { value: null }, curve: { value: 1 } }),
+    createSticker: () => Qr(ot, E0, { toSticker: { value: null }, rect: { value: null }, curve: { value: 1 } }),
     placeErp() {
     },
     placeSticker(v, w) {
@@ -29689,7 +29688,7 @@ function k0({ onUpdate: r = () => {
         v.material.uniforms[I].value = O;
       });
     }
-  }, lt = /* @__PURE__ */ new Map(), Pt = Ac({ uploadRegions: (v, w) => D0(a, v, w) });
+  }, lt = /* @__PURE__ */ new Map(), Pt = Ac({ uploadRegions: (v, w) => F0(a, v, w) });
   a.setScissorTest(!0);
   function z(v, w, I) {
     return v[w] || (v[w] = I()), v[w];
@@ -29705,7 +29704,7 @@ function k0({ onUpdate: r = () => {
     x && ri(x.group);
     const w = new nn();
     w.add(new vh(v.size, v.divisions, 5395035, 4144966)), w.add(new Sh(v.step * 2));
-    const I = new pe(new Ci(1, 16, 8), new dn({ color: S0 }));
+    const I = new pe(new Ci(1, 16, 8), new dn({ color: I0 }));
     return I.scale.setScalar(v.step * 0.12), w.add(I), x = { step: v.step, group: w }, w;
   }
   function ve(v, w, I) {
@@ -29726,7 +29725,7 @@ function k0({ onUpdate: r = () => {
     });
   }
   const R = [], M = new Ci(1, 192, 96), W = () => {
-    const v = wi(w0, R0, { crop: { value: new Xe() }, curve: { value: 1 }, patchHalf: { value: new De(1, 1) } });
+    const v = wi(b0, A0, { crop: { value: new Xe() }, curve: { value: 1 }, patchHalf: { value: new De(1, 1) } });
     v.side = 2, v.depthTest = !0, v.depthWrite = !0;
     const w = new pe(M, v);
     return w.userData.lensPatch = !0, w;
@@ -29744,7 +29743,7 @@ function k0({ onUpdate: r = () => {
     A = [], b = [], w.grid && Se.push(mt(w.grid)), w.ground && Se.push((m || (m = l0())).show(w.ground)), Z.retain(w.sceneUrls ?? []);
     const Re = [], qe = { playing: !!w.playing, lean: !!w.lean }, Fe = { ...qe, idle: !!w.idle };
     w.scene && Re.push({ content: ve(Z, w.scene, Z.request(w.scene, Fe)), input: w.scene, opacity: 1, keepMaterials: !0 });
-    const $e = vc(w), rt = Q.requestMany($e.inputs, qe);
+    const $e = yc(w), rt = Q.requestMany($e.inputs, qe);
     $e.drawn.forEach((we, Mt) => {
       if (we.id != null && rt[Mt]) {
         const it = s_(we);
@@ -29810,7 +29809,7 @@ function k0({ onUpdate: r = () => {
       Re.kind === "erp" ? Fe = At(v, w, z(w.erp, Q++, w.createErp), Re, !1) : w.lensSticker && Re.curve !== void 0 && Re.curve !== 1 ? (Fe = z(w.lensSticker, Se++, w.createLensSticker), Fe.material.uniforms.map.value = v.texture(Re, 1001, !0), Fe.material.uniforms.opacity.value = Re.opacity, w.placeLensSticker(Fe, Re), u.add(Fe)) : Fe = Ze(v, w, z(w.sticker, me++, w.createSticker), Re), Fe.renderOrder = qe + 1;
     });
   }
-  const te = /* @__PURE__ */ new Map(), Me = /* @__PURE__ */ new Map(), Ae = /* @__PURE__ */ new WeakMap(), ue = new ts(), le = Qr(ot, U0, {
+  const te = /* @__PURE__ */ new Map(), Me = /* @__PURE__ */ new Map(), Ae = /* @__PURE__ */ new WeakMap(), ue = new ts(), le = Qr(ot, C0, {
     ...Object.fromEntries(Array.from({ length: qn }, (v, w) => [`face${w}`, { value: null }])),
     cameraTurn: { value: new Ge() },
     faceTurn: { value: Array.from({ length: qn }, () => new Ge()) },
@@ -30002,8 +30001,8 @@ function k0({ onUpdate: r = () => {
   function xr(v, w) {
     var I, O;
     return w != null && w.userData.lensPatch ? ((I = w.userData).pickMaterial || (I.pickMaterial = new Bt({
-      vertexShader: C0,
-      fragmentShader: P0,
+      vertexShader: w0,
+      fragmentShader: R0,
       uniforms: { pickId: { value: 0 }, ...bn, curve: w.material.uniforms.curve, patchHalf: w.material.uniforms.patchHalf },
       side: 2,
       blending: 0
@@ -30135,10 +30134,10 @@ function k0({ onUpdate: r = () => {
 }
 const nx = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  DEFAULT_LIGHTS: _c,
+  DEFAULT_LIGHTS: Sc,
   applyViewportCamera: Ec,
   cachedLines: Cc,
-  createDefaultLights: xc,
+  createDefaultLights: Mc,
   createDepthColorTextures: bc,
   createGizmo: Pc,
   createLayerTextures: Ac,
@@ -30149,7 +30148,7 @@ const nx = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   placeSticker: Tc,
   sameValue: si,
   setChildren: Rc,
-  stickerItemInputs: vc,
+  stickerItemInputs: yc,
   unwrapStickerUniforms: ba,
   visibleWindow: Ra
 }, Symbol.toStringTag, { value: "Module" }));
