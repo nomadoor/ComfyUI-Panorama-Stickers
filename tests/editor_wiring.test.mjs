@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { createEditorModules } from "../web_src/editor/modules.js";
-import { EDITOR_FILES } from "./editor_source.mjs";
+import { EDITOR_FILES, readEditorSource } from "./editor_source.mjs";
 
-const editor = readFileSync(new URL("../web_src/pano_editor.js", import.meta.url), "utf8");
-const wiring = editor.match(/  const \{([\s\S]*?)\} = createEditorModules\(\{([\s\S]*?)\}, \[([\s\S]*?)\]\);/);
+// showEditor's one createEditorModules call, in whichever editor file it is: the names it takes, the names it
+// provides and the factories it makes.
+const calls = [...readEditorSource().matchAll(/const \{([^{}]*?)\} = createEditorModules\(\{([^{}]*?)\}, \[([^\]]*?)\]\);/g)];
+const wiring = calls[0];
 const names = (text) => text.split(/[\s,]+/).filter(Boolean);
 
 // What the modules' factories do when they are made, in a browser: observe the stage, ask for a frame.
@@ -17,6 +18,7 @@ function browserStubs() {
 }
 
 test("showEditor gives the modules every name they take and takes only names they give", async () => {
+  assert.equal(calls.length, 1);
   browserStubs();
   try {
     const factories = [];

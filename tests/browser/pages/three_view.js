@@ -80,6 +80,11 @@ try {
     view.clear();
     view.render({ rect: { x: 0, y: 0, w: W, h: H }, camera, background, layers: [], space, owner: undefined });
     check.draws += 1;
+    // Once the splats have loaded: a SPLAT is picked on its box (the Sticker's id), and a box hit is no surface
+    // (docs/threejs-spark-integration.md "GPU の当たり判定"), so pickSurface over it gives null.
+    if (!check.splatPick && turnStart) {
+      check.splatPick = { sticker: view.pickSticker(camera, W / 2, H / 2, W, H), surface: view.pickSurface(camera, W / 2, H / 2, W, H) };
+    }
     // Sample the frame in the same task as the draw, before the drawing buffer is cleared.
     probe2d.drawImage(view.canvas, 0, 0, probe.width, probe.height);
     const pixels = probe2d.getImageData(0, 0, probe.width, probe.height).data;
