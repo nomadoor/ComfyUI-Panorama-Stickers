@@ -296,3 +296,29 @@ test("as it is: background_range changed while the window is open applies on the
   await page.setViewportSize({ width: 1400, height: 860 });
   await expect.poll(async () => Math.abs(full - await page.evaluate(() => window.__preview.sample())), { timeout: 20_000 }).toBeGreaterThan(10);
 });
+
+// docs/studio-ui.md "Preview のウィンドウ" and docs/space-and-view.md "寄る" (ADR 0061): the View group has the FOV number
+// and its reset, Reset View (off at the start view), the grid and Fullscreen, no Frame Selected; Alt + wheel zooms at
+// once (not damped), and Reset View brings the FOV back.
+test("the window's View group: the FOV number zooms with Alt + wheel at once, and Reset View brings it back", async ({ page }) => {
+  const problems = await open(page);
+  const number = page.locator("[data-action=fov]");
+  await expect(number).toHaveText("100°");
+  await expect(page.locator("[data-action=frame-selected]")).toHaveCount(0);
+  await expect(page.locator("[data-action=reset-view]")).toHaveAttribute("aria-disabled", "true");
+  const order = await page.locator(".pano-studio-at-buttons [data-action]").evaluateAll((list) => list.map((el) => el.getAttribute("data-action")));
+  expect(order).toEqual(["fov", "fov-reset", "reset-view", "grid", "fullscreen"]);
+  const canvas = page.locator("[data-stage-canvas]");
+  const box = await canvas.boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.keyboard.down("Alt");
+  await page.mouse.wheel(0, -100);
+  await page.mouse.wheel(0, -100);
+  await page.keyboard.up("Alt");
+  expect((await page.evaluate(() => window.__preview.pose())).hFOV_deg).toBe(96);
+  await expect(number).toHaveText("96°");
+  await page.locator("[data-action=reset-view]").click();
+  await expect(number).toHaveText("100°");
+  await expect(page.locator("[data-action=reset-view]")).toHaveAttribute("aria-disabled", "true");
+  expect(problems).toEqual([]);
+});

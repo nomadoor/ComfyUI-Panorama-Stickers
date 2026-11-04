@@ -1,7 +1,7 @@
 <script setup>
 // The new Preview window's shell (docs/studio-ui.md "Preview のウィンドウ"): the stage fills the window; ✕ at the top
-// right, the view knobs, Set orbit center and "?" at the right middle, Reset View, the grid switch and Fullscreen at the
-// bottom right; at the top center only Set orbit center's waiting line (docs/space-and-view.md "Set orbit center").
+// right, the view knobs, Set orbit center and "?" at the right middle, the View group (StudioViewButtons.vue: the FOV
+// number and its reset, Reset View, the grid switch) with Fullscreen at the bottom right; at the top center only Set orbit center's waiting line (docs/space-and-view.md "Set orbit center").
 // No inspector, timeline, left rail or bottom bar. A VIDEO source has the playback strip at the bottom: play / pause,
 // the loop switch, the seek bar and the time, in the node surface's order. web_src/studio/preview_window.js owns what
 // it shows. `playback`: { video, frame, frames, fps, playing, loop }. `controller`: onStage({ canvas, overlay, root }), close(),
@@ -18,6 +18,7 @@ import StudioNavWidget from "./StudioNavWidget.vue";
 import StudioNotice from "./StudioNotice.vue";
 import StudioShortcuts from "./StudioShortcuts.vue";
 import StudioTooltip from "./StudioTooltip.vue";
+import StudioViewButtons from "./StudioViewButtons.vue";
 
 const props = defineProps({
   nodeTitle: { type: String, default: "" },
@@ -105,33 +106,24 @@ const timeText = computed(() => `${clock(props.playback.frame / props.playback.f
         <div v-if="help" class="pano-studio-at-shortcuts">
           <StudioShortcuts :groups="shortcuts" :toggle="helpButton" @close="help = false" />
         </div>
-        <div class="pano-studio-at-buttons">
-          <StudioFloatGroup layout="row" label="View">
-            <StudioIconButton
-              data-action="reset-view"
-              :icon="ICON.home"
-              label="Reset view"
-              :tip="ui.atStart ? 'Reset view · Already at the start' : ''"
-              :disabled="ui.atStart"
-              @press="controller.resetView()"
-            />
-            <StudioIconButton
-              data-action="grid"
-              role="switch"
-              :aria-checked="String(!ui.gridHidden)"
-              :icon="ui.gridHidden ? ICON.grid_off : ICON.grid"
-              label="Grid"
-              :tip="ui.gridHidden ? 'Grid: hidden' : 'Grid: shown'"
-              @press="controller.grid(ui.gridHidden)"
-            />
-            <StudioIconButton
-              data-action="fullscreen"
-              :icon="fullscreen ? ICON.fullscreen_close : ICON.fullscreen"
-              :label="fullscreen ? 'Exit fullscreen' : 'Fullscreen'"
-              @press="controller.fullscreen(root)"
-            />
-          </StudioFloatGroup>
-        </div>
+        <StudioViewButtons
+          class="pano-studio-at-buttons"
+          :fov="ui.fov"
+          :frame-selected="false"
+          :grid-shown="!ui.gridHidden"
+          :at-start="ui.atStart"
+          @fov="(value) => stage?.setFov(value)"
+          @fov-reset="stage?.resetFov()"
+          @reset-view="controller.resetView()"
+          @grid="(shown) => controller.grid(shown)"
+        >
+          <StudioIconButton
+            data-action="fullscreen"
+            :icon="fullscreen ? ICON.fullscreen_close : ICON.fullscreen"
+            :label="fullscreen ? 'Exit fullscreen' : 'Fullscreen'"
+            @press="controller.fullscreen(root)"
+          />
+        </StudioViewButtons>
       </div>
       <div v-if="playback.video" class="pano-studio-preview-strip" data-region="playback">
         <StudioIconButton

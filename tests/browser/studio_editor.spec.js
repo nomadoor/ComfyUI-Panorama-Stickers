@@ -356,3 +356,63 @@ test("Alt + wheel and a pinch zoom the view's FOV; Reset View is off at the star
   await expect(page.locator('[data-action="reset-view"]')).toHaveAttribute("aria-disabled", "true");
   expect(problems).toEqual([]);
 });
+
+// docs/studio-ui.md "右下の View の群" and docs/space-and-view.md "寄る" (ADR 0061, mock B2): the FOV number shows the view's
+// FOV in a fixed width, a drag right makes it larger (4 px a degree, Shift finer), its arrow keys step it by 2°, and its
+// reset (off at 100°) brings it back; the buttons right of it never move.
+test("the FOV number drags and steps the view's FOV in a fixed width; its reset is off at 100°", async ({ page }, testInfo) => {
+  const { problems } = await open(page, testInfo);
+  const number = page.locator('[data-action="fov"]');
+  const reset = page.locator('[data-action="fov-reset"]');
+  const fov = async () => (await page.evaluate(() => window.__studio.pose())).hFOV_deg;
+  await expect(number).toHaveText("100°");
+  await expect(number).toHaveAttribute("data-tip", "Field of view · Drag to change");
+  await expect(reset).toHaveAttribute("aria-disabled", "true");
+  const places = async () => page.evaluate(() => {
+    const box = (selector) => document.querySelector(selector).getBoundingClientRect().toJSON();
+    return { number: box('[data-action="fov"]'), frame: box('[data-action="frame-selected"]'), grid: box('[data-action="grid"]') };
+  });
+  const start = await places();
+  expect(start.number.height).toBe(34);
+  // A drag right of 20 px: 5° larger; Shift keeps a tenth of the movement.
+  const box = await number.boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + 10, box.y + box.height / 2);
+  await page.mouse.move(box.x + box.width / 2 + 20, box.y + box.height / 2);
+  await expect.poll(fov).toBe(105);
+  await page.keyboard.down("Shift");
+  await page.mouse.move(box.x + box.width / 2 + 60, box.y + box.height / 2);
+  await page.keyboard.up("Shift");
+  await expect.poll(fov).toBe(106);
+  await page.mouse.move(box.x + box.width / 2 - 140, box.y + box.height / 2);
+  await page.mouse.up();
+  await expect.poll(fov).toBe(56);
+  await expect(number).toHaveText("56°");
+  await expect(reset).not.toHaveAttribute("aria-disabled", "true");
+  // A press that does not move changes nothing.
+  await number.click();
+  expect(await fov()).toBe(56);
+  // The focused number steps with the arrow keys.
+  await number.focus();
+  await page.keyboard.press("ArrowUp");
+  await page.keyboard.press("ArrowRight");
+  expect(await fov()).toBe(60);
+  await page.keyboard.press("ArrowDown");
+  expect(await fov()).toBe(58);
+  // The width holds "140°": the buttons stay where they were at 35°, 100° and 140°.
+  for (const value of [35, 140]) {
+    await page.evaluate((v) => window.__studio.stage().setFov(v), value);
+    await expect(number).toHaveText(`${value}°`);
+    const now = await places();
+    expect(now.number.width).toBe(start.number.width);
+    expect(now.frame.x).toBe(start.frame.x);
+    expect(now.grid.x).toBe(start.grid.x);
+  }
+  // Its reset: the FOV only, back to 100°.
+  await reset.click();
+  await expect(number).toHaveText("100°");
+  await expect(reset).toHaveAttribute("aria-disabled", "true");
+  expect((await places()).frame.x).toBe(start.frame.x);
+  expect(problems).toEqual([]);
+});

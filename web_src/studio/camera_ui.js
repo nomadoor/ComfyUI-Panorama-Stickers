@@ -10,6 +10,11 @@ const LABEL = "Camera to view";
 export const CAMERA_TAB_LOCKED_TIP = "Locked · Unlock in the 3D tab";
 // The tooltip of what the Camera tab grays whatever the Camera (the left column, the Output window, the view knobs).
 export const CAMERA_TAB_TIP = "Not available in the Camera view";
+// The tooltip of what the Camera tab's Panorama mode grays (the view knobs, Frame Selected, the FOV number).
+export const PANORAMA_MODE_TIP = "Not available in Panorama mode";
+// The FOV number's tooltip in the Camera tab's Frame mode: it shows the Camera's H FOV, which the FOV ruler changes
+// (docs/studio-ui.md "Camera タブ", ADR 0061).
+export const CAMERA_FOV_TIP = "Camera FOV · Change it with the FOV ruler";
 
 // The Camera button for a Camera of `projection` ("erp" is Panorama mode), `locked`, in a `readOnly` editor:
 // { disabled, tip }. The Camera tab's disabling is the left column's (StudioToolRail.vue cameraTab).

@@ -454,6 +454,53 @@
   height: 22px;
 }
 
+/* The View group's reset of the FOV keeps the row's reset size (docs/design.md "右下の画角の数字と画角のリセット"). */
+.pano-studio-at-buttons .pano-studio-icon-btn.is-sm {
+  width: var(--studio-btn-sm);
+  height: var(--studio-btn-sm);
+}
+
+.pano-studio-at-buttons .pano-studio-icon-btn.is-sm svg.icon {
+  width: 14px;
+  height: 14px;
+}
+
+/* The View group's FOV number (docs/design.md "右下の画角の数字と画角のリセット", mock B2): a pill as tall as the buttons,
+   no fill but the hover's, the number in the edge ruler's value style in a width that holds "140°", right-aligned. */
+.pano-studio-fov {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  height: var(--studio-knob);
+  padding: 0 6px 0 10px;
+  border-radius: var(--studio-r-part);
+  color: var(--studio-fg);
+  font-size: var(--studio-text-sm);
+  font-weight: var(--studio-weight-head);
+  line-height: 1;
+  cursor: ew-resize;
+  user-select: none;
+  touch-action: none;
+  transition: background-color var(--studio-motion-hover);
+}
+
+.pano-studio-fov:hover {
+  background: var(--studio-fill-hover);
+}
+
+.pano-studio-fov-num {
+  display: inline-block;
+  width: 4ch;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.pano-studio-fov[aria-disabled="true"] {
+  opacity: 0.35;
+  background: transparent;
+  cursor: default;
+}
+
 .pano-studio-sep {
   flex: none;
   background: var(--studio-line);

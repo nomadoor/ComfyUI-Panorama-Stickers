@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { createBackdropClose } from "../../studio/backdrop.js";
-import { CAMERA_TAB_LOCKED_TIP, CAMERA_TAB_TIP, cameraButton } from "../../studio/camera_ui.js";
+import { CAMERA_FOV_TIP, CAMERA_TAB_LOCKED_TIP, CAMERA_TAB_TIP, PANORAMA_MODE_TIP, cameraButton } from "../../studio/camera_ui.js";
 import { cameraOf } from "../../studio/camera_state.js";
 import { liveErpRatio } from "../../studio/erp_preview.js";
 import { cameraRulers, rulerEdit } from "../../studio/frame_layout.js";
@@ -137,11 +137,14 @@ const cameraRailButton = computed(() => cameraButton({ projection: camera.value.
 // The stage's knobs: nothing moves in Panorama mode, nor a locked Camera or a read-only editor's in the Camera tab.
 const navOff = computed(() => {
   if (!cameraTab.value) return "";
-  if (panorama.value) return "Not available in Panorama mode";
+  if (panorama.value) return PANORAMA_MODE_TIP;
   if (props.view.readOnly) return "Read-only";
   if (camera.value.locked === true) return CAMERA_TAB_LOCKED_TIP;
   return "";
 });
+// The FOV number (docs/studio-ui.md "右下の View の群", "Camera タブ"): the Camera tab shows the Camera's H FOV in the FOV
+// ruler's text, grayed (the ruler, the inspector and Frame mode's Alt + wheel change it).
+const fovOffTip = computed(() => (panorama.value ? PANORAMA_MODE_TIP : CAMERA_FOV_TIP));
 // --- The list of shortcuts (docs/studio-ui.md "ショートカットの一覧"): what works on the screen now.
 const nav = ref(null);
 const isMac = isMacPlatform();
@@ -404,6 +407,10 @@ function setCollapsed(value) {
           </div>
           <StudioViewButtons
             class="pano-studio-at-buttons"
+            :fov="ui.fov"
+            :fov-text="cameraTab && rulers ? rulers.fov.valueText : ''"
+            :fov-disabled="cameraTab"
+            :fov-tip="fovOffTip"
             :grid-shown="!ui.gridHidden"
             :reset-disabled="cameraTab"
             :reset-tip="CAMERA_TAB_TIP"
@@ -411,6 +418,8 @@ function setCollapsed(value) {
             :frame-tip="cameraTab ? 'Frame selected · Moves the camera' : ''"
             :frame-disabled="!!navOff"
             :frame-disabled-tip="navOff"
+            @fov="(value) => stage?.setFov(value)"
+            @fov-reset="stage?.resetFov()"
             @frame-selected="stage?.frameSelected()"
             @reset-view="stage?.resetView()"
             @grid="setGrid"

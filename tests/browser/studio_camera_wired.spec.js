@@ -519,3 +519,36 @@ for (const query of ["aspect=16:9&mode=frame", "aspect=1:1&mode=frame", "aspect=
     expect(problems).toEqual([]);
   });
 }
+
+// docs/studio-ui.md "Camera タブ" 右下の画角の数字 (ADR 0061): the number shows the Camera's H FOV in the FOV ruler's text,
+// grayed with its reason; the reset too; the view's FOV is kept for the 3D tab.
+test("the Camera tab's FOV number shows the Camera's H FOV in the ruler's text, grayed", async ({ page }, testInfo) => {
+  const problems = await open(page, testInfo);
+  const number = page.locator('[data-action="fov"]');
+  const ruler = await page.locator('[data-ruler="FOV"] [data-ruler-value]').textContent();
+  await expect(number).toHaveText(ruler);
+  await expect(number).toHaveAttribute("aria-disabled", "true");
+  await expect(number).toHaveAttribute("tabindex", "-1");
+  await expect(number).toHaveAttribute("data-tip", "Camera FOV · Change it with the FOV ruler");
+  await expect(page.locator('[data-action="fov-reset"]')).toHaveAttribute("aria-disabled", "true");
+  await expect(page.locator('[data-action="fov-reset"]')).toHaveAttribute("data-tip", "Camera FOV · Change it with the FOV ruler");
+  await expect(page.locator('[data-action="reset-view"]')).toHaveAttribute("data-tip", "Not available in the Camera view");
+  // Its drag does nothing.
+  const box = await number.boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + 40, box.y + box.height / 2);
+  await page.mouse.up();
+  await expect(number).toHaveText(ruler);
+  // Back in the 3D tab the number is the view's FOV again.
+  await page.locator('[role="tablist"] button', { hasText: "3D" }).click();
+  await expect(number).toHaveText("100°");
+  await expect(number).not.toHaveAttribute("aria-disabled", "true");
+  expect(problems).toEqual([]);
+});
+
+test("in Panorama mode the FOV number's tooltip says it is not available", async ({ page }, testInfo) => {
+  const problems = await open(page, testInfo, "aspect=16:9&mode=panorama");
+  await expect(page.locator('[data-action="fov"]')).toHaveAttribute("data-tip", "Not available in Panorama mode");
+  expect(problems).toEqual([]);
+});
