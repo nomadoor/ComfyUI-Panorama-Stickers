@@ -835,3 +835,16 @@ test("a look that cuts Reset View's ease leaves the FOV in whole degrees", () =>
   assert.ok(Number.isInteger(view.pose().hFOV_deg), String(view.pose().hFOV_deg));
 });
 
+// docs/space-and-view.md "寄る" (ADR 0061): Frame Selected during Reset View's ease fits with the FOV the view is going to.
+test("Frame Selected during Reset View's ease fits with the destination's FOV", () => {
+  const sphere = { center: [0, 0, -6], radius: 1 };
+  const eased = camera(pose({ position: [5, 0, 5], hFOV_deg: 40 }));
+  eased.reset();
+  eased.step(0.1);
+  eased.frameSelected(sphere);
+  const still = camera(pose({ target: [0, -1.6, -8] }));
+  still.reset();
+  still.step(1);
+  still.frameSelected(sphere);
+  closeVec(eased.destination().position, still.destination().position, 1e-9);
+});

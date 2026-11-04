@@ -556,7 +556,8 @@ export function createViewCamera({ pose: start, frame = false }) {
     frameSelected(sphere) {
       if (!sphere) return result(false, "nothing-to-frame");
       const base = aim();
-      const framed = frameView(asView(base, hFov()), sphere, screen.width, screen.height);
+      // The FOV of the view it starts from: the destination's (an eased Reset View's), the Camera's in the Frame view.
+      const framed = frameView(asView(base, frame ? screen.hFOV_deg : base.hFOV_deg), sphere, screen.width, screen.height);
       const to = { ...base, position: framed.position, target: targetWithin(framed.position, sphere.center, eye(), forwardOf(base)) };
       destination = [...to.position];
       go(to, ACTION_EASE_SECONDS);
