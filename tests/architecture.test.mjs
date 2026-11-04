@@ -153,7 +153,7 @@ test("every place that lays paint on the Sky does it through createPaintDisplay,
 // docs/timeline-ui.md "どの背景を出すか": the new editor, the Preview window and Panorama Studio's node surface choose the
 // background they show with the one chooseBackground of pano_background_choice.js.
 test("every new-UI view that shows a node's background imports chooseBackground from pano_background_choice.js", () => {
-  for (const file of ["studio/editor.js", "studio/preview_window.js", "node_surface/studio_picture.js"]) {
+  for (const file of ["studio/editor_inputs.js", "studio/preview_window.js", "node_surface/studio_picture.js"]) {
     const from = IMPORTS.get(file).find(({ names }) => names.includes("chooseBackground"));
     assert.equal(from?.target, "pano_background_choice.js", file);
   }
