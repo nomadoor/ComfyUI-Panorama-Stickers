@@ -3,7 +3,7 @@ import hashlib
 import json
 import math
 from collections import Counter
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from fractions import Fraction
 from pathlib import Path
 import logging
@@ -65,6 +65,7 @@ from .core.gltf_animation import clip_time
 from .core.world_render import ContentSource, SceneContent
 from . import file_3d
 from .file_3d import FILE_NOT_FOUND, NEITHER_3D_READER, _check_da3_inputs, _check_moge_inputs, _file_3d_error, _read_file_3d, _read_scene_file, _scene_content
+from .pano_scene import PanoScene, PanoSceneValue, SceneLayer
 from .port_sticker import (
     PORT_3D_FIT_FOV_DEG,
     _handoff_lanes,
@@ -955,66 +956,8 @@ class PanoramaStickersNode(io.ComfyNode):
 
 MoGeGeometry = io.Custom("MOGE_GEOMETRY")
 DA3Geometry = io.Custom("DA3_GEOMETRY")
-PanoScene = io.Custom("PANO_SCENE")
 MESH_FILE_TYPES = [io.File3DGLB, io.File3DGLTF, io.File3DFBX, io.File3DOBJ, io.File3DSTL, io.File3DUSDZ, io.File3DAny]
 SPLAT_FILE_TYPES = [io.File3DPLY, io.File3DSPLAT, io.File3DSPZ, io.File3DKSPLAT, io.File3DSplatAny]
-
-
-@dataclass(frozen=True, eq=False)
-class SceneLayer:
-    """One Panorama Studio's own part of a Scene (ADR 0029): its state bound to its inputs.
-
-    `state` is the loaded `state_json` with the port Sticker appended when missing, and `sources` its Sticker
-    sources read into memory; the port Sticker's source is a template holding the first frame of `port`, the
-    media on the sticker input (None without one), whose frames come from `port.frames()` at `port.index_at`.
-    3D media has no template: `port.frames()` is its content, and `_port_source_at` the item to draw. `scene` is
-    the 3D media on the `scene` input (None without one), a 3D file as the SPLAT or MESH read from it
-    (`_read_scene_file`), as is the 3D media in `port`. `media_ui` is the part of the execution `ui` that shows the
-    layer's own media in an editor (the `sticker` media and the `scene` and 3D Sticker editor files); the files are
-    the producing node's and are not written again.
-    """
-
-    state: dict
-    sources: SceneSources
-    port: PortMedia | None
-    scene: object
-    media_ui: dict
-
-
-@dataclass(frozen=True, eq=False)
-class PanoSceneValue:
-    """The PANO_SCENE output: a Scene derived on each execution from the states and inputs of a chain of nodes
-    (ADR 0025, ADR 0029).
-
-    `layers` holds a `SceneLayer` for each node of the chain, from the farthest upstream to the node that made it,
-    flat: a PANO_SCENE never holds another. `bg_media` (IMAGE, VIDEO, or None) is the input as given, `coverage`
-    its span, and `bg_color` 0..1 RGB, all from the farthest upstream node that has a `bg_media`. `bg_ui` is the
-    `ui` that shows that `bg_media` in an editor, and `bg_clip` its Clip range (`background.clip`) with the
-    `timeline.fps` of that node's state, or None without `bg_media`. The output size is not part of it; each
-    consumer sets its own. `rate` is the Timeline fps as the fraction (a)
-    decided (`fps` as a float), `times` each output frame's time in seconds (Fraction), and `time_base` the step
-    those times are rounded to (0: exact). `frames` holds per output frame the `bg_media` frame to draw and, for
-    each layer, the Timeline frame of its state to evaluate, the `port` frame, and the `scene` item, as
-    `_decide_timeline` returns them. `media_ui` is the part of the producing node's execution `ui` that shows its
-    media in an editor (with the upstream layers, `docs/studio-node.md`); a consumer passes it on in its own
-    `ui`. Consumers must not modify it; the same value reaches every node linked to the output.
-    """
-
-    layers: tuple
-    bg_media: object
-    coverage: int
-    bg_color: tuple
-    rate: Fraction
-    times: tuple
-    time_base: Fraction
-    frames: tuple
-    bg_ui: dict
-    media_ui: dict
-    bg_clip: tuple | None = None
-
-    @property
-    def fps(self) -> float:
-        return float(self.rate)
 
 
 def _resolve_sources(state: dict, port: PortMedia | None, warnings: list[str]) -> SceneSources:

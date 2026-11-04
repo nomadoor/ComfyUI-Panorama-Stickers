@@ -18,7 +18,7 @@ Panorama Studio（`PanoramaStudio`）のノードが Scene を組み立てて撮
 | VIDEO の読み方 | `core/video_source.py` `scan_video`・`StreamedVideo`・`VideoIndex`、`sticker_media.py` `open_video` | — | `tests/test_video_source.py`、`tests/test_stickers_scene_video.py` |
 | フレームごとの描画（(b)） | `nodes.py` `_render_frames` | — | `tests/test_scene_video.py`、`tests/test_studio_scene.py` |
 | `video` 出力 | `scene_video.py` `SceneVideo`・`RenderedVideo` | — | `tests/test_scene_video.py`、`tests/test_stickers_scene_video.py`、`tests/test_cancel_long_loops.py` |
-| `PANO_SCENE` | `nodes.py` `PanoSceneValue`・`SceneLayer`・`_scene_output` | — | `tests/test_studio_scene.py`、`tests/test_studio_upstream.py`、`tests/test_pano_scene_preview.py` |
+| `PANO_SCENE` | `pano_scene.py` `PanoSceneValue`・`SceneLayer`、`nodes.py` `_scene_output` | — | `tests/test_studio_scene.py`、`tests/test_studio_upstream.py`、`tests/test_pano_scene_preview.py` |
 | Panorama Studio の入出力、撮る Camera と撮り方（Panorama / Frame）、出力の大きさ（`megapixels`・`multiple`）、`sticker_state` 出力 | `nodes.py` `PanoramaStudioNode`（`execute` が撮り方を決める）・`_build_scene`・`_studio_output_size`・`_camera_sticker_state` | 出力の大きさの式だけ `web_src/pano_studio_status.js` `studioOutputSize` | `tests/test_studio_node.py`、`tests/test_studio_upstream.py`、`tests/test_studio_camera.py`、`tests/test_studio_scene.py`、`tests/test_node_schema_contract.py`、`tests/test_studio_status_parity.py`（フィクスチャ `tests/fixtures/studio_output_size.json` を JS の `tests/pano_studio_status.test.mjs` も読む） |
 | 実行結果の `ui` とエディタ用ファイル（`pano_scene_meta` の `unlit` を含む） | `nodes.py` `_build_scene`・`_port_media_ui`・`_scene_ui`・`_editor_mp4`、`core/video.py` `encode_editor_mp4`・`editor_ready`・`save_editor_frames`、`scene_files.py` `write_editor_files` | — | `tests/test_editor_mp4.py`、`tests/test_scene_editor_files.py`、`tests/test_studio_upstream.py` |
 | `DA3_GEOMETRY` mono のエディタ用ファイルの形式（深度（keep は値の `> 0`）・メタ・色のプロキシ） | `scene_files.py` `write_editor_files` の `DA3_GEOMETRY` mono の枝（`_da3_depth_files`）、`nodes.py` `_scene_ui`・`_depth_grid_meta`（メタと色のプロキシ。プロキシは `_batch_mp4_ui` と同じ作り）・`SCENE_FILE_TYPES` の `f32` | `web_src/pano_space.js` `sceneFilesOf` の `depth_grid` の枝、`web_src/pano_depth_grid.js` `readDepthGrid` | `tests/test_scene_editor_files.py` `test_da3_mono_editor_files_are_depth_with_keep_as_positive`・`test_the_depth_grid_fixture_is_what_python_writes`、`tests/pano_depth_grid.test.mjs`（形式の読み方。fixture `tests/fixtures/da3_depth_grid/`）、`tests/pano_space.test.mjs` |
@@ -274,7 +274,7 @@ Panorama Studio の `video` は、`scene_video.py` の `SceneVideo`（コアの 
 
 ## `PANO_SCENE`
 
-Panorama Studio の `scene` 出力は、`nodes.py` の `PanoSceneValue`（frozen dataclass、比較は同一性）である。Scene の正は各ノードの `state_json` だけで、この値は実行のたびに状態と入力から導く派生値である（ADR 0025、ADR 0029）。フレームは描画せず、`PANO_SCENE` を入れ子に持たない。上流の Scene を受けたノードの値は、上流の層の後ろに自分の層を足した平らな列になる。Preview の表示（`docs/preview-node.md` の「`PANO_SCENE` を見る」）、3D の撮影、Studio の `scene` 入力は、次のフィールドだけを前提にする。
+Panorama Studio の `scene` 出力は、`pano_scene.py` の `PanoSceneValue`（frozen dataclass、比較は同一性）である。Scene の正は各ノードの `state_json` だけで、この値は実行のたびに状態と入力から導く派生値である（ADR 0025、ADR 0029）。フレームは描画せず、`PANO_SCENE` を入れ子に持たない。上流の Scene を受けたノードの値は、上流の層の後ろに自分の層を足した平らな列になる。Preview の表示（`docs/preview-node.md` の「`PANO_SCENE` を見る」）、3D の撮影、Studio の `scene` 入力は、次のフィールドだけを前提にする。
 
 | フィールド | 内容 |
 |---|---|
