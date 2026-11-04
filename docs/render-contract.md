@@ -204,7 +204,7 @@ RTX 4070 Ti、1 フレーム、κ = 0.5・hFOV 140°（4K は 4096 × 2048 相�
 `paint` のラスタにも `mask` のラスタにも使う。
 
 - 描く所：ノードはラスタを、`painting_layer` の有無によらずいつも状態から描く。Panorama Studio は `_sky_layers`（`render_raster_layer_from_state`）、
-  旧ノードの PanoramaStickers・PanoramaCutout は `nodes.py` から `compose_display_list_to_overlay_rgba`（`core/display_layers.py` の
+  旧ノードの PanoramaStickers・PanoramaCutout は `legacy_nodes.py` から `compose_display_list_to_overlay_rgba`（`core/display_layers.py` の
   `render_raster_layer_from_state`）と `render_painting_to_erp` を通る。どれも `core/painting.py` `_composite_one_raster_object` に行き着く。
   MASK は、アップロードされた `mask` が無いときだけ状態から描く。
 - 回す平面：経度と緯度を同じ度で測る平面（ERP の u を 360°、v を 180° として測る）で回し、拡大する。点 `p` を中心 `c` のまわりに

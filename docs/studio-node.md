@@ -485,7 +485,7 @@ Scene を組み立てて撮るノード（ADR 0029）。Python のクラスは `
 
 #### `port` の Sticker が状態にないとき
 
-`sticker` 入力が接続されているのに、状態に `source.kind == "port"` の Sticker がない場合、ノードとエディタは、その素材を次の Sticker としてリストの末尾（最も手前）に加えて扱う。2D の素材で `sticker_state` があるときは、状態に `port` の Sticker があっても実行のたびに Pose handoff を当てる（下記「`sticker_state` で届く `port` の Sticker」）。旧ノードの挙動（`nodes.py` の `_build_runtime_external_sticker` を呼ぶ、既存の外部 Sticker が見つからないときの経路）と同じである。
+`sticker` 入力が接続されているのに、状態に `source.kind == "port"` の Sticker がない場合、ノードとエディタは、その素材を次の Sticker としてリストの末尾（最も手前）に加えて扱う。2D の素材で `sticker_state` があるときは、状態に `port` の Sticker があっても実行のたびに Pose handoff を当てる（下記「`sticker_state` で届く `port` の Sticker」）。旧ノードの挙動（`legacy_nodes.py` の `_build_runtime_external_sticker` を呼ぶ、既存の外部 Sticker が見つからないときの経路）と同じである。
 
 - `placement: "sky"`、Clip range・`opacity` などは既定値。
 - `sticker` の素材が 3D（MESH・SPLAT・3D ファイル・`MOGE_GEOMETRY`・`DA3_GEOMETRY`）のときは `placement: "world"` とし、`position` は上の「`port` の Sticker が状態になければ」の項目のとおり中身の全体が ERP の正面に収まる位置（式は `docs/editor-interaction.md` の「3D の Sticker を収めて置く」）、`rotation` は 0、`scale` は `1` とする。Pose handoff（下記）は 2D の素材の Sticker だけに当てはまり、3D の Sticker には `sticker_state` を使わない（使わなかったことを警告に出す）。状態の `port` の Sticker が `sky` のまま 3D の素材がつながったときは、同じ `id` の `world` の Sticker（上の変形。`clip`・`visible`・`locked`・`animation` は保ち、`sky` の Lane と Keyframe は捨てる）に置き換えて扱い、エディタも実行結果で同じように置き換える（`docs/editor-interaction.md` の「`port` の Sticker の同期」）。逆向き（`world` の `port` の Sticker に 2D の素材）は、2D の `world` の Sticker として正しいので置き換えない（`sticker_state` がないとき。あるときは配置も Pose handoff に従う）。以下の `z_index`・`direction`・`roll`・`size` の規則は `sky` のときだけ。
