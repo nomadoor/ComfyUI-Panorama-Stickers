@@ -466,13 +466,14 @@
 }
 
 /* The View group's FOV number (docs/design.md "右下の画角の数字と画角のリセット", mock B2): a pill as tall as the buttons,
-   no fill but the hover's, the number in the edge ruler's value style in a width that holds "140°", right-aligned. */
+   no fill but the hover's, the number in the edge ruler's value style, right-aligned in exactly the width of "140°"
+   (a hidden "140°", data-widest, in the same cell). */
 .pano-studio-fov {
   display: inline-flex;
   flex: none;
   align-items: center;
   height: var(--studio-knob);
-  padding: 0 6px 0 10px;
+  padding: 0 6px;
   border-radius: var(--studio-r-part);
   color: var(--studio-fg);
   font-size: var(--studio-text-sm);
@@ -489,10 +490,19 @@
 }
 
 .pano-studio-fov-num {
-  display: inline-block;
-  width: 4ch;
+  display: inline-grid;
+  justify-items: end;
   font-variant-numeric: tabular-nums;
-  text-align: right;
+}
+
+.pano-studio-fov-num > *,
+.pano-studio-fov-num::after {
+  grid-area: 1 / 1;
+}
+
+.pano-studio-fov-num::after {
+  content: attr(data-widest);
+  visibility: hidden;
 }
 
 .pano-studio-fov[aria-disabled="true"] {

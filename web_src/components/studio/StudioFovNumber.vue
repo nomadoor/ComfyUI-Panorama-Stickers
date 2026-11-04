@@ -87,5 +87,5 @@ onBeforeUnmount(() => {
     @pointercancel="onPointerUp"
     @lostpointercapture="onPointerUp"
     @keydown="onKeydown"
-  ><span class="pano-studio-fov-num" data-fov-text>{{ text || `${value}°` }}</span></span>
+  ><span class="pano-studio-fov-num" :data-widest="`${VIEW_HFOV_MAX_DEG}°`"><span data-fov-text>{{ text || `${value}°` }}</span></span></span>
 </template>
