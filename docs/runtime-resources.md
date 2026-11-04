@@ -8,7 +8,7 @@ Panorama Studio と Preview の実行が使うデバイスとメモリ、中断�
 
 | 規則 | Python | JS | test |
 |---|---|---|---|
-| デバイスとメモリ | `nodes.py` `_render_memory`・`_media_bytes`、`scene_mesh.py` `da3_device_bytes` | — | `tests/test_device_memory.py`、`tests/test_scene_mesh.py` |
+| デバイスとメモリ | `scene_render.py` `_render_memory`・`_media_bytes`、`scene_mesh.py` `da3_device_bytes` | — | `tests/test_device_memory.py`、`tests/test_scene_mesh.py` |
 | 中断と進み具合 | `progress.py` `loop_progress`、`core/temp_files.py` `removed_on_failure` | — | `tests/test_cancel_long_loops.py`、`tests/test_temp_files.py` |
 | 実行をまたぐキャッシュ | `core/cache.py` `CACHE`・`MemoryCache.get_or_put` | — | `tests/test_memory_cache.py`、`tests/test_file_3d_route.py` |
 | 一時ファイル | `core/temp_files.py` `TEMP_FILES` | — | `tests/test_temp_files.py`、`tests/test_file_3d_route.py` |
@@ -22,7 +22,7 @@ Python のファイルは `comfyui_pano_suite/` の下にある。
 - 見積もり（`_render_memory`）は次の和。粗い上側の見積もりで、細かな一時テンソルは含めない。
   - 出力の画素あたり `RENDER_FLOATS_PER_PIXEL`（32）個の float32。1 フレームの間にデバイスに同時にあるもの（光線とその向き、Sky の層ごとのサンプルと footprint・重み、背景のサンプル、World の層、色・マスク・深度）の分。32 は実測（`docs/legacy-baselines.md` の「Panorama Studio の描画の計測」）に余裕を持たせた値。光線（3 個）とその向き（2 個）、World の光線（3 個）、MESH・SPLAT の光線（各 3 個）はフレームの間も描画のパスの終わりまで持ち続けるが、これらを合わせても画素あたり約 14 個で、32 の内に収まる。
   - デバイスに上げる素材の float32 の大きさの `DEVICE_SOURCE_FACTOR`（4）倍：`bg_media` の 1 フレーム（RGB）、各層の Sticker の素材（RGBA）、アップロード済みのペイントのラスタ。4 倍は、本体と `_sample_filtered` の ripmap（本体の 3 倍まで）の分。
-  - 3D の中身（`scene` と 3D の Sticker。3D の Sticker は `port` の素材と、3D ファイルの `file` の Source から読んだ SPLAT・MESH（`SceneSources.contents`））のテンソルの大きさ（`core/cache.py` の `nbytes`）。`DA3_GEOMETRY` は入力の辞書ではなく、device に置く変換後のメッシュの大きさの上限で数える（`scene_mesh.py` の `da3_device_bytes`、`nodes.py` の `_media_bytes`）。見積もりのために変換はせず、`depth` の大きさから、格子の全画素を頂点にしたメッシュ（float32 の頂点・uv・線形のテクスチャと、int64 の面）を device に置いたときの量とする。mono は 1 フレーム分、multiview は全視点を同時に置くので全視点の和にする。
+  - 3D の中身（`scene` と 3D の Sticker。3D の Sticker は `port` の素材と、3D ファイルの `file` の Source から読んだ SPLAT・MESH（`SceneSources.contents`））のテンソルの大きさ（`core/cache.py` の `nbytes`）。`DA3_GEOMETRY` は入力の辞書ではなく、device に置く変換後のメッシュの大きさの上限で数える（`scene_mesh.py` の `da3_device_bytes`、`scene_render.py` の `_media_bytes`）。見積もりのために変換はせず、`depth` の大きさから、格子の全画素を頂点にしたメッシュ（float32 の頂点・uv・線形のテクスチャと、int64 の面）を device に置いたときの量とする。mono は 1 フレーム分、multiview は全視点を同時に置くので全視点の和にする。
 - 例：ERP 4096 x 2048 の出力に 4096 x 2048 の背景と 2048 四方の Sticker 一つなら、1 GiB（画素）＋ 384 MiB（背景）＋ 256 MiB（Sticker）で約 1.6 GiB。
 - 新しい UI の上限（`megapixels` 16、`STUDIO_MAX_OUTPUT_SIDE` 8192。`docs/studio-node.md`）では、16 MP の出力（Panorama 360 で 5792 x 2896）の画素だけで
   約 2 GiB（16.8 M 画素 × 32 × 4 バイト）になる。大きな ERP にストロークを描く重さ（8192 の ERP で描き直すたびに CPU で約 7 秒・3 GB）は

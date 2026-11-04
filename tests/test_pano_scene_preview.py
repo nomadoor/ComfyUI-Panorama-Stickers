@@ -186,8 +186,8 @@ def test_a_pano_scene_preview_gives_the_upstream_keys(monkeypatch, background):
     pano_scene = _studio(**inputs)[0]
     downstream = PanoramaStudioNode.execute(background_color="#00ff00", background_range="360", **output_size(64), state_json="", scene=pano_scene).ui
     rendered = []
-    monkeypatch.setattr(nodes, "render_frame", lambda *args, **kwargs: rendered.append(1))
-    monkeypatch.setattr(nodes, "_render_frames", lambda *args, **kwargs: rendered.append(1))
+    monkeypatch.setattr("comfyui_pano_suite.scene_render.render_frame", lambda *args, **kwargs: rendered.append(1))
+    monkeypatch.setattr("comfyui_pano_suite.scene_render._render_frames", lambda *args, **kwargs: rendered.append(1))
     monkeypatch.setattr(nodes, "write_editor_files", lambda *args, **kwargs: rendered.append(1))
 
     output = _preview(pano_scene)

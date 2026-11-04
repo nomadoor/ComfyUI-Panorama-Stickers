@@ -265,7 +265,7 @@ def _record_projections(monkeypatch):
         projections.append((camera, projection))
         return original(layers, camera, projection, **kwargs)
 
-    monkeypatch.setattr(nodes, "render_frame", recording)
+    monkeypatch.setattr("comfyui_pano_suite.scene_render.render_frame", recording)
     return projections
 
 

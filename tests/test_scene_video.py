@@ -33,7 +33,7 @@ def _count_renders(monkeypatch):
         passes.append(1)
         return original(*args, **kwargs)
 
-    monkeypatch.setattr(nodes, "_render_frames", counted)
+    monkeypatch.setattr("comfyui_pano_suite.scene_render._render_frames", counted)
     return passes
 
 
