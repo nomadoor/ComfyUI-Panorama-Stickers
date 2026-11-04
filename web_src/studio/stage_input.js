@@ -8,7 +8,8 @@ import { MOVE_KEY_CODES, isMoveKey } from "../pano_view_keys.js";
 import { editorKeyAction } from "./shortcuts.js";
 import { lensPickView, lensPinholePoint, surfaceHit } from "./stage_view.js";
 import { orbitCenter } from "./view_camera.js";
-import { navigationAction, wheelMeaning } from "./view_input.js";
+import { navigationAction } from "./view_input.js";
+import { wheelMeaning } from "../pano_wheel.js";
 import { FRAME_WHEEL_REST_MS } from "./view_scale.js";
 
 // A double click that comes within this long after Set orbit center's press is the one its clicks made (a browser's

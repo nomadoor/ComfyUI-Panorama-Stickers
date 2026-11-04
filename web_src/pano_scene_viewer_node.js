@@ -11,8 +11,7 @@ import { anyStudioEditorOpen, sceneViewer } from "./pano_node_bridge.js";
 import { acquirePreviewView } from "./pano_preview_view.js";
 import { createSceneViewer, sceneViewerHost, sceneViewerRecord } from "./pano_scene_viewer.js";
 import { VIEW_CONTROLS_SETTING_ID, presetUsesButton, viewControlsPreset } from "./pano_view_controls.js";
-import { bindWheelCaptureRoot, readWheelDirection } from "./pano_wheel.js";
-import { createWheelSteps, wheelMeaning } from "./studio/view_input.js";
+import { bindWheelCaptureRoot, createWheelSteps, readWheelDirection, wheelMeaning } from "./pano_wheel.js";
 
 // How long the play / pause cue of a double click shows.
 const CUE_MS = 600;
@@ -163,7 +162,7 @@ export function attachSceneViewerNode(node, { app, uiList, mediaSource, mediaAss
   }
 
   // The wheel moves toward the point under the pointer; Alt + wheel and a pinch (Ctrl + wheel) change the view's FOV
-  // (docs/preview-node.md "ノード上"; studio/view_input.js wheelMeaning). Every wheel is the surface's.
+  // (docs/preview-node.md "ノード上"; pano_wheel.js wheelMeaning). Every wheel is the surface's.
   function onWheel(event) {
     event.preventDefault();
     event.stopPropagation();

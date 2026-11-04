@@ -1,13 +1,12 @@
 // The new UI's input of the view (docs/space-and-view.md "マウスとキー", "カーソル", "視点の操作の部品", "ウィンドウが
-// フォーカスを失ったとき"): which button and modifier does which operation, the wheel's steps (a trackpad's fine
-// events added up), the movement keys, the stage's cursor, the knob that lights for the operation under way, and what
+// フォーカスを失ったとき"): which button and modifier does which operation (the wheel's meaning and steps are
+// pano_wheel.js's), the movement keys, the stage's cursor, the knob that lights for the operation under way, and what
 // is cleared when the window loses focus. view_camera.js does the moves; this only decides which.
 //
 // The operations: "look" (look around in place), "orbit" (about T), "pan", "joystick" (forward / back), and "object"
 // (the left button on an object: selecting and editing, the selection spec's).
 import { createMoveKeys, isMoveKey } from "../pano_view_keys.js";
-import { readWheelDirection } from "../pano_wheel.js";
-import { WHEEL_STEP_PIXELS, frameSeconds } from "./view_scale.js";
+import { frameSeconds } from "./view_scale.js";
 
 // --- Buttons and modifiers: the same table in the Panorama view and the Frame view (where the moves move the Camera).
 
@@ -89,50 +88,6 @@ export function stageCursor({ gesture = null, altHeld = false, objectCursor = nu
   if (gesture && DRAG_CURSORS[gesture]) return DRAG_CURSORS[gesture];
   if (altHeld) return ORBIT_CURSOR;
   return objectCursor ?? LOOK_CURSOR;
-}
-
-// --- The wheel.
-
-// What a wheel event does (docs/space-and-view.md "マウスとキー", "寄る"; ADR 0061): "move" (toward the pointer), or
-// "zoom" (the view's FOV) with Alt or Ctrl (a trackpad's pinch comes as Ctrl + wheel, which a mouse's Ctrl + wheel
-// cannot be told from); null with Meta, which stays the browser's. Shift changes nothing (some browsers make Shift +
-// wheel a sideways scroll).
-export function wheelMeaning(event) {
-  if (event.metaKey) return null;
-  return event.altKey || event.ctrlKey ? "zoom" : "move";
-}
-
-// The wheel's steps: push(event) gives 1 (nearer: rolled away, deltaY < 0; a smaller FOV for a zoom), -1 (farther) or
-// 0. A line or page event (deltaMode != 0) and a pixel event of WHEEL_STEP_PIXELS or more are one step each. Finer
-// pixel events (a trackpad) add up in one direction to a step every WHEEL_STEP_PIXELS; a change of direction or of the
-// wheel's meaning (wheelMeaning: Alt or Ctrl went down or up) drops what was added up.
-export function createWheelSteps() {
-  let added = 0;
-  let meaning = "move";
-  return {
-    push(event) {
-      const now = wheelMeaning(event);
-      if (now !== meaning) {
-        added = 0;
-        meaning = now;
-      }
-      const fine = (event.deltaMode ?? 0) === 0 && Math.abs(event.deltaY) < WHEEL_STEP_PIXELS;
-      if (!fine) {
-        added = 0;
-        return -readWheelDirection(event) || 0;
-      }
-      if (!event.deltaY) return 0;
-      if (Math.sign(event.deltaY) !== Math.sign(added)) added = 0;
-      added += event.deltaY;
-      if (Math.abs(added) < WHEEL_STEP_PIXELS) return 0;
-      const direction = Math.sign(added);
-      added -= direction * WHEEL_STEP_PIXELS;
-      return -direction;
-    },
-    reset() {
-      added = 0;
-    },
-  };
 }
 
 // --- The input state: Alt, the movement keys, the hover, the gesture under way.

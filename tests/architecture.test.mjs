@@ -97,6 +97,15 @@ test("the new UI imports no node surface module and not pano_editor_extension.js
   assert.deepEqual(crossings, []);
 });
 
+// docs/editor-architecture.md "Overview" (the layers) and "Dependency rules": the libraries (web_src/pano_*.js) know no editor: none
+// but the old editor's composition (pano_editor.js) imports editor/*.js or studio/*.js.
+test("the libraries pano_*.js import neither editor/*.js nor studio/*.js", () => {
+  const libraries = [...IMPORTS.keys()].filter((name) => /^pano_[^/]+\.js$/.test(name) && name !== "pano_editor.js");
+  assert.ok(libraries.length > 50);
+  const crossings = libraries.flatMap((from) => graph.get(from).filter((to) => /^(editor|studio)\//.test(to)).map((to) => `${from} -> ${to}`));
+  assert.deepEqual(crossings, []);
+});
+
 // docs/editor-architecture.md "Dependency rules": editor/*.js import neither pano_editor.js, ComfyUI's app / api,
 // nor each other, except the modules without behavior.
 const EDITOR_SHARED = new Set(["editor/constants.js", "editor/helpers.js", "editor/ui_settings.js", "editor/video_thumbnail_cache.js"]);

@@ -12,8 +12,7 @@ import {
   resumeNodeVideoFromWindow,
   shouldTogglePreviewPlaybackFromKey,
 } from "./pano_preview_node_surface.js";
-import { bindWheelCaptureRoot } from "./pano_wheel.js";
-import { createWheelSteps, wheelMeaning } from "./studio/view_input.js";
+import { bindWheelCaptureRoot, createWheelSteps, wheelMeaning } from "./pano_wheel.js";
 import { acquirePreviewView, previewNodeCamera } from "./pano_preview_view.js";
 import { installPanoSuiteStylesheet } from "./pano_styles.js";
 import {
