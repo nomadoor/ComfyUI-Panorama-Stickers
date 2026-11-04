@@ -12,18 +12,14 @@ import {
   AxesHelper,
   BackSide,
   Box2,
-  BufferGeometry,
   ClampToEdgeWrapping,
   Color,
   CustomBlending,
   DirectionalLight,
   DoubleSide,
-  Float32BufferAttribute,
   FloatType,
   GridHelper,
   Group,
-  LineBasicMaterial,
-  LineSegments,
   LinearFilter,
   Matrix3,
   Matrix4,
@@ -31,8 +27,6 @@ import {
   MeshBasicMaterial,
   NoBlending,
   Object3D,
-  OneFactor,
-  OneMinusSrcAlphaFactor,
   PerspectiveCamera,
   NearestFilter,
   NoColorSpace,
@@ -64,7 +58,6 @@ import { createGroundGrid } from "./pano_ground_grid.js";
 import { createSkyGrid } from "./pano_sky_grid.js";
 import { canvasValueTarget, createLiveErp } from "./pano_live_erp.js";
 import {
-  ERP_FRAGMENT,
   ERP_VERTEX,
   LENS_FACES,
   LENS_FRAGMENT,
@@ -77,9 +70,13 @@ import {
   STICKER_VERTEX,
   UNWRAP_ERP_FRAGMENT,
   UNWRAP_STICKER_FRAGMENT,
-  UNWRAP_VERTEX,
   WORLD_STICKER_FRAGMENT,
 } from "./three_view/shaders.js";
+import { applyViewportCamera, devicePoint, setCamera, setView } from "./three_view/camera.js";
+import { createErpMesh, createLines, createMaterial, createQuad, pooled } from "./three_view/meshes.js";
+import { sameValue } from "./three_view/values.js";
+
+export { applyViewportCamera, sameValue };
 
 // The lights of the World pass (docs/render-contract.md "既定の照明", which owns the values; Python's
 // mesh_render.py has the same, both checked against tests/fixtures/default_lighting.json). No shadows.
@@ -129,15 +126,6 @@ export function stickerItemInputs(space) {
 const DOME_RADIUS = 100;
 const STICKER_DISTANCE = 50;
 const ORIGIN_COLOR = 0xffdd57;
-
-export function applyViewportCamera(camera, setup) {
-  const { quaternion } = setup;
-  camera.quaternion.set(quaternion.x, quaternion.y, quaternion.z, quaternion.w);
-  camera.fov = setup.fovY_deg;
-  camera.aspect = setup.aspect;
-  camera.updateProjectionMatrix();
-  camera.updateMatrixWorld();
-}
 
 // A sky Sticker is its gnomonic image plane at STICKER_DISTANCE along the Sticker's forward axis;
 // seen from the camera at the center it covers the same rays as the previous per-pixel shader.
@@ -448,58 +436,6 @@ export function createLayerTextures({ uploadRegions = null } = {}) {
   };
 }
 
-function createMaterial(vertexShader, fragmentShader, uniforms, blending = CustomBlending) {
-  return new ShaderMaterial({
-    vertexShader,
-    fragmentShader,
-    uniforms: { map: { value: null }, opacity: { value: 1 }, ...uniforms },
-    depthTest: false,
-    depthWrite: false,
-    transparent: true,
-    blending,
-    blendSrc: OneFactor,
-    blendDst: OneMinusSrcAlphaFactor,
-    blendSrcAlpha: OneFactor,
-    blendDstAlpha: OneMinusSrcAlphaFactor,
-  });
-}
-
-function createErpMesh(geometry, blending) {
-  const material = createMaterial(ERP_VERTEX, ERP_FRAGMENT, { halfCoverage: { value: false } }, blending);
-  material.side = BackSide;
-  return new Mesh(geometry, material);
-}
-
-function createQuad(geometry, fragmentShader, uniforms, blending = CustomBlending) {
-  const mesh = new Mesh(geometry, createMaterial(UNWRAP_VERTEX, fragmentShader, uniforms, blending));
-  mesh.frustumCulled = false;
-  return mesh;
-}
-
-// Line segments [[a, b], ...] in one color.
-function createLines({ segments, color }) {
-  const geometry = new BufferGeometry();
-  geometry.setAttribute("position", new Float32BufferAttribute(segments.flat(2), 3));
-  return new LineSegments(geometry, new LineBasicMaterial({ color }));
-}
-
-// The camera of setup, drawing the part `offset` of its view (visibleWindow() with the whole view's size as
-// fullWidth and fullHeight), or all of it.
-function setView(target, setup, offset = null) {
-  if (offset) target.setViewOffset(offset.fullWidth, offset.fullHeight, offset.offsetX, offset.offsetY, offset.width, offset.height);
-  else target.clearViewOffset();
-  applyViewportCamera(target, setup);
-}
-
-function setCamera(target, setup, offset = null) {
-  setView(target, setup, offset);
-  target.position.set(...setup.position);
-  target.near = setup.near;
-  target.far = setup.far;
-  target.updateProjectionMatrix();
-  target.updateMatrixWorld();
-}
-
 // width x height in device pixels, kept to what the GPU can draw to (maxSide, the smaller of
 // MAX_RENDERBUFFER_SIZE and MAX_TEXTURE_SIZE): a larger size is scaled down evenly. Nothing else limits it.
 export function fitRenderSize(width, height, maxSide) {
@@ -521,11 +457,6 @@ export function visibleWindow(rect, canvasWidth, canvasHeight) {
   const y1 = Math.min(canvasHeight, Math.round(rect.y + rect.h));
   if (x1 <= x0 || y1 <= y0) return null;
   return { x: x0, y: y0, width: x1 - x0, height: y1 - y0, offsetX: x0 - rect.x, offsetY: y0 - rect.y };
-}
-
-// (x, y) of a width x height view as three.js normalized device coordinates.
-function devicePoint(x, y, width, height) {
-  return new Vector2(x / width * 2 - 1, 1 - y / height * 2);
 }
 
 // The pick of the World content (pick() below) draws the pixel under the pointer with only the pickable
@@ -564,16 +495,6 @@ export function setChildren(parent, children) {
   parent.clear();
   if (children.length) parent.add(...children);
   return true;
-}
-
-// Whether a and b hold the same numbers, strings and booleans in the same arrays and objects.
-export function sameValue(a, b) {
-  if (a === b) return true;
-  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false;
-  if (Array.isArray(a) !== Array.isArray(b)) return false;
-  const keys = Object.keys(a);
-  if (keys.length !== Object.keys(b).length) return false;
-  return keys.every((key) => sameValue(a[key], b[key]));
 }
 
 // The line objects of `sets` ([{ segments, color }], createLines) kept in cache ({ sets, lines }): made
@@ -875,11 +796,6 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
   const owners = new Map();
   const layerTextures = createLayerTextures({ uploadRegions: (texture, rects) => uploadTextureRegions(renderer, texture, rects) });
   renderer.setScissorTest(true);
-
-  function pooled(meshes, index, create) {
-    if (!meshes[index]) meshes[index] = create();
-    return meshes[index];
-  }
 
   function addErp(owned, projection, mesh, layer, halfCoverage) {
     mesh.material.uniforms.map.value = owned.texture(layer, halfCoverage ? ClampToEdgeWrapping : RepeatWrapping, false);

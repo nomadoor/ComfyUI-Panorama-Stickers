@@ -9343,7 +9343,7 @@ function sy(e, t, n, { media: r, evaluated: i = Os(e, t) }) {
   }), a;
 }
 function r_() {
-  return import("./.lazy/pano_three_view-CDExXOrT.js").then((e) => e.$);
+  return import("./.lazy/pano_three_view-T7B8QCT1.js").then((e) => e.$);
 }
 function ly({ canvas: e, onReady: t, onFailed: n, onUpdate: r = () => {
 }, onSplats: i = () => {
@@ -10691,7 +10691,7 @@ function jF(e) {
   };
 }
 const _y = jF(
-  ({ onUpdate: e, onSplats: t }) => import("./.lazy/pano_three_view-CDExXOrT.js").then((n) => n.$).then((n) => iw(n.createThreeView({ onUpdate: e, onSplats: t, ownWorlds: !0, createCanvas: () => Gt({ label: "three.node" }) }), "node"))
+  ({ onUpdate: e, onSplats: t }) => import("./.lazy/pano_three_view-T7B8QCT1.js").then((n) => n.$).then((n) => iw(n.createThreeView({ onUpdate: e, onSplats: t, ownWorlds: !0, createCanvas: () => Gt({ label: "three.node" }) }), "node"))
 ), _a = 8192, Wh = Object.freeze({ megapixels: 2, multiple: 8 });
 function x_(e) {
   return {
