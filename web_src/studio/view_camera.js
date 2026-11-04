@@ -10,7 +10,7 @@
 //
 // createViewCamera() holds one viewpoint: the Panorama view's (and the Preview window's), or, with `frame`, the Frame
 // view's, where the pose is the Camera itself and its moves go to the Camera's Lane (the caller writes them).
-import { DEG2RAD, RAD2DEG, VIEW_FOV_STEP_DEG, VIEW_HFOV_MAX_DEG, VIEW_HFOV_MIN_DEG, clamp, fovStepValue, shortestYawDelta, wrapYaw } from "../pano_camera_math.js";
+import { DEG2RAD, RAD2DEG, VIEW_FOV_STEP_DEG, VIEW_HFOV_MAX_DEG, VIEW_HFOV_MIN_DEG, clamp, fovStepValue, fovZoomStep, shortestYawDelta, wrapYaw } from "../pano_camera_math.js";
 import { rayBoxDepth } from "../pano_ray_box.js";
 import { DEFAULT_VIEW_HFOV, frameView, orbitView, sameViewpoint, viewAxes } from "../pano_space.js";
 import { KEY_MOVE_FAST, keyMoveView } from "../pano_view_keys.js";
@@ -477,12 +477,12 @@ export function createViewCamera({ pose: start, frame = false }) {
     // --- Zoom (docs/space-and-view.md "寄る"): the view's FOV, at the screen's center (P, the direction and T stay),
     // at once, a direct operation (an eased move stops where it shows). Not the Frame view's (its FOV is the Camera's).
 
-    // One zoom step: smaller by VIEW_FOV_STEP_DEG (pano_camera_math.js fovStepValue) rolled away (step > 0), larger
+    // One zoom step: smaller by VIEW_FOV_STEP_DEG (pano_camera_math.js fovZoomStep) rolled away (step > 0), larger
     // back. At the range's end nothing changes and nothing is said.
     zoom(step) {
       if (!step || frame) return result(false);
       const base = direct();
-      const next = fovStepValue(base.hFOV_deg, -Math.sign(step));
+      const next = fovZoomStep(base.hFOV_deg, step);
       if (next === base.hFOV_deg) return result(false);
       pose = { ...base, hFOV_deg: next };
       return result(true);

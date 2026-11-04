@@ -27,6 +27,12 @@ export function fovStepValue(value, dir, { min = VIEW_HFOV_MIN_DEG, max = VIEW_H
   return Object.is(rounded, -0) ? 0 : rounded;
 }
 
+// One zoom step of a FOV (docs/space-and-view.md "寄る"): a wheel step rolled away (`step` > 0: nearer, a pinch spreading)
+// makes it one FOV step smaller, one back larger; `options` as fovStepValue's.
+export function fovZoomStep(fov, step, options = {}) {
+  return fovStepValue(fov, -Math.sign(step), options);
+}
+
 // The vertical FOV, in degrees, of a pinhole view of horizontal FOV `hFovDeg` whose height ÷ width is
 // `heightOverWidth`: tan(vFOV ÷ 2) = tan(hFOV ÷ 2) × height ÷ width. No clamp and no guard: callers clamp.
 export function vFovFromHfov(hFovDeg, heightOverWidth) {

@@ -1,4 +1,4 @@
-import { DEG2RAD, VIEW_HFOV_MAX_DEG, VIEW_HFOV_MIN_DEG, VIEW_PITCH_LIMIT_DEG, fovStepValue } from "./pano_camera_math.js";
+import { DEG2RAD, VIEW_HFOV_MAX_DEG, VIEW_HFOV_MIN_DEG, VIEW_PITCH_LIMIT_DEG, fovZoomStep } from "./pano_camera_math.js";
 import { clamp, wrapYaw } from "./pano_math.js";
 import { PANO_FOV_WHEEL_STEP_DEG, readWheelDirection } from "./pano_wheel.js";
 
@@ -188,13 +188,13 @@ export function createPanoInteractionController(options = {}) {
   }
 
   // One zoom step of the new Preview's node (docs/preview-node.md "ノード上"; ADR 0061): the FOV smaller by one FOV step
-  // (pano_camera_math.js fovStepValue, within its range) rolled away (`step` > 0), larger back.
+  // (pano_camera_math.js fovZoomStep, within its range) rolled away (`step` > 0), larger back.
   function applyZoomStep(step) {
     const sign = Math.sign(Number(step || 0));
     if (!sign) return false;
     const view = { ...getView() };
     const before = Number(view.fov || PANO_INITIAL_FOV);
-    view.fov = fovStepValue(before, -sign);
+    view.fov = fovZoomStep(before, sign);
     if (view.fov === before) return false;
     setView(view);
     onInteraction();

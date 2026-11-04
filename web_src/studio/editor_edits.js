@@ -8,7 +8,7 @@ import { cameraShot } from "../pano_editor_state.js";
 import { loadSceneState } from "../pano_scene_state.js";
 import { needsPaintLayer, textWithPaintLayer, uploadPaintLayer } from "./paint_upload.js";
 import { cameraOf, editableCamera, moveCameraPose } from "./camera_state.js";
-import { fovStepValue } from "../pano_camera_math.js";
+import { fovZoomStep } from "../pano_camera_math.js";
 import { cameraRulers, rulerEdit } from "./frame_layout.js";
 import { buildCameraCard } from "./inspector_model.js";
 import { LINE_TEXT } from "./notice_line.js";
@@ -133,7 +133,7 @@ export function createEditorEdits(ctx) {
       const rulers = rulersAt(playhead);
       if (!rulers || rulers.fov.disabled) return false;
       const { value, min, max, precision } = rulers.fov;
-      const next = fovStepValue(value, -Math.sign(step), { min, max, precision });
+      const next = fovZoomStep(value, step, { min, max, precision });
       if (next === value || !fovApply(rulerEdit(rulers, "fov", "input", next), playhead).changed) return false;
       fovRun = { value: next, playhead };
       return true;

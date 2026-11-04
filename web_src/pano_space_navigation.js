@@ -24,7 +24,7 @@ import {
   switchSpaceMode,
   zoomView,
 } from "./pano_space.js";
-import { fovStepValue } from "./pano_camera_math.js";
+import { fovZoomStep } from "./pano_camera_math.js";
 import { keyMoveView } from "./pano_view_keys.js";
 import { spaceModeChoice, startViewTransition, viewTransitionFrame } from "./pano_view_transition.js";
 
@@ -181,7 +181,7 @@ export function createSpaceNavigation({
   // transition under way stops where it shows. The place and direction stay.
   function zoomFov(step) {
     cancelViewTransition();
-    const next = fovStepValue(view.viewFov, -Math.sign(step));
+    const next = fovZoomStep(view.viewFov, step);
     if (next === view.viewFov) return false;
     view.viewFov = next;
     invalidate();
