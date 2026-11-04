@@ -2135,7 +2135,7 @@ const kw = {
   roll: "Roll",
   size: "Size",
   opacity: "Opacity"
-}, op = 0.15, PA = 0.01, EA = 1e-3, CA = 0.05, AA = 4, rb = 250, NA = 16, Bn = 1, ww = Object.freeze({ x: 1, y: 0, z: 0, w: 0 });
+};
 function cn(e, t, n = 1) {
   return [e[0] + t[0] * n, e[1] + t[1] * n, e[2] + t[2] * n];
 }
@@ -2145,36 +2145,60 @@ function Yr(e, t) {
 function Ji(e, t) {
   return e.map((n) => n[0] * t[0] + n[1] * t[1] + n[2] * t[2]);
 }
-function ti(e, t, n = 0) {
-  const r = jt(e, t, n), i = Yr(r, 2);
-  return { right: Yr(r, 0), up: Yr(r, 1), forward: [-i[0], -i[1], -i[2]] };
-}
-function OA(e, t, n = [0, 0, 0]) {
-  return e === "6dof" ? t : { ...t, position: [...n] };
-}
-function ym(e, t, n = [0, 0, 0]) {
-  return t === "3dof" ? { mode: t, position: [...n], moved: !1 } : { ...e, mode: t };
-}
-function IA(e, t, n = [0, 0, 0]) {
-  return t || e.mode === "3dof" ? e : ym(e, "3dof", n);
-}
-function TA(e) {
-  return ti(e.yaw_deg, e.pitch_deg, e.roll_deg ?? 0);
-}
-function FA(e) {
-  return cn(e.position, ti(e.yaw_deg, e.pitch_deg).forward, e.distance);
-}
 function uo(e, t) {
   return [e[0] - t[0], e[1] - t[1], e[2] - t[2]];
 }
 function ll(e, t) {
   return e[0] * t[0] + e[1] * t[1] + e[2] * t[2];
 }
+function rb(e, t) {
+  return e.map((n) => [0, 1, 2].map((r) => n[0] * t[0][r] + n[1] * t[1][r] + n[2] * t[2][r]));
+}
+function PA(e) {
+  return [0, 1, 2].map((t) => Yr(e, t));
+}
+const In = 100, EA = 1.1, CA = 0.1, AA = sk(In, 9 / 16);
+function NA(e) {
+  return Number.isFinite(e) && e > 0 ? e : AA;
+}
+function ww(e, t) {
+  return e / Math.sin(NA(t) * 0.5 * rt) * EA;
+}
+function OA(e) {
+  const t = (i) => Array.isArray(i) && i.length === 3 && i.every((o) => typeof o == "number" && Number.isFinite(o));
+  if (!e || typeof e != "object" || !t(e.min) || !t(e.max) || e.min.some((i, o) => i > e.max[o])) return null;
+  const n = e.min.map((i, o) => (i + e.max[o]) / 2), r = Math.hypot(...e.max.map((i, o) => i - e.min[o])) / 2;
+  return { center: n, radius: r };
+}
+function Sw(e, t, n, r, i, o) {
+  const a = Math.hypot(...t), s = t.map((f) => f / a), l = n && n.center.every(Number.isFinite) && Number.isFinite(n.radius) && n.radius >= 0, c = l ? n.center : [0, 0, 0], d = l ? Math.max(ww(n.radius, i), o) : _w, u = Ji(jt(r.yaw_deg, r.pitch_deg, r.roll_deg), c);
+  return cn(e, s, d).map((f, p) => f - u[p]);
+}
+const _w = 2, op = 0.15, IA = 0.01, TA = 1e-3, FA = 0.05, DA = 4, ib = 250, LA = 16, Bn = 1;
+function ti(e, t, n = 0) {
+  const r = jt(e, t, n), i = Yr(r, 2);
+  return { right: Yr(r, 0), up: Yr(r, 1), forward: [-i[0], -i[1], -i[2]] };
+}
+function RA(e, t, n = [0, 0, 0]) {
+  return e === "6dof" ? t : { ...t, position: [...n] };
+}
+function ym(e, t, n = [0, 0, 0]) {
+  return t === "3dof" ? { mode: t, position: [...n], moved: !1 } : { ...e, mode: t };
+}
+function $A(e, t, n = [0, 0, 0]) {
+  return t || e.mode === "3dof" ? e : ym(e, "3dof", n);
+}
+function VA(e) {
+  return ti(e.yaw_deg, e.pitch_deg, e.roll_deg ?? 0);
+}
+function zA(e) {
+  return cn(e.position, ti(e.yaw_deg, e.pitch_deg).forward, e.distance);
+}
 function og(e, t) {
   return ll(uo(t, e.position), ti(e.yaw_deg, e.pitch_deg).forward);
 }
 function ag(e) {
-  return Math.max(e, 1e-6) * CA;
+  return Math.max(e, 1e-6) * FA;
 }
 function bm(e, t, n = null, r = Bn) {
   if (t) return t;
@@ -2185,59 +2209,42 @@ function bm(e, t, n = null, r = Bn) {
   }
   return cn(e.position, ti(e.yaw_deg, e.pitch_deg).forward, Math.max(e.distance, i));
 }
-function Sw(e, t = Bn) {
+function Mw(e, t = Bn) {
   return Math.max(e.distance, ag(t));
 }
-function _w(e, t) {
-  return !e || e.key !== t.key || e.view !== t.view || Math.hypot(t.x - e.x, t.y - e.y) > AA ? !1 : t.time - e.time < rb || e.cost > NA && t.time - e.wheelTime < rb;
+function xw(e, t) {
+  return !e || e.key !== t.key || e.view !== t.view || Math.hypot(t.x - e.x, t.y - e.y) > DA ? !1 : t.time - e.time < ib || e.cost > LA && t.time - e.wheelTime < ib;
 }
 function sg(e, t, n) {
   const r = Math.tan(e.hFOV_deg * 0.5 * rt);
   return { tanX: r, tanY: r * n / t };
 }
-function Mw(e, t, n) {
+function Pw(e, t, n) {
   const { tanX: r, tanY: i } = sg(e, t, n);
   return 2 * Math.atan(Math.min(r, i)) * pt;
 }
-const In = 100, DA = 1.1, LA = 0.1, RA = sk(In, 9 / 16);
-function $A(e) {
-  return Number.isFinite(e) && e > 0 ? e : RA;
-}
-function xw(e, t) {
-  return e / Math.sin($A(t) * 0.5 * rt) * DA;
-}
-function VA(e) {
-  const t = (i) => Array.isArray(i) && i.length === 3 && i.every((o) => typeof o == "number" && Number.isFinite(o));
-  if (!e || typeof e != "object" || !t(e.min) || !t(e.max) || e.min.some((i, o) => i > e.max[o])) return null;
-  const n = e.min.map((i, o) => (i + e.max[o]) / 2), r = Math.hypot(...e.max.map((i, o) => i - e.min[o])) / 2;
-  return { center: n, radius: r };
-}
-function Pw(e, t, n, r, i, o) {
-  const a = Math.hypot(...t), s = t.map((f) => f / a), l = n && n.center.every(Number.isFinite) && Number.isFinite(n.radius) && n.radius >= 0, c = l ? n.center : [0, 0, 0], d = l ? Math.max(xw(n.radius, i), o) : Dw, u = Ji(jt(r.yaw_deg, r.pitch_deg, r.roll_deg), c);
-  return cn(e, s, d).map((f, p) => f - u[p]);
-}
-function Yd(e, t, n, r, i = FA(e)) {
-  const o = e.roll_deg ?? 0, [a, s] = zA(t, n, o), l = kt(e.yaw_deg + a / r * 360), c = Ee(e.pitch_deg - s / r * 360, -tn, tn), d = jt(e.yaw_deg, e.pitch_deg, o), u = jt(l, c, o), f = uo(e.position, i), p = [0, 1, 2].map((h) => ll(Yr(d, h), f)), m = { ...e, yaw_deg: l, pitch_deg: c, position: cn(i, Ji(u, p)) };
+function Yd(e, t, n, r, i = zA(e)) {
+  const o = e.roll_deg ?? 0, [a, s] = jA(t, n, o), l = kt(e.yaw_deg + a / r * 360), c = Ee(e.pitch_deg - s / r * 360, -tn, tn), d = jt(e.yaw_deg, e.pitch_deg, o), u = jt(l, c, o), f = uo(e.position, i), p = [0, 1, 2].map((h) => ll(Yr(d, h), f)), m = { ...e, yaw_deg: l, pitch_deg: c, position: cn(i, Ji(u, p)) };
   return { ...m, distance: og(m, i) };
 }
-function zA(e, t, n) {
+function jA(e, t, n) {
   const r = Math.cos(n * rt), i = Math.sin(n * rt);
   return [e * r + t * i, t * r - e * i];
 }
 function Ew(e, t, n, r, i, o = e.distance) {
-  const { right: a, up: s } = TA(e), l = 2 * o * sg(e, r, i).tanY / i;
+  const { right: a, up: s } = VA(e), l = 2 * o * sg(e, r, i).tanY / i;
   return { ...e, position: cn(cn(e.position, a, -t * l), s, n * l), distance: o };
 }
 function Cw(e, t, n, r = Bn) {
   const i = uo(t, e.position), o = Math.hypot(...i);
   if (!(o > 0) || !n) return e;
-  const a = Math.max(r, 1e-6), s = a * PA, l = n > 0 ? Math.min(Math.max(o * op, s), o - a * EA) : -Math.max(o * op / (1 - op), s);
+  const a = Math.max(r, 1e-6), s = a * IA, l = n > 0 ? Math.min(Math.max(o * op, s), o - a * TA) : -Math.max(o * op / (1 - op), s);
   if (n > 0 && l <= 0) return e;
   const c = { ...e, position: cn(e.position, i, l / o) };
   return { ...c, distance: Math.max(og(c, t), ag(r)) };
 }
 function Aw(e, t, n, r) {
-  const i = xw(Math.max(t.radius, 1e-6), Mw(e, n, r)), { forward: o } = ti(e.yaw_deg, e.pitch_deg);
+  const i = ww(Math.max(t.radius, 1e-6), Pw(e, n, r)), { forward: o } = ti(e.yaw_deg, e.pitch_deg);
   return { ...e, position: cn(t.center, o, -i), distance: i };
 }
 function pu(e, t, n, r = null) {
@@ -2267,42 +2274,43 @@ function lg(e) {
   const t = yi(e.quaternion), n = Yr(t, 2);
   return { right: Yr(t, 0), up: Yr(t, 1), forward: n.map((r) => -r) };
 }
-function jA(e) {
+function HA(e) {
   return lg(e).forward;
 }
-function HA(e) {
+const Nw = Object.freeze({ x: 1, y: 0, z: 0, w: 0 });
+function BA(e) {
   return `views:${JSON.stringify(e)}`;
 }
 function Zi(e, t, n) {
   var s;
   const r = (s = t[0]) == null ? void 0 : s.kind;
-  if (r === "depth_grid") return KA(e, t[0], n);
+  if (r === "depth_grid") return GA(e, t[0], n);
   if (!e.length || r !== "splat" && r !== "mesh") return null;
   const i = {}, o = e.map((l) => {
     if (!Array.isArray(l)) return l ? n(l) : null;
     const c = l.filter(Boolean).map(n);
     if (!c.length) return null;
-    const d = HA(c);
+    const d = BA(c);
     return i[d] = c, d;
   }), a = r === "mesh" && o.length === 1 ? Xk(t[0].animation, n) : null;
   return { kind: r, unlit: r !== "mesh" || t[0].unlit !== !1, urls: o, sources: i, ...a ? { animation: a } : {} };
 }
-const BA = 8, ib = (e) => Number.isInteger(e) && e > 0;
-function KA(e, t, n) {
+const KA = 8, ob = (e) => Number.isInteger(e) && e > 0;
+function GA(e, t, n) {
   const { width: r, height: i, depth: o, intrinsics: a } = t;
-  if (!e.length || !ib(r) || !ib(i) || !o || typeof o != "object" || !Array.isArray(a) || a.length !== e.length) return null;
+  if (!e.length || !ob(r) || !ob(i) || !o || typeof o != "object" || !Array.isArray(a) || a.length !== e.length) return null;
   const s = {}, l = e.map((u, f) => {
     const p = u && !Array.isArray(u) ? n(u) : null;
     return p && (s[p] = { url: p, width: r, height: i, depth: o, intrinsics: a[f] }), p || null;
   }), c = t.video ? n(t.video) : null, d = Number(t.video_fps);
   return { kind: "depth_grid", unlit: !0, urls: l, sources: s, video: c && d > 0 ? { src: c, fps: d } : null };
 }
-function GA({ sceneLinked: e, files: t, stickers: n }) {
+function WA({ sceneLinked: e, files: t, stickers: n }) {
   return e || !!t || n.some((r) => r.placement === "world");
 }
 function Xd(e, t, n = void 0, r = 24) {
   if (!e || !t.active) return null;
-  const i = WA(t.clip_frame, e.urls.length), o = e.kind === "depth_grid", a = i === null ? [] : e.urls.slice(i + 1, i + 1 + (o ? BA : 1));
+  const i = UA(t.clip_frame, e.urls.length), o = e.kind === "depth_grid", a = i === null ? [] : e.urls.slice(i + 1, i + 1 + (o ? KA : 1));
   return {
     kind: e.kind,
     url: i === null ? null : e.urls[i],
@@ -2312,15 +2320,15 @@ function Xd(e, t, n = void 0, r = 24) {
     // withDepthColor, depthItemTime).
     video: o && e.video && i !== null ? { ...e.video, items: e.urls } : null,
     transform: Ya(t),
-    itemQuaternion: e.kind === "splat" ? ww : { x: 0, y: 0, z: 0, w: 1 },
+    itemQuaternion: e.kind === "splat" ? Nw : { x: 0, y: 0, z: 0, w: 1 },
     unlit: e.unlit !== !1,
     // Where an item of several views loads from (sceneFilesOf).
     sources: e.sources ?? {},
     // An animated 3D file (ADR 0043): where its original loads from and the pose at the clip frame.
-    ...Nw(e.animation, n, t.clip_frame, r)
+    ...Ow(e.animation, n, t.clip_frame, r)
   };
 }
-function Nw(e, t, n, r) {
+function Ow(e, t, n, r) {
   if (!e) return {};
   const i = ZC(e.clips, t, n, r);
   return i ? { animation: { src: e.src, ...e.box ? { box: e.box } : {}, ...i } } : {};
@@ -2349,7 +2357,7 @@ function fg(e, t) {
   const n = t.stickers.find((r) => r.source.kind === "port");
   return e && (n == null ? void 0 : n.placement) === "world" ? e.urls.filter(Boolean) : [];
 }
-function Ow(e, t) {
+function Iw(e, t) {
   return `file3d:${t}:${e}`;
 }
 function Jd(e, t, n) {
@@ -2358,7 +2366,7 @@ function Jd(e, t, n) {
     if (i.placement !== "world" || !Xn(i.source)) return;
     const a = n(i);
     if (!a) return;
-    const s = Ow(i.id, a.generation), l = t.stickers[o], c = l.active ? {
+    const s = Iw(i.id, a.generation), l = t.stickers[o], c = l.active ? {
       kind: a.kind,
       unlit: a.unlit !== !1,
       url: s,
@@ -2366,16 +2374,16 @@ function Jd(e, t, n) {
       prefetch: [],
       src: a.url,
       transform: Ya(l),
-      itemQuaternion: a.kind === "splat" ? ww : { x: 0, y: 0, z: 0, w: 1 },
+      itemQuaternion: a.kind === "splat" ? Nw : { x: 0, y: 0, z: 0, w: 1 },
       id: i.id,
       opacity: l.opacity,
       value: l,
-      ...Nw(a.animation, i.animation, l.clip_frame, e.timeline.fps)
+      ...Ow(a.animation, i.animation, l.clip_frame, e.timeline.fps)
     } : null;
     r.push({ id: i.id, key: s, request: c });
   }), r;
 }
-function WA(e, t) {
+function UA(e, t) {
   if (t === 1) return 0;
   const n = Math.floor(e + 0.5);
   return n >= 0 && n < t ? n : null;
@@ -2390,12 +2398,12 @@ function Ya(e) {
 function Do(e, t) {
   return cn(e.position, Ji(jt(e.yaw_deg, e.pitch_deg, e.roll_deg), t), e.scale);
 }
-function UA(e, t) {
+function YA(e, t) {
   return e !== "splat" ? t : { min: [t.min[0], -t.max[1], -t.max[2]], max: [t.max[0], -t.min[1], -t.min[2]] };
 }
 function zn(e, t) {
   var n;
-  return (n = e == null ? void 0 : e.animation) != null && n.box ? e.animation.box : t && e ? UA(e.kind, t) : null;
+  return (n = e == null ? void 0 : e.animation) != null && n.box ? e.animation.box : t && e ? YA(e.kind, t) : null;
 }
 function qa({ min: e, max: t }) {
   const n = [];
@@ -2414,7 +2422,7 @@ function pg(e, t, n, r = []) {
   for (const { box: o, value: a } of r) i.push(...qa(o).map((s) => Do(a, s)));
   return i;
 }
-function Iw(e, t, n, r) {
+function Tw(e, t, n, r) {
   const i = (t.x1 - t.x0) * n, o = (t.y1 - t.y0) * r;
   if (!(i > 0 && o > 0)) return null;
   const a = {
@@ -2424,9 +2432,9 @@ function Iw(e, t, n, r) {
     width: e.scale,
     height: e.scale * o / i
   };
-  return e.lens && (a.patch = YA(a, e.lens)), a;
+  return e.lens && (a.patch = qA(a, e.lens)), a;
 }
-function YA(e, t) {
+function qA(e, t) {
   const n = Yn(t.hFOV_deg * 0.5 * rt, t.curve), r = e.width / (2 * n);
   return {
     curve: t.curve,
@@ -2436,19 +2444,19 @@ function YA(e, t) {
     halfY: n * e.height / e.width
   };
 }
-function Tw(e, t, n) {
+function Fw(e, t, n) {
   if (!e.patch) return cn(e.position, Ji(e.rotation, [t * e.width / 2, n * e.height / 2, 0]));
   const { patch: r } = e, i = bs(t * r.halfX, n * r.halfY, r.curve);
   return i && cn(r.center, Ji(e.rotation, i.map((o) => o * r.radius)));
 }
 function Zd(e) {
-  return [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([t, n]) => Tw(e, t, n)).filter(Boolean);
+  return [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([t, n]) => Fw(e, t, n)).filter(Boolean);
 }
-function Fw(e, t = 24) {
+function Dw(e, t = 24) {
   const n = [[-1, -1], [1, -1], [1, 1], [-1, 1]], r = [];
   return n.forEach(([i, o], a) => {
     const [s, l] = n[(a + 1) % 4];
-    for (let c = 0; c < t; c += 1) r.push(Tw(e, i + (s - i) * c / t, o + (l - o) * c / t));
+    for (let c = 0; c < t; c += 1) r.push(Fw(e, i + (s - i) * c / t, o + (l - o) * c / t));
   }), r.flatMap((i, o) => {
     const a = r[(o + 1) % r.length];
     return i && a ? [[i, a]] : [];
@@ -2458,29 +2466,23 @@ function mg(e, t = null) {
   const { sticker: n, value: r, plane: i, box: o } = t ?? {};
   return (n == null ? void 0 : n.placement) !== "world" || !(r != null && r.active) ? e : i ? El(Zd(i)) : o ? El(qa(o).map((a) => Do(r, a))) : { center: [...r.position], radius: r.scale };
 }
-const Dw = 2, qA = 0.5, Xa = 30;
+const XA = 0.5, Xa = 30;
 function Lw(e, t) {
   const n = uo(t, e), r = Math.atan2(n[0], -n[2]) * pt, i = Math.atan2(n[1], Math.hypot(n[0], n[2])) * pt;
   return { yaw_deg: r + 0, pitch_deg: i, roll_deg: 0 };
 }
-function XA(e, t, n = null) {
-  const r = (n == null ? void 0 : n.radius) > 0 ? n.radius : 0, i = r ? r * qA : Dw, o = t ? [...t] : cn(e.position, ti(e.yaw_deg, e.pitch_deg).forward, i), a = Math.hypot(...uo(o, e.position)), s = a > 0 ? Lw(e.position, o) : { yaw_deg: e.yaw_deg, pitch_deg: e.pitch_deg, roll_deg: 0 }, l = 2 * Math.max(a, 1e-3) * Math.tan(Xa * 0.5 * rt);
+function JA(e, t, n = null) {
+  const r = (n == null ? void 0 : n.radius) > 0 ? n.radius : 0, i = r ? r * XA : _w, o = t ? [...t] : cn(e.position, ti(e.yaw_deg, e.pitch_deg).forward, i), a = Math.hypot(...uo(o, e.position)), s = a > 0 ? Lw(e.position, o) : { yaw_deg: e.yaw_deg, pitch_deg: e.pitch_deg, roll_deg: 0 }, l = 2 * Math.max(a, 1e-3) * Math.tan(Xa * 0.5 * rt);
   return { position: o, rotation: s, scale: l };
 }
-function JA(e, t) {
+function ZA(e, t) {
   const r = Math.hypot(t[0], t[2]) > 1e-9 ? Math.atan2(t[0], -t[2]) * pt + 0 : e.yaw_deg;
-  return { position: Pw(e.position, t, null, { yaw_deg: r, pitch_deg: 0, roll_deg: 0 }, 0, 0), rotation: { yaw_deg: r, pitch_deg: 0, roll_deg: 0 }, scale: 1 };
-}
-function ob(e, t) {
-  return e.map((n) => [0, 1, 2].map((r) => n[0] * t[0][r] + n[1] * t[1][r] + n[2] * t[2][r]));
-}
-function ZA(e) {
-  return [0, 1, 2].map((t) => Yr(e, t));
+  return { position: Sw(e.position, t, null, { yaw_deg: r, pitch_deg: 0, roll_deg: 0 }, 0, 0), rotation: { yaw_deg: r, pitch_deg: 0, roll_deg: 0 }, scale: 1 };
 }
 function vm(e, t, n, r) {
   if (e === "translate") return { position: cn(t.position, uo(r.position, n.position)) };
   if (e === "scale") return { scale: t.scale * Rw(n.scale, r.scale) / n.scale };
-  const i = ob(yi(r.quaternion), ZA(yi(n.quaternion))), o = ob(i, jt(t.yaw_deg, t.pitch_deg, t.roll_deg)), { yawDeg: a, pitchDeg: s, rollDeg: l } = zh(o);
+  const i = rb(yi(r.quaternion), PA(yi(n.quaternion))), o = rb(i, jt(t.yaw_deg, t.pitch_deg, t.roll_deg)), { yawDeg: a, pitchDeg: s, rollDeg: l } = zh(o);
   return Math.abs(s) <= QA ? { rotation: { yaw_deg: a + 0, pitch_deg: s, roll_deg: l + 0 } } : { rotation: { yaw_deg: t.yaw_deg, pitch_deg: s, roll_deg: eN(o, t.yaw_deg) } };
 }
 const QA = 89.9;
@@ -9325,7 +9327,7 @@ function ty(e, t, n, { media: r, evaluated: i = ws(e, t) }) {
     if (s.placement !== "world" || !c.active || Xn(s.source)) return;
     const d = o.get(s.id), u = d ? r(d) : null;
     if (!u) return;
-    const { width: f, height: p } = ey(u.media), m = Iw(c, s.crop, f, p);
+    const { width: f, height: p } = ey(u.media), m = Tw(c, s.crop, f, p);
     m && a.push({
       id: s.id,
       media: u.media,
@@ -9343,7 +9345,7 @@ function ty(e, t, n, { media: r, evaluated: i = ws(e, t) }) {
   }), a;
 }
 function X_() {
-  return import("./.lazy/pano_three_view-BgJdVWo3.js").then((e) => e.$);
+  return import("./.lazy/pano_three_view-B1E7vFUg.js").then((e) => e.$);
 }
 function ny({ canvas: e, onReady: t, onFailed: n, onUpdate: r = () => {
 }, onSplats: i = () => {
@@ -10691,7 +10693,7 @@ function HF(e) {
   };
 }
 const by = HF(
-  ({ onUpdate: e, onSplats: t }) => import("./.lazy/pano_three_view-BgJdVWo3.js").then((n) => n.$).then((n) => Jk(n.createThreeView({ onUpdate: e, onSplats: t, ownWorlds: !0, createCanvas: () => Tt({ label: "three.node" }) }), "node"))
+  ({ onUpdate: e, onSplats: t }) => import("./.lazy/pano_three_view-B1E7vFUg.js").then((n) => n.$).then((n) => Jk(n.createThreeView({ onUpdate: e, onSplats: t, ownWorlds: !0, createCanvas: () => Tt({ label: "three.node" }) }), "node"))
 ), fa = 8192, Lm = Object.freeze({ megapixels: 2, multiple: 8 });
 function gM(e) {
   return {
@@ -14016,7 +14018,7 @@ function GL(e, t, n = () => null, r = () => null, i = []) {
       kind: "plane",
       locked: es(b),
       upstream: dt(b),
-      segments: g.patch ? Fw(g) : rx(k),
+      segments: g.patch ? Dw(g) : rx(k),
       corners: k,
       center: [...g.position]
     });
@@ -14509,7 +14511,7 @@ function ER(e, t, n, r, i, { ground: o, picked: a = null }) {
   const u = Math.min(...c);
   return s.origin.map((f, p) => f + s.direction[p] * u);
 }
-function Hy({ camera: e, canvasWidth: t, canvasHeight: n, background: r, ground: i, gridHidden: o, clearColor: a = kd, content: s = null, rect: l = null, lens: c = null, owner: d = "studio-stage", eye: u = (e == null ? void 0 : e.position) ?? null, forward: f = e != null && e.quaternion ? jA(e) : null }) {
+function Hy({ camera: e, canvasWidth: t, canvasHeight: n, background: r, ground: i, gridHidden: o, clearColor: a = kd, content: s = null, rect: l = null, lens: c = null, owner: d = "studio-stage", eye: u = (e == null ? void 0 : e.position) ?? null, forward: f = e != null && e.quaternion ? HA(e) : null }) {
   const p = gR({ ground: i, hidden: o }), m = bR({ ground: i, hidden: o, eye: u, forward: f });
   return {
     rect: l ?? { x: 0, y: 0, w: t, h: n },
@@ -14676,7 +14678,7 @@ function AR(e, t, n, { media: r, sceneBox: i = () => null, editorFile: o = () =>
   var y, g;
   const s = e.stickers.findIndex((b) => b.id === n);
   if (s < 0) return NR(t, a, n, i);
-  const l = e.stickers[s], c = t.evaluated.stickers[s], d = l.placement === "world" && !Xn(l.source) ? r(l) : null, u = d ? Of(d.media) : null, f = u ? Iw(c, l.crop, u.width, u.height) : null, p = l.source.kind === "port" && ((y = t.space.sticker) == null ? void 0 : y.id) === n ? t.space.sticker : null, m = Xn(l.source) ? (g = Jd({ ...e, stickers: [l] }, { ...t.evaluated, stickers: [c] }, o)[0]) == null ? void 0 : g.request : p, h = m ? zn(m, i(m.url)) : null;
+  const l = e.stickers[s], c = t.evaluated.stickers[s], d = l.placement === "world" && !Xn(l.source) ? r(l) : null, u = d ? Of(d.media) : null, f = u ? Tw(c, l.crop, u.width, u.height) : null, p = l.source.kind === "port" && ((y = t.space.sticker) == null ? void 0 : y.id) === n ? t.space.sticker : null, m = Xn(l.source) ? (g = Jd({ ...e, stickers: [l] }, { ...t.evaluated, stickers: [c] }, o)[0]) == null ? void 0 : g.request : p, h = m ? zn(m, i(m.url)) : null;
   return mg(t.sphere, { sticker: l, value: c, plane: f, box: h });
 }
 function NR(e, t, n, r) {
@@ -19106,7 +19108,7 @@ function a3({ presented: e, background: t = Zl, stickers: n = [] } = {}) {
   const a = t === or, s = r.includes(or);
   return a && s ? { status: or, detail: "mixed" } : a ? { status: or, detail: "background" } : s ? { status: or, detail: "stickers" } : { status: Zl, detail: "" };
 }
-const $i = (e, t, n) => e + (t - e) * n, Bo = [
+const Bo = [
   { id: "green", label: "Green", color: { r: 0, g: 1, b: 0, a: 1 } },
   { id: "red", label: "Red", color: { r: 1, g: 0, b: 0, a: 1 } },
   { id: "blue", label: "Blue", color: { r: 0, g: 0, b: 1, a: 1 } },
@@ -19157,6 +19159,7 @@ function Md(e) {
   const l = i <= 1e-6 ? 0 : a / i;
   return { h: s, s: l, v: i };
 }
+const $i = (e, t, n) => e + (t - e) * n;
 function cs(e) {
   return `${e}_${Math.random().toString(16).slice(2, 10)}`;
 }
@@ -23166,7 +23169,7 @@ function _2({
   function m() {
     var K;
     const H = e.viewMoved ? e.viewDistance : ((K = n()) == null ? void 0 : K.radius) || Bn, Y = { position: e.viewPosition, yaw_deg: e.viewYaw, pitch_deg: e.viewPitch, hFOV_deg: e.viewFov, distance: H };
-    return OA(e.spaceMode, Y, t());
+    return RA(e.spaceMode, Y, t());
   }
   function h(H) {
     e.viewPosition = H.position, e.viewYaw = H.yaw_deg, e.viewPitch = H.pitch_deg, e.viewDistance = H.distance, e.viewMoved = !0, a(), s();
@@ -23224,7 +23227,7 @@ function _2({
   }
   function j(H, Y) {
     const K = performance.now(), de = { x: H.x, y: H.y, time: K, key: r.contentRevision(), view: A() };
-    if (!_w(d, de)) {
+    if (!xw(d, de)) {
       const ee = O(H);
       d = { ...de, cost: performance.now() - K, hit: ee };
     }
@@ -23233,7 +23236,7 @@ function _2({
   }
   function N(H, Y) {
     const K = m();
-    return H === "orbit" ? { kind: "space_orbit", last: Y, pivot: D(K, O(Y)) } : { kind: "space_pan", last: Y, depth: Sw(K, p()) };
+    return H === "orbit" ? { kind: "space_orbit", last: Y, pivot: D(K, O(Y)) } : { kind: "space_pan", last: Y, depth: Mw(K, p()) };
   }
   function E(H, Y) {
     const K = m(), { width: de, height: L } = i();
@@ -23357,7 +23360,7 @@ function Qz(e) {
     return i.mode === "pano" && le();
   }
   function le() {
-    return u && GA({ sceneLinked: l && ba(a, gg), files: O(), stickers: d.stickers });
+    return u && WA({ sceneLinked: l && ba(a, gg), files: O(), stickers: d.stickers });
   }
   function G() {
     return i.spaceMode === "6dof" && te();
@@ -23526,7 +23529,7 @@ function e8(e) {
     }, Qe = $(), Ft = [...Qe.sky, ...q_(X.sceneState, n.frame, s.stickers, { media: Ue, paintLayers: Se, evaluated: Te })], gt = me && (me === d || me === c) ? d.dataset.panoSrc : me;
     let _e = Y(me) ? { media: me, revision: E(me), coverage: m(), source: gt } : null;
     h(n.frame) || (_e = sl(p()));
-    const Ne = H(), Ve = IA(R(), Ne, T());
+    const Ne = H(), Ve = $A(R(), Ne, T());
     Ve.mode !== n.spaceMode && k(), f(Ve);
     const Ke = Ne ? ve(X.sceneState, Te, Ue, Qe) : null;
     Ke || (J([]), re = "");
@@ -23598,7 +23601,7 @@ function e8(e) {
   function Me(me) {
     var Oe;
     const Se = (Oe = U()) == null ? void 0 : Oe.id, Pe = Se ? [...me.stickers, ...me.upstreamStickers ?? []].find((Te) => Te.id === Se && Te.patch) : null;
-    return Pe ? [{ segments: Fw(Pe), color: ih }] : [];
+    return Pe ? [{ segments: Dw(Pe), color: ih }] : [];
   }
   function q(me) {
     const Se = U(), Pe = dt(Se) ? on(Se, n.frame) : me.stickers.find((Oe) => Oe.id === (Se == null ? void 0 : Se.id));
@@ -25566,8 +25569,8 @@ function f8(e) {
       view: C,
       eye: [...C.position],
       dir: Zg(z, F, n.width, n.height),
-      fovDeg: Mw(C, n.width, n.height),
-      minDistance: Math.max(LA, z.near * 2)
+      fovDeg: Pw(C, n.width, n.height),
+      minDistance: Math.max(CA, z.near * 2)
     };
   }
   async function w(q, C) {
@@ -25577,7 +25580,7 @@ function f8(e) {
       _ = z, E();
       return;
     }
-    const F = Wi(u), oe = JA(C.view, C.dir);
+    const F = Wi(u), oe = ZA(C.view, C.dir);
     u.stickers.push(Gc(F, { kind: "file", filename: "" }, oe)), ne.add(F), Y(F), v(), ce(), W(), Z(), E();
     const B = Ri(s, `add:${F}`, async () => {
       try {
@@ -25603,14 +25606,14 @@ function f8(e) {
     }
   }
   function P(q, C, z, F) {
-    const oe = q.position, B = !oe.keyframes.length && oe.value.every((ke, me) => ke === C[me]), ae = VA(F);
+    const oe = q.position, B = !oe.keyframes.length && oe.value.every((ke, me) => ke === C[me]), ae = OA(F);
     if (!B || !ae) return;
     const ge = on(q, i.frame);
-    oe.value = Pw(z.eye, z.dir, ae, ge, z.fovDeg, z.minDistance);
+    oe.value = Sw(z.eye, z.dir, ae, ge, z.fovDeg, z.minDistance);
   }
   function $() {
     for (const q of [...ne]) {
-      const C = u.stickers.find((oe) => oe.id === q), z = C != null && C.source.filename ? k(C) : null, F = z && Ow(q, z.generation);
+      const C = u.stickers.find((oe) => oe.id === q), z = C != null && C.source.filename ? k(C) : null, F = z && Iw(q, z.generation);
       !C || F && o.sceneBox(F) || !on(C, i.frame).active ? ne.delete(q) : F && o.sceneItemError(F) && !/\b404\b/.test(o.sceneItemError(F)) && (ne.delete(q), _ = `Could not show ${C.source.filename}: ${o.sceneItemError(F)}`);
     }
     return _ || (ne.size ? "Loading 3D model…" : "");
@@ -25620,7 +25623,7 @@ function f8(e) {
   }
   function re() {
     const q = { x: n.width / 2, y: n.height / 2 }, C = D() ? o.pick(b(), q.x, q.y, n.width, n.height) : null;
-    return XA(de(), C, g());
+    return JA(de(), C, g());
   }
   async function X(q, C = "sky") {
     _ = "";
@@ -26253,7 +26256,7 @@ function h8(e) {
     const Ce = G();
     if (!Ce || c) return;
     const Ae = M(Ce);
-    r.interaction = ue === "orbit" ? { kind: "frame_orbit", last: ve, pivot: P(Ce, Ae, ve), changed: !1 } : { kind: "frame_pan", last: ve, depth: Sw(Ae, A()), changed: !1 }, I(ve), n.setPointerCapture(we);
+    r.interaction = ue === "orbit" ? { kind: "frame_orbit", last: ve, pivot: P(Ce, Ae, ve), changed: !1 } : { kind: "frame_pan", last: ve, depth: Mw(Ae, A()), changed: !1 }, I(ve), n.setPointerCapture(we);
   }
   function Q(ue, ve) {
     const we = G();
@@ -26265,7 +26268,7 @@ function h8(e) {
     const we = G();
     if (!we || c) return;
     const Ce = M(we), Ae = performance.now(), Me = { x: ue.x, y: ue.y, time: Ae, key: i.contentRevision(), view: $(we) };
-    if (!_w(K, Me)) {
+    if (!xw(K, Me)) {
       const q = w(we, ue);
       K = { ...Me, cost: performance.now() - Ae, hit: q };
     }

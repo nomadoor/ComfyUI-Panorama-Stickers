@@ -7,63 +7,53 @@
 //
 // Every render sets the scene up from the given layers. Only GPU resources (meshes, materials, textures,
 // the loaded `scene` items and the World's objects) are reused between renders; nothing here is saved.
+// The parts of the view live in three_view/ (the shaders, the Sky's meshes, the lens pass, the GPU pick, the gizmo),
+// inside the same chunk; this module builds the World, owns the layer textures and puts the parts together.
 import {
   AmbientLight,
   AxesHelper,
-  BackSide,
   Box2,
-  BufferGeometry,
   ClampToEdgeWrapping,
   Color,
-  CustomBlending,
   DirectionalLight,
   DoubleSide,
-  Float32BufferAttribute,
-  FloatType,
   GridHelper,
   Group,
-  LineBasicMaterial,
-  LineSegments,
   LinearFilter,
-  Matrix3,
-  Matrix4,
   Mesh,
   MeshBasicMaterial,
-  NoBlending,
-  Object3D,
-  OneFactor,
-  OneMinusSrcAlphaFactor,
   PerspectiveCamera,
-  NearestFilter,
   NoColorSpace,
-  PlaneGeometry,
-  Quaternion,
-  RGBAFormat,
-  RepeatWrapping,
   SRGBColorSpace,
   Scene,
-  ShaderMaterial,
   SphereGeometry,
   Texture,
-  UnsignedByteType,
   Vector2,
-  Vector3,
   Vector4,
   VideoTexture,
-  WebGLRenderTarget,
   WebGLRenderer,
 } from "three";
-import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
-import { PICK_FRAGMENT, PICK_VERTEX, nearestHit, pickCacheKey, pickRay, pickWindow, pointAt, rayBoxDepth, readPickBytes, readPickFloat } from "./pano_pick.js";
 import { COARSE_GRID_IDLE_TIMEOUT_MS, coarseGridKey, createCoarseGridBuilds } from "./pano_coarse_grid.js";
 import { createSceneItems } from "./pano_scene_items.js";
 import { disposeObject, disposeSceneItem, loadSceneItem, loadSpark, poseAnimation } from "./pano_scene_loaders.js";
 import { createSparkViews } from "./pano_spark_views.js";
-import { createDepthGridPickMaterial } from "./pano_depth_grid.js";
-import { LENS_GLSL } from "./pano_lens_glsl.js";
 import { createGroundGrid } from "./pano_ground_grid.js";
-import { createSkyGrid } from "./pano_sky_grid.js";
-import { canvasValueTarget, createLiveErp } from "./pano_live_erp.js";
+import { createLiveErp } from "./pano_live_erp.js";
+import {
+  LENS_PATCH_FRAGMENT,
+  LENS_PATCH_VERTEX,
+  STICKER_VERTEX,
+  WORLD_STICKER_FRAGMENT,
+} from "./three_view/shaders.js";
+import { applyViewportCamera, devicePoint, setCamera, setView } from "./three_view/camera.js";
+import { createLines, createMaterial, pooled } from "./three_view/meshes.js";
+import { createPlainValue, sameValue } from "./three_view/values.js";
+import { createLensPass } from "./three_view/lens_pass.js";
+import { createPicker, pickPass } from "./three_view/picker.js";
+import { createGizmo } from "./three_view/gizmo.js";
+import { createSkyMeshes, placeSticker, unwrapStickerUniforms } from "./three_view/sky.js";
+
+export { applyViewportCamera, createGizmo, pickPass, placeSticker, sameValue, unwrapStickerUniforms };
 
 // The lights of the World pass (docs/render-contract.md "既定の照明", which owns the values; Python's
 // mesh_render.py has the same, both checked against tests/fixtures/default_lighting.json). No shadows.
@@ -110,219 +100,7 @@ export function stickerItemInputs(space) {
   return { drawn, inputs: [...drawn, { urls: [...(space.stickerUrls ?? []), ...(space.fileStickerKeys ?? [])] }] };
 }
 
-const DOME_RADIUS = 100;
-const STICKER_DISTANCE = 50;
 const ORIGIN_COLOR = 0xffdd57;
-
-// The Sky's and the world Sticker planes' shaders write their images' (sRGB) values as they are, which the canvas
-// shows as they are. The lens and live ERP faces hold the canvas's values (pano_live_erp.js canvasValueTarget), so
-// the same values go there.
-
-// The ERP is laid out in the panorama convention (forward +Z); World is glTF (forward -Z).
-const ERP_VERTEX = `
-varying vec3 vDirection;
-void main() {
-  vDirection = position;
-  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-}`;
-
-const ERP_FRAGMENT = `
-uniform sampler2D map;
-uniform float opacity;
-uniform bool halfCoverage;
-varying vec3 vDirection;
-const float PI = 3.1415926535897932384626433832795;
-void main() {
-  vec3 dir = normalize(vec3(vDirection.xy, -vDirection.z));
-  float lon = atan(dir.x, dir.z);
-  float lat = asin(clamp(dir.y, -1.0, 1.0));
-  vec2 uv = vec2(lon / (2.0 * PI) + 0.5, clamp(0.5 - lat / PI, 0.0, 1.0));
-  if (halfCoverage) {
-    if (abs(lon) > PI * 0.5) {
-      gl_FragColor = vec4(0.0);
-      return;
-    }
-    uv.x = clamp(lon / PI + 0.5, 0.0, 1.0);
-  }
-  gl_FragColor = texture2D(map, uv) * opacity;
-}`;
-
-const STICKER_VERTEX = `
-varying vec2 vUv;
-void main() {
-  vUv = uv;
-  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-}`;
-
-const STICKER_FRAGMENT = `
-uniform sampler2D map;
-uniform float opacity;
-varying vec2 vUv;
-void main() {
-  gl_FragColor = texture2D(map, vUv) * opacity;
-}`;
-
-// A world Sticker's plane shows its crop (x0, v of y1, x1, v of y0) of the image; v runs up the image.
-const WORLD_STICKER_FRAGMENT = `
-uniform sampler2D map;
-uniform float opacity;
-uniform vec4 crop;
-varying vec2 vUv;
-void main() {
-  vec4 color = texture2D(map, vec2(mix(crop.x, crop.z, vUv.x), mix(crop.y, crop.w, vUv.y))) * opacity;
-  if (color.a <= 0.0) discard;
-  gl_FragColor = color;
-}`;
-
-// The Unwrap view draws every layer on a full-view quad in the ERP layout: longitude runs across
-// the view and latitude down it, with the ERP's own pixels for the ERP layers.
-const UNWRAP_VERTEX = `
-varying vec2 vUv;
-void main() {
-  vUv = uv;
-  gl_Position = vec4(position.xy, 0.0, 1.0);
-}`;
-
-const UNWRAP_ERP_FRAGMENT = `
-uniform sampler2D map;
-uniform float opacity;
-varying vec2 vUv;
-void main() {
-  gl_FragColor = texture2D(map, vec2(vUv.x, 1.0 - vUv.y)) * opacity;
-}`;
-
-// A sky Sticker seen along each ERP pixel's World direction, in the Sticker's own frame (looking
-// down -Z) where its image plane is rect one unit ahead.
-// A sky Sticker's image at a direction in its own axes (toSticker of the World direction): on its image plane one
-// unit ahead, or at a lens curve other than 1 (ADR 0042) on the image of that lens, whose film rect it covers.
-const STICKER_IMAGE_GLSL = `
-${LENS_GLSL}
-uniform mat3 toSticker;
-uniform vec4 rect;
-uniform float curve;
-bool stickerImage(vec3 local, out vec2 uv) {
-  vec2 plane;
-  if (curve == 1.0) {
-    if (local.z >= -1e-5) return false;
-    plane = local.xy / -local.z;
-  } else if (!lensFilm(local, curve, plane)) {
-    return false;
-  }
-  if (plane.x < rect.x || plane.x > rect.z || plane.y < rect.y || plane.y > rect.w) return false;
-  uv = (plane - rect.xy) / (rect.zw - rect.xy);
-  return true;
-}
-`;
-
-const UNWRAP_STICKER_FRAGMENT = `
-uniform sampler2D map;
-uniform float opacity;
-varying vec2 vUv;
-${STICKER_IMAGE_GLSL}
-const float PI = 3.1415926535897932384626433832795;
-void main() {
-  float lon = (vUv.x - 0.5) * 2.0 * PI;
-  float lat = (vUv.y - 0.5) * PI;
-  vec2 uv;
-  if (!stickerImage(toSticker * vec3(cos(lat) * sin(lon), sin(lat), -cos(lat) * cos(lon)), uv)) discard;
-  gl_FragColor = texture2D(map, uv) * opacity;
-}`;
-
-// A sky Sticker of a lens curve other than 1 in the panorama view: drawn on the dome, as its image covers more than a
-// plane can hold (past 90° off its axis).
-const LENS_STICKER_FRAGMENT = `
-uniform sampler2D map;
-uniform float opacity;
-varying vec3 vDirection;
-${STICKER_IMAGE_GLSL}
-void main() {
-  vec2 uv;
-  if (!stickerImage(toSticker * normalize(vDirection), uv)) discard;
-  gl_FragColor = texture2D(map, uv) * opacity;
-}`;
-
-// A world Sticker with a lens (ADR 0042): the part of a sphere around its lens's center whose directions, in the
-// Sticker's own axes, the lens maps into its image (x of halfX, y of halfY each way); the rest is discarded. The
-// mesh is a unit sphere scaled to the radius and placed at the center.
-const LENS_PATCH_VERTEX = `
-varying vec3 vLocal;
-void main() {
-  vLocal = position;
-  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-}`;
-
-const LENS_PATCH_GLSL = `
-${LENS_GLSL}
-uniform float curve;
-uniform vec2 patchHalf;
-varying vec3 vLocal;
-bool patchPoint(out vec2 at) {
-  vec2 film;
-  if (!lensFilm(vLocal, curve, film)) return false;
-  at = film / patchHalf;
-  return abs(at.x) <= 1.0 && abs(at.y) <= 1.0;
-}
-`;
-
-const LENS_PATCH_FRAGMENT = `
-uniform sampler2D map;
-uniform float opacity;
-uniform vec4 crop;
-${LENS_PATCH_GLSL}
-void main() {
-  vec2 at;
-  if (!patchPoint(at)) discard;
-  vec2 uv = at * 0.5 + 0.5;
-  vec4 color = texture2D(map, vec2(mix(crop.x, crop.z, uv.x), mix(crop.y, crop.w, uv.y))) * opacity;
-  if (color.a <= 0.0) discard;
-  gl_FragColor = color;
-}`;
-
-// Its pick material: the same part of the sphere, writing what PICK_FRAGMENT writes.
-const LENS_PATCH_PICK_VERTEX = `
-varying vec3 vLocal;
-varying float vDepth;
-void main() {
-  vLocal = position;
-  vec4 view = modelViewMatrix * vec4(position, 1.0);
-  vDepth = -view.z;
-  gl_Position = projectionMatrix * view;
-}`;
-
-const LENS_PATCH_PICK_FRAGMENT = PICK_FRAGMENT
-  .replace("varying float vDepth;", `varying float vDepth;\n${LENS_PATCH_GLSL}`)
-  .replace("void main() {", "void main() {\n  vec2 at;\n  if (!patchPoint(at)) discard;");
-
-export function applyViewportCamera(camera, setup) {
-  const { quaternion } = setup;
-  camera.quaternion.set(quaternion.x, quaternion.y, quaternion.z, quaternion.w);
-  camera.fov = setup.fovY_deg;
-  camera.aspect = setup.aspect;
-  camera.updateProjectionMatrix();
-  camera.updateMatrixWorld();
-}
-
-// A sky Sticker is its gnomonic image plane at STICKER_DISTANCE along the Sticker's forward axis;
-// seen from the camera at the center it covers the same rays as the previous per-pixel shader.
-export function placeSticker(mesh, layer) {
-  const { rect, quaternion } = layer;
-  mesh.quaternion.set(quaternion.x, quaternion.y, quaternion.z, quaternion.w);
-  mesh.position.set((rect.x0 + rect.x1) * 0.5, (rect.y0 + rect.y1) * 0.5, -1)
-    .multiplyScalar(STICKER_DISTANCE)
-    .applyQuaternion(mesh.quaternion);
-  mesh.scale.set((rect.x1 - rect.x0) * STICKER_DISTANCE, (rect.y1 - rect.y0) * STICKER_DISTANCE, 1);
-}
-
-// The Unwrap sticker shader's uniforms: World to the Sticker's frame, and its rect as (x0, y0, x1, y1).
-export function unwrapStickerUniforms(layer) {
-  const { quaternion, rect } = layer;
-  const rotation = new Matrix4().makeRotationFromQuaternion(new Quaternion(quaternion.x, quaternion.y, quaternion.z, quaternion.w));
-  return {
-    toSticker: new Matrix3().setFromMatrix4(rotation).transpose(),
-    rect: new Vector4(rect.x0, rect.y0, rect.x1, rect.y1),
-    curve: layer.curve ?? 1,
-  };
-}
 
 // The size of a media element: the chunk's copy of pano_editor_view.js mediaSize, held equal by tests/chunk_copies.test.mjs.
 export function mediaSize(media) {
@@ -611,102 +389,6 @@ export function createLayerTextures({ uploadRegions = null } = {}) {
   };
 }
 
-// The lens pass (ADR 0042): each output pixel's ray by lens_angle, sampled from the face of the pinhole or the cube
-// it goes through (pano_lens.js lensRenderPlan); past 180° off the axis, and where no face reaches, the background.
-const LENS_FACES = 6;
-const LENS_FRAGMENT = `
-${Array.from({ length: LENS_FACES }, (_, index) => `uniform sampler2D face${index};`).join("\n")}
-uniform mat3 cameraTurn;
-uniform mat3 faceTurn[${LENS_FACES}];
-uniform vec2 faceTan[${LENS_FACES}];
-uniform int faceCount;
-uniform float curve;
-uniform float focal;
-uniform vec2 center;
-uniform vec4 window;
-uniform float windowHeight;
-uniform vec4 background;
-${LENS_GLSL}
-vec4 sampleFace(int index, vec2 uv) {
-${Array.from({ length: LENS_FACES }, (_, index) => `  if (index == ${index}) return texture2D(face${index}, uv);`).join("\n")}
-  return vec4(0.0);
-}
-void main() {
-  vec2 local = gl_FragCoord.xy - window.xy;
-  vec2 pixel = vec2(window.z + local.x, window.w + windowHeight - local.y);
-  vec2 film = vec2(pixel.x - center.x, center.y - pixel.y) / focal;
-  float rho = length(film);
-  float theta = lensAngle(rho, curve);
-  if (theta > 3.141592653589793) {
-    gl_FragColor = background;
-    return;
-  }
-  vec3 direction = rho > 0.0 ? vec3(film / rho * sin(theta), -cos(theta)) : vec3(0.0, 0.0, -1.0);
-  for (int index = 0; index < ${LENS_FACES}; index++) {
-    if (index >= faceCount) break;
-    vec3 seen = faceTurn[index] * (cameraTurn * direction);
-    if (seen.z >= 0.0) continue;
-    vec2 at = seen.xy / -seen.z / faceTan[index];
-    if (abs(at.x) > 1.0 || abs(at.y) > 1.0) continue;
-    // The faces hold the canvas's values (canvasValueTarget).
-    gl_FragColor = sampleFace(index, at * 0.5 + 0.5);
-    return;
-  }
-  gl_FragColor = background;
-}`;
-
-function createMaterial(vertexShader, fragmentShader, uniforms, blending = CustomBlending) {
-  return new ShaderMaterial({
-    vertexShader,
-    fragmentShader,
-    uniforms: { map: { value: null }, opacity: { value: 1 }, ...uniforms },
-    depthTest: false,
-    depthWrite: false,
-    transparent: true,
-    blending,
-    blendSrc: OneFactor,
-    blendDst: OneMinusSrcAlphaFactor,
-    blendSrcAlpha: OneFactor,
-    blendDstAlpha: OneMinusSrcAlphaFactor,
-  });
-}
-
-function createErpMesh(geometry, blending) {
-  const material = createMaterial(ERP_VERTEX, ERP_FRAGMENT, { halfCoverage: { value: false } }, blending);
-  material.side = BackSide;
-  return new Mesh(geometry, material);
-}
-
-function createQuad(geometry, fragmentShader, uniforms, blending = CustomBlending) {
-  const mesh = new Mesh(geometry, createMaterial(UNWRAP_VERTEX, fragmentShader, uniforms, blending));
-  mesh.frustumCulled = false;
-  return mesh;
-}
-
-// Line segments [[a, b], ...] in one color.
-function createLines({ segments, color }) {
-  const geometry = new BufferGeometry();
-  geometry.setAttribute("position", new Float32BufferAttribute(segments.flat(2), 3));
-  return new LineSegments(geometry, new LineBasicMaterial({ color }));
-}
-
-// The camera of setup, drawing the part `offset` of its view (visibleWindow() with the whole view's size as
-// fullWidth and fullHeight), or all of it.
-function setView(target, setup, offset = null) {
-  if (offset) target.setViewOffset(offset.fullWidth, offset.fullHeight, offset.offsetX, offset.offsetY, offset.width, offset.height);
-  else target.clearViewOffset();
-  applyViewportCamera(target, setup);
-}
-
-function setCamera(target, setup, offset = null) {
-  setView(target, setup, offset);
-  target.position.set(...setup.position);
-  target.near = setup.near;
-  target.far = setup.far;
-  target.updateProjectionMatrix();
-  target.updateMatrixWorld();
-}
-
 // width x height in device pixels, kept to what the GPU can draw to (maxSide, the smaller of
 // MAX_RENDERBUFFER_SIZE and MAX_TEXTURE_SIZE): a larger size is scaled down evenly. Nothing else limits it.
 export function fitRenderSize(width, height, maxSide) {
@@ -730,57 +412,12 @@ export function visibleWindow(rect, canvasWidth, canvasHeight) {
   return { x: x0, y: y0, width: x1 - x0, height: y1 - y0, offsetX: x0 - rect.x, offsetY: y0 - rect.y };
 }
 
-// (x, y) of a width x height view as three.js normalized device coordinates.
-function devicePoint(x, y, width, height) {
-  return new Vector2(x / width * 2 - 1, 1 - y / height * 2);
-}
-
-// The pick of the World content (pick() below) draws the pixel under the pointer with only the pickable
-// objects of `world`: entries are { object, stickerId } for its children that are hit on their
-// triangles, and entry i draws its meshes in materialOf(i). The other children of `world` (the guides,
-// the lines, the gizmo, Spark's renderer) and the lines or points inside an entry are hidden meanwhile.
-// Runs draw() and puts every object and material back after it, also when it throws (a lost WebGL
-// context, a target the GPU will not draw to), so the next render draws the World as it is.
-export function pickPass(world, entries, materialOf, draw) {
-  const roots = new Set(entries.map((entry) => entry.object));
-  const hidden = world.children.filter((child) => child.visible && !roots.has(child));
-  const swapped = [];
-  entries.forEach((entry, index) => {
-    entry.object.traverse((object) => {
-      if (object.isMesh) {
-        swapped.push([object, object.material]);
-        // A mesh may have a pick material of its own (a depth grid, which makes its positions in its shader).
-        object.material = materialOf(index, object);
-      } else if ((object.isLine || object.isPoints || object.isSprite) && object.visible) {
-        hidden.push(object);
-      }
-    });
-  });
-  hidden.forEach((object) => { object.visible = false; });
-  try {
-    return draw();
-  } finally {
-    hidden.forEach((object) => { object.visible = true; });
-    swapped.forEach(([object, material]) => { object.material = material; });
-  }
-}
-
 // Puts children in parent in this order, unless it holds them so already. Returns whether it changed.
 export function setChildren(parent, children) {
   if (parent.children.length === children.length && children.every((child, index) => parent.children[index] === child)) return false;
   parent.clear();
   if (children.length) parent.add(...children);
   return true;
-}
-
-// Whether a and b hold the same numbers, strings and booleans in the same arrays and objects.
-export function sameValue(a, b) {
-  if (a === b) return true;
-  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false;
-  if (Array.isArray(a) !== Array.isArray(b)) return false;
-  const keys = Object.keys(a);
-  if (keys.length !== Object.keys(b).length) return false;
-  return keys.every((key) => sameValue(a[key], b[key]));
 }
 
 // The line objects of `sets` ([{ segments, color }], createLines) kept in cache ({ sets, lines }): made
@@ -791,76 +428,6 @@ export function cachedLines(cache, sets) {
   cache.sets = sets;
   cache.lines = sets.map(createLines);
   return cache.lines;
-}
-
-// The gizmo of the selected world Sticker: three.js TransformControls seen from camera, on a
-// stand-in object. The editor feeds it the pointer and writes what it moved back to the state, which the
-// next render draws. It is not hooked to DOM events.
-export function createGizmo(camera) {
-  const controls = new TransformControls(camera);
-  const target = new Object3D();
-  controls.attach(target);
-  let shown = false;
-  let colors = null;
-  return {
-    // Shows it at { mode ("translate", "rotate" or "scale"), transform ({ position, quaternion, scale }, as
-    // pano_space.js sceneTransform() gives it), colors? }, and returns the objects to add to the World. It draws
-    // over the World (its materials do not test depth). While a handle is dragged the stand-in keeps
-    // where the drag took it, so it follows the pointer even when the Sticker's value is taken at another
-    // frame. `colors` ({ x, y, z, active }, CSS colors; the new UI's) paints the axes and the handle under the
-    // pointer; without it the gizmo keeps TransformControls' colors.
-    show({ mode, transform, colors: wanted = null }) {
-      shown = true;
-      if (wanted && !sameValue(wanted, colors)) {
-        colors = { ...wanted };
-        controls.setColors(colors.x, colors.y, colors.z, colors.active);
-      }
-      if (!controls.dragging) {
-        controls.mode = mode;
-        target.position.set(...transform.position);
-        target.quaternion.set(transform.quaternion.x, transform.quaternion.y, transform.quaternion.z, transform.quaternion.w);
-        target.scale.setScalar(transform.scale);
-      }
-      return [target, controls.getHelper()];
-    },
-    // Not shown in this frame: a drag in progress ends, so the gizmo can be grabbed when it shows again.
-    hide() {
-      shown = false;
-      if (controls.dragging) controls.pointerUp(null);
-    },
-    // The pointer at (x, y) in normalized device coordinates, with the camera where the frame was drawn
-    // from. phase "hover" finds the handle under it and returns its axis (null over none), "down" grabs
-    // that handle and returns whether it did, "move" drags it and returns the stand-in's transform
-    // ({ position, quaternion, scale: [x, y, z] }) or null when nothing is grabbed, and "up" lets go,
-    // shown or not. While it is not shown the other phases return null.
-    pointer(phase, x, y) {
-      if (phase === "up") {
-        controls.pointerUp({ x, y, button: 0 });
-        return null;
-      }
-      if (!shown) return null;
-      controls.getHelper().updateMatrixWorld(true);
-      if (phase === "hover") {
-        controls.pointerHover({ x, y, button: -1 });
-        return controls.axis;
-      }
-      if (phase === "down") {
-        controls.pointerDown({ x, y, button: 0 });
-        return controls.dragging;
-      }
-      if (!controls.dragging) return null;
-      controls.pointerMove({ x, y, button: -1 });
-      return {
-        position: target.position.toArray(),
-        quaternion: { x: target.quaternion.x, y: target.quaternion.y, z: target.quaternion.z, w: target.quaternion.w },
-        scale: target.scale.toArray(),
-      };
-    },
-    // TransformControls.dispose() would unhook pointer listeners it never had (no DOM element here).
-    dispose() {
-      controls.getHelper().dispose();
-    },
-  };
 }
 
 // onUpdate runs when something every view draws changes by itself: a `scene` item finished loading, or Spark
@@ -914,8 +481,6 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
   let guides = null;
   // The new UI's ground grid (pano_ground_grid.js), made the first time a space asks for it.
   let groundGrid = null;
-  // The new UI's sky grid (pano_sky_grid.js), made the first time a render's space has `sky`.
-  let skyGrid = null;
   // The default lights, always in the World (they change nothing that is not lit).
   const lights = createDefaultLights();
   const lines = { sets: null, lines: [] };
@@ -929,15 +494,23 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
   let pickBoxes = [];
   let contentParts = [];
   let contentRevision = 0;
-  // The last pick ({ key, hit }, pickCacheKey()) and what it draws with: a 1 x 1 target (a float one
-  // where the GPU can draw to it), its camera and the pick materials by entry.
-  let lastPick = { key: null, hit: null };
-  let pickTarget = null;
-  // After a float target failed picks use RGBA8; after that failed too only the SPLAT boxes are picked.
-  let pickFloat = true;
-  let pickFailed = false;
-  const pickCamera = new PerspectiveCamera();
-  const pickMaterials = [];
+  // The GPU picks of the World content the last space render drew (createPicker).
+  const picker = createPicker({
+    renderer,
+    world,
+    content: {
+      get pickable() {
+        return pickable;
+      },
+      get pickBoxes() {
+        return pickBoxes;
+      },
+      get revision() {
+        return contentRevision;
+      },
+    },
+  });
+  const { pick, pickSurface, pickSticker } = picker;
   // Spark's module once it has loaded (when a SPLAT first shows), and per view that draws SPLATs a renderer
   // and SplatMeshes that see only that view's camera.
   let Spark = null;
@@ -959,20 +532,12 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
       packedSplats.splatEncoding = encoding;
       return mesh;
     },
-    // A lens face's renderer draws for the view it is a face of, and its face is drawn again. The pinhole face is
-    // drawn with its view's own renderer (drawLens), so that renderer's sort draws it again too.
+    // A lens face's renderer draws for the view it is a face of, and its face is drawn again (createLensPass
+    // sortedAgain); only the view that draws again is told.
     onDirty: (owner) => {
       // A live ERP's radial sort ended: its faces draw again with the new order.
       liveErps.get(owner)?.erp.invalidate("splats");
-      if (!lensFaceBase.has(owner)) {
-        const cache = lensCaches.get(owner);
-        if (cache?.shared) cache.dirty.add(0);
-        onSplats(owner);
-        return;
-      }
-      const { base, index } = lensFaceBase.get(owner);
-      lensCaches.get(base)?.dirty.add(index);
-      onSplats(base);
+      onSplats(lensPass.sortedAgain(owner));
     },
   });
 
@@ -1035,46 +600,8 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
       : setTimeout(run, 0)),
     now: () => performance.now(),
   });
-  const domeGeometry = new SphereGeometry(DOME_RADIUS, 64, 32);
-  const planeGeometry = new PlaneGeometry(1, 1);
-  const quadGeometry = new PlaneGeometry(2, 2);
-  // The background replaces what is below it like the previous renderer; the other layers blend.
-  // Each projection keeps its meshes: the background, and pools of ERP and Sticker meshes.
-  const panorama = {
-    background: createErpMesh(domeGeometry, NoBlending),
-    erp: [],
-    sticker: [],
-    createErp: () => createErpMesh(domeGeometry, CustomBlending),
-    createSticker: () => new Mesh(planeGeometry, createMaterial(STICKER_VERTEX, STICKER_FRAGMENT, {})),
-    // A sky Sticker of a lens curve other than 1, on the dome (ADR 0042).
-    lensSticker: [],
-    createLensSticker: () => {
-      const material = createMaterial(ERP_VERTEX, LENS_STICKER_FRAGMENT, { toSticker: { value: null }, rect: { value: null }, curve: { value: 1 } });
-      material.side = BackSide;
-      return new Mesh(domeGeometry, material);
-    },
-    placeLensSticker(mesh, layer) {
-      Object.entries(unwrapStickerUniforms(layer)).forEach(([name, value]) => { mesh.material.uniforms[name].value = value; });
-    },
-    // An ERP may come turned (Panorama Studio's run output, shot by a Camera): its dome takes the rotation.
-    placeErp(mesh, halfCoverage, quaternion) {
-      mesh.material.uniforms.halfCoverage.value = halfCoverage;
-      mesh.quaternion.set(quaternion?.x ?? 0, quaternion?.y ?? 0, quaternion?.z ?? 0, quaternion?.w ?? 1);
-    },
-    placeSticker,
-  };
-  // The Unwrap view lays a 180 ERP over the whole width like the previous renderer.
-  const unwrap = {
-    background: createQuad(quadGeometry, UNWRAP_ERP_FRAGMENT, {}, NoBlending),
-    erp: [],
-    sticker: [],
-    createErp: () => createQuad(quadGeometry, UNWRAP_ERP_FRAGMENT, {}),
-    createSticker: () => createQuad(quadGeometry, UNWRAP_STICKER_FRAGMENT, { toSticker: { value: null }, rect: { value: null }, curve: { value: 1 } }),
-    placeErp() {},
-    placeSticker(mesh, layer) {
-      Object.entries(unwrapStickerUniforms(layer)).forEach(([name, value]) => { mesh.material.uniforms[name].value = value; });
-    },
-  };
+  const sky = createSkyMeshes({ scene });
+  const { domeGeometry, planeGeometry, quadGeometry, panorama, unwrap, fillSky } = sky;
   // Per owner: the size it last rendered at. Surfaces that share this view (the on-node Previews, the
   // Cutout camera preview) pass their own owner, so the canvas keeps the largest size in use instead of
   // resizing per owner. The layer textures are the view's (createLayerTextures): rendering one owner does
@@ -1082,27 +609,6 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
   const owners = new Map();
   const layerTextures = createLayerTextures({ uploadRegions: (texture, rects) => uploadTextureRegions(renderer, texture, rects) });
   renderer.setScissorTest(true);
-
-  function pooled(meshes, index, create) {
-    if (!meshes[index]) meshes[index] = create();
-    return meshes[index];
-  }
-
-  function addErp(owned, projection, mesh, layer, halfCoverage) {
-    mesh.material.uniforms.map.value = owned.texture(layer, halfCoverage ? ClampToEdgeWrapping : RepeatWrapping, false);
-    mesh.material.uniforms.opacity.value = layer.opacity;
-    projection.placeErp(mesh, halfCoverage, layer.quaternion);
-    scene.add(mesh);
-    return mesh;
-  }
-
-  function addSticker(owned, projection, mesh, layer) {
-    mesh.material.uniforms.map.value = owned.texture(layer, ClampToEdgeWrapping, true);
-    mesh.material.uniforms.opacity.value = layer.opacity;
-    projection.placeSticker(mesh, layer);
-    scene.add(mesh);
-    return mesh;
-  }
 
   // The grid, axes and origin marker for a gridSpec(); rebuilt when the spacing changes.
   function guideGroup(grid) {
@@ -1326,247 +832,28 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     return { x: 0, y: canvas.height - height, width, height, offsetX: 0, offsetY: 0, fullWidth: width, fullHeight: height };
   }
 
-  // The Sky of input (its background and layers) in `scene`.
-  function fillSky(owned, projection, input) {
-    scene.clear();
-    const background = input.background;
-    if (background && owned.drawable({ id: "background", ...background })) {
-      addErp(owned, projection, projection.background, { id: "background", opacity: 1, ...background }, background.coverage === 180);
-    }
-    // The new UI's sky grid (space.sky, grid.js skyGrid), over the background and under the layers.
-    const sky = projection === panorama ? input.space?.sky : null;
-    if (sky) scene.add((skyGrid ||= createSkyGrid(domeGeometry)).show(sky));
-    let erpIndex = 0;
-    let stickerIndex = 0;
-    let lensIndex = 0;
-    input.layers.forEach((layer, index) => {
-      if (!owned.drawable(layer)) return;
-      let mesh;
-      if (layer.kind === "erp") mesh = addErp(owned, projection, pooled(projection.erp, erpIndex++, projection.createErp), layer, false);
-      else if (projection.lensSticker && layer.curve !== undefined && layer.curve !== 1) {
-        mesh = pooled(projection.lensSticker, lensIndex++, projection.createLensSticker);
-        mesh.material.uniforms.map.value = owned.texture(layer, ClampToEdgeWrapping, true);
-        mesh.material.uniforms.opacity.value = layer.opacity;
-        projection.placeLensSticker(mesh, layer);
-        scene.add(mesh);
-      } else mesh = addSticker(owned, projection, pooled(projection.sticker, stickerIndex++, projection.createSticker), layer);
-      mesh.renderOrder = index + 1;
-    });
-  }
-
-  // The lens images (ADR 0042): per owner, the faces its lens renders draw into, by index (each owner keeps its own,
-  // so one owner's faces never overwrite another's kept ones), and the owners each face's Spark renderer draws for
-  // (one per face, so each sorts for its own camera).
-  const lensTargets = new Map();
-  const lensFaceOwners = new Map();
-  const lensFaceBase = new WeakMap();
-  const lensScene = new Scene();
-  const lensQuad = createQuad(quadGeometry, LENS_FRAGMENT, {
-    ...Object.fromEntries(Array.from({ length: LENS_FACES }, (_, index) => [`face${index}`, { value: null }])),
-    cameraTurn: { value: new Matrix3() },
-    faceTurn: { value: Array.from({ length: LENS_FACES }, () => new Matrix3()) },
-    faceTan: { value: Array.from({ length: LENS_FACES }, () => new Vector2(1, 1)) },
-    faceCount: { value: 0 },
-    curve: { value: 1 },
-    focal: { value: 1 },
-    center: { value: new Vector2() },
-    window: { value: new Vector4() },
-    windowHeight: { value: 1 },
-    background: { value: new Vector4(0, 0, 0, 1) },
-  }, NoBlending);
-  lensScene.add(lensQuad);
-  const lensCamera = new PerspectiveCamera();
-  const faceRotation = new Matrix4();
-
-  // A face's target: it holds the canvas's sRGB values and blends them as the canvas does (canvasValueTarget), which
-  // the pass puts on the canvas as they are.
-  function lensTarget(owner, index, width, height) {
-    let targets = lensTargets.get(owner);
-    if (!targets) lensTargets.set(owner, targets = []);
-    let target = targets[index];
-    if (!target) {
-      target = canvasValueTarget(new WebGLRenderTarget(width, height, { format: RGBAFormat, type: UnsignedByteType, depthBuffer: true, minFilter: LinearFilter, magFilter: LinearFilter, generateMipmaps: false }));
-      targets[index] = target;
-    } else if (target.width !== width || target.height !== height) {
-      target.setSize(width, height);
-    }
-    return target;
-  }
-
-  // The owners of base's faces, made the first time; a Spark renderer of a face tells base's view to draw again.
-  function lensFaceOwner(base, index) {
-    let faces = lensFaceOwners.get(base);
-    if (!faces) lensFaceOwners.set(base, faces = []);
-    if (!faces[index]) {
-      faces[index] = { lensFace: index };
-      lensFaceBase.set(faces[index], { base, index });
-    }
-    return faces[index];
-  }
-
-  // base's lens images let go: its faces' targets and what they held.
-  function releaseLensImages(base) {
-    lensCaches.delete(base);
-    lensTargets.get(base)?.forEach((target) => target?.dispose());
-    lensTargets.delete(base);
-  }
-
-  // base's lens images and its cube faces' Spark renderers let go, when base stops drawing or hides its SPLATs. A
-  // face's renderer stays while base draws otherwise (without a lens, or through the pinhole): a new one has no sort
-  // until its worker returns one, and its face would show without its splats until then.
-  function releaseLensFaces(base) {
-    releaseLensImages(base);
-    lensFaceOwners.get(base)?.forEach((owner) => owner && sparkViews.release(owner));
-    lensFaceOwners.delete(base);
-  }
-
-  // Per owner, the faces drawn ({ key, drawn: face indexes drawn under key, dirty: faces whose Spark renderer sorted
-  // again }): a face is drawn again only when what it shows changed (lensCacheKey) or its splats were sorted again.
-  const lensCaches = new Map();
-
-  // What a lens render's faces show, but for the Camera's turn: the faces' places and sizes (a pinhole's turn is the
-  // Camera's), the Camera's position, the clear color, the Sky (background and layers with their images'
-  // revisions, a VIDEO's time) and the World (its content revision and the inputs drawn).
-  function lensCacheKey(input, faces) {
-    return plainValue({
-      faces: faces.map((face) => [face.quaternion, face.tanX, face.tanY, face.width, face.height]),
-      position: input.camera.position, near: input.camera.near, far: input.camera.far,
-      clearColor: input.clearColor ?? null,
-      background: input.background ?? null,
-      layers: input.layers,
-      space: input.space ?? null,
-      content: contentRevision,
-    });
-  }
-
-  const objectIds = new WeakMap();
-  let nextObjectId = 1;
-  function objectId(value) {
-    if (!objectIds.has(value)) objectIds.set(value, nextObjectId++);
-    return objectIds.get(value);
-  }
-
-  // A value as plain numbers, strings, arrays and objects (sameValue compares them): an image as its identity, size
-  // and frame count (its layer's revision says when it changed), a VIDEO as its identity and time; a draw's `owner`
-  // is left out. The World's guides (grid, lines, the gizmo's place) are drawn into the faces, so they stay in it.
-  function plainValue(value) {
-    if (value === null || typeof value !== "object") return value;
-    if (typeof HTMLVideoElement !== "undefined" && value instanceof HTMLVideoElement) return ["video", objectId(value), value.currentTime, value.videoWidth];
-    if (value.nodeType || (typeof ImageBitmap !== "undefined" && value instanceof ImageBitmap)) {
-      return ["media", objectId(value), value.width, value.height, value.__panoFrameIdx ?? 0];
-    }
-    // A buffer of data (a depth, a typed array) by identity: its contents are its item's, which the content revision
-    // follows.
-    if (ArrayBuffer.isView(value) || value instanceof ArrayBuffer) return ["data", objectId(value)];
-    if (Array.isArray(value)) return value.map(plainValue);
-    const out = {};
-    for (const [key, item] of Object.entries(value)) if (key !== "owner" && item !== undefined) out[key] = plainValue(item);
-    return out;
-  }
-  // A lens Camera's image (input.lens: { curve, focal, centerX, centerY, background, faces }, the faces of
-  // pano_lens.js lensRenderPlan; focal and the center in pixels of the whole view): each seen face drawn as a pinhole
-  // turned by its quaternion (from the Camera for the pinhole, from the World's axes for the cube) at the Camera's
-  // position, then the pass samples them per pixel of the part on the canvas through the Camera's turn. A face drawn
-  // before is used again while lensCacheKey stays and its splats were not sorted again, so a turn of the Camera alone
-  // draws only the pass.
-  function drawLens(input, space) {
-    let entry = owners.get(input.owner);
-    if (!entry) owners.set(input.owner, entry = {});
-    const at = place(input, entry);
-    if (!at) return null;
-    const { lens } = input;
-    const base = new Quaternion(input.camera.quaternion.x, input.camera.quaternion.y, input.camera.quaternion.z, input.camera.quaternion.w);
-    // Each face's turn in the World.
-    const faces = lens.faces.map((face) => {
-      const q = new Quaternion(face.quaternion.x, face.quaternion.y, face.quaternion.z, face.quaternion.w);
-      const turn = face.world ? q : base.clone().multiply(q);
-      return { ...face, quaternion: { x: turn.x, y: turn.y, z: turn.z, w: turn.w }, turn };
-    });
-    let cache = lensCaches.get(input.owner);
-    if (!cache) lensCaches.set(input.owner, cache = { key: null, drawn: new Set(), dirty: new Set(), shared: false });
-    // The pinhole looks where the Camera looks, as a draw without a lens does: it draws with the view's own Spark
-    // renderer, whose sort holds for it, so going from no lens to a lens (κ leaving 1) shows the splats at once.
-    cache.shared = !faces[0].world;
-    const owned = layerTextures.draw(input.owner);
-    const uniforms = lensQuad.material.uniforms;
-    let count = 0;
-    try {
-      fillSky(owned, panorama, input);
-      // The World is built once for what picks and the content revision read; each drawn face builds it for its
-      // own Spark renderer.
-      if (space) buildWorld(owned, space, lensSplatOwner(input.owner, faces[0], 0));
-      const key = lensCacheKey(input, faces);
-      if (!sameValue(key, cache.key)) {
-        cache.key = key;
-        cache.drawn.clear();
-      }
-      faces.forEach((face, index) => {
-        if (!face.seen) return;
-        if (!cache.drawn.has(index) || cache.dirty.has(index)) {
-          drawLensFace(owned, input, space, face, index);
-          cache.drawn.add(index);
-          cache.dirty.delete(index);
-        }
-        uniforms[`face${count}`].value = lensTargets.get(input.owner)[index].texture;
-        faceRotation.makeRotationFromQuaternion(face.turn.clone().invert());
-        uniforms.faceTurn.value[count].setFromMatrix4(faceRotation);
-        uniforms.faceTan.value[count].set(face.tanX, face.tanY);
-        count += 1;
-      });
-    } finally {
-      owned.end();
-      renderer.setRenderTarget(null);
-    }
-    uniforms.faceCount.value = count;
-    uniforms.cameraTurn.value.setFromMatrix4(faceRotation.makeRotationFromQuaternion(base));
-    uniforms.curve.value = lens.curve;
-    uniforms.focal.value = lens.focal;
-    uniforms.center.value.set(lens.centerX, lens.centerY);
-    const bottom = canvas.height - at.y - at.height;
-    uniforms.window.value.set(at.x, bottom, at.offsetX, at.offsetY);
-    uniforms.windowHeight.value = at.height;
-    const color = Number(lens.background ?? 0);
-    uniforms.background.value.set(((color >> 16) & 255) / 255, ((color >> 8) & 255) / 255, (color & 255) / 255, 1);
-    renderer.setViewport(at.x, bottom, at.width, at.height);
-    renderer.setScissor(at.x, bottom, at.width, at.height);
-    renderer.render(lensScene, lensCamera);
-    settleUnpack();
-    return { canvas, x: at.x, y: at.y, width: at.width, height: at.height };
-  }
-
-  // One face of a lens render into its target: the Sky, then the World from the Camera's position with the face's
-  // own Spark renderer.
-  function drawLensFace(owned, input, space, face, index) {
-    const setup = {
-      ...input.camera,
-      quaternion: face.quaternion,
-      fovY_deg: 2 * Math.atan(face.tanY) * 180 / Math.PI,
-      aspect: face.tanX / face.tanY,
-    };
-    renderer.setRenderTarget(lensTarget(input.owner, index, face.width, face.height));
-    renderer.setViewport(0, 0, face.width, face.height);
-    renderer.setScissor(0, 0, face.width, face.height);
-    if (input.clearColor != null) renderer.setClearColor(new Color(input.clearColor), 1);
-    renderer.clear(true, true, false);
-    setView(camera, setup);
-    renderer.autoClear = false;
-    renderer.render(scene, camera);
-    if (space) {
-      const faceOwner = lensSplatOwner(input.owner, face, index);
-      buildWorld(owned, space, faceOwner);
-      setCamera(worldCamera, setup);
-      sparkViews.aim(worldCamera, faceOwner);
-      renderer.clearDepth();
-      renderer.render(world, worldCamera);
-    }
-    renderer.autoClear = true;
-    if (input.clearColor != null) renderer.setClearColor(0x000000, 0);
-  }
-
-  // The owner whose Spark renderer draws a lens face's splats: the view's own for the pinhole, the face's for the cube.
-  function lensSplatOwner(base, face, index) {
-    return face.world ? lensFaceOwner(base, index) : base;
-  }
+  // The lens pass (ADR 0042): the faces of a lens Camera's image and the pass that samples them.
+  const plainValue = createPlainValue();
+  const lensPass = createLensPass({
+    renderer,
+    canvas,
+    quadGeometry,
+    sparkViews,
+    owners,
+    place,
+    layerTextures,
+    fillSky,
+    panorama,
+    buildWorld,
+    camera,
+    scene,
+    worldCamera,
+    world,
+    settleUnpack,
+    contentRevision: () => contentRevision,
+    plainValue,
+  });
+  const { drawLens, releaseLensImages, releaseLensFaces } = lensPass;
 
   function draw(projection, input, space = null) {
     if (projection === panorama && input.lens) return drawLens(input, space);
@@ -1747,149 +1034,6 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     return null;
   }
 
-  // The pick pass's mode and far, which the depth grids' pick materials share.
-  const pickShared = { pickMode: { value: 0 }, far: { value: 1 } };
-
-  // The pick material of pickable entry `index` for one of its meshes: one per entry, or a depth grid's own (its
-  // uniforms are its item's), kept on the mesh and freed with it.
-  function pickMaterial(index, object) {
-    // A world Sticker's lens patch is hit where it shows: its own shape, with its uniforms.
-    if (object?.userData.lensPatch) {
-      object.userData.pickMaterial ||= new ShaderMaterial({
-        vertexShader: LENS_PATCH_PICK_VERTEX,
-        fragmentShader: LENS_PATCH_PICK_FRAGMENT,
-        uniforms: { pickId: { value: 0 }, ...pickShared, curve: object.material.uniforms.curve, patchHalf: object.material.uniforms.patchHalf },
-        side: DoubleSide,
-        blending: NoBlending,
-      });
-      object.userData.pickMaterial.uniforms.pickId.value = index + 1;
-      return object.userData.pickMaterial;
-    }
-    if (object?.userData.depthGrid) {
-      object.userData.pickMaterial ||= createDepthGridPickMaterial(object.material, pickShared);
-      object.userData.pickMaterial.uniforms.pickId.value = index + 1;
-      return object.userData.pickMaterial;
-    }
-    if (!pickMaterials[index]) {
-      pickMaterials[index] = new ShaderMaterial({
-        vertexShader: PICK_VERTEX,
-        fragmentShader: PICK_FRAGMENT,
-        uniforms: { pickId: { value: index + 1 }, pickMode: { value: 0 }, far: { value: 1 } },
-        side: DoubleSide,
-        blending: NoBlending,
-      });
-    }
-    return pickMaterials[index];
-  }
-
-  // The 1 x 1 target picks draw to: RGBA float where the GPU can draw to it, else RGBA8.
-  function ensurePickTarget() {
-    if (pickTarget) return pickTarget;
-    const float = pickFloat && renderer.extensions.has("EXT_color_buffer_float");
-    pickTarget = new WebGLRenderTarget(1, 1, {
-      type: float ? FloatType : UnsignedByteType,
-      format: RGBAFormat,
-      minFilter: NearestFilter,
-      magFilter: NearestFilter,
-      generateMipmaps: false,
-      depthBuffer: true,
-    });
-    return pickTarget;
-  }
-
-  // Draws the pixel at (x, y) with the pickable meshes and reads it back: { id (1 + pickable index),
-  // depth }, null over nothing, or false when drawing failed (the next pick tries RGBA8, then gives up).
-  function drawPick(camera, x, y, width, height) {
-    if (!pickable.length || pickFailed) return null;
-    const target = ensurePickTarget();
-    const float = target.texture.type === FloatType;
-    setCamera(pickCamera, camera);
-    const offset = pickWindow(x, y, width, height);
-    pickCamera.setViewOffset(offset.fullWidth, offset.fullHeight, offset.x, offset.y, offset.width, offset.height);
-    const pixel = float ? new Float32Array(4) : new Uint8Array(4);
-    const read = (mode) => {
-      pickMaterials.forEach((material) => {
-        material.uniforms.pickMode.value = mode;
-        material.uniforms.far.value = camera.far;
-      });
-      pickShared.pickMode.value = mode;
-      pickShared.far.value = camera.far;
-      renderer.setRenderTarget(target);
-      try {
-        renderer.render(world, pickCamera);
-      } finally {
-        renderer.setRenderTarget(null);
-      }
-      renderer.readRenderTargetPixels(target, 0, 0, 1, 1, pixel);
-      return [...pixel];
-    };
-    try {
-      return pickPass(world, pickable, pickMaterial, () => (float ? readPickFloat(read(0)) : readPickBytes(read(1), read(2), camera.far)));
-    } catch (error) {
-      console.error("[PanoramaStickers] Picking on the GPU failed", error);
-      target.dispose();
-      pickTarget = null;
-      if (float) pickFloat = false;
-      else pickFailed = true;
-      return false;
-    }
-  }
-
-  // The nearest content of the last space render at (x, y) of a width x height view from camera (a
-  // spaceCamera()): { point (World [x, y, z]), stickerId (the Sticker it is, or null for the `scene`
-  // content), box (whether the point is on a SPLAT's box) } or null over empty space. Meshes and planes
-  // hit on their triangles, from both sides; a SPLAT on its box. The same pixel of the same view over the
-  // same content gives the pick before.
-  function pickAt(camera, x, y, width, height) {
-    const key = pickCacheKey(camera, x, y, width, height, contentRevision);
-    if (lastPick.key === key) return lastPick.hit;
-    world.updateMatrixWorld();
-    const ray = pickRay(camera, x, y, width, height);
-    const hits = [];
-    const drawn = drawPick(camera, x, y, width, height);
-    const entry = drawn && pickable[drawn.id - 1];
-    if (entry) hits.push({ depth: drawn.depth, stickerId: entry.stickerId, plane: entry.plane });
-    for (const { object, box, stickerId } of pickBoxes) {
-      if (!box) continue;
-      // The ray in the SPLAT's own frame keeps its parameter, which is the depth along the view axis.
-      const inverse = new Matrix4().copy(object.matrixWorld).invert();
-      const origin = new Vector3(...ray.origin).applyMatrix4(inverse).toArray();
-      const direction = new Vector3(...ray.direction).applyMatrix3(new Matrix3().setFromMatrix4(inverse)).toArray();
-      const depth = rayBoxDepth(origin, direction, box);
-      if (depth !== null) hits.push({ depth, stickerId, box: true });
-    }
-    // The point is the nearest hit. A SPLAT's box is larger than what shows of it, so a world Sticker plane
-    // hit takes the Sticker before a nearer box.
-    const nearest = nearestHit(hits, camera);
-    const hit = nearest && {
-      point: pointAt(ray, nearest.depth),
-      stickerId: nearestHit(hits, camera, (each) => each.plane).stickerId,
-      box: nearest.box === true,
-    };
-    // A failed draw is not kept, so the next pick draws again.
-    if (drawn !== false) lastPick = { key, hit };
-    return hit;
-  }
-
-  // The World point of the content under (x, y) in the last space render (pickAt), or null.
-  function pick(camera, x, y, width, height) {
-    return pickAt(camera, x, y, width, height)?.point ?? null;
-  }
-
-  // The same on a surface only: null where the nearest content is a SPLAT's box, whose point (inside the
-  // box, where the ray leaves it) is not where the splats show, so an orbit or a wheel step there works
-  // on the view's pivot instead.
-  function pickSurface(camera, x, y, width, height) {
-    const hit = pickAt(camera, x, y, width, height);
-    return hit && !hit.box ? hit.point : null;
-  }
-
-  // The id of the world or 3D Sticker under (x, y) in the last space render (pickAt), or null over the
-  // `scene` content or empty space.
-  function pickSticker(camera, x, y, width, height) {
-    return pickAt(camera, x, y, width, height)?.stickerId ?? null;
-  }
-
   // The coarse occupancy grid of the World 3D Sticker whose item key is url (pano_coarse_grid.js, in the `scene`
   // glTF frame; a batch's from its first item drawn), for the hover and the click (docs/space-and-view.md
   // "ホバーの判定"), or null until its grid is built (buildWorld asks for it at the first draw). It never builds one.
@@ -1975,7 +1119,7 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     depthColors.dispose();
     if (guides) disposeObject(guides.group);
     groundGrid?.dispose();
-    skyGrid?.dispose();
+    sky.disposeSkyGrid();
     lines.lines.forEach((line) => disposeObject(line));
     gizmo?.dispose();
     worldStickers.forEach((mesh) => mesh.material.dispose());
@@ -1985,10 +1129,8 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     });
     lensPatchGeometry.dispose();
     panorama.lensSticker.forEach((mesh) => mesh.material.dispose());
-    pickMaterials.forEach((material) => material.dispose());
-    pickTarget?.dispose();
-    lensTargets.forEach((targets) => targets.forEach((target) => target.dispose()));
-    lensQuad.material.dispose();
+    picker.dispose();
+    lensPass.dispose();
     liveErps.forEach((entry) => entry.erp.dispose());
     liveErps.clear();
     sparkViews.dispose();
