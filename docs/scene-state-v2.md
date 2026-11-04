@@ -141,7 +141,7 @@ Python と JS の両方の test が同じファイルを読む。Python と JS �
 表示（`visible`）は、Camera・`scene`・Sticker・ペイントのそれぞれが持つ。エディタのタイムラインの各行の目のアイコンで切り替える（`docs/timeline-ui.md`）。ペイントの表示は、旧ノードと共有する `painting` の形（`normalize_painting_state`）を変えないように、`painting` の中ではなく最上位の `painting_visible` に置く。
 
 - 非表示の `scene` と Sticker は、評価関数の `active` が偽になる（下記「評価関数」）ので描かれない。Clip range・Keyframe・値はそのまま保ち、出力の長さにも今までどおり数える（表示の切り替えで長さは変わらない）。
-- 非表示のペイントは描かない（`nodes.py` の `_resolve_sources` が空のペイントを渡す）。
+- 非表示のペイントは描かない（`scene_build.py` の `_resolve_sources` が空のペイントを渡す）。
 - 非表示の Camera は状態に残り、今までどおり撮る（表示だけの切り替え。ADR 0048。`docs/studio-node.md`）。評価関数は今までどおり値を返す。Camera の Keyframe は表示によらず出力の長さに数える。
 
 - ノードでの扱い：状態 v2 を読み書きするのは Panorama Studio だけで、欠け・`null` の `camera` は既定の Camera として読む（`docs/studio-node.md` の「Panorama Studio」）。エディタは Camera を消さない（消す操作は無い）。Camera のボタンで Camera を今の視点へ持ってくるのは、Camera の Lane の編集である（`docs/studio-ui.md`）。
@@ -390,7 +390,7 @@ evaluateSceneState(state, frame) // -> object
 | フィールド | 意味 |
 |---|---|
 | `frame` | 受け取った Timeline frame |
-| `camera` | `position`、`yaw_deg`・`pitch_deg`・`roll_deg`（`rotation`）、`hFOV_deg`（`fov`、κ による上限に寄せた値）、`curve`、`aspect`。`camera` は自分の状態ではいつもある（読み込みが既定の Camera を入れる。ADR 0048）。上流の層（`PanoSceneValue` の層）の `camera` は `None` のままで、評価関数は `None` を返す（`nodes.py` の `_scene_output` が `None` にする。下流は上流の Camera を使わない）。JS の上流の層の読み込み（`pano_upstream.js` が `loadSceneState` を通す）は、既定の Camera が入っても使わず捨てる。この違いは Python と JS の一致の対象外とする。`projection`・`erp_range` は時間で変わらないので、状態の `camera` のものを読む |
+| `camera` | `position`、`yaw_deg`・`pitch_deg`・`roll_deg`（`rotation`）、`hFOV_deg`（`fov`、κ による上限に寄せた値）、`curve`、`aspect`。`camera` は自分の状態ではいつもある（読み込みが既定の Camera を入れる。ADR 0048）。上流の層（`PanoSceneValue` の層）の `camera` は `None` のままで、評価関数は `None` を返す（`scene_build.py` の `_scene_output` が `None` にする。下流は上流の Camera を使わない）。JS の上流の層の読み込み（`pano_upstream.js` が `loadSceneState` を通す）は、既定の Camera が入っても使わず捨てる。この違いは Python と JS の一致の対象外とする。`projection`・`erp_range` は時間で変わらないので、状態の `camera` のものを読む |
 | `scene` | `active`（`visible` かつ `frame` が `scene.clip` の範囲内）、`clip_frame`、`position`、`yaw_deg`・`pitch_deg`・`roll_deg`（`rotation`）、`scale` |
 | `clip_frame` | 素材の先頭からの経過（Timeline frame、端数あり）。`frame − (start − in)`。素材の時刻（秒）は `clip_frame ÷ timeline.fps` |
 | `stickers[]` | `state.stickers` と同じ順。`id`・`placement`、`active`（`visible` かつ Clip range の範囲内）、`clip_frame`、各 Lane の値のフィールド（`sky` は `yaw_deg`・`pitch_deg`・`roll_deg`・`hFOV_deg`・`vFOV_deg`・`curve`、`world` は `position`・`yaw_deg`・`pitch_deg`・`roll_deg`・`scale` と、`lens` の Lane を持つ Sticker だけ `lens`（`curve`・`hFOV_deg`））、`opacity` |
@@ -557,7 +557,7 @@ applyUpstreamOverrides(layerState, record) // -> object, web_src/pano_scene_inhe
 - 層に無い `id` の上書きと消した記録は何もしない。Sticker の並び順は変えない。そうした記録は、エディタが編集を書き戻すとき（Undo の段を積むとき）に、今の実行結果にその層があれば捨てる（上流で消した要素の上書きと消した記録。結果に無い層の記録は捨てない。開いて閉じただけでは捨てない。`docs/editor-interaction.md` の「上流の Scene の表示と編集」）。
 - 当てたときの結果の `upstream` は `[]`、`id`・`timeline`・`next_sticker_id` は層のまま。結果は正規化済みの状態で、`load_scene_state` に通しても同じになる。
 - 鎖（A → B → C）では、B の記録を A に当てた結果に、C の記録を当てる。後に当てた記録が勝つ。
-- `PANO_SCENE` の層の状態は、自分の `upstream` を持たない（`[]`）。Panorama Studio が `scene` 出力で自分の層の `upstream` を空にするためである（`nodes.py` の `_scene_output`。上流の層はすでに上流の Studio が空にしている）。下流が層に当てる記録は、下流の状態の `upstream` だけである。
+- `PANO_SCENE` の層の状態は、自分の `upstream` を持たない（`[]`）。Panorama Studio が `scene` 出力で自分の層の `upstream` を空にするためである（`scene_build.py` の `_scene_output`。上流の層はすでに上流の Studio が空にしている）。下流が層に当てる記録は、下流の状態の `upstream` だけである。
 - フィクスチャは `tests/fixtures/scene_inherit/`（`layer`・`records`・`expected`。`records` を順に当てる。`layer_anchor`・`chained_anchor` は層の Sticker の素材の先頭からの相対）で、`tests/test_scene_inherit.py`（Python と、JS との一致）と `tests/pano_scene_inherit.test.mjs`（JS）で固定する。
 
 ## 版の判定
