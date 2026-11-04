@@ -88,7 +88,7 @@ def test_the_route_and_the_node_read_a_file_once_and_share_its_editor_file(input
     reads, writes = [], []
     read, write = nodes.read_mesh_file, nodes.write_editor_files
     monkeypatch.setattr("comfyui_pano_suite.file_3d.read_mesh_file", lambda file: reads.append(file) or read(file))
-    monkeypatch.setattr(nodes, "write_editor_files", lambda value, progress=None: writes.append(progress) or write(value, progress))
+    monkeypatch.setattr("comfyui_pano_suite.media_ui.write_editor_files", lambda value, progress=None: writes.append(progress) or write(value, progress))
 
     _status, payload = _post({"filename": "model.glb", "subfolder": "3d"})
     again = _post({"filename": "model.glb", "subfolder": "3d"})[1]
@@ -111,7 +111,7 @@ def test_concurrent_requests_for_one_file_read_and_write_it_once(input_dir, monk
         return read(file)
 
     monkeypatch.setattr("comfyui_pano_suite.file_3d.read_mesh_file", slow_read)
-    monkeypatch.setattr(nodes, "write_editor_files", lambda value, progress=None: writes.append(1) or write(value, progress))
+    monkeypatch.setattr("comfyui_pano_suite.media_ui.write_editor_files", lambda value, progress=None: writes.append(1) or write(value, progress))
     results = []
 
     def request():

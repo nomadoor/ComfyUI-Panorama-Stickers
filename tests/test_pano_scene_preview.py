@@ -188,7 +188,7 @@ def test_a_pano_scene_preview_gives_the_upstream_keys(monkeypatch, background):
     rendered = []
     monkeypatch.setattr("comfyui_pano_suite.scene_render.render_frame", lambda *args, **kwargs: rendered.append(1))
     monkeypatch.setattr("comfyui_pano_suite.scene_render._render_frames", lambda *args, **kwargs: rendered.append(1))
-    monkeypatch.setattr(nodes, "write_editor_files", lambda *args, **kwargs: rendered.append(1))
+    monkeypatch.setattr("comfyui_pano_suite.media_ui.write_editor_files", lambda *args, **kwargs: rendered.append(1))
 
     output = _preview(pano_scene)
 
@@ -291,7 +291,7 @@ def test_studio_ui_saves_video_media_without_reading_it_whole(tmp_path, monkeypa
 def test_studio_ui_makes_the_background_mp4_once_per_input(tmp_path, monkeypatch):
     encoded = []
     encode_editor_mp4 = nodes.encode_editor_mp4
-    monkeypatch.setattr(nodes, "encode_editor_mp4", lambda opened, progress=None: encoded.append(opened) or encode_editor_mp4(opened, progress))
+    monkeypatch.setattr("comfyui_pano_suite.media_ui.encode_editor_mp4", lambda opened, progress=None: encoded.append(opened) or encode_editor_mp4(opened, progress))
     video = _video(tmp_path, count=6)
     images = _solid([0.5, 0.5, 0.5], batch=3)
 

@@ -43,11 +43,17 @@ def render_only_runtime():
     Those paths write into ComfyUI's temp directory and are not part of the rendered output.
     """
     host_runtime = nodes.NODE_RUNTIME
-    nodes.NODE_RUNTIME = NodeRuntime()
+    # Every node module holds the one runtime (`node_runtime.NODE_RUNTIME`); each is given the bare one.
+    holders = [module for name, module in list(sys.modules.items())
+               if name.startswith(f"{nodes.__package__}.") and getattr(module, "NODE_RUNTIME", None) is host_runtime]
+    bare = NodeRuntime()
+    for module in holders:
+        module.NODE_RUNTIME = bare
     try:
         yield
     finally:
-        nodes.NODE_RUNTIME = host_runtime
+        for module in holders:
+            module.NODE_RUNTIME = host_runtime
 
 
 def build_background_erp() -> torch.Tensor:

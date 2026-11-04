@@ -250,7 +250,7 @@ def test_same_3d_file_on_the_sticker_input_is_read_once_and_keeps_its_editor_fil
     reads, writes = [], []
     read, write = nodes.read_mesh_file, nodes.write_editor_files
     monkeypatch.setattr("comfyui_pano_suite.file_3d.read_mesh_file", lambda model: reads.append(model) or read(model))
-    monkeypatch.setattr(nodes, "write_editor_files", lambda value, progress=None: writes.append(value) or write(value, progress))
+    monkeypatch.setattr("comfyui_pano_suite.media_ui.write_editor_files", lambda value, progress=None: writes.append(value) or write(value, progress))
 
     first = _execute(sticker=file)
     again = _execute(sticker=Types.File3D(str(tmp_path / "square.obj")))

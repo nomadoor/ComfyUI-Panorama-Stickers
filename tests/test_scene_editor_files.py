@@ -204,7 +204,7 @@ def test_same_input_reuses_its_files(monkeypatch):
     written = path.stat().st_mtime_ns
     calls = []
     original = nodes.write_editor_files
-    monkeypatch.setattr(nodes, "write_editor_files", lambda value, progress=None: calls.append(value) or original(value, progress))
+    monkeypatch.setattr("comfyui_pano_suite.media_ui.write_editor_files", lambda value, progress=None: calls.append(value) or original(value, progress))
 
     assert nodes._scene_ui(splat) == first
     assert calls == [] and path.stat().st_mtime_ns == written

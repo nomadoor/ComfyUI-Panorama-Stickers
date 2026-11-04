@@ -3,7 +3,6 @@ import json
 import math
 from collections import Counter
 from dataclasses import replace
-from fractions import Fraction
 from pathlib import Path
 import logging
 
@@ -12,14 +11,11 @@ import torch
 import torch.nn.functional as F
 from PIL import Image
 import comfy.model_management
-import folder_paths
 from comfy_api.latest import ComfyExtension, Input, Types, io
 from typing_extensions import override
 
 from .comfy_image_resolver import resolve_painting_layer_payload
 from .node_runtime import NODE_RUNTIME, _NodeProgress, _audio_signature, _tensor_cache_identity
-from .progress import loop_progress
-from .core.cache import file_key
 from .core.cutout import build_cutout_sampling_map, sample_cutout_from_sampling_map
 from .core.display_list import (
     alpha_composite_over_rgba as _alpha_composite_over_rgba,
@@ -52,16 +48,30 @@ from .core.stickers import load_source_rgba
 from .core.video import (
     editor_ready,
     encode_editor_mp4,
-    entry_from_path,
-    make_frames_ui_payload,
-    make_video_ui_payload,
-    mp4_has_audio,
     save_editor_frames,
-    save_video_to_mp4,
 )
-from .core.video_source import MaterializedVideo, StreamedVideo, pts_tolerance
 from . import file_3d
-from .file_3d import FILE_NOT_FOUND, NEITHER_3D_READER, _check_da3_inputs, _check_moge_inputs, _file_3d_error, _read_file_3d, _read_scene_file, _scene_content
+from .file_3d import (
+    _check_da3_inputs,
+    _check_moge_inputs,
+    _file_3d_error,
+    _read_file_3d,
+    _read_scene_file,
+    _scene_content,
+)
+from . import media_ui as media_ui_module
+from .media_ui import (
+    _append_preview_video_from_batch,
+    _bg_media_ui,
+    _flush_warnings,
+    _get_preview_ui_contract,
+    _init_ui_preview,
+    _merge_ui_payload,
+    _port_media_ui,
+    _push_ui_warning,
+    _scene_ui,
+    _video_ui,
+)
 from .pano_scene import PanoScene, PanoSceneValue, SceneLayer
 from .port_sticker import (
     PORT_3D_FIT_FOV_DEG,
@@ -77,16 +87,10 @@ from .scene_files import write_editor_files
 from .scene_render import DEVICE_SOURCE_FACTOR, RENDER_FLOATS_PER_PIXEL, _render_frames, _render_outputs
 from .scene_timeline import _decide_timeline, _open_media, _timing_video
 from .scene_mesh import (
-    da3_key,
-    depth_grid_intrinsics,
-    is_da3,
-    is_moge,
-    is_unlit,
     mesh_animation,
     read_mesh_file,
 )
-from .scene_video import SceneVideo
-from .sticker_media import PortMedia, content_box, open_video, stream_video
+from .sticker_media import PortMedia, open_video
 _log = logging.getLogger(__name__)
 
 
@@ -157,10 +161,6 @@ def _apply_overlay_coverage_to_mask(arr, coverage: int, out_w: int, out_h: int):
     if int(mask.shape[0]) != int(out_h) or int(mask.shape[1]) != int(out_w):
         mask = _resize_image_like(np.clip(mask * 255.0, 0.0, 255.0).astype(np.uint8), out_w, out_h, mode="mask").astype(np.float32) / 255.0
     return mask
-
-
-def _push_ui_warning(ui_ret: dict, key: str, message: str):
-    NODE_RUNTIME.warn(ui_ret, key, message)
 
 
 def _iter_external_sticker_payloads(sticker_image=None, sticker_state=None):
@@ -297,43 +297,6 @@ def _batch_to_torch(batch: np.ndarray):
     return torch.from_numpy(arr.astype(np.float32, copy=False))
 
 
-def _merge_ui_payload(ui_ret: dict, payload: dict | None):
-    return NODE_RUNTIME.merge_ui_payload(ui_ret, payload)
-
-
-def _append_video_payload(
-    ui_ret: dict,
-    frames: np.ndarray | None,
-    fps: float,
-    audio,
-    *,
-    warning_key: str,
-    include_comfy_preview: bool = False,
-    video_key: str = "pano_videos",
-    meta_key: str = "pano_video_meta",
-    progress_callback=None,
-):
-    NODE_RUNTIME.append_video(
-        ui_ret,
-        frames,
-        fps,
-        audio,
-        warning_key=warning_key,
-        include_comfy_preview=include_comfy_preview,
-        video_key=video_key,
-        meta_key=meta_key,
-        progress_callback=progress_callback,
-    )
-
-
-def _init_ui_preview(image, *, key="pano_input_images") -> dict:
-    return NODE_RUNTIME.init_preview(image, key=key)
-
-
-def _flush_warnings(ui_ret: dict, warning_key: str, warnings: list[str] | None):
-    NODE_RUNTIME.flush_warnings(ui_ret, warning_key, warnings)
-
-
 def _make_batched_image_and_mask_outputs(out_batch: np.ndarray, mask_bw: np.ndarray):
     batch = np.asarray(out_batch, dtype=np.float32)
     if batch.ndim == 3:
@@ -342,33 +305,6 @@ def _make_batched_image_and_mask_outputs(out_batch: np.ndarray, mask_bw: np.ndar
     out_t = _batch_to_torch(batch)
     mask_t = _batch_to_torch(mask_batch)
     return out_t, mask_t, batch
-
-
-def _append_preview_video_from_batch(
-    ui_ret: dict,
-    out_batch: np.ndarray | None,
-    fps: float,
-    audio,
-    *,
-    warning_key: str,
-    video_key: str = "pano_videos",
-    meta_key: str = "pano_video_meta",
-    progress_callback=None,
-):
-    _append_video_payload(
-        ui_ret,
-        out_batch,
-        fps,
-        audio,
-        warning_key=warning_key,
-        video_key=video_key,
-        meta_key=meta_key,
-        progress_callback=progress_callback,
-    )
-
-
-def _get_preview_ui_contract(kind: str = "default") -> dict:
-    return NODE_RUNTIME.preview_contract(kind)
 
 
 def _finalize_batched_node_output(
@@ -1058,166 +994,6 @@ def _override_layer(layer: SceneLayer, record: dict, rate: float) -> tuple[Scene
     return replace(layer, state=state, sources=sources, port=port), ends
 
 
-def _bg_media_ui(bg_media, bg, fps: float) -> dict:
-    """The `ui` of `bg_media`: its first frame, and an MP4 when it has two or more frames. `bg` is the opened VIDEO;
-    an IMAGE batch plays at `fps`. The MP4 is made once per input and reused while the input stays the same."""
-    contract = _get_preview_ui_contract("stickers_bg")
-    if isinstance(bg_media, Input.Video):
-        return _video_ui(bg_media, bg, float(bg.frame_rate), len(bg.times), contract)
-    ui_ret = _init_ui_preview(bg_media, key=contract["image"])
-    if bg_media.shape[0] > 1:
-        _merge_ui_payload(ui_ret, _batch_mp4_ui(bg_media, "bg_media", fps, contract))
-    return ui_ret
-
-
-def _batch_mp4_ui(images: torch.Tensor, name: str, fps: float, contract: dict) -> dict:
-    """The `ui` of the editor MP4 of an IMAGE batch, evenly spaced at `fps`, made once per batch and fps."""
-    batch = MaterializedVideo(Types.VideoComponents(images=images, frame_rate=Fraction(round(fps * 1000), 1000)), name)
-    cache_key = ("editor_mp4", _tensor_cache_identity(images), float(fps))
-    return _editor_mp4_ui(cache_key, lambda: encode_editor_mp4(batch, loop_progress()), fps, len(batch.times), contract)
-
-
-def _editor_frames_ui(images: torch.Tensor, fps: float, contract: dict) -> dict:
-    """The `ui` of an RGBA IMAGE batch as one PNG per image, saved once per batch and reused while the files are
-    there. Each image is a file of its own, so a long batch costs a PNG per image in temp."""
-    cache_key = ("editor_frames", _tensor_cache_identity(images))
-    paths = NODE_RUNTIME.cache.get("video", cache_key)
-    if paths is None or not all(path.exists() for path in paths):
-        paths = save_editor_frames(images, loop_progress())
-        NODE_RUNTIME.cache.put("video", cache_key, paths)
-    return make_frames_ui_payload(paths, fps, frames_key=contract["frames"], meta_key=contract["meta"])
-
-
-def _port_media_ui(port: PortMedia, fps: float, time_base) -> dict:
-    """The `ui` of the sticker media: its first frame, and an MP4 for the editor to follow the Timeline with when it
-    has two or more frames (a one-frame VIDEO has the meta only), made like the bg_media one. An RGBA IMAGE batch is PNGs instead (`_editor_frames_ui`),
-    since an MP4 drops the alpha that the `video` output keeps. The meta tells how a Timeline frame maps to the MP4 as
-    `PortMedia.index_at` maps it: `kind`, `duration` (where the media ends), and for a VIDEO `pts_tolerance`, the
-    seconds before a PTS that count as its frame (half the time base of the media or `time_base`, that of the
-    Timeline's times). 3D media is its editor files instead (`_scene_ui`)."""
-    if port.is_3d:
-        return _scene_ui(port.media, "pano_sticker_files", "pano_sticker_meta", fps=fps)
-    contract = _get_preview_ui_contract("stickers_input")
-    ui_ret = _init_ui_preview(port.first_frame[None], key=contract["image"])
-    video = port.media
-    if port.times is None:
-        if video.shape[0] < 2:
-            return ui_ret
-        payload = _editor_frames_ui(video, fps, contract) if video.shape[-1] == 4 else _batch_mp4_ui(video, "sticker", fps, contract)
-        payload[contract["meta"]][0]["kind"] = "IMAGE"
-    else:
-        if len(port.times) < 2:
-            # No MP4 for one frame, but the meta tells the editor where the media ends (`PortMedia.end`).
-            end = float(port.times[-1] + 1 / port.frame_rate)
-            meta = {"kind": "VIDEO", "fps": float(port.frame_rate), "frames": 1, "duration": end, "has_audio": False}
-            return {**ui_ret, contract["meta"]: [meta]}
-        # The VIDEO is opened again only to make the MP4; PortMedia does not keep it open.
-        cache_key = ("editor_mp4", _video_cache_identity(video, port.streamed))
-        payload = _editor_mp4_ui(cache_key, lambda: _editor_mp4(video, open_video(video, "sticker")), float(port.frame_rate), len(port.times), contract)
-        time_base = max(port.time_base, time_base)
-        payload[contract["meta"]][0].update(kind="VIDEO", duration=float(port.times[-1] + 1 / port.frame_rate), pts_tolerance=pts_tolerance(time_base))
-    return _merge_ui_payload(ui_ret, payload)
-
-
-SCENE_FILE_TYPES = {"ply": "application/ply", "glb": "model/gltf-binary", "f32": "application/octet-stream"}
-
-
-def _editor_paths(paths: list) -> list:
-    """Every file of the items' editor files: an item is None, a path, or a list of paths (DA3_GEOMETRY multiview)."""
-    return [view for path in paths if path is not None for view in (path if isinstance(path, list) else [path])]
-
-
-def _scene_ui(scene, files_key: str = "pano_scene_files", meta_key: str = "pano_scene_meta", *, in_execution: bool = True, fps: float | None = None) -> dict:
-    """The `ui` of the `scene` input, or of 3D media on the `sticker` input under the given keys: a temp file per
-    item for the editor (`write_editor_files`; a list of files for a DA3_GEOMETRY multiview), None for an empty item,
-    and the kind it loads with, for a mesh,
-    whether it is `unlit`. The files are written once per input and reused while they are there, keyed by the input
-    and the tensors it is read from (a MOGE_GEOMETRY is a dict), so the same SPLAT or MESH on both inputs, or read
-    for the editor's route, shares them; concurrent callers write them once. Outside an execution (the route) the
-    writing reports no progress and checks no Cancel."""
-    if is_da3(scene):
-        cache_key = da3_key(scene)
-    elif isinstance(scene, dict):
-        cache_key = tuple((key, _tensor_cache_identity(scene[key])) for key in ("points", "mask", "image", "intrinsics") if key in scene)
-    else:
-        positions = scene.positions if isinstance(scene, Types.SPLAT) else scene.vertices
-        cache_key = (NODE_RUNTIME.object_identity(scene), _tensor_cache_identity(positions))
-    saved = NODE_RUNTIME.cache.get_or_put(
-        "scene_files", cache_key,
-        lambda: write_editor_files(scene, loop_progress() if in_execution else None),
-        valid=lambda saved: all(path.exists() for path in _editor_paths(saved[1])),
-    )
-    kind, paths = saved
-
-    def entry(path):
-        return entry_from_path(path, media_type=SCENE_FILE_TYPES[path.suffix[1:]])
-
-    # A DA3_GEOMETRY multiview item is the list of its views' files.
-    files = [None if path is None else [entry(view) for view in path] if isinstance(path, list) else entry(path) for path in paths]
-    meta = {"kind": kind} if kind == "splat" else {"kind": kind, "unlit": is_unlit(scene)}
-    if kind == "depth_grid":
-        meta.update(_depth_grid_meta(scene, fps))
-    animation = _animation_meta(scene)
-    if animation is not None:
-        meta["animation"] = animation
-    return {files_key: files, meta_key: [meta]}
-
-
-# The media types of the original glTF the editor plays an animation from.
-GLTF_TYPES = {".glb": "model/gltf-binary", ".gltf": "model/gltf+json"}
-
-
-def _animation_meta(media) -> dict | None:
-    """What the editor plays the glTF clips of `media` with (docs/studio-node.md, "glTF のアニメーションのエディタ用ファイル"):
-    the original file's `ui` entry, the clips in the file's order, and the content's box (`content_box`: the first
-    clip's pose at time 0), `{"source", "clips": [{"name", "duration"}], "box": {"min", "max"}}`;
-    None without clips, or when the browser cannot load the original whole (outside ComfyUI's folders, or a GLTF with
-    an external buffer, which also logs a warning). The editor then draws the still GLB."""
-    animation = mesh_animation(media)
-    if animation is None or not animation.clips:
-        return None
-    if not media.self_contained:
-        _log.warning("Panorama Stickers: %s keeps its data in another file, so the editor shows it still; the output plays its animation.",
-                     Path(media.source).name if media.source else "a glTF")
-        return None
-    entry = None if media.source is None else _view_entry(media.source, GLTF_TYPES.get(Path(media.source).suffix.lower(), "model/gltf-binary"))
-    if entry is None:
-        return None
-    return {"source": entry, "clips": [{"name": clip.name, "duration": clip.duration} for clip in animation.clips], "box": content_box(media)}
-
-
-def _view_entry(path, media_type: str) -> dict | None:
-    """The `ui` entry of a file in ComfyUI's input, output, or temp directory, which `/view` serves, or None for a
-    file elsewhere."""
-    target = Path(path).resolve()
-    for storage, directory in (("input", folder_paths.get_input_directory), ("output", folder_paths.get_output_directory), ("temp", folder_paths.get_temp_directory)):
-        try:
-            rel = target.relative_to(Path(directory()).resolve())
-        except ValueError:
-            continue
-        subfolder = rel.parent.as_posix()
-        return {"filename": rel.name, "subfolder": "" if subfolder == "." else subfolder, "type": storage, "storage": storage, "format": media_type}
-    return None
-
-
-def _depth_grid_meta(geometry: dict, fps: float) -> dict:
-    """The meta of the depth files of a DA3_GEOMETRY mono or a MOGE_GEOMETRY perspective sequence (docs/studio-node.md,
-    "`DA3_GEOMETRY` mono のエディタ用ファイル"): the grid's size, the files' layout, each frame's K of pixel numbers
-    (row order, `depth_grid_intrinsics`), and the color proxy MP4 of the frames' `image` at the Timeline `fps` (frame
-    i at i / fps), made as an IMAGE batch's."""
-    if fps is None:
-        raise ValueError("_scene_ui needs the Timeline fps for a depth grid: its color proxy plays at that fps.")
-    # The size of the depth files: the points' (MoGe) or the depth's (DA3), not the image's.
-    count, height, width = (geometry["points"] if is_moge(geometry) else geometry["depth"]).shape[:3]
-    proxy = _batch_mp4_ui(geometry["image"], "scene", fps, {"video": "video", "meta": "meta"})
-    return {
-        "width": int(width), "height": int(height),
-        "depth": {"dtype": "float32", "byte_order": "little", "bytes": int(width * height * 4)},
-        "intrinsics": depth_grid_intrinsics(geometry),
-        "video": proxy["video"][0], "video_fps": float(fps), "frames": int(count),
-    }
-
-
 def _build_scene(state_json: str, background, world, scene, sticker, sticker_state, background_color, background_range, warnings: list[str]):
     """The Scene that Studio builds from its inputs, as the PANO_SCENE value: the state with the port Sticker
     appended when missing, its sources, the Timeline (counting the state's Camera), and the media `ui` for the
@@ -1262,7 +1038,7 @@ def _build_scene(state_json: str, background, world, scene, sticker, sticker_sta
     # The `ui` shows the input media in the editor and on the node, under the legacy node's keys.
     layer_ui = {}
     if world is not None:
-        _merge_ui_payload(layer_ui, _scene_ui(world, fps=fps))
+        _merge_ui_payload(layer_ui, media_ui_module._scene_ui(world, fps=fps))
     if port is not None:
         _merge_ui_payload(layer_ui, _port_media_ui(port, fps, time_base))
     if inherited_bg:
@@ -1770,71 +1546,6 @@ def _preview_ui(images: torch.Tensor, fps: float, audio, unique_id) -> dict:
     progress.set(1 + video_span)
     progress.stage("Done")
     progress.finish()
-    return ui_ret
-
-
-def _video_cache_identity(video, streamed: bool) -> tuple:
-    """A VIDEO that `open_video` streams from its file (so without a crop) is its file and trim window; any other
-    VIDEO is the object itself."""
-    if streamed:
-        source = video.get_stream_source()
-        if isinstance(source, str):
-            path, mtime_ns, _size = file_key(source)
-            return ("file", path, mtime_ns, video.get_active_trim_window())
-    return NODE_RUNTIME.object_identity(video)
-
-
-def _editor_mp4(video, opened) -> tuple[Path, bool]:
-    """The MP4 the editor plays for a VIDEO opened by `open_video` as `opened`, and whether it has audio. A file the
-    core copies into an MP4 that seeks fast already (`editor_ready`) is copied, or played as it is when it is an MP4
-    in the input directory; a Studio `video` shows
-    its stream source when that seeks fast. Otherwise a proxy is encoded (`encode_editor_mp4`), from the file
-    again for a VIDEO read from its file, since `opened` has moved on, so the frames are never all in memory."""
-    if isinstance(video, SceneVideo):
-        # Its stream source is an MP4 in temp already, kept by the video itself, and is what SaveVideo copies.
-        source = video.get_stream_source()
-        if editor_ready(source):
-            return Path(source), mp4_has_audio(source)
-        return encode_editor_mp4(stream_video(source, 0, 0, "source"), loop_progress())
-    if isinstance(opened, StreamedVideo):
-        source, trim = video.get_stream_source(), video.get_active_trim_window()
-        # The core copies the streams only without a trim window, and reads a file in memory as it is.
-        if isinstance(source, str) and not any(trim) and editor_ready(source):
-            # An MP4 in the input directory is played from there; the browser is served it by its extension.
-            if _input_entry(source) is not None and Path(source).suffix.lower() == ".mp4":
-                return Path(source), mp4_has_audio(source)
-            return save_video_to_mp4(video, Types.VideoContainer.MP4, Types.VideoCodec.H264)
-        return encode_editor_mp4(stream_video(source, *trim, "source"), loop_progress())
-    return encode_editor_mp4(opened, loop_progress())
-
-
-def _input_entry(path) -> dict | None:
-    """The `ui` entry of an MP4 in ComfyUI's input directory, or None for a file elsewhere."""
-    entry = _view_entry(path, "video/mp4")
-    return entry if entry is not None and entry["type"] == "input" else None
-
-
-def _editor_mp4_ui(cache_key: tuple, make, fps: float, frame_count: int, contract: dict) -> dict:
-    """The `ui` of the editor MP4 that `make()` saves, made once per `cache_key` and reused while the file is there.
-    The MP4 is a temp file, or the input file itself (`_editor_mp4`)."""
-    saved = NODE_RUNTIME.cache.get("video", cache_key)
-    if saved is None or not saved[0].exists():
-        saved = make()
-        NODE_RUNTIME.cache.put("video", cache_key, saved)
-    path, has_audio = saved
-    payload = make_video_ui_payload(path, fps, frame_count, video_key=contract["video"], meta_key=contract["meta"], video_entry=_input_entry(path))
-    payload[contract["meta"]][0]["has_audio"] = has_audio
-    return payload
-
-
-def _video_ui(video, opened, fps: float, frame_count: int, contract: dict) -> dict:
-    """The `ui` of a VIDEO opened by `open_video`: its first frame, and the editor MP4 (`_editor_mp4`) when it has
-    two or more frames. The frames are not read into one batch (ADR 0018), and the MP4 is reused while the VIDEO
-    stays the same."""
-    ui_ret = _init_ui_preview(opened.first_frame[None], key=contract["image"])
-    if frame_count > 1:
-        cache_key = ("editor_mp4", _video_cache_identity(video, isinstance(opened, StreamedVideo)))
-        _merge_ui_payload(ui_ret, _editor_mp4_ui(cache_key, lambda: _editor_mp4(video, opened), fps, frame_count, contract))
     return ui_ret
 
 

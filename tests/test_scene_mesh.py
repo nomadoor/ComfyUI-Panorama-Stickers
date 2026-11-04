@@ -232,7 +232,7 @@ def test_same_mesh_file_is_read_once_and_keeps_its_editor_files(tmp_path, monkey
     reads, writes = [], []
     read, write = nodes.read_mesh_file, nodes.write_editor_files
     monkeypatch.setattr("comfyui_pano_suite.file_3d.read_mesh_file", lambda file: reads.append(file) or read(file))
-    monkeypatch.setattr(nodes, "write_editor_files", lambda value, progress=None: writes.append(value) or write(value, progress))
+    monkeypatch.setattr("comfyui_pano_suite.media_ui.write_editor_files", lambda value, progress=None: writes.append(value) or write(value, progress))
 
     first = nodes.PanoramaStudioNode.execute(background_color="#00ff00", background_range="360", megapixels=0.5, multiple=8, state_json="", world=Types.File3D(str(path)))
     again = nodes.PanoramaStudioNode.execute(background_color="#00ff00", background_range="360", megapixels=0.5, multiple=8, state_json="", world=Types.File3D(str(path)))
@@ -550,7 +550,7 @@ def test_editor_files_are_written_once_per_input_dict(monkeypatch):
     geometry = _mono()
     writes = []
     write = nodes.write_editor_files
-    monkeypatch.setattr(nodes, "write_editor_files", lambda value, progress=None: writes.append(value) or write(value, progress))
+    monkeypatch.setattr("comfyui_pano_suite.media_ui.write_editor_files", lambda value, progress=None: writes.append(value) or write(value, progress))
 
     first = _da3_execute(world=geometry)
     again = _da3_execute(world=geometry, state={"version": 2, "timeline": {"fps": 12}})
