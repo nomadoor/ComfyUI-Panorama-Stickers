@@ -57,14 +57,18 @@ const STATE = {
   timeline: { fps: 24, length: 240 },
   camera: {
     projection: mode === "panorama" ? "erp" : "perspective",
+    // ?locked=1: a locked Camera.
+    ...(params.has("locked") ? { locked: true } : {}),
     aspect: aw / ah,
     position: { value: [...CAMERA.position] },
     rotation: { value: { yaw_deg: CAMERA.yaw, pitch_deg: cameraPitch, roll_deg: CAMERA.roll } },
-    fov: { value: CAMERA.fov },
+    // ?fovkeys=1: the fov Lane keyed at frames 0 and 40.
+    fov: params.has("fovkeys") ? { keyframes: [{ frame: 0, value: CAMERA.fov }, { frame: 40, value: CAMERA.fov }] } : { value: CAMERA.fov },
     ...(params.has("curve") ? { curve: { value: Number(params.get("curve")) } } : {}),
   },
   stickers: [
-    ...MARKERS.map(([name, yaw, pitch, rgb], index) => ({
+    // ?sky=1: no World content (the sky image only).
+    ...(params.has("sky") ? [] : MARKERS).map(([name, yaw, pitch, rgb], index) => ({
       id: `sticker_${index + 1}`,
       placement: "world",
       source: { kind: "file", data_url: solid(`rgb(${rgb.join(",")})`) },

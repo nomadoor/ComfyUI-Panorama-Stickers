@@ -19,12 +19,13 @@ const DOUBLE_CLICK_AFTER_PICK_MS = 600;
 const CLICK_SLOP = 3;
 
 // canvas, root, world, selected, onEscape, follow, paint, win, now, objectDeps (createStage's `objects`): createStage's.
+// report(result): shows a move's notice (stage.js).
 // camera, input, wheelSteps, editorView, scheduler, objects: the stage's viewpoint, keys, wheel, three.js view, render
 // loop and objects. The rest are the functions of stage.js and stage_frame_view.js the gestures call.
 export function createStageInput(shared, {
   canvas, root, world, selected, onEscape, follow, paint, win, now, objectDeps,
   camera, input, wheelSteps, editorView, scheduler, objects,
-  viewMode, viewport, navCamera, commitFrame, cancelFrame,
+  viewMode, viewport, navCamera, commitFrame, cancelFrame, zoomFrame, report,
   stopCoast, local, objectsOn, paintOn, directionsOf, samplesOf, moved, setPicking, setCenterAt, syncUi, requestDraw, resize,
 }) {
   // When (now(), ms) the wait's press last set T: the double click its clicks may make is not a second one.
@@ -318,9 +319,18 @@ export function createStageInput(shared, {
   }
 
   // One zoom step (docs/space-and-view.md "寄る"): the 3D tab's and the Preview window's view changes its FOV at once (a
-  // coast stops, as another operation starts).
+  // coast stops, as another operation starts); the Camera tab's Frame view changes the Camera's H FOV ("Frame 表示");
+  // Panorama mode changes nothing and says so ("黙って何もしない操作").
   function zoom(step) {
-    if (viewMode() !== "space") return;
+    const mode = viewMode();
+    if (mode === "erp") {
+      report({ notice: "fov-panorama" });
+      return;
+    }
+    if (mode === "frame") {
+      if (zoomFrame(step)) requestDraw();
+      return;
+    }
     stopCoast();
     if (camera.zoom(step).moved) requestDraw();
   }

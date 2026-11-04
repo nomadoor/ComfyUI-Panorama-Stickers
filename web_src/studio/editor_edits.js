@@ -8,6 +8,9 @@ import { cameraShot } from "../pano_editor_state.js";
 import { loadSceneState } from "../pano_scene_state.js";
 import { needsPaintLayer, textWithPaintLayer, uploadPaintLayer } from "./paint_upload.js";
 import { cameraOf, editableCamera, moveCameraPose } from "./camera_state.js";
+import { fovStepValue } from "../pano_camera_math.js";
+import { cameraRulers, rulerEdit } from "./frame_layout.js";
+import { buildCameraCard } from "./inspector_model.js";
 import { LINE_TEXT } from "./notice_line.js";
 
 // The edits and writing to the node.
@@ -108,6 +111,46 @@ export function createEditorEdits(ctx) {
     commit: () => objectOutcome(ctx.session.commitGesture()),
     cancel: () => objectOutcome(ctx.session.cancelGesture()),
   };
+  // The Frame view's Alt + wheel (docs/space-and-view.md "Frame 表示"; ADR 0061): each step writes the FOV ruler's
+  // arrow-key value (pano_camera_math.js fovStepValue in the ruler's range and digits) by the ruler's own path
+  // (frame_layout.js rulerEdit into the inspector's edit), "input" until the stage ends the run with commit (one Undo
+  // step) or cancel. The run: { value (the last written), playhead (where it writes: a seek or playback before the run
+  // ends does not move its Keyframe) }, or null.
+  let fovRun = null;
+  const rulersAt = (playhead) => cameraRulers(buildCameraCard({ state: ctx.session.state, playhead, readOnly: ctx.readOnly }));
+  function fovApply(edit, playhead) {
+    const outcome = ctx.session.applyInspector(edit, { ...inspectorContext(), playhead });
+    // A step stops playback as every move of the Frame view does (docs/space-and-view.md "Frame 表示" 記録).
+    if (outcome.changed || outcome.stopPlayback) ctx.playback.stop();
+    ctx.sync();
+    return outcome;
+  }
+  const cameraFov = {
+    // One step (`step` > 0 rolled away: a smaller FOV); whether the H FOV changed (not at its range's end, the ruler
+    // not grayed).
+    step(step) {
+      const playhead = fovRun?.playhead ?? ctx.view.playhead;
+      const rulers = rulersAt(playhead);
+      if (!rulers || rulers.fov.disabled) return false;
+      const { value, min, max, precision } = rulers.fov;
+      const next = fovStepValue(value, -Math.sign(step), { min, max, precision });
+      if (next === value || !fovApply(rulerEdit(rulers, "fov", "input", next), playhead).changed) return false;
+      fovRun = { value: next, playhead };
+      return true;
+    },
+    commit() {
+      if (!fovRun) return;
+      const { value, playhead } = fovRun;
+      fovRun = null;
+      fovApply(rulerEdit(rulersAt(playhead), "fov", "change", value), playhead);
+    },
+    cancel() {
+      if (!fovRun) return;
+      const { playhead } = fovRun;
+      fovRun = null;
+      fovApply(rulerEdit(rulersAt(playhead), "fov", "cancel"), playhead);
+    },
+  };
   // [inputs] An upstream background's bg_color while it stands in.
   const backgroundColor = () => parseInt(ctx.backgroundNow().color.replace("#", ""), 16) || 0;
   const cameraTab = {
@@ -121,6 +164,7 @@ export function createEditorEdits(ctx) {
     backgroundColor,
     output: () => ctx.outputCanvases,
     edits: cameraEdits,
+    fov: cameraFov,
   };
 
   // The left column's Camera button (docs/studio-ui.md "エディタの中の Camera"): the Camera to the 3D tab's view, as one

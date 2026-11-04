@@ -49,6 +49,9 @@ export function stageUi() {
     // whether the view is (going to) the start view, where Reset View is off (view_camera.js atResetView).
     fov: DEFAULT_VIEW_HFOV,
     atStart: true,
+    // Alt is held without a drag in the Camera tab's Frame view with a Camera that moves: the FOV ruler shows that Alt +
+    // wheel changes it (docs/studio-ui.md "Camera タブ").
+    fovLit: false,
   };
 }
 
@@ -68,7 +71,8 @@ export function stageUi() {
 // tab() ("3d" or "camera"), mode() ("frame" or "panorama": the Camera's projection), shot() (the Camera at the
 // playhead, pano_editor_state.js cameraShot), erpRange() (360 or 180), frame() (the frame box in the stage's CSS px,
 // frame_layout.js frameRect, or null before it is laid out), erpCanvas() (the 2D canvas in the frame that shows the
-// live ERP, or null), movable() (the Camera may move: not locked, not read-only), backgroundColor() (the node's
+// live ERP, or null), movable() (the Camera may move: not locked, not read-only), fov ({ step(step), commit(), cancel() }:
+// the Frame view's Alt + wheel run of the Camera's H FOV, written by the editor), backgroundColor() (the node's
 // background color, a hex RGB: past a lens's reach), output() (the Output window's canvases while it is open:
 // { frame, erp }, a "bitmaprenderer" canvas for Frame mode and a 2D one for the live ERP, or null), and edits ({ live(pose), commit(), cancel() }: the Frame view's
 // moves of the Camera, pose { position, yaw_deg, pitch_deg }, written to its Lanes by the editor). Without it the
@@ -178,7 +182,7 @@ export function createStage({
 
   // --- The Camera tab: the Frame view, where the viewpoint is the Camera itself (a viewpoint of its own, whose moves
   // go to the Camera's Lanes), and Panorama mode, where the frame shows the live ERP and nothing moves.
-  const { viewMode, viewport, navCamera, writeFrame, commitFrame, cancelFrame } = createStageFrameView(shared, { cameraTab, camera, world, content, shownPose });
+  const { viewMode, viewport, navCamera, writeFrame, commitFrame, cancelFrame, zoomFrame } = createStageFrameView(shared, { cameraTab, camera, world, content, shownPose });
 
   // The kind of lens image the Frame view drew last (pano_lens.js lensRenderPlan's `previous`).
   let lensKind = null;
@@ -497,6 +501,7 @@ export function createStage({
   function syncUi() {
     ui.fov = Math.round(shownPose().hFOV_deg);
     ui.atStart = atResetView(camera.destination());
+    ui.fovLit = input.altHeld() && !shared.drag && viewMode() === "frame" && !!cameraTab?.movable();
     const gesture = input.gesture();
     ui.lit = litKnobs({ gesture, keysMoving: shared.keysMoving, altHeld: input.altHeld() });
     ui.knobDrag = !!shared.drag?.knob;
@@ -519,7 +524,7 @@ export function createStage({
   const { pointOf, hitAt, hoverAt, begin, end, endKeys, objectSelection, listen, unlisten } = createStageInput(shared, {
     canvas, root, world, selected, onEscape, follow, paint, win, now, objectDeps,
     camera, input, wheelSteps, editorView, scheduler, objects,
-    viewMode, viewport, navCamera, commitFrame, cancelFrame,
+    viewMode, viewport, navCamera, commitFrame, cancelFrame, zoomFrame, report,
     stopCoast, local, objectsOn, paintOn, directionsOf, samplesOf, moved, setPicking, setCenterAt, syncUi, requestDraw, resize,
   });
 

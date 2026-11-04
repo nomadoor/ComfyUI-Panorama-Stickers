@@ -619,6 +619,11 @@ test("a notice shows for BOUND_NOTICE_SECONDS after the last time it was shown",
   assert.equal(notice.current(5), null);
 });
 
+// docs/space-and-view.md "黙って何もしない操作" (ADR 0061): Alt + wheel in the Camera tab's Panorama mode says so.
+test("the notice of Alt + wheel in Panorama mode", () => {
+  assert.equal(VIEW_NOTICES["fov-panorama"], "Not available in Panorama mode");
+});
+
 // --- A T the user points at (ADR 0058): taken as it is, pulled back into the range before the moves that scale with d.
 
 // A content sphere far out grows the world bound well past TARGET_MAX_DISTANCE (48 at E = 1.6).

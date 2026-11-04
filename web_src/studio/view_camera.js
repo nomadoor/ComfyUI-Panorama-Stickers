@@ -16,6 +16,7 @@ import { DEFAULT_VIEW_HFOV, frameView, orbitView, sameView, viewAxes } from "../
 import { KEY_MOVE_FAST, keyMoveView } from "../pano_view_keys.js";
 import { restoredView, viewMemory } from "../pano_view_memory.js";
 import { worldRotation } from "../pano_world.js";
+import { PANORAMA_MODE_TIP } from "./camera_ui.js";
 import {
   ACTION_EASE_SECONDS,
   BOUND_NOTICE_SECONDS,
@@ -29,11 +30,13 @@ import {
   worldBoundRadius,
 } from "./view_scale.js";
 
-// The stage's one-line notices (docs/space-and-view.md "世界の境界", "黙って何もしない操作").
+// The stage's one-line notices (docs/space-and-view.md "世界の境界", "黙って何もしない操作"): "fov-panorama" is Alt + wheel
+// in the Camera tab's Panorama mode (ADR 0061).
 export const VIEW_NOTICES = Object.freeze({
   bound: "The view can't go farther",
   "nothing-to-focus": "Nothing to focus on",
   "nothing-to-frame": "Nothing to frame",
+  "fov-panorama": PANORAMA_MODE_TIP,
 });
 
 const add = (a, b, s = 1) => [a[0] + b[0] * s, a[1] + b[1] * s, a[2] + b[2] * s];

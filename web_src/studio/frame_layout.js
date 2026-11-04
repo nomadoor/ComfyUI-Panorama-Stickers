@@ -130,6 +130,8 @@ export function rulerSnapStep(value, dir, snap, { min = -Infinity, max = Infinit
 // `lensStart` is the Lens row's (a κ edit keeps the image's center scale from where it began). Null without the
 // Camera card.
 export const ROLL_RULER_RANGE = Object.freeze({ min: -180, max: 180 });
+// The FOV ruler's tooltip while it works (docs/studio-ui.md "Camera タブ" 辺の目盛りの tooltip; ADR 0061).
+export const FOV_WHEEL_TIP = "Alt+wheel over the view also changes it";
 
 export function cameraRulers(card) {
   if (card?.kind !== "camera") return null;
@@ -161,7 +163,7 @@ export function cameraRulers(card) {
   roll.atDefault = roll.disabled || Math.abs(roll.value - CAMERA_ROLL_DEFAULT) < 1e-9;
   return {
     target: card.target,
-    fov: ruler("FOV", hfov, "hFOV_deg", { scale: CAMERA_RULERS.fov, valueText: `${rulerLabel(hfov.fields[0].value, 0)}°` }),
+    fov: ruler("FOV", hfov, "hFOV_deg", { scale: CAMERA_RULERS.fov, valueText: `${rulerLabel(hfov.fields[0].value, 0)}°`, ...(hfov.disabled ? {} : { tip: FOV_WHEEL_TIP }) }),
     lens: ruler("Lens", lens, "curve", { scale: CAMERA_RULERS.lens, valueText: rulerLabel(lens.fields[0].value, 2), lensStart: lens.lensStart }),
     roll: { ...roll, valueText: `${rulerLabel(roll.value, 0)}°` },
   };

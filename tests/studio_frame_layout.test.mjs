@@ -13,7 +13,7 @@ import {
   rulerLabel,
   rulerMarks,
 } from "../web_src/studio/frame_layout.js";
-import { cameraRulers, rulerEdit } from "../web_src/studio/frame_layout.js";
+import { FOV_WHEEL_TIP, cameraRulers, rulerEdit } from "../web_src/studio/frame_layout.js";
 import { buildCameraCard, buildInspectorModel } from "../web_src/studio/inspector_model.js";
 import { loadSceneState } from "../web_src/pano_scene_state.js";
 import { FINE_FACTOR } from "../web_src/studio/ui_drag.js";
@@ -186,4 +186,17 @@ test("the FOV ruler reads the shared FOV step and drag scale", async () => {
   const { VIEW_FOV_DRAG_PX_PER_DEG, VIEW_FOV_STEP_DEG } = await import("../web_src/pano_camera_math.js");
   assert.equal(CAMERA_RULERS.fov.minor, VIEW_FOV_STEP_DEG);
   assert.equal(CAMERA_RULERS.fov.unitPx, VIEW_FOV_DRAG_PX_PER_DEG);
+});
+
+// docs/studio-ui.md "Camera タブ" 辺の目盛りの tooltip (ADR 0061): the FOV ruler tells about Alt + wheel while it works;
+// grayed, it gives the reason; Lens and Roll have a tooltip only when grayed.
+test("the FOV ruler's tooltip names Alt + wheel while it works", () => {
+  const frame = rulersOf(cameraState({ projection: "perspective" }));
+  assert.equal(FOV_WHEEL_TIP, "Alt+wheel over the view also changes it");
+  assert.equal(frame.fov.tip, FOV_WHEEL_TIP);
+  assert.equal(frame.lens.tip, "");
+  assert.equal(frame.roll.tip, "");
+  assert.equal(rulersOf(cameraState({ projection: "erp" })).fov.tip, "Used in Frame mode");
+  assert.equal(rulersOf(cameraState({ projection: "perspective" }), { readOnly: true }).fov.tip, "Read-only");
+  assert.equal(rulersOf(cameraState({ projection: "perspective", locked: true })).fov.tip, "Locked · Unlock in the 3D tab");
 });

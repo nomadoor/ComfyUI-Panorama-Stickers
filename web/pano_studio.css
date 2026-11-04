@@ -2281,6 +2281,13 @@
 .pano-studio-edge-ruler.is-right .pano-studio-edge-ruler-num { left: 24px; }
 .pano-studio-edge-ruler.is-horizontal .pano-studio-edge-ruler-num { top: 22px; transform: translateX(-50%); }
 
+/* Alt held in the Frame view (docs/studio-ui.md "Camera タブ", docs/design.md): the FOV ruler, which Alt + wheel changes,
+   looks as the keyboard's focus does (its band's fill white 10%, its text white). */
+.pano-studio-edge-ruler.is-lit .pano-studio-edge-ruler-track {
+  background-color: var(--studio-focus-fill);
+  color: var(--studio-focus-fg);
+}
+
 /* Panorama mode: FOV and Lens stay in their places, gray and untouchable. */
 .pano-studio-edge-ruler.is-disabled {
   opacity: 0.35;

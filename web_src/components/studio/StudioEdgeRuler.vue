@@ -46,6 +46,9 @@ const props = defineProps({
   // The value an arrow key gives, stepValue(value, dir, { min, max, precision, fine }) (`fine` the share of a step
   // Shift keeps, 1 without it): the FOV ruler's is pano_camera_math.js fovStepValue. Null: one small tick (`minor`).
   stepValue: { type: Function, default: null },
+  // Looks as the keyboard's focus does (Alt held in the Frame view: Alt + wheel changes this ruler; docs/studio-ui.md
+  // "Camera タブ").
+  lit: { type: Boolean, default: false },
 });
 const emit = defineEmits(["input", "change", "cancel", "key", "reset"]);
 
@@ -176,7 +179,7 @@ onBeforeUnmount(() => {
 <template>
   <div
     class="pano-studio-edge-ruler"
-    :class="[vertical ? 'is-vertical' : 'is-horizontal', vertical ? `is-${side}` : '', { 'is-disabled': disabled }]"
+    :class="[vertical ? 'is-vertical' : 'is-horizontal', vertical ? `is-${side}` : '', { 'is-disabled': disabled, 'is-lit': lit && !disabled }]"
     :data-tip="tip || null"
     :data-ruler="name"
   >

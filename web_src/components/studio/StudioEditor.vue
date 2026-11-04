@@ -289,6 +289,7 @@ function setCollapsed(value) {
                 :value-chars="rulers.fov.scale.valueChars"
                 :at-default="rulers.fov.atDefault"
                 :step-value="fovStepValue"
+                :lit="ui.fovLit"
                 :style="stripStyle(place.vertical, true)"
                 @reset="onRuler('fov', 'reset')"
                 @input="(value) => onRuler('fov', 'input', value)"

@@ -552,3 +552,117 @@ test("in Panorama mode the FOV number's tooltip says it is not available", async
   await expect(page.locator('[data-action="fov"]')).toHaveAttribute("data-tip", "Not available in Panorama mode");
   expect(problems).toEqual([]);
 });
+
+// docs/space-and-view.md "Frame 表示" (ADR 0061): Alt + wheel changes the Camera's H FOV by the FOV ruler's arrow-key
+// step, the position stays, a run is one Undo step apart from a plain wheel run; Alt (without a drag) lights the FOV
+// ruler (docs/studio-ui.md "Camera タブ").
+test("Frame mode: Alt + wheel changes the Camera's FOV, not its position, as one Undo step; Alt lights the FOV ruler", async ({ page }, testInfo) => {
+  const problems = await open(page, testInfo);
+  const stage = await stageBox(page);
+  const frame = await frameBox(page);
+  const fovRuler = page.locator('[data-ruler="FOV"]');
+  await expect(fovRuler).toHaveAttribute("data-tip", "Alt+wheel over the view also changes it");
+  const before = await camera(page);
+  const x = stage.x + frame.x + frame.width / 2;
+  const y = stage.y + frame.y + frame.height / 2;
+  await page.mouse.move(x, y);
+  await expect(fovRuler).not.toHaveClass(/is-lit/);
+  await page.keyboard.down("Alt");
+  await expect(fovRuler).toHaveClass(/is-lit/);
+  await expect(page.locator('[data-ruler="Lens"]')).not.toHaveClass(/is-lit/);
+  // Rolled away three steps: three small ticks smaller.
+  for (let i = 0; i < 3; i += 1) await page.mouse.wheel(0, -100);
+  let cam = await camera(page);
+  expect(cam.hFOV_deg).toBeCloseTo(before.hFOV_deg - 6, 5);
+  expect(cam.position).toEqual(before.position);
+  await expect(fovRuler.locator("[data-ruler-value]")).toHaveText(`${before.hFOV_deg - 6}°`);
+  await expect(page.locator('[data-action="fov"]')).toHaveText(`${before.hFOV_deg - 6}°`);
+  // Rolled back one: one tick larger.
+  await page.mouse.wheel(0, 100);
+  expect((await camera(page)).hFOV_deg).toBeCloseTo(before.hFOV_deg - 4, 5);
+  // An Alt drag (an orbit) does not light it.
+  await page.mouse.down();
+  await page.mouse.move(x + 20, y);
+  await expect(fovRuler).not.toHaveClass(/is-lit/);
+  await page.mouse.up();
+  await page.keyboard.up("Alt");
+  await expect(fovRuler).not.toHaveClass(/is-lit/);
+  await page.waitForTimeout(400);
+  // The Alt + wheel run and the orbit: two steps; the first Undo takes the orbit back, the second the FOV.
+  await page.keyboard.press("Control+z");
+  await page.waitForTimeout(100);
+  cam = await camera(page);
+  expect(cam.position).toEqual(before.position);
+  expect(cam.hFOV_deg).toBeCloseTo(before.hFOV_deg - 4, 5);
+  await page.keyboard.press("Control+z");
+  await page.waitForTimeout(100);
+  expect((await camera(page)).hFOV_deg).toBeCloseTo(before.hFOV_deg, 5);
+  expect(await history(page)).toEqual({ undo: false, redo: true });
+  // A plain wheel step right after an Alt + wheel step is a step of its own.
+  await page.keyboard.down("Alt");
+  await page.mouse.wheel(0, -100);
+  await page.keyboard.up("Alt");
+  await page.mouse.wheel(0, -100);
+  await page.waitForTimeout(400);
+  await page.keyboard.press("Control+z");
+  await page.waitForTimeout(100);
+  cam = await camera(page);
+  expect(cam.position).toEqual(before.position);
+  expect(cam.hFOV_deg).toBeCloseTo(before.hFOV_deg - 2, 5);
+  expect(problems).toEqual([]);
+});
+
+// docs/space-and-view.md "黙って何もしない操作": Alt + wheel in Panorama mode changes nothing and says it is not available.
+test("Panorama mode: Alt + wheel changes nothing and says it is not available", async ({ page }, testInfo) => {
+  const problems = await open(page, testInfo, "aspect=16:9&mode=panorama");
+  const stage = await stageBox(page);
+  const frame = await frameBox(page);
+  const before = await camera(page);
+  await page.mouse.move(stage.x + frame.x + frame.width / 2, stage.y + frame.y + frame.height / 2);
+  await page.keyboard.down("Alt");
+  await expect(page.locator('[data-ruler="FOV"]')).not.toHaveClass(/is-lit/);
+  await page.mouse.wheel(0, -100);
+  await page.keyboard.up("Alt");
+  const notice = page.locator(".pano-studio-notice");
+  await expect(notice).toHaveText("Not available in Panorama mode");
+  await expect(notice).toHaveAttribute("data-notice", "stopped");
+  expect(await camera(page)).toEqual(before);
+  expect(await history(page)).toEqual({ undo: false, redo: false });
+  expect(problems).toEqual([]);
+});
+
+// docs/space-and-view.md "Frame 表示": an Alt + wheel run writes its Keyframe where it began; a seek before the run rests
+// (FRAME_WHEEL_REST_MS) does not write it again at the new playhead.
+test("Frame mode: an Alt + wheel run keeps its Keyframe where it began when the playhead moves before it rests", async ({ page }, testInfo) => {
+  const problems = await open(page, testInfo, "aspect=16:9&mode=frame&fovkeys=1");
+  const stage = await stageBox(page);
+  const frame = await frameBox(page);
+  const x = stage.x + frame.x + frame.width / 2;
+  const y = stage.y + frame.y + frame.height / 2;
+  await page.evaluate(({ x, y }) => {
+    const canvas = document.querySelector("[data-stage-canvas]");
+    canvas.dispatchEvent(new WheelEvent("wheel", { deltaY: -100, deltaMode: 0, altKey: true, clientX: x, clientY: y, bubbles: true, cancelable: true }));
+    document.querySelector('[data-tl="next"]').click();
+  }, { x, y });
+  await page.waitForTimeout(400);
+  const keys = await page.evaluate(() => window.__studio.session.state.camera.fov.keyframes.map((key) => [key.frame, key.value]));
+  expect(keys).toEqual([[0, 58], [40, 60]]);
+  expect(await history(page)).toEqual({ undo: true, redo: false });
+  expect(problems).toEqual([]);
+});
+
+// docs/space-and-view.md "Frame 表示": nothing for a locked Camera or a read-only editor; the ruler does not light.
+test("Frame mode: Alt + wheel does nothing to a locked Camera", async ({ page }, testInfo) => {
+  const problems = await open(page, testInfo, "aspect=16:9&mode=frame&locked=1");
+  const stage = await stageBox(page);
+  const frame = await frameBox(page);
+  const before = await camera(page);
+  await page.mouse.move(stage.x + frame.x + frame.width / 2, stage.y + frame.y + frame.height / 2);
+  await page.keyboard.down("Alt");
+  await expect(page.locator('[data-ruler="FOV"]')).not.toHaveClass(/is-lit/);
+  await page.mouse.wheel(0, -100);
+  await page.keyboard.up("Alt");
+  expect(await camera(page)).toEqual(before);
+  expect(await history(page)).toEqual({ undo: false, redo: false });
+  expect(problems).toEqual([]);
+});
