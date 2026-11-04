@@ -42,6 +42,7 @@ function setup({ content, overlay = null } = {}) {
     const event = Object.assign(new Event(type, { cancelable: true }), { code, key: extra.key ?? code, shiftKey: false, altKey: false, ctrlKey: false, metaKey: false, ...extra });
     Object.defineProperty(event, "composedPath", { value: () => [body] });
     win.dispatchEvent(event);
+    return event;
   };
   return { stage, ui, run, key, root, frames, counts, canvas };
 }
@@ -59,6 +60,19 @@ test("a held movement key moves the view until Meta goes up, which lets it go", 
   const stopped = stage.pose().position[2];
   run();
   assert.equal(stage.pose().position[2], stopped, "nothing moves once the key is let go");
+  stage.dispose();
+});
+
+// docs/space-and-view.md "視点の操作の部品": Alt alone would move the focus to the browser's menu on Windows, after
+// which the next Alt never reaches the page and the lit knobs stay lit or stop lighting.
+test("Alt alone keeps the browser's default; keys pressed with Alt keep theirs", () => {
+  const { stage, ui, key } = setup();
+  assert.equal(key("keydown", "AltLeft", { key: "Alt", altKey: true }).defaultPrevented, true);
+  assert.deepEqual(ui.lit, ["orbit", "move"]);
+  assert.equal(key("keydown", "Digit9", { key: "9", altKey: true }).defaultPrevented, false);
+  key("keyup", "Digit9", { key: "9", altKey: true });
+  assert.equal(key("keyup", "AltLeft", { key: "Alt" }).defaultPrevented, true);
+  assert.deepEqual(ui.lit, []);
   stage.dispose();
 });
 

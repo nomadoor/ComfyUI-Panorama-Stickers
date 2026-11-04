@@ -377,7 +377,14 @@ export function createStageInput(shared, {
     else onEscape();
   }
 
+  // Alt alone, pressed or let go, would move the focus to the browser's menu on Windows, and the next Alt would not
+  // reach the page (docs/space-and-view.md "つまみ"). Keys pressed with Alt keep their meaning.
+  function holdBareAlt(event) {
+    if (event.key === "Alt") event.preventDefault();
+  }
+
   function onKeyDown(event) {
+    holdBareAlt(event);
     const alt = input.altHeld();
     input.modifiers(event);
     if (alt !== input.altHeld() && shared.pointer && !shared.drag) hoverAt(shared.pointer);
@@ -408,6 +415,7 @@ export function createStageInput(shared, {
   }
 
   function onKeyUp(event) {
+    holdBareAlt(event);
     const alt = input.altHeld();
     input.modifiers(event);
     if (alt !== input.altHeld() && shared.pointer && !shared.drag) hoverAt(shared.pointer);
