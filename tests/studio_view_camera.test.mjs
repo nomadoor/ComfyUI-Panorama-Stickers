@@ -5,7 +5,7 @@ import test from "node:test";
 
 import { ACTION_EASE_SECONDS } from "../web_src/studio/view_scale.js";
 
-import { fitDistance, viewAxes, viewFitFov } from "../web_src/pano_space.js";
+import { START_VIEW, fitDistance, viewAxes, viewFitFov } from "../web_src/pano_space.js";
 import { KEY_MOVE_FAST } from "../web_src/pano_view_keys.js";
 import {
   VIEW_NOTICES,
@@ -479,6 +479,8 @@ test("an eased destination is not cut by the bound, and the bound grows to hold 
 test("Reset View eases to the World origin, level, yaw 0 (not the Camera), with the first T found there (ADR 0058)", () => {
   const view = camera(pose({ position: [5, 1, 5], yaw_deg: 120, pitch_deg: 30 }), { world: { ...WORLD, camera: [3, 0.4, 2.6] } });
   assert.deepEqual(RESET_VIEW, { position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0, hFOV_deg: 100 });
+  // The one start view the Preview node's Scene viewer uses too.
+  assert.equal(RESET_VIEW, START_VIEW);
   view.reset();
   view.step(0.4);
   const shown = view.pose();

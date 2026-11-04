@@ -3,7 +3,7 @@
 // fit of a sphere. The view is { position, yaw_deg, pitch_deg, hFOV_deg, distance } (pano_space.js).
 import { DEG2RAD, RAD2DEG, VIEW_PITCH_LIMIT_DEG, clamp, shortestYawDelta, wrapYaw } from "../pano_camera_math.js";
 import { worldRotation } from "../pano_world.js";
-import { fitDistance } from "./fit.js";
+import { DEFAULT_VIEW_HFOV, fitDistance } from "./fit.js";
 import { add, apply, column, dot, sub } from "./vec.js";
 
 // A zoom step toward a point is this part of the distance to it.
@@ -25,6 +25,11 @@ export const DEFAULT_DISTANCE = 1;
 
 // The difference two views may have and still be the same view (the numbers' error).
 const SAME_VIEW_EPSILON = 1e-6;
+
+// The start view (docs/space-and-view.md "開いたときの視点と Reset View" 始めの視点): the World origin, yaw 0, pitch 0 at
+// DEFAULT_VIEW_HFOV, where the new UI's Reset View (studio/view_camera.js RESET_VIEW) and the Preview node's Scene viewer's
+// Reset view (pano_scene_viewer.js) go, and where they are off.
+export const START_VIEW = Object.freeze({ position: Object.freeze([0, 0, 0]), yaw_deg: 0, pitch_deg: 0, hFOV_deg: DEFAULT_VIEW_HFOV });
 
 // Whether views a and b ({ position, yaw_deg, pitch_deg, hFOV_deg }) are the same: the position, pitch and FOV within
 // the numbers' error, the yaw too round 360° (docs/space-and-view.md "開いたときの視点と Reset View" 始めの視点; a

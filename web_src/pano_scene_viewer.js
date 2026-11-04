@@ -15,6 +15,7 @@ import {
   orbitView,
   sameViewpoint,
   sceneContentBox,
+  START_VIEW,
   spaceCamera,
 } from "./pano_space.js";
 import { createSpaceNavigation } from "./pano_space_navigation.js";
@@ -66,10 +67,6 @@ export function createSceneViewerHost() {
 }
 
 export const sceneViewerHost = createSceneViewerHost();
-
-// Where the viewer's Reset view goes, and its start view (docs/preview-node.md "ノード上"): the World origin's front at
-// the editor's default FOV.
-const START_VIEW = Object.freeze({ position: Object.freeze([0, 0, 0]), yaw_deg: 0, pitch_deg: 0, hFOV_deg: DEFAULT_VIEW_HFOV });
 
 function timeLabel(seconds) {
   const total = Math.max(0, Math.floor(seconds));
@@ -314,7 +311,7 @@ export function createSceneViewer({
     if (step) navigation.zoomFov(step);
   }
 
-  // Back to the World origin's front at the default FOV, over a transition.
+  // Back to the start view (pano_space.js START_VIEW: the World origin's front at the default FOV), over a transition.
   function resetView() {
     const state = navigation.spaceViewState();
     navigation.transitionView({ ...state, ...START_VIEW, position: [...START_VIEW.position], distance: sphere?.radius || DEFAULT_DISTANCE }, { mode: record.view.spaceMode, moved: false });

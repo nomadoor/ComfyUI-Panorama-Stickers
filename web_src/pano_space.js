@@ -24,6 +24,7 @@ export {
   pivotOf,
   reuseWheelPick,
   sameViewpoint,
+  START_VIEW,
   spaceModeView,
   switchSpaceMode,
   viewAxes,
