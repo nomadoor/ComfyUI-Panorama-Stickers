@@ -51,7 +51,7 @@ const GROUPS = {
     view: null,
     playback: null,
     // What Panorama Studio's picture draws of its inputs as the editor does: the depth grids' colors and the upstream
-    // Scene's layers (pano_preview_runtime.js attachPanoramaPreviewImpl), null without a Studio surface.
+    // Scene's layers (node_surface/playback.js createSurfacePlayback), null without a Studio surface.
     studioInputs: null,
     scene: null,
     renderCache: null,
