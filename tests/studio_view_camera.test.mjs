@@ -823,3 +823,15 @@ test("the FOV number's arrow key: one step, with Shift one degree, within the ra
   assert.equal(viewFovKeyStep(35, -1, true), 35);
   assert.equal(viewFovKeyStep(140, 1), 140);
 });
+
+// docs/space-and-view.md "寄る" 値の桁 (ADR 0061): a direct operation that cuts an eased move holds the FOV it shows as
+// the view holds its FOV, in whole degrees.
+test("a look that cuts Reset View's ease leaves the FOV in whole degrees", () => {
+  const view = camera(pose({ position: [5, 0, 5], hFOV_deg: 41 }));
+  view.reset();
+  view.step(ACTION_EASE_SECONDS / 3);
+  assert.ok(!Number.isInteger(view.pose().hFOV_deg));
+  view.look(10, 0);
+  assert.ok(Number.isInteger(view.pose().hFOV_deg), String(view.pose().hFOV_deg));
+});
+

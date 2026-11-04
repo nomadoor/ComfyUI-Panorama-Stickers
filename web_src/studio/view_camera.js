@@ -324,10 +324,12 @@ export function createViewCamera({ pose: start, frame = false }) {
     };
   }
 
-  // A direct operation starts from what shows: an eased move stops there.
+  // A direct operation starts from what shows: an eased move stops there, the Panorama view's FOV held in whole degrees
+  // (viewFovValue; the Frame view's is the Camera's).
   function direct() {
     if (ease) {
       pose = shown();
+      if (!frame) pose.hFOV_deg = viewFovValue(pose.hFOV_deg);
       ease = null;
     }
     return pose;
