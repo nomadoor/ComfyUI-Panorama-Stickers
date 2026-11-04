@@ -19108,7 +19108,7 @@ function o3({ presented: e, background: t = cc, stickers: n = [] } = {}) {
   const a = t === gr, s = r.includes(gr);
   return a && s ? { status: gr, detail: "mixed" } : a ? { status: gr, detail: "background" } : s ? { status: gr, detail: "stickers" } : { status: cc, detail: "" };
 }
-const Xi = (e, t, n) => e + (t - e) * n, ta = [
+const ta = [
   { id: "green", label: "Green", color: { r: 0, g: 1, b: 0, a: 1 } },
   { id: "red", label: "Red", color: { r: 1, g: 0, b: 0, a: 1 } },
   { id: "blue", label: "Blue", color: { r: 0, g: 0, b: 1, a: 1 } },
@@ -19159,6 +19159,7 @@ function Od(e) {
   const l = i <= 1e-6 ? 0 : a / i;
   return { h: s, s: l, v: i };
 }
+const Xi = (e, t, n) => e + (t - e) * n;
 function Ss(e) {
   return `${e}_${Math.random().toString(16).slice(2, 10)}`;
 }
