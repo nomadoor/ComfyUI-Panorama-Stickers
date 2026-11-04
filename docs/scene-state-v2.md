@@ -61,7 +61,7 @@ Python と JS の両方の test が同じファイルを読む。Python と JS �
 パノラマの角度規約（`core/math.py` の `camera_basis`・`ray_directions`・`dir_to_lon_lat`・`lon_lat_to_erp`、JS は `web_src/pano_camera_math.js`）：
 
 - 角度の座標は +X が右、+Y が上、+Z が正面（左手系）。World の glTF 座標とは Z が逆で、変換は上の一か所だけで行う。
-- yaw（経度）は `atan2(x, z)`。0 が正面、+90 が右、−90 が左、±180 が背面（ERP の左右の端の継ぎ目）。範囲に丸めて表すときは −180 以上 180 未満（`wrap_yaw_deg`）。状態の yaw は丸めない（下の Lane の規則）。
+- yaw（経度）は `atan2(x, z)`。0 が正面、+90 が右、−90 が左、±180 が背面（ERP の左右の端の継ぎ目）。範囲に丸めて表すときは −180 以上 180 未満（`core/state.py` の `_wrap_yaw`）。状態の yaw は丸めない（下の Lane の規則）。
 - pitch（緯度）は −90〜90 で、0 が水平線、+90 が天頂。
 - ERP の画像は、左から右へ経度 −180〜180（`coverage` 180 では −90〜90）、上から下へ緯度 90〜−90。画素の中心で標本化する。
 - Camera の向きは `Ry(yaw) @ Rx(−pitch) @ Rz(roll)`。正の yaw は右を、正の pitch は上を向き、正の roll は画像を時計回りに回す。同じ基底を、Camera は見る側として、`sky` の Sticker は空に貼る側として使うので、正の roll で Camera の写す絵は時計回りに回り、`sky` の Sticker の画像は中から見て反時計回りに回る。

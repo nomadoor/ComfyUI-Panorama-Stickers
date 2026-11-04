@@ -300,8 +300,8 @@ RTX 4070 Ti、1 フレーム、κ = 0.5・hFOV 140°（4K は 4096 × 2048 相�
 - 出力が変わるもの（意図した変更）：ノードの出力では、赤道から離れたストロークが横に `1 ÷ cos φ` 倍太くなり、エディタで見る太さと揃う
   （今はノードだけが細い）。基準画像：`stickers_paint`（緯度およそ 9〜36° の二本。横に 1〜24% 太くなり、点の少ない古いストローク（3 点）の
   曲がり方も大円に寄って、はっきり形が変わる大きな見た目の変化）は焼き直した（`docs/legacy-baselines.md`）。`stickers_paint_mask`・
-  `stickers_paint_interleaved`・`studio_paint_interleaved`（緯度 9° 以内）は、許容の中で変わらなかった。`render_painting_to_cutout` は同じ描き方を通るが、旧 Cutout の基準画像
-  （`cutout_single_shot`）はペイントを持たないので変わらない。ペイントを持たない基準画像は変わらない。エディタでは、緯度 87° より極に近い所、
+  `stickers_paint_interleaved`・`studio_paint_interleaved`（緯度 9° 以内）は、許容の中で変わらなかった。
+  ペイントを持たない基準画像は変わらない。エディタでは、緯度 87° より極に近い所、
   極の近くで点が大きく離れた区間、古い UI の Unwrap の表示で描いたストローク（横に広がるようになる）が変わる
   （`tests/fixtures/paint_rasters_golden.json` の `paint_group:g1` は変わらなかった）。
 

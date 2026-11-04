@@ -3,7 +3,6 @@ from pathlib import Path
 import numpy as np
 from PIL import UnidentifiedImageError
 
-from .core.math import unit_float
 from .core.painting import load_painting_layer_payload
 from .core.stickers import comfy_file_path, read_image_file_rgba8
 
@@ -34,13 +33,6 @@ def _load_comfy_rgba8(asset: dict) -> np.ndarray | None:
         return read_image_file_rgba8(path)
     except (FileNotFoundError, OSError, UnidentifiedImageError, ValueError):
         return None
-
-
-def resolve_comfy_image_rgba(asset: dict | None) -> np.ndarray | None:
-    if not isinstance(asset, dict):
-        return None
-    rgba = _load_comfy_rgba8(asset)
-    return None if rgba is None else unit_float(rgba)
 
 
 def resolve_painting_layer_payload(

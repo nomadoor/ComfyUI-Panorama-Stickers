@@ -1,6 +1,4 @@
-import json
 import math
-import uuid
 from copy import deepcopy
 
 from .paint_state import empty_painting_state, normalize_painting_state
@@ -31,10 +29,6 @@ def normalize_coverage(value) -> int:
         return 180 if int(value) == 180 else 360
     except Exception:
         return 360
-
-
-def make_id(prefix: str) -> str:
-    return f"{prefix}_{uuid.uuid4().hex[:8]}"
 
 
 def _without_non_finite(value):
@@ -102,10 +96,6 @@ def parse_state(state_raw: str | None) -> dict | None:
         except Exception:
             return None
     return None
-
-
-def dump_state(state: dict) -> str:
-    return json.dumps(state, ensure_ascii=True, separators=(",", ":"))
 
 
 def _wrap_yaw(yaw_deg: float) -> float:

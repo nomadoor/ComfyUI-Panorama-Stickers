@@ -16,16 +16,6 @@ except Exception:  # pragma: no cover - optional in non-Comfy test environments
     folder_paths = None
 
 
-def _hex_to_rgb01(hex_color: str) -> np.ndarray:
-    s = (hex_color or "#00ff00").strip().lstrip("#")
-    if len(s) != 6:
-        s = "00ff00"
-    r = int(s[0:2], 16)
-    g = int(s[2:4], 16)
-    b = int(s[4:6], 16)
-    return np.array([r, g, b], dtype=np.float32) / 255.0
-
-
 def _decode_rgba8(source) -> np.ndarray:
     """An image as RGBA uint8. An image that cannot be decoded raises OSError or ValueError; PIL's decompression bomb
     error is raised as ValueError, so that every reader turns it into "cannot be read"."""
@@ -200,18 +190,6 @@ def _normalize_coverage(value) -> int:
         return 360
 
 
-def _prepare_background_for_coverage(bg_erp: np.ndarray | None, output_w: int, output_h: int, coverage: int) -> np.ndarray | None:
-    if bg_erp is None:
-        return None
-    canvas = np.clip(bg_erp.astype(np.float32), 0.0, 1.0)
-    if canvas.shape[0] != output_h or canvas.shape[1] != output_w:
-        canvas = np.asarray(
-            Image.fromarray((canvas * 255.0).astype(np.uint8)).resize((output_w, output_h), Image.BILINEAR),
-            dtype=np.float32,
-        ) / 255.0
-    return canvas
-
-
 def _normalize_runtime_sticker_image(st: dict, assets: dict, base_dir: Path | None = None) -> np.ndarray | None:
     runtime_img = st.get("image_rgba")
     if isinstance(runtime_img, np.ndarray):
@@ -352,55 +330,6 @@ def render_stickers_to_rgba_erp(
     stickers = stickers_override if isinstance(stickers_override, list) else state.get("stickers", [])
     assets = assets_override if isinstance(assets_override, dict) else state.get("assets", {})
 
-    def _safe_sticker_z_index(item) -> float:
-        try:
-            return float(item.get("z_index", 0))
-        except Exception:
-            return 0.0
-
-    stickers_sorted = sorted(
-        [item for item in stickers if isinstance(item, dict)],
-        key=_safe_sticker_z_index,
-    )
-
-    for st in stickers_sorted:
-        if st.get("visible", True) is False:
-            continue
-        img = _normalize_runtime_sticker_image(st, assets, base_dir=base_dir)
-        if img is None:
-            continue
-        _compose_sticker_patch(
-            canvas,
-            img,
-            st,
-            output_w,
-            output_h,
-            quality=quality,
-            coverage=coverage,
-        )
-
-    return np.clip(canvas, 0.0, 1.0).astype(np.float32)
-
-
-def compose_stickers_to_erp(
-    state: dict,
-    output_w: int,
-    output_h: int,
-    bg_erp: np.ndarray | None = None,
-    base_dir: Path | None = None,
-    quality: str = "export",
-    stickers_override: list[dict] | None = None,
-    assets_override: dict | None = None,
-) -> np.ndarray:
-    coverage = _normalize_coverage(state.get("coverage"))
-    if bg_erp is not None:
-        canvas = _prepare_background_for_coverage(bg_erp, output_w, output_h, coverage)
-    else:
-        bg = _hex_to_rgb01(state.get("bg_color", "#00ff00"))
-        canvas = np.ones((output_h, output_w, 3), dtype=np.float32) * bg[None, None, :]
-
-    stickers = stickers_override if isinstance(stickers_override, list) else state.get("stickers", [])
-    assets = assets_override if isinstance(assets_override, dict) else state.get("assets", {})
     def _safe_sticker_z_index(item) -> float:
         try:
             return float(item.get("z_index", 0))

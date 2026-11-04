@@ -19,7 +19,7 @@ from comfy_api.latest import ComfyExtension, Input, Types, io
 from typing_extensions import override
 
 from .comfy_image_resolver import resolve_painting_layer_payload
-from .node_runtime import PREVIEW_UI_KEYS, NodeProgress, create_default_runtime
+from .node_runtime import NodeProgress, create_default_runtime
 from .progress import loop_progress
 from .core.cache import nbytes
 from .core.cutout import build_cutout_sampling_map, sample_cutout_from_sampling_map
@@ -28,16 +28,12 @@ from .core.display_list import (
     build_display_entries,
 )
 from .core.display_layers import (
-    build_visual_paint_only_state as _build_visual_paint_only_state,
-    compose_display_list_to_erp as _compose_display_list_to_erp,
     compose_display_list_to_overlay_rgba as _compose_display_list_to_overlay_rgba,
     render_remaining_flat_paint_layer_from_state as _render_remaining_flat_paint_layer_from_state,
     sample_overlay_rgba_from_sampling_map as _sample_overlay_rgba_from_sampling_map,
-    should_use_uploaded_group_layers as _should_use_uploaded_group_layers,
 )
 from .core.math import (
     calculate_dimensions_from_megapixels,
-    calculate_output_dimensions,
     finite_float,
     unit_float,
     vfov_from_hfov,
@@ -121,14 +117,6 @@ def _common_video_preview_inputs(*, default_fps: float = 24.0) -> list:
     ]
 
 
-def _audio_has_waveform(audio) -> bool:
-    return NODE_RUNTIME.audio_has_waveform(audio)
-
-
-def _save_input_preview(images, key="pano_input_images"):
-    return NODE_RUNTIME.save_preview(images, key=key)
-
-
 def _crop_erp_for_coverage(arr: np.ndarray, coverage: int, out_w: int, out_h: int) -> np.ndarray:
     if arr is None:
         return None
@@ -158,39 +146,6 @@ def _resize_image_like(arr: np.ndarray, out_w: int, out_h: int, *, mode: str) ->
     if mode == "mask":
         resample = Image.BILINEAR
     return np.asarray(pil.resize((int(out_w), int(out_h)), resample))
-
-
-def _apply_coverage_to_rgba(arr, coverage: int, out_w: int, out_h: int):
-    if arr is None:
-        return None
-    rgba = np.clip(arr.astype(np.float32), 0.0, 1.0)
-    if int(rgba.shape[0]) != int(out_h) or int(rgba.shape[1]) != int(out_w):
-        rgba = _resize_image_like((rgba * 255.0).astype(np.uint8), out_w, out_h, mode="rgba").astype(np.float32) / 255.0
-    return rgba
-
-
-def _apply_coverage_to_mask(arr, coverage: int, out_w: int, out_h: int):
-    if arr is None:
-        return None
-    mask = np.clip(arr.astype(np.float32), 0.0, 1.0)
-    if int(mask.shape[0]) != int(out_h) or int(mask.shape[1]) != int(out_w):
-        mask = _resize_image_like(np.clip(mask * 255.0, 0.0, 255.0).astype(np.uint8), out_w, out_h, mode="mask").astype(np.float32) / 255.0
-    return mask
-
-
-def _apply_coverage_to_rgb(arr, coverage: int, out_w: int, out_h: int):
-    if arr is None:
-        return None
-    rgb = np.clip(arr.astype(np.float32), 0.0, 1.0)
-    if rgb.ndim != 3:
-        return None
-    if rgb.shape[-1] < 3:
-        rgb = np.repeat(rgb[..., :1], 3, axis=-1)
-    elif rgb.shape[-1] > 3:
-        rgb = rgb[..., :3]
-    if int(rgb.shape[0]) != int(out_h) or int(rgb.shape[1]) != int(out_w):
-        rgb = _resize_image_like((rgb * 255.0).astype(np.uint8), out_w, out_h, mode="rgb").astype(np.float32) / 255.0
-    return rgb
 
 
 def _apply_overlay_coverage_to_rgba(arr, coverage: int, out_w: int, out_h: int):
@@ -557,10 +512,6 @@ def _render_sticker_output_batches(
             ) from None
 
     return out_batch, bg_batch
-
-
-def _first_image_tensor(image):
-    return NODE_RUNTIME._first_image(image)
 
 
 def _default_pose_for_sticker(image_w: int, image_h: int) -> dict:
@@ -1545,7 +1496,7 @@ def _decide_timeline(state: dict, bg, port: PortMedia | None, scene: SceneConten
     are rounded to (0: exact), and per output frame the bg_media frame to draw and, for each layer (those of
     `upstream`, then `state` with its `port` and `scene`), the Timeline frame to evaluate, its port media frame, and
     its `scene` item (`_layer_frames`). A `scene` batch, like an IMAGE batch on the port, ends its Clip range without a duration.
-    The state's Camera, when it has one, shoots the frames and its Keyframes count for the length.
+    The state's Camera shoots the frames and its Keyframes count for the length.
 
     `bg` is the bg_media IMAGE batch, an opened VIDEO, or None; `inherited_bg` says it is the upstream Scene's
     (ADR 0048: the node's own background, when connected, takes its place). Without `upstream`, the output frames follow the PTS
@@ -1611,9 +1562,7 @@ def _decide_timeline(state: dict, bg, port: PortMedia | None, scene: SceneConten
         if end is not None:
             clip_ends.append(end)
     # The latest Keyframe over the Camera's Lanes.
-    last_key = None
-    if state["camera"] is not None:
-        last_key = max((state["camera"][name]["keyframes"][-1]["frame"] for name, _value in CAMERA_LANES if state["camera"][name]["keyframes"]), default=None)
+    last_key = max((state["camera"][name]["keyframes"][-1]["frame"] for name, _value in CAMERA_LANES if state["camera"][name]["keyframes"]), default=None)
     if state["timeline"]["length"]:
         length = max(1, output_frames(state["timeline"]["length"]))
     else:
@@ -2262,8 +2211,6 @@ CUTOUT_MAX_OUTPUT_SIDE = 4096
 
 
 class PanoramaCutoutNode(io.ComfyNode):
-    DEFAULT_LONG_SIDE = 1024
-
     @classmethod
     def define_schema(cls):
         return io.Schema(
@@ -2293,15 +2240,6 @@ class PanoramaCutoutNode(io.ComfyNode):
             ],
             hidden=[io.Hidden.unique_id],
             is_output_node=True,
-        )
-
-    @classmethod
-    def _derive_output_size_from_fov(cls, hfov_val, vfov_val):
-        return calculate_output_dimensions(
-            hfov_deg=hfov_val,
-            vfov_deg=vfov_val,
-            long_side=cls.DEFAULT_LONG_SIDE,
-            max_side=CUTOUT_MAX_OUTPUT_SIDE,
         )
 
     @staticmethod

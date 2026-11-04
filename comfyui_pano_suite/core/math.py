@@ -1,18 +1,7 @@
 import math
 import numpy as np
-
-try:
-    import torch
-    import torch.nn.functional as F
-    HAS_TORCH = True
-except ImportError:
-    HAS_TORCH = False
-
-try:
-    import cv2
-    HAS_CV2 = True
-except ImportError:
-    HAS_CV2 = False
+import torch
+import torch.nn.functional as F
 
 
 DEG2RAD = math.pi / 180.0
@@ -30,14 +19,6 @@ def unit_float_tensor(array: np.ndarray, device) -> "torch.Tensor":
     """`unit_float` of `array` as a tensor on `device`; an 8-bit image is uploaded as it is and converted there."""
     tensor = torch.tensor(array, device=device)
     return tensor.float().div_(255.0) if tensor.dtype == torch.uint8 else tensor.float()
-
-
-def clamp(v: float, lo: float, hi: float) -> float:
-    return max(lo, min(hi, v))
-
-
-def wrap_yaw_deg(yaw: float) -> float:
-    return (yaw + 180.0) % 360.0 - 180.0
 
 
 def camera_basis(
@@ -90,7 +71,7 @@ CURVE_MIN, CURVE_MAX = 0.0, 1.0
 
 def _tan_ratio(x):
     """tan(x) / x, 1 at x = 0."""
-    if HAS_TORCH and isinstance(x, torch.Tensor):
+    if isinstance(x, torch.Tensor):
         small = x.abs() < _LENS_SERIES
         safe = torch.where(small, torch.ones_like(x), x)
         return torch.where(small, 1.0 + x * x / 3.0, torch.tan(safe) / safe)
@@ -99,7 +80,7 @@ def _tan_ratio(x):
 
 def _atan_ratio(x):
     """atan(x) / x, 1 at x = 0."""
-    if HAS_TORCH and isinstance(x, torch.Tensor):
+    if isinstance(x, torch.Tensor):
         small = x.abs() < _LENS_SERIES
         safe = torch.where(small, torch.ones_like(x), x)
         return torch.where(small, 1.0 - x * x / 3.0, torch.atan(safe) / safe)
@@ -110,7 +91,7 @@ def lens_radius(theta, curve: float):
     """Where a ray `theta` radians off the optical axis lands, from the image center in units of f:
     tan(κθ)/κ, θ at κ = 0. Defined for κθ < π/2. A pinhole (κ = 1) is tan θ exactly."""
     if curve == 1.0:
-        return torch.tan(theta) if HAS_TORCH and isinstance(theta, torch.Tensor) else math.tan(theta)
+        return torch.tan(theta) if isinstance(theta, torch.Tensor) else math.tan(theta)
     return theta * _tan_ratio(theta * curve)
 
 
@@ -118,7 +99,7 @@ def lens_angle(radius, curve: float):
     """The angle off the optical axis of the ray through a point `radius` (in units of f) from the image center,
     the inverse of `lens_radius`: atan(κr)/κ, r at κ = 0."""
     if curve == 1.0:
-        return torch.atan(radius) if HAS_TORCH and isinstance(radius, torch.Tensor) else math.atan(radius)
+        return torch.atan(radius) if isinstance(radius, torch.Tensor) else math.atan(radius)
     return radius * _atan_ratio(radius * curve)
 
 
@@ -217,62 +198,29 @@ def lon_lat_to_erp(lon: np.ndarray, lat: np.ndarray, w: int, h: int) -> tuple[np
 def sample_erp_bilinear(erp: np.ndarray, u: np.ndarray, v: np.ndarray) -> np.ndarray:
     """Samples an Equirectangular image using bilinear interpolation with horizontal wrapping."""
     h, w, c = erp.shape
-    # Normalize coordinates to ensure correct wrapping and clipping across all paths
+    # Normalize coordinates for horizontal wrapping and vertical clipping
     u = np.mod(u, w)
     v = np.clip(v, 0.0, h - 1.0)
 
-    if HAS_TORCH:
-        # Padded horizontally for wrapping, as float32 (H, W + 1, C) -> torch (B, C, H, W). The padding makes a new
-        # array, so a read-only (cached) erp is read without another copy.
-        t_erp_padded = torch.from_numpy(np.concatenate([erp, erp[:, :1]], axis=1, dtype=np.float32)).permute(2, 0, 1)[None, ...]
+    # Padded horizontally for wrapping, as float32 (H, W + 1, C) -> torch (B, C, H, W). The padding makes a new
+    # array, so a read-only (cached) erp is read without another copy.
+    t_erp_padded = torch.from_numpy(np.concatenate([erp, erp[:, :1]], axis=1, dtype=np.float32)).permute(2, 0, 1)[None, ...]
 
-        # Grid sample coordinates in [-1, 1]
-        # x corresponds to u (width), y corresponds to v (height)
-        # padded width is w+1. index 0 maps to -1, index w maps to 1.
-        # u and v are the new arrays of np.mod and np.clip above, so torch can share them.
-        grid_u = (torch.from_numpy(u).to(torch.float32) / w) * 2.0 - 1.0
+    # Grid sample coordinates in [-1, 1]
+    # x corresponds to u (width), y corresponds to v (height)
+    # padded width is w+1. index 0 maps to -1, index w maps to 1.
+    # u and v are the new arrays of np.mod and np.clip above, so torch can share them.
+    grid_u = (torch.from_numpy(u).to(torch.float32) / w) * 2.0 - 1.0
 
-        # Avoid division by zero if h=1
-        v_denom = float(h - 1) if h > 1 else 1.0
-        grid_v = (torch.from_numpy(v).to(torch.float32) / v_denom) * 2.0 - 1.0
+    # Avoid division by zero if h=1
+    v_denom = float(h - 1) if h > 1 else 1.0
+    grid_v = (torch.from_numpy(v).to(torch.float32) / v_denom) * 2.0 - 1.0
 
-        grid = torch.stack([grid_u, grid_v], dim=-1)[None, ...]
+    grid = torch.stack([grid_u, grid_v], dim=-1)[None, ...]
 
-        # Note: we use align_corners=True to exactly match pixel center sampling
-        out = F.grid_sample(t_erp_padded, grid, mode='bilinear', padding_mode='border', align_corners=True)
-        return out[0].permute(1, 2, 0).cpu().numpy().astype(erp.dtype, copy=False)
-
-    if HAS_CV2:
-        # Optimize by using cv2.remap. To handle horizontal wrapping (longitude),
-        # we pad the image by 1 pixel on the right side.
-        erp_padded = np.concatenate([erp, erp[:, :1, :]], axis=1)
-        # Using BORDER_REPLICATE for the vertical axis (latitude) to match np.clip.
-        # The horizontal axis wrapping is handled by the padding + u coordinates in [0, w].
-        return cv2.remap(
-            erp_padded,
-            u.astype(np.float32),
-            v.astype(np.float32),
-            interpolation=cv2.INTER_LINEAR,
-            borderMode=cv2.BORDER_REPLICATE,
-        )
-
-    # Manual NumPy fallback
-    x0 = np.floor(u).astype(np.int32)
-    y0 = np.floor(v).astype(np.int32)
-    x1 = (x0 + 1) % w
-    y1 = np.clip(y0 + 1, 0, h - 1)
-
-    fx = (u - x0)[..., None]
-    fy = (v - y0)[..., None]
-
-    c00 = erp[y0, x0]
-    c10 = erp[y0, x1]
-    c01 = erp[y1, x0]
-    c11 = erp[y1, x1]
-
-    c0 = c00 * (1.0 - fx) + c10 * fx
-    c1 = c01 * (1.0 - fx) + c11 * fx
-    return c0 * (1.0 - fy) + c1 * fy
+    # Note: we use align_corners=True to exactly match pixel center sampling
+    out = F.grid_sample(t_erp_padded, grid, mode='bilinear', padding_mode='border', align_corners=True)
+    return out[0].permute(1, 2, 0).cpu().numpy().astype(erp.dtype, copy=False)
 
 
 def round_to_multiple(x: float, multiple: int = 8, min_val: int = 8) -> int:

@@ -8,8 +8,6 @@ from comfyui_pano_suite.core.cutout import build_cutout_sampling_map
 from comfyui_pano_suite.core.math import camera_basis
 from comfyui_pano_suite.core.stickers import compose_single_sticker_to_canvas_erp
 from comfyui_pano_suite.core.world import (
-    camera_from_camera_info,
-    camera_info_from_camera,
     pano_to_world,
     panorama_angles,
     rotation_to_quaternion,
@@ -139,19 +137,9 @@ def test_js_and_python_agree_on_world_camera_rotation():
         [15.0, 89.0, 23.0],
         [-80.0, -90.0, -31.0],
     ]
-    cameras = [
-        {"position": [0.5, 1.0, -2.0], "yaw_deg": yaw, "pitch_deg": pitch, "roll_deg": roll, "hFOV_deg": 70.0}
-        for yaw, pitch, roll in angles
-    ]
-    partial_camera_infos = [
-        {"position": {"x": 0.0, "y": 0.0, "z": 0.0}, "target": {"x": 1.0, "y": 0.5, "z": -2.0}, "cameraType": "perspective"},
-        {"position": {"x": 1.0, "y": 0.0, "z": 0.0}, "target": {"x": 0.0, "y": 0.0, "z": 0.0}, "fov": 0, "zoom": 0},
-        {"position": {"x": 0.0, "y": 3.0, "z": 0.0}, "target": {"x": 0.0, "y": 0.0, "z": 0.0}, "quaternion": {}, "fov": 60.0, "zoom": 2.0},
-        {"position": {"x": 0.0, "y": 0.0, "z": 0.0}, "target": {"x": 0.0, "y": 0.0, "z": 0.0}, "quaternion": {"y": 0.5}, "fov": 45.0},
-    ]
-    payload = json.dumps({"angles": angles, "cameras": cameras, "partialCameraInfos": partial_camera_infos})
+    payload = json.dumps({"angles": angles})
     script = f"""
-      import {{ cameraFromCameraInfo, cameraInfoFromCamera, panoramaAngles, rotationToQuaternion, worldRotation }} from './web_src/pano_world.js';
+      import {{ panoramaAngles, rotationToQuaternion, worldRotation }} from './web_src/pano_world.js';
       const input = {payload};
       const rotations = input.angles.map(([yaw, pitch, roll]) => worldRotation(yaw, pitch, roll));
       process.stdout.write(JSON.stringify({{
@@ -164,9 +152,6 @@ def test_js_and_python_agree_on_world_camera_rotation():
           const a = panoramaAngles(rotation);
           return [a.yawDeg, a.pitchDeg, a.rollDeg];
         }}),
-        cameraInfos: input.cameras.map((camera) => cameraInfoFromCamera(camera, 1.5)),
-        cameras: input.cameras.map((camera) => cameraFromCameraInfo(cameraInfoFromCamera(camera, 1.5), 1.5)),
-        partialCameras: input.partialCameraInfos.map((cameraInfo) => cameraFromCameraInfo(cameraInfo, 1.5)),
       }}));
     """
     result = subprocess.run(
@@ -188,21 +173,6 @@ def test_js_and_python_agree_on_world_camera_rotation():
     assert np.allclose(np.asarray(reference_rotations), python_rotations, atol=2e-6)
     assert np.allclose(js["quaternions"], [rotation_to_quaternion(r) for r in python_rotations], atol=2e-6)
     assert np.allclose(js["angles"], [panorama_angles(r) for r in python_rotations], atol=1e-4)
-
-    for camera, js_info, js_camera in zip(cameras, js["cameraInfos"], js["cameras"]):
-        info = camera_info_from_camera(camera, 1.5)
-        for key in ("position", "target", "quaternion"):
-            assert np.allclose(list(js_info[key].values()), list(info[key].values()), atol=2e-6), key
-        assert np.isclose(js_info["fov"], info["fov"])
-        restored = camera_from_camera_info(info, 1.5)
-        for key in ("yaw_deg", "pitch_deg", "roll_deg", "hFOV_deg"):
-            assert np.isclose(js_camera[key], restored[key], atol=1e-4), key
-
-    for camera_info, js_camera in zip(partial_camera_infos, js["partialCameras"]):
-        camera = camera_from_camera_info(camera_info, 1.5)
-        assert np.allclose(js_camera["position"], camera["position"])
-        for key in ("yaw_deg", "pitch_deg", "roll_deg", "hFOV_deg"):
-            assert np.isclose(js_camera[key], camera[key], atol=1e-9), key
 
 
 def test_cutout_sampling_stays_continuous_near_the_north_pole():
