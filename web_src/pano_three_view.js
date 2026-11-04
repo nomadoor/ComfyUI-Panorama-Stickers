@@ -10,11 +10,9 @@
 import {
   AmbientLight,
   AxesHelper,
-  BackSide,
   Box2,
   ClampToEdgeWrapping,
   Color,
-  CustomBlending,
   DirectionalLight,
   DoubleSide,
   FloatType,
@@ -30,10 +28,8 @@ import {
   PerspectiveCamera,
   NearestFilter,
   NoColorSpace,
-  PlaneGeometry,
   Quaternion,
   RGBAFormat,
-  RepeatWrapping,
   SRGBColorSpace,
   Scene,
   ShaderMaterial,
@@ -55,28 +51,23 @@ import { disposeObject, disposeSceneItem, loadSceneItem, loadSpark, poseAnimatio
 import { createSparkViews } from "./pano_spark_views.js";
 import { createDepthGridPickMaterial } from "./pano_depth_grid.js";
 import { createGroundGrid } from "./pano_ground_grid.js";
-import { createSkyGrid } from "./pano_sky_grid.js";
 import { canvasValueTarget, createLiveErp } from "./pano_live_erp.js";
 import {
-  ERP_VERTEX,
   LENS_FACES,
   LENS_FRAGMENT,
   LENS_PATCH_FRAGMENT,
   LENS_PATCH_PICK_FRAGMENT,
   LENS_PATCH_PICK_VERTEX,
   LENS_PATCH_VERTEX,
-  LENS_STICKER_FRAGMENT,
-  STICKER_FRAGMENT,
   STICKER_VERTEX,
-  UNWRAP_ERP_FRAGMENT,
-  UNWRAP_STICKER_FRAGMENT,
   WORLD_STICKER_FRAGMENT,
 } from "./three_view/shaders.js";
 import { applyViewportCamera, devicePoint, setCamera, setView } from "./three_view/camera.js";
-import { createErpMesh, createLines, createMaterial, createQuad, pooled } from "./three_view/meshes.js";
+import { createLines, createMaterial, createQuad, pooled } from "./three_view/meshes.js";
 import { sameValue } from "./three_view/values.js";
+import { createSkyMeshes, placeSticker, unwrapStickerUniforms } from "./three_view/sky.js";
 
-export { applyViewportCamera, sameValue };
+export { applyViewportCamera, placeSticker, sameValue, unwrapStickerUniforms };
 
 // The lights of the World pass (docs/render-contract.md "既定の照明", which owns the values; Python's
 // mesh_render.py has the same, both checked against tests/fixtures/default_lighting.json). No shadows.
@@ -123,31 +114,7 @@ export function stickerItemInputs(space) {
   return { drawn, inputs: [...drawn, { urls: [...(space.stickerUrls ?? []), ...(space.fileStickerKeys ?? [])] }] };
 }
 
-const DOME_RADIUS = 100;
-const STICKER_DISTANCE = 50;
 const ORIGIN_COLOR = 0xffdd57;
-
-// A sky Sticker is its gnomonic image plane at STICKER_DISTANCE along the Sticker's forward axis;
-// seen from the camera at the center it covers the same rays as the previous per-pixel shader.
-export function placeSticker(mesh, layer) {
-  const { rect, quaternion } = layer;
-  mesh.quaternion.set(quaternion.x, quaternion.y, quaternion.z, quaternion.w);
-  mesh.position.set((rect.x0 + rect.x1) * 0.5, (rect.y0 + rect.y1) * 0.5, -1)
-    .multiplyScalar(STICKER_DISTANCE)
-    .applyQuaternion(mesh.quaternion);
-  mesh.scale.set((rect.x1 - rect.x0) * STICKER_DISTANCE, (rect.y1 - rect.y0) * STICKER_DISTANCE, 1);
-}
-
-// The Unwrap sticker shader's uniforms: World to the Sticker's frame, and its rect as (x0, y0, x1, y1).
-export function unwrapStickerUniforms(layer) {
-  const { quaternion, rect } = layer;
-  const rotation = new Matrix4().makeRotationFromQuaternion(new Quaternion(quaternion.x, quaternion.y, quaternion.z, quaternion.w));
-  return {
-    toSticker: new Matrix3().setFromMatrix4(rotation).transpose(),
-    rect: new Vector4(rect.x0, rect.y0, rect.x1, rect.y1),
-    curve: layer.curve ?? 1,
-  };
-}
 
 // The size of a media element: the chunk's copy of pano_editor_view.js mediaSize, held equal by tests/chunk_copies.test.mjs.
 export function mediaSize(media) {
@@ -628,8 +595,6 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
   let guides = null;
   // The new UI's ground grid (pano_ground_grid.js), made the first time a space asks for it.
   let groundGrid = null;
-  // The new UI's sky grid (pano_sky_grid.js), made the first time a render's space has `sky`.
-  let skyGrid = null;
   // The default lights, always in the World (they change nothing that is not lit).
   const lights = createDefaultLights();
   const lines = { sets: null, lines: [] };
@@ -749,46 +714,8 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
       : setTimeout(run, 0)),
     now: () => performance.now(),
   });
-  const domeGeometry = new SphereGeometry(DOME_RADIUS, 64, 32);
-  const planeGeometry = new PlaneGeometry(1, 1);
-  const quadGeometry = new PlaneGeometry(2, 2);
-  // The background replaces what is below it like the previous renderer; the other layers blend.
-  // Each projection keeps its meshes: the background, and pools of ERP and Sticker meshes.
-  const panorama = {
-    background: createErpMesh(domeGeometry, NoBlending),
-    erp: [],
-    sticker: [],
-    createErp: () => createErpMesh(domeGeometry, CustomBlending),
-    createSticker: () => new Mesh(planeGeometry, createMaterial(STICKER_VERTEX, STICKER_FRAGMENT, {})),
-    // A sky Sticker of a lens curve other than 1, on the dome (ADR 0042).
-    lensSticker: [],
-    createLensSticker: () => {
-      const material = createMaterial(ERP_VERTEX, LENS_STICKER_FRAGMENT, { toSticker: { value: null }, rect: { value: null }, curve: { value: 1 } });
-      material.side = BackSide;
-      return new Mesh(domeGeometry, material);
-    },
-    placeLensSticker(mesh, layer) {
-      Object.entries(unwrapStickerUniforms(layer)).forEach(([name, value]) => { mesh.material.uniforms[name].value = value; });
-    },
-    // An ERP may come turned (Panorama Studio's run output, shot by a Camera): its dome takes the rotation.
-    placeErp(mesh, halfCoverage, quaternion) {
-      mesh.material.uniforms.halfCoverage.value = halfCoverage;
-      mesh.quaternion.set(quaternion?.x ?? 0, quaternion?.y ?? 0, quaternion?.z ?? 0, quaternion?.w ?? 1);
-    },
-    placeSticker,
-  };
-  // The Unwrap view lays a 180 ERP over the whole width like the previous renderer.
-  const unwrap = {
-    background: createQuad(quadGeometry, UNWRAP_ERP_FRAGMENT, {}, NoBlending),
-    erp: [],
-    sticker: [],
-    createErp: () => createQuad(quadGeometry, UNWRAP_ERP_FRAGMENT, {}),
-    createSticker: () => createQuad(quadGeometry, UNWRAP_STICKER_FRAGMENT, { toSticker: { value: null }, rect: { value: null }, curve: { value: 1 } }),
-    placeErp() {},
-    placeSticker(mesh, layer) {
-      Object.entries(unwrapStickerUniforms(layer)).forEach(([name, value]) => { mesh.material.uniforms[name].value = value; });
-    },
-  };
+  const sky = createSkyMeshes({ scene });
+  const { domeGeometry, planeGeometry, quadGeometry, panorama, unwrap, fillSky } = sky;
   // Per owner: the size it last rendered at. Surfaces that share this view (the on-node Previews, the
   // Cutout camera preview) pass their own owner, so the canvas keeps the largest size in use instead of
   // resizing per owner. The layer textures are the view's (createLayerTextures): rendering one owner does
@@ -796,22 +723,6 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
   const owners = new Map();
   const layerTextures = createLayerTextures({ uploadRegions: (texture, rects) => uploadTextureRegions(renderer, texture, rects) });
   renderer.setScissorTest(true);
-
-  function addErp(owned, projection, mesh, layer, halfCoverage) {
-    mesh.material.uniforms.map.value = owned.texture(layer, halfCoverage ? ClampToEdgeWrapping : RepeatWrapping, false);
-    mesh.material.uniforms.opacity.value = layer.opacity;
-    projection.placeErp(mesh, halfCoverage, layer.quaternion);
-    scene.add(mesh);
-    return mesh;
-  }
-
-  function addSticker(owned, projection, mesh, layer) {
-    mesh.material.uniforms.map.value = owned.texture(layer, ClampToEdgeWrapping, true);
-    mesh.material.uniforms.opacity.value = layer.opacity;
-    projection.placeSticker(mesh, layer);
-    scene.add(mesh);
-    return mesh;
-  }
 
   // The grid, axes and origin marker for a gridSpec(); rebuilt when the spacing changes.
   function guideGroup(grid) {
@@ -1033,34 +944,6 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     });
     if (canvas.width !== canvasWidth || canvas.height !== canvasHeight) renderer.setSize(canvasWidth, canvasHeight, false);
     return { x: 0, y: canvas.height - height, width, height, offsetX: 0, offsetY: 0, fullWidth: width, fullHeight: height };
-  }
-
-  // The Sky of input (its background and layers) in `scene`.
-  function fillSky(owned, projection, input) {
-    scene.clear();
-    const background = input.background;
-    if (background && owned.drawable({ id: "background", ...background })) {
-      addErp(owned, projection, projection.background, { id: "background", opacity: 1, ...background }, background.coverage === 180);
-    }
-    // The new UI's sky grid (space.sky, grid.js skyGrid), over the background and under the layers.
-    const sky = projection === panorama ? input.space?.sky : null;
-    if (sky) scene.add((skyGrid ||= createSkyGrid(domeGeometry)).show(sky));
-    let erpIndex = 0;
-    let stickerIndex = 0;
-    let lensIndex = 0;
-    input.layers.forEach((layer, index) => {
-      if (!owned.drawable(layer)) return;
-      let mesh;
-      if (layer.kind === "erp") mesh = addErp(owned, projection, pooled(projection.erp, erpIndex++, projection.createErp), layer, false);
-      else if (projection.lensSticker && layer.curve !== undefined && layer.curve !== 1) {
-        mesh = pooled(projection.lensSticker, lensIndex++, projection.createLensSticker);
-        mesh.material.uniforms.map.value = owned.texture(layer, ClampToEdgeWrapping, true);
-        mesh.material.uniforms.opacity.value = layer.opacity;
-        projection.placeLensSticker(mesh, layer);
-        scene.add(mesh);
-      } else mesh = addSticker(owned, projection, pooled(projection.sticker, stickerIndex++, projection.createSticker), layer);
-      mesh.renderOrder = index + 1;
-    });
   }
 
   // The lens images (ADR 0042): per owner, the faces its lens renders draw into, by index (each owner keeps its own,
@@ -1684,7 +1567,7 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     depthColors.dispose();
     if (guides) disposeObject(guides.group);
     groundGrid?.dispose();
-    skyGrid?.dispose();
+    sky.disposeSkyGrid();
     lines.lines.forEach((line) => disposeObject(line));
     gizmo?.dispose();
     worldStickers.forEach((mesh) => mesh.material.dispose());
