@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from comfyui_pano_suite import nodes
+from comfyui_pano_suite import nodes, studio_node
 from comfyui_pano_suite.core.scene_state import load_scene_state
 from comfyui_pano_suite.node_runtime import NodeRuntime
 from comfyui_pano_suite.nodes import PanoramaCutoutNode, PanoramaStickersNode, PanoramaStudioNode
@@ -169,12 +169,12 @@ STUDIO_SHOT_SIZE = (224, 128)
 @contextmanager
 def studio_shot_size(size: tuple[int, int]):
     """Panorama Studio with its Camera output at `size`, whatever megapixels and multiple give."""
-    output_size = nodes._studio_output_size
-    nodes._studio_output_size = lambda *_args, **_kwargs: (*size, None)
+    output_size = studio_node._studio_output_size
+    studio_node._studio_output_size = lambda *_args, **_kwargs: (*size, None)
     try:
         yield
     finally:
-        nodes._studio_output_size = output_size
+        studio_node._studio_output_size = output_size
 
 
 def _run_studio_shot(shot: dict):
