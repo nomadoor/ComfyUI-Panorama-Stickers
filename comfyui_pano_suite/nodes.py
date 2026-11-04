@@ -2,7 +2,6 @@ import bisect
 import hashlib
 import json
 import math
-import os
 from collections import Counter
 from dataclasses import dataclass, replace
 from fractions import Fraction
@@ -21,7 +20,7 @@ from typing_extensions import override
 from .comfy_image_resolver import resolve_painting_layer_payload
 from .node_runtime import NodeProgress, create_default_runtime
 from .progress import loop_progress
-from .core.cache import nbytes
+from .core.cache import file_key, nbytes
 from .core.cutout import build_cutout_sampling_map, sample_cutout_from_sampling_map
 from .core.display_list import (
     alpha_composite_over_rgba as _alpha_composite_over_rgba,
@@ -46,9 +45,9 @@ from .core.painting import (
     render_painting_to_erp,
 )
 from .core.render import Projection, RenderLayer, SceneSources, StickerSource, render_frame
-from .core.scene_eval import FRAME_EPSILON, clip_active, evaluate_scene_state
+from .core.scene_eval import clip_active, evaluate_scene_state, segment_easing
 from .core.scene_inherit import apply_upstream_overrides
-from .core.scene_state import CAMERA_LANES, DEFAULT_CLIP, DEFAULT_EASING, STICKER_NUMBER_MAX, STICKER_STATE_KIND, is_3d_file_source, load_scene_state, load_sticker_state
+from .core.scene_state import CAMERA_LANES, DEFAULT_ANIMATION, DEFAULT_CLIP, DEFAULT_EASING, STICKER_NUMBER_MAX, STICKER_STATE_KIND, is_3d_file_source, load_scene_state, load_sticker_state, round_frame
 from .core.state import merge_state, normalize_coverage, parse_sticker_state
 from .core.stickers import comfy_file_path, load_source_rgba
 from .core.video import (
@@ -61,7 +60,7 @@ from .core.video import (
     save_editor_frames,
     save_video_to_mp4,
 )
-from .core.video_source import MaterializedVideo, StreamedVideo
+from .core.video_source import MaterializedVideo, StreamedVideo, pts_tolerance, pts_tolerance_frames
 from .core.world import FIT_3D_MIN_DISTANCE, box_sphere, fit_3d_position
 from .core.gltf_animation import clip_time
 from .core.world_render import ContentSource, SceneContent
@@ -204,12 +203,27 @@ def _safe_int(value, default: int = 0) -> int:
         return int(default)
 
 
-def _hex_color_to_rgb01(value: str) -> np.ndarray:
-    text = str(value or "").strip()
-    if text.startswith("#"):
-        text = text[1:]
-    if len(text) != 6:
-        text = "00ff00"
+def _normalize_hex_color(value) -> str:
+    """A color widget value as `#` and six characters in lower case: `#abc` is `#aabbcc`, the `#` is optional, and
+    anything that is not six characters (or three) that `int(text, 16)` reads is `#00ff00`."""
+    s = str(value or "").strip()
+    if s.startswith("#"):
+        s = s[1:]
+    if len(s) == 3:
+        s = "".join(ch * 2 for ch in s)
+    if len(s) != 6:
+        return "#00ff00"
+    try:
+        int(s, 16)
+    except ValueError:
+        return "#00ff00"
+    return f"#{s.lower()}"
+
+
+def hex_to_rgb01(value) -> np.ndarray:
+    """A color widget value (`_normalize_hex_color`) as float32 RGB in 0..1; green for a value whose channels do not
+    read as hex."""
+    text = _normalize_hex_color(value)[1:]
     try:
         rgb = [int(text[idx:idx + 2], 16) / 255.0 for idx in (0, 2, 4)]
     except ValueError:
@@ -429,7 +443,7 @@ def _render_sticker_output_batches(
     progress_callback=None,
 ):
     if bg_erp is None:
-        solid_rgb = np.broadcast_to(_hex_color_to_rgb01(bg_hex), (1, out_h, out_w, 3)).astype(np.float32, copy=True)
+        solid_rgb = np.broadcast_to(hex_to_rgb01(bg_hex), (1, out_h, out_w, 3)).astype(np.float32, copy=True)
         if overlay_rgba is not None:
             alpha = overlay_rgba[None, ..., 3:4].astype(np.float32, copy=False)
             rgb = overlay_rgba[None, ..., :3].astype(np.float32, copy=False)
@@ -771,27 +785,12 @@ class PanoramaStickersNode(io.ComfyNode):
             return workspace_w, max(1, workspace_w // 2)
         return workspace_w, max(1, int(out_h))
 
-    @staticmethod
-    def _normalize_hex_color(v):
-        s = str(v or "").strip()
-        if s.startswith("#"):
-            s = s[1:]
-        if len(s) == 3:
-            s = "".join(ch * 2 for ch in s)
-        if len(s) != 6:
-            return "#00ff00"
-        try:
-            int(s, 16)
-        except ValueError:
-            return "#00ff00"
-        return f"#{s.lower()}"
-
     @classmethod
     def execute(cls, output_preset, coverage, bg_color, state_json, bg_erp=None, sticker_image=None, sticker_state="", fps=24.0, audio=None, unique_id=None):
         coverage_value = normalize_coverage(coverage)
         out_w, out_h, output_uses_bg_size = cls._resolve_output_size(output_preset, coverage_value, bg_erp=bg_erp)
         workspace_w, workspace_h = cls._resolve_overlay_workspace_size(out_w, out_h, coverage_value)
-        bg_hex = cls._normalize_hex_color(bg_color)
+        bg_hex = _normalize_hex_color(bg_color)
         fps_value = max(1.0, finite_float(fps, 24.0))
         state = merge_state(state_in=None, internal_state=state_json, fallback_preset=out_w, fallback_bg=bg_hex)
         warnings = []
@@ -1047,8 +1046,7 @@ def _read_scene_file(scene, name: str | None):
     if not isinstance(scene, Types.File3D):
         return scene
     if scene.is_disk_backed:
-        stat = os.stat(scene.get_source())
-        cache_key = (scene.get_source(), stat.st_mtime_ns, stat.st_size)
+        cache_key = file_key(scene.get_source())
     else:
         cache_key = NODE_RUNTIME.object_identity(scene)
     mesh = NODE_RUNTIME.cache.get("mesh_files", cache_key)
@@ -1123,9 +1121,7 @@ def _nearest_turn(angle: float, previous: float) -> float:
 
 def _in_hold(keyframes: list[dict], frame: float) -> bool:
     """Whether `frame` is in a segment that holds its value until the next Keyframe (a cut)."""
-    if not keyframes[0]["frame"] - FRAME_EPSILON <= frame < keyframes[-1]["frame"] - FRAME_EPSILON:
-        return False
-    return [key for key in keyframes if key["frame"] <= frame + FRAME_EPSILON][-1]["easing"] == "hold"
+    return segment_easing(keyframes, frame) == "hold"
 
 
 def _lane_numbers(value) -> tuple:
@@ -1394,7 +1390,7 @@ def _timeline_frame(time, stored_fps: float, time_base) -> float:
     """The Timeline frame of a state recorded at `stored_fps` at `time` seconds. PTS are rounded to the time base,
     so a frame within half of it of a whole Timeline frame is that frame."""
     frame = float(time * Fraction(stored_fps))
-    return float(round(frame)) if abs(frame - round(frame)) <= float(time_base) / 2 * stored_fps else frame
+    return float(round(frame)) if abs(frame - round(frame)) <= pts_tolerance_frames(time_base, stored_fps) else frame
 
 
 def _layer_frames(state: dict, port: PortMedia | None, scene: SceneContent | None, times, fps: float, time_base) -> list[tuple]:
@@ -1403,7 +1399,7 @@ def _layer_frames(state: dict, port: PortMedia | None, scene: SceneContent | Non
     the state's recorded `timeline.fps`, so its Keyframes keep their seconds at any Timeline `fps`; the state is not
     rebased."""
     stored_fps = state["timeline"]["fps"]
-    tolerance = float(time_base) / 2 * stored_fps
+    tolerance = pts_tolerance_frames(time_base, stored_fps)
     clip = state["scene"]["clip"]
     origin = clip["start"] - clip["in"]
     frames = []
@@ -1440,7 +1436,7 @@ def _bg_frames(bg, times, time_base, timing: bool, place: PortMedia | None, fps:
         return [None] * len(times)
     if place is not None:
         stored_fps = place.stored_fps
-        tolerance = float(time_base) / 2 * stored_fps
+        tolerance = pts_tolerance_frames(time_base, stored_fps)
         frames = [_timeline_frame(time, stored_fps, time_base) for time in times]
         return [place.index_at(frame, fps, tolerance) if clip_active(place.clip, frame) else None for frame in frames]
     if not isinstance(bg, OPENED_VIDEOS):
@@ -1452,10 +1448,6 @@ def _bg_frames(bg, times, time_base, timing: bool, place: PortMedia | None, fps:
     tolerance = max(Fraction(time_base), Fraction(bg.time_base)) / 2
     indices = [bisect.bisect_right(starts, time + tolerance) - 1 for time in times]
     return [index if 0 <= index < len(bg.times) else None for index in indices]
-
-
-# A 3D file's animation when its state has none (ADR 0043): the first clip at speed 1.
-DEFAULT_ANIMATION = {"clip": None, "speed": 1.0}
 
 
 def _clip_of(animation, setting: dict | None):
@@ -1535,7 +1527,7 @@ def _decide_timeline(state: dict, bg, port: PortMedia | None, scene: SceneConten
         place = None if bg is None or upstream.bg_clip is None else _bg_place(bg, *upstream.bg_clip)
 
     def output_frames(frame):
-        return math.floor(frame * fps / stored_fps + 0.5)
+        return round_frame(frame * fps / stored_fps)
 
     clips = [state["scene"]["clip"], *(sticker["clip"] for sticker in state["stickers"])]
     clip_ends = [clip["start"] + clip["duration"] for clip in clips if clip["duration"] is not None]
@@ -1570,7 +1562,7 @@ def _decide_timeline(state: dict, bg, port: PortMedia | None, scene: SceneConten
         # the length, and the frames it leaves show bg_color.
         if video:
             # A background VIDEO that does not set the Timeline lasts until its last frame ends.
-            length = len(own_bg.times) if upstream is None else max(1, math.floor(float(own_bg.times[-1] + 1 / own_bg.frame_rate) * fps + 0.5))
+            length = len(own_bg.times) if upstream is None else max(1, round_frame(float(own_bg.times[-1] + 1 / own_bg.frame_rate) * fps))
         elif batch > 1:
             length = batch
         elif clip_ends:
@@ -1580,7 +1572,7 @@ def _decide_timeline(state: dict, bg, port: PortMedia | None, scene: SceneConten
         else:
             length = 1
         if upstream is not None:
-            length = max([length, len(upstream.frames), *(math.floor(end * fps / layer_fps + 0.5) for end, layer_fps in overridden_ends)])
+            length = max([length, len(upstream.frames), *(round_frame(end * fps / layer_fps) for end, layer_fps in overridden_ends)])
 
     times = _output_times(given, rate, length)
     layers = [] if upstream is None else [(layer.state, layer.port, _scene_content(layer.scene)) for layer in upstream.layers]
@@ -1821,7 +1813,7 @@ def _port_media_ui(port: PortMedia, fps: float, time_base) -> dict:
         cache_key = ("editor_mp4", _video_cache_identity(video, port.streamed))
         payload = _editor_mp4_ui(cache_key, lambda: _editor_mp4(video, open_video(video, "sticker")), float(port.frame_rate), len(port.times), contract)
         time_base = max(port.time_base, time_base)
-        payload[contract["meta"]][0].update(kind="VIDEO", duration=float(port.times[-1] + 1 / port.frame_rate), pts_tolerance=float(time_base) / 2)
+        payload[contract["meta"]][0].update(kind="VIDEO", duration=float(port.times[-1] + 1 / port.frame_rate), pts_tolerance=pts_tolerance(time_base))
     return _merge_ui_payload(ui_ret, payload)
 
 
@@ -1955,7 +1947,7 @@ def _build_scene(state_json: str, background, world, scene, sticker, sticker_sta
         bg_media, coverage, bg_rgb = upstream.bg_media, upstream.coverage, upstream.bg_color
     else:
         bg_media, coverage = background, normalize_coverage(background_range)
-        bg_rgb = tuple(_hex_color_to_rgb01(PanoramaStickersNode._normalize_hex_color(background_color)).tolist())
+        bg_rgb = tuple(hex_to_rgb01(background_color).tolist())
     bg = _open_media(bg_media, "background")
     # The upstream with this state's overrides applied (ADR 0030), which is drawn and passed on.
     applied, overridden_ends = upstream, []
@@ -1990,8 +1982,7 @@ def _build_scene(state_json: str, background, world, scene, sticker, sticker_sta
         if not inherited_bg:
             _merge_ui_payload(media_ui, bg_ui)
         # The upstream Scene sets the Timeline fps; the editor shows its length too.
-        media_ui["pano_timeline_fps"] = [fps]
-        media_ui["pano_timeline_frames"] = [len(frames)]
+        media_ui.update(_timeline_ui(fps, len(frames)))
     layer = SceneLayer(state, sources, port, world, layer_ui)
     layers = (layer,) if upstream is None else (*applied.layers, layer)
     if inherited_bg:
@@ -2013,6 +2004,11 @@ def _animation_warnings(state: dict, world, port: PortMedia | None, contents: di
         clip = (owner.get("animation") or DEFAULT_ANIMATION)["clip"]
         if animation is not None and animation.clips and animation.clip_index(clip) is None:
             warnings.append(f"The 3D file of {name} has no clip named {clip!r}; it plays its first clip, {animation.clips[0].name!r}.")
+
+
+def _timeline_ui(fps: float, frame_count: int) -> dict:
+    """The `ui` of a Timeline: its fps (`pano_timeline_fps`) and length in output frames (`pano_timeline_frames`)."""
+    return {"pano_timeline_fps": [fps], "pano_timeline_frames": [frame_count]}
 
 
 def _upstream_ui(upstream: PanoSceneValue, bg_ui: dict | None) -> dict:
@@ -2507,7 +2503,8 @@ def _video_cache_identity(video, streamed: bool) -> tuple:
     if streamed:
         source = video.get_stream_source()
         if isinstance(source, str):
-            return ("file", source, os.stat(source).st_mtime_ns, video.get_active_trim_window())
+            path, mtime_ns, _size = file_key(source)
+            return ("file", path, mtime_ns, video.get_active_trim_window())
     return NODE_RUNTIME.object_identity(video)
 
 
@@ -2570,8 +2567,7 @@ def _preview_scene_ui(scene: PanoSceneValue) -> dict:
     for the same Scene upstream (`_upstream_ui`), and its Timeline (`pano_timeline_fps`, `pano_timeline_frames`).
     Nothing is drawn or written; the files are those the Studio that made the Scene wrote."""
     ui = _upstream_ui(scene, scene.bg_ui if scene.bg_media is not None else None)
-    ui["pano_timeline_fps"] = [scene.fps]
-    ui["pano_timeline_frames"] = [len(scene.frames)]
+    ui.update(_timeline_ui(scene.fps, len(scene.frames)))
     return ui
 
 

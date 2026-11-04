@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import numpy as np
 
+from .math import over_rgba
+
 
 def _safe_int(value, default: int = 0) -> int:
     try:
@@ -71,10 +73,7 @@ def alpha_composite_over_rgba(base_rgba: np.ndarray, overlay_rgba: np.ndarray) -
     source_rgb = np.clip(source_roi[..., :3], 0.0, 1.0)
     destination_alpha = np.clip(destination_roi[..., 3:4], 0.0, 1.0)
     destination_rgb = np.clip(destination_roi[..., :3], 0.0, 1.0)
-    output_alpha = source_alpha + destination_alpha * (1.0 - source_alpha)
-    numerator_rgb = source_rgb * source_alpha + destination_rgb * destination_alpha * (1.0 - source_alpha)
-    safe_output_alpha = np.maximum(output_alpha, 1e-6)
-    output_rgb = np.where(output_alpha > 1e-6, numerator_rgb / safe_output_alpha, 0.0)
+    output_rgb, output_alpha = over_rgba(destination_rgb, destination_alpha, source_rgb, source_alpha)
     destination_roi[..., :3] = output_rgb
     destination_roi[..., 3:4] = output_alpha
     return destination

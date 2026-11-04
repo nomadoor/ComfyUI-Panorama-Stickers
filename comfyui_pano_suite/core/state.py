@@ -24,9 +24,15 @@ DEFAULT_STATE = {
 }
 
 
+def coverage_span(value) -> int:
+    """A span of longitude (coverage): 180, or else 360. A value that `int` cannot read raises its error."""
+    return 180 if int(value) == 180 else 360
+
+
 def normalize_coverage(value) -> int:
+    """`coverage_span` of `value`, or 360 when `int` cannot read it."""
     try:
-        return 180 if int(value) == 180 else 360
+        return coverage_span(value)
     except Exception:
         return 360
 

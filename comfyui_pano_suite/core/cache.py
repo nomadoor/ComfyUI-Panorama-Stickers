@@ -5,6 +5,7 @@ Each entry is a value under a namespace and a key. The cache holds at most `limi
 `CACHE_MAX_ENTRIES` entries, evicting the least recently used. A value larger than the limit is not kept. Arrays are
 kept as given and handed out read-only: callers must not write to what they get or put, and nothing is copied.
 """
+import os
 import threading
 from collections import OrderedDict
 from contextlib import contextmanager
@@ -34,6 +35,13 @@ def nbytes(value) -> int:
     if hasattr(value, "__dict__") and not callable(value):
         return sum(nbytes(item) for item in vars(value).values())
     return 0
+
+
+def file_key(path) -> tuple:
+    """A file on disk as the key of what is read from it: its path (as a string), modification time in nanoseconds,
+    and size, so a changed file is read again. A file that cannot be read raises the error of `os.stat`."""
+    stat = os.stat(path)
+    return (str(path), stat.st_mtime_ns, stat.st_size)
 
 
 def _read_only(value):

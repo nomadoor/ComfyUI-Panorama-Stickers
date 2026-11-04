@@ -3,6 +3,7 @@ from pathlib import Path
 import numpy as np
 from PIL import UnidentifiedImageError
 
+from .core.cache import file_key
 from .core.painting import load_painting_layer_payload
 from .core.stickers import comfy_file_path, read_image_file_rgba8
 
@@ -18,10 +19,9 @@ def _resolve_asset_cache_key(asset: dict | None) -> tuple[str, int, int] | None:
     if path is None:
         return None
     try:
-        stat = path.stat()
+        return file_key(path)
     except (FileNotFoundError, OSError):
         return None
-    return (str(path), int(stat.st_mtime_ns), int(stat.st_size))
 
 
 def _load_comfy_rgba8(asset: dict) -> np.ndarray | None:

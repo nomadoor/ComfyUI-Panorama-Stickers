@@ -21,6 +21,19 @@ def unit_float_tensor(array: np.ndarray, device) -> "torch.Tensor":
     return tensor.float().div_(255.0) if tensor.dtype == torch.uint8 else tensor.float()
 
 
+def over_rgb(dst_rgb: np.ndarray, src_rgb: np.ndarray, src_a: np.ndarray) -> np.ndarray:
+    """Straight-alpha `src_rgb` with alpha `src_a` laid over the opaque `dst_rgb`. Callers clip their inputs."""
+    return src_rgb * src_a + dst_rgb * (1.0 - src_a)
+
+
+def over_rgba(dst_rgb: np.ndarray, dst_a: np.ndarray, src_rgb: np.ndarray, src_a: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Straight-alpha `src` laid over straight-alpha `dst`, as (straight rgb, alpha); the color is 0 where the alpha
+    is 1e-6 or less. Alphas carry a trailing axis of 1 so they broadcast over rgb. Callers clip their inputs."""
+    out_a = src_a + dst_a * (1.0 - src_a)
+    numer_rgb = src_rgb * src_a + dst_rgb * dst_a * (1.0 - src_a)
+    return np.where(out_a > 1e-6, numer_rgb / np.maximum(out_a, 1e-6), 0.0), out_a
+
+
 def camera_basis(
     yaw_deg: float,
     pitch_deg: float,

@@ -41,27 +41,23 @@ except Exception:
     get_executing_context = None
 
 
+# The keys of an output preview, and of an input VIDEO (also the Studio background). Kinds with the same keys share
+# one dict; `preview_contract` hands out a copy.
+_OUTPUT_UI_KEYS = {
+    "image": "pano_input_images",
+    "video": "pano_videos",
+    "meta": "pano_video_meta",
+}
+_INPUT_VIDEO_UI_KEYS = {
+    "image": "pano_input_images",
+    "video": "pano_input_videos",
+    "meta": "pano_input_video_meta",
+}
 PREVIEW_UI_KEYS = {
-    "default": {
-        "image": "pano_input_images",
-        "video": "pano_videos",
-        "meta": "pano_video_meta",
-    },
-    "input_video": {
-        "image": "pano_input_images",
-        "video": "pano_input_videos",
-        "meta": "pano_input_video_meta",
-    },
-    "stickers_bg": {
-        "image": "pano_input_images",
-        "video": "pano_input_videos",
-        "meta": "pano_input_video_meta",
-    },
-    "stickers_output": {
-        "image": "pano_input_images",
-        "video": "pano_videos",
-        "meta": "pano_video_meta",
-    },
+    "default": _OUTPUT_UI_KEYS,
+    "input_video": _INPUT_VIDEO_UI_KEYS,
+    "stickers_bg": _INPUT_VIDEO_UI_KEYS,
+    "stickers_output": _OUTPUT_UI_KEYS,
     "stickers_input": {
         "image": "pano_sticker_input_images",
         "video": "pano_sticker_input_videos",
