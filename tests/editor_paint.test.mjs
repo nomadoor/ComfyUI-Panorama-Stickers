@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { createCommands } from "../web_src/editor/commands.js";
 import { createPaintStrokes } from "../web_src/editor/paint_strokes.js";
+import { createHitTest } from "../web_src/editor/hit_test.js";
 
 // A 2D canvas of `width` x `height` whose pixels are `alpha` (row by row), with the calls a lasso fill makes.
 function fakeCanvas(width = 0, height = 0, alpha = []) {
@@ -67,10 +68,19 @@ test("Delete cancels a pointer's edit under way before it deletes", () => {
   const commands = createCommands({ editor: { interaction: null }, readOnly: false, state: {}, type: "stickers", uiState: {} });
   commands.connect({
     cancelLiveEdits: () => order.push("cancel"), getSelected: () => item, getSelectedItems: () => [item], isItemLocked: () => false,
-    selectedWorldSticker: () => ({ id: "w" }), worldStickerEditable: () => true,
-    stopTimelinePlayback: () => { order.push("stop"); throw new Error("deleting"); },
+    isStrokeGroupItem: () => { order.push("delete"); throw new Error("deleting"); },
   });
   assert.throws(() => commands.deleteSelected(), /deleting/);
-  assert.throws(() => commands.deleteSelectedWorldSticker(), /deleting/);
-  assert.deepEqual(order, ["cancel", "stop", "cancel", "stop"]);
+  assert.deepEqual(order, ["cancel", "delete"]);
+});
+
+test("the old editor: a one-point stroke's dot is its body (move), though a frame corner lies within the handles' reach", () => {
+  const hit = createHitTest({ editor: { mode: "pano" }, readOnly: false, shotEditor: false, type: "stickers" });
+  hit.connect({ isStickerItem: () => false, isShotItem: () => false });
+  const corners = [{ x: 96, y: 96 }, { x: 104, y: 96 }, { x: 104, y: 104 }, { x: 96, y: 104 }];
+  const dot = { kind: "strokeGroup", visible: true, center: { x: 100, y: 100 }, corners, strokePaths: [{ points: [{ x: 100, y: 100 }], lineWidth: 20 }] };
+  assert.equal(hit.handleHit(dot, { x: 100, y: 100 }).kind, "move");
+  // A stroke with a line keeps its corner handles.
+  const line = { ...dot, strokePaths: [{ points: [{ x: 96, y: 100 }, { x: 104, y: 100 }], lineWidth: 20 }] };
+  assert.equal(hit.handleHit(line, { x: 97, y: 97 }).kind, "scale");
 });

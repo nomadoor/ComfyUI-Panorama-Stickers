@@ -1,44 +1,22 @@
-// The floating selection menu over the selected item (or world Sticker) and the tooltips of the stage.
+// The floating selection menu over the selected item and the tooltips of the stage.
 import { ICON } from "../icons.js";
 import { getCutoutAspectLabel } from "../pano_cutout_view_math.js";
-import {
-  ERP_ASPECT,
-  buildSelectionMenuModel,
-  buildWorldSelectionMenuModel,
-  selectionMenuPlacement,
-} from "../pano_editor_ui_state.js";
+import { buildSelectionMenuModel, selectionMenuPlacement } from "../pano_editor_ui_state.js";
 import { clamp } from "../pano_math.js";
-import { gizmoScreenBox, planeCorners, projectPoint } from "../pano_space.js";
-import { isUpstreamSticker, upstreamStickerEditable } from "../pano_upstream.js";
 
 export function createSelectionMenu(deps) {
   const {
-    cameraV2, canvas, editor, scheduler, selectionMenu, stageWrap, state, timers, tooltip, tooltipEl, type,
+    canvas, editor, scheduler, selectionMenu, stageWrap, timers, tooltip, tooltipEl, type,
     uiState,
   } = deps;
   // Bound by connect() to the other modules and showEditor.
-  let areAllSelectedItemsLocked, canRestoreSelectedToInitial, currentSpaceCamera, editorViewInput,
-    getMultiSelectionGeom, getSelected, getSelectedItems, getSelectedKind, isCameraSelected, isErpCamera,
-    isExternalSticker, isFreeSpaceView, isItemLocked, isShotItem, isSpaceView, isStickerHidden, objectGeom;
-
-  // Whether the selection menu shows the world Sticker's menu, which renderEditorView() keeps current.
-  let worldMenuShown = false;
-
-  function isWorldMenuShown() {
-    return worldMenuShown;
-  }
+  let areAllSelectedItemsLocked, canRestoreSelectedToInitial, getMultiSelectionGeom, getSelected, getSelectedItems,
+    getSelectedKind, isExternalSticker, isItemLocked, isStickerHidden, objectGeom;
 
   function updateSelectionMenu() {
     if (!selectionMenu) return;
-    worldMenuShown = false;
     if (editor.mode === "frame") {
       uiState.selectionMenu = { visible: false, left: 0, top: 0, items: [] };
-      return;
-    }
-    if (editor.worldSelectedId || (isCameraSelected() && isFreeSpaceView())) {
-      const model = worldSelectionMenuModel();
-      worldMenuShown = model.visible;
-      showSelectionMenu(model);
       return;
     }
     const selected = getSelected();
@@ -57,38 +35,14 @@ export function createSelectionMenu(deps) {
       allLocked: areAllSelectedItemsLocked(selectedItems),
       anyLocked: selectedItems.some((item) => isItemLocked(item)),
       selectedLocked: isItemLocked(selected),
-      activeAspect: isShotItem(selected) && isErpCamera() ? ERP_ASPECT : getCutoutAspectLabel(selected),
+      activeAspect: getCutoutAspectLabel(selected),
       cutoutAspectOpen: editor.cutoutAspectOpen,
       isExternalSticker,
       isStickerHidden,
       canRestoreSelectedToInitial,
       iconSet: ICON,
-      cameraShot: cameraV2,
-      coverage: state.coverage,
-      upstream: upstreamSelection(selectedItems),
     });
     showSelectionMenu(model);
-  }
-
-  // What the menu may do with upstream elements in the selection (ADR 0030): null without any, else whether
-  // they can be locked, unlocked and deleted (their layers keep overrides).
-  function upstreamSelection(selectedItems) {
-    const upstream = selectedItems.filter(isUpstreamSticker);
-    return upstream.length ? { editable: upstream.every(upstreamStickerEditable) } : null;
-  }
-
-  // The selected world Sticker's menu shows while its gizmo does (worldGizmo: in the space view, not
-  // locked, in an editor that edits, inside its Clip range), clear of its plane (or its 3D item's origin)
-  // and of the gizmo's handles.
-  function worldSelectionMenuModel() {
-    const space = isSpaceView() && !editor.interaction ? editorViewInput().space : null;
-    if (!space?.gizmo) return { visible: false };
-    const camera = currentSpaceCamera();
-    const plane = [...space.stickers, ...space.upstreamStickers].find((layer) => layer.id === editor.worldSelectedId);
-    const points = plane ? planeCorners(plane) : [space.gizmo.transform.position];
-    const corners = points.map((point) => projectPoint(camera, point, canvas.width, canvas.height)).filter(Boolean);
-    const gizmoBox = gizmoScreenBox(camera, space.gizmo.transform.position, space.gizmo.mode, canvas.width, canvas.height);
-    return buildWorldSelectionMenuModel({ corners, gizmoBox, gizmoMode: space.gizmo.mode, camera: isCameraSelected() });
   }
 
   function showSelectionMenu(model) {
@@ -188,11 +142,10 @@ export function createSelectionMenu(deps) {
   return {
     connect(api) {
       ({
-        areAllSelectedItemsLocked, canRestoreSelectedToInitial, currentSpaceCamera, editorViewInput,
-        getMultiSelectionGeom, getSelected, getSelectedItems, getSelectedKind, isCameraSelected, isErpCamera,
-        isExternalSticker, isFreeSpaceView, isItemLocked, isShotItem, isSpaceView, isStickerHidden, objectGeom,
+        areAllSelectedItemsLocked, canRestoreSelectedToInitial, getMultiSelectionGeom, getSelected, getSelectedItems,
+        getSelectedKind, isExternalSticker, isItemLocked, isStickerHidden, objectGeom,
       } = api);
     },
-    isWorldMenuShown, updateSelectionMenu, hideTooltip, showTooltipFor,
+    updateSelectionMenu, hideTooltip, showTooltipFor,
   };
 }

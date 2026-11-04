@@ -50,12 +50,6 @@ export function switchSpaceMode(space, mode, origin = [0, 0, 0]) {
   return mode === "3dof" ? { mode, position: [...origin], moved: false } : { ...space, mode };
 }
 
-// The same once it is known whether there is World content: without it a 6DoF view goes back to 3DoF,
-// so content that shows again starts in 3DoF.
-export function spaceModeWithContent(space, hasContent, origin = [0, 0, 0]) {
-  return hasContent || space.mode === "3dof" ? space : switchSpaceMode(space, "3dof", origin);
-}
-
 // The axes of a view, with its roll (the Frame view's Camera has one; the Viewport camera has none).
 function axesOf(view) {
   return viewAxes(view.yaw_deg, view.pitch_deg, view.roll_deg ?? 0);

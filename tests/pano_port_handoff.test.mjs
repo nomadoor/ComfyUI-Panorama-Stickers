@@ -2,9 +2,7 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import test from "node:test";
 
-import { createExternalStickers } from "../web_src/editor/external_stickers.js";
-import { historySnapshot } from "../web_src/editor/history.js";
-import { editorStateWrite, parseSceneEditorState, restoredHistoryState, setTimelineFps } from "../web_src/pano_editor_state.js";
+import { parseSceneEditorState } from "../web_src/pano_editor_state.js";
 import {
   inheritPortHandoff,
   portHandoff,
@@ -60,52 +58,6 @@ function studioNode(handoff) {
     handoff,
   };
   return node;
-}
-
-// The editor's port Sticker module over the working state of `text`, with the node's result handing
-// `node.handoff`; commit() writes the state as the editor's commitState does and returns the text.
-function editorSession(text, node, fps = null) {
-  const state = working(text, fps);
-  const session = { state, text, node };
-  const external = createExternalStickers({ comfyMedia: {}, editor: {}, node, readOnly: false, state, type: "stickers" });
-  external.connect({
-    commitAndRefreshNode: () => session.commit(),
-    getExternalStickerPreviewImage: () => null,
-    getNodeUiValue: (key) => (key === "pano_sticker_handoff" && node.handoff ? [node.handoff] : null),
-    isExternalSticker: (item) => item.source?.kind === "port",
-    markObjectVisualsDirty() {},
-    pushHistory: () => session.pushHistory(),
-    requestDraw() {},
-    updateSelectionMenu() {},
-    updateSidePanel() {},
-  });
-  const history = [historySnapshot(state)];
-  let index = 0;
-  Object.assign(session, {
-    external,
-    commit() {
-      external.syncPortHandoff();
-      const next = editorStateWrite(node, external.storedEditorState(), session.text, { rebased: true });
-      if (next !== null) session.text = next;
-      return session.text;
-    },
-    pushHistory() {
-      external.syncPortHandoff();
-      history.splice(index + 1, history.length, historySnapshot(external.storedEditorState()));
-      index = history.length - 1;
-    },
-    step(delta) {
-      index += delta;
-      const restored = restoredHistoryState(state, history[index]).state;
-      for (const key of Object.keys(state)) delete state[key];
-      Object.assign(state, restored);
-      external.syncPortHandoff({ restored: true });
-      session.commit();
-    },
-  });
-  external.reconcileExternalStickerFromInputs("open");
-  session.pushHistory();
-  return session;
 }
 
 test("a stored port Sticker shows the handoff's Lanes and keeps what the state keeps", () => {
@@ -184,119 +136,6 @@ test("a handoff at another fps is rebased to the editor's, as the whole state is
 
   assert.equal(state.timeline.fps, 48);
   assert.deepEqual(shown.direction.keyframes.map((key) => key.frame), [0, 8]);
-});
-
-test("opening and closing the editor with a handoff writes nothing", () => {
-  const text = stateText([FILE_STICKER, SKY_PORT]);
-  for (const handoff of [SKY_HANDOFF, WORLD_HANDOFF]) {
-    const session = editorSession(text, studioNode(handoff));
-
-    assert.equal(port(session.state).placement, handoff.placement);
-    assert.equal(session.commit(), text);
-    // A result with a handoff of the other placement is shown, and writes nothing either.
-    const other = handoff === SKY_HANDOFF ? WORLD_HANDOFF : SKY_HANDOFF;
-    session.node.handoff = other;
-    session.external.reconcileExternalStickerFromInputs("executed");
-    assert.equal(port(session.state).placement, other.placement);
-    assert.equal(session.commit(), text);
-  }
-  // At another fps (a VIDEO's), the editor rebases the state and still writes nothing.
-  assert.equal(editorSession(text, studioNode(SKY_HANDOFF), 30).commit(), text);
-});
-
-test("an edit records its Lane, Undo and Redo bring the text back, and Revert to upstream follows the handoff", () => {
-  const text = stateText([SKY_PORT]);
-  const session = editorSession(text, studioNode(SKY_HANDOFF));
-  port(session.state).size.value = { hFOV_deg: 90, vFOV_deg: 90 };
-  session.pushHistory();
-  const edited = session.commit();
-
-  const saved = port(JSON.parse(edited));
-  assert.deepEqual([saved.handoff_overrides, saved.size.value.hFOV_deg, saved.direction.value.yaw_deg], [["size"], 90, -90]);
-  // The edit is shown; the other Lanes still follow the handoff.
-  assert.deepEqual([port(session.state).size.value.hFOV_deg, port(session.state).direction.value.yaw_deg], [90, 10]);
-
-  session.step(-1);
-  assert.equal(session.text, text);
-  assert.equal(port(session.state).size.value.hFOV_deg, 60);
-  session.step(1);
-  assert.equal(session.text, edited);
-
-  session.external.revertPortHandoffLane("size");
-  assert.deepEqual([port(session.state).size.value.hFOV_deg, port(session.state).handoff_overrides], [60, []]);
-  assert.deepEqual(port(JSON.parse(session.text)).handoff_overrides ?? [], []);
-  assert.deepEqual(session.external.portHandoffLanes(port(session.state)), [
-    { name: "direction", overridden: false }, { name: "roll", overridden: false }, { name: "size", overridden: false },
-  ]);
-});
-
-test("an edit of the port Sticker that the handoff turned to the other placement keeps the new placement", () => {
-  const text = stateText([SKY_PORT]);
-  const session = editorSession(text, studioNode(WORLD_HANDOFF));
-  port(session.state).scale.value = 2;
-  session.pushHistory();
-
-  const saved = port(JSON.parse(session.commit()));
-
-  assert.deepEqual([saved.placement, saved.handoff_overrides, saved.scale.value, saved.crop], ["world", ["scale"], 2, CROP]);
-  session.step(-1);
-  assert.equal(session.text, text);
-});
-
-test("changing the Timeline fps rebases the port Sticker without making its Lanes overrides", () => {
-  const session = editorSession(stateText([SKY_PORT]), studioNode(SKY_HANDOFF));
-  setTimelineFps(session.state, 48);
-  session.pushHistory();
-  port(session.state).roll.value = 30;
-  session.pushHistory();
-
-  const saved = JSON.parse(session.commit());
-
-  assert.equal(saved.timeline.fps, 48);
-  assert.deepEqual([port(saved).handoff_overrides, port(saved).roll.value, port(saved).direction.value.yaw_deg], [["roll"], 30, -90]);
-  // Shown at the new fps, the handoff's Keyframes keep their seconds.
-  assert.deepEqual(port(session.state).direction.keyframes.map((key) => key.frame), [0, 8]);
-});
-
-test("a pending edit is still recorded when the Timeline fps changes before it is written", () => {
-  const session = editorSession(stateText([SKY_PORT]), studioNode(SKY_HANDOFF));
-  port(session.state).roll.value = 30;
-  setTimelineFps(session.state, 48);
-  session.pushHistory();
-
-  const saved = port(JSON.parse(session.commit()));
-
-  assert.deepEqual([saved.handoff_overrides, saved.roll.value], [["roll"], 30]);
-});
-
-test("Revert to upstream stores the upstream value of the Lane", () => {
-  const session = editorSession(stateText([{ ...SKY_PORT, handoff_overrides: ["size"] }]), studioNode(SKY_HANDOFF));
-
-  session.external.revertPortHandoffLane("size");
-
-  const saved = port(JSON.parse(session.text));
-  assert.deepEqual([saved.handoff_overrides ?? [], saved.size.value.hFOV_deg], [[], 60]);
-});
-
-test("disconnecting sticker_state shows the stored port Sticker again, and writes nothing", () => {
-  const text = stateText([FILE_STICKER, SKY_PORT]);
-  const session = editorSession(text, studioNode(WORLD_HANDOFF));
-  assert.equal(port(session.state).placement, "world");
-
-  session.node.connected.delete("sticker_state");
-  session.external.reconcileExternalStickerFromInputs("connections");
-
-  assert.deepEqual(port(session.state), port(working(text)));
-  assert.equal(session.commit(), text);
-});
-
-test("the inspector's Upstream row is there for Studio's port Sticker, all disabled without a handoff", () => {
-  const session = editorSession(stateText([{ ...SKY_PORT, handoff_overrides: ["size"] }]), studioNode(null));
-
-  assert.deepEqual(session.external.portHandoffLanes(port(session.state)), [
-    { name: "direction", overridden: false }, { name: "roll", overridden: false }, { name: "size", overridden: false },
-  ]);
-  assert.equal(session.external.portHandoffLanes(session.state.stickers.find((item) => item.source.kind === "file")), null);
 });
 
 test("the node surface shows the handoff without writing state_json, and its sync-port writes nothing", () => {

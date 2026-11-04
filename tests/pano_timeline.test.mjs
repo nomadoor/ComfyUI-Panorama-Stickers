@@ -3,7 +3,6 @@ import test from "node:test";
 
 import { readdirSync, readFileSync } from "node:fs";
 
-import { createEditorHistory, createHistory } from "../web_src/editor/history.js";
 import { evaluateSceneState } from "../web_src/pano_scene_eval.js";
 import { loadSceneState } from "../web_src/pano_scene_state.js";
 import { videoTimelineFps } from "../web_src/pano_video_fps.js";
@@ -13,8 +12,8 @@ import {
   deleteKeyframes,
   enteredTimelineFps,
   enteredTimelineLength,
-  isTimed,
   keyAllLanes,
+  ownerTimed,
   moveClip,
   moveKeyframes,
   keyedAt,
@@ -256,18 +255,14 @@ test("trimming a Clip range changes the range and not where the Keyframes are", 
   assert.deepEqual(open, { start: 12, in: 12, duration: null });
 });
 
-test("a state is timed when it has a Keyframe or a Clip range other than the whole Timeline", () => {
-  assert.equal(isTimed(loadSceneState(null)), false);
-  assert.equal(isTimed(loadSceneState(readFixture("v1_stickers"))), false);
-  assert.equal(isTimed(loadSceneState(readFixture("v2_canonical"))), true);
+test("an owner is timed when it has a Keyframe or a Clip range other than the whole Timeline", () => {
   const state = loadSceneState({ version: 2, camera: {}, stickers: [{ source: { kind: "port" }, clip: { start: 0, in: 3 } }] });
-  assert.equal(isTimed(state), true);
+  assert.equal(ownerTimed(state.stickers[0]), true);
   state.stickers[0].clip.in = 0;
-  assert.equal(isTimed(state), false);
-  assert.equal(isTimed({ ...state, camera: null }, { camera: true }), false, "a state without a Camera");
+  assert.equal(ownerTimed(state.stickers[0]), false);
+  assert.equal(ownerTimed(state.camera), false);
   keyAllLanes(state.camera, 0);
-  assert.equal(isTimed(state), false, "the Camera counts only with `camera`");
-  assert.equal(isTimed(state, { camera: true }), true, "Panorama Studio shoots with the Camera");
+  assert.equal(ownerTimed(state.camera), true);
 });
 
 test("the Timeline spans exactly the output's length: timeline.length, else the Auto length", () => {
@@ -341,41 +336,6 @@ test("dense Keyframes are grouped into one pin", () => {
   ]);
   assert.deepEqual(clusterFrames([0, 10, 20], 3).map((pin) => pin.frames), [[0], [10], [20]]);
   assert.deepEqual(clusterFrames([], 3), []);
-});
-
-test("undo and redo stop playback before they restore a step", () => {
-  const state = { ...loadSceneState({ version: 2, camera: { fov: { value: 90 } } }), active: {} };
-  const editor = { frame: 0, historyController: createEditorHistory(state) };
-  const history = createHistory({ editor, readOnly: false, runtime: {}, state, stateV2: true, studio: true, type: "stickers" });
-  const noop = () => {};
-  const stops = [];
-  history.connect({
-    cancelLiveEdits: () => false,
-    clearWorldSelection: noop, commitState: noop, getActiveCutoutShot: () => null, isUploadingSticker: () => false,
-    markObjectVisualsDirty: noop, markPaintStrokeVisualsDirty: noop, playback: { seek: noop }, pruneUpstreamRecords: noop,
-    rebuildUpstreamWorking: noop, releaseHiddenSelection: noop, requestDraw: noop,
-    stopTimelinePlayback: () => stops.push(state.camera.fov.value), storedEditorState: () => state, syncCutoutShot: noop,
-    syncPaintUi: noop, syncPortHandoff: noop, syncUndoRedoButtons: noop, syncUpstreamEdits: noop, updateSidePanel: noop,
-  });
-  state.camera.fov.value = 120;
-  history.pushHistory();
-  history.restoreHistory(-1);
-  history.restoreHistory(1);
-  // Each stop came while the step before it was still shown.
-  assert.deepEqual(stops, [120, 90]);
-  assert.equal(state.camera.fov.value, 120);
-});
-
-test("Panorama Studio's Timeline opens by itself on its Camera's Keyframes and on the rest", () => {
-  const state = loadSceneState({ version: 2, camera: {} });
-  assert.equal(isTimed(state, { camera: true }), false);
-  keyAllLanes(state.camera, 0);
-  assert.equal(isTimed(state, { camera: true }), true);
-  const sticker = loadSceneState({ version: 2, camera: {} });
-  keyAllLanes(sticker.scene, 0);
-  assert.equal(isTimed(sticker, { camera: true }), true);
-  // Without a Camera there is nothing of it to count.
-  assert.equal(isTimed(loadSceneState({ version: 2 }), { camera: true }), false);
 });
 
 test("the fps and length fields bring what is typed into range and reject what is not a number", () => {
@@ -479,7 +439,7 @@ test("the Timeline plays when its span is longer than one frame", () => {
   assert.equal(timelinePlayable(timelineSpan(state, { sceneItems: 4 })), true);
 });
 
-test("a background Clip range makes the state timed", () => {
-  assert.equal(isTimed(loadSceneState({ version: 2 })), false);
-  assert.equal(isTimed(loadSceneState({ version: 2, background: { clip: { start: 4 } } })), true);
+test("a background Clip range makes the background timed", () => {
+  assert.equal(ownerTimed(loadSceneState({ version: 2 }).background), false);
+  assert.equal(ownerTimed(loadSceneState({ version: 2, background: { clip: { start: 4 } } }).background), true);
 });

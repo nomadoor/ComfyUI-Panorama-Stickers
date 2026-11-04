@@ -12,8 +12,6 @@ import { add, apply } from "./vec.js";
 export const DEFAULT_VIEW_HFOV = 100;
 // The space between a fitted sphere and the edges of the view.
 export const FIT_MARGIN = 1.1;
-// The nearest a new 3D Sticker goes, in World units (the editor keeps it past twice its near plane too).
-export const FIT_3D_MIN_DISTANCE = 0.1;
 // The FOV a fit takes when it is given none: DEFAULT_VIEW_HFOV made the vertical FOV of a 16:9 view (the node's
 // PORT_3D_FIT_FOV_DEG).
 export const FIT_FALLBACK_FOV_DEG = vFovFromHfov(DEFAULT_VIEW_HFOV, 9 / 16);
@@ -26,17 +24,6 @@ function fitFov(fovDeg) {
 // FIT_MARGIN. Frame Selected (frameView) and the placing of a new 3D Sticker (fit3dPosition) both use it.
 export function fitDistance(radius, fovDeg) {
   return radius / Math.sin(fitFov(fovDeg) * 0.5 * DEG2RAD) * FIT_MARGIN;
-}
-
-// The sphere a fit takes around a box { min, max } in the content's own (scene glTF) frame, as the route gives
-// it: no sceneItemBox turn, which is for the boxes three.js loads. null for no box or a malformed one.
-export function fitSphereOfBox(box) {
-  const triple = (value) => Array.isArray(value) && value.length === 3 && value.every((item) => typeof item === "number" && Number.isFinite(item));
-  if (!box || typeof box !== "object" || !triple(box.min) || !triple(box.max)) return null;
-  if (box.min.some((value, axis) => value > box.max[axis])) return null;
-  const center = box.min.map((value, axis) => (value + box.max[axis]) / 2);
-  const radius = Math.hypot(...box.max.map((value, axis) => value - box.min[axis])) / 2;
-  return { center, radius };
 }
 
 // Where a new 3D Sticker turned by `rotation` ({ yaw_deg, pitch_deg, roll_deg }) goes so its content, of bounding
@@ -53,7 +40,6 @@ export function fit3dPosition(eye, dir, sphere, rotation, fovDeg, minDistance) {
   return add(eye, unit, distance).map((value, axis) => value - turned[axis]);
 }
 
-// A new world image without World content goes this far ahead of the view; with content it goes half the radius
-// of the content's bounding sphere ahead. A new 3D Sticker goes this far along its direction while its content is
-// not known, or when it has none (fit3dPosition; core/world.py has the same constant).
+// How far along its direction fit3dPosition places a 3D Sticker without a usable content sphere (core/world.py has
+// the same constant).
 export const NEW_WORLD_STICKER_DISTANCE = 2;

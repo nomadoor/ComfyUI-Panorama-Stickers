@@ -24,7 +24,6 @@ export {
   pivotOf,
   reuseWheelPick,
   spaceModeView,
-  spaceModeWithContent,
   switchSpaceMode,
   viewAxes,
   viewFitFov,
@@ -34,11 +33,9 @@ export {
 export {
   DEFAULT_VIEW_HFOV,
   fit3dPosition,
-  FIT_3D_MIN_DISTANCE,
   FIT_FALLBACK_FOV_DEG,
   FIT_MARGIN,
   fitDistance,
-  fitSphereOfBox,
   NEW_WORLD_STICKER_DISTANCE,
 } from "./space/fit.js";
 export {
@@ -51,7 +48,6 @@ export {
   DEPTH_GRID_PREFETCH,
   fileStickerKey,
   fileStickerRequests,
-  hasWorldContent,
   multiviewKey,
   sceneFilesOf,
   sceneItemIndex,
@@ -79,19 +75,12 @@ export {
 export {
   facingRotation,
   NEW_STICKER_HFOV,
-  newWorld3dStickerTransform,
-  newWorldStickerTransform,
 } from "./space/placement.js";
 export {
   gizmoDragLanes,
-  gizmoScreenBox,
   uniformScale,
 } from "./space/gizmo.js";
 export {
-  cameraFrustumSegments,
   cameraFrustumShape,
-  cameraTrajectory,
   gridSpec,
-  polylineSegments,
-  segmentsHit,
 } from "./space/guides.js";

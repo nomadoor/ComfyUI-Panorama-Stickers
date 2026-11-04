@@ -10,7 +10,7 @@
 stylesheet `web/pano_studio.css` にあり、`web_src/studio/stylesheet.js` の `installStudioStylesheet` が
 `<link id="pano-studio-style-link">` として、新しい UI のエディタを初めて開くときに一度だけ読み込む（どちらも `pano_styles.js` の `installStylesheet` を使う）。
 Vue のコンポーネント（`web_src/components/*.vue`）は `<style>` を持たず、class と、位置・大きさ・色を渡す
-inline の `style` と custom property（`--pano-segment-count`・`--pano-timeline-rows`・`--pano-video-shell-max`・`--v`・`--swatch` など）だけを使う。
+inline の `style` と custom property（`--pano-segment-count`・`--pano-video-shell-max`・`--v`・`--swatch` など）だけを使う。
 
 この文書が持たない規則：どのボタンがどこに出て何をするか・ツールチップの文言・ボタンの位置を動かさない規則
 （`docs/editor-interaction.md`）、タイムラインの行と再生の振る舞い（`docs/timeline-ui.md`）、Panorama Studio の
@@ -229,7 +229,6 @@ inline の `style` と custom property（`--pano-segment-count`・`--pano-timeli
 | `.pano-view-toggle` | Panorama / Unwrap / Frame | 48px / 40px（`.pano-view-btn`） | HUD の地、padding 4px | `--pano-surface-3`、角丸 8px | `transform` 170ms |
 | `.pano-segments`（`--pano-segment-pad: 3px`） | 選択メニューの Move / Rotate / Scale | 40px（選択メニューの中は 35px）/ 外側から padding を引いた高さ | `--pano-bg-control`、padding `--pano-segment-pad` | `--pano-surface-3` | `transform` 170ms |
 | `.pano-segment` | サイドパネルの設定（2 択） | 32px / 28px（`.pano-segment-btn`） | `--pano-surface-1`、padding 2px | `--pano-surface-3` | `transform` 170ms |
-| `.pano-easing-modes` | Easing の 3 択 | 30px / 26px（`.pano-easing-mode`） | `--pano-surface-1`、padding 2px | 押された項目の地が `--pano-surface-3` | なし |
 
 文字は選ばれていない側が `--pano-muted`、選ばれている側が `--pano-text`。
 `.pano-view-toggle` と `.pano-segments` の選ばれていない側の hover は `--pano-muted-strong`、表示の切り替えの無効の項目は

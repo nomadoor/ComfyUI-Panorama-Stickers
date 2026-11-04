@@ -1,7 +1,7 @@
 // The pointer gestures of the Frame view that edit the active Camera's shot: the moves of its pan
 // ("pan_frame", which the left drag and the middle button start with frame_view.js startPanFrame) and the
 // Alt / Shift roll ("roll_frame"; the roll knob's is camera.js). A gesture that changed the shot is one Undo
-// step, as are the Frame view's drags of frame_view.js ("frame_pan", "frame_orbit").
+// step.
 import { beginCutoutRollGesture, panCutoutShotByScreenDelta } from "../pano_cutout_node_surface.js";
 
 export function createPointerFrame(deps) {

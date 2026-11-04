@@ -63,12 +63,6 @@ function depthGridFilesOf(files, meta, source) {
   return { kind: "depth_grid", unlit: true, urls, sources, video: video && fps > 0 ? { src: video, fps } : null };
 }
 
-// Whether there is World content to show in space: a linked `scene` input, its files in the node's
-// current result, or a world Sticker.
-export function hasWorldContent({ sceneLinked, files, stickers }) {
-  return sceneLinked || !!files || stickers.some((item) => item.placement === "world");
-}
-
 // What the space view asks pano_three_view.js to draw of the `scene` input at an evaluated state: the
 // item the node draws at this frame (sceneItemIndex) with the next one to load ahead, or null outside the
 // `scene` Clip range. url is null at a frame without an item (outside the batch, or an empty item).

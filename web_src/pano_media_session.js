@@ -137,12 +137,6 @@ export function backgroundVideoMedia(source, video) {
   return { video: !!video, frames: source.frameCount, duration: Number(source.duration || 0) };
 }
 
-// The node's own background as the Auto length reads it: its VIDEO or IMAGE batch (`loaded`, backgroundVideoMedia),
-// else a linked IMAGE as a single image (an IMAGE batch before a run too); null without a link.
-export function backgroundLengthMedia(loaded, { linked, videoLinked }) {
-  return loaded ?? (linked && !videoLinked ? { frames: 1 } : null);
-}
-
 // The background VIDEO of an editor. `video` is its HTMLVideoElement (or null: an editor without one), `still` the
 // canvas its still is copied into. clock, fps, span, loop, place, onFrame and onChange are createVideoPlayback's;
 // onStill() runs when a new still was captured, onStillDropped() when the still of one source was let go, onReady()

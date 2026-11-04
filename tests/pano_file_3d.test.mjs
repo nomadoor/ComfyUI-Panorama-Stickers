@@ -24,8 +24,7 @@ test("the editor asks the route for a 3D file's editor file with the Source's va
   assert.equal(calls[0].options.method, "POST");
   assert.equal(calls[0].options.headers["Content-Type"], "application/json");
   assert.deepEqual(JSON.parse(calls[0].options.body), { filename: "chair.glb", subfolder: "3d", storage: "input" });
-  // The content's box comes as the route gives it, for the fit of a new 3D Sticker (pano_space.js fitSphereOfBox
-  // checks its shape).
+  // The content's box comes as the route gives it, for the fit of a new 3D Sticker.
   assert.deepEqual(result, { ok: true, kind: "mesh", unlit: false, file: entry, box: { min: [-1, 0, -1], max: [1, 2, 1] }, animation: null });
 });
 

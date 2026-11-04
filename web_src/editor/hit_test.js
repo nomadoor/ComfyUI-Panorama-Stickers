@@ -1,5 +1,5 @@
 // What is under the pointer: the canvas items and their handles, the selection rects, and the cursor that
-// shows it. The upstream Scene's sky Stickers (ADR 0030) lie under the node's own Sky, so they are hit after it.
+// shows it.
 import { hitFrameAffordance, hitStickerSelectionAffordance } from "../pano_sticker_affordance.js";
 import { paintCornerHandle, strokeDotHit, strokeHitThreshold, strokePathsHit } from "../pano_paint_objects.js";
 import { FRAME_ROLL_CURSOR } from "./constants.js";
@@ -12,14 +12,9 @@ export function createHitTest(deps) {
   // Bound by connect() to the other modules and showEditor.
   let erpPointToWorldDir, getActiveCutoutShot, getCutoutSelectableItemsForHit, getFrameViewRect,
     getOrderedDisplayListObjects, getRasterObjectItem, getSelected, getStrokeGroupItem, hitRasterObjectAt,
-    isActivePaintCursorVisible, isErpCamera, isItemLocked, isRasterObjectItem, isShotItem, isStickerItem,
+    isActivePaintCursorVisible, isItemLocked, isRasterObjectItem, isShotItem, isStickerItem,
     isStrokeGroupItem, makeRasterObjectSelectionId, makeStrokeGroupSelectionId, objectGeom,
-    screenPosToFrameAsErpPoint, setCanvasCursor, syncPaintCursorElement, upstreamSkyStickers, worldDirToFrameLocalPoint;
-
-  // The upstream sky Stickers from front to back.
-  function upstreamHitOrder() {
-    return upstreamSkyStickers().reverse();
-  }
+    screenPosToFrameAsErpPoint, setCanvasCursor, syncPaintCursorElement, worldDirToFrameLocalPoint;
 
   function hitObjectAt(p) {
     if (shotEditor && editor.mode === "frame") {
@@ -71,13 +66,6 @@ export function createHitTest(deps) {
           if (geom?.visible) return { item, geom };
         }
       }
-      if (!dir) return null;
-      for (const item of upstreamHitOrder()) {
-        const local = worldDirToFrameLocalPoint(item, dir);
-        if (!local || !(Number(local.x) >= 0 && Number(local.x) <= 1 && Number(local.y) >= 0 && Number(local.y) <= 1)) continue;
-        const geom = objectGeom(item);
-        if (geom?.visible) return { item, geom };
-      }
       return null;
     }
     const items = [
@@ -94,7 +82,6 @@ export function createHitTest(deps) {
         return entry.item;
       })
       .filter(Boolean),
-      ...upstreamHitOrder(),
       ...(shotEditor ? getCutoutSelectableItemsForHit().filter((item) => isShotItem(item)) : []),
     ];
     for (const item of items) {
@@ -145,7 +132,7 @@ export function createHitTest(deps) {
     }
     return hitFrameAffordance(geom, p, {
       edges: type === "cutout" || isShotItem(item),
-      resize: !(isShotItem(item) && isErpCamera()),
+      resize: true,
       emptyCursor: editor.mode === "pano" ? "grab" : "default",
     });
   }
@@ -182,9 +169,6 @@ export function createHitTest(deps) {
       if (editor.interaction.kind === "paint_stroke" || editor.interaction.kind === "paint_lasso_fill") setCanvasCursor("none");
       else if (editor.interaction.kind === "view") setCanvasCursor("grabbing");
       else if (editor.interaction.kind === "pan_frame") setCanvasCursor("grabbing");
-      else if (editor.interaction.kind === "space_pan" || editor.interaction.kind === "frame_pan") setCanvasCursor("move");
-      else if (editor.interaction.kind === "space_orbit" || editor.interaction.kind === "frame_orbit") setCanvasCursor("grabbing");
-      else if (editor.interaction.kind === "world_gizmo") setCanvasCursor("grabbing");
       else if (editor.interaction.kind === "roll_frame") setCanvasCursor("grabbing");
     else if (editor.interaction.kind === "move" || editor.interaction.kind === "move_multi" || editor.interaction.kind === "move_stroke_group" || editor.interaction.kind === "move_raster_object") setCanvasCursor("move");
       else if (editor.interaction.kind === "scale" || editor.interaction.kind === "scale_x" || editor.interaction.kind === "scale_y" || editor.interaction.kind === "scale_raster_object") setCanvasCursor(editor.interaction.cursor || "nwse-resize");
@@ -212,10 +196,6 @@ export function createHitTest(deps) {
       setCanvasCursor("default");
       return;
     }
-    if (editor.gizmoAxis) {
-      setCanvasCursor("grab");
-      return;
-    }
     const selected = getSelected();
     const geom = selected ? objectGeom(selected) : null;
     const selectedLocked = selected ? isItemLocked(selected) : false;
@@ -239,9 +219,9 @@ export function createHitTest(deps) {
       ({
         erpPointToWorldDir, getActiveCutoutShot, getCutoutSelectableItemsForHit, getFrameViewRect,
         getOrderedDisplayListObjects, getRasterObjectItem, getSelected, getStrokeGroupItem, hitRasterObjectAt,
-        isActivePaintCursorVisible, isErpCamera, isItemLocked, isRasterObjectItem, isShotItem, isStickerItem,
+        isActivePaintCursorVisible, isItemLocked, isRasterObjectItem, isShotItem, isStickerItem,
         isStrokeGroupItem, makeRasterObjectSelectionId, makeStrokeGroupSelectionId, objectGeom,
-        screenPosToFrameAsErpPoint, setCanvasCursor, syncPaintCursorElement, upstreamSkyStickers, worldDirToFrameLocalPoint,
+        screenPosToFrameAsErpPoint, setCanvasCursor, syncPaintCursorElement, worldDirToFrameLocalPoint,
       } = api);
     },
     hitObjectAt, handleHit, rectFromPoints, rectIntersectsGeom, updateCursor,

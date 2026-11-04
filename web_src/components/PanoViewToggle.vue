@@ -1,8 +1,8 @@
 <script setup>
 import SvgIcon from "./shared/SvgIcon.vue";
 
-// A disabled tab is aria-disabled rather than disabled, so its tooltip can still say why (Panorama
-// Studio's Frame tab, pano_editor_ui_state.js frameViewButton); the editor ignores its clicks.
+// A disabled tab is aria-disabled rather than disabled, so it keeps its place and tooltip (the Cutout's Frame tab
+// without a frame, pano_editor_ui_state.js frameViewButton); the editor ignores its clicks.
 defineProps({
   buttons: { type: Array, default: () => [] },
 });

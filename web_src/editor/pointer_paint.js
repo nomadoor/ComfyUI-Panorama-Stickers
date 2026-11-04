@@ -1,6 +1,6 @@
 // The paint and mask tools' pointer gestures: a freehand stroke ("paint_stroke") or a lasso fill
 // ("paint_lasso_fill") into the paint engine, committed as one Undo step when it lets go.
-// pointer_input.js decides when a press paints and stops playback first.
+// pointer_input.js decides when a press paints.
 import { DRAW_REASON } from "../pano_frame_scheduler.js";
 import { makePaintId } from "./helpers.js";
 

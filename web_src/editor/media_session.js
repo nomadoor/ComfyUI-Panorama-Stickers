@@ -1,11 +1,9 @@
-// The media the editor shows: the background (ERP image, VIDEO and its still), the port Sticker's VIDEO and
-// frames, the Sticker images, the node's ui values for them, and the legacy VIDEO transport with its
-// filmstrip. It makes the VIDEO playback and the port's follower, and lets them go (disposeMediaSession).
+// The media the editor shows: the background (ERP image, VIDEO and its still, its bg_color), the Sticker images, the
+// node's ui values for them, the legacy VIDEO transport with its filmstrip and its play button, and what a run's result
+// brings to the open editor. It makes the VIDEO playback, and lets it go (disposeMediaSession).
 import { createPanoCanvas, createPanoVideo, releasePanoCanvas } from "../pano_diagnostics.js";
-import { normalizeCoverageValue, sourceAsset } from "../pano_editor_state.js";
+import { normalizeCoverageValue } from "../pano_editor_state.js";
 import { runExternalStickerSync } from "../pano_external_sticker_sync.js";
-import { createDepthColors } from "../pano_depth_color.js";
-import { createFile3dEditorFiles, file3dEditorFileOf } from "../pano_file_3d.js";
 import { DRAW_REASON } from "../pano_frame_scheduler.js";
 import {
   IMAGE_FAILED,
@@ -17,12 +15,7 @@ import {
   markImageReady,
   stageImageStatus,
 } from "../pano_image_state.js";
-import { createFrameSequence, portMediaMeta, portMediaSource, portMediaTime } from "../pano_port_media.js";
 import { STUDIO_BACKGROUND_INPUT_NAMES, isNodeOutputMediaCurrent } from "../pano_preview_video.js";
-import { is3dFileSource } from "../pano_scene_state.js";
-import { sceneFilesOf, stickerAnimationClips } from "../pano_space.js";
-import { upstreamBackgroundOf } from "../pano_upstream.js";
-import { createVideoFollower } from "../pano_video_playback.js";
 import {
   backgroundVideoKeys,
   createBackgroundVideo,
@@ -31,29 +24,17 @@ import {
   mediaRevisionToken,
   videoMetaEntry,
 } from "../pano_media_session.js";
-import {
-  EXTERNAL_STICKER_PREVIEW_KEY,
-  PORT_FRAMES_KEY,
-  PORT_VIDEO_KEY,
-  PORT_VIDEO_META_KEY,
-} from "./constants.js";
+import { EXTERNAL_STICKER_PREVIEW_KEY } from "./constants.js";
 import { getCachedVideoThumbnails, setCachedVideoThumbnails } from "./video_thumbnail_cache.js";
 
 export function createMediaSession(deps) {
   const {
-    api, comfyMedia, editor, editorView, floatingRightEl, imageCache, loadPreferredExactLinkedImage,
-    mediaAssetSource, mediaSource, mediaUiImage, node, portStillCanvas, portVideoEl, readOnly, runtime,
-    scheduler, stageWrap, state, stateV2, stillCanvas, studio, timelinePlayhead, type, uiState, videoEl,
+    comfyMedia, editor, editorView, floatingRightEl, imageCache, loadPreferredExactLinkedImage,
+    mediaAssetSource, mediaSource, mediaUiImage, node, readOnly, runtime,
+    scheduler, stageWrap, state, stillCanvas, type, uiState, videoEl,
   } = deps;
   // Bound by connect() to the other modules and showEditor.
-  let backgroundVideoPlace, isExternalSticker, requestDraw, setTimelineFrame, skyStickers, syncTimeline, timelineSpanFrames,
-    upstreamStickers;
-
-  // The editor files of the 3D file Sources (pano_file_3d.js), asked for once each while the editor is open
-  // (Panorama Studio only).
-  const file3dFiles = stateV2
-    ? createFile3dEditorFiles({ fetchApi: (path, options) => api.fetchApi(path, options), onUpdate: () => requestDraw() })
-    : null;
+  let cancelLiveEdits, isExternalSticker, requestDraw, skyStickers;
 
   const videoState = {
     thumbnailJobId: 0,
@@ -210,9 +191,8 @@ export function createMediaSession(deps) {
   videoCleanupFns.push(() => {
     resetVideoThumbnails();
   });
-  // The background VIDEO (pano_media_session.js) and its playback: Panorama Studio's Timeline, else the legacy
-  // transport, on a Timeline of the VIDEO's own length. The legacy transport loops seamlessly through the VIDEO's
-  // own loop, so its playback then has no end.
+  // The background VIDEO (pano_media_session.js) and its playback: the legacy transport, on a Timeline of the VIDEO's
+  // own length. The legacy transport loops seamlessly through the VIDEO's own loop, so its playback then has no end.
   const background = createBackgroundVideo({
     video: videoEl,
     still: stillCanvas,
@@ -223,16 +203,13 @@ export function createMediaSession(deps) {
     },
     fps: playbackFps,
     span: () => {
-      if (stateV2) return timelineSpanFrames();
       const frames = Math.round(Number(uiState.videoTransport.duration || 0) * playbackFps());
       return videoEl.loop || !(frames > 0) ? Infinity : frames;
     },
-    loop: () => stateV2,
-    // Panorama Studio's background VIDEO is where its Clip range puts it (state.background).
-    place: () => backgroundVideoPlace(),
-    onFrame: (frame) => {
-      if (stateV2) setTimelineFrame(frame);
-      else syncVideoTransportState();
+    loop: () => false,
+    place: () => null,
+    onFrame: () => {
+      syncVideoTransportState();
       requestDraw({ cause: "frame_view", localOnly: true, reason: DRAW_REASON.PLAYHEAD });
     },
     onStill: () => {
@@ -243,8 +220,6 @@ export function createMediaSession(deps) {
     },
     onChange: () => {
       syncVideoTransportState();
-      timelinePlayhead.playing.value = playback.playing;
-      syncTimeline();
       requestDraw({ cause: "frame_view", localOnly: true, reason: DRAW_REASON.PLAYHEAD });
     },
     // The VIDEO's length and audio are known from its metadata on.
@@ -259,47 +234,6 @@ export function createMediaSession(deps) {
   });
   const { playback } = background;
   videoCleanupFns.push(() => background.dispose());
-  // Panorama Studio's port Sticker plays its MP4 along the playhead, muted.
-  const portVideo = stateV2 && portVideoEl instanceof HTMLVideoElement
-    ? createVideoFollower({
-      video: portVideoEl,
-      onCapture: () => {
-        const width = Number(portVideoEl.videoWidth || 0);
-        const height = Number(portVideoEl.videoHeight || 0);
-        if (width < 1 || height < 1) return;
-        portStillCanvas.width = width;
-        portStillCanvas.height = height;
-        portStillCanvas.getContext("2d")?.drawImage(portVideoEl, 0, 0);
-        portStillCanvas.__panoFrameIdx += 1;
-        requestDraw({ cause: "frame_view", localOnly: true, reason: DRAW_REASON.MEDIA });
-      },
-      onChange: () => requestDraw({ cause: "frame_view", localOnly: true, reason: DRAW_REASON.MEDIA }),
-    })
-    : null;
-  if (portVideo) videoCleanupFns.push(() => portVideo.dispose());
-  // The colors of the depth grids (DA3_GEOMETRY mono), a proxy MP4 per input following the playhead.
-  const depthColors = stateV2
-    ? createDepthColors({
-      createVideo: () => createPanoVideo(document, "editor.depth-video"),
-      createCanvas: () => createPanoCanvas({ label: "editor.depth-still" }),
-      releaseCanvas: releasePanoCanvas,
-      onChange: () => requestDraw({ cause: "frame_view", localOnly: true, reason: DRAW_REASON.MEDIA }),
-    })
-    : null;
-  if (depthColors) videoCleanupFns.push(() => depthColors.dispose());
-  // An RGBA IMAGE batch on the port shows its PNGs instead, which keep its alpha.
-  const portFrames = stateV2
-    ? createFrameSequence({
-      createImage: (src, onLoad) => {
-        const image = new Image();
-        image.onload = onLoad;
-        image.onerror = onLoad;
-        image.src = src;
-        return image;
-      },
-      onLoad: () => requestDraw({ cause: "frame_view", localOnly: true, reason: DRAW_REASON.MEDIA }),
-    })
-    : null;
   if (videoEl instanceof HTMLVideoElement) {
     const onVolumeChange = () => {
       syncVideoTransportState({
@@ -319,7 +253,7 @@ export function createMediaSession(deps) {
   }
   function getModalVideoUiKeys() {
     const nodeName = String(node?.comfyClass || node?.type || node?.title || "");
-    return backgroundVideoKeys({ nodeName, upstream: upstreamBackground(), type });
+    return backgroundVideoKeys({ nodeName, upstream: null, type });
   }
   function getVideoMetaEntry() {
     const { metaKey } = getModalVideoUiKeys();
@@ -334,7 +268,7 @@ export function createMediaSession(deps) {
   }
   // Without a known fps the legacy transport counts milliseconds, so its slider seeks to the time itself.
   function playbackFps() {
-    return stateV2 ? state.timeline.fps : background.metaFps || 1000;
+    return background.metaFps || 1000;
   }
   // The transport shows the playback's frame and state; `extra` brings what the source refresh learned.
   function syncVideoTransportState(extra = {}) {
@@ -382,15 +316,13 @@ export function createMediaSession(deps) {
       thumbnailCount: Math.max(1, Number(extra.thumbnailCount ?? uiState.videoTransport.thumbnailCount ?? VIDEO_THUMBNAIL_COUNT)),
     });
   }
-  // Panorama Studio plays the background VIDEO from the Timeline, so the video's own transport is hidden.
   function getVideoTransportVisible() {
     return !!(videoEl instanceof HTMLVideoElement
-      && !stateV2
       && videoEl.getAttribute("src")
       && editor.primaryTool !== "paint"
       && editor.primaryTool !== "mask");
   }
-  // Mutes or unmutes the background VIDEO: the video transport's button, or the Timeline's for Panorama Studio.
+  // Mutes or unmutes the background VIDEO: the video transport's button.
   function toggleVideoMuted() {
     if (!(videoEl instanceof HTMLVideoElement)) return;
     if (!uiState.videoTransport.hasAudio) return;
@@ -417,26 +349,26 @@ export function createMediaSession(deps) {
   function refreshModalVideoSource() {
     if (!(videoEl instanceof HTMLVideoElement)) return null;
     const { videoKey } = getModalVideoUiKeys();
-    const ownEntry = upstreamBackground() || isNodeOutputMediaCurrent(node, "background") ? getNodeUiList(videoKey)[0] || null : null;
+    const ownEntry = isNodeOutputMediaCurrent(node, "background") ? getNodeUiList(videoKey)[0] || null : null;
     // The node's own result wins. Without one, a video file the background input loads directly plays,
     // with its length from the file and the Timeline's fps (pano_media_session.js choose).
     const { src: nextSrc, fps, duration, frameCount, hasAudio } = background.choose({
       own: mediaSource(ownEntry),
       file: comfyMedia.linkedVideoFile(node, backgroundInputNames()),
       meta: getVideoMetaEntry,
-      fps: stateV2 ? state.timeline.fps : 24,
+      fps: 24,
       audio: uiState.videoTransport.hasAudio,
     });
-    // Panorama Studio shows the playhead's frame of a new source; the legacy transport starts it at 0.
+    // The legacy transport starts a new source at 0.
     const loaded = background.load(nextSrc, {
-      loop: !stateV2 && !!uiState.videoTransport.loop,
+      loop: !!uiState.videoTransport.loop,
       muted: !!uiState.videoTransport.muted,
       volume: uiState.videoTransport.volume ?? 1,
     });
-    if (loaded === "loaded" && !stateV2) playback.seek(0);
-    // The legacy transport loops through the VIDEO's own loop; Panorama Studio's playback sets it.
-    if (!stateV2) videoEl.loop = !!uiState.videoTransport.loop;
-    if (nextSrc && !stateV2 && videoState.thumbnailSrc !== nextSrc && !videoState.thumbnailFailedSrcs.has(nextSrc)) {
+    if (loaded === "loaded") playback.seek(0);
+    // The legacy transport loops through the VIDEO's own loop.
+    videoEl.loop = !!uiState.videoTransport.loop;
+    if (nextSrc && videoState.thumbnailSrc !== nextSrc && !videoState.thumbnailFailedSrcs.has(nextSrc)) {
       void buildVideoThumbnails(nextSrc, duration, fps);
     }
     if (!nextSrc) {
@@ -467,113 +399,20 @@ export function createMediaSession(deps) {
     return getStickerUiImage(EXTERNAL_STICKER_PREVIEW_KEY, onLoad);
   }
 
-  // The port Sticker's MP4 ({ src, meta }) or the PNGs of an RGBA IMAGE batch ({ frames, meta }) in
-  // the node's current result, or null.
-  function getPortMedia() {
-    if (!isNodeOutputMediaCurrent(node, "external-sticker")) return null;
-    const meta = getNodeUiList(PORT_VIDEO_META_KEY)[0];
-    if (!meta || typeof meta !== "object") return null;
-    const frames = getNodeUiList(PORT_FRAMES_KEY).map(mediaSource).filter(Boolean);
-    if (frames.length) return { frames, meta };
-    const src = mediaSource(getNodeUiList(PORT_VIDEO_KEY)[0] || null);
-    return src ? { src, meta } : null;
-  }
-
-  // The port Sticker's media as the Timeline's length counts it (portMediaMeta) in the node's current result,
-  // or null.
-  function getPortMediaMeta() {
-    return isNodeOutputMediaCurrent(node, "external-sticker") ? portMediaMeta(getNodeUiList) : null;
-  }
-
-  // Has the port Sticker's MP4 follow the playhead, and returns the port Sticker's picture there
-  // ({ media, revision, source }): the playing VIDEO, the still of its frame, or the PNG of its image,
-  // else the first frame until there is one; null where the media shows nothing (ADR 0024).
-  function followPortSticker() {
-    const port = state.stickers.find(isExternalSticker);
-    const media = port ? getPortMedia() : null;
-    const time = media ? portMediaTime(port.clip, editor.frame, state.timeline.fps, media.meta) : null;
-    portVideo.follow({ src: media?.src || "", time, playing: playback.advancing, fps: state.timeline.fps });
-    const first = port ? getStickerImage(port) : null;
-    const picture = media?.frames
-      ? portFrames.picture(media.frames, time, media.meta, first)
-      : portVideo.picture(portStillCanvas, first);
-    return picture ? { media: picture, revision: getMediaRevisionToken(picture), source: portMediaSource(media, first) } : null;
-  }
-
-  // The `scene` input's editor files in the node's current result (docs/studio-node.md): the kind
-  // the editor loads and a URL per item, null for an empty item. null without a current result.
-  function sceneFiles() {
-    if (!stateV2 || !isNodeOutputMediaCurrent(node, "scene")) return null;
-    return sceneFilesOf(getNodeUiList("pano_scene_files"), getNodeUiList("pano_scene_meta"), mediaSource);
-  }
-
-  // The `sticker` input's 3D media in the node's current result, in the shape of sceneFiles().
-  function stickerFiles() {
-    if (!stateV2 || !isNodeOutputMediaCurrent(node, "external-sticker")) return null;
-    return sceneFilesOf(getNodeUiList("pano_sticker_files"), getNodeUiList("pano_sticker_meta"), mediaSource);
-  }
-
-  // The colors of the depth grid of input `name` (a request's `video`, pano_space.js sceneRequest) at the
-  // playhead: { media, revision, source }, or null until its video has a picture.
-  function depthColor(name, video) {
-    return depthColors?.picture(name, video, playback.advancing) ?? null;
-  }
-
-  // Lets the depth grid videos of the inputs not in `names` go.
-  function retainDepthColors(names) {
-    depthColors?.retain(names);
-  }
-
-  // The editor file of a 3D file Sticker (docs/threejs-spark-integration.md): { kind, unlit, url, generation } once
-  // the route answered, else null. The first call for its Source asks the route.
-  function file3dEditorFile(sticker) {
-    return file3dEditorFileOf(file3dFiles, sticker, mediaSource);
-  }
-
-  // The clips of a Sticker's animated 3D file (ADR 0043), or null.
-  function animationClipsOf(sticker) {
-    return stickerAnimationClips(sticker, { stickerFiles: stickerFiles(), editorFile: file3dEditorFile });
-  }
-
-  // The route's answer for a 3D file's Source, once it came ({ state "ready" or "failed", error, ... }).
-  function requestFile3d(source) {
-    return file3dFiles.request(source);
-  }
-
-  // Asks the route again for a Source whose editor file is gone (404).
-  function refreshFile3d(source) {
-    file3dFiles?.refresh(source);
-  }
-
-  // The node's text for a 3D file of a Sticker in the editor (its own or the upstream Scene's) that could not be
-  // read, or "". A Sticker that is there keeps its place; only the text tells.
-  function file3dNotice() {
-    if (!file3dFiles) return "";
-    const failures = file3dFiles.failures();
-    if (!failures.length) return "";
-    const sources = [...state.stickers, ...upstreamStickers()].map((sticker) => sticker.source).filter(is3dFileSource);
-    const same = (a, b) => a.filename === b.filename && (a.subfolder ?? "") === b.subfolder && (a.storage ?? "input") === b.storage;
-    return failures.find((failure) => sources.some((source) => same(source, failure.source)))?.error ?? "";
-  }
-
   function getStickerImage(stickerOrAssetId) {
-    // A 3D file has no image: its item draws instead (file3dEditorFile).
-    if (stateV2 && is3dFileSource(stickerOrAssetId?.source)) return null;
     if (stickerOrAssetId && typeof stickerOrAssetId === "object"
       && (isExternalSticker(stickerOrAssetId) || stickerOrAssetId.external === true)) {
       return getExternalStickerPreviewImage(() => {
         runExternalStickerSync(node, "image-loaded");
       });
     }
-    const assetId = stateV2
-      ? stickerImageKey(stickerOrAssetId)
-      : (stickerOrAssetId && typeof stickerOrAssetId === "object")
-        ? String(stickerOrAssetId.asset_id || stickerOrAssetId.assetId || "")
-        : String(stickerOrAssetId || "");
+    const assetId = (stickerOrAssetId && typeof stickerOrAssetId === "object")
+      ? String(stickerOrAssetId.asset_id || stickerOrAssetId.assetId || "")
+      : String(stickerOrAssetId || "");
     if (!assetId) return null;
     const cached = imageCache.get(assetId);
     if (cached) return cached;
-    const asset = stateV2 ? sourceAsset(stickerOrAssetId.source) : state.assets?.[assetId];
+    const asset = state.assets?.[assetId];
     const src = mediaAssetSource(asset);
     if (!src) return null;
     const img = new Image();
@@ -589,13 +428,6 @@ export function createMediaSession(deps) {
     img.src = src;
     imageCache.set(assetId, img);
     return img;
-  }
-
-  // The image cache key of a Sticker of state v2. An image being uploaded or embedded as a data URL
-  // is cached under the Sticker's id.
-  function stickerImageKey(item) {
-    const { source } = item;
-    return source.filename ? `file:${source.storage}:${source.subfolder}:${source.filename}` : `sticker:${item.id}`;
   }
 
   function getConnectedErpImage() {
@@ -614,37 +446,23 @@ export function createMediaSession(deps) {
     }
     const displaySource = getDisplayBackgroundSource();
     if (displaySource) return displaySource;
-    // The upstream Scene's background takes the place of the node's own (Panorama Studio).
-    const upstream = upstreamBackground();
-    const uiImg = upstream || isNodeOutputMediaCurrent(node, "background")
-      ? mediaUiImage(node, upstream?.imageKey ?? "pano_input_images", imageCache, () => requestDraw())
+    const uiImg = isNodeOutputMediaCurrent(node, "background")
+      ? mediaUiImage(node, "pano_input_images", imageCache, () => requestDraw())
       : null;
     if (uiImg && !isImageLoadFailed(uiImg)) return uiImg;
     // A background video still loading.
     if (videoEl instanceof HTMLVideoElement && videoEl.dataset.panoSrc) return videoEl;
-    // The node's own bg_media is not used, so it does not stand in.
-    if (upstream) return uiImg;
     const preferred = backgroundInputNames();
     const img = loadPreferredExactLinkedImage(node, preferred, () => requestDraw(), `background:${preferred.join("|")}`);
     return img || uiImg || null;
   }
 
-  // The background of the Scene on Panorama Studio's `scene` input in the node's current result, used in
-  // place of its own bg_media: { imageKey, videoKey, metaKey, coverage } (pano_upstream.js), or null. It comes
-  // through `scene` alone, so a relinked bg_media (which the node does not use) leaves it current.
-  function upstreamBackground() {
-    if (!studio || !isNodeOutputMediaCurrent(node, "scene")) return null;
-    return upstreamBackgroundOf(getNodeUiList);
-  }
-
-  // The span of the background ERP: the upstream Scene's when its background shows, else the node's own.
+  // The span of the background ERP.
   function backgroundCoverage() {
-    return upstreamBackground()?.coverage ?? normalizeCoverageValue(state.coverage);
+    return normalizeCoverageValue(state.coverage);
   }
 
   function backgroundInputNames() {
-    // With the upstream Scene's background, the node's own bg_media is not shown.
-    if (upstreamBackground()) return [];
     if (type === "cutout") return ["erp_image", "bg_erp"];
     const inputNames = Array.isArray(node?.inputs)
       ? node.inputs.map((i) => String(i?.name || ""))
@@ -673,11 +491,30 @@ export function createMediaSession(deps) {
     });
   }
 
-  // Lets go of what the session made when the editor closes: the background VIDEO stops, the playback,
-  // the port's follower, the listeners and the filmstrip job are released, and then the VIDEO lets go of its
-  // source as the follower's does (pano_video_playback.js), so the browser stops loading and decoding it.
+  // The bg_color the views draw where the background shows nothing.
+  function backgroundColor() {
+    return state.bg_color;
+  }
+
+  // The legacy transport's play button. With a background VIDEO the video plays with its audio and its presented
+  // frames move the transport.
+  function togglePlayback() {
+    // The background VIDEO of the node's current result, loaded here when the node ran after the editor opened.
+    refreshModalVideoSource();
+    playback.toggle();
+  }
+
+  // A run's result reached the open editor (its `executed`): an edit a pointer has under way is cancelled
+  // first, then the background VIDEO follows the run.
+  function applyRunResult() {
+    cancelLiveEdits();
+    refreshModalVideoSource();
+  }
+
+  // Lets go of what the session made when the editor closes: the background VIDEO stops, the playback, the
+  // listeners and the filmstrip job are released, and then the VIDEO lets go of its source, so the browser stops
+  // loading and decoding it.
   function disposeMediaSession() {
-    file3dFiles?.close();
     if (videoEl instanceof HTMLVideoElement) videoEl.pause();
     videoCleanupFns.forEach((fn) => {
       try { fn(); } catch { }
@@ -690,15 +527,12 @@ export function createMediaSession(deps) {
 
   return {
     connect(api) {
-      ({
-        backgroundVideoPlace, isExternalSticker, requestDraw, setTimelineFrame, skyStickers, syncTimeline, timelineSpanFrames,
-        upstreamStickers,
-      } = api);
+      ({ cancelLiveEdits, isExternalSticker, requestDraw, skyStickers } = api);
     },
-    videoState, queueVideoTransportLayout, playback, portVideo, getNodeUiValue,
+    videoState, queueVideoTransportLayout, playback, getNodeUiValue,
     getMediaRevisionToken, playbackFps, syncVideoTransportState, toggleVideoMuted, syncVideoTransportVisibility,
-    refreshModalVideoSource, getStickerUiImage, getExternalStickerPreviewImage, getPortMediaMeta, followPortSticker,
-    getStickerImage, stickerImageKey, getConnectedErpImage, backgroundCoverage, upstreamBackground, isDecodedImageReady, getStageImageStatus, sceneFiles,
-    stickerFiles, depthColor, retainDepthColors, file3dEditorFile, animationClipsOf, requestFile3d, refreshFile3d, file3dNotice, disposeMediaSession,
+    refreshModalVideoSource, getStickerUiImage, getExternalStickerPreviewImage,
+    getStickerImage, getConnectedErpImage, backgroundCoverage, backgroundColor, isDecodedImageReady, getStageImageStatus,
+    togglePlayback, applyRunResult, disposeMediaSession,
   };
 }

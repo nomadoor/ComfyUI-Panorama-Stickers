@@ -114,9 +114,9 @@ export function createHistory(deps) {
 | `editor/helpers.js` | 小さな純粋な関数（easing、ベクトル、2D の幾何、色、ノードの値） |
 | `editor/ui_settings.js` | localStorage の設定（視点の反転、ノードごとのグリッド） |
 | `editor/video_thumbnail_cache.js` | VIDEO のサムネイルのキャッシュ（直近 12 本） |
-| `editor/media_session.js` | 背景（ERP、VIDEO と静止画）、port の VIDEO とフレーム、Sticker の画像、3D ファイルのエディタ用ファイルの問い合わせ（`file3dEditorFile`）、旧 VIDEO トランスポートとサムネイル。背景の VIDEO（どの VIDEO を再生するか、要素への読み込み、`playback`、静止画）は下の部品 `web_src/pano_media_session.js` の `createBackgroundVideo` を使い、port の follower を作り、`disposeMediaSession()` で放す |
+| `editor/media_session.js` | 背景（ERP、VIDEO と静止画、`bg_color`）、Sticker の画像、旧 VIDEO トランスポートとサムネイル、その再生と一時停止（`togglePlayback`）、実行結果を受けたときの VIDEO の読み直し（`applyRunResult`）。背景の VIDEO（どの VIDEO を再生するか、要素への読み込み、`playback`、静止画）は下の部品 `web_src/pano_media_session.js` の `createBackgroundVideo` を使い、`disposeMediaSession()` で放す |
 | `editor/history.js` | Undo の履歴。スナップショットに残すもの（`historySnapshot`）と数（`HISTORY_LIMIT`）。段は `pano_paint_history.js` の `createSharedStringHistory` が持ち、長い文字列（ラスターの PNG の data URL など）は段ごとに写さず表に一度だけ置いて、残っている段のどれも使わなくなったら捨てる |
-| `editor/items.js` | Sticker（`stickerById`）、shot、ストロークのグループ、ラスターの品目の検索・並び・移動。ストロークのグループとラスターを動かす・大きさを変える・回す式、当たり、Sky の重なり順の振り直し、消し方は新しい UI と共有の下の部品 `web_src/pano_paint_objects.js` にあり（`docs/studio-ui.md` の「ペイントのまとまり」。ストロークのまとまりの球面の上の枠と回し方もそこ、ラスタの四隅は `docs/render-contract.md` の「ペイントのラスタの置き方」）、`items.js`・`hit_test.js`・`paint_layers.js`・`object_geometry.js`・`pointer_transform.js`・`selection.js`・`commands.js` はそれを呼ぶ |
+| `editor/items.js` | Sticker、shot、ストロークのグループ、ラスターの品目の検索・並び・移動。ストロークのグループとラスターを動かす・大きさを変える・回す式、当たり、Sky の重なり順の振り直し、消し方は新しい UI と共有の下の部品 `web_src/pano_paint_objects.js` にあり（`docs/studio-ui.md` の「ペイントのまとまり」。ストロークのまとまりの球面の上の枠と回し方もそこ、ラスタの四隅は `docs/render-contract.md` の「ペイントのラスタの置き方」）、`items.js`・`hit_test.js`・`paint_layers.js`・`object_geometry.js`・`pointer_transform.js`・`selection.js`・`commands.js` はそれを呼ぶ |
 | `editor/selection.js` | キャンバスの選択、ロック、インスペクターの品目、z の順 |
 | `editor/projection.js` | ビューの射影、Unwrap の矩形、画面・方向・ERP・Frame の変換 |
 | `editor/object_geometry.js` | 品目の画面上の形（オーバーレイと当たり判定が読む） |
@@ -129,16 +129,15 @@ export function createHistory(deps) {
 | `editor/overlay.js` | 2D のオーバーレイ（グリッド、枠、選択の印、Frame のゲート、投げ縄、ロール） |
 | `editor/render_loop.js` | `requestDraw`、`tickFrame`、`drawScene`、キャンバスの大きさ、`stopRenderLoop` |
 | `editor/panels.js` | ツールのレール、ビューのボタン、ペイントのドック、サイドパネル、Undo / Redo の同期 |
-| `editor/timeline.js` | 旧 VIDEO トランスポートの再生と一時停止（`togglePlayback`）、実行結果を受けたときの VIDEO の読み直し（`applyRunResult`）、背景の `bg_color` |
 | `editor/commit.js` | 状態の widget への書き戻し、ノードのプレビューの更新 |
 | `editor/commands.js` | 全消去、複製、削除と確認 |
 | `editor/sticker_import.js` | 画像の追加・置き換え・アップロード、3D ファイルの追加（アップロード・経路への問い合わせ・待つ間と失敗の知らせ）、drop |
-| `editor/camera.js` | Cutout の Camera（`syncCutoutShot`、追加・削除、アスペクト、ロールのつまみ） |
+| `editor/camera.js` | Cutout の Camera（追加・削除、アスペクト、ロールのつまみ） |
 | `editor/frame_view.js` | Frame のビュー（ゲート、パン・ドラッグ・ホイール） |
 | `editor/paint_input.js` | ペイントの入力、カーソル、Frame の端の区切り（記録・確定・消しゴムの規則は下の `pano_paint_strokes.js`） |
 | `editor/hit_test.js` | ポインターの下の品目、選択の矩形、カーソル |
 | `editor/selection_menu.js` | 選択メニューとツールチップ |
-| `editor/pointer_input.js` | キャンバスのポインターとホイールの入口：押したときにどのジェスチャーを始めるか（決まった順で確かめ、最初に当てはまったもの。品目のクリックでの選択と空のクリックでの選択の解除、Ctrl / Meta の範囲選択の開始を含む）、動かす・離す・取り消すを `editor.interaction.kind` のジェスチャーへ回す、再生中の編集の最初の動きで止めて止まったフレームからやり直す（`restartEditAtStoppedFrame`）、ホイール |
+| `editor/pointer_input.js` | キャンバスのポインターとホイールの入口：押したときにどのジェスチャーを始めるか（決まった順で確かめ、最初に当てはまったもの。品目のクリックでの選択と空のクリックでの選択の解除、Ctrl / Meta の範囲選択の開始を含む）、動かす・離す・取り消すを `editor.interaction.kind` のジェスチャーへ回す、ホイール |
 | `editor/pointer_view.js` | 視点を動かすジェスチャー：見回し（`view`）、空の場所の左ドラッグ |
 | `editor/pointer_frame.js` | Frame のビューで Camera の shot を動かすジェスチャー：中ボタンのパン（`pan_frame`）、Alt / Shift のロール（`roll_frame`）、Frame のビューのジェスチャー（`frame_view.js` のドラッグを含む）の終わりの Undo の段 |
 | `editor/pointer_paint.js` | ペイントとマスクの筆跡（`paint_stroke`・`paint_lasso_fill`）の開始・点の追加（Frame のビューの枠の外の点を捨て、戻ったところで区切る）・確定・取り消し |
@@ -158,10 +157,9 @@ export function createHistory(deps) {
   も読むので変えない。
 - 押したときにどの操作を始めるかは `onCanvasPointerDown` の確かめる順だけが決める。操作のモジュールは、
   その操作を始める関数、動きの関数、終わりの関数を返し（名前は操作ごとに違う。例：`startMultiMove`・`moveMulti`、
-  `scaleItem`、`dragWorldGizmo`、`endTransform`）、`pointer_input.js` が `kind` で呼び分ける。
+  `scaleItem`、`endTransform`）、`pointer_input.js` が `kind` で呼び分ける。
 - 操作を足すときは、操作のモジュールに始め・動き・終わりを置き、`pointer_input.js` の押したときの順の中の
-  一か所と、動き・離す・取り消すの振り分けに一行ずつ足す。再生中に始まる編集の操作なら、
-  `pointer_input.js` の `restartEditAtStoppedFrame` にもその `kind` を足す。
+  一か所と、動き・離す・取り消すの振り分けに一行ずつ足す。
 - `tests/editor_pointer_input.test.mjs` は `web_src/editor/pointer_*.js` の factory を全部本物で作ってつなぎ、
   ほかの名前を記録するスタブにして、押したときの分かれ道ごとに始まる操作と、動き・離す・取り消す・ホイールの
   呼び出しを確かめる。ポインターの操作のモジュールは `pointer_` で始める。
@@ -177,7 +175,7 @@ export function createHistory(deps) {
 `onCanvasPointerDown` が操作を始めた直後に取り、ロールのつまみは `camera.js` の `onFrameRollKnobPointerDown` が取る。ペイントの
 ストロークは、Frame の端で区間を確定する直前（`paint_input.js` の `_segmentFrameStroke`・`_segmentFrameLassoFill`）にだけ
 `state.painting` を取る（区間を確定しないストロークは状態に何も書かない）。戻すときは記録をその場で書き戻し（オブジェクトの
-同一性を保つ）、Camera を戻したら `syncCutoutShot(false)` で shot を作り直し、ペイントを戻したらペイントエンジンを作り直す。
+同一性を保つ）、ペイントを戻したらペイントエンジンを作り直す。
 Undo の段を積まず、`state_json` にも書かない。
 
 | `kind` | 取り消しで戻すもの |
@@ -186,7 +184,7 @@ Undo の段を積まず、`state_json` にも書かない。
 | ストロークのグループ（`*_stroke_group`） | そのストロークとグループの記録（枠を含む） |
 | ラスターの品目（`*_raster_object`） | その記録 |
 | `move_multi` | 選んでいる全部の記録と、ストロークとラスター |
-| `pan_frame`・`roll_frame`・`frame_pan`・`frame_orbit` | `state.camera` と shot（旧ノードの Cutout では shot） |
+| `pan_frame`・`roll_frame` | Cutout の shot |
 | `marquee_select` | 何も戻さない（選択は離したときにだけ変わる） |
 | `paint_stroke`・`paint_lasso_fill` | エンジンの描きかけのストロークを取り消し、そのストローク全体を捨てる（Frame の端ですでに確定した区間も含む） |
 | `view` | 戻さず、その場で止める（慣性なし。`viewController.stopMotion`） |

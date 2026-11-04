@@ -1,10 +1,9 @@
 // The modal's own controls, read from their DOM events (PanoModal.vue renders them): the tool rail, the
-// view and space buttons, the Frame rail, the paint dock and its color picker, the VIDEO transport,
+// view buttons, the Frame rail, the paint dock and its color picker, the VIDEO transport,
 // tooltips, and fullscreen.
 import { ICON } from "../icons.js";
 import { BRUSH_PRESETS } from "../pano_brush_presets.js";
 import { patchUiButton } from "../pano_editor_ui_state.js";
-import { DRAW_REASON } from "../pano_frame_scheduler.js";
 import { clamp } from "../pano_math.js";
 import { DEFAULT_DISTANCE, DEFAULT_VIEW_HFOV } from "../pano_space.js";
 import { frameAtTime } from "../pano_video_playback.js";
@@ -25,13 +24,13 @@ export function createModalEvents(deps) {
     timers, tooltip, uiState, videoEl,
   } = deps;
   // Bound by connect() to the other modules and showEditor.
-  let addCutoutFrame, addImageSticker, addStudioCamera, addToWorld, applyCutoutAspectCustom,
-    bringSelectedToFront, clearAll, clearPaintingLayer, clearSelection, commitAndRefreshNode, contentSphere,
-    deleteSelected, duplicateSelected, forceCursorTool, frameSpaceContent, getActiveCutoutShot,
-    getBrushPresetIdForTool, getSelected, hidePaintSizePreview, hideTooltip, isErpCamera, isFreeSpaceView,
+  let addCutoutFrame, addImageSticker, applyCutoutAspectCustom,
+    bringSelectedToFront, clearAll, clearPaintingLayer, clearSelection, commitAndRefreshNode,
+    deleteSelected, duplicateSelected, forceCursorTool, getActiveCutoutShot,
+    getBrushPresetIdForTool, getSelected, hidePaintSizePreview, hideTooltip,
     playback, playbackFps, pushHistory, queueVideoTransportLayout, replaceSelectedImage, requestDraw,
-    restoreHistory, restoreSelectedToInitialPose, rotateCutoutAspect90, sendSelectedToBack, setShotAspect,
-    setSpaceMode, settleCanvasConfirm, showPaintSizePreview, showTooltipFor, spaceOrigin, startAnimation, syncFloatingViewButtonState,
+    restoreHistory, restoreSelectedToInitialPose, rotateCutoutAspect90, sendSelectedToBack, applyCutoutAspect,
+    settleCanvasConfirm, showPaintSizePreview, showTooltipFor, startAnimation, syncFloatingViewButtonState,
     syncPaintUi, syncSidePanelControls, syncVideoTransportState, syncViewToggleState, togglePlayback,
     toggleSelectedExternalStickerVisibility, toggleSelectedLock, toggleVideoMuted, transitionView,
     updateSelectionMenu, updateSidePanel, videoState;
@@ -74,19 +73,6 @@ export function createModalEvents(deps) {
       settleCanvasConfirm(false);
       return;
     }
-    const spaceModeTarget = ev.target.closest("[data-space-mode]");
-    if (spaceModeTarget) {
-      setSpaceMode(spaceModeTarget.getAttribute("data-space-mode"));
-      return;
-    }
-    const gizmoModeTarget = ev.target.closest("[data-gizmo-mode]");
-    if (gizmoModeTarget) {
-      editor.gizmoMode = gizmoModeTarget.getAttribute("data-gizmo-mode");
-      runtime.backgroundDirty = true;
-      updateSelectionMenu();
-      requestDraw({ localOnly: true, reason: DRAW_REASON.VIEW });
-      return;
-    }
     const viewTarget = ev.target.closest("[data-view]");
     if (viewTarget) {
       if (viewTarget.getAttribute("aria-disabled") === "true") return;
@@ -121,9 +107,7 @@ export function createModalEvents(deps) {
         else if (action === "redo") restoreHistory(1);
         else if (action === "clear") clearAll();
         else if (action === "add" || action === "add-image") addImageSticker();
-        else if (action === "add-world") addToWorld();
         else if (action === "add-or-look") addCutoutFrame();
-        else if (action === "add-camera") addStudioCamera();
         return;
       }
       if (actionTarget.matches("[data-paint-tool]")) {
@@ -210,13 +194,12 @@ export function createModalEvents(deps) {
       if (action === "frame-aspect-set") {
         const shot = editor.mode === "frame" ? getActiveCutoutShot() : null;
         if (!shot || shot.locked === true) return;
-        setShotAspect(shot, String(actionTarget.getAttribute("data-aspect") || "1:1"));
+        applyCutoutAspect(shot, String(actionTarget.getAttribute("data-aspect") || "1:1"));
         uiState.frameRail.aspectOpen = false;
         syncSidePanelControls();
         pushHistory();
         commitAndRefreshNode();
         syncViewToggleState();
-        // 360° leaves the Frame view (Panorama Studio), whose inspector shows the shot.
         updateSidePanel();
         updateSelectionMenu();
         requestDraw();
@@ -258,7 +241,7 @@ export function createModalEvents(deps) {
         const selected = getSelected();
         if (!selected) return;
         const aspect = String(actionTarget.getAttribute("data-aspect") || "1:1");
-        setShotAspect(selected, aspect);
+        applyCutoutAspect(selected, aspect);
         editor.cutoutAspectOpen = false;
         editor.menuSize.measured = false;
         syncSidePanelControls();
@@ -270,7 +253,7 @@ export function createModalEvents(deps) {
       }
       if (action === "rotate-90") {
         const selected = getSelected();
-        if (!selected || isErpCamera()) return;
+        if (!selected) return;
         rotateCutoutAspect90(selected);
         editor.cutoutAspectOpen = false;
         editor.menuSize.measured = false;
@@ -316,18 +299,10 @@ export function createModalEvents(deps) {
     }
     if (action === "reset-view") {
       if (editor.mode === "frame") return;
-      // In space the view also goes back to where 3DoF stands (the World origin, where the ERP is taken from,
-      // or the Camera), as it opened.
       transitionView(
-        { position: spaceOrigin(), yaw_deg: 0, pitch_deg: 0, hFOV_deg: DEFAULT_VIEW_HFOV, distance: contentSphere()?.radius || DEFAULT_DISTANCE },
+        { position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0, hFOV_deg: DEFAULT_VIEW_HFOV, distance: DEFAULT_DISTANCE },
         { mode: shownSpaceMode(editor.spaceMode, editor.viewTransition), moved: false },
       );
-      return;
-    }
-    if (action === "frame-view") {
-      // As the button shows it: not on the way back to 3DoF.
-      if (!isFreeSpaceView() || shownSpaceMode(editor.spaceMode, editor.viewTransition) !== "6dof") return;
-      frameSpaceContent();
       return;
     }
     if (action === "toggle-grid") {
@@ -532,13 +507,13 @@ export function createModalEvents(deps) {
   return {
     connect(api) {
       ({
-        addCutoutFrame, addImageSticker, addStudioCamera, addToWorld, applyCutoutAspectCustom,
-        bringSelectedToFront, clearAll, clearPaintingLayer, clearSelection, commitAndRefreshNode, contentSphere,
-        deleteSelected, duplicateSelected, forceCursorTool, frameSpaceContent, getActiveCutoutShot,
-        getBrushPresetIdForTool, getSelected, hidePaintSizePreview, hideTooltip, isErpCamera, isFreeSpaceView,
+        addCutoutFrame, addImageSticker, applyCutoutAspectCustom,
+        bringSelectedToFront, clearAll, clearPaintingLayer, clearSelection, commitAndRefreshNode,
+        deleteSelected, duplicateSelected, forceCursorTool, getActiveCutoutShot,
+        getBrushPresetIdForTool, getSelected, hidePaintSizePreview, hideTooltip,
         playback, playbackFps, pushHistory, queueVideoTransportLayout, replaceSelectedImage, requestDraw,
-        restoreHistory, restoreSelectedToInitialPose, rotateCutoutAspect90, sendSelectedToBack, setShotAspect,
-        setSpaceMode, settleCanvasConfirm, showPaintSizePreview, showTooltipFor, spaceOrigin, startAnimation, syncFloatingViewButtonState,
+        restoreHistory, restoreSelectedToInitialPose, rotateCutoutAspect90, sendSelectedToBack, applyCutoutAspect,
+        settleCanvasConfirm, showPaintSizePreview, showTooltipFor, startAnimation, syncFloatingViewButtonState,
         syncPaintUi, syncSidePanelControls, syncVideoTransportState, syncViewToggleState, togglePlayback,
         toggleSelectedExternalStickerVisibility, toggleSelectedLock, toggleVideoMuted, transitionView,
         updateSelectionMenu, updateSidePanel, videoState,

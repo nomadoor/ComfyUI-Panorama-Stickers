@@ -5,7 +5,7 @@ import { deriveVerticalFovDeg, normalizeCutoutShotItem } from "./pano_cutout_vie
 import { lensAngle, lensFovKeepingCenter, lensFovLimit, lensRadius } from "./pano_lens.js";
 import { clipFrame, evaluateCamera, evaluateLane, evaluateSticker } from "./pano_scene_eval.js";
 import { SKY_STICKER_LANES, cameraAspect, freeStickerNumber, loadSceneState, rebaseSceneState, sceneStateText, stickerCounter } from "./pano_scene_state.js";
-import { laneNames, setLaneValue } from "./pano_timeline.js";
+import { setLaneValue } from "./pano_timeline.js";
 import { NEW_STICKER_HFOV } from "./pano_space.js";
 import { createSharedStringHistory } from "./pano_paint_history.js";
 import { sceneAtVideoFps } from "./pano_video_fps.js";
@@ -226,22 +226,6 @@ export function parseSceneEditorState(text, options = {}) {
   };
 }
 
-// Sets the Timeline fps of a working state v2, rebasing its times (rebaseSceneState) so they keep their
-// seconds. The objects stay the ones the editor holds; a Sticker still uploading is left as it is.
-export function setTimelineFps(state, fps) {
-  const rebased = rebaseSceneState(state, fps);
-  const stickers = new Map(rebased.stickers.map((item) => [item.id, item]));
-  state.timeline = rebased.timeline;
-  const owners = [[state.camera, rebased.camera], [state.background, rebased.background], [state.scene, rebased.scene], ...state.stickers.map((item) => [item, stickers.get(item.id)])];
-  for (const [owner, next] of owners) {
-    // A state without a Camera has none to rebase. Only a Sticker still uploading has no match; it was
-    // just added with a default Clip range and no Keyframes.
-    if (!next) continue;
-    if (owner.clip) owner.clip = next.clip;
-    for (const name of laneNames(owner)) owner[name].keyframes = next[name].keyframes;
-  }
-}
-
 // The vFOV a sky Sticker with the evaluated `value` is drawn and hit tested at. A port Sticker's follows
 // its hFOV and the aspect of the media on the port (`size`, { width, height }), as the run derives it
 // (core/render.py `derive_vfov`, core/math.py `vfov_from_hfov`): the media changes outside the state, so
@@ -326,20 +310,6 @@ export function cameraShot(camera, frame) {
   });
 }
 
-// Panorama Studio's Camera as Add Camera places it: where the Viewport camera `view` stands and
-// looks (pano_space.js), level, with a 90 degree hFOV and a 16:9 frame, and without Keyframes.
-export function newStudioCamera(view) {
-  return loadSceneState({
-    version: 2,
-    camera: {
-      aspect: 16 / 9,
-      position: { value: [...view.position] },
-      rotation: { value: { yaw_deg: wrapYaw(view.yaw_deg), pitch_deg: view.pitch_deg, roll_deg: 0 } },
-      fov: { value: 90 },
-    },
-  }).camera;
-}
-
 function nearestTurn(delta) {
   return delta - 360 * Math.round(delta / 360);
 }
@@ -358,28 +328,8 @@ export function setCameraShot(camera, frame, shot, base) {
   if (shot.position.some((value, axis) => value !== base.position[axis])) setLaneValue(camera, "position", frame, [...shot.position]);
 }
 
-// The Camera of state v2 at a Timeline frame, in the inspector's fields.
-export function cameraFields(camera, frame) {
-  const position = evaluateLane(camera, "position", frame);
-  const rotation = evaluateLane(camera, "rotation", frame);
-  return {
-    ...Object.fromEntries(POSITION_FIELDS.map((field, axis) => [field, position[axis]])),
-    yaw_deg: rotation.yaw_deg,
-    pitch_deg: rotation.pitch_deg,
-    roll_deg: rotation.roll_deg,
-    hFOV_deg: evaluateLane(camera, "fov", frame),
-  };
-}
-
-// The Camera's angle of view in the inspector's fields: its evaluated hFOV (under the limit of its κ), its aspect
-// (width ÷ height) and its lens curve κ (ADR 0042).
-export function cameraLensFields(camera, frame) {
-  const value = evaluateCamera(camera, frame);
-  return { hFOV_deg: value.hFOV_deg, aspect: camera.aspect, curve: value.curve };
-}
-
 // An inspector edit of the Camera's lens curve κ at a Timeline frame (docs/editor-interaction.md "レンズの行"): it
-// keeps the image's center scale of `start` (the cameraLensFields() where the edit began), so the hFOV follows, and
+// keeps the image's center scale of `start` ({ hFOV_deg, curve } where the edit began), so the hFOV follows, and
 // writes both the `curve` and the `fov` Lanes at the frame, each by its recording rule.
 export function setCameraCurveKeepingCenter(camera, frame, curve, start) {
   setLaneValue(camera, "curve", frame, curve);
@@ -415,19 +365,6 @@ export function setStickerOpacity(sticker, frame, opacity) {
 // The smallest scale the inspector sets on a world Sticker (its scale has no upper limit).
 export const WORLD_MIN_SCALE = 0.01;
 
-// A world Sticker at a Timeline frame, in the inspector's fields (opacity in percent).
-export function worldStickerFields(sticker, frame) {
-  const value = evaluateSticker(sticker, frame);
-  return {
-    ...Object.fromEntries(POSITION_FIELDS.map((field, axis) => [field, value.position[axis]])),
-    yaw_deg: value.yaw_deg,
-    pitch_deg: value.pitch_deg,
-    roll_deg: value.roll_deg,
-    scale: value.scale,
-    opacity: value.opacity * 100,
-  };
-}
-
 // An inspector edit of one world Sticker field at a Timeline frame, by the recording rule of its Lane.
 export function setWorldStickerField(sticker, frame, field, value) {
   const stickerFrame = clipFrame(sticker.clip, frame);
@@ -454,17 +391,7 @@ export function setWorldStickerTransform(sticker, frame, transform) {
   }
 }
 
-// Delete on the world Sticker `id` of a working state v2 removes it. The port Sticker follows the
-// `sticker` input, so it is hidden instead, as a sky one is.
-export function deleteWorldSticker(state, id) {
-  const sticker = state.stickers.find((item) => item.id === id && item.placement === "world");
-  if (!sticker) return;
-  if (sticker.source.kind === "port") sticker.visible = false;
-  else state.stickers = state.stickers.filter((item) => item !== sticker);
-}
-
-// A world Sticker over the whole Timeline at a World transform ({ position, rotation, scale }, as
-// pano_space.js newWorldStickerTransform gives it).
+// A world Sticker over the whole Timeline at a World transform ({ position, rotation, scale }).
 export function newWorldSceneSticker(id, source, transform) {
   return {
     id,

@@ -102,7 +102,7 @@ Python はこの文書の規則を持たない（列は `—`）。「（未実�
 | `DEFAULT_VIEW_HFOV`（参照） | 100° | `space/fit.js`、`docs/editor-interaction.md`。Panorama 表示と Preview の視点の横の画角で、どの操作も変えない |
 | `KEY_MOVE_FAST` | 4 | `pano_view_keys.js`。WASD / QE の速さに Shift で掛ける数。Alt では遅くしない（下の「直接の操作」の WASD / QE。ADR 0048） |
 | `NEW_STICKER_HFOV`（参照） | 30° | `space/placement.js`。新しい Sky の Sticker の横の画角 |
-| `CAMERA_HIT_PIXELS` | 6 px | `web_src/studio/camera_marker.js`。Camera の印の線の当たりの幅（下の「ホバーの判定」。古い UI の `space/guides.js` `segmentsHit` と同じ値） |
+| `CAMERA_HIT_PIXELS` | 6 px | `web_src/studio/camera_marker.js`。Camera の印の線の当たりの幅（下の「ホバーの判定」） |
 | `COARSE_GRID_CELLS` | 16 | `web_src/pano_coarse_grid.js`。3D の Sticker の当たりの粗い占有グリッドの、各辺のマスの数（下の「ホバーの判定」） |
 | `COARSE_GRID_SLICE_MS` | 4 ms | `web_src/pano_coarse_grid.js`。そのグリッドを手の空いた時間に作るとき、1 回に使う時間の上限 |
 | `COARSE_GRID_IDLE_TIMEOUT_MS` | 100 ms | `web_src/pano_coarse_grid.js`。手が空かなくても、グリッドを作る次の 1 回が呼ばれるまでの最長の待ち |

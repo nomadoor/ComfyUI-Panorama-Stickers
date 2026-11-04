@@ -63,11 +63,12 @@ change でこの設定を消す」としていた。
   呼ばれない関数。古いエディタを開くノードは旧ノードと Preview の読み取り専用だけになり、そこでは `studio`・`stateV2`・`sceneV2`・
   `cameraV2` がいつも偽になるので、これらの分岐は通らない。
 - 丸ごと消すモジュールと部品（どれも Panorama Studio の道からしか使われないことを確かめた）：`editor/upstream.js`・
-  `editor/pointer_world.js`・`editor/timeline_actions.js`、`pano_scene_viewer_window.js`、`PanoTimeline.vue`・`PanoTimelineGroup.vue`・
+  `editor/pointer_world.js`・`editor/timeline_actions.js`・`editor/timeline.js`、`pano_scene_viewer_window.js`、`PanoTimeline.vue`・`PanoTimelineGroup.vue`・
   `PanoEasingGraph.vue`・`PanoUpstreamOrigin.vue`、`modal_shell_presets.js` の `studio` と `viewer`、`PanoModal.vue` の `viewer` の配置。
-- `editor/space.js` と `editor/timeline.js` は、旧ノードも使う部分（Reset View などの視点の遷移、閉じたときの視点の記憶、ペイントを
-  見せるか、旧 VIDEO トランスポートの再生と一時停止、実行結果を受けたときの VIDEO の読み直し）があるので、Panorama Studio の部分だけを
-  消す。
+- `editor/space.js` は、旧ノードも使う部分（Reset View などの視点の遷移、閉じたときの視点の記憶、ペイントを見せるか）があるので、
+  Panorama Studio の部分だけを消す。`editor/timeline.js` のうち旧ノードも使う部分（旧 VIDEO トランスポートの再生と一時停止
+  `togglePlayback`、実行結果を受けたときの VIDEO の読み直し `applyRunResult`、背景の `bg_color` の `backgroundColor`）は
+  `editor/media_session.js` へ移し、`editor/timeline.js` は丸ごと消す。
 - 共有の部品のうち、古い UI の Panorama Studio の道からしか呼ばれなくなる関数も消す（例：`space/guides.js` の `cameraFrustumSegments`・
   `cameraTrajectory`、`pano_editor_state.js` の `newStudioCamera`、`space/placement.js` の `newWorldStickerTransform`・`newWorld3dStickerTransform`、
   `pano_editor_ui_state.js` の `buildTimelineModel`・`buildEasingModel`・`upstreamInspectorModel`）。ノード上の表示が使う `editorActive`・

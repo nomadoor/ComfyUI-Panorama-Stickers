@@ -3,24 +3,21 @@
 import { yawPitchToDir } from "../pano_camera_math.js";
 import { deviceLens, frameViewContext } from "../pano_editor_view.js";
 import { clamp } from "../pano_math.js";
-import { projectPoint, spaceCamera } from "../pano_space.js";
 import { drawStickerSelectionBoundary, drawStickerSelectionHandles } from "../pano_sticker_affordance.js";
-import { isUpstreamSticker } from "../pano_upstream.js";
 import { CUTOUT_FRAME_ACCENT, CUTOUT_PANO_DIM_ALPHA, DEG2RAD } from "./constants.js";
 
 export function createOverlay(deps) {
   const {
-    cameraV2, canvas, ctx, editor, editorView, frameGateCssRadius, runtime, shotEditor, studio, type,
+    canvas, ctx, editor, editorView, frameGateCssRadius, runtime, shotEditor, type,
   } = deps;
   // Bound by connect() to the other modules and showEditor.
-  let areAllSelectedItemsLocked, contentSphere, deviceRect, drawEditorViewShot, editorViewInput,
+  let areAllSelectedItemsLocked, deviceRect, drawEditorViewShot,
     getActiveCutoutShot, getCutoutSelectableItemsForDisplay, getFrameViewLayout, getFrameViewRect, getList,
-    getMultiSelectionGeom, getSelectedItems, getStickerDisplayAlpha, getUnwrapRect, isCameraSelected,
-    isErpCamera, isExternalSticker, isFreeSpaceView, isItemLocked, isItemSelected, isRasterObjectItem,
-    isSceneSticker, isShotItem, isStickerItem, isStrokeGroupItem, objectGeom, poseOf, projectDir,
+    getMultiSelectionGeom, getSelectedItems, getStickerDisplayAlpha, getUnwrapRect,
+    isExternalSticker, isItemLocked, isItemSelected, isRasterObjectItem,
+    isShotItem, isStickerItem, isStrokeGroupItem, objectGeom, poseOf, projectDir,
     projectDirUnwrap, projectErpLassoPointsToFrameRect, projectLassoPointsToCurrentView,
-    rebuildPaintEngineIfNeeded, rectFromPoints, renderEditorView, renderEditorViewUnwrap, sampleStickerEdge,
-    sceneStickerShown, spaceViewState;
+    rebuildPaintEngineIfNeeded, rectFromPoints, renderEditorView, renderEditorViewUnwrap, sampleStickerEdge;
 
   function drawGridUnwrap(drawView) {
     const w = canvas.width;
@@ -80,9 +77,7 @@ export function createOverlay(deps) {
     rebuildPaintEngineIfNeeded();
     if (drawView) runtime.backgroundDirty = !renderEditorView();
 
-    if (editor.showGrid && !editor.fullscreen && editorViewInput().space) {
-      drawErpOriginLabel();
-    } else if (editor.showGrid && !editor.fullscreen) {
+    if (editor.showGrid && !editor.fullscreen) {
       for (let lon = -180; lon <= 180; lon += 15) {
         const pts = [];
         for (let lat = -89; lat <= 89; lat += 4) pts.push(yawPitchToDir(lon, lat));
@@ -108,18 +103,6 @@ export function createOverlay(deps) {
         if (p) ctx.fillText(l.name, p.x, p.y + 24);
       });
     }
-  }
-
-  // The space view's grid has its origin marker at the World origin, where the Stickers ERP is taken
-  // from; this names it.
-  function drawErpOriginLabel() {
-    const camera = spaceCamera(spaceViewState(), canvas.width, canvas.height, contentSphere());
-    const origin = projectPoint(camera, [0, 0, 0], canvas.width, canvas.height);
-    if (!origin) return;
-    ctx.fillStyle = "rgba(255, 221, 87, 0.9)";
-    ctx.font = "500 11px Geist, sans-serif";
-    ctx.textAlign = "center";
-    ctx.fillText("ERP origin", origin.x, origin.y - 12);
   }
 
   function drawStickerBoundary(item, selected) {
@@ -254,11 +237,9 @@ export function createOverlay(deps) {
       drawStickerSelectionHandles(ctx, geom, { accent });
       return;
     }
-    // Panorama Studio's 360-degree Camera has no size handles, only its rotate handle.
-    const resizable = !(isShotItem(item) && isErpCamera());
     ctx.fillStyle = accent;
-    if (resizable) geom.corners.forEach((p) => { ctx.beginPath(); ctx.arc(p.x, p.y, 6.5, 0, Math.PI * 2); ctx.fill(); });
-    if (resizable && isShotItem(item)) {
+    geom.corners.forEach((p) => { ctx.beginPath(); ctx.arc(p.x, p.y, 6.5, 0, Math.PI * 2); ctx.fill(); });
+    if (isShotItem(item)) {
       ctx.strokeStyle = accent;
       ctx.lineCap = "round";
       ctx.lineWidth = 4;
@@ -302,9 +283,7 @@ export function createOverlay(deps) {
         sorted: [...rawList],
       };
     }
-    // A selected upstream element (ADR 0030) shows its outline and handles under the node's own.
-    const items = [...selectedItems.filter(isUpstreamSticker), ...editor._sortedItemsCache.sorted];
-    for (const item of items) {
+    for (const item of editor._sortedItemsCache.sorted) {
       const selected = editor.mode !== "frame" && !multiSelected && isItemSelected(item);
       if (editor.mode === "frame" && !selected) continue;
       const itemIsSticker = isStickerItem(item);
@@ -313,7 +292,6 @@ export function createOverlay(deps) {
       if (!itemIsSticker && !itemIsShot) {
         continue;
       }
-      if (isSceneSticker(item) && !sceneStickerShown(item)) continue;
       const g = objectGeom(item);
       if (type !== "stickers" && !g.visible) {
         continue;
@@ -551,9 +529,7 @@ export function createOverlay(deps) {
   }
 
   function getCutoutPanoDimTarget() {
-    // In 6DoF the Camera is its frustum, not a frame on the panorama to dim around. Panorama Studio dims
-    // around its Camera's frame only while the Camera is selected, so its Stickers stay in full view.
-    if (!shotEditor || !getActiveCutoutShot() || (cameraV2 && isFreeSpaceView()) || (studio && !isCameraSelected())) return 0;
+    if (!shotEditor || !getActiveCutoutShot()) return 0;
     return CUTOUT_PANO_DIM_ALPHA;
   }
 
@@ -596,14 +572,13 @@ export function createOverlay(deps) {
   return {
     connect(api) {
       ({
-        areAllSelectedItemsLocked, contentSphere, deviceRect, drawEditorViewShot, editorViewInput,
+        areAllSelectedItemsLocked, deviceRect, drawEditorViewShot,
         getActiveCutoutShot, getCutoutSelectableItemsForDisplay, getFrameViewLayout, getFrameViewRect, getList,
-        getMultiSelectionGeom, getSelectedItems, getStickerDisplayAlpha, getUnwrapRect, isCameraSelected,
-        isErpCamera, isExternalSticker, isFreeSpaceView, isItemLocked, isItemSelected, isRasterObjectItem,
-        isSceneSticker, isShotItem, isStickerItem, isStrokeGroupItem, objectGeom, poseOf, projectDir,
+        getMultiSelectionGeom, getSelectedItems, getStickerDisplayAlpha, getUnwrapRect,
+        isExternalSticker, isItemLocked, isItemSelected, isRasterObjectItem,
+        isShotItem, isStickerItem, isStrokeGroupItem, objectGeom, poseOf, projectDir,
         projectDirUnwrap, projectErpLassoPointsToFrameRect, projectLassoPointsToCurrentView,
         rebuildPaintEngineIfNeeded, rectFromPoints, renderEditorView, renderEditorViewUnwrap, sampleStickerEdge,
-        sceneStickerShown, spaceViewState,
       } = api);
     },
     drawGridUnwrap, drawGridPano, drawObjects, drawFrameViewBackground, drawLassoOutlineOverlay,

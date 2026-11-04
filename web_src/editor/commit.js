@@ -3,18 +3,16 @@
 import {
   editorStateWrite,
   normalizeCoverageValue,
-  setEditorActive,
 } from "../pano_editor_state.js";
 import { peekNodeSurface, peekPreviewNode } from "../pano_node_bridge.js";
 import { saveSharedUiSettings } from "./ui_settings.js";
 
 export function createCommit(deps) {
   const {
-    app, bgWidget, cameraV2, coverageWidget, node, presetWidget, readOnly, state, stateWidget,
+    app, bgWidget, coverageWidget, node, presetWidget, readOnly, state, stateWidget,
   } = deps;
   // Bound by connect() to the other modules and showEditor.
-  let needsPaintingLayerSync, resolveEditorOutputPresetWidth, storedEditorState, syncCutoutShot, syncPaintingLayerAsync,
-    syncPortHandoff, syncUpstreamEdits;
+  let needsPaintingLayerSync, resolveEditorOutputPresetWidth, syncPaintingLayerAsync;
 
   function apply() {
     if (readOnly) return;
@@ -29,18 +27,10 @@ export function createCommit(deps) {
 
   function commitState() {
     if (readOnly) return;
-    syncCutoutShot();
-    syncPortHandoff();
-    syncUpstreamEdits();
     state.coverage = normalizeCoverageValue(state.coverage);
-    setEditorActive(node, state.active);
     if (!stateWidget) return;
-    // The port Sticker shown with the Pose handoff is written as the state keeps it (ADR 0030).
-    const stored = storedEditorState();
-    const text = editorStateWrite(node, stored, String(stateWidget.value ?? ""), { rebased: cameraV2 });
+    const text = editorStateWrite(node, state, String(stateWidget.value ?? ""));
     if (text === null) return;
-    // A Scene id given on writing (editorStateWrite) stays with the working state.
-    if (stored !== state) state.id = stored.id;
     stateWidget.value = text;
     stateWidget.callback?.(text);
   }
@@ -82,8 +72,7 @@ export function createCommit(deps) {
   return {
     connect(api) {
       ({
-        needsPaintingLayerSync, resolveEditorOutputPresetWidth, storedEditorState, syncCutoutShot, syncPaintingLayerAsync,
-        syncPortHandoff, syncUpstreamEdits,
+        needsPaintingLayerSync, resolveEditorOutputPresetWidth, syncPaintingLayerAsync,
       } = api);
     },
     apply, commitState, persistUiSettings, commitAndRefreshNode, triggerBackgroundPersistenceOnClose,

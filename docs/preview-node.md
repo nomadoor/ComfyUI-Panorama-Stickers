@@ -60,7 +60,7 @@ Scene を見る表示（ビューア）は、エディタの部品を、エデ�
 
 - 分けたもの（振る舞いを変えない整理）：
   - 視点の操作の配線（`editor/space.js` の 3DoF・6DoF、ドラッグとホイールの動き、`pickSurface` での中心と先、遷移、キーの移動、Reset View・Frame Selected）を `web_src/pano_space_navigation.js` の `createSpaceNavigation` に移した。
-  - 上流の層の組み立て（エディタの `pano_upstream_layers` の読み込み、層ごとの素材の follower、`upstreamViewInput`、ファイルの 404 の問い合わせ直し）を `web_src/pano_upstream_layers.js` の `createUpstreamLayers`・`refreshGoneUpstreamFiles` に移した。上書きの記録・編集の書き戻しは `web_src/pano_upstream_edits.js` の `createUpstreamEdits`（新しい UI の `web_src/studio/upstream.js` が使う）。
+  - 上流の層の組み立て（エディタの `pano_upstream_layers` の読み込み、層ごとの素材の follower、描く物（`viewInput`）、ファイルの 404 の問い合わせ直し）を `web_src/pano_upstream_layers.js` の `createUpstreamLayers`・`refreshGoneUpstreamFiles` に移した。上書きの記録・編集の書き戻しは `web_src/pano_upstream_edits.js` の `createUpstreamEdits`（新しい UI の `web_src/studio/upstream.js` が使う）。
   - エディタは分けたモジュールを呼ぶだけになる。
 - ビューアの組み立て（`pano_scene_viewer.js` の `createSceneViewer`）：分けた 2 つのモジュールと、再生の部品（`createNodePlayback`、深度のグリッドの色）を 1 つの Scene の表示に組み立てる。ノード上の表示がこれを使い、共有のビュー（`pano_preview_view.js` の `acquirePreviewView`。`pano_scene_viewer_node.js`）に描く。大きなウィンドウは新しい UI のステージで描き（`docs/studio-ui.md` の「Preview のウィンドウ」）、ビューアからは視点と再生の位置の記録（`sceneViewerRecord`）だけを引き継ぐ。
 - 要素の読み込みの知らせ：共有のビューは、要素が読み込めたときと自分のスプラットを並べ替え直したときの知らせを、`acquire(onChange, { items: true })` で求めたノードにだけ送る。求めるのは Scene のビューアだけで、ほかのノード上の表示（Studio・旧ノード・旧 Preview）は今までどおり知らせを受けず、描き直しが増えない（`tests/pano_preview_view.test.mjs` の「an item loaded or splats sorted in the shared view are told only to the nodes that draw 3D items」）。

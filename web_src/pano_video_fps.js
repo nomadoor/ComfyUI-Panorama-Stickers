@@ -1,7 +1,6 @@
 // The Timeline fps a VIDEO input sets (ADR 0024, docs/timeline-ui.md "タイムラインの表示"): the fps the node's current
 // result brings (`pano_timeline_fps`), whether the editor's fps field is locked by it, and the state an editor opens
-// on, rebased to it. Both editors (the old one, pano_editor.js and editor/timeline.js, and the new one,
-// studio/editor.js) use these.
+// on, rebased to it. The new editor (studio/editor.js) uses these.
 import { STUDIO_BACKGROUND_INPUT_NAMES, isNodeOutputMediaCurrent, videoLinked } from "./pano_preview_video.js";
 import { rebaseSceneState, timelineFps } from "./pano_scene_state.js";
 

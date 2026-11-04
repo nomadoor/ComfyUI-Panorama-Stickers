@@ -75,7 +75,6 @@ export function getEditorNodeTitle(node, type) {
   const rawType = String(node?.comfyClass || node?.type || node?.title || "").trim();
   const titleMap = {
     PanoramaStickers: "Panorama Stickers",
-    PanoramaStudio: "Panorama Studio",
     "Panorama Stickers": "Panorama Stickers",
     PanoramaCutout: "Panorama Cutout",
     "Panorama Cutout": "Panorama Cutout",

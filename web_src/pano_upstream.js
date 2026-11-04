@@ -54,9 +54,6 @@ export function upstreamBackgroundOf(uiList) {
   };
 }
 
-// The warning of a result that the node's own bg_media is not used (the start of the node's text).
-export const UPSTREAM_BACKGROUND_WARNING = "bg_media is not used";
-
 // Whether the editor waits for a run to show the upstream Scene: a Scene is linked to `scene` and the node's
 // current result has no upstream layers (null).
 export function upstreamPending(linkType, layers) {

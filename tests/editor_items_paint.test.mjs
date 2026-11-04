@@ -10,7 +10,7 @@ test("the old editor's stroke group frame is turned by the group's rot_deg", () 
   const points = [{ u: 0.4, v: 0.45 }, { u: 0.5, v: 0.5 }];
   const stroke = { id: "s1", actionGroupId: "g1", layerKind: "paint", toolKind: "pen", size: 10, opacity: 1, color: { r: 1, g: 0, b: 0, a: 1 }, targetSpace: { kind: "ERP_GLOBAL" }, geometry: { geometryKind: "freehand_open", points, rawPoints: points, processedPoints: points } };
   const state = loadSceneState({ version: 2, painting: { groups: [{ id: "g1", actionGroupId: "g1", z_index: 0, rot_deg: 30 }], paint: { strokes: [stroke] } } });
-  const items = createItems({ cameraV2: true, editor: { frame: 0, mode: "pano" }, sceneV2: true, state, stateV2: true, type: "stickers" });
+  const items = createItems({ editor: { frame: 0, mode: "pano" }, state, type: "stickers" });
   items.connect({ getBrushPresetIdForTool: () => "pen", getPaintingLayerList: () => state.painting.paint.strokes });
   const frame = items.ensureGroupFrame("g1", "paint");
   assert.equal(frame.rot_deg, 30);
@@ -21,7 +21,7 @@ test("the old editor moves a stroke group as a sky Sticker moves: its center dir
   const points = [{ u: 0.48, v: 0.06 }, { u: 0.5, v: 0.065 }, { u: 0.52, v: 0.06 }];
   const stroke = { id: "s1", actionGroupId: "g1", layerKind: "paint", toolKind: "pen", size: 10, opacity: 1, color: { r: 1, g: 0, b: 0, a: 1 }, targetSpace: { kind: "ERP_GLOBAL" }, geometry: { geometryKind: "freehand_open", points, rawPoints: points, processedPoints: points } };
   const state = loadSceneState({ version: 2, painting: { groups: [{ id: "g1", actionGroupId: "g1", z_index: 0, rot_deg: 5 }], paint: { strokes: [stroke] } } });
-  const items = createItems({ cameraV2: true, editor: { frame: 0, mode: "pano" }, sceneV2: true, state, stateV2: true, type: "stickers" });
+  const items = createItems({ editor: { frame: 0, mode: "pano" }, state, type: "stickers" });
   items.connect({ getBrushPresetIdForTool: () => "pen", getPaintingLayerList: () => state.painting.paint.strokes });
   const snapshot = structuredClone(state.painting.paint.strokes);
   const frame = structuredClone(items.ensureGroupFrame("g1", "paint"));
@@ -40,7 +40,7 @@ function groupAt80() {
   const points = [{ u: 0.66, v: 0.05 }, { u: 0.667, v: 0.055 }, { u: 0.673, v: 0.05 }];
   const stroke = { id: "s1", actionGroupId: "g1", layerKind: "paint", toolKind: "pen", size: 10, opacity: 1, color: { r: 1, g: 0, b: 0, a: 1 }, targetSpace: { kind: "ERP_GLOBAL" }, geometry: { geometryKind: "freehand_open", points, rawPoints: points, processedPoints: points } };
   const state = loadSceneState({ version: 2, painting: { groups: [{ id: "g1", actionGroupId: "g1", z_index: 0, rot_deg: 0 }], paint: { strokes: [stroke] } } });
-  const items = createItems({ cameraV2: true, editor: { frame: 0, mode: "unwrap" }, sceneV2: true, state, stateV2: true, type: "stickers" });
+  const items = createItems({ editor: { frame: 0, mode: "unwrap" }, state, type: "stickers" });
   items.connect({ getBrushPresetIdForTool: () => "pen", getPaintingLayerList: () => state.painting.paint.strokes });
   return { state, items, points };
 }
@@ -91,4 +91,15 @@ test("the old editor's move to where the group's center already is leaves its po
   state.painting.paint.strokes[0].geometry.points.forEach((p, index) => {
     assert.ok(Math.abs(p.u - points[index].u) < 1e-12 && Math.abs(p.v - points[index].v) < 1e-12, `${index}`);
   });
+});
+
+// The legacy Cutout's shot keeps its pose fields as they are written: the hFOV and vFOV pair stays a pair.
+test("the old editor writes a shot's pose as it is, keeping its hFOV and vFOV pair", () => {
+  const shot = { id: "shot_1", yaw_deg: 0, pitch_deg: 0, hFOV_deg: 90, vFOV_deg: 60 };
+  const items = createItems({ editor: { frame: 0, mode: "pano" }, state: { shots: [shot], stickers: [] }, type: "cutout" });
+  assert.equal(items.poseOf(shot), shot);
+  items.writePose(shot, { hFOV_deg: 70, vFOV_deg: 40 });
+  assert.deepEqual([shot.hFOV_deg, shot.vFOV_deg], [70, 40]);
+  items.writePose(shot, { yaw_deg: 15 });
+  assert.deepEqual([shot.yaw_deg, shot.hFOV_deg, shot.vFOV_deg], [15, 70, 40]);
 });

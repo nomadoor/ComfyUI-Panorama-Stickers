@@ -1,26 +1,22 @@
 // The editor's edit commands on the selection and the state: clear, duplicate, delete, and the confirmation
 // they may ask for.
-import { deleteWorldSticker, duplicateSceneSticker, retainActiveCutoutShot, takeStickerId } from "../pano_editor_state.js";
+import { retainActiveCutoutShot } from "../pano_editor_state.js";
 import { wrapYaw } from "../pano_math.js";
 import { deletePaintObjects } from "../pano_paint_objects.js";
 import { normalizePaintingState } from "../pano_paint_types.js";
-import { isUpstreamSticker } from "../pano_upstream.js";
 import { uid } from "./helpers.js";
 
 export function createCommands(deps) {
   const {
-    editor, readOnly, sceneV2, state, studio, type, uiState,
+    editor, readOnly, state, type, uiState,
   } = deps;
   // Bound by connect() to the other modules and showEditor.
-  let cancelLiveEdits, clearCutoutFrame, clearWorldSelection, collectExternalStickersForClearAll, commitAndRefreshNode,
-    deleteStudioCamera, deleteUpstreamStickers, getActivePaintTargetDescriptor, getList, getNextStickerZIndex,
-    getPaintingGroupList, getPaintingLayerList, getRasterObjectList, getSelected, getSelectedItems, isExternalSticker,
-    isItemLocked, isRasterObjectItem, isShotItem, isStickerHidden, isStickerItem, isStrokeGroupItem, isUploadingSticker,
-    markObjectVisualsDirty, markPaintCompositeVisualsDirty, markPaintStrokeVisualsDirty,
-    parseRasterObjectSelectionId, pruneUnusedAssets, pushHistory, releaseHiddenSelection, requestDraw,
-    restoreUpstreamDeleted, revertUpstreamLayer, selectedWorldSticker,
-    stopTimelinePlayback, syncFloatingViewButtonState, syncPaintUi, updateSelectionMenu, updateSidePanel,
-    worldStickerEditable;
+  let cancelLiveEdits, clearCutoutFrame, collectExternalStickersForClearAll, commitAndRefreshNode,
+    getActivePaintTargetDescriptor, getList, getNextStickerZIndex, getPaintingGroupList, getPaintingLayerList,
+    getRasterObjectList, getSelected, getSelectedItems, isExternalSticker, isItemLocked, isRasterObjectItem,
+    isStickerHidden, isStickerItem, isStrokeGroupItem, markObjectVisualsDirty, markPaintCompositeVisualsDirty,
+    markPaintStrokeVisualsDirty, parseRasterObjectSelectionId, pruneUnusedAssets, pushHistory, requestDraw, syncPaintUi,
+    updateSelectionMenu, updateSidePanel;
 
   // The confirm dialog over the stage: resolves true on its confirm button, false on Cancel, a click beside it
   // or Escape (settleCanvasConfirm).
@@ -57,9 +53,8 @@ export function createCommands(deps) {
     markPaintStrokeVisualsDirty();
     const keptExternalStickers = collectExternalStickersForClearAll();
     if (type === "stickers") {
-      // World Stickers are not shown on the canvas, so Clear All keeps them.
-      state.stickers = sceneV2 ? state.stickers.filter((item) => item.placement === "world" || keptExternalStickers.includes(item)) : keptExternalStickers;
-      if (!sceneV2) state.assets = {};
+      state.stickers = keptExternalStickers;
+      state.assets = {};
       editor.selectedId = keptExternalStickers[0]?.id || null;
       editor.selectedIds = editor.selectedId ? [editor.selectedId] : [];
       state.active.selected_sticker_id = keptExternalStickers[0]?.id || null;
@@ -122,18 +117,11 @@ export function createCommands(deps) {
     if (readOnly) return;
     const selected = getSelected();
     if (!selected) return;
-    if (!isStickerItem(selected) || isExternalSticker(selected) || isUpstreamSticker(selected)) return;
-    // A Sticker whose image is still uploading has no file to copy yet.
-    if (sceneV2 && isUploadingSticker(selected)) return;
-    let copy;
-    if (sceneV2) {
-      copy = duplicateSceneSticker(selected, takeStickerId(state), getNextStickerZIndex());
-    } else {
-      copy = JSON.parse(JSON.stringify(selected));
-      copy.id = uid("st");
-      copy.yaw_deg = wrapYaw((copy.yaw_deg || 0) + 8);
-      copy.z_index = getNextStickerZIndex();
-    }
+    if (!isStickerItem(selected) || isExternalSticker(selected)) return;
+    const copy = JSON.parse(JSON.stringify(selected));
+    copy.id = uid("st");
+    copy.yaw_deg = wrapYaw((copy.yaw_deg || 0) + 8);
+    copy.z_index = getNextStickerZIndex();
     state.stickers.push(copy);
     state.active.selected_sticker_id = copy.id;
     editor.selectedId = copy.id;
@@ -146,28 +134,6 @@ export function createCommands(deps) {
     requestDraw();
   }
 
-  // Delete on the selected world Sticker (deleteWorldSticker). Returns whether a world Sticker was selected.
-  function deleteSelectedWorldSticker() {
-    const sticker = selectedWorldSticker();
-    if (!sticker) return false;
-    if (!worldStickerEditable(sticker)) return true;
-    // An edit a pointer has under way is cancelled first (pointer_input.js cancelLiveEdits).
-    cancelLiveEdits();
-    stopTimelinePlayback();
-    // An upstream element is deleted in the node's overrides (ADR 0030).
-    if (isUpstreamSticker(sticker)) deleteUpstreamStickers([sticker]);
-    else deleteWorldSticker(state, sticker.id);
-    clearWorldSelection();
-    markObjectVisualsDirty();
-    pushHistory();
-    commitAndRefreshNode();
-    updateSidePanel();
-    updateSelectionMenu();
-    syncFloatingViewButtonState();
-    requestDraw();
-    return true;
-  }
-
   function deleteSelected() {
     if (readOnly) return;
     const selectedItems = getSelectedItems();
@@ -175,14 +141,7 @@ export function createCommands(deps) {
     if (!selected && selectedItems.length === 0) return;
     if (selectedItems.some((item) => isItemLocked(item))) return;
     cancelLiveEdits();
-    stopTimelinePlayback();
-    // Upstream elements are deleted in the node's overrides (ADR 0030), in the same Undo step as the rest.
-    const upstream = selectedItems.filter(isUpstreamSticker);
-    if (upstream.length) {
-      deleteUpstreamStickers(upstream);
-      markObjectVisualsDirty();
-    }
-    if (selectedItems.length > 1 || upstream.length) {
+    if (selectedItems.length > 1) {
       const paintStrokeIds = new Set(selectedItems
         .filter((item) => isStrokeGroupItem(item))
         .map((item) => String(item.actionGroupId || item.id || "")));
@@ -242,10 +201,6 @@ export function createCommands(deps) {
       requestDraw();
       return;
     }
-    if (studio && isShotItem(selected)) {
-      deleteStudioCamera();
-      return;
-    }
     if (type === "stickers" || isStickerItem(selected)) {
       if (isExternalSticker(selected)) {
         if (isStickerHidden(selected)) return;
@@ -274,31 +229,6 @@ export function createCommands(deps) {
     clearCutoutFrame();
   }
 
-  // An action on the upstream layer with `key` (ADR 0030) run from its Timeline header: `change(key)` changes the
-  // node's records (editor/upstream.js), and when it did, the change is an Undo step written back.
-  function changeUpstreamLayer(change, key) {
-    if (readOnly) return;
-    stopTimelinePlayback();
-    if (!change(key)) return;
-    releaseHiddenSelection();
-    markObjectVisualsDirty();
-    pushHistory();
-    commitAndRefreshNode();
-    updateSidePanel();
-    updateSelectionMenu();
-    requestDraw();
-  }
-
-  // "Restore deleted": the layer's elements deleted here show again.
-  function restoreUpstreamDeletedCommand(key) {
-    changeUpstreamLayer(restoreUpstreamDeleted, key);
-  }
-
-  // "Revert": the layer's `scene` and painting follow upstream again.
-  function revertUpstreamLayerCommand(key) {
-    changeUpstreamLayer(revertUpstreamLayer, key);
-  }
-
   function forceCursorTool() {
     if (editor.primaryTool === "cursor") return;
     editor.primaryTool = "cursor";
@@ -309,18 +239,14 @@ export function createCommands(deps) {
   return {
     connect(api) {
       ({
-        cancelLiveEdits, clearCutoutFrame, clearWorldSelection, collectExternalStickersForClearAll, commitAndRefreshNode,
-        deleteStudioCamera, deleteUpstreamStickers, getActivePaintTargetDescriptor, getList, getNextStickerZIndex,
-        getPaintingGroupList, getPaintingLayerList, getRasterObjectList, getSelected, getSelectedItems, isExternalSticker,
-        isItemLocked, isRasterObjectItem, isShotItem, isStickerHidden, isStickerItem, isStrokeGroupItem, isUploadingSticker,
-        markObjectVisualsDirty, markPaintCompositeVisualsDirty, markPaintStrokeVisualsDirty,
-        parseRasterObjectSelectionId, pruneUnusedAssets, pushHistory, releaseHiddenSelection, requestDraw,
-        restoreUpstreamDeleted, revertUpstreamLayer, selectedWorldSticker,
-        stopTimelinePlayback, syncFloatingViewButtonState, syncPaintUi, updateSelectionMenu, updateSidePanel,
-        worldStickerEditable,
+        cancelLiveEdits, clearCutoutFrame, collectExternalStickersForClearAll, commitAndRefreshNode,
+        getActivePaintTargetDescriptor, getList, getNextStickerZIndex, getPaintingGroupList, getPaintingLayerList,
+        getRasterObjectList, getSelected, getSelectedItems, isExternalSticker, isItemLocked, isRasterObjectItem,
+        isStickerHidden, isStickerItem, isStrokeGroupItem, markObjectVisualsDirty, markPaintCompositeVisualsDirty,
+        markPaintStrokeVisualsDirty, parseRasterObjectSelectionId, pruneUnusedAssets, pushHistory, requestDraw, syncPaintUi,
+        updateSelectionMenu, updateSidePanel,
       } = api);
     },
-    clearAll, clearPaintingLayer, duplicateSelected, deleteSelectedWorldSticker, deleteSelected, restoreUpstreamDeletedCommand,
-    revertUpstreamLayerCommand, forceCursorTool, settleCanvasConfirm,
+    clearAll, clearPaintingLayer, duplicateSelected, deleteSelected, forceCursorTool, settleCanvasConfirm,
   };
 }

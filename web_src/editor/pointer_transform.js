@@ -5,8 +5,7 @@
 // which one starts. Letting go of any item edit that moved, a multi-selection move (pointer_multi_move.js)
 // too, is one Undo step (endTransform).
 import { yawPitchToDir } from "../pano_camera_math.js";
-import { deriveCutoutAspectLabelFromFov, deriveHorizontalFovDeg, getCutoutCameraParams } from "../pano_cutout_view_math.js";
-import { CAMERA_SHOT_ID } from "../pano_editor_state.js";
+import { deriveCutoutAspectLabelFromFov } from "../pano_cutout_view_math.js";
 import { DRAW_REASON } from "../pano_frame_scheduler.js";
 import { clamp, wrapYaw } from "../pano_math.js";
 import { pointerDistance, pointerScaleRatio } from "../pano_paint_objects.js";
@@ -15,14 +14,14 @@ import { RAD2DEG } from "./constants.js";
 import { cloneJson, dirToYawPitch } from "./helpers.js";
 
 export function createPointerTransform(deps) {
-  const { cameraV2, canvas, editor, node, shotEditor, state } = deps;
+  const { canvas, editor, node, shotEditor, state } = deps;
   // Bound by connect() to the other modules and showEditor.
   let applyRasterObjectOffset, applyRasterObjectTransform, applyStrokeGroupOffset, applyStrokeGroupTransform,
     commitState, ensureGroupFrame, frameLocalPointToWorldDir, getActiveCutoutShot, getFrameViewRect,
     getPaintingGroupList, getRasterObjectList, getStrokeGroupStrokes, getUnwrapRect, isPaintCompositeInteraction,
-    isRasterObjectItem, isSceneSticker, isStickerItem, isStrokeGroupItem, markObjectVisualsDirty, markPaintCompositeVisualsDirty,
+    isRasterObjectItem, isStickerItem, isStrokeGroupItem, markObjectVisualsDirty, markPaintCompositeVisualsDirty,
     markPaintStrokeVisualsDirty, parseRasterObjectSelectionId, poseOf, pushHistory, requestDraw, screenPosToErpPoint,
-    screenPosToFrameAsErpPoint, screenToWorldDir, shortestWrappedDelta, stickerById, syncCutoutShot,
+    screenPosToFrameAsErpPoint, screenToWorldDir, shortestWrappedDelta,
     syncSidePanelControls, updateCursor, updateSelectionMenu, writePose;
 
   // The ERP point under canvas point p that a paint item moves by: through the active shot in the Frame
@@ -262,19 +261,9 @@ export function createPointerTransform(deps) {
     }
   }
 
-  // "scale" writes both FOVs, "scale_x" the hFOV, "scale_y" the vFOV. Panorama Studio's Camera keeps its frame's
-  // aspect (docs/editor-interaction.md): each handle changes its angle of view, its hFOV from the handle's axis.
+  // "scale" writes both FOVs, "scale_x" the hFOV, "scale_y" the vFOV.
   function scaleItem(it, p) {
     const d = Math.max(1, Math.hypot(p.x - it.center.x, p.y - it.center.y));
-    const ratio = d / it.startDist;
-    if (it.item?.id === CAMERA_SHOT_ID) {
-      const start = { ...it.item, hFOV_deg: it.startHFOV, vFOV_deg: it.startVFOV };
-      const { aspect, curve } = getCutoutCameraParams(start);
-      const hFov = it.kind === "scale_y" ? deriveHorizontalFovDeg(it.startVFOV * ratio, aspect, curve) : it.startHFOV * ratio;
-      writePose(it.item, { hFOV_deg: hFov });
-      requestDraw({ localOnly: true });
-      return;
-    }
     const start = { hFOV_deg: it.startHFOV, vFOV_deg: it.startVFOV };
     if (it.kind === "scale") {
       const { hFOV_deg, vFOV_deg } = scaleStickerFromPointer(start, it.startDist, d);
@@ -283,7 +272,7 @@ export function createPointerTransform(deps) {
       const field = it.kind === "scale_x" ? "hFOV_deg" : "vFOV_deg";
       writePose(it.item, { [field]: scaleStickerAxisFromPointer(start, it.kind, it.startDist, d)[field] });
     }
-    if (!isSceneSticker(it.item)) it.item.aspect_id = deriveCutoutAspectLabelFromFov(it.item);
+    it.item.aspect_id = deriveCutoutAspectLabelFromFov(it.item);
     if (isStickerItem(it.item)) markObjectVisualsDirty();
     requestDraw({ localOnly: true });
   }
@@ -339,7 +328,7 @@ export function createPointerTransform(deps) {
   // docs/editor-architecture.md「操作の取り消し」).
 
   // The records an item's edit writes: a stroke group's strokes and its group entry (with its frame), a raster
-  // object's record, Panorama Studio's Camera shot with `state.camera` (its Lanes take Keyframes), else the item.
+  // object's record, else the item.
   function itemRecords(item) {
     if (!item) return [];
     if (isStrokeGroupItem(item)) {
@@ -351,7 +340,6 @@ export function createPointerTransform(deps) {
       const id = parseRasterObjectSelectionId(item.rasterObjectId || item.id || "");
       return [getRasterObjectList().find((entry) => String(entry?.id || "") === id)];
     }
-    if (cameraV2 && item.id === CAMERA_SHOT_ID) return [item, state.camera];
     return [item];
   }
 
@@ -364,9 +352,7 @@ export function createPointerTransform(deps) {
       case "move_raster_object": case "scale_raster_object":
         return itemRecords(it.item);
       case "move_multi": return it.items.flatMap(itemRecords);
-      case "world_gizmo": return it.camera ? itemRecords(getActiveCutoutShot()) : [stickerById(it.id)];
       case "pan_frame": case "roll_frame": return itemRecords(it.shot);
-      case "frame_pan": case "frame_orbit": return itemRecords(getActiveCutoutShot());
       case "paint_stroke": case "paint_lasso_fill": return [state.painting];
       default: return [];
     }
@@ -392,13 +378,10 @@ export function createPointerTransform(deps) {
     const snapshot = it ? gestureSnapshots.get(it) : null;
     if (!snapshot) return false;
     gestureSnapshots.delete(it);
-    let camera = false;
     for (const [record, start] of snapshot.records) {
       for (const key of Object.keys(record)) if (!Object.hasOwn(start, key)) delete record[key];
       Object.assign(record, start);
-      if (record === state.camera) camera = true;
     }
-    if (camera) syncCutoutShot(false);
     if (snapshot.painting) markPaintStrokeVisualsDirty({ rebuildPaintEngine: true });
     else markObjectVisualsDirty();
     return true;
@@ -410,9 +393,9 @@ export function createPointerTransform(deps) {
         applyRasterObjectOffset, applyRasterObjectTransform, applyStrokeGroupOffset, applyStrokeGroupTransform,
         commitState, ensureGroupFrame, frameLocalPointToWorldDir, getActiveCutoutShot, getFrameViewRect,
         getPaintingGroupList, getRasterObjectList, getStrokeGroupStrokes, getUnwrapRect, isPaintCompositeInteraction,
-        isRasterObjectItem, isSceneSticker, isStickerItem, isStrokeGroupItem, markObjectVisualsDirty, markPaintCompositeVisualsDirty,
+        isRasterObjectItem, isStickerItem, isStrokeGroupItem, markObjectVisualsDirty, markPaintCompositeVisualsDirty,
         markPaintStrokeVisualsDirty, parseRasterObjectSelectionId, poseOf, pushHistory, requestDraw, screenPosToErpPoint,
-        screenPosToFrameAsErpPoint, screenToWorldDir, shortestWrappedDelta, stickerById, syncCutoutShot,
+        screenPosToFrameAsErpPoint, screenToWorldDir, shortestWrappedDelta,
         syncSidePanelControls, updateCursor, updateSelectionMenu, writePose,
       } = api);
     },

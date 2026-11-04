@@ -247,16 +247,15 @@ test("the selected Camera shows the Camera card alone, in either tab; Panorama g
   expect(problems).toEqual([]);
 });
 
-test("nothing selected shows the Scene card: the Camera's card over Ground at -1.6, Set ground asks the editor, and an edited ground resets", async ({ page }) => {
+test("nothing selected shows the Scene card: the Camera's card over Ground at -1.6 without Set ground, and an edited ground resets", async ({ page }) => {
   const problems = await open(page);
   await scene(page, "select", { ids: [] });
   await expect(page.locator('[data-card="scene"]')).toHaveCount(1);
   expect(await page.locator(".pano-studio-inspector [data-card]").evaluateAll((els) => els.map((el) => el.dataset.card))).toEqual(["camera", "scene"]);
   await expect(row(page, "Ground").locator(".pano-studio-field-value")).toHaveText("-1.60");
   await expect(reset(page, "Ground")).toHaveAttribute("aria-disabled", "true");
-  await page.locator('[data-action="set-ground"]').click();
-  const edits = await page.evaluate(() => window.__edits.map((item) => item.edit.type));
-  expect(edits).toContain("set-ground");
+  // ADR 0062: no Set ground button until it is made.
+  await expect(page.locator('[data-action="set-ground"]')).toHaveCount(0);
   await row(page, "Ground").locator('[data-field="ground"]').click();
   await row(page, "Ground").locator("input").fill("-0.9");
   await row(page, "Ground").locator("input").press("Enter");

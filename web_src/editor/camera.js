@@ -1,5 +1,4 @@
-// The Cutout's shot and Panorama Studio's Camera: its shot at the playhead and the edits written back
-// to its Lanes (syncCutoutShot), adding and removing it, its aspect, and its roll knob.
+// The Cutout's shot: adding and removing it, its aspect, and its roll knob.
 import { parseCutoutAspectPair, updateCutoutRollGesture } from "../pano_cutout_node_surface.js";
 import {
   aspectFitGateSize,
@@ -14,54 +13,21 @@ import {
   shortestAngleDeltaRad,
   shotCurve,
 } from "../pano_cutout_view_math.js";
-import { CAMERA_SHOT_ID, cameraShot, newStudioCamera, setCameraShot } from "../pano_editor_state.js";
-import { cameraAspect } from "../pano_scene_state.js";
-import { ASPECT_PRESETS, ERP_ASPECT, aspectPreset } from "../pano_editor_ui_state.js";
+import { aspectPreset } from "../pano_editor_ui_state.js";
 import { clamp, wrapYaw } from "../pano_math.js";
 import { VIEW_PITCH_LIMIT_DEG } from "../pano_camera_math.js";
-import { cameraFrustumSegments, segmentsHit } from "../pano_space.js";
 import { FRAME_GATE_OCCUPANCY } from "./constants.js";
 import { formatParamValue } from "./helpers.js";
 
 export function createCamera(deps) {
   const {
-    cameraV2, canvas, editor, frameRollKnobEl, initialShotBase, readOnly, runtime, shotEditor,
-    stageWrap, state, studio, timers, tooltip, type, uiState,
+    canvas, editor, frameRollKnobEl, readOnly, runtime, shotEditor,
+    stageWrap, state, timers, tooltip, type, uiState,
   } = deps;
   // Bound by connect() to the other modules and showEditor.
-  let applySpaceMode, cameraFrustumLength, cameraShoots, commitAndRefreshNode, currentSpaceCamera,
-    cutoutCamera, editorViewInput, forceCursorTool, getFrameViewRect, hasCamera, hasSpaceContent, hideTooltip,
-    isCameraSelected, isShotItem, leaveFrameView, pushHistory, requestDraw,
-    screenPos, setSelectedItem, spaceScale, spaceViewState, stopTimelinePlayback, syncFrameRollKnob,
-    syncViewToggleState, takeGestureSnapshot, transitionView, turnViewTo, updateCursor, updateSelectionMenu, updateSidePanel,
-    worldGizmoPointer;
-
-  // The Camera's shot as it was last derived (null without a Camera); an edit since then is written back to
-  // the Camera's Lanes (syncCutoutShot).
-  let cutoutShotBase = initialShotBase;
-
-  // A left press with the cursor tool in 6DoF on the selected Camera's gizmo grabs it; on the Camera's
-  // frustum it selects the Camera. Returns whether the press was taken.
-  function startCameraPress(e, p) {
-    const gizmo = editorViewInput().space?.gizmo;
-    if (isCameraSelected() && gizmo && worldGizmoPointer("hover", p) !== null && worldGizmoPointer("down", p)) {
-      editor.interaction = { kind: "world_gizmo", camera: true, mode: gizmo.mode, start: gizmo.transform, base: cutoutCamera(), changed: false };
-      canvas.setPointerCapture(e.pointerId);
-      updateCursor(p);
-      return true;
-    }
-    const frustum = cameraFrustumSegments(cutoutCamera(), cameraFrustumLength(spaceScale()));
-    if (!segmentsHit(currentSpaceCamera(), frustum, p, canvas.width, canvas.height)) return false;
-    if (!isCameraSelected()) {
-      setSelectedItem(getActiveCutoutShot());
-      updateSidePanel();
-      updateSelectionMenu();
-      requestDraw();
-    }
-    editor.interaction = { kind: "world_select" };
-    canvas.setPointerCapture(e.pointerId);
-    return true;
-  }
+  let commitAndRefreshNode, forceCursorTool, getFrameViewRect, hideTooltip, pushHistory, requestDraw,
+    screenPos, setSelectedItem, syncFrameRollKnob, syncViewToggleState, takeGestureSnapshot, turnViewTo,
+    updateSelectionMenu, updateSidePanel;
 
   function addCutoutFrame() {
     if (readOnly || type !== "cutout") return;
@@ -90,68 +56,6 @@ export function createCamera(deps) {
     updateSidePanel();
     updateSelectionMenu();
     requestDraw({ cause: "cutout_frame" });
-  }
-
-  // Add Camera (Panorama Studio): one Camera where the Viewport camera stands and looks
-  // (newStudioCamera), selected. The view stays where it is.
-  function addStudioCamera() {
-    if (readOnly || !studio || hasCamera()) return;
-    stopTimelinePlayback();
-    state.camera = newStudioCamera(spaceViewState());
-    syncCutoutShot();
-    setSelectedItem(getActiveCutoutShot());
-    forceCursorTool();
-    pushHistory();
-    commitAndRefreshNode();
-    updateSidePanel();
-    updateSelectionMenu();
-    requestDraw({ cause: "cutout_frame" });
-  }
-
-  // Delete on Panorama Studio's selected Camera: the state has no Camera (`camera: null`), and the Frame view
-  // and 3DoF follow (followCameraChange). Undo brings it back.
-  function deleteStudioCamera() {
-    stopTimelinePlayback();
-    state.camera = null;
-    setSelectedItem(null);
-    syncCutoutShot();
-    pushHistory();
-    commitAndRefreshNode();
-    updateSidePanel();
-    updateSelectionMenu();
-    requestDraw({ cause: "cutout_frame" });
-  }
-
-  // An aspect preset of the selected shot. Panorama Studio's 360° preset makes its Camera shoot an ERP, and a
-  // ratio makes it shoot through its frame again (ADR 0029).
-  function setShotAspect(shot, aspect) {
-    if (studio && isShotItem(shot)) {
-      state.camera.projection = aspect === ERP_ASPECT ? "erp" : "perspective";
-      if (aspect === ERP_ASPECT) return;
-    }
-    if (isStudioCamera(shot)) {
-      if (shot.locked === true) return;
-      // The preset in the frame's orientation.
-      let [aw, ah] = aspectPreset(aspect);
-      if ((aw >= ah) !== (state.camera.aspect >= 1)) [aw, ah] = [ah, aw];
-      setCameraAspect(aw / ah);
-      return;
-    }
-    applyCutoutAspect(shot, aspect);
-  }
-
-  // Panorama Studio's Camera (docs/editor-interaction.md): its frame's aspect is a field of its own, which the
-  // presets, the portrait flip and a custom ratio write directly; its angle of view stays, and its shot is computed
-  // from it again.
-  function isStudioCamera(shot) {
-    return cameraV2 && shot?.id === CAMERA_SHOT_ID && !!state.camera;
-  }
-
-  function setCameraAspect(ratio) {
-    syncCutoutShot();
-    // Held to the stored range (docs/scene-state-v2.md `camera.aspect`), so the working state never leaves it.
-    state.camera.aspect = cameraAspect(ratio);
-    syncCutoutShot();
   }
 
   function clearCutoutFrame() {
@@ -221,10 +125,6 @@ export function createCamera(deps) {
     const pair = parseCutoutAspectPair(w, h);
     if (!pair) return false;
     const ratio = pair.ratio;
-    if (isStudioCamera(selected)) {
-      setCameraAspect(ratio);
-      return true;
-    }
     if (!applyGateAspectAtCurrentScale(selected, ratio)) {
       const vf = clamp(Number(selected.vFOV_deg || 40), 1, 179);
       selected.vFOV_deg = vf;
@@ -245,13 +145,6 @@ export function createCamera(deps) {
   // behind it does not move.
   function rotateCutoutAspect90(selected) {
     if (!selected || selected.locked === true) return;
-    if (isStudioCamera(selected)) {
-      // A preset's flip is its exact ratio flipped.
-      const { aspect } = state.camera;
-      const preset = Object.values(ASPECT_PRESETS).flatMap(([w, h]) => [[w, h], [h, w]]).find(([w, h]) => Math.abs(w / h - aspect) < 1e-9);
-      setCameraAspect(preset ? preset[1] / preset[0] : 1 / aspect);
-      return;
-    }
     const storedAspect = String(selected.aspect_id || "").trim();
     const camera = getCutoutCameraParams(selected);
     const aspect = camera.tanHalfX / Math.max(1e-12, camera.tanHalfY);
@@ -267,48 +160,6 @@ export function createCamera(deps) {
     } else {
       selected.aspect_id = deriveCutoutAspectLabelFromFov(selected);
     }
-  }
-
-  // Panorama Studio: writes an edit of the shot since it was last derived to the Camera at the playhead
-  // (setCameraShot, by the recording rule), then derives the shot from the Camera again, so it follows the
-  // playhead, Keyframe edits and Undo. The shot stays the same object, which interactions hold. `keep`
-  // false drops an edit instead (the state was replaced). The shot comes and goes with the Camera.
-  function syncCutoutShot(keep = true) {
-    if (!cameraV2) return;
-    const before = cutoutShotBase;
-    if (!cameraShoots()) {
-      cutoutShotBase = null;
-      if (state.shots?.length) state.shots = [];
-      if (before) followCameraChange(before, null);
-      return;
-    }
-    const shot = state.shots?.[0];
-    if (keep && shot && cutoutShotBase) setCameraShot(state.camera, editor.frame, shot, cutoutShotBase);
-    cutoutShotBase = cameraShot(state.camera, editor.frame);
-    if (shot) Object.assign(shot, cutoutShotBase, { position: [...cutoutShotBase.position] });
-    else state.shots = [{ ...cutoutShotBase, position: [...cutoutShotBase.position] }];
-    if (!before) followCameraChange(null, cutoutShotBase);
-  }
-
-  // Panorama Studio's Camera came or went, by an edit or by Undo. The Frame view ends without one,
-  // and 3DoF, which stands at the Camera (spaceOrigin), moves to where it stands now. The view goes there
-  // over a transition instead of jumping.
-  function followCameraChange(before, after) {
-    if (!after && editor.mode === "frame") leaveFrameView(before);
-    const to = after?.position ?? [0, 0, 0];
-    // A way back to 3DoF on the way goes to where 3DoF stands now.
-    if (editor.viewTransition?.end?.mode === "3dof") {
-      transitionView({ ...spaceViewState(), position: to }, editor.viewTransition.end);
-      return;
-    }
-    if (editor.mode !== "pano" || editor.spaceMode !== "3dof" || !hasSpaceContent()) return;
-    const from = before?.position ?? [0, 0, 0];
-    if (from.every((value, axis) => value === to[axis])) return;
-    // The way there moves in 6DoF and enters 3DoF when it arrives, as the way back from 6DoF does.
-    const view = { ...spaceViewState(), position: from };
-    applySpaceMode({ mode: "6dof", position: from, moved: true });
-    editor.viewDistance = view.distance;
-    transitionView({ ...view, position: to }, { mode: "3dof", moved: false });
   }
 
   function getActiveCutoutShot() {
@@ -441,16 +292,13 @@ export function createCamera(deps) {
   return {
     connect(api) {
       ({
-        applySpaceMode, cameraFrustumLength, cameraShoots, commitAndRefreshNode, currentSpaceCamera,
-        cutoutCamera, editorViewInput, forceCursorTool, getFrameViewRect, hasCamera, hasSpaceContent, hideTooltip,
-        isCameraSelected, isShotItem, leaveFrameView, pushHistory, requestDraw,
-        screenPos, setSelectedItem, spaceScale, spaceViewState, stopTimelinePlayback, syncFrameRollKnob,
-        syncViewToggleState, takeGestureSnapshot, transitionView, turnViewTo, updateCursor, updateSelectionMenu, updateSidePanel,
-        worldGizmoPointer,
+        commitAndRefreshNode, forceCursorTool, getFrameViewRect, hideTooltip, pushHistory, requestDraw,
+        screenPos, setSelectedItem, syncFrameRollKnob, syncViewToggleState, takeGestureSnapshot, turnViewTo,
+        updateSelectionMenu, updateSidePanel,
       } = api);
     },
-    addCutoutFrame, addStudioCamera, deleteStudioCamera, setShotAspect, clearCutoutFrame,
-    applyCutoutAspectCustom, rotateCutoutAspect90, syncCutoutShot, getActiveCutoutShot, startCameraPress,
+    addCutoutFrame, applyCutoutAspect, clearCutoutFrame,
+    applyCutoutAspectCustom, rotateCutoutAspect90, getActiveCutoutShot,
     applySharedRollInteractionPoint, onFrameRollKnobPointerDown, onFrameRollKnobPointerMove, finishKnobRoll,
     onFrameRollKnobDoubleClick,
   };
