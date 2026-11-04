@@ -111,7 +111,7 @@ surfaceに含めない操作:
 - image解決、video muted / loop、double-click / Space再生切替、coverage、drag、wheel、inertiaを維持する。
 - videoは自動再生しない。既定は停止で先頭のframeを表示し、double-click / Spaceで再生する。画面外（collapse、別のgraph、subgraphの中）では停止する（見えないかの判定は Panorama Studio と同じ `surfaceShown`。停止するだけで、src は外さない）。
 - cameraは一時状態のままとし、workflowへ新しいparameterやstateを保存しない。
-- Legacy canvas pathは既存挙動と標準 `Open Preview` buttonを維持する。
+- `addDOMWidget` の無いフロントエンド向けのcanvas描画は持たない。DOM widgetを付けられないときはmount失敗と同じ扱いで、標準 `Open Preview` buttonとread-only modal導線だけが残る。
 
 ### Node2 Surface Contract
 

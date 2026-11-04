@@ -105,8 +105,6 @@ import { mediaPlayheadRevisionToken } from "./pano_media_session.js";
 import { attachSceneViewerNode, redrawSceneViewers, touchSceneViewer } from "./pano_scene_viewer_node.js";
 import { openSceneViewerWindow } from "./pano_scene_viewer_window.js";
 
-const _paintLayerSyncRegistry = new Map();
-
 const comfyMedia = createComfyMediaAdapter({
   app,
   api,
@@ -687,9 +685,9 @@ async function showEditor(node, type, options = {}) {
     onVisibilityChange, onWindowBlur, onWindowDragEnter, onWindowDragLeave, onWindowDragOver, onWindowDrop,
     playback, pushHistory, reconcileExternalStickerFromInputs, refreshModalVideoSource,
     replaceSelectedImageFromFile, requestDraw, restoreView, sampleEditorDiagnostics, saveView, setDropCue, settleCanvasConfirm,
-    setPointerPos, stageResizeObserver, stickerCornerOrderSanity, stopRenderLoop, syncCanvasSize, syncCutoutShot,
+    setPointerPos, stageResizeObserver, stopRenderLoop, syncCanvasSize, syncCutoutShot,
     syncFullscreenButton, syncGridToggleButton, syncLookAtFrameButtonState, syncOutputPreviewToggleButton,
-    syncPaintUi, syncPaintingLayerAsync, syncTimeline, syncUndoRedoButtons, tick,
+    syncPaintUi, syncTimeline, syncUndoRedoButtons, tick,
     triggerBackgroundPersistenceOnClose, updateCursor, updatePaintColorFromHue, updatePaintColorFromSv,
     updateSelectionMenu, updateSidePanel, viewControls, watchPixelRatio,
   } = createEditorModules({
@@ -713,10 +711,6 @@ async function showEditor(node, type, options = {}) {
     createSidePanelEvents, createModalEvents, createKeyboard,
   ]);
   // --- editor modules: end ---
-
-  // Coordinate sanity: front-facing sticker should have top edge above bottom edge.
-  const __sanity = stickerCornerOrderSanity();
-  void __sanity;
 
   stageResizeObserver.observe(canvas);
   watchPixelRatio();
@@ -805,9 +799,6 @@ async function showEditor(node, type, options = {}) {
   });
   root.addEventListener("pointerover", onRootPointerOver);
   root.addEventListener("pointerout", onRootPointerOut);
-  root.addEventListener("pointerdown", (event) => {
-    if (!event.target.closest("[data-frame-roll-knob]")) hideTooltip();
-  });
   if (paintColorSv) {
     paintColorSv.onpointerdown = (ev) => {
       ev.preventDefault();
@@ -852,9 +843,6 @@ async function showEditor(node, type, options = {}) {
     };
     node.onConnectionsChange = modalOnConnectionsChange;
   }
-  if (!readOnly) {
-    _paintLayerSyncRegistry.set(String(node.id ?? "0"), () => syncPaintingLayerAsync());
-  }
 
   let closeEditorPromise = null;
   async function closeEditor() {
@@ -864,7 +852,6 @@ async function showEditor(node, type, options = {}) {
       if (session) session.open = false;
       noteStudioEditorOpen(node, false);
       redrawSceneViewers();
-      _paintLayerSyncRegistry.delete(String(node.id ?? "0"));
       flushFrameWheelCommit();
       endFrameKeyMove();
       if (!readOnly) commitState();

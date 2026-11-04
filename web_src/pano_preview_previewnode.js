@@ -13,7 +13,7 @@ import {
   shouldTogglePreviewPlaybackFromKey,
 } from "./pano_preview_node_surface.js";
 import { bindWheelCaptureRoot } from "./pano_wheel.js";
-import { VIEW_UNAVAILABLE_MESSAGE, acquirePreviewView, previewNodeCamera } from "./pano_preview_view.js";
+import { acquirePreviewView, previewNodeCamera } from "./pano_preview_view.js";
 import { installPanoSuiteStylesheet } from "./pano_styles.js";
 import {
   assignFreshDomWidgetRenderIdentity,
@@ -21,7 +21,6 @@ import {
   trackDomWidgetRemoval,
 } from "./pano_dom_widget_lifecycle.js";
 import PanoPreviewNodeSurface from "./components/PanoPreviewNodeSurface.vue";
-import { localPosFromEvent } from "./pano_preview_runtime.js";
 import { isRenderableMediaReady, mediaPlayheadRevisionToken } from "./pano_media_session.js";
 import { peekPreviewNode, previewNode } from "./pano_node_bridge.js";
 import { createComfyMediaAdapter } from "./pano_comfy_media.js";
@@ -70,10 +69,6 @@ function drawPreview(node, ctx, width, height, view, img, previewView) {
   // The grid stays until the view has loaded.
   if (surface) ctx.drawImage(surface.canvas, surface.x, surface.y, surface.width, surface.height, 0, 0, width, height);
   else drawGrid(ctx, width, height);
-}
-
-function isPointInRect(x, y, rect) {
-  return x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h;
 }
 
 class PreviewNodeRuntime {
@@ -125,24 +120,18 @@ class PreviewNodeRuntime {
     });
     this.orig = {
       onDrawForeground: node.onDrawForeground,
-      onMouseDown: node.onMouseDown,
-      onMouseMove: node.onMouseMove,
-      onMouseUp: node.onMouseUp,
-      onMouseWheel: node.onMouseWheel,
       onExecuted: node.onExecuted,
       onConnectionsChange: node.onConnectionsChange,
       onResize: node.onResize,
       onRemoved: node.onRemoved,
       coverageWidgetCallback: null,
     };
-    this.legacyDragPointer = false;
     this.tick = this.tick.bind(this);
     this.onResizeDom = this.onResizeDom.bind(this);
   }
 
   attach() {
-    if (typeof this.node?.addDOMWidget === "function") this.attachDom();
-    else this.attachLegacy();
+    this.attachDom();
     this.installCommonHooks();
     this.refreshImage();
     this.requestDraw();
@@ -401,94 +390,10 @@ class PreviewNodeRuntime {
     return !this.node.flags?.collapsed && (!app.canvas?.graph || this.node.graph === app.canvas.graph);
   }
 
-  attachLegacy() {
-    const self = this;
-    this.node.onDrawForeground = function (ctx) {
-      const out = self.orig.onDrawForeground ? self.orig.onDrawForeground.apply(this, arguments) : undefined;
-      self.drawLegacy(ctx);
-      return out;
-    };
-    this.node.onMouseDown = function (e, localPos) {
-      const p = self.localPoint(localPos);
-      if (!p) return self.orig.onMouseDown ? self.orig.onMouseDown.apply(this, arguments) : undefined;
-      const previewRect = self.getLegacyPreviewRect();
-      if (!isPointInRect(p.x, p.y, previewRect)) {
-        return self.orig.onMouseDown ? self.orig.onMouseDown.apply(this, arguments) : undefined;
-      }
-      self.legacyDragPointer = true;
-      self.controller.startDrag(p.x - previewRect.x, p.y - previewRect.y);
-      this.setDirtyCanvas?.(true, false);
-      return true;
-    };
-    this.node.onMouseMove = function (e, localPos) {
-      if (!self.legacyDragPointer || !self.controller.state.drag.active) {
-        return self.orig.onMouseMove ? self.orig.onMouseMove.apply(this, arguments) : undefined;
-      }
-      const p = self.localPoint(localPos);
-      if (!p) return true;
-      const previewRect = self.getLegacyPreviewRect();
-      self.controller.moveDrag(p.x - previewRect.x, p.y - previewRect.y, "pano");
-      this.setDirtyCanvas?.(true, false);
-      return true;
-    };
-    this.node.onMouseUp = function () {
-      if (!self.legacyDragPointer && !self.controller.state.drag.active) {
-        return self.orig.onMouseUp ? self.orig.onMouseUp.apply(this, arguments) : undefined;
-      }
-      self.legacyDragPointer = false;
-      self.controller.endDrag();
-      this.setDirtyCanvas?.(true, false);
-      return true;
-    };
-    this.node.onMouseWheel = function (e, arg2, canvasRef) {
-      const p = localPosFromEvent(this, e, arg2, canvasRef);
-      const previewRect = self.getLegacyPreviewRect();
-      if (!p || !isPointInRect(p.x, p.y, previewRect)) {
-        return self.orig.onMouseWheel ? self.orig.onMouseWheel.apply(this, arguments) : undefined;
-      }
-      const before = Number(self.view?.fov || 100);
-      const changed = self.controller.applyWheelEvent(e, typeof arg2 === "number" ? arg2 : 0);
-      const after = Number(self.view?.fov || 100);
-      if (changed) this.setDirtyCanvas?.(true, false);
-      e?.preventDefault?.();
-      e?.stopPropagation?.();
-      e?.stopImmediatePropagation?.();
-      return true;
-    };
-  }
-
-  localPoint(localPos) {
-    if (!Array.isArray(localPos) || localPos.length < 2) return null;
-    return { x: Number(localPos[0] || 0), y: Number(localPos[1] || 0) };
-  }
-
   getLegacyPreviewRect() {
     const width = Math.max(80, Number(this.node?.size?.[0] || 0) - LEGACY_MARGIN * 2);
     const height = Math.max(60, Number(this.node?.size?.[1] || 0) - LEGACY_TOP_OFFSET - LEGACY_MARGIN);
     return { x: LEGACY_MARGIN, y: LEGACY_TOP_OFFSET, w: width, h: height };
-  }
-
-  drawLegacy(ctx) {
-    if (!ctx || this.node?.flags?.collapsed) return;
-    const rect = this.getLegacyPreviewRect();
-    if (rect.w <= 2 || rect.h <= 2) return;
-
-    ctx.save();
-    ctx.translate(rect.x, rect.y);
-    drawPreview(this.node, ctx, rect.w, rect.h, this.view, this.img, this.previewView);
-
-    // Drawn on the graph canvas, this path has no node surface to show a failed view.
-    const message = this.errorText || (this.previewView.failed ? VIEW_UNAVAILABLE_MESSAGE : "");
-    if (message) {
-      ctx.fillStyle = "rgba(18,18,22,0.92)";
-      ctx.fillRect(0, 0, rect.w, rect.h);
-      ctx.fillStyle = "rgba(236,236,242,0.92)";
-      ctx.font = "600 12px sans-serif";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText(message, rect.w * 0.5, rect.h * 0.5);
-    }
-    ctx.restore();
   }
 
   onResizeDom() {
@@ -664,10 +569,6 @@ class PreviewNodeRuntime {
     }
     try { removeTrackedDomWidget(this.node, this.widget); } catch { }
     this.node.onDrawForeground = this.orig.onDrawForeground;
-    this.node.onMouseDown = this.orig.onMouseDown;
-    this.node.onMouseMove = this.orig.onMouseMove;
-    this.node.onMouseUp = this.orig.onMouseUp;
-    this.node.onMouseWheel = this.orig.onMouseWheel;
     this.node.onExecuted = this.orig.onExecuted;
     this.node.onConnectionsChange = this.orig.onConnectionsChange;
     this.node.onResize = this.orig.onResize;

@@ -197,7 +197,6 @@ const ALLOWED_PANO_PROPERTIES = {
   __panoLoadSource: "image: the source the load state is for",
   __panoSrc: "image: the source of a UI image (pano_comfy_media.js)",
   __panoFrameIdx: "canvas: frames drawn into a VIDEO still",
-  __panoLifecyclePatched_: "node type: patchNodeLifecycle ran for a key",
 };
 test("no __pano property outside the allowed list is kept on a node or other frontend object", () => {
   const found = new Map();

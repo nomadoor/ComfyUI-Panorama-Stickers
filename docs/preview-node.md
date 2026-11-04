@@ -83,7 +83,7 @@ Scene を見る表示（ビューア）は、エディタの部品を、エデ�
 
 #### 大きなウィンドウ
 
-- `Open viewer`（ノード上）か、Legacy canvas の `Open Preview` ボタンで開く。`PanoModal.vue` の `viewer` の配置（`modal_shell_presets.js`、`pano_scene_viewer_window.js`）で、エディタのモーダルの外枠をそのまま使う（AGENTS.md の「Modal UI must be Vue」）。
+- `Open viewer`（ノード上）か、ノード上の表示を付けられなかったときに残る `Open Preview` のボタン（widget。表示を付けたときは隠す、`pano_editor_extension.js`）で開く。`PanoModal.vue` の `viewer` の配置（`modal_shell_presets.js`、`pano_scene_viewer_window.js`）で、エディタのモーダルの外枠をそのまま使う（AGENTS.md の「Modal UI must be Vue」）。
 - 置くもの：ステージ、右下の視点の操作のボタン群（`PanoFloatingRight.vue`。空間の群（3DoF | 6DoF と、Frame Selected と同じ場所の `Frame all`。選べるものが無いので、いつも全体を収める）、Reset View、Hide Grid、Fullscreen）、下端の再生の帯、閉じるボタンだけ。サイドパネル、ツール、インスペクタ、タイムライン、Undo、選択メニューは出さない。
 - キー：エディタと同じ WASD・QE の移動（`docs/editor-interaction.md` の「キーボードの移動」）と、Space の再生と一時停止。Escape で閉じる。
 - 開くと、ノードと同じ視点と再生の位置から続ける。閉じるとノードはウィンドウの最後の視点と位置を引き継ぐ。ウィンドウはエディタと同じく自分の WebGL の context を持ち、開いている間だけ使う。

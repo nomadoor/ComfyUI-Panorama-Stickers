@@ -359,7 +359,7 @@ function createTexture(media, flipY) {
 const regionSources = new WeakMap();
 const regionBox = new Box2();
 const regionAt = new Vector2();
-export function uploadTextureRegions(renderer, texture, rects) {
+function uploadTextureRegions(renderer, texture, rects) {
   const media = texture.image;
   const max = renderer.capabilities.maxTextureSize;
   if (texture.isVideoTexture || texture.flipY || texture.colorSpace !== NoColorSpace || texture.version === 0) return false;
@@ -471,7 +471,7 @@ function hasVideo(media) {
 
 // A <video> has a picture to upload from HAVE_CURRENT_DATA on; before that (loading, seeking) its
 // upload is empty.
-export function hasContent(media) {
+function hasContent(media) {
   const size = mediaSize(media);
   if (!(size.width > 0 && size.height > 0)) return false;
   return !(media instanceof HTMLVideoElement) || media.readyState >= HTMLVideoElement.HAVE_CURRENT_DATA;
