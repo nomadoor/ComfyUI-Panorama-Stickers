@@ -10,7 +10,7 @@ Panorama Studio と Preview の実行が使うデバイスとメモリ、中断�
 |---|---|---|---|
 | デバイスとメモリ | `scene_render.py` `_render_memory`・`_media_bytes`、`scene_mesh.py` `da3_device_bytes` | — | `tests/test_device_memory.py`、`tests/test_scene_mesh.py` |
 | 中断と進み具合 | `progress.py` `loop_progress`、`core/temp_files.py` `removed_on_failure` | — | `tests/test_cancel_long_loops.py`、`tests/test_temp_files.py` |
-| 実行をまたぐキャッシュ | `core/cache.py` `CACHE`・`MemoryCache.get_or_put` | — | `tests/test_memory_cache.py`、`tests/test_file_3d_route.py` |
+| 実行をまたぐキャッシュ | `core/cache.py` `CACHE`・`MemoryCache.get_or_put`、`core/paint_strokes.py` `_STAMP_ALPHA_CACHE` | — | `tests/test_memory_cache.py`、`tests/test_file_3d_route.py` |
 | 一時ファイル | `core/temp_files.py` `TEMP_FILES` | — | `tests/test_temp_files.py`、`tests/test_file_3d_route.py` |
 
 Python のファイルは `comfyui_pano_suite/` の下にある。
@@ -49,6 +49,7 @@ Python のファイルは `comfyui_pano_suite/` の下にある。
   - `video_index`：ストリームで読む VIDEO の PTS の表と最初に復号できたフレーム（`core/video_source.py` の `VideoIndex`。`sticker_media.py` の `stream_video` が `scan_video` の結果を入れる）。キーはファイル（パス・更新時刻・大きさ、メモリ上のファイルはオブジェクト）とトリム範囲。PTS の表は int64 の配列としてバイト数に数える（規則は `docs/studio-node.md` の VIDEO の読み方）。
   - `video_size`：VIDEO のファイルのストリームの大きさ（`sticker_media.py` の `open_video` がクロップの判定に使う `coded_size`）。キーはファイル。
   - `splat_files`・`mesh_files`：3D ファイルから読んだ SPLAT・MESH。`scene`・`sticker` の入力の 3D ファイルも、3D ファイルの `file` の Source も、エディタ用ファイルの問い合わせ（`docs/studio-node.md`）も、同じキー（パス・更新時刻・大きさ）で引く。同じキーを同時に求める呼び出し（実行中のプロンプトと経路）は、キーごとのロックで待ち合わせ、1 回だけ読む（`MemoryCache.get_or_put`）。`scene_files` も同じく 1 回だけ書く。
+- `CACHE` の外に持つもの：筆の押す形（stamp）の alpha（`core/paint_strokes.py` の `_STAMP_ALPHA_CACHE`）。キーは形の種類と、丸めた半径・硬さ・縦横比・角度・横の伸び（`_get_stamp_alpha`）。一つは半径の約 2 倍四方（ERP の x の向きには伸びの倍）の float32 で、プロセスの中で最大 128 個を持ち、超えたら最初に入れたものから捨てる（使っても順は変わらない）。`CACHE` の上限とバイト数には数えない。
 - 持たないもの：
   - 旧 `PanoramaStickers` の背景のバッチ。プレビューの MP4 を作る間だけ持つ。
   - アップロード済みのペイントの拡大縮小の結果（元の画像は `image_file` にあり、拡大縮小はパスごとに一度で軽い）。
