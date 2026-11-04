@@ -50,8 +50,8 @@ TIMELINE_FPS_MAX = 1000.0
 # 1000 fps. A length is one of these frames, so a rebase to a higher fps does not cut it short.
 TIMELINE_FRAME_MAX = 10000000
 TIMELINE_LENGTH_MAX = TIMELINE_FRAME_MAX
-# A Camera's aspect is held to 1/CAMERA_ASPECT_LIMIT..CAMERA_ASPECT_LIMIT: 2 : 4096, the thinnest frame the output
-# (at most 4096 on its long side, at least 2 on its short one) can take, so a thinner one shoots the same.
+# A Camera's aspect is held to 1/CAMERA_ASPECT_LIMIT..CAMERA_ASPECT_LIMIT. The output is at most 8192 on its long side and
+# at least `multiple` (8 or more) on its short one, so any ratio thinner than 8192 : 8 already shoots the same frame.
 CAMERA_ASPECT_LIMIT = 2048.0
 # A v1 number written as text: ASCII decimal without `_`, with ASCII whitespace around it.
 V1_NUMBER_TEXT = re.compile(r"[ \t\n\r\f\v]*[+-]?(?:[0-9]+\.?[0-9]*|\.[0-9]+)(?:[eE][+-]?[0-9]+)?[ \t\n\r\f\v]*")
