@@ -15,8 +15,8 @@ import { LIVE_ERP_OWNER, OUTPUT_ERP_OWNER, OUTPUT_OWNER, createStageOutput } fro
 import { liveErpSize } from "./erp_preview.js";
 import { outputErpInput } from "./output_picture.js";
 import { STAGE_CLEAR_COLOR, stageCamera, stageRenderInput, stageRenderSize } from "./stage_view.js";
-import { atResetView, createNotice, createViewCamera, frameSelectedSphere, orbitCenter } from "./view_camera.js";
-import { KNOB_CURSOR, createViewInput, createWheelSteps, knobAction, litKnobs, stageCursor } from "./view_input.js";
+import { atResetView, createNotice, createViewCamera, frameSelectedSphere, orbitCenter, skyOnlyNotice as skyOnlyCode, viewFovValue } from "./view_camera.js";
+import { KNOB_CURSOR, createViewInput, createWheelSteps, fovRulerLit, knobAction, litKnobs, stageCursor } from "./view_input.js";
 import { BOUND_NOTICE_SECONDS, frameSeconds } from "./view_scale.js";
 import { DEFAULT_VIEW_HFOV, projectPoint } from "../pano_space.js";
 import { markOnView, orbitMarkPoint, orbitMarkerAlpha, orbitMarkerFading } from "./orbit_marker.js";
@@ -507,18 +507,16 @@ export function createStage({
     if (result?.notice) showNotice("notice", result.notice);
   }
 
-  // A plain wheel step on `view` (the Frame view's moves the Camera) that moved it with no World content (no sphere for
-  // Frame Selected's whole content): it says Sky only and where zooming is (docs/space-and-view.md "Sky だけのときの
-  // ホイール"). A step that stopped says that instead; one that moved nothing says nothing.
+  // A plain wheel step's result on `view`: the Sky-only notice when it is due (view_camera.js skyOnlyNotice).
   function skyWheel(view, result) {
-    if (!skyOnlyNotice || !result?.moved || result.notice || content()?.sphere) return;
-    showNotice("skyOnly", view === shared.frameCamera ? "sky-only-frame" : "sky-only");
+    const code = skyOnlyNotice ? skyOnlyCode(result, { content: content()?.sphere ?? null, frame: view === shared.frameCamera }) : null;
+    if (code) showNotice("skyOnly", code);
   }
 
   function syncUi() {
-    ui.fov = Math.round(shownPose().hFOV_deg);
+    ui.fov = viewFovValue(shownPose().hFOV_deg);
     ui.atStart = atResetView(camera.destination());
-    ui.fovLit = input.altHeld() && !shared.drag && viewMode() === "frame" && !!cameraTab?.movable();
+    ui.fovLit = fovRulerLit({ altHeld: input.altHeld(), dragging: !!shared.drag, frame: viewMode() === "frame", movable: !!cameraTab?.movable() });
     const gesture = input.gesture();
     ui.lit = litKnobs({ gesture, keysMoving: shared.keysMoving, altHeld: input.altHeld() });
     ui.knobDrag = !!shared.drag?.knob;

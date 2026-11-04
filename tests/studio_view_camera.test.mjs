@@ -21,6 +21,7 @@ import {
   RESET_VIEW,
   recallView,
   rememberView,
+  skyOnlyNotice,
 } from "../web_src/studio/view_camera.js";
 
 const SCREEN = { width: 1000, height: 500, hFOV_deg: 100 };
@@ -796,4 +797,15 @@ test("the memory keeps the FOV, and a FOV out of the range opens all at the outp
   assert.equal(recallView({ ...memory, hFOV_deg: 20 }, { frameAvailable: false, ground: -1.6 }), null);
   const opened = openingView({ memory: null, output: { position: [0, 0, 0], yaw_deg: 0 }, world: WORLD });
   assert.equal(opened.pose.hFOV_deg, 100);
+});
+
+// docs/space-and-view.md "Sky だけのときのホイール" (ADR 0061).
+test("the Sky-only notice: a plain wheel step that moved with no World content; not one that stopped or moved nothing", () => {
+  assert.equal(skyOnlyNotice({ moved: true, notice: null }, { content: null }), "sky-only");
+  assert.equal(skyOnlyNotice({ moved: true, notice: null }, { content: null, frame: true }), "sky-only-frame");
+  assert.equal(VIEW_NOTICES["sky-only"], "Sky only · Alt+wheel zooms");
+  assert.equal(VIEW_NOTICES["sky-only-frame"], "Sky only · Alt+wheel changes the FOV");
+  assert.equal(skyOnlyNotice({ moved: true, notice: "bound" }, { content: null }), null);
+  assert.equal(skyOnlyNotice({ moved: false, notice: null }, { content: null }), null);
+  assert.equal(skyOnlyNotice({ moved: true, notice: null }, { content: { center: [0, 0, 0], radius: 1 } }), null);
 });

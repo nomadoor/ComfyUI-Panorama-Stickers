@@ -9,6 +9,7 @@ import {
   ORBIT_CURSOR,
   createViewInput,
   createWheelSteps,
+  fovRulerLit,
   knobAction,
   litKnobs,
   navigationAction,
@@ -238,4 +239,15 @@ test("a gesture begins and ends", () => {
   assert.equal(input.gesture(), "pan");
   assert.equal(input.endGesture(), "pan");
   assert.equal(input.gesture(), null);
+});
+
+// docs/studio-ui.md "Camera タブ" (ADR 0061): the FOV ruler shows Alt + wheel while Alt is held without a drag, in the
+// Frame view, with a Camera that moves.
+test("the FOV ruler lights with Alt, not during a drag, only in the Frame view with a Camera that moves", () => {
+  const on = { altHeld: true, dragging: false, frame: true, movable: true };
+  assert.equal(fovRulerLit(on), true);
+  assert.equal(fovRulerLit({ ...on, altHeld: false }), false);
+  assert.equal(fovRulerLit({ ...on, dragging: true }), false);
+  assert.equal(fovRulerLit({ ...on, frame: false }), false);
+  assert.equal(fovRulerLit({ ...on, movable: false }), false);
 });

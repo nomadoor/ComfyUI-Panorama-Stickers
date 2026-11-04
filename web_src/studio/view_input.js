@@ -55,6 +55,13 @@ export function litKnobs({ gesture = null, keysMoving = false, altHeld = false }
   return Object.keys(KNOB_ACTIONS).filter((knob) => lit.has(knob));
 }
 
+// Whether the Camera tab's FOV ruler shows that Alt + wheel changes it (docs/studio-ui.md "Camera タブ"): Alt held
+// without a drag (Alt + wheel does nothing during one; an Alt drag orbits), in the Frame view (`frame`) with a Camera
+// that moves (`movable`: not locked, not read-only).
+export function fovRulerLit({ altHeld = false, dragging = false, frame = false, movable = false }) {
+  return altHeld && !dragging && frame && movable;
+}
+
 // --- The cursor.
 
 function svgCursor(paths, fallback) {

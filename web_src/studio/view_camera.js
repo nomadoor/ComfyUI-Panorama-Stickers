@@ -239,6 +239,15 @@ export function openingView({ memory = null, output, world, frameAvailable = fal
   return { tab: "panorama", pose: { ...p, target: initialTarget({ ...p, target: p.position }, world) } };
 }
 
+// The Sky-only notice (VIEW_NOTICES' code) of a plain wheel step's `result` (docs/space-and-view.md "Sky だけのときの
+// ホイール"): when it moved the view (`frame`: the Frame view's Camera) and there is no World content (`content`: the
+// sphere Frame Selected fits for the whole content, null without one); null for a step that stopped (its own notice
+// shows) or moved nothing.
+export function skyOnlyNotice(result, { content, frame = false }) {
+  if (!result?.moved || result.notice || content) return null;
+  return frame ? "sky-only-frame" : "sky-only";
+}
+
 // --- The stage's notice: shown for BOUND_NOTICE_SECONDS after the last time.
 
 export function createNotice() {
