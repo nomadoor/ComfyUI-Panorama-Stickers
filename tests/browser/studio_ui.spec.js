@@ -37,7 +37,15 @@ test("the primitives draw in dark and light with the font, no console errors, an
   const look = await page.evaluate(() => {
     const dark = document.querySelector('[data-theme-col="dark"]');
     const light = document.querySelector('[data-theme-col="light"]');
-    const css = (el, name) => getComputedStyle(el).getPropertyValue(name).trim();
+    const css = (el, name) => {
+      // A token is light-dark(light, dark): resolve it where it is used (the root's color-scheme), as #rrggbb.
+      const probe = document.createElement("i");
+      probe.style.color = `var(${name})`;
+      el.append(probe);
+      const [r, g, b] = getComputedStyle(probe).color.match(/\d+/g).map(Number);
+      probe.remove();
+      return `#${[r, g, b].map((v) => v.toString(16).padStart(2, "0")).join("")}`;
+    };
     const style = (root, selector) => getComputedStyle(root.querySelector(selector));
     const shadows = [...document.querySelectorAll(".pano-studio *")].filter((el) => getComputedStyle(el).boxShadow !== "none").length;
     const float = style(dark, ".pano-studio-float.is-rail");

@@ -15,29 +15,30 @@
 }
 
 /* Tokens. Every element of the new UI sits inside `.pano-studio`, which holds the values below; nothing outside it
-   reads them. Light is the default and ComfyUI's `.dark-theme` (on <html>, set by the frontend from the palette)
-   switches to dark. The values are the design-drafts specimens' own (docs/design.md "新しい UI の見た目" "色"); ComfyUI's
+   reads them. Each value is `light-dark(light, dark)`, picked by the `color-scheme` the root inherits from <html>,
+   where ComfyUI's frontend (1.58 and later) writes `dark` or `light` from the palette; with none stated it is light.
+   The values are the design-drafts specimens' own (docs/design.md "新しい UI の見た目" "色"); ComfyUI's
    role colors are not read, so its bright stroke never reaches a window or a float. */
 .pano-studio {
   /* Gray steps (Geist's roles): frame / panel / fill / hover / pressed / line / strong line / strong fill / 2nd text / text. */
-  --studio-frame: #f6f6f7;
-  --studio-panel: #ffffff;
-  --studio-fill: #f1f1f2;
-  --studio-fill-hover: #e9e9eb;
-  --studio-fill-active: #e0e0e3;
-  --studio-line: #e2e2e5;
-  --studio-line-strong: #cfcfd4;
-  --studio-strong: #1b1b1d;
-  --studio-on-strong: #ffffff;
-  --studio-fg-2: #6b6b72;
-  --studio-fg: #161618;
+  --studio-frame: light-dark(#f6f6f7, #121314);
+  --studio-panel: light-dark(#ffffff, #1b1c1e);
+  --studio-fill: light-dark(#f1f1f2, #2c2c2e);
+  --studio-fill-hover: light-dark(#e9e9eb, #343436);
+  --studio-fill-active: light-dark(#e0e0e3, #3c3c3f);
+  --studio-line: light-dark(#e2e2e5, #2a2b2d);
+  --studio-line-strong: light-dark(#cfcfd4, #48484c);
+  --studio-strong: light-dark(#1b1b1d, #d6d6da);
+  --studio-on-strong: light-dark(#ffffff, #111112);
+  --studio-fg-2: light-dark(#6b6b72, #8e8f93);
+  --studio-fg: light-dark(#161618, #dcdce0);
   /* Meaning colors: one point each (docs/design.md "色"). Light holds darker values. */
-  --studio-coral: #d9573f;
-  --studio-ice: #5f8fa3;
-  --studio-lime: #7f9a3a;
-  --studio-yellow: #a8861f;
+  --studio-coral: light-dark(#d9573f, #f37159);
+  --studio-ice: light-dark(#5f8fa3, #aecedb);
+  --studio-lime: light-dark(#7f9a3a, #d6e797);
+  --studio-yellow: light-dark(#a8861f, #e8cf74);
   /* The override colour (docs/design.md "色" 桃): an upstream object's overridden-row dots, Back to source while pressable. */
-  --studio-override: #c2477d;
+  --studio-override: light-dark(#c2477d, #e879a6);
   /* Floating parts over the stage: 85% opaque, never the 2nd gray on them. */
   --studio-float-alpha: 85%;
   --studio-float: color-mix(in srgb, var(--studio-panel) var(--studio-float-alpha), transparent);
@@ -85,24 +86,10 @@
   -webkit-font-smoothing: antialiased;
 }
 
+/* Frontends before 1.58 state the dark theme as `.dark-theme` on <html> or <body>, not as `color-scheme`. */
 .dark-theme .pano-studio,
 .pano-studio.dark-theme {
-  --studio-frame: #121314;
-  --studio-panel: #1b1c1e;
-  --studio-fill: #2c2c2e;
-  --studio-fill-hover: #343436;
-  --studio-fill-active: #3c3c3f;
-  --studio-line: #2a2b2d;
-  --studio-line-strong: #48484c;
-  --studio-strong: #d6d6da;
-  --studio-on-strong: #111112;
-  --studio-fg-2: #8e8f93;
-  --studio-fg: #dcdce0;
-  --studio-coral: #f37159;
-  --studio-ice: #aecedb;
-  --studio-lime: #d6e797;
-  --studio-yellow: #e8cf74;
-  --studio-override: #e879a6;
+  color-scheme: dark;
 }
 
 .pano-studio *,
@@ -155,7 +142,7 @@
    docs/design.md "Panorama Studio のノード上の表示"). The canvas under it draws the Camera's output picture; the overlay
    places the Open Studio button, the play button and the line under the picture where pano_studio_surface.js lays them
    out (inline left / top / bottom / width), over the node's own background (the surface is not filled: STUDIO_SURFACE_FILL is transparent). Only the buttons
-   (and the output size's tooltip) take the pointer. The line reads the theme's tokens (ComfyUI's `.dark-theme` on <html>). */
+   (and the output size's tooltip) take the pointer. The line reads the theme's tokens (ComfyUI's theme, see Tokens above). */
 .pano-studio-node-surface {
   position: absolute;
   inset: 0;
