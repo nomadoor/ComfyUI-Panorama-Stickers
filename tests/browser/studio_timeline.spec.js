@@ -74,7 +74,15 @@ test("the playhead is a coral 2px line with its ▼ on the ruler only", async ({
       width: line.borderLeftWidth,
       marks: marks.length,
       inRuler: marks.every((mark) => !!mark.closest(".pano-studio-tl-ruler")),
-      coral: getComputedStyle(col).getPropertyValue("--studio-coral").trim(),
+      coral: ((el, name) => {
+        // A token is light-dark(light, dark): resolve it where it is used (the root's color-scheme), as #rrggbb.
+        const probe = document.createElement("i");
+        probe.style.color = `var(${name})`;
+        el.append(probe);
+        const [r, g, b] = getComputedStyle(probe).color.match(/\d+/g).map(Number);
+        probe.remove();
+        return `#${[r, g, b].map((v) => v.toString(16).padStart(2, "0")).join("")}`;
+      })(col, "--studio-coral"),
     };
   });
   expect(look).toEqual({ color: "rgb(243, 113, 89)", width: "2px", marks: 1, inRuler: true, coral: "#f37159" });
