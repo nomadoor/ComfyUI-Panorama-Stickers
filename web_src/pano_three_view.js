@@ -7,6 +7,8 @@
 //
 // Every render sets the scene up from the given layers. Only GPU resources (meshes, materials, textures,
 // the loaded `scene` items and the World's objects) are reused between renders; nothing here is saved.
+// The parts of the view live in three_view/ (the shaders, the Sky's meshes, the lens pass, the GPU pick, the gizmo),
+// inside the same chunk; this module builds the World, owns the layer textures and puts the parts together.
 import {
   AmbientLight,
   AxesHelper,
@@ -20,7 +22,6 @@ import {
   LinearFilter,
   Mesh,
   MeshBasicMaterial,
-  Object3D,
   PerspectiveCamera,
   NoColorSpace,
   SRGBColorSpace,
@@ -32,7 +33,6 @@ import {
   VideoTexture,
   WebGLRenderer,
 } from "three";
-import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
 import { COARSE_GRID_IDLE_TIMEOUT_MS, coarseGridKey, createCoarseGridBuilds } from "./pano_coarse_grid.js";
 import { createSceneItems } from "./pano_scene_items.js";
 import { disposeObject, disposeSceneItem, loadSceneItem, loadSpark, poseAnimation } from "./pano_scene_loaders.js";
@@ -50,9 +50,10 @@ import { createLines, createMaterial, pooled } from "./three_view/meshes.js";
 import { createPlainValue, sameValue } from "./three_view/values.js";
 import { createLensPass } from "./three_view/lens_pass.js";
 import { createPicker, pickPass } from "./three_view/picker.js";
+import { createGizmo } from "./three_view/gizmo.js";
 import { createSkyMeshes, placeSticker, unwrapStickerUniforms } from "./three_view/sky.js";
 
-export { applyViewportCamera, pickPass, placeSticker, sameValue, unwrapStickerUniforms };
+export { applyViewportCamera, createGizmo, pickPass, placeSticker, sameValue, unwrapStickerUniforms };
 
 // The lights of the World pass (docs/render-contract.md "既定の照明", which owns the values; Python's
 // mesh_render.py has the same, both checked against tests/fixtures/default_lighting.json). No shadows.
@@ -427,76 +428,6 @@ export function cachedLines(cache, sets) {
   cache.sets = sets;
   cache.lines = sets.map(createLines);
   return cache.lines;
-}
-
-// The gizmo of the selected world Sticker: three.js TransformControls seen from camera, on a
-// stand-in object. The editor feeds it the pointer and writes what it moved back to the state, which the
-// next render draws. It is not hooked to DOM events.
-export function createGizmo(camera) {
-  const controls = new TransformControls(camera);
-  const target = new Object3D();
-  controls.attach(target);
-  let shown = false;
-  let colors = null;
-  return {
-    // Shows it at { mode ("translate", "rotate" or "scale"), transform ({ position, quaternion, scale }, as
-    // pano_space.js sceneTransform() gives it), colors? }, and returns the objects to add to the World. It draws
-    // over the World (its materials do not test depth). While a handle is dragged the stand-in keeps
-    // where the drag took it, so it follows the pointer even when the Sticker's value is taken at another
-    // frame. `colors` ({ x, y, z, active }, CSS colors; the new UI's) paints the axes and the handle under the
-    // pointer; without it the gizmo keeps TransformControls' colors.
-    show({ mode, transform, colors: wanted = null }) {
-      shown = true;
-      if (wanted && !sameValue(wanted, colors)) {
-        colors = { ...wanted };
-        controls.setColors(colors.x, colors.y, colors.z, colors.active);
-      }
-      if (!controls.dragging) {
-        controls.mode = mode;
-        target.position.set(...transform.position);
-        target.quaternion.set(transform.quaternion.x, transform.quaternion.y, transform.quaternion.z, transform.quaternion.w);
-        target.scale.setScalar(transform.scale);
-      }
-      return [target, controls.getHelper()];
-    },
-    // Not shown in this frame: a drag in progress ends, so the gizmo can be grabbed when it shows again.
-    hide() {
-      shown = false;
-      if (controls.dragging) controls.pointerUp(null);
-    },
-    // The pointer at (x, y) in normalized device coordinates, with the camera where the frame was drawn
-    // from. phase "hover" finds the handle under it and returns its axis (null over none), "down" grabs
-    // that handle and returns whether it did, "move" drags it and returns the stand-in's transform
-    // ({ position, quaternion, scale: [x, y, z] }) or null when nothing is grabbed, and "up" lets go,
-    // shown or not. While it is not shown the other phases return null.
-    pointer(phase, x, y) {
-      if (phase === "up") {
-        controls.pointerUp({ x, y, button: 0 });
-        return null;
-      }
-      if (!shown) return null;
-      controls.getHelper().updateMatrixWorld(true);
-      if (phase === "hover") {
-        controls.pointerHover({ x, y, button: -1 });
-        return controls.axis;
-      }
-      if (phase === "down") {
-        controls.pointerDown({ x, y, button: 0 });
-        return controls.dragging;
-      }
-      if (!controls.dragging) return null;
-      controls.pointerMove({ x, y, button: -1 });
-      return {
-        position: target.position.toArray(),
-        quaternion: { x: target.quaternion.x, y: target.quaternion.y, z: target.quaternion.z, w: target.quaternion.w },
-        scale: target.scale.toArray(),
-      };
-    },
-    // TransformControls.dispose() would unhook pointer listeners it never had (no DOM element here).
-    dispose() {
-      controls.getHelper().dispose();
-    },
-  };
 }
 
 // onUpdate runs when something every view draws changes by itself: a `scene` item finished loading, or Spark
