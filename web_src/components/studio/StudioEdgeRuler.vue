@@ -43,6 +43,9 @@ const props = defineProps({
   tip: { type: String, default: "" },
   // With Shift, stop at multiples of this (0: Shift makes the movement finer instead).
   snap: { type: Number, default: 0 },
+  // The value an arrow key gives, stepValue(value, dir, { min, max, precision, fine }) (`fine` the share of a step
+  // Shift keeps, 1 without it): the FOV ruler's is pano_camera_math.js fovStepValue. Null: one small tick (`minor`).
+  stepValue: { type: Function, default: null },
 });
 const emit = defineEmits(["input", "change", "cancel", "key", "reset"]);
 
@@ -153,6 +156,8 @@ function onKeydown(event) {
   let next;
   if (event.shiftKey && props.snap > 0) {
     next = roundValue(rulerSnapStep(props.value, dir, props.snap, { min: props.min, max: props.max }), props.precision);
+  } else if (props.stepValue) {
+    next = props.stepValue(props.value, dir, { min: props.min, max: props.max, precision: props.precision, fine: event.shiftKey ? FINE_FACTOR : 1 });
   } else {
     const step = props.minor * (event.shiftKey ? FINE_FACTOR : 1);
     next = roundValue(Math.min(props.max, Math.max(props.min, props.value + dir * step)), props.precision);

@@ -4,6 +4,7 @@
 import { CAMERA_ROLL_DEFAULT } from "./inspector_actions.js";
 import { FINE_FACTOR } from "./ui_drag.js";
 import { CAMERA_TAB_LOCKED_TIP } from "./camera_ui.js";
+import { VIEW_FOV_DRAG_PX_PER_DEG, VIEW_FOV_STEP_DEG } from "../pano_camera_math.js";
 
 // The stage's margins around the area the frame is fitted into, in CSS px. The top keeps 30px clear under the tabs
 // (16 + 42 + 30); left and right keep the edge rulers' numbers clear of the left column and the view knobs
@@ -17,8 +18,9 @@ export const CAMERA_FRAME_MARGIN = Object.freeze({ left: 150, right: 150, top: 8
 // decimals of the numbers (provisional, chosen against frame-4.html: a small tick every 8px, a number every 80px);
 // `length` the tick strip's fixed length in px, and `valueChars` the width of the value text in digits, enough for
 // the widest value (FOV "360°", Lens "0.00", Roll "-180°"), so the head never changes width (docs/design.md "大きさ").
+// FOV's small tick and scale are the FOV step and drag scale the view's zoom shares (pano_camera_math.js).
 export const CAMERA_RULERS = Object.freeze({
-  fov: Object.freeze({ unitPx: 4, minor: 2, major: 20, precision: 0, length: 200, valueChars: 4 }),
+  fov: Object.freeze({ unitPx: VIEW_FOV_DRAG_PX_PER_DEG, minor: VIEW_FOV_STEP_DEG, major: 20, precision: 0, length: 200, valueChars: 4 }),
   lens: Object.freeze({ unitPx: 400, minor: 0.02, major: 0.2, precision: 2, length: 200, valueChars: 4 }),
   roll: Object.freeze({ unitPx: 8, minor: 1, major: 10, precision: 0, length: 320, valueChars: 5 }),
 });

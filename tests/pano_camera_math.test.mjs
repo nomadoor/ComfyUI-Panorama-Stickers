@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { cameraBasis } from "../web_src/pano_camera_math.js";
+import { VIEW_FOV_DRAG_PX_PER_DEG, VIEW_FOV_STEP_DEG, VIEW_HFOV_MAX_DEG, VIEW_HFOV_MIN_DEG, cameraBasis, fovStepValue } from "../web_src/pano_camera_math.js";
 
 function closeVector(actual, expected, tolerance = 1e-12) {
   for (const axis of ["x", "y", "z"]) {
@@ -99,4 +99,20 @@ test("camera basis preserves yaw at the exact pole", () => {
   closeVector(pole.right, { x: 0, y: 0, z: -1 });
   closeVector(pole.up, { x: -1, y: 0, z: 0 });
   closeVector(pole.fwd, { x: 0, y: 1, z: 0 });
+});
+
+// docs/space-and-view.md "寄る" and docs/design.md "Camera タブの辺の目盛りの縮尺": one FOV step is 2°, the drag 4 px per
+// degree; a step stops at the range's ends, keeps `fine` of a step with Shift and rounds to the digits asked for.
+test("fovStepValue: one step in either direction, within the range, at the digits asked for", () => {
+  assert.equal(VIEW_FOV_STEP_DEG, 2);
+  assert.equal(VIEW_FOV_DRAG_PX_PER_DEG, 4);
+  assert.equal(fovStepValue(100, -1), 98);
+  assert.equal(fovStepValue(100, 1), 102);
+  assert.equal(fovStepValue(VIEW_HFOV_MIN_DEG + 1, -1), VIEW_HFOV_MIN_DEG);
+  assert.equal(fovStepValue(VIEW_HFOV_MIN_DEG, -1), VIEW_HFOV_MIN_DEG);
+  assert.equal(fovStepValue(VIEW_HFOV_MAX_DEG, 1), VIEW_HFOV_MAX_DEG);
+  // The Camera's H FOV (the inspector box's range and one decimal), Shift's tenth of a step.
+  assert.equal(fovStepValue(60, 1, { min: 1, max: 120, precision: 1, fine: 0.1 }), 60.2);
+  assert.equal(fovStepValue(119.5, 1, { min: 1, max: 120, precision: 1 }), 120);
+  assert.equal(fovStepValue(60.04, 1, { min: 1, max: 120, precision: 1 }), 62);
 });

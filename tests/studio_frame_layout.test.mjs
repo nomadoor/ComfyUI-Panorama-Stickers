@@ -179,3 +179,11 @@ test("Roll with Shift stops at multiples of ROTATE_SNAP_DEG, by drag and by arro
   assert.equal(rulerSnapStep(15, -1, 15), 0);
   assert.equal(rulerSnapStep(175, 1, 15, { min: -180, max: 180 }), 180);
 });
+
+// docs/design.md "Camera タブの辺の目盛りの縮尺" (ADR 0061): the FOV ruler's small tick and scale are the FOV step and
+// drag scale the view's zoom shares (pano_camera_math.js).
+test("the FOV ruler reads the shared FOV step and drag scale", async () => {
+  const { VIEW_FOV_DRAG_PX_PER_DEG, VIEW_FOV_STEP_DEG } = await import("../web_src/pano_camera_math.js");
+  assert.equal(CAMERA_RULERS.fov.minor, VIEW_FOV_STEP_DEG);
+  assert.equal(CAMERA_RULERS.fov.unitPx, VIEW_FOV_DRAG_PX_PER_DEG);
+});
