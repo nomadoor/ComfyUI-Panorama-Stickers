@@ -43,7 +43,7 @@ from .core.render import Projection, SceneSources, StickerSource, render_frame
 from .core.scene_eval import evaluate_scene_state
 from .core.scene_inherit import apply_upstream_overrides
 from .core.scene_state import CAMERA_LANES, DEFAULT_ANIMATION, DEFAULT_EASING, STICKER_STATE_KIND, is_3d_file_source, load_scene_state
-from .core.state import merge_state, normalize_coverage, parse_sticker_state
+from .core.state import _normalize_hex_color, hex_to_rgb01, merge_state, normalize_coverage, parse_sticker_state
 from .core.stickers import load_source_rgba
 from .core.video import (
     editor_ready,
@@ -193,34 +193,6 @@ def _safe_int(value, default: int = 0) -> int:
         return int(value)
     except Exception:
         return int(default)
-
-
-def _normalize_hex_color(value) -> str:
-    """A color widget value as `#` and six characters in lower case: `#abc` is `#aabbcc`, the `#` is optional, and
-    anything that is not six characters (or three) that `int(text, 16)` reads is `#00ff00`."""
-    s = str(value or "").strip()
-    if s.startswith("#"):
-        s = s[1:]
-    if len(s) == 3:
-        s = "".join(ch * 2 for ch in s)
-    if len(s) != 6:
-        return "#00ff00"
-    try:
-        int(s, 16)
-    except ValueError:
-        return "#00ff00"
-    return f"#{s.lower()}"
-
-
-def hex_to_rgb01(value) -> np.ndarray:
-    """A color widget value (`_normalize_hex_color`) as float32 RGB in 0..1; green for a value whose channels do not
-    read as hex."""
-    text = _normalize_hex_color(value)[1:]
-    try:
-        rgb = [int(text[idx:idx + 2], 16) / 255.0 for idx in (0, 2, 4)]
-    except ValueError:
-        rgb = [0.0, 1.0, 0.0]
-    return np.asarray(rgb, dtype=np.float32)
 
 
 def _normalize_image_batch_array(arr, *, allow_alpha: bool = False, fallback_shape: tuple[int, int, int, int] | None = None) -> np.ndarray | None:
