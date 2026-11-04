@@ -13,7 +13,7 @@ Preview ノードの入力と素通しの規則、旧ノードのプレビュー
 | Preview ノード | `preview_node.py` `PanoramaPreviewSceneNode` | — | `tests/test_pano_scene_preview.py`、`tests/test_studio_upstream.py` |
 | `PANO_SCENE` を見るための `ui`（上流の Scene と同じキー） | `preview_node.py` `PanoramaPreviewSceneNode.execute`・`_preview_scene_ui`（`scene_build.py` の `_upstream_ui` を呼ぶ。キーの形の owner は `docs/studio-node.md` の「上流の Scene」） | — | `tests/test_pano_scene_preview.py` `test_a_pano_scene_preview_gives_the_upstream_keys` |
 | ノード上の表示を `PanoramaPreviewNode` に結ぶ（実行の前は接続の型で、IMAGE・VIDEO の表示か Scene のビューアかを決める） | — | `web_src/pano_preview_identity.js` `isPanoramaPreviewSceneNodeName`、`web_src/pano_editor_extension.js` `createPanoEditorExtension`、`web_src/pano_preview_video.js` `linkedInputType`・`BACKGROUND_INPUT_NAMES`（`source` を含む） | `tests/pano_editor_extension.test.mjs`（「the Preview shows a linked Scene in the Scene viewer and IMAGE or VIDEO in the legacy Preview's view, switching with the link」） |
-| Scene のビューア（読み取り専用の空間の表示、ノード上と大きなウィンドウ、動くのは最後に操作した 1 つ、再生の帯） | — | `web_src/pano_scene_viewer.js` `createSceneViewer`・`createSceneViewerHost`・`sceneViewerRecord`（下の分けたモジュールを組み立てる）、ノード上は `web_src/pano_scene_viewer_node.js` と `web_src/components/PanoSceneViewerNodeSurface.vue`（大きなウィンドウは `docs/studio-ui.md` の「Preview のウィンドウ」）、`web_src/pano_space_navigation.js` `createSpaceNavigation`、`web_src/pano_upstream_layers.js` `createUpstreamLayers`・`refreshGoneUpstreamFiles`、`web_src/pano_preview_view.js` の `acquire(onChange, { items: true })` | `tests/pano_scene_viewer.test.mjs`、`tests/pano_space_navigation.test.mjs`、`tests/pano_preview_view.test.mjs`、`tests/browser/scene_viewer.spec.js`（`tests/browser/pages/scene_viewer.*`） |
+| Scene のビューア（読み取り専用の空間の表示、ノード上と大きなウィンドウ、動くのは最後に操作した 1 つ、再生の帯） | — | `web_src/pano_scene_viewer.js` `createSceneViewer`・`createSceneViewerHost`・`sceneViewerRecord`（下の分けたモジュールを組み立てる）、ノード上は `web_src/pano_scene_viewer_node.js` と `web_src/components/PanoSceneViewerNodeSurface.vue`（大きなウィンドウは `docs/studio-ui.md` の「Preview のウィンドウ」）、`web_src/pano_space_navigation.js` `createSpaceNavigation`、`web_src/pano_upstream_layers.js` `createUpstreamLayers`・`refreshGoneUpstreamFiles`、`web_src/pano_preview_view.js` の `acquire(onChange, { items: true })`。（未実装）ノード上の Alt + ホイールとピンチの画角は `pano_space_navigation.js`（一段と範囲は `pano_camera_math.js` `fovStepValue`・`VIEW_FOV_STEP_DEG`・`VIEW_HFOV_MIN_DEG`・`VIEW_HFOV_MAX_DEG`。`docs/space-and-view.md` の「寄る」）、Reset view の家のアイコンと始めの視点での無効は `PanoSceneViewerNodeSurface.vue` と `pano_scene_viewer.js` | `tests/pano_scene_viewer.test.mjs`、`tests/pano_space_navigation.test.mjs`、`tests/pano_preview_view.test.mjs`、`tests/browser/scene_viewer.spec.js`（`tests/browser/pages/scene_viewer.*`）、（未作成）Alt + ホイールの画角と Reset view の無効 |
 | 旧ノードのプレビュー MP4 の音声の長さ | `core/video.py` `_fit_audio_to_frame_count` | — | `tests/test_preview_audio.py` |
 
 Python のファイルは `comfyui_pano_suite/` の下にある。
@@ -72,9 +72,18 @@ Scene を見る表示（ビューア）は、エディタの部品を、エデ�
 
 #### ノード上
 
-- 置くもの（`PANO_SCENE` のとき）：Vue の overlay の右上に、アイコンのボタンを 2 つ：`Reset view`（原点の正面に戻る。エディタの Reset View と同じ遷移。小さなノードで迷ったときに戻る手段が要るため）と `Open viewer`（下の大きなウィンドウ）。下端に再生の帯（下の「再生の帯」）。IMAGE・VIDEO のときは旧 Preview の runtime の表示のまま。ただし、新しい Preview のウィンドウがそのノードを開くとき（`web_src/editor_choice.js` `previewUsesNewWindow`）、右上のボタンはブラウザの全画面ではなく `Open viewer` になり、新しいウィンドウ（`docs/studio-ui.md` の「Preview のウィンドウ」）を開く。新しいウィンドウが開くのは、`source` に IMAGE か VIDEO をつないだときと、`source` に何もつないでいないとき（`source` の差し口に link が無いとき。黒いステージのウィンドウ。持ち主、2026-10-31）。link はあるが型が分からないとき（型の無い Reroute を通したときなど）は `Fullscreen` のまま。どの入口も同じ選び方（`createEditorChooser`。ボタンの切り替えは `web_src/pano_preview_previewnode.js` の `opensWindow`）を通す。
-- マウス：エディタと同じプリセットの表を、ノードの上でもそのまま使う（同じ操作を二通り覚えさせないため）。オブジェクトの操作が無いので、左ドラッグはいつも表の「何もないところ」の扱い。surface の上の押し下げ・ドラッグ・ホイールは surface が受け、ComfyUI のキャンバスのパンやノードの移動にしない（Studio のノード上の表示と同じ）。ノードのタイトルの帯は ComfyUI のまま。
-- ホイール：Studio のノード上の表示と同じ捕捉の規則（`docs/studio-node-surface.md` の「見回し」）で受け、エディタと同じポインタの下へのズームにする。
+- 置くもの（`PANO_SCENE` のとき）：Vue の overlay の右上に、アイコンのボタンを 2 つ：`Reset view`（原点の正面に戻り、画角も `DEFAULT_VIEW_HFOV` に戻す。エディタの Reset View と同じ遷移。小さなノードで迷ったときに戻る手段が要るため）と `Open viewer`（下の大きなウィンドウ）。`Reset view` のアイコンは家（`docs/design.md` の「アイコン」）で、位置・yaw・pitch・画角がすべて始めの視点（原点、yaw 0、pitch 0、`DEFAULT_VIEW_HFOV`）と同じ間は隠さずに無効にし、tooltip は「Reset view · Already at the start」（ADR 0061。比べ方は `docs/space-and-view.md` の「開いたときの視点と Reset View」の始めの視点と同じ）。画角の数字は出さない（ノード上の表示は絵が主役のため）。下端に再生の帯（下の「再生の帯」）。IMAGE・VIDEO のときは旧 Preview の runtime の表示のまま。ただし、新しい Preview のウィンドウがそのノードを開くとき（`web_src/editor_choice.js` `previewUsesNewWindow`）、右上のボタンはブラウザの全画面ではなく `Open viewer` になり、新しいウィンドウ（`docs/studio-ui.md` の「Preview のウィンドウ」）を開く。新しいウィンドウが開くのは、`source` に IMAGE か VIDEO をつないだときと、`source` に何もつないでいないとき（`source` の差し口に link が無いとき。黒いステージのウィンドウ。持ち主、2026-10-31）。link はあるが型が分からないとき（型の無い Reroute を通したときなど）は `Fullscreen` のまま。どの入口も同じ選び方（`createEditorChooser`。ボタンの切り替えは `web_src/pano_preview_previewnode.js` の `opensWindow`）を通す。
+- マウス：エディタと同じプリセットの表を、ノードの上でもそのまま使う（同じ操作を二通り覚えさせないため）。Alt + ホイールとピンチは、下の「ホイール」の寄る規則に従う。オブジェクトの操作が無いので、左ドラッグはいつも表の「何もないところ」の扱い。surface の上の押し下げ・ドラッグ・ホイールは surface が受け、ComfyUI のキャンバスのパンやノードの移動にしない（Studio のノード上の表示と同じ）。ノードのタイトルの帯は ComfyUI のまま。
+- ホイール：Studio のノード上の表示と同じ捕捉の規則（`docs/studio-node-surface.md` の「見回し」）で受ける。ピンチ（Ctrl + ホイール）も
+  同じ捕捉の規則でホイールと同じに surface が受け、ComfyUI のキャンバスの拡大にしない。割り当ては Panorama Studio の
+  エディタとそろえる（ADR 0061）：
+  - Alt なしのホイール（トラックパッドの二本指でなぞるのを含む）は、エディタと同じポインタの下へのズーム（前へ進む）。
+  - Alt + ホイールとトラックパッドのピンチ（Ctrl + ホイール。マウスの Ctrl + ホイールも同じ）は、視点の画角を変える。中心、一段、向き、
+    範囲、溜め方は `docs/space-and-view.md` の「寄る」と同じで、Scene のビューアでも IMAGE・VIDEO の表示でも同じ。
+  - IMAGE・VIDEO（旧 Preview の runtime。`docs/legacy-node-surfaces.md` の「PanoramaPreview」）では、ふつうのホイールで画角が変わっていたのを
+    やめる（意図した変更。ADR 0061）。見回しだけ（3DoF）の表示なので、ふつうのホイールでは何も動かない。
+  - ノードの上には、Sky だけのときのホイールの知らせを出さない（ノードの上の UI は足さない。持ち主の決定、2026-11-05。ADR 0061）。
+    知らせは Preview のウィンドウとエディタだけに出る（`docs/space-and-view.md` の「Sky だけのときのホイール」）。
 - 右クリックのメニュー：右ドラッグを使うプリセット（Default・Unity-like）では、surface の上の右クリックのメニューを抑止する（エディタの 6DoF と同じ。ノードのメニューはタイトルの帯の右クリックで出る）。
 - キー：ノード上では WASD・QE も Space も受けない（キャンバスのキーは ComfyUI のもの。Studio のノード上の表示も Space を割り当てない）。キーで動くのはウィンドウだけ。
 - ダブルクリック：旧 Preview と同じく再生と一時停止を切り替える。切り替えた瞬間に、surface の中央に再生か一時停止のアイコンを短く出して知らせる（`docs/agents/ux-principles.md` の「状態が変わった瞬間は、一瞬だけはっきり知らせる」）。最初は止めて frame 0 を出す。
@@ -84,7 +93,7 @@ Scene を見る表示（ビューア）は、エディタの部品を、エデ�
 #### 大きなウィンドウ
 
 - `Open viewer`（ノード上）か、ノード上の表示を付けられなかったときに残る `Open Preview` のボタン（widget。表示を付けたときは隠す、`pano_editor_extension.js`）で開く。開くのは新しい UI の Preview のウィンドウ（`web_src/studio/preview_window.js` `openPreviewWindow`）で、置くもの・キー・見た目は `docs/studio-ui.md` の「Preview のウィンドウ」、視点は `docs/space-and-view.md` の「Preview のウィンドウ」が持つ（ADR 0062）。
-- 開くと、ノードと同じ視点と再生の位置から続ける。閉じるとノードはウィンドウの最後の視点と位置を引き継ぐ。ウィンドウはエディタと同じく自分の WebGL の context を持ち、開いている間だけ使う。
+- 開くと、ノードと同じ視点（画角を含む）と再生の位置から続ける。閉じるとノードはウィンドウの最後の視点（画角を含む）と位置を引き継ぐ。IMAGE・VIDEO も画角を受け渡す（ADR 0061。それまではウィンドウがいつも `DEFAULT_VIEW_HFOV` で開いた）。何を受け渡すかは `docs/space-and-view.md` の「Preview のウィンドウ」。ウィンドウはエディタと同じく自分の WebGL の context を持ち、開いている間だけ使う。
 
 #### 再生の帯
 

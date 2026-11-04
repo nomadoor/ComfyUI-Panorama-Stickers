@@ -105,7 +105,9 @@ Panorama Studio（`PanoramaStudio`）のノード上の表示（node surface）�
 ## 見回し（旧ノードと Preview の Scene のビューアの規則）
 
 Panorama Studio の表示は見回さない（ADR 0049）。drag と wheel を受けず、wheel は ComfyUI のグラフに渡る（root に
-`data-capture-wheel` を付けない）。次の規則は旧ノードと Preview の Scene のビューアが使い、この節だけが持つ。
+`data-capture-wheel` を付けない）。次の規則は旧ノードと Preview の Scene のビューアが使い、この節だけが持つ。ただし Panorama Preview
+（`PanoramaPreviewNode`）の wheel の割り当て（Scene のビューアと IMAGE・VIDEO の表示）は `docs/preview-node.md` の「ノード上」が持つ（ADR 0061）。
+wheel の捕捉（下の Node 2.0 の行）はここのまま。
 
 - 空所primary dragはcameraをpanする。wheelは共有controllerで横FOVを1イベント3度変更する。
 - 空所drag / wheelはCutout / Previewと同じcamera感度で動く。
