@@ -13,6 +13,7 @@ import {
   shouldTogglePreviewPlaybackFromKey,
 } from "./pano_preview_node_surface.js";
 import { bindWheelCaptureRoot } from "./pano_wheel.js";
+import { createWheelSteps, wheelMeaning } from "./studio/view_input.js";
 import { acquirePreviewView, previewNodeCamera } from "./pano_preview_view.js";
 import { installPanoSuiteStylesheet } from "./pano_styles.js";
 import {
@@ -98,6 +99,11 @@ class PreviewNodeRuntime {
     this.imgSrc = "";
     this.mediaCleanup = null;
     this.view = { yaw: 0, pitch: 0, fov: 100 };
+    // options.wheel: "modifier" on the new Preview (`PanoramaPreviewNode`; docs/preview-node.md "ノード上", ADR 0061):
+    // the plain wheel changes nothing here (the view only looks around), Alt + wheel and a pinch (Ctrl + wheel) zoom
+    // by the FOV step, their fine events added up as the editor's. Else (the legacy PanoramaPreview) the plain wheel
+    // zooms (docs/legacy-node-surfaces.md "PanoramaPreview").
+    this.zoomSteps = options.wheel === "modifier" ? createWheelSteps() : null;
     // The new Preview window is open on this node (studio/preview_window.js): the VIDEO does not play here meanwhile.
     this.windowOpen = false;
     this.previewView = acquirePreviewView(() => this.requestDraw());
@@ -341,7 +347,7 @@ class PreviewNodeRuntime {
     canvas.addEventListener("pointerup", end);
     canvas.addEventListener("pointercancel", end);
     root.addEventListener("wheel", (ev) => {
-      this.controller.applyWheelEvent(ev);
+      this.wheel(ev);
       ev.preventDefault();
       ev.stopPropagation();
       ev.stopImmediatePropagation?.();
@@ -486,6 +492,20 @@ class PreviewNodeRuntime {
       img.onerror = null;
     };
     img.src = nextSrc;
+  }
+
+  // A wheel event on the surface (options.wheel above).
+  wheel(ev) {
+    if (!this.zoomSteps) {
+      this.controller.applyWheelEvent(ev);
+      return;
+    }
+    if (wheelMeaning(ev) !== "zoom") {
+      this.zoomSteps.reset();
+      return;
+    }
+    const step = this.zoomSteps.push(ev);
+    if (step) this.controller.applyZoomStep(step);
   }
 
   // Whether the surface's top-right button opens the new Preview window rather than the browser's fullscreen

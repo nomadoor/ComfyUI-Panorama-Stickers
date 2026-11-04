@@ -2548,6 +2548,13 @@
   color: rgba(255, 255, 255, 0.96);
   box-shadow: none;
 }
+/* Reset view at the start view (docs/preview-node.md "ノード上"): in place, grayed, its tooltip still saying why. */
+.pano-scene-viewer-buttons .pano-btn[aria-disabled="true"] {
+  opacity: 0.46;
+  background: rgba(27, 30, 37, 0.9);
+  color: rgba(255, 255, 255, 0.72);
+  cursor: default;
+}
 .pano-scene-viewer-buttons .pano-btn svg {
   width: 16px;
   height: 16px;

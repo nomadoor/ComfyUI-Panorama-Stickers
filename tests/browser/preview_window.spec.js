@@ -145,17 +145,22 @@ test("the grid starts shown, and a look drag let go while moving coasts until a 
   expect(problems).toEqual([]);
 });
 
-test("an IMAGE opens at the node's yaw and pitch and hands them back on close, keeping the node's FOV", async ({ page }) => {
+// ADR 0061: the FOV goes to the window and back too.
+test("an IMAGE opens at the node's yaw, pitch and FOV and hands them back on close", async ({ page }) => {
   await open(page, "?handoff");
   const pose = await page.evaluate(() => window.__preview.pose());
   expect(pose.position).toEqual([0, 0, 0]);
   expect(pose.yaw_deg).toBeCloseTo(30, 6);
   expect(pose.pitch_deg).toBeCloseTo(5, 6);
+  expect(pose.hFOV_deg).toBe(70);
+  await expect(page.locator("[data-action=fov]")).toHaveText("70°");
+  // Zoomed in the window, the node takes the window's FOV.
+  await page.evaluate(() => document.querySelector("[data-stage-canvas]").dispatchEvent(new WheelEvent("wheel", { deltaY: -100, altKey: true, bubbles: true, cancelable: true })));
   await page.keyboard.press("Escape");
   await expect(page.locator("[data-preview-window]")).toHaveCount(0);
   const view = await page.evaluate(() => window.__preview.runtimeView());
   expect(view.yaw).toBeCloseTo(30, 6);
-  expect(view.fov).toBe(70);
+  expect(view.fov).toBe(68);
   expect(await page.evaluate(() => window.__preview.told)).toContain("draw");
 });
 
@@ -165,6 +170,7 @@ test("a Scene opens at the node viewer's view and playhead, stops the node meanw
   expect(pose.position).toEqual([0.5, 0, 1]);
   expect(pose.yaw_deg).toBeCloseTo(40, 6);
   expect(pose.pitch_deg).toBeCloseTo(-10, 6);
+  expect(pose.hFOV_deg).toBe(100);
   // The node was playing: the window goes on playing from its frame, and the node rests and does not draw.
   let record = await page.evaluate(() => window.__preview.record());
   expect(record.windowOpen).toBe(true);
@@ -185,6 +191,7 @@ test("a Scene opens at the node viewer's view and playhead, stops the node meanw
   expect(record.playing).toBe(false);
   expect(record.view.viewPosition).toEqual([0.5, 0, 1]);
   expect(record.view.viewYaw).toBeCloseTo(40, 6);
+  expect(record.view.viewFov).toBe(100);
   expect(await page.evaluate(() => window.__preview.told)).toEqual(["rest", "activate"]);
   expect(problems).toEqual([]);
 });

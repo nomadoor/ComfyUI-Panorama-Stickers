@@ -12,7 +12,7 @@
 // view's, where the pose is the Camera itself and its moves go to the Camera's Lane (the caller writes them).
 import { DEG2RAD, RAD2DEG, VIEW_HFOV_MAX_DEG, VIEW_HFOV_MIN_DEG, clamp, fovStepValue, shortestYawDelta, wrapYaw } from "../pano_camera_math.js";
 import { rayBoxDepth } from "../pano_ray_box.js";
-import { DEFAULT_VIEW_HFOV, frameView, orbitView, sameView, viewAxes } from "../pano_space.js";
+import { DEFAULT_VIEW_HFOV, frameView, orbitView, sameViewpoint, viewAxes } from "../pano_space.js";
 import { KEY_MOVE_FAST, keyMoveView } from "../pano_view_keys.js";
 import { restoredView, viewMemory } from "../pano_view_memory.js";
 import { worldRotation } from "../pano_world.js";
@@ -195,10 +195,10 @@ export function frameSelectedSphere({ selection, content, ground }) {
 export const RESET_VIEW = Object.freeze({ position: Object.freeze([0, 0, 0]), yaw_deg: 0, pitch_deg: 0, hFOV_deg: DEFAULT_VIEW_HFOV });
 
 // Whether the pose `p` is the start view, where Reset View is off (docs/space-and-view.md "開いたときの視点と Reset
-// View" 始めの視点): P, yaw, pitch and the FOV are RESET_VIEW's (pano_space.js sameView). Pass the pose an eased move
+// View" 始めの視点): P, yaw, pitch and the FOV are RESET_VIEW's (pano_space.js sameViewpoint). Pass the pose an eased move
 // goes to (the destination).
 export function atResetView(p) {
-  return sameView({ ...p, hFOV_deg: p.hFOV_deg ?? DEFAULT_VIEW_HFOV }, RESET_VIEW);
+  return sameViewpoint({ ...p, hFOV_deg: p.hFOV_deg ?? DEFAULT_VIEW_HFOV }, RESET_VIEW);
 }
 
 // --- Opening and the view memory (kept per node for the page, pano_node_bridge.js editorSession(node).view).

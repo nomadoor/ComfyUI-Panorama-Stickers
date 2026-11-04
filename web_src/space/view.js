@@ -30,7 +30,7 @@ const SAME_VIEW_EPSILON = 1e-6;
 // the numbers' error, the yaw too round 360° (docs/space-and-view.md "開いたときの視点と Reset View" 始めの視点; a
 // pivot or T is not compared). Reset View is off at its start view by this (studio/view_camera.js atResetView,
 // pano_scene_viewer.js).
-export function sameView(a, b) {
+export function sameViewpoint(a, b) {
   const close = (x, y) => Math.abs(x - y) <= SAME_VIEW_EPSILON;
   return a.position.every((value, axis) => close(value, b.position[axis]))
     && close(shortestYawDelta(a.yaw_deg, b.yaw_deg), 0) && close(a.pitch_deg, b.pitch_deg) && close(a.hFOV_deg, b.hFOV_deg);

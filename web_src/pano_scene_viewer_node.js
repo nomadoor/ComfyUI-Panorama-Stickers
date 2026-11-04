@@ -12,6 +12,7 @@ import { acquirePreviewView } from "./pano_preview_view.js";
 import { createSceneViewer, sceneViewerHost, sceneViewerRecord } from "./pano_scene_viewer.js";
 import { VIEW_CONTROLS_SETTING_ID, presetUsesButton, viewControlsPreset } from "./pano_view_controls.js";
 import { bindWheelCaptureRoot, readWheelDirection } from "./pano_wheel.js";
+import { createWheelSteps, wheelMeaning } from "./studio/view_input.js";
 
 // How long the play / pause cue of a double click shows.
 const CUE_MS = 600;
@@ -53,7 +54,9 @@ export function attachSceneViewerNode(node, { app, uiList, mediaSource, mediaAss
   root.setAttribute("data-capture-wheel", "true");
   root.tabIndex = 0;
   root.style.cssText = `width:100%;height:100%;min-height:${SURFACE_MIN_HEIGHT}px;position:relative;overflow:hidden`;
-  const model = reactive({ transport: {}, cue: null, cueKey: 0, viewUnavailable: false });
+  const model = reactive({ transport: {}, cue: null, cueKey: 0, viewUnavailable: false, atStart: true });
+  // Alt + wheel and a pinch zoom (docs/preview-node.md "ノード上"): their fine events add up to steps as the editor's do.
+  const zoomSteps = createWheelSteps();
   let raf = 0;
   let cueTimer = 0;
   const vueApp = createApp(PanoSceneViewerNodeSurface, { model, onAction: (action) => onAction(action) });
@@ -111,6 +114,7 @@ export function attachSceneViewerNode(node, { app, uiList, mediaSource, mediaAss
     }
     model.transport = viewer.transport();
     model.viewUnavailable = shared.failed;
+    model.atStart = viewer.atStart();
     const input = viewer.input();
     const drawn = shared.render({ width: canvas.width, height: canvas.height, ...input });
     if (!drawn) return;
@@ -158,10 +162,19 @@ export function attachSceneViewerNode(node, { app, uiList, mediaSource, mediaAss
     canvas.releasePointerCapture?.(event.pointerId);
   }
 
+  // The wheel moves toward the point under the pointer; Alt + wheel and a pinch (Ctrl + wheel) change the view's FOV
+  // (docs/preview-node.md "ノード上"; studio/view_input.js wheelMeaning). Every wheel is the surface's.
   function onWheel(event) {
     event.preventDefault();
     event.stopPropagation();
     activate();
+    if (wheelMeaning(event) === "zoom") {
+      const step = zoomSteps.push(event);
+      if (step) viewer.zoom(step);
+      requestDraw();
+      return;
+    }
+    zoomSteps.reset();
     const direction = readWheelDirection(event);
     if (direction) viewer.wheel(-direction, devicePoint(event));
   }
@@ -199,7 +212,7 @@ export function attachSceneViewerNode(node, { app, uiList, mediaSource, mediaAss
 
   function onAction(action) {
     activate();
-    if (action.type === "reset-view") viewer.resetView();
+    if (action.type === "reset-view" && !viewer.atStart()) viewer.resetView();
     else if (action.type === "open-viewer") openViewer?.(node);
   }
 

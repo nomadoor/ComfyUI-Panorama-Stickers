@@ -23,7 +23,7 @@ export {
   panView,
   pivotOf,
   reuseWheelPick,
-  sameView,
+  sameViewpoint,
   spaceModeView,
   switchSpaceMode,
   viewAxes,

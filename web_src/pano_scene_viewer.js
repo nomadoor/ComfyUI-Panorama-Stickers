@@ -13,6 +13,7 @@ import {
   contentPoints,
   gridSpec,
   orbitView,
+  sameViewpoint,
   sceneContentBox,
   spaceCamera,
 } from "./pano_space.js";
@@ -65,6 +66,10 @@ export function createSceneViewerHost() {
 }
 
 export const sceneViewerHost = createSceneViewerHost();
+
+// Where the viewer's Reset view goes, and its start view (docs/preview-node.md "ノード上"): the World origin's front at
+// the editor's default FOV.
+const START_VIEW = Object.freeze({ position: Object.freeze([0, 0, 0]), yaw_deg: 0, pitch_deg: 0, hFOV_deg: DEFAULT_VIEW_HFOV });
 
 function timeLabel(seconds) {
   const total = Math.max(0, Math.floor(seconds));
@@ -304,10 +309,23 @@ export function createSceneViewer({
     if (direction) navigation.zoomSpaceAt(p, direction);
   }
 
-  // Back to the World origin's front, over a transition.
+  // One zoom step (Alt + wheel, a pinch): the view's FOV (pano_space_navigation.js zoomFov).
+  function zoom(step) {
+    if (step) navigation.zoomFov(step);
+  }
+
+  // Back to the World origin's front at the default FOV, over a transition.
   function resetView() {
     const state = navigation.spaceViewState();
-    navigation.transitionView({ ...state, position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0, hFOV_deg: DEFAULT_VIEW_HFOV, distance: sphere?.radius || DEFAULT_DISTANCE }, { mode: record.view.spaceMode, moved: false });
+    navigation.transitionView({ ...state, ...START_VIEW, position: [...START_VIEW.position], distance: sphere?.radius || DEFAULT_DISTANCE }, { mode: record.view.spaceMode, moved: false });
+  }
+
+  // Whether the view is (going to) the start view, where Reset view is off (docs/preview-node.md "ノード上"; compared as
+  // the editor's start view: pano_space.js sameViewpoint).
+  function atStart() {
+    const view = record.view;
+    const at = view.viewTransition?.to ?? { position: view.viewPosition, yaw_deg: view.viewYaw, pitch_deg: view.viewPitch, hFOV_deg: view.viewFov };
+    return sameViewpoint(at, START_VIEW);
   }
 
   // Frame all: the whole content fits (nothing is selected in the viewer).
@@ -341,7 +359,7 @@ export function createSceneViewer({
 
   return {
     input, itemsLoaded, tick, frames, fps, hasTime, togglePlay, seek, transport, pointerDown, pointerMove, pointerUp, wheel,
-    resetView, frameAll, toggleGrid, stepKeys, setSpaceMode: navigation.setSpaceMode, navigation, dispose,
+    zoom, resetView, atStart, frameAll, toggleGrid, stepKeys, setSpaceMode: navigation.setSpaceMode, navigation, dispose,
     get dragging() {
       return drag !== null;
     },
