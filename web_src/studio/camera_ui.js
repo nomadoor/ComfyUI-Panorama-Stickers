@@ -2,6 +2,7 @@
 // can be pressed and what its tooltip says, and how it brings the Camera to the view. Pure; studio/session.js makes the
 // move one Undo step, studio/editor.js hands it the view, components/studio/StudioToolRail.vue draws the button.
 import { moveCameraPose } from "./camera_state.js";
+import { VIEW_NOTICES } from "./view_camera.js";
 
 const LABEL = "Camera to view";
 
@@ -10,8 +11,9 @@ const LABEL = "Camera to view";
 export const CAMERA_TAB_LOCKED_TIP = "Locked · Unlock in the 3D tab";
 // The tooltip of what the Camera tab grays whatever the Camera (the left column, the Output window, the view knobs).
 export const CAMERA_TAB_TIP = "Not available in the Camera view";
-// The tooltip of what the Camera tab's Panorama mode grays (the view knobs, Frame Selected, the FOV number).
-export const PANORAMA_MODE_TIP = "Not available in Panorama mode";
+// The tooltip of what the Camera tab's Panorama mode grays (the view knobs, Frame Selected, the FOV number): the text
+// of Alt + wheel's notice there (view_camera.js VIEW_NOTICES).
+export const PANORAMA_MODE_TIP = VIEW_NOTICES["fov-panorama"];
 // The FOV number's tooltip in the Camera tab's Frame mode: it shows the Camera's H FOV, which the FOV ruler changes
 // (docs/studio-ui.md "Camera タブ", ADR 0061).
 export const CAMERA_FOV_TIP = "Camera FOV · Change it with the FOV ruler";

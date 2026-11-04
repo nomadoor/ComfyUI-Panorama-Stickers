@@ -144,7 +144,7 @@ export function shortcutGroups({ context = "editor", tab = "3d", panorama = fals
       gestureRow("Move toward the pointer", [["Wheel"]], "wheel"),
       // Alt + wheel and a pinch (docs/space-and-view.md "寄る"): the view's FOV, or in the Frame view the Camera's H FOV,
       // which a read-only editor or a locked Camera does not change. Ctrl + wheel is the pinch and not shown.
-      ...(space || (!readOnly && !locked) ? [{ label: space ? "Zoom (change FOV)" : "Change Camera FOV", keys: [["Alt", "Wheel"], ["Pinch"]], refs: ["pointer:alt-wheel", "pointer:pinch"] }] : []),
+      ...(space || (!readOnly && !locked) ? [gestureRow(space ? "Zoom (change FOV)" : "Change Camera FOV", [["Alt", "Wheel"], ["Pinch"]], "zoom")] : []),
       ...(space ? [gestureRow("Look at a point", [["Double-click"]], "double-click")] : []),
     ];
   const objects = preview ? [] : [

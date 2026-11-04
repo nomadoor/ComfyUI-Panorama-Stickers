@@ -29,6 +29,9 @@ const SAME_VIEW_EPSILON = 1e-6;
 // The start view (docs/space-and-view.md "開いたときの視点と Reset View" 始めの視点): the World origin, yaw 0, pitch 0 at
 // DEFAULT_VIEW_HFOV, where the new UI's Reset View (studio/view_camera.js RESET_VIEW) and the Preview node's Scene viewer's
 // Reset view (pano_scene_viewer.js) go, and where they are off.
+// Reset View's tooltip while the view is at the start view, where it is off (docs/studio-ui.md "右下の View の群",
+// docs/preview-node.md "ノード上"; the new UI's and the Preview node's).
+export const START_VIEW_TIP = "Reset view · Already at the start";
 export const START_VIEW = Object.freeze({ position: Object.freeze([0, 0, 0]), yaw_deg: 0, pitch_deg: 0, hFOV_deg: DEFAULT_VIEW_HFOV });
 
 // Whether views a and b ({ position, yaw_deg, pitch_deg, hFOV_deg }) are the same: the position, pitch and FOV within

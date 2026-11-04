@@ -16,7 +16,6 @@ import { DEFAULT_VIEW_HFOV, START_VIEW, frameView, orbitView, sameViewpoint, vie
 import { KEY_MOVE_FAST, keyMoveView } from "../pano_view_keys.js";
 import { restoredView, viewMemory } from "../pano_view_memory.js";
 import { worldRotation } from "../pano_world.js";
-import { PANORAMA_MODE_TIP } from "./camera_ui.js";
 import {
   ACTION_EASE_SECONDS,
   BOUND_NOTICE_SECONDS,
@@ -38,7 +37,7 @@ export const VIEW_NOTICES = Object.freeze({
   bound: "The view can't go farther",
   "nothing-to-focus": "Nothing to focus on",
   "nothing-to-frame": "Nothing to frame",
-  "fov-panorama": PANORAMA_MODE_TIP,
+  "fov-panorama": "Not available in Panorama mode",
   "sky-only": "Sky only · Alt+wheel zooms",
   "sky-only-frame": "Sky only · Alt+wheel changes the FOV",
 });

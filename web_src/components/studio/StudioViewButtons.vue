@@ -1,6 +1,6 @@
 <script setup>
 import { ICON } from "../../icons.js";
-import { DEFAULT_VIEW_HFOV } from "../../pano_space.js";
+import { DEFAULT_VIEW_HFOV, START_VIEW_TIP } from "../../pano_space.js";
 import StudioFloatGroup from "./StudioFloatGroup.vue";
 import StudioFovNumber from "./StudioFovNumber.vue";
 import StudioIconButton from "./StudioIconButton.vue";
@@ -65,7 +65,7 @@ const emit = defineEmits(["fov", "fov-reset", "frame-selected", "reset-view", "g
       data-action="reset-view"
       :icon="ICON.home"
       label="Reset view"
-      :tip="resetDisabled && resetTip ? resetTip : atStart ? 'Reset view · Already at the start' : ''"
+      :tip="resetDisabled && resetTip ? resetTip : atStart ? START_VIEW_TIP : ''"
       :disabled="resetDisabled || atStart"
       @press="emit('reset-view')"
     />

@@ -25,6 +25,7 @@ export {
   reuseWheelPick,
   sameViewpoint,
   START_VIEW,
+  START_VIEW_TIP,
   spaceModeView,
   switchSpaceMode,
   viewAxes,

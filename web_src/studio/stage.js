@@ -88,7 +88,8 @@ export function stageUi() {
 // follow: the Preview window's feel (preview_motion.js createPreviewMotion): the view shown follows the moved view and a
 // drag let go coasts. Without it (the editor) the view shown is the moved view.
 // skyOnlyNotice: whether a plain wheel step with no World content says Sky only (docs/space-and-view.md "Sky だけのときの
-// ホイール"); false for a Preview window with nothing linked to `source`, which has nothing to zoom into.
+// ホイール"); false for a Preview window with nothing linked to `source`, which has nothing to zoom into. An option, as
+// the stage cannot tell that from what it draws: an editor with nothing drawn yet still says it.
 export function createStage({
   canvas,
   overlay = null,

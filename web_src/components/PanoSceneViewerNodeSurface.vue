@@ -1,6 +1,7 @@
 <script setup>
 import { ref } from "vue";
 import { ICON } from "../icons.js";
+import { START_VIEW_TIP } from "../pano_space.js";
 import PanoIconButton from "./shared/PanoIconButton.vue";
 import PanoVideoTransport from "./shared/PanoVideoTransport.vue";
 import PanoViewUnavailable from "./shared/PanoViewUnavailable.vue";
@@ -27,7 +28,7 @@ defineExpose({ canvas });
       <PanoIconButton
         :icon="ICON.home"
         label="Reset view"
-        :tip="model.atStart ? 'Reset view · Already at the start' : 'Reset view'"
+        :tip="model.atStart ? START_VIEW_TIP : 'Reset view'"
         :attrs="{ 'data-action': 'reset-view', 'aria-disabled': model.atStart ? 'true' : null }"
         @click="onAction?.({ type: 'reset-view' })"
       />
