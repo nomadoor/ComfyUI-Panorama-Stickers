@@ -1,6 +1,7 @@
 <script setup>
 import { computed } from "vue";
 import { ICON } from "../../icons.js";
+import { CAMERA_TAB_TIP } from "../../studio/camera_ui.js";
 import StudioAddIcon from "./StudioAddIcon.vue";
 import StudioFloatGroup from "./StudioFloatGroup.vue";
 import StudioIconButton from "./StudioIconButton.vue";
@@ -27,7 +28,6 @@ const props = defineProps({
 });
 const emit = defineEmits(["press"]);
 
-const CAMERA_TAB_TIP = "Not available in the Camera view";
 const groups = computed(() => [
   [
     { key: "cursor", icon: ICON.cursor_tool, label: "Cursor", active: props.tool === "cursor" },

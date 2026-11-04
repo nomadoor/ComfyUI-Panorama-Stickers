@@ -10,7 +10,7 @@
 // point's depth, so the pivot stays in sight. A pan always moves at the pivot's depth (panDepth), never at
 // the depth of what the pointer is over, so a drag of the same length moves the view the same way.
 import { animationMetaOf, animationPose } from "./pano_animation.js";
-import { DEG2RAD, RAD2DEG, clamp, wrapYaw } from "./pano_camera_math.js";
+import { DEG2RAD, RAD2DEG, VIEW_PITCH_LIMIT_DEG, clamp, vFovFromHfov, wrapYaw } from "./pano_camera_math.js";
 import { lensFilmDirection, lensProjectPoint, lensRadius } from "./pano_lens.js";
 import { evaluateLane } from "./pano_scene_eval.js";
 import { is3dFileSource } from "./pano_scene_state.js";
@@ -166,7 +166,7 @@ export const FIT_MARGIN = 1.1;
 export const FIT_3D_MIN_DISTANCE = 0.1;
 // The FOV a fit takes when it is given none: DEFAULT_VIEW_HFOV made the vertical FOV of a 16:9 view (the node's
 // PORT_3D_FIT_FOV_DEG).
-export const FIT_FALLBACK_FOV_DEG = 2 * Math.atan(Math.tan(DEFAULT_VIEW_HFOV * 0.5 * DEG2RAD) * 9 / 16) * RAD2DEG;
+export const FIT_FALLBACK_FOV_DEG = vFovFromHfov(DEFAULT_VIEW_HFOV, 9 / 16);
 
 function fitFov(fovDeg) {
   return Number.isFinite(fovDeg) && fovDeg > 0 ? fovDeg : FIT_FALLBACK_FOV_DEG;
@@ -212,7 +212,7 @@ export function orbitView(view, dx, dy, height, pivot = pivotOf(view)) {
   const roll = view.roll_deg ?? 0;
   const [turnX, turnY] = unrolled(dx, dy, roll);
   const yaw = wrapYaw(view.yaw_deg + turnX / height * 360);
-  const pitch = clamp(view.pitch_deg - turnY / height * 360, -89.9, 89.9);
+  const pitch = clamp(view.pitch_deg - turnY / height * 360, -VIEW_PITCH_LIMIT_DEG, VIEW_PITCH_LIMIT_DEG);
   const before = worldRotation(view.yaw_deg, view.pitch_deg, roll);
   const after = worldRotation(yaw, pitch, roll);
   // The view's offset from the pivot in its own frame stays, so the pivot keeps its place on the screen.

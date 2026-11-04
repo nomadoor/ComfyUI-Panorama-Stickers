@@ -1,5 +1,6 @@
 <script setup>
 import { ICON } from "../../icons.js";
+import { TIMELINE_FPS_MAX, TIMELINE_FPS_MIN } from "../../pano_scene_state.js";
 import StudioIconButton from "./StudioIconButton.vue";
 import StudioNumberField from "./StudioNumberField.vue";
 
@@ -66,8 +67,8 @@ const fpsParse = (text) => {
         :value="bar.fps"
         :step="1"
         :precision="3"
-        :min="1"
-        :max="1000"
+        :min="TIMELINE_FPS_MIN"
+        :max="TIMELINE_FPS_MAX"
         :format="fpsText"
         :parse="fpsParse"
         :disabled="bar.fpsLocked"

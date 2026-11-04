@@ -5,6 +5,19 @@ export const RAD2DEG = 180 / Math.PI;
 
 export { clamp, wrapYaw, shortestYawDelta };
 
+// A panorama view's pitch stops at ± this many degrees (the editor's view, the node surfaces' views, the new UI's
+// view: studio/view_scale.js PITCH_LIMIT).
+export const VIEW_PITCH_LIMIT_DEG = 89.9;
+// The range of a panorama view's horizontal FOV, in degrees (the wheel's zoom, a restored or entered view).
+export const VIEW_HFOV_MIN_DEG = 35;
+export const VIEW_HFOV_MAX_DEG = 140;
+
+// The vertical FOV, in degrees, of a pinhole view of horizontal FOV `hFovDeg` whose height ÷ width is
+// `heightOverWidth`: tan(vFOV ÷ 2) = tan(hFOV ÷ 2) × height ÷ width. No clamp and no guard: callers clamp.
+export function vFovFromHfov(hFovDeg, heightOverWidth) {
+  return 2 * Math.atan(Math.tan(hFovDeg * DEG2RAD * 0.5) * heightOverWidth) * RAD2DEG;
+}
+
 export function vec3(x, y, z) {
   return { x, y, z };
 }

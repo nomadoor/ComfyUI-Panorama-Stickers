@@ -1,7 +1,7 @@
 // Images and 3D files that become Stickers: picked or dropped files added as sky or world Stickers (a 3D file
 // only in Panorama Studio, as a world Sticker), replacing a Sticker's image, uploading them, the legacy embedded
 // assets moved to files, and the drop cue on the stage.
-import { queuePendingStickerOperation } from "../pano_editor_extension.js";
+import { queuePendingStickerOperation } from "../pano_sticker_operations.js";
 import { placeDirection } from "../pano_editor_view.js";
 import { fileSource, newSceneSticker, newWorldSceneSticker, takeStickerId } from "../pano_editor_state.js";
 import { evaluateSticker } from "../pano_scene_eval.js";

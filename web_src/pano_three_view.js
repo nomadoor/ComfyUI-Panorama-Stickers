@@ -324,7 +324,8 @@ export function unwrapStickerUniforms(layer) {
   };
 }
 
-function mediaSize(media) {
+// The size of a media element: the chunk's copy of pano_editor_view.js mediaSize, held equal by tests/chunk_copies.test.mjs.
+export function mediaSize(media) {
   return {
     width: Number(media.videoWidth || media.naturalWidth || media.width || 0),
     height: Number(media.videoHeight || media.naturalHeight || media.height || 0),
@@ -1926,12 +1927,8 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
   // Frees the textures and the Spark renderer of an owner that stops drawing; the canvas shrinks on the next
   // render if this owner was the largest.
   function release(owner) {
-    releaseLiveErp(owner);
-    releaseLensFaces(owner);
-    layerTextures.release(owner);
-    depthColors.release(owner);
+    releaseSplats(owner);
     owners.delete(owner);
-    sparkViews.release(owner);
   }
 
   // Frees the items of owner's World (ownWorlds) for good: the owner draws no more (a node removed). A release() alone

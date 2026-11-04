@@ -1,12 +1,9 @@
+import { DEG2RAD, VIEW_HFOV_MAX_DEG, VIEW_HFOV_MIN_DEG, VIEW_PITCH_LIMIT_DEG } from "./pano_camera_math.js";
 import { clamp, wrapYaw } from "./pano_math.js";
 import { PANO_FOV_WHEEL_STEP_DEG, readWheelDirection } from "./pano_wheel.js";
 
-const DEG2RAD = Math.PI / 180;
-
 const PANO_DRAG_SENSITIVITY = 0.12;
 const PANO_WHEEL_STEP = PANO_FOV_WHEEL_STEP_DEG;
-const PANO_FOV_MIN = 35;
-const PANO_FOV_MAX = 140;
 const PANO_INITIAL_FOV = 100;
 export const PANO_INERTIA_DAMPING = 5.5;
 export const PANO_INERTIA_START_SPEED = 20;
@@ -96,7 +93,7 @@ export function createPanoInteractionController(options = {}) {
     }
 
     view.yaw = wrapYaw(Number(view.yaw || 0) + dYaw);
-    view.pitch = clamp(Number(view.pitch || 0) + dPitch, -89.9, 89.9);
+    view.pitch = clamp(Number(view.pitch || 0) + dPitch, -VIEW_PITCH_LIMIT_DEG, VIEW_PITCH_LIMIT_DEG);
     setView(view);
 
     // Record position for windowed velocity estimation; keep last 100ms only.
@@ -150,7 +147,7 @@ export function createPanoInteractionController(options = {}) {
     state.inertia.lastTs = now;
     const view = { ...getView() };
     view.yaw = wrapYaw(Number(view.yaw || 0) + state.inertia.vx * dt);
-    view.pitch = clamp(Number(view.pitch || 0) + state.inertia.vy * dt, -89.9, 89.9);
+    view.pitch = clamp(Number(view.pitch || 0) + state.inertia.vy * dt, -VIEW_PITCH_LIMIT_DEG, VIEW_PITCH_LIMIT_DEG);
     const damping = Math.exp(-PANO_INERTIA_DAMPING * dt);
     state.inertia.vx *= damping;
     state.inertia.vy *= damping;
@@ -183,7 +180,7 @@ export function createPanoInteractionController(options = {}) {
     if (!sign) return false;
     const view = { ...getView() };
     const before = Number(view.fov || PANO_INITIAL_FOV);
-    view.fov = clamp(before + sign * PANO_WHEEL_STEP, PANO_FOV_MIN, PANO_FOV_MAX);
+    view.fov = clamp(before + sign * PANO_WHEEL_STEP, VIEW_HFOV_MIN_DEG, VIEW_HFOV_MAX_DEG);
     setView(view);
     onInteraction();
     log("wheel", { deltaSign: sign, fovBefore: before, fovAfter: view.fov });

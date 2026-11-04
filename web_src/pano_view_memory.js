@@ -3,6 +3,8 @@
 // place, direction, FOV and pivot distance. It is never saved: a page or workflow load opens at the origin
 // in 3DoF.
 
+import { VIEW_HFOV_MAX_DEG, VIEW_HFOV_MIN_DEG, VIEW_PITCH_LIMIT_DEG } from "./pano_camera_math.js";
+
 const TABS = new Set(["pano", "unwrap", "frame"]);
 const SPACE_MODES = new Set(["3dof", "6dof"]);
 
@@ -43,8 +45,8 @@ export function restoredView(memory, { frame }) {
     && SPACE_MODES.has(spaceMode)
     && Array.isArray(position) && position.length === 3 && position.every(Number.isFinite)
     && Number.isFinite(yaw_deg)
-    && inRange(pitch_deg, -89.9, 89.9)
-    && inRange(hFOV_deg, 35, 140)
+    && inRange(pitch_deg, -VIEW_PITCH_LIMIT_DEG, VIEW_PITCH_LIMIT_DEG)
+    && inRange(hFOV_deg, VIEW_HFOV_MIN_DEG, VIEW_HFOV_MAX_DEG)
     && Number.isFinite(distance) && distance > 0
     && typeof moved === "boolean";
   if (!valid) return null;

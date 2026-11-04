@@ -11,7 +11,7 @@
 // Making two callers agree is a behaviour change the owner has not decided yet: when decided, it edits a cell of the table.
 import { normalizeCoverageValue } from "./pano_editor_state.js";
 import { backgroundClipAt, backgroundShownAt, bgColorBackground } from "./pano_port_media.js";
-import { STUDIO_BACKGROUND_INPUT_NAMES, BACKGROUND_INPUT_NAMES } from "./pano_preview_video.js";
+import { STUDIO_BACKGROUND_INPUT_NAMES, BACKGROUND_INPUT_NAMES, backgroundColorWidget } from "./pano_preview_video.js";
 import { clipActive } from "./pano_scene_eval.js";
 import { upstreamBackgroundOf, upstreamBgColor } from "./pano_upstream.js";
 
@@ -111,7 +111,7 @@ export function chooseBackground(caller, {
   if (row.colorFrom === "scene") {
     color = upstream?.color ?? upstreamBgColor(uiList) ?? row.colorFallback;
   } else {
-    const own = String((widget("background_color") ?? widget("bg_color"))?.value || row.colorFallback);
+    const own = String(backgroundColorWidget(widget)?.value || row.colorFallback);
     color = upstream?.color || own;
   }
   let place = null;

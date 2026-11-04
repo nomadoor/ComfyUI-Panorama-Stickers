@@ -1,5 +1,6 @@
 // The eager side of the live ERP of Panorama mode (docs/threejs-spark-integration.md "Panorama モードの ERP の表示"):
 // what pano_live_erp.js (in the three.js chunk, which cannot import this side) is given. Pure functions.
+import { normalizeCoverageValue } from "../pano_editor_state.js";
 import { worldRotation } from "../pano_world.js";
 
 // The ERP's ratio (width / height) for the Camera's erp_range: 360 is 2 : 1, 180 is 1 : 1 (docs/studio-node.md).
@@ -14,7 +15,7 @@ export function liveErpView(camera, erpRange = 360) {
   return {
     position,
     turn: worldRotation(Number(camera?.yaw_deg) || 0, Number(camera?.pitch_deg) || 0, Number(camera?.roll_deg) || 0),
-    coverage: erpRange === 180 ? 180 : 360,
+    coverage: normalizeCoverageValue(erpRange),
   };
 }
 

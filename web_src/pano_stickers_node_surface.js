@@ -1,7 +1,7 @@
 import { fileSource, newSceneSticker, parseSceneEditorState, setStickerPose, stickerPose, takeStickerId, unkeyedPose } from "./pano_editor_state.js";
 import { createNodeSurfaceSession } from "./pano_node_surface_session.js";
 import { evaluateSticker } from "./pano_scene_eval.js";
-import { portHandoff, showPortHandoff } from "./pano_port_handoff.js";
+import { isInputConnected, nodePortHandoff, portHandoff, showPortHandoff } from "./pano_port_handoff.js";
 import { loadSceneState } from "./pano_scene_state.js";
 
 const EXTERNAL_STICKER_ID = "sticker_image_1";
@@ -161,11 +161,6 @@ export function reconcileExternalStickerState(state, descriptor = {}) {
   return { state: { ...state, stickers: nextStickers }, changed: true };
 }
 
-function isInputConnected(node, name) {
-  const slot = (Array.isArray(node?.inputs) ? node.inputs : []).findIndex((input) => input?.name === name);
-  return slot >= 0 && node.isInputConnected(slot);
-}
-
 const MEDIA_KINDS_2D = ["IMAGE", "VIDEO"];
 
 // The 3D media of the `sticker` input: drawn as a world port Sticker that the node places.
@@ -217,15 +212,9 @@ export function portStickerSyncValue(node, { pose = null, handoff = null } = {})
   };
 }
 
-// Whether the Pose handoff of a node's result can apply: `sticker` and `sticker_state` are connected.
-export function portHandoffLinked(node) {
-  return isInputConnected(node, "sticker") && isInputConnected(node, "sticker_state");
-}
-
-// The Pose handoff of a node's current result (`value`, its `pano_sticker_handoff`) while it can apply, or null.
-export function nodePortHandoff(node, value) {
-  return portHandoffLinked(node) ? portHandoff(value) : null;
-}
+// Whether the Pose handoff can apply, and a node's current one, are pano_port_handoff.js's;
+// tests/pano_stickers_node_surface.test.mjs still imports nodePortHandoff here.
+export { nodePortHandoff };
 
 // Panorama Studio's state_json `text` as its node surface shows it (parseSceneEditorState `options`): the port
 // Sticker with the Pose handoff `handoffValue` of the current result (null without one) as the run draws it.

@@ -69,6 +69,11 @@ function comfyImageEntryToUrl(api, entry, read = READ_PROFILES.editor) {
   return typeof api?.apiURL === "function" ? api.apiURL(route) : route;
 }
 
+// The /view route of a file of ComfyUI's input folder by its name, as LoadImage's `image` widget names it.
+function loadImageViewRoute(filename) {
+  return `/view?filename=${encodeURIComponent(filename)}&type=input&subfolder=`;
+}
+
 function getGraphNodeById(graph, id) {
   if (!graph || id == null) return null;
   if (typeof graph.getNodeById === "function") return graph.getNodeById(id);
@@ -312,9 +317,7 @@ export function createComfyMediaAdapter({ app, api, ImageCtor, imageState, read:
     if (imageWidget) {
       let src = source(imageWidget.value);
       if (src && !src.includes("/") && !src.includes(":") && (originNode.comfyClass === "LoadImage" || originNode.type === "LoadImage")) {
-        src = typeof api?.apiURL === "function"
-          ? api.apiURL(`/view?filename=${encodeURIComponent(src)}&type=input&subfolder=`)
-          : `/view?filename=${encodeURIComponent(src)}&type=input&subfolder=`;
+        src = typeof api?.apiURL === "function" ? api.apiURL(loadImageViewRoute(src)) : loadImageViewRoute(src);
       }
       if (src) return { src, sourceType: "widget", inputName: wanted };
     }
@@ -447,7 +450,7 @@ export function createComfyMediaAdapter({ app, api, ImageCtor, imageState, read:
       if (imageWidget) {
         let src = source(imageWidget.value);
         if (src && !src.includes("/") && !src.includes(":") && (originNode.comfyClass === "LoadImage" || originNode.type === "LoadImage")) {
-          src = api.apiURL(`/view?filename=${encodeURIComponent(src)}&type=input&subfolder=`);
+          src = api.apiURL(loadImageViewRoute(src));
         }
         if (src) {
           log("image-resolve", {
@@ -521,7 +524,7 @@ export function createComfyMediaAdapter({ app, api, ImageCtor, imageState, read:
     const imageWidget = originNode?.widgets?.find((widget) => String(widget?.name || "").toLowerCase() === "image");
     const imageName = String(imageWidget?.value || "").trim();
     if (!imageName) return "";
-    return api.apiURL(`/view?filename=${encodeURIComponent(imageName)}&type=input&subfolder=`);
+    return api.apiURL(loadImageViewRoute(imageName));
   };
 
   // The MP4 of the Preview node's own result (pano_videos, then images).

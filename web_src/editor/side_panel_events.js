@@ -11,6 +11,7 @@ import {
   WORLD_MIN_SCALE,
 } from "../pano_editor_state.js";
 import { clamp, wrapYaw } from "../pano_math.js";
+import { VIEW_PITCH_LIMIT_DEG } from "../pano_camera_math.js";
 import { ANIMATION_DEFAULT, ANIMATION_SPEED_MAX, ANIMATION_SPEED_MIN } from "../pano_scene_state.js";
 import { isUpstreamSticker } from "../pano_upstream.js";
 import { WORLD_UNLIMITED_FIELDS } from "./constants.js";
@@ -188,7 +189,7 @@ export function createSidePanelEvents(deps) {
       setSelectedItem(nextItem || null);
       if (nextItem && !isStrokeGroupItem(nextItem)) {
         const pose = poseOf(nextItem);
-        turnViewTo(wrapYaw(Number(pose.yaw_deg || 0)), clamp(Number(pose.pitch_deg || 0), -89.9, 89.9));
+        turnViewTo(wrapYaw(Number(pose.yaw_deg || 0)), clamp(Number(pose.pitch_deg || 0), -VIEW_PITCH_LIMIT_DEG, VIEW_PITCH_LIMIT_DEG));
       }
       updateSidePanel();
       updateSelectionMenu();

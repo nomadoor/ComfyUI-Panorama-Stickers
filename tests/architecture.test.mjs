@@ -87,6 +87,16 @@ test("the new UI and the old UI do not import each other", () => {
   assert.deepEqual(crossings, []);
 });
 
+// ADR 0044 "新旧の境": the new UI does not reach the old nodes' parts either: no node surface module
+// (*_node_surface.js) and not the old editor's ComfyUI extension (pano_editor_extension.js).
+test("the new UI imports no node surface module and not pano_editor_extension.js", () => {
+  const isNew = (name) => /^(studio|components\/studio)\//.test(name);
+  const isOldPart = (name) => /(^|\/)[^/]*_node_surface\.js$/.test(name) || name === "pano_editor_extension.js";
+  const crossings = [...graph].filter(([from]) => isNew(from))
+    .flatMap(([from, targets]) => targets.filter(isOldPart).map((to) => `${from} -> ${to}`));
+  assert.deepEqual(crossings, []);
+});
+
 // docs/editor-architecture.md "Dependency rules": editor/*.js import neither pano_editor.js, ComfyUI's app / api,
 // nor each other, except the modules without behavior.
 const EDITOR_SHARED = new Set(["editor/constants.js", "editor/helpers.js", "editor/ui_settings.js", "editor/video_thumbnail_cache.js"]);

@@ -1,3 +1,5 @@
+import { clamp } from "./pano_math.js";
+
 // A finite JSON number (not a boolean, not text, not an array), else `fallback`: every number of `painting` is read
 // so (docs/scene-state-v2.md, 共通の規則), as Python's _finite_float does.
 function finiteNumber(value, fallback = null) {
@@ -126,8 +128,6 @@ function normalizeGeometry(raw, targetSpace, toolKind, allowLasso) {
     processedPoints: processedPoints || points.map((pt) => ({ ...pt })),
   };
 }
-
-const clamp = (value, lo, hi) => Math.max(lo, Math.min(hi, value));
 
 const STAMP_KINDS = new Set(["round", "chisel", "crayon"]);
 
