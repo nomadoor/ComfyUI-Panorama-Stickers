@@ -22,12 +22,14 @@ from comfyui_pano_suite.scene_video import RenderedVideo, SceneVideo, _container
 from comfyui_pano_suite.sticker_media import open_video
 from scene_test_helpers import output_size, shoot, video_frames
 from test_stickers_scene_video import _cfr, _execute, _write_video
+from comfyui_pano_suite.core.video import editor_ready
+from comfyui_pano_suite.scene_render import _render_frames
 
 
 def _count_renders(monkeypatch):
     """The passes over the Timeline that start from now on."""
     passes = []
-    original = nodes._render_frames
+    original = _render_frames
 
     def counted(*args, **kwargs):
         passes.append(1)
@@ -216,7 +218,7 @@ def test_preview_shows_a_proxy_of_a_long_stickers_video_and_keeps_its_stream_sou
     entry = output.ui["pano_videos"][0]
     proxy = tmp_path / entry["subfolder"] / entry["filename"]
     assert proxy != source
-    assert nodes.editor_ready(proxy)
+    assert editor_ready(proxy)
     assert _probe(proxy)[0] == _probe(source)[0]
     # SaveVideo still copies the stream source as it was encoded.
     assert source.read_bytes() == stream_source

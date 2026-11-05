@@ -51,7 +51,8 @@ function makeDefaultState({
   };
 }
 
-function parseOutputPresetValue(value, fallback = 2048) {
+// The output width an output_preset widget value names ("4096x2048" → 4096, a number rounded), or `fallback` without one.
+export function parseOutputPresetValue(value, fallback = 2048) {
   if (typeof value === "number" && Number.isFinite(value)) return Math.round(value);
   const text = String(value ?? "").trim();
   if (!text) return fallback;
@@ -94,6 +95,26 @@ export function retainActiveCutoutShot(shots, selectedShotId) {
   const selected = list.find((shot) => String(shot?.id || "") === selectedId) || list[0];
   const retainedId = String(selected?.id || "") || null;
   return { shots: [selected], selectedShotId: retainedId };
+}
+
+// The legacy nodes never use a lens `curve`: their editor and node surfaces draw every v1 shot and Sticker as a pinhole,
+// as Python's legacy nodes do (docs/legacy-node-surfaces.md). This drops it (and an initial pose's) from a parsed v1
+// state `state` (its items are the parse's own copies), so saving leaves it out too. A shot's aspect_id is derived
+// again without it. Returns `state`.
+function pinholeV1Items(state) {
+  for (const item of Array.isArray(state.stickers) ? state.stickers : []) {
+    if (!item || typeof item !== "object") continue;
+    delete item.curve;
+    if (item.initial_pose && typeof item.initial_pose === "object") delete item.initial_pose.curve;
+  }
+  if (Array.isArray(state.shots)) {
+    state.shots = state.shots.map((shot) => {
+      if (!shot || typeof shot !== "object" || !("curve" in shot)) return shot;
+      const { curve: _curve, ...pinhole } = shot;
+      return normalizeCutoutShotItem(pinhole);
+    });
+  }
+  return state;
 }
 
 export function parsePanoEditorState(text, options = {}) {
@@ -144,8 +165,7 @@ export function parsePanoEditorState(text, options = {}) {
     );
     merged.bg_color = String(resolvedOptions.backgroundColor || merged.bg_color || base.bg_color);
     merged.coverage = normalizeCoverageValue(resolvedOptions.coverage);
-    delete merged.editor_history;
-    return merged;
+    return pinholeV1Items(merged);
   } catch {
     parseStateJsonCache = { text: trimmed, parsed: null };
     return base;
@@ -153,7 +173,7 @@ export function parsePanoEditorState(text, options = {}) {
 }
 
 // The fields of the state an Undo step leaves out.
-const HISTORY_SNAPSHOT_OMITS = Object.freeze(["editor_history", "painting_layer"]);
+const HISTORY_SNAPSHOT_OMITS = Object.freeze(["painting_layer"]);
 
 export function makePanoEditorHistorySnapshot(state) {
   if (!state || typeof state !== "object") return state;
@@ -244,8 +264,7 @@ export function skyStickerVfov(sticker, value, size) {
     const vfov = 2 * lensAngle(lensRadius(hfov * 0.5, curve) * (size.height / size.width), curve) / DEG2RAD;
     return Math.min(limit, Math.max(0.1, vfov));
   }
-  const hfov = Math.min(179, Math.max(0.1, value.hFOV_deg)) * DEG2RAD;
-  const vfov = 2 * Math.atan(Math.tan(hfov * 0.5) * (size.height / size.width)) / DEG2RAD;
+  const vfov = vFovFromHfov(Math.min(179, Math.max(0.1, value.hFOV_deg)), size.height / size.width);
   return Math.min(179, Math.max(0.1, vfov));
 }
 
@@ -419,7 +438,6 @@ export function fileSource(asset) {
 
 // The v1 asset of a file Source, which the editor's image loading (mediaAssetSource) reads.
 export function sourceAsset(source) {
-  if (source.data_url) return { type: "dataurl", value: source.data_url };
   return { type: "comfy_image", filename: source.filename, subfolder: source.subfolder, storage: source.storage };
 }
 

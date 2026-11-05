@@ -21,7 +21,7 @@ def _stroke_width_px(stroke: dict, width: int, height: int) -> int:
                 return max(1, int(round(rv * 2.0 * width)))
         except (TypeError, ValueError):
             pass
-    # Fallback for strokes that pre-date radiusValue
+    # Without a radiusValue (a lasso fill): from its size.
     base = max(1.0, float(stroke.get("size") or 1.0))
     scale = max(1.0, min(width, height) / 512.0)
     return max(1, int(round(base * scale)))
@@ -108,76 +108,23 @@ def stamp_half_width_px(rv: float, aspect: float, v: float, width: int) -> float
     return width * 0.5 if across >= c * width * 0.5 else across / c
 
 
-def _catmull_rom_resample(coords: list[tuple[float, float]], spacing: float = 2.0) -> list[tuple[float, float]]:
-    """Densify a polyline via Catmull-Rom spline so PIL draws smooth curves."""
-    n = len(coords)
-    if n < 2:
-        return coords
-    # Phantom end-points mirror the first/last segment.
-    pts = [
-        (2 * coords[0][0] - coords[1][0], 2 * coords[0][1] - coords[1][1]),
-        *coords,
-        (2 * coords[-1][0] - coords[-2][0], 2 * coords[-1][1] - coords[-2][1]),
-    ]
-    out: list[tuple[float, float]] = [coords[0]]
-    for i in range(1, len(pts) - 2):
-        p0, p1, p2, p3 = pts[i - 1], pts[i], pts[i + 1], pts[i + 2]
-        seg_len = math.hypot(p2[0] - p1[0], p2[1] - p1[1])
-        steps = max(1, int(math.ceil(seg_len / max(spacing, 0.5))))
-        for j in range(1, steps + 1):
-            t = j / steps
-            t2 = t * t
-            t3 = t2 * t
-            x = 0.5 * (
-                2 * p1[0]
-                + (-p0[0] + p2[0]) * t
-                + (2 * p0[0] - 5 * p1[0] + 4 * p2[0] - p3[0]) * t2
-                + (-p0[0] + 3 * p1[0] - 3 * p2[0] + p3[0]) * t3
-            )
-            y = 0.5 * (
-                2 * p1[1]
-                + (-p0[1] + p2[1]) * t
-                + (2 * p0[1] - 5 * p1[1] + 4 * p2[1] - p3[1]) * t2
-                + (-p0[1] + 3 * p1[1] - 3 * p2[1] + p3[1]) * t3
-            )
-            out.append((x, y))
-    return out
-
-
 def _stroke_segments_for_erp_geometry(stroke: dict, width: int, height: int) -> list[list[tuple[float, float]]]:
+    """The polygons a lasso fill covers on the ERP: its closed path on the sphere and the seam's copies."""
     geometry = stroke.get("geometry") or {}
-    kind = str(geometry.get("geometryKind") or "")
-    if kind not in {"freehand_open", "freehand_closed", "lasso_fill"}:
+    if str(geometry.get("geometryKind") or "") != "lasso_fill":
         return []
     # ADR 0006: processedPoints is the durable dense point list written by JS on commit.
-    # Fall back to points (= rawPoints) with Catmull-Rom densification for old strokes.
     processed = geometry.get("processedPoints")
-    raw = geometry.get("points") or []
-    use_processed = isinstance(processed, list) and len(processed) >= 1
-    source_points = processed if use_processed else raw
-    segments = []
-    # On the sphere: great-circle points between neighbours (a lasso's closing edge too), in continuous u, before the
+    source_points = processed if isinstance(processed, list) and len(processed) >= 1 else geometry.get("points") or []
+    # On the sphere: great-circle points between neighbours (the closing edge too), in continuous u, before the
     # seam's copies.
-    radius_px = _stroke_radius_px(stroke, width, height)
-    closed = kind == "lasso_fill" and len(source_points) >= 3
-    path = stroke_erp_path(list(source_points) + ([source_points[0]] if closed else []), radius_px, width, height)
+    closed = len(source_points) >= 3
+    path = stroke_erp_path(list(source_points) + ([source_points[0]] if closed else []), _stroke_radius_px(stroke, width, height), width, height)
     if closed:
         path = path[:-1]
-    for group in [path] if path else []:
-        coords = [(float(pt["u"]) * width, float(pt["v"]) * height) for pt in group]
-        shift_neg = [((float(pt["u"]) - 1.0) * width, float(pt["v"]) * height) for pt in group]
-        shift_pos = [((float(pt["u"]) + 1.0) * width, float(pt["v"]) * height) for pt in group]
-        if not use_processed and kind in {"freehand_open", "freehand_closed"} and len(coords) >= 2:
-            # Old strokes without processedPoints: densify via Catmull-Rom as fallback.
-            brush_px = _stroke_width_px(stroke, width, height)
-            spacing = max(1.0, brush_px * 0.5)
-            coords = _catmull_rom_resample(coords, spacing)
-            shift_neg = _catmull_rom_resample(shift_neg, spacing)
-            shift_pos = _catmull_rom_resample(shift_pos, spacing)
-        segments.append(coords)
-        segments.append(shift_neg)
-        segments.append(shift_pos)
-    return segments
+    if not path:
+        return []
+    return [[((float(pt["u"]) + shift) * width, float(pt["v"]) * height) for pt in path] for shift in (0.0, -1.0, 1.0)]
 
 
 def _stroke_point_paths_for_erp_geometry(stroke: dict, width: int, height: int) -> list[list[dict]]:

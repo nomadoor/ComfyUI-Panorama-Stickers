@@ -114,12 +114,12 @@ Python と JS の両方の test が同じファイルを読む。Python と JS �
 | `scene.animation` | オブジェクト または欠け | 欠け | `scene` 入力の 3D ファイルの glTF のアニメーション（ADR 0043）。形は下の Sticker の `animation` と同じ |
 | `stickers` | 配列 | `[]` | `sky` の層は `z_index`（ペイントと共通の軸）で並べ、同じ値ならリストの順（先頭が奥）。`world` の Sticker は奥行きで重なる |
 | `next_sticker_id` | 整数 | 下記 | 次に加える Sticker の番号 `n`（`sticker_<n>`）。下記「Sticker の id の採番」 |
-| `painting` | オブジェクト | 空のペイント | 既存の `normalize_painting_state` / `normalizePaintingState` で正規化する。`sky` の静的な層。`version` は保存された値によらず常に `1`。group とラスタ（`raster_objects`）の `z_index` は、`z_index`、次に `zIndex` のうち最初の有限の JSON の数値（真偽値と文字列は数えない。double にできない大きな整数は有限でない）で、どちらにも無いときは groups（raster_objects）の中の順番にする。エディタは数値を書くので、文字列はテキストを手で書いた状態にだけ現れる。group の値は `Math.round` と同じ丸め（半分は +∞ の向き。−2.5 は −2）、ラスタの値は丸めず、どちらも 0 以上に寄せる。group の `locked` はエディタだけが使う（ノードは描画に使わない）ので、Python の読み込みは持たない。group の `rot_deg`（任意。まとまりの枠の向き：中心の向きのまわりの回転で、正は中から見て時計回り。roll との向きの関係は上の角度規約の項、枠の作り方は `docs/studio-ui.md` の「ペイントのまとまり」。点はすでに回してあり、枠と回転のハンドルを点と一緒に回して描くためだけに持つ）も同じくエディタだけが使い、Python の読み込みは持たない。JS の読み込みは、有限の JSON の数値ならそのまま（範囲に丸めない。360° の差は同じ向き）、無いときと不正なときは 0 にする（下記「ペイントの数値」の `finiteNumber`。この項目が無い古い状態は 0 で読む）。ラスタの `locked` もエディタだけが使い（ノードは描画に使わない）、Python の読み込みはその値を保つ。ほかの数値は下記「ペイントの数値」 |
+| `painting` | オブジェクト | 空のペイント | 既存の `normalize_painting_state` / `normalizePaintingState` で正規化する。`sky` の静的な層。`targetSpace.kind` が `ERP_GLOBAL` でないストローク（旧 `FRAME_LOCAL` など）は読み込みで捨てる（ADR 0063）。`version` は保存された値によらず常に `1`。group とラスタ（`raster_objects`）の `z_index` は、`z_index`、次に `zIndex` のうち最初の有限の JSON の数値（真偽値と文字列は数えない。double にできない大きな整数は有限でない）で、どちらにも無いときは groups（raster_objects）の中の順番にする。エディタは数値を書くので、文字列はテキストを手で書いた状態にだけ現れる。group の値は `Math.round` と同じ丸め（半分は +∞ の向き。−2.5 は −2）、ラスタの値は丸めず、どちらも 0 以上に寄せる。group の `locked` はエディタだけが使う（ノードは描画に使わない）ので、Python の読み込みは持たない。group の `rot_deg`（任意。まとまりの枠の向き：中心の向きのまわりの回転で、正は中から見て時計回り。roll との向きの関係は上の角度規約の項、枠の作り方は `docs/studio-ui.md` の「ペイントのまとまり」。点はすでに回してあり、枠と回転のハンドルを点と一緒に回して描くためだけに持つ）も同じくエディタだけが使い、Python の読み込みは持たない。JS の読み込みは、有限の JSON の数値ならそのまま（範囲に丸めない。360° の差は同じ向き）、無いときと不正なときは 0 にする（下記「ペイントの数値」の `finiteNumber`。この項目が無い古い状態は 0 で読む）。ラスタの `locked` もエディタだけが使い（ノードは描画に使わない）、Python の読み込みはその値を保つ。ほかの数値は下記「ペイントの数値」 |
 | `painting_layer` | オブジェクト または `null` | `null` | ペイントのラスタ画像の参照。中身はそのまま保つ |
 | `painting_visible` | 真偽値 | `true` | 真偽値でなければ既定値。`false` ならペイント（ストローク・ラスタ・マスク）を描かず、MASK にも出さない |
 | `ground` | 数値 または欠け | 欠け | 地面の高さ（World の y。ADR 0046）。数でない値・有限でない値は欠けとして読む。欠けているときは、上流の Scene があれば上流の層の `ground`（最も下流で `ground` を持つ層のもの）、無ければ `GROUND_DEFAULT`（-1.6）として読む。正規化の結果には欠けのまま残し、読む側（評価関数と、下の読む場所）が既定の規則で値を求める。使う人が「ここを地面にする」で変えたときだけ値が入る（`docs/studio-ui.md` の Scene のカード、`docs/space-and-view.md` の目の高さ `E`）。読む場所：エディタのグリッドと置く物の位置（JS）、ノードが置く 3D の `port` の Sticker の位置（Python `port_sticker.py` の `_world_port_sticker`。ADR 0046 の「ノードが置く 3D の `port` の Sticker も地面の上に置く」）、`PANO_SCENE` の下流での上流の層の `ground`（Python・JS） |
 | `upstream` | 配列 | `[]` | 上流の Scene の要素への上書き。下記「上流の上書き（`upstream`）」 |
-| `background.clip` | Clip range | 下記 | 自分の `bg_media` が Timeline 上で有効な範囲（下記「背景の Clip range」）。`background` が欠け・オブジェクトでないときも既定の Clip range |
+| `background.clip` | Clip range | 下記 | 自分の `background` 入力が Timeline 上で有効な範囲（下記「背景の Clip range」）。`background` が欠け・オブジェクトでないときも既定の Clip range |
 
 `scene` は、`scene` 入力が接続されていなくても常に存在する。
 
@@ -181,7 +181,7 @@ Keyframe を持つ単位である。パラメータごとに一つあり、ど�
 - `yaw_deg`・`roll_deg` は範囲に丸めない。360° の差は同じ向きを表す。
 - `sky` の Sticker の `direction` は yaw と pitch を一つの Lane にまとめる。別々に補間すると、球面上をまっすぐ進まないためである。
 - `sky` の Sticker の値は、中心の方向（`direction`）、画面内の回転（`roll`）、角度サイズ（`size`）である。
-- `sky` の Sticker の `curve` は Lane にする。Pose handoff（ADR 0036）は Camera の値をフレームごとに焼くので、撮った Camera の `curve` に Keyframe があれば、Sticker の `curve` もフレームごとの Keyframe になる。動かない κ は Keyframe の無い静的な値になる（ほかの Lane と同じ）。Keyframe が無く `value` が 1 の `curve` は、保存するテキストに書かない（見た目も今と同じ）。`world` の Sticker の `lens` は、`curve` と `hFOV_deg` の組で持つ。球面の一部の形は κ だけでは決まらず（半径か角度の広さがもう一つ要る）、`hFOV_deg` があれば `scale` と合わせて半径が決まるためである（`size` と同じく 2 つの数値をそれぞれ補間する）。`lens` は欠けてよい Lane で、欠けていれば読み込みでも足さず、保存するテキストにも書かない（平らな板）。あれば値によらず書く。書くのは Pose handoff だけで、いつ足し、いつ外すかは `docs/studio-node.md` の「`port` の Sticker と Pose handoff」のレンズの曲線の項にある。
+- `sky` の Sticker の `curve` は Lane にする。Pose handoff（ADR 0036）は Camera の値をフレームごとに焼くので、撮った Camera の `curve` に Keyframe があれば、Sticker の `curve` もフレームごとの Keyframe になる。動かない κ は Keyframe の無い静的な値になる（ほかの Lane と同じ）。Keyframe が無く `value` が 1 の `curve` は、保存するテキストに書かない（見た目も今と同じ）。`world` の Sticker の `lens` は、`curve` と `hFOV_deg` の組で持つ。球面の一部の形は κ だけでは決まらず（半径か角度の広さがもう一つ要る）、`hFOV_deg` があれば `scale` と合わせて半径が決まるためである（`size` と同じく 2 つの数値をそれぞれ補間する）。`lens` は欠けてよい Lane で、欠けていれば読み込みでも足さず、保存するテキストにも書かない（平らな板）。あれば値によらず書く。今は書く経路が無く（ADR 0059 の前の Pose handoff が書いた。今の Pose handoff はいつも `sky` の Sticker を渡す）、保存した状態にあるものを読んで描く。
 - Source が `port` の Sticker の vFOV は、`hFOV_deg` と素材（最初のフレーム）のアスペクト比から求める派生値で、状態には書かない。ポートの素材は状態の外で差し替わるためである。ノードは描くときに求め（`core/render.py` の `derive_vfov`）、エディタとノード上の表示も描くときと当たり判定のときに同じ式で求める（`web_src/pano_editor_state.js` の `skyStickerVfov`）。`port` の Sticker を加えるときは `vFOV_deg` を `hFOV_deg` と同じ値で保存し（Keyframe も同じ）、素材が読み込まれても書き直さない。これで素材の読み込みが `state_json` を変えず、実行の key（`docs/studio-node-surface.md` の「一行の状態」）がずれない。保存された `vFOV_deg` は、素材の大きさがわかるまでの表示にだけ使い、エディタで `port` の Sticker の大きさを変えても `hFOV_deg` だけを書く（inspector の V FOV は無効）。ノードが加える `port` の Sticker（Pose handoff の Keyframe を含む）も `vFOV_deg` を `hFOV_deg` と同じ値にする。 κ ≠ 1 では、像の中心の `f` が縦横で同じになるよう `g_κ(vFOV ÷ 2) = g_κ(hFOV ÷ 2) × 高さ ÷ 幅` から求める（`core/math.py` の `vfov_from_hfov(..., curve)`。`g_κ` は `docs/render-contract.md` の `lens_radius`。κ = 1 では `tan` の式）。
 
 ### Keyframe
@@ -220,7 +220,7 @@ Keyframe を持つ単位である。パラメータごとに一つあり、ど�
 
 #### 背景の Clip range
 
-`background.clip` は、Panorama Studio 自身の `bg_media` を Sticker の素材と同じ規則で Timeline に置く。形・正規化・fps の再基準化は Sticker の Clip range と同じである。
+`background.clip` は、Panorama Studio 自身の `background` 入力を Sticker の素材と同じ規則で Timeline に置く。形・正規化・fps の再基準化は Sticker の Clip range と同じである。
 
 - 素材の先頭は Timeline 上の `start − in` に来る。`start` を後ろへずらすと背景の映像が遅れて始まり、`in` で頭を、`duration` で終わりを切る。`duration` が `null` なら素材の終わりまで。
 - Clip range の外と素材の外では背景を描かず、`bg_color` になる。出力の長さは Clip range によらず素材のフレーム数で決まる（`docs/studio-node.md` の「長さ」）。描き方は `docs/studio-node.md` の「背景の Clip range」。
@@ -302,13 +302,12 @@ Sticker の `id` は、一度使った値を別の Sticker に使い直さない
 |---|---|
 | `{"kind": "port"}` | ノードの `sticker` 入力ポートの素材。ポートは一本なので番号を持たない。状態の中に高々一つで、二つ目以降の `port` の Sticker は捨てる |
 | `{"kind": "file", "filename": "...", "subfolder": "...", "storage": "input"}` | ComfyUI のディレクトリにあるファイル。`storage` は `input`・`output`・`temp` のいずれか（既定値 `input`）、`subfolder` の既定値は `""`。投入した画像は `input/panorama_stickers`、3D ファイルは Load3D と同じ場所に保存する。`filename` の前後の空白、`subfolder` の前後の空白と `/`・`\` を除き、`storage` は前後の空白を除いて小文字にする（v1 の読み替えと同じ規則）。`filename` が空なら不正 |
-| `{"kind": "file", "data_url": "data:image/..."}` | 旧 v1 の埋め込み画像。v1 の読み替えでだけ生じる。`data:image` で始まらなければ不正。エディタは開いたときに従来どおりアップロードして上の形に置き換える |
 
 `filename`・`subfolder`・`storage` は信頼しない入力である。ファイルを読む側は、既存の `folder_paths` による範囲の確認を必ず通す。この契約のコードはファイルを読まない。
 
 #### 3D ファイルの `file` の Source
 
-`file` の Source が 3D ファイルかどうかは、`filename` の拡張子だけで決める（大文字と小文字は区別しない）。3D ファイルの拡張子は、ComfyUI の Load3D が受け付ける 9 つ（`.gltf`・`.glb`・`.obj`・`.fbx`・`.stl`・`.spz`・`.splat`・`.ply`・`.ksplat`）と同じにする（出典：ComfyUI_frontend（5276d1b）の `src/extensions/core/load3d/constants.ts:6-20` の `SUPPORTED_EXTENSIONS`、コアの `comfy_extras/nodes_load_3d.py:29`）。それ以外の `file` の Source と、`data_url` の Source は画像とする。
+`file` の Source が 3D ファイルかどうかは、`filename` の拡張子だけで決める（大文字と小文字は区別しない）。3D ファイルの拡張子は、ComfyUI の Load3D が受け付ける 9 つ（`.gltf`・`.glb`・`.obj`・`.fbx`・`.stl`・`.spz`・`.splat`・`.ply`・`.ksplat`）と同じにする（出典：ComfyUI_frontend（5276d1b）の `src/extensions/core/load3d/constants.ts:6-20` の `SUPPORTED_EXTENSIONS`、コアの `comfy_extras/nodes_load_3d.py:29`）。それ以外の `file` の Source は画像とする。
 
 - Python と JS は同じ表（フィクスチャ `tests/fixtures/scene_state/file_3d_formats.json`。拡張子の一覧と、`filename` と期待する判定の組）を読み、同じ判定になることを parity の test で守る。この表は状態ではないので、`test_scene_state_parity.py` の `STATE_CASES` には入れず、Python と JS の test がそれぞれ専用に読む。
 - 判定はファイルを開かない。PLY がスプラットかメッシュか、読めるかどうかは、読む側が中身で決める（`docs/render-contract.md` の「SPLAT の描き方」と「読めない 3D ファイル」）。
@@ -389,7 +388,7 @@ evaluateSceneState(state, frame) // -> object
 | フィールド | 意味 |
 |---|---|
 | `frame` | 受け取った Timeline frame |
-| `camera` | `position`、`yaw_deg`・`pitch_deg`・`roll_deg`（`rotation`）、`hFOV_deg`（`fov`、κ による上限に寄せた値）、`curve`、`aspect`。`camera` は自分の状態ではいつもある（読み込みが既定の Camera を入れる。ADR 0048）。上流の層（`PanoSceneValue` の層）の `camera` は `None` のままで、評価関数は `None` を返す（`scene_build.py` の `_scene_output` が `None` にする。下流は上流の Camera を使わない）。JS の上流の層の読み込み（`pano_upstream.js` が `loadSceneState` を通す）は、既定の Camera が入っても使わず捨てる。この違いは Python と JS の一致の対象外とする。`projection`・`erp_range` は時間で変わらないので、状態の `camera` のものを読む |
+| `camera` | `position`、`yaw_deg`・`pitch_deg`・`roll_deg`（`rotation`）、`hFOV_deg`（`fov`、κ による上限に寄せた値）、`curve`、`aspect`。`camera` は自分の状態ではいつもある（読み込みが既定の Camera を入れる。ADR 0048）。上流の層（`PanoSceneValue` の層）の `camera` は `None` のままで、Python の評価関数は `None` を返す（`scene_build.py` の `_scene_output` が `None` にする。下流は上流の Camera を使わない）。JS の状態はいつも Camera を持ち（`loadSceneState` が既定の Camera を入れる。上流の層の読み込みも `pano_upstream.js` が `loadSceneState` を通す）、JS の評価関数の `camera` はいつも値である。上流の層の Camera は使わず捨てる。この違いは Python と JS の一致の対象外とする。`projection`・`erp_range` は時間で変わらないので、状態の `camera` のものを読む |
 | `scene` | `active`（`visible` かつ `frame` が `scene.clip` の範囲内）、`clip_frame`、`position`、`yaw_deg`・`pitch_deg`・`roll_deg`（`rotation`）、`scale` |
 | `clip_frame` | 素材の先頭からの経過（Timeline frame、端数あり）。`frame − (start − in)`。素材の時刻（秒）は `clip_frame ÷ timeline.fps` |
 | `stickers[]` | `state.stickers` と同じ順。`id`・`placement`、`active`（`visible` かつ Clip range の範囲内）、`clip_frame`、各 Lane の値のフィールド（`sky` は `yaw_deg`・`pitch_deg`・`roll_deg`・`hFOV_deg`・`vFOV_deg`・`curve`、`world` は `position`・`yaw_deg`・`pitch_deg`・`roll_deg`・`scale` と、`lens` の Lane を持つ Sticker だけ `lens`（`curve`・`hFOV_deg`））、`opacity` |
@@ -587,8 +586,7 @@ Python は `ValueError`、JS は `Error` を投げる。
 | Sticker の `visible`・`locked`・`crop`・`id` | 同名のフィールド |
 | `source_kind: "external_image"` の Sticker（`sticker_image_1`） | `source: {"kind": "port"}` |
 | `assets[asset_id]` が `type: "comfy_image"` | `source: {"kind": "file", filename, subfolder, storage}` |
-| `assets[asset_id]` が `type: "dataurl"` | `source: {"kind": "file", "data_url": ...}` |
-| `assets[asset_id]` が `type: "path"`、または資産が見つからない | Sticker を捨てる |
+| `assets[asset_id]` が `type: "dataurl"`（埋め込み画像）・`type: "path"`、または資産が見つからない | Sticker を捨てる（ADR 0063） |
 | `shots` のうちオブジェクトであるものの最初（Cutout。オブジェクトでない shot は除く） | `camera`（Camera あり、`projection` は `perspective`）。`yaw_deg`・`pitch_deg`・`roll_deg` は `rotation.value`、`hFOV_deg`（1〜179 に寄せる）は `fov.value`、`aspect = tan(hFOV/2) ÷ tan(vFOV/2)`（`vFOV_deg` の既定値 60、1〜179 に寄せる）。旧 Cutout の出力と同じ画面比になる。Stickers の v1 の状態は通常 `shots` を持たない（持っていれば Camera に写る） |
 | `shots` がない、空、またはオブジェクトの shot が一つも無い | `camera: null`。読み込みが既定の Camera（Panorama モード、原点・回転 0。上の「既定の Camera」）にする。v1 の Stickers の状態はこれにあたる。v1 の Cutout でもこのときは同じ。v1 の Cutout はこのとき ERP をそのまま出力していた |
 | `painting`・`painting_layer` | 同名のフィールド |
@@ -597,6 +595,8 @@ Python は `ValueError`、JS は `Error` を投げる。
 | `ui_settings`・`active`・`editor_history` | 捨てる。エディタのセッションの状態であり、Scene ではない（`ui_settings` はブラウザ側にも保存されている）。エディタの選択状態（旧 `active`）は状態に置かない |
 | `cutout_render_layer`、`source_state_hash`・`slot_key`・`source_kind`・`asset_id`、`assets` の `name`・`w`・`h` | 捨てる |
 | `timeline` | 既定値（`fps: 24`、`length: null`）。v1 の `fps` 入力は状態にない |
+
+旧ノード（`PanoramaStickers`・`PanoramaCutout`）が v1 の状態をそのまま描くときも、読む資産は `type: "comfy_image"`（ComfyUI の input・output・temp のファイル）だけで、ほかの資産の Sticker は描かない（ADR 0063）。
 
 Sticker の位置と見た目は変わらない。`yaw_deg` は範囲に丸めない（v1 の描画も丸めない）。
 
@@ -622,13 +622,12 @@ Sticker の位置と見た目は変わらない。`yaw_deg` は範囲に丸め�
 |---|---|---|---|
 | `kind` | `"pano_sticker_state"` | — | |
 | `version` | `2` | — | |
-| `fps` | 数値 | `24.0` | `camera` の `frame` の基準となる fps。撮った Studio の状態の `timeline.fps`（Timeline fps に再基準化しない）。0 以下と数値でない値は既定値。`timeline.fps` と同じ 1〜1000（`TIMELINE_FPS_MIN`・`TIMELINE_FPS_MAX`）に寄せる（フィクスチャ `sticker_state_fps`） |
+| `fps` | 数値 | — | `camera` の `frame` の基準となる fps。撮った Studio の状態の `timeline.fps`（Timeline fps に再基準化しない）。欠け・0 以下・数値でない値なら、その `sticker_state` は読まない（ADR 0063）。`timeline.fps` と同じ 1〜1000（`TIMELINE_FPS_MIN`・`TIMELINE_FPS_MAX`）に寄せる（フィクスチャ `sticker_state_fps`） |
 | `camera` | Lane ごとの Keyframe の配列（`position`・`rotation`・`fov`・`curve`（無ければ κ = 1）） | 各 Lane に Keyframe 一つ | 各配列の形は `state_json` の `camera` の同名の Lane の `keyframes` と同じ。Keyframe のない Lane は、撮影した値を持つ `frame: 0` の Keyframe を一つだけ置く。空または不正な Lane は、既定値を持つ `frame: 0` の Keyframe 一つになる |
 | `source_aspect` | 数値 または `null` | `null` | 撮影した画面の幅 ÷ 高さ |
 
 `load_sticker_state(text)` / `loadStickerState(text)` は v1 と v2 を読み、どちらも v2 の形で返す（フィクスチャ：`sticker_state_v1.json`、`sticker_state_v2.json`）。
 
-- v1（`pose` を一つ持つ形）は、従来の `parse_sticker_state` と同じ規則（yaw を −180〜180 に回す、pitch を ±89.9、`hFOV_deg` を 0.1〜179 に寄せる、`"30"` のような数値の文字列を許す）で読み、各 Lane に `frame: 0` の Keyframe を一つずつ置く（`position` は `[0, 0, 0]`、`easing` は既定値）。`fps` は `24`。
-  - v1 の数値の文字列は、Python と JS の両方が `_` の無い ASCII の 10 進（符号、小数点、指数）だけを受け、前後には ASCII の空白（スペース・タブ・改行・`\r`・`\f`・`\v`）だけを許す。全角などの ASCII でない数字と空白、`_`、16 進・8 進・2 進の接頭辞、`Infinity` は受けない（`scene_state.py` と `pano_scene_state.js` の `V1_NUMBER_TEXT`。フィクスチャ `tests/fixtures/scene_state/sticker_state_v1_numbers.json`）。
-- 空、JSON でない、`kind` が違う、v1 の `pose` が読めない場合は `None` / `null` を返す（従来どおり無視される）。
-- `kind` が一致して `version` が `1`・`2` 以外なら、エラー `Unsupported sticker_state version <値>; supported versions are 1 and 2.` にする。
+- v1（`pose` を一つ持つ形。`version` は数値の `1`）は、旧ノードの `parse_sticker_state` と同じ規則（yaw を −180〜180 に回す、pitch を ±89.9、`hFOV_deg` を 0.1〜179 に寄せる。`pose` と `source_aspect` の値は JSON の数値だけを読み、`"30"` のような文字列は読めない値とする。ADR 0063）で読み、各 Lane に `frame: 0` の Keyframe を一つずつ置く（`position` は `[0, 0, 0]`、`easing` は既定値）。`fps` は `24`。
+- 空、JSON でない、`kind` が違う、v1 の `pose` が読めない、v2 の `fps` が読めない場合は `None` / `null` を返す（無視される）。
+- `kind` が一致して `version` が数値の `1`・`2` 以外（`"1"` を含む）なら、エラー `Unsupported sticker_state version <値>; supported versions are 1 and 2.` にする。

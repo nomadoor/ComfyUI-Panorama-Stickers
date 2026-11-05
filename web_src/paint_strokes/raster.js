@@ -1,31 +1,18 @@
 // Rasterizing a stroke on a 2D canvas (docs/render-contract.md "ペイントのストロークの描き方"), and the raster objects
 // made from a painted ERP canvas. Pure except for the canvases a raster needs.
 import { createPanoCanvas, releasePanoCanvas } from "../pano_diagnostics.js";
-import { DEG2RAD } from "../pano_camera_math.js";
 import { stampHalfWidthPx, strokeErpPath } from "../pano_paint_sphere.js";
 import { getStrokePointScalar, lerp, makePaintId } from "./record.js";
 
 // --- Rasterizing a stroke on a 2D canvas.
 
-function getStrokeRadiusSpec(stroke) {
+// A stroke's radius as a share of the ERP width: a positive radiusValue whatever radiusModel says, as the node reads it
+// (core/paint_strokes.py `_stroke_width_px`; the old degree_norm / world_angle models are not looked at), else from its
+// size on the 2048 px reference.
+function strokeRadiusShare(stroke) {
   const radiusValue = Number(stroke?.radiusValue);
-  if (Number.isFinite(radiusValue) && radiusValue > 0) {
-    const model = String(stroke?.radiusModel || "").trim() || "erp_uv_norm";
-    if (model === "world_angle") {
-      return {
-        model: "erp_uv_norm",
-        value: Math.max(1e-6, Number(stroke?.size || 10) * 0.5 / 2048),
-      };
-    }
-    return {
-      model,
-      value: radiusValue,
-    };
-  }
-  return {
-    model: "erp_uv_norm",
-    value: Math.max(1e-6, Number(stroke?.size || 10) * 0.5 / 2048),
-  };
+  if (Number.isFinite(radiusValue) && radiusValue > 0) return radiusValue;
+  return Math.max(1e-6, Number(stroke?.size || 10) * 0.5 / 2048);
 }
 
 // A 2D canvas of width x height and its context ({ canvas, ctx }); `readback` asks for a context read often.
@@ -41,18 +28,9 @@ export function createRasterSurface(width, height, options = {}) {
   return { canvas: surface, ctx: surfaceCtx };
 }
 
-export function getNativeRadiusPxForStrokePoint(stroke, point, targetWidth, targetHeight, shot = null) {
-  void targetHeight;
-  const spec = getStrokeRadiusSpec(stroke);
+export function getNativeRadiusPxForStrokePoint(stroke, point, targetWidth) {
   const scale = getStrokePointScalar(point, "widthScale", 1) * getStrokePointScalar(point, "pressureLike", 1);
-  if (spec.model === "erp_uv_norm") return Math.max(0.5, spec.value * targetWidth * scale);
-  if (spec.model === "world_angle") {
-    if (shot) {
-      return Math.max(0.5, ((spec.value / Math.max(1e-6, Number(shot.hFOV_deg || 90) * DEG2RAD)) * targetWidth) * scale);
-    }
-    return Math.max(0.5, ((spec.value / (2 * Math.PI)) * targetWidth) * scale);
-  }
-  return Math.max(0.5, Number(stroke?.size || 10) * 0.5 * scale);
+  return Math.max(0.5, strokeRadiusShare(stroke) * targetWidth * scale);
 }
 
 function configureStrokeFill(targetCtx, stroke, options = {}) {
@@ -153,7 +131,7 @@ function drawNativeLassoFill(targetCtx, points, stroke, bounds, axisKeys) {
   }
   // Its edges (the closing one too) on great circles, u continuous across the seam, with the seam's copies.
   const coords = points.map((point) => ({ u: Number(point?.[xKey] || 0), v: Number(point?.[yKey] || 0) }));
-  const path = strokeErpPath([...coords, coords[0]], getNativeRadiusPxForStrokePoint(stroke, null, bounds.w, bounds.h), bounds.w, bounds.h).slice(0, -1);
+  const path = strokeErpPath([...coords, coords[0]], getNativeRadiusPxForStrokePoint(stroke, null, bounds.w), bounds.w, bounds.h).slice(0, -1);
   const xs = path.map((point) => point.u * bounds.w);
   const minX = Math.min(...xs);
   const maxX = Math.max(...xs);
@@ -187,11 +165,11 @@ function buildNativeStrokeSamples(stroke, bounds) {
   if (!Array.isArray(raw) || !raw.length) return [];
   const w = Number(bounds?.w || 1);
   const h = Number(bounds?.h || 1);
-  const points = strokeErpPath(raw, getNativeRadiusPxForStrokePoint(stroke, null, w, h), w, h);
+  const points = strokeErpPath(raw, getNativeRadiusPxForStrokePoint(stroke, null, w), w, h);
   return points.map((point) => ({
     x: Number(point?.u || 0) * Number(bounds?.w || 1),
     y: Number(point?.v || 0) * Number(bounds?.h || 1),
-    radiusPx: getNativeRadiusPxForStrokePoint(stroke, point, Number(bounds?.w || 1), Number(bounds?.h || 1)),
+    radiusPx: getNativeRadiusPxForStrokePoint(stroke, point, Number(bounds?.w || 1)),
   }));
 }
 

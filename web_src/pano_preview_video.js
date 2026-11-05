@@ -1,16 +1,15 @@
 import { createPanoVideo } from "./pano_diagnostics.js";
 
-// Panorama Studio's input that carries its background: `background` (docs/studio-node.md "Panorama Studio", ADR 0048),
-// `bg_media` before the rename.
-export const STUDIO_BACKGROUND_INPUT_NAMES = ["background", "bg_media"];
+// Panorama Studio's input that carries its background: `background` (docs/studio-node.md "Panorama Studio", ADR 0048).
+export const STUDIO_BACKGROUND_INPUT_NAMES = ["background"];
 // The inputs that carry the background: Cutout and Preview's erp_image, the legacy Stickers bg_erp,
 // Panorama Studio's (STUDIO_BACKGROUND_INPUT_NAMES), and the Preview's `source` (`PanoramaPreviewNode`; its Scene too).
 export const BACKGROUND_INPUT_NAMES = ["erp_image", "bg_erp", ...STUDIO_BACKGROUND_INPUT_NAMES, "source"];
 // The inputs that carry the media of the port Sticker: the legacy Stickers sticker_image and
 // Panorama Studio's sticker.
 export const STICKER_INPUT_NAMES = ["sticker_image", "sticker"];
-// Panorama Studio's `scene` (an upstream Scene) and `world` (its own 3D, on `scene` before ADR 0048) inputs, whose
-// items the editor loads from the node's result.
+// Panorama Studio's `scene` (an upstream Scene) and `world` (its own 3D) inputs, whose items the editor loads from
+// the node's result.
 const SCENE_INPUT_NAMES = ["scene", "world"];
 // The inputs the Pose handoff of Panorama Studio's result (`pano_sticker_handoff`, ADR 0030) comes from: the port's
 // media and the `sticker_state` of the Studio that shot it.

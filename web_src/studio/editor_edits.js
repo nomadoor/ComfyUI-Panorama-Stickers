@@ -7,7 +7,7 @@ import { queuePendingStickerOperation } from "../pano_sticker_operations.js";
 import { cameraShot } from "../pano_editor_state.js";
 import { loadSceneState } from "../pano_scene_state.js";
 import { needsPaintLayer, textWithPaintLayer, uploadPaintLayer } from "./paint_upload.js";
-import { cameraOf, editableCamera, moveCameraPose } from "./camera_state.js";
+import { moveCameraPose } from "./camera_state.js";
 import { fovZoomStep } from "../pano_camera_math.js";
 import { cameraRulers, rulerEdit } from "./frame_layout.js";
 import { buildCameraCard } from "./inspector_model.js";
@@ -102,7 +102,7 @@ export function createEditorEdits(ctx) {
   // the recording rule (camera_state.js moveCameraPose) as one drag of the session (one Undo step at its end).
   const cameraEdits = {
     live: (pose) => objectOutcome(ctx.session.gesture((draft) => {
-      const camera = editableCamera(draft);
+      const { camera } = draft;
       if (camera.locked === true) return false;
       // A move back onto the start writes nothing, and the state is the start again (each move starts from it).
       moveCameraPose(camera, ctx.view.playhead, pose);
@@ -155,12 +155,12 @@ export function createEditorEdits(ctx) {
   const backgroundColor = () => parseInt(ctx.backgroundNow().color.replace("#", ""), 16) || 0;
   const cameraTab = {
     tab: () => ctx.view.tab,
-    mode: () => (cameraOf(ctx.session.state).projection === "erp" ? "panorama" : "frame"),
-    shot: () => cameraShot(cameraOf(ctx.session.state), ctx.view.playhead),
-    erpRange: () => cameraOf(ctx.session.state).erp_range,
+    mode: () => (ctx.session.state.camera.projection === "erp" ? "panorama" : "frame"),
+    shot: () => cameraShot(ctx.session.state.camera, ctx.view.playhead),
+    erpRange: () => ctx.session.state.camera.erp_range,
     frame: () => ctx.frameRect,
     erpCanvas: () => ctx.erpCanvas,
-    movable: () => !ctx.readOnly && cameraOf(ctx.session.state).locked !== true,
+    movable: () => !ctx.readOnly && ctx.session.state.camera.locked !== true,
     backgroundColor,
     output: () => ctx.outputCanvases,
     edits: cameraEdits,

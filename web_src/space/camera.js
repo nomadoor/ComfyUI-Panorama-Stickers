@@ -1,9 +1,9 @@
 // The three.js camera of a view in space (docs/threejs-spark-integration.md "空間の表示", "Camera 向けの部品"): its
 // position, turn, FOV, near and far, and where a World point lands in it.
-import { DEG2RAD, RAD2DEG } from "../pano_camera_math.js";
+import { DEG2RAD, vFovFromHfov } from "../pano_camera_math.js";
 import { lensProjectPoint } from "../pano_lens.js";
 import { quaternionToRotation, rotationToQuaternion, worldRotation } from "../pano_world.js";
-import { DEFAULT_DISTANCE, tanHalfFov } from "./view.js";
+import { DEFAULT_DISTANCE } from "./view.js";
 import { column } from "./vec.js";
 
 // The three.js camera of a view: its position, and its angles and FOV as viewportCamera() makes them.
@@ -14,7 +14,7 @@ import { column } from "./vec.js";
 export function spaceCamera(view, width, height, sphere = null) {
   return placedCamera({
     quaternion: rotationToQuaternion(worldRotation(view.yaw_deg, view.pitch_deg, view.roll_deg ?? 0)),
-    fovY_deg: 2 * Math.atan(tanHalfFov(view, width, height).tanY) * RAD2DEG,
+    fovY_deg: vFovFromHfov(view.hFOV_deg, height / width),
     aspect: width / height,
   }, view.position, view.distance, sphere);
 }

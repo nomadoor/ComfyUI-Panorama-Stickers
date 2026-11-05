@@ -12,6 +12,8 @@ import math
 import numpy as np
 from PIL import Image
 
+from .math import over_rgba
+
 
 def _decode_raster_data_url(data_url: str) -> np.ndarray | None:
     """Decode a PNG data URL to a float32 RGBA numpy array, or None on failure."""
@@ -170,8 +172,4 @@ def _composite_raster_patch(paint: np.ndarray, mask: np.ndarray, patch: np.ndarr
         mask[y0:y1, x0:x1] = np.clip(dst + src_alpha[..., 0] * (1.0 - dst), 0.0, 1.0)
         return
     dst = paint[y0:y1, x0:x1]
-    da = dst[..., 3:4]
-    out_a = src_alpha + da * (1.0 - src_alpha)
-    safe = np.where(out_a > 0, out_a, 1.0)
-    paint[y0:y1, x0:x1, :3] = (patch[..., :3] * src_alpha + dst[..., :3] * da * (1.0 - src_alpha)) / safe
-    paint[y0:y1, x0:x1, 3:4] = out_a
+    paint[y0:y1, x0:x1, :3], paint[y0:y1, x0:x1, 3:4] = over_rgba(dst[..., :3], dst[..., 3:4], patch[..., :3], src_alpha)

@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from comfyui_pano_suite import nodes
 from comfyui_pano_suite.core.scene_state import load_scene_state
+from comfyui_pano_suite.studio_node import STUDIO_MAX_OUTPUT_SIDE, _studio_output_size, _studio_run_key
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 TABLE = json.loads((REPO_ROOT / "tests" / "fixtures" / "studio_output_size.json").read_text(encoding="utf-8"))
@@ -39,7 +39,7 @@ KEYS = [
 
 def _python(case):
     warnings = []
-    width, height, reduced_from = nodes._studio_output_size(load_scene_state(case["state"]), case["megapixels"], case["multiple"], warnings)
+    width, height, reduced_from = _studio_output_size(load_scene_state(case["state"]), case["megapixels"], case["multiple"], warnings)
     return width, height, reduced_from, warnings
 
 
@@ -51,7 +51,7 @@ def js_results():
 
 
 def test_the_cap_is_the_fixtures():
-    assert nodes.STUDIO_MAX_OUTPUT_SIDE == TABLE["max_side"] == 8192
+    assert STUDIO_MAX_OUTPUT_SIDE == TABLE["max_side"] == 8192
 
 
 @pytest.mark.parametrize("case", CASES, ids=[case["name"] for case in CASES])
@@ -65,6 +65,6 @@ def test_the_run_gives_the_fixtures_size(case):
 
 
 def test_the_run_key_matches(js_results):
-    assert js_results["keys"] == [nodes._studio_run_key(*args) for args in KEYS]
+    assert js_results["keys"] == [_studio_run_key(*args) for args in KEYS]
     # A whole megapixels gives one key whether it came as an int or a float.
-    assert nodes._studio_run_key("", 2.0, 8, "360", "#00ff00") == nodes._studio_run_key("", 2, 8, "360", "#00ff00")
+    assert _studio_run_key("", 2.0, 8, "360", "#00ff00") == _studio_run_key("", 2, 8, "360", "#00ff00")

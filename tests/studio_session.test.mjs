@@ -582,19 +582,6 @@ test("Delete takes a stroke group's strokes and entry, or a raster object, as on
   assert.equal(session.state.painting.raster_objects.length, 1);
 });
 
-test("the Camera button on a state whose Camera is null puts the default Camera there, in Frame mode at the view", () => {
-  const pose = { position: [1, 2, 3], yaw_deg: 30, pitch_deg: -10, roll_deg: 0, target: [0, 0, 0] };
-  const session = createStudioSession({ state: { ...load({}), camera: null } });
-  const outcome = session.cameraToView(pose, 0);
-  assert.equal(outcome.changed, true);
-  const want = load({}).camera;
-  assert.equal(session.state.camera.projection, "perspective");
-  assert.deepEqual(session.state.camera.position.value, [1, 2, 3]);
-  assert.deepEqual(session.state.camera.rotation.value, { yaw_deg: 30, pitch_deg: -10, roll_deg: 0 });
-  assert.deepEqual(session.state.camera.fov, want.fov, "the default angle of view stays");
-  assert.equal(session.state.camera.aspect, want.aspect);
-});
-
 // --- Upstream objects (docs/studio-ui.md "上流の物の編集"): edited in their working copies, written back as the
 // state's `upstream` records on each Undo step through the shared edits (pano_upstream_edits.js).
 
@@ -856,11 +843,6 @@ const SKY_HANDOFF = {
   lanes: { direction: { value: { yaw_deg: 10, pitch_deg: 5 }, keyframes: [] }, roll: { value: 3, keyframes: [] }, size: { value: { hFOV_deg: 60, vFOV_deg: 60 }, keyframes: [] } },
   fps: 24,
 };
-const WORLD_HANDOFF = {
-  placement: "world",
-  lanes: { position: { value: [0, 0, -2], keyframes: [] }, rotation: { value: { yaw_deg: 0, pitch_deg: 0, roll_deg: 0 }, keyframes: [] }, scale: { value: 4, keyframes: [] } },
-  fps: 24,
-};
 const PORT_RAW = { stickers: [{ id: "sticker_1", placement: "sky", source: { kind: "port" }, direction: { value: { yaw_deg: -90, pitch_deg: 0 } }, size: { value: { hFOV_deg: 30, vFOV_deg: 30 } } }] };
 const portOf = (state) => state.stickers.find((item) => item.source.kind === "port");
 
@@ -911,18 +893,21 @@ test("a new result's handoff is applied at once, or after the drag under way end
   assert.equal(session.setPortHandoff(SKY_HANDOFF), true);
   assert.deepEqual(portOf(session.state).direction.value, { yaw_deg: 10, pitch_deg: 5 });
   assert.equal(session.selection.keys.length, 1, "the same placement keeps the Keyframe selection");
-  // During a drag, the world handoff waits for its end.
-  session.gesture((draft) => {
+  // A stored world port Sticker turns sky with the handoff; during a drag, the handoff waits for its end.
+  const worldRaw = { stickers: [{ id: "sticker_1", placement: "world", source: { kind: "port" }, position: { value: [0, 0, -2] }, scale: { value: 4 } }] };
+  const world = createStudioSession({ state: load(worldRaw) });
+  world.select({ row: "sticker_1", keys: [{ row: "sticker_1", lane: "scale", frame: 0 }] });
+  world.gesture((draft) => {
     draft.stickers[0].opacity = { value: 0.5, keyframes: [] };
     return true;
   });
-  assert.equal(session.setPortHandoff(WORLD_HANDOFF), false);
-  assert.equal(portOf(session.state).placement, "sky");
-  session.cancelGesture();
-  assert.equal(portOf(session.state).placement, "world");
-  assert.deepEqual(session.selection, { row: "sticker_1", keys: [] });
-  // Undo history and state_json still hold the stored sky Sticker.
-  assert.equal(portOf(load(JSON.parse(session.stateText(node, "") ?? text(PORT_RAW)))).placement, "sky");
+  assert.equal(world.setPortHandoff(SKY_HANDOFF), false);
+  assert.equal(portOf(world.state).placement, "world");
+  world.cancelGesture();
+  assert.equal(portOf(world.state).placement, "sky");
+  assert.deepEqual(world.selection, { row: "sticker_1", keys: [] });
+  // Undo history and state_json still hold the stored world Sticker.
+  assert.equal(portOf(load(JSON.parse(world.stateText(node, "") ?? text(worldRaw)))).placement, "world");
 });
 
 test("a change of the Timeline fps is no edit of the port Sticker shown with the Pose handoff", () => {

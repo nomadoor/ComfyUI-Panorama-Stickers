@@ -33,7 +33,6 @@ export function videoMetaEntry(meta) {
 export function detectVideoHasAudio(video, fallback = false) {
   if (!(typeof HTMLVideoElement !== "undefined" && video instanceof HTMLVideoElement)) return false;
   try {
-    if (Array.isArray(video.audioTracks) && video.audioTracks.length > 0) return true;
     if (video.audioTracks && typeof video.audioTracks.length === "number" && video.audioTracks.length > 0) return true;
   } catch {
     // Ignore browser-specific audioTracks access issues.

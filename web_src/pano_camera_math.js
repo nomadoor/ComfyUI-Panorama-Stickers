@@ -40,10 +40,18 @@ export function fovZoomStep(fov, step, options = {}) {
   return fovStepValue(fov, -Math.sign(step), options);
 }
 
+// The half tangents { tanX, tanY } of a pinhole view of horizontal FOV `hFovDeg` whose height ÷ width is
+// `heightOverWidth`: tanX = tan(hFOV ÷ 2), tanY = tanX × height ÷ width. No clamp and no guard: callers clamp.
+export function pinholeHalfTangents(hFovDeg, heightOverWidth) {
+  const tanX = Math.tan(hFovDeg * DEG2RAD * 0.5);
+  return { tanX, tanY: tanX * heightOverWidth };
+}
+
 // The vertical FOV, in degrees, of a pinhole view of horizontal FOV `hFovDeg` whose height ÷ width is
-// `heightOverWidth`: tan(vFOV ÷ 2) = tan(hFOV ÷ 2) × height ÷ width. No clamp and no guard: callers clamp.
+// `heightOverWidth` (pinholeHalfTangents): tan(vFOV ÷ 2) = tan(hFOV ÷ 2) × height ÷ width. Every pinhole
+// hFOV → vFOV goes by this; a lens curve other than 1 keeps its own maths (pano_lens.js). No clamp and no guard.
 export function vFovFromHfov(hFovDeg, heightOverWidth) {
-  return 2 * Math.atan(Math.tan(hFovDeg * DEG2RAD * 0.5) * heightOverWidth) * RAD2DEG;
+  return 2 * Math.atan(pinholeHalfTangents(hFovDeg, heightOverWidth).tanY) * RAD2DEG;
 }
 
 export function vec3(x, y, z) {

@@ -10,7 +10,7 @@
 //
 // createViewCamera() holds one viewpoint: the Panorama view's (and the Preview window's), or, with `frame`, the Frame
 // view's, where the pose is the Camera itself and its moves go to the Camera's Lane (the caller writes them).
-import { DEG2RAD, RAD2DEG, VIEW_FOV_FINE_STEP_DEG, VIEW_HFOV_MAX_DEG, VIEW_HFOV_MIN_DEG, clamp, fovStepValue, fovZoomStep, shortestYawDelta, stepWithin, wrapYaw } from "../pano_camera_math.js";
+import { DEG2RAD, RAD2DEG, VIEW_FOV_FINE_STEP_DEG, VIEW_HFOV_MAX_DEG, VIEW_HFOV_MIN_DEG, clamp, fovStepValue, fovZoomStep, pinholeHalfTangents, shortestYawDelta, stepWithin, wrapYaw } from "../pano_camera_math.js";
 import { rayBoxDepth } from "../pano_ray_box.js";
 import { DEFAULT_VIEW_HFOV, START_VIEW, frameView, orbitView, sameViewpoint, viewAxes } from "../pano_space.js";
 import { KEY_MOVE_FAST, keyMoveView } from "../pano_view_keys.js";
@@ -366,8 +366,7 @@ export function createViewCamera({ pose: start, frame = false }) {
   }
 
   function tanHalf() {
-    const tanX = Math.tan(hFov() * 0.5 * DEG2RAD);
-    return { tanX, tanY: tanX * screen.height / screen.width };
+    return pinholeHalfTangents(hFov(), screen.height / screen.width);
   }
 
   return {

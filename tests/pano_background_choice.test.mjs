@@ -66,14 +66,14 @@ test("editor: its own linked background, its keys, span, color, Clip range and V
   const choice = choose("editor", { ui: OWN_UI, ownLinked: true });
   assert.equal(choice.from, "own");
   assert.deepEqual(choice.keys, BACKGROUND_UI_KEYS.studio);
-  assert.deepEqual(choice.fileInputs, ["background", "bg_media"]);
+  assert.deepEqual(choice.fileInputs, ["background"]);
   assert.equal(choice.coverage, 360);
   assert.equal(choice.color, "#123456");
   assert.deepEqual(choice.place, OWN_CLIP);
   const candidates = backgroundVideoCandidates(choice, {
     uiList: uiListOf(OWN_UI), current: currentOf(), source: (entry) => `/view/${entry}`, linkedVideoFile: (inputs) => `file:${inputs.join("|")}`,
   });
-  assert.deepEqual(candidates, { own: "/view/own.mp4", file: "file:background|bg_media" });
+  assert.deepEqual(candidates, { own: "/view/own.mp4", file: "file:background" });
   // A result for other inputs: not read.
   const stale = backgroundVideoCandidates(choice, { uiList: uiListOf(OWN_UI), current: currentOf(["background"]), source: (entry) => entry, linkedVideoFile: () => "" });
   assert.deepEqual(stale, { own: "", file: "" });

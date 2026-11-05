@@ -1,7 +1,7 @@
 // The Viewport camera's navigation in space (docs/editor-interaction.md "視点のモード", "ピボット・パン・ホイールの規則",
 // Frame Selected's distance, the Camera's orbit and zoom): the view modes, the pivot, orbit, pan, wheel steps and the
 // fit of a sphere. The view is { position, yaw_deg, pitch_deg, hFOV_deg, distance } (pano_space.js).
-import { DEG2RAD, RAD2DEG, VIEW_PITCH_LIMIT_DEG, clamp, shortestYawDelta, wrapYaw } from "../pano_camera_math.js";
+import { DEG2RAD, RAD2DEG, VIEW_PITCH_LIMIT_DEG, clamp, pinholeHalfTangents, shortestYawDelta, wrapYaw } from "../pano_camera_math.js";
 import { worldRotation } from "../pano_world.js";
 import { DEFAULT_VIEW_HFOV, fitDistance } from "./fit.js";
 import { add, apply, column, dot, sub } from "./vec.js";
@@ -126,8 +126,7 @@ export function reuseWheelPick(last, next) {
 }
 
 export function tanHalfFov(view, width, height) {
-  const tanX = Math.tan(view.hFOV_deg * 0.5 * DEG2RAD);
-  return { tanX, tanY: tanX * height / width };
+  return pinholeHalfTangents(view.hFOV_deg, height / width);
 }
 
 // The FOV, in degrees, a view of width x height pixels fits content in: the smaller of its horizontal FOV

@@ -82,15 +82,13 @@ def _without_non_finite(value):
     return value
 
 
-def merge_state(state_in: str | None, internal_state: str | None, fallback_preset: int = 2048, fallback_bg: str = "#00ff00") -> dict:
+def merge_state(state_json: str | None, fallback_preset: int = 2048, fallback_bg: str = "#00ff00") -> dict:
     state = deepcopy(DEFAULT_STATE)
     state["output_preset"] = int(fallback_preset)
     state["bg_color"] = fallback_bg
 
-    for src in (internal_state, state_in):
-        parsed = parse_state(src)
-        if parsed is None:
-            continue
+    parsed = parse_state(state_json)
+    if parsed is not None:
         state.update({k: v for k, v in parsed.items() if k in state})
 
     state["version"] = 1
@@ -152,27 +150,20 @@ def parse_sticker_state(state_raw: str | None) -> dict | None:
         return None
     if str(parsed.get("kind") or "") != "pano_sticker_state":
         return None
-    version_value = parsed.get("version")
-    if isinstance(version_value, bool):
-        return None
-    if isinstance(version_value, int):
-        version = version_value
-    elif isinstance(version_value, str) and version_value.isdigit():
-        try:
-            version = int(version_value)
-        except ValueError:
-            return None
-    else:
-        return None
-    if version != 1:
+    version = parsed.get("version")
+    if isinstance(version, bool) or not isinstance(version, int) or version != 1:
         return None
     pose = parsed.get("pose")
     if not isinstance(pose, dict):
         return None
 
+    raw_values = [pose.get(key) for key in ("yaw_deg", "pitch_deg", "roll_deg", "hFOV_deg")]
+    # JSON numbers only (ADR 0063): a number written as text, a bool, or anything else is not read.
+    if any(isinstance(value, bool) or not isinstance(value, (int, float)) for value in raw_values):
+        return None
     try:
-        values = [float(pose[key]) for key in ("yaw_deg", "pitch_deg", "roll_deg", "hFOV_deg")]
-    except Exception:
+        values = [float(value) for value in raw_values]
+    except OverflowError:
         return None
     # Finiteness before the clamps, which would turn an infinite pitch or hFOV into an edge value.
     if not all(math.isfinite(v) for v in values):
@@ -190,10 +181,10 @@ def parse_sticker_state(state_raw: str | None) -> dict | None:
     }
 
     source_aspect = parsed.get("source_aspect", None)
-    if source_aspect is not None:
+    if isinstance(source_aspect, (int, float)) and not isinstance(source_aspect, bool):
         try:
             source_aspect_val = float(source_aspect)
-        except Exception:
+        except OverflowError:
             source_aspect_val = None
         if source_aspect_val is not None and math.isfinite(source_aspect_val) and source_aspect_val > 0.0:
             out["source_aspect"] = source_aspect_val

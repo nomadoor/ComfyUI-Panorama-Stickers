@@ -60,7 +60,7 @@ def resolve_painting_layer_payload(
         for item in raw_groups:
             if not isinstance(item, dict):
                 continue
-            action_group_id = str(item.get("actionGroupId") or item.get("id") or "").strip()
+            action_group_id = str(item.get("actionGroupId") or "").strip()
             if not action_group_id:
                 continue
             image_asset = item.get("image") if isinstance(item.get("image"), dict) else None
@@ -72,36 +72,6 @@ def resolve_painting_layer_payload(
                 asset_keys.append("|".join(["group", action_group_id, group_key[0], str(group_key[1]), str(group_key[2])]))
 
     revision = str(painting_layer.get("revision") or "").strip()
-    if not revision:
-        revision_parts = []
-        for key in ("paint", "mask"):
-            asset = painting_layer.get(key)
-            if isinstance(asset, dict):
-                revision_parts.append(
-                    "|".join([
-                        key,
-                        str(asset.get("filename") or "").strip(),
-                        str(asset.get("subfolder") or "").strip(),
-                        str(asset.get("storage") or asset.get("type") or "").strip(),
-                    ])
-                )
-        if isinstance(raw_groups, list):
-            for item in raw_groups:
-                if not isinstance(item, dict):
-                    continue
-                image = item.get("image")
-                if not isinstance(image, dict):
-                    continue
-                revision_parts.append(
-                    "|".join([
-                        "group",
-                        str(item.get("actionGroupId") or item.get("id") or "").strip(),
-                        str(image.get("filename") or "").strip(),
-                        str(image.get("subfolder") or "").strip(),
-                        str(image.get("storage") or image.get("type") or "").strip(),
-                    ])
-                )
-        revision = "::".join(part for part in revision_parts if part)
     if asset_keys:
         revision = "::".join(part for part in [revision, *asset_keys] if part)
 

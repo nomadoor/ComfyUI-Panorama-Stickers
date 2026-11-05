@@ -1051,7 +1051,7 @@ test("no rotate handle on a locked paint group or in a read-only editor; a group
 // A stage with the Camera's rotation as `rotation`, the view at `viewAt` looking down -Z, and the selection `row`.
 function cameraSetup({ camera, row = "camera", mode = "rotate", viewAt = [0, 0, 0] } = {}) {
   const raw = loadSceneState({ version: 2, stickers: [{ id: "board", placement: "world", source: file("board.png"), position: { value: [3, 0, -5] } }] });
-  const session = createStudioSession({ state: camera === null ? { ...raw, camera: null } : loadSceneState({ version: 2, camera, stickers: raw.stickers }) });
+  const session = createStudioSession({ state: loadSceneState({ version: 2, camera, stickers: raw.stickers }) });
   const view = stageCamera({ position: viewAt, yaw_deg: 0, pitch_deg: 0, roll_deg: 0, target: [viewAt[0], viewAt[1], viewAt[2] - 5] }, W, H, 50);
   const selected = { row };
   const objects = createStageObjects({
@@ -1096,8 +1096,8 @@ test("a Rotate drag of the Camera's gizmo writes all three angles at the frame, 
   assert.deepEqual(second, { frame: 10, value: { yaw_deg: 170, pitch_deg: 0, roll_deg: 0 }, easing: second.easing });
 });
 
-test("a gizmo drag of a state whose Camera is null puts the default Camera there first and writes its Lane", () => {
-  const { session, objects } = cameraSetup({ camera: null, mode: "translate", viewAt: [0, 0, 6] });
+test("a gizmo drag of the default Camera writes its Lane", () => {
+  const { session, objects } = cameraSetup({ mode: "translate", viewAt: [0, 0, 6] });
   const ball = ballOf(objects, "y");
   const drag = objects.press(ball);
   assert.ok(drag, "the Y ball is grabbed");

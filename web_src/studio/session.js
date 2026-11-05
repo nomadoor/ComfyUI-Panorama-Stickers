@@ -29,7 +29,6 @@ import { syncPaintGroups } from "../pano_paint_strokes.js";
 import { NO_PORT_HANDOFF_PAIR, storedPortState, syncPortHandoffPair } from "../pano_port_handoff.js";
 import { normalizePaintingState } from "../pano_paint_types.js";
 import { cameraToView as moveCameraToView } from "./camera_ui.js";
-import { editableCamera } from "./camera_state.js";
 import { applyInspectorEdit } from "./inspector_actions.js";
 import { stickerChangedRows } from "./inspector_model.js";
 import { findSticker } from "./row_object.js";
@@ -420,7 +419,7 @@ export function createStudioSession({ state: opening, readOnly = false, upstream
   function editCamera(edit) {
     if (readOnly || gestureBase) return result(false);
     const draft = structuredClone(state);
-    if (!edit(editableCamera(draft))) return result(false);
+    if (!edit(draft.camera)) return result(false);
     state = draft;
     record();
     return result(true, { history: true });
@@ -464,7 +463,7 @@ export function createStudioSession({ state: opening, readOnly = false, upstream
   // Timeline frame `playhead` (camera_ui.js cameraToView, Panorama mode switching to Frame), as one Undo step. Not
   // while the Camera is locked. A move selects the Camera (the inspector shows its card); nothing moved changes nothing.
   function cameraToView(pose, playhead) {
-    if (state.camera?.locked === true) return result(false);
+    if (state.camera.locked === true) return result(false);
     const outcome = editCamera((camera) => moveCameraToView(camera, playhead, pose));
     if (outcome.changed) selection = { row: "camera", keys: [] };
     return outcome;

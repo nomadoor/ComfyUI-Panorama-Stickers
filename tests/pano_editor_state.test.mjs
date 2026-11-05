@@ -124,7 +124,7 @@ test("loaded state is normalized while widget and shared settings remain authori
       },
       { id: "hidden", visible: false, locked: true },
     ],
-    shots: [{ id: "shot_1", hFOV_deg: 90, vFOV_deg: 90, out_w: 1920, out_h: 1080, locked: 1 }],
+    shots: [{ id: "shot_1", hFOV_deg: 90, vFOV_deg: 90, locked: 1 }],
     painting: null,
     painting_layer: { token: "temporary" },
     ui_settings: {
@@ -133,7 +133,6 @@ test("loaded state is normalized while widget and shared settings remain authori
       preview_quality: "draft",
     },
     active: { selected_sticker_id: "visible_default", selected_shot_id: "shot_1" },
-    editor_history: { entries: ["runtime-only"] },
   });
 
   const state = parsePanoEditorState(text, {
@@ -158,7 +157,6 @@ test("loaded state is normalized while widget and shared settings remain authori
     invert_view_x: true,
     invert_view_y: false,
   });
-  assert.equal("editor_history" in state, false);
   assert.deepEqual(state.stickers, [
     {
       id: "visible_default",
@@ -197,7 +195,6 @@ test("history snapshots are detached and exclude runtime-only state", () => {
     version: 1,
     assets: { asset_1: { name: "source.png" } },
     stickers: [{ id: "sticker_1", crop: { x: 0.25 } }],
-    editor_history: { entries: ["previous"] },
     painting_layer: { token: "uploaded-preview" },
   };
 

@@ -3,6 +3,8 @@
 // browser. The sizes' values are provisional (docs/design.md "大きさ": the timeline's and the stage's least heights
 // and the Output window's least and largest sizes are not decided yet); they live here and nowhere else.
 
+import { clamp } from "../pano_math.js";
+
 // The timeline's height when nothing is remembered, and the least heights of the timeline and the stage.
 export const TIMELINE_DEFAULT_HEIGHT = 176;
 export const TIMELINE_MIN_HEIGHT = 120;
@@ -24,8 +26,6 @@ const KEYS = Object.freeze({
   timeline: "PanoramaSuite.Studio.timelineHeight",
   output: "PanoramaSuite.Studio.outputWindow",
 });
-
-const clamp = (value, low, high) => Math.min(high, Math.max(low, value));
 
 // The timeline's height for a wish of `wanted` px in an editor column of `total` px: at least TIMELINE_MIN_HEIGHT,
 // and leaving the stage at least STAGE_MIN_HEIGHT (when both cannot be met, the timeline keeps its least

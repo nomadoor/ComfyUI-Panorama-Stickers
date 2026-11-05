@@ -4,15 +4,14 @@
 // Lane rules themselves (which Lanes a row keys, its pins) are pano_timeline.js's, called here.
 //
 // `ctx`, shared with timeline_actions.js, is what the shell gives the Timeline:
-//   state       the working state v2 (a snapshot; nothing here changes it). Its `camera` may be null: the Camera row
-//               then shows the default Camera (camera_state.js cameraOf)
+//   state       the working state v2 (a snapshot; nothing here changes it)
 //   upstream    the upstream layers, farthest first: [{ key, name, sceneState, editable, record, scene, deleted,
 //               portMeta }] (studio/upstream.js working(), with `name` the upstream node's title and
 //               `portMeta` the media meta of its port Sticker, studio/upstream.js; optional `sceneItems`, the number of
 //               items of its 3D content, and `animations`, its animated 3D files' clips as media.animations)
 //   media       what timelineSpan knows of the inputs (pano_timeline.js autoTimelineLength), `port` the node's own port
 //               Sticker's media meta
-//   background  null, or { end, video } while the node's own bg_media has a row (`end` where its media ends, or null;
+//   background  null, or { end, video } while the node's own background has a row (`end` where its media ends, or null;
 //               `video` whether a VIDEO is linked to it, before its length is known too)
 //   sceneRow    whether the node's own 3D content is linked (pano_upstream.js ownSceneLinked)
 //   fpsLocked   whether a VIDEO sets the Timeline fps
@@ -39,7 +38,6 @@ import {
   timelineSpan,
 } from "../pano_timeline.js";
 import { upstreamLayerOverridden, upstreamRowId, upstreamStickerOverridden } from "../pano_upstream.js";
-import { cameraOf } from "./camera_state.js";
 
 // The name of a Sticker's row (and its inspector card): its file's name, else its id; an upstream element's own id, not
 // its working id (`upstream:<key>:<id>`).
@@ -88,7 +86,7 @@ function timelineEntries(ctx) {
   };
   const own = [];
   if (ctx.background) own.push({ id: BACKGROUND_ROW, kind: "background", owner: state.background, sceneState: state, layer: null, offset: clipOffset(state.background), label: "Background", icon: ICON.unwrap });
-  own.push({ id: CAMERA_ROW, kind: "camera", owner: cameraOf(state), sceneState: state, layer: null, offset: 0, label: "Camera", icon: ICON.camera });
+  own.push({ id: CAMERA_ROW, kind: "camera", owner: state.camera, sceneState: state, layer: null, offset: 0, label: "Camera", icon: ICON.camera });
   // The own `scene` (the `world` content) is drawn over the upstream layers too, so its row shows with them.
   own.push(...stateEntries(state, null, !!ctx.sceneRow || ownerTimed(state.scene)));
   return {

@@ -68,7 +68,7 @@ export function resolveCutoutNodeSurfaceShot(state) {
 
 export function cutoutNodeSurfaceModel(state) {
   const shot = resolveCutoutNodeSurfaceShot(state);
-  const rollDeg = Number(shot?.roll_deg ?? shot?.rot_deg ?? 0);
+  const rollDeg = Number(shot?.roll_deg ?? 0);
   const roundedRoll = Math.abs(rollDeg) < 0.05 ? 0 : rollDeg;
   return {
     hasShot: !!shot,
@@ -341,11 +341,9 @@ export function applyCutoutNodeSurfaceAction(state, action = {}) {
     if (!Number.isFinite(value)) return { state, changed: false };
     return replaceActiveShot(state, (shot) => {
       const roll = wrapRollDeg(value);
-      const current = Number(shot.roll_deg ?? shot.rot_deg ?? 0);
+      const current = Number(shot.roll_deg ?? 0);
       if (Math.abs(current - roll) <= 1e-12) return shot;
-      const next = { ...shot, roll_deg: roll };
-      delete next.rot_deg;
-      return next;
+      return { ...shot, roll_deg: roll };
     });
   }
   if (action.type === "scale-fov") {
@@ -432,7 +430,7 @@ export function panCutoutShotByScreenDelta(shot, options = {}) {
   const invertY = options.invertY === true ? -1 : 1;
   const dx = Number(options.dx || 0) * invertX;
   const dy = Number(options.dy || 0) * invertY;
-  const rollRad = Number(shot.roll_deg ?? shot.rot_deg ?? 0) * DEG2RAD;
+  const rollRad = Number(shot.roll_deg ?? 0) * DEG2RAD;
   const cosRoll = Math.cos(rollRad);
   const sinRoll = Math.sin(rollRad);
   const tanX = dx / focal;

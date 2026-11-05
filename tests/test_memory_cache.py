@@ -26,6 +26,7 @@ from comfyui_pano_suite.core.scene_eval import evaluate_scene_state
 from comfyui_pano_suite.core.scene_state import load_scene_state
 from comfyui_pano_suite.core.stickers import load_source_rgba
 from tools.bake_legacy_goldens import _painting, _stroke
+from comfy_api.latest import Types
 
 
 def _array(megabytes: int) -> np.ndarray:
@@ -127,7 +128,7 @@ def test_a_value_that_is_no_longer_valid_is_made_again_and_none_is_not_kept():
 
 
 def test_nbytes_counts_the_tensors_of_a_splat():
-    splat = nodes.Types.SPLAT(torch.zeros(1, 10, 3), torch.zeros(1, 10, 3), torch.zeros(1, 10, 4), torch.zeros(1, 10, 1), torch.zeros(1, 10, 1, 3))
+    splat = Types.SPLAT(torch.zeros(1, 10, 3), torch.zeros(1, 10, 3), torch.zeros(1, 10, 4), torch.zeros(1, 10, 1), torch.zeros(1, 10, 1, 3))
 
     assert nbytes(splat) == 10 * (3 + 3 + 4 + 1 + 3) * 4
     assert nbytes((np.zeros(4, np.uint8), {"a": torch.zeros(2)}, "text")) == 4 + 8
@@ -141,19 +142,6 @@ def _png(rgba: np.ndarray) -> bytes:
 
 def _image(height=6, width=8):
     return np.random.default_rng(1).integers(0, 256, (height, width, 4), dtype=np.uint8)
-
-
-def test_a_data_url_source_is_kept_as_its_uint8_pixels_once():
-    image = _image()
-    source = {"kind": "file", "data_url": "data:image/png;base64," + base64.b64encode(_png(image)).decode()}
-
-    first = load_source_rgba(source)
-    second = load_source_rgba(dict(source))
-
-    assert first.dtype == np.uint8 and np.array_equal(first, image)
-    assert second is first and not first.flags.writeable
-    # The URL itself is not kept as a key.
-    assert all(len(str(key)) < 200 for key in CACHE._entries)
 
 
 def test_a_file_source_is_read_once_per_version(tmp_path, monkeypatch):
@@ -251,3 +239,15 @@ def test_sampling_a_read_only_erp_warns_nothing():
     with warnings.catch_warnings():
         warnings.simplefilter("error")
         sample_cutout_from_sampling_map(erp, sampling_map)
+
+
+def test_a_painting_layer_is_read_by_the_keys_the_editor_writes(tmp_path, monkeypatch):
+    # ADR 0063: a group is read by its `actionGroupId` only, and the revision is the one the editor sent.
+    monkeypatch.setattr(folder_paths, "get_temp_directory", lambda: str(tmp_path))
+    (tmp_path / "group.png").write_bytes(_png(_image(4, 8)))
+    asset = {"type": "comfy_image", "filename": "group.png", "subfolder": "", "storage": "temp"}
+
+    payload = resolve_painting_layer_payload({"groups": [{"id": "old", "image": asset}, {"actionGroupId": "ag", "image": asset}]})
+
+    assert list(payload["groups"]) == ["ag"]
+    assert not payload["revision"].startswith("group|old")

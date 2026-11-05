@@ -8,6 +8,7 @@ import json
 import math
 import re
 from copy import deepcopy
+from fractions import Fraction
 
 from .math import CURVE_MAX, CURVE_MIN
 from .paint_state import normalize_painting_state
@@ -53,8 +54,6 @@ TIMELINE_LENGTH_MAX = TIMELINE_FRAME_MAX
 # A Camera's aspect is held to 1/CAMERA_ASPECT_LIMIT..CAMERA_ASPECT_LIMIT. The output is at most 8192 on its long side and
 # at least `multiple` (8 or more) on its short one, so any ratio thinner than 8192 : 8 already shoots the same frame.
 CAMERA_ASPECT_LIMIT = 2048.0
-# A v1 number written as text: ASCII decimal without `_`, with ASCII whitespace around it.
-V1_NUMBER_TEXT = re.compile(r"[ \t\n\r\f\v]*[+-]?(?:[0-9]+\.?[0-9]*|\.[0-9]+)(?:[eE][+-]?[0-9]+)?[ \t\n\r\f\v]*")
 # The largest Sticker number (`sticker_<n>`) the `next_sticker_id` counter keeps: JS integers are exact up to here.
 STICKER_NUMBER_MAX = 2**53 - 1
 # At most 16 digits (past STICKER_NUMBER_MAX): a longer number is not counted, and int() of a very long one raises.
@@ -105,9 +104,13 @@ def _clamp(value, lo, hi):
     return max(lo, min(hi, value))
 
 
+_HALF = Fraction(1, 2)
+
+
 def round_frame(value):
-    """`value` (frames) to the nearest whole frame, a half up: floor(value + 0.5)."""
-    return math.floor(value + 0.5)
+    """`value` (frames, or audio samples) to the nearest whole one, a half up: floor(value + 0.5). A Fraction is
+    rounded exactly (a float would round its last bits first)."""
+    return math.floor(value + (_HALF if isinstance(value, Fraction) else 0.5))
 
 
 def _frame(value):
@@ -206,7 +209,8 @@ def _lens_value(raw):
     return {"curve": _curve_value(raw.get("curve")), "hFOV_deg": _camera_fov_value(raw.get("hFOV_deg"))}
 
 
-# A `world` Sticker's lens (ADR 0042): only Pose handoff writes it, so a Sticker has it only when its state does.
+# A `world` Sticker's lens (ADR 0042): only Pose handoff before ADR 0059 wrote it, so a Sticker has it only when its
+# saved state does.
 WORLD_STICKER_LENS = ("lens", _lens_value)
 
 
@@ -304,15 +308,12 @@ def _source(raw):
             "subfolder": subfolder.strip().strip("/\\") if isinstance(subfolder, str) else "",
             "storage": storage if storage in FILE_STORAGES else "input",
         }
-    data_url = raw.get("data_url")
-    if isinstance(data_url, str) and data_url.startswith("data:image"):
-        return {"kind": "file", "data_url": data_url}
     return None
 
 
 def normalize_source(raw):
-    """A Source as a loaded state holds it (`port`, a `file` with `filename`, `subfolder`, and `storage`, or a v1
-    `data_url`), or None when it is not valid."""
+    """A Source as a loaded state holds it (`port`, or a `file` with `filename`, `subfolder`, and `storage`), or None
+    when it is not valid."""
     return _source(raw)
 
 
@@ -571,8 +572,6 @@ def _v1_source(sticker, assets):
             "subfolder": str(asset.get("subfolder") or "").strip().strip("/\\"),
             "storage": str(asset.get("storage") or "input").strip().lower(),
         }
-    if asset_type == "dataurl":
-        return {"kind": "file", "data_url": asset.get("value")}
     return None
 
 
@@ -668,7 +667,6 @@ def rebase_scene_state(state: dict, fps: float) -> dict:
         return _frame(frame * ratio)
 
     length = state["timeline"]["length"]
-    camera = state["camera"]
     scene = _rebase_clip(state["scene"]["clip"], rebase)
     stickers = []
     for sticker in state["stickers"]:
@@ -680,7 +678,8 @@ def rebase_scene_state(state: dict, fps: float) -> dict:
     return _normalize_v2({
         **state,
         "timeline": {"fps": rate, "length": None if length is None else max(1, rebase(length))},
-        "camera": None if camera is None else {**camera, **_rebase_lanes(camera, CAMERA_LANES, rebase, 0, 0)},
+        # A loaded state always has its one Camera (ADR 0048).
+        "camera": {**state["camera"], **_rebase_lanes(state["camera"], CAMERA_LANES, rebase, 0, 0)},
         "scene": {**state["scene"], "clip": scene["clip"], **_rebase_lanes(state["scene"], SCENE_LANES, rebase, scene["anchor"], scene["new_anchor"])},
         "stickers": stickers,
         "background": {**state["background"], "clip": _rebase_clip(state["background"]["clip"], rebase)["clip"]},
@@ -722,11 +721,10 @@ def rebase_upstream_record(record: dict, layer_state: dict) -> dict:
 
 
 def _v1_pose_number(value):
-    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+    """A v1 pose number: a JSON number only (ADR 0063), else NaN."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
         return math.nan
-    if not isinstance(value, str):
-        return _float(value)
-    return float(value) if V1_NUMBER_TEXT.fullmatch(value) else math.nan
+    return _float(value)
 
 
 def _sticker_state_camera(raw):
@@ -764,7 +762,7 @@ def load_sticker_state(text) -> dict | None:
     if not isinstance(raw, dict) or raw.get("kind") != STICKER_STATE_KIND:
         return None
     version = raw.get("version")
-    if not isinstance(version, bool) and version in (1, "1"):
+    if not isinstance(version, bool) and version == 1:
         camera = _v1_sticker_state_camera(raw.get("pose"))
         if camera is None:
             return None
@@ -772,9 +770,12 @@ def load_sticker_state(text) -> dict | None:
         source_aspect = aspect if math.isfinite(aspect) and aspect > 0.0 else None
         fps = 24.0
     elif not isinstance(version, bool) and version == 2:
+        # A sticker_state without a readable fps is not read (ADR 0063).
+        fps = _timeline_fps(raw.get("fps"))
+        if fps is None:
+            return None
         camera = _sticker_state_camera(raw.get("camera"))
         source_aspect = _positive(raw.get("source_aspect"), None)
-        fps = _timeline_fps(raw.get("fps")) or 24.0
     else:
         raise ValueError(f"Unsupported sticker_state version {version!r}; supported versions are 1 and 2.")
     return {

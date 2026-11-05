@@ -90,7 +90,7 @@ export function selectionBar({ state, row, mode = "translate", readOnly = false,
   }));
   const lockButton = (locked) => button("lock", locked ? ICON.lock_closed : ICON.lock_open, locked ? "Unlock" : "Lock", { disabled: readOnly });
   if (kind === "camera") {
-    return { kind, icon: ICON.camera, name: "Camera", fixedName: true, groups: [gizmo, [lockButton(state.camera?.locked === true)]] };
+    return { kind, icon: ICON.camera, name: "Camera", fixedName: true, groups: [gizmo, [lockButton(state.camera.locked === true)]] };
   }
   if (kind === "paint") {
     const { locked } = paintObjectOf(state, row);

@@ -344,7 +344,7 @@ test("the legacy Stickers and Cutout surfaces read state_json as the editor does
   const text = JSON.stringify({
     output_preset: 1024,
     stickers: [{ id: "a", visible: 0, locked: "yes" }, { id: "b" }],
-    shots: [{ id: "s", yaw_deg: 10, pitch_deg: 0, roll_deg: 0, hFOV_deg: 60, vFOV_deg: 40, out_w: 512, out_h: 256, locked: 1 }],
+    shots: [{ id: "s", yaw_deg: 10, pitch_deg: 0, roll_deg: 0, hFOV_deg: 60, vFOV_deg: 40, locked: 1 }],
     painting: { paint: { strokes: "x" } },
   });
   for (const type of [LEGACY, CUTOUT]) {
@@ -354,7 +354,6 @@ test("the legacy Stickers and Cutout surfaces read state_json as the editor does
     const editor = parsePanoEditorState(text, { outputPreset: "2048", backgroundColor: "#abcdef", coverage: 180, sharedUiSettings: null });
     assert.deepEqual(parsed, editor, type);
     assert.deepEqual(parsed.stickers.map((item) => [item.visible, item.locked]), [[true, false], [true, false]]);
-    assert.equal("out_w" in parsed.shots[0], false);
     detach(node);
   }
   // The legacy Cutout has no bg_color widget: the surface, the old editor and a new frame use the one default.
@@ -609,4 +608,51 @@ test("the port Sticker's 3D clips count in the animations", () => {
   assert.deepEqual(animations, { scene: null, stickers: animations.stickers });
   assert.deepEqual(Object.values(animations.stickers), [clips]);
   detach(node);
+});
+
+// One rule, one owner (pano_comfy_media.js resultUiList): the node surface reads a result's `ui` lists as the editor
+// does. A `ui` whose value under the key is not a list falls back to the result's own list (it gave [] before).
+test("the node surface reads a result's ui list as the media adapter does", async () => {
+  const { ownOutputUiList } = await import("../web_src/node_surface/media.js");
+  const node = createFakeNode({ type: STUDIO, studio: true });
+  fakeApp.nodeOutputs[String(node.id)] = { ui: { pano_timeline_fps: 12, pano_timeline_frames: [5] }, pano_timeline_fps: [30], pano_timeline_frames: [9] };
+  try {
+    assert.deepEqual(ownOutputUiList(node, "pano_timeline_fps"), [30]);
+    assert.deepEqual(ownOutputUiList(node, "pano_timeline_frames"), [5]);
+    assert.deepEqual(ownOutputUiList(node, "pano_missing"), []);
+  } finally {
+    delete fakeApp.nodeOutputs[String(node.id)];
+  }
+});
+
+// docs/legacy-node-surfaces.md: the legacy nodes never use `curve`; their surfaces draw a v1 shot or Sticker as a pinhole,
+// as Python's legacy output does.
+test("a legacy node surface reads a v1 state's shots and Stickers without their curve", async () => {
+  const { getCachedState } = await import("../web_src/node_surface/state.js");
+  const shot = { id: "shot", yaw_deg: -30, pitch_deg: 5, roll_deg: 0, hFOV_deg: 90, vFOV_deg: 60 };
+  const sticker = { id: "s", asset_id: "a", yaw_deg: 20, pitch_deg: 10, rot_deg: 0, hFOV_deg: 70, vFOV_deg: 50 };
+  const node = createFakeNode({
+    type: CUTOUT,
+    widgets: { state_json: JSON.stringify({ version: 1, shots: [{ ...shot, curve: 0.5 }], stickers: [{ ...sticker, curve: 0.5, initial_pose: { ...sticker, curve: 0.5 } }] }) },
+  });
+  const pinhole = createFakeNode({
+    type: CUTOUT,
+    widgets: { state_json: JSON.stringify({ version: 1, shots: [shot], stickers: [{ ...sticker, initial_pose: { ...sticker } }] }) },
+  });
+  const state = getCachedState(node);
+  const expected = getCachedState(pinhole);
+  assert.deepEqual(state.shots, expected.shots);
+  assert.deepEqual(state.stickers, expected.stickers);
+});
+
+// The surface takes away only its own DOM widget: the names older ComfyUI frontends used are not looked for.
+test("teardown removes the surface's DOM widget and leaves a widget of an old frontend's name", () => {
+  const node = createFakeNode({ type: LEGACY, widgets: { state_json: "" } });
+  attachPanoramaPreview(node, {});
+  const own = nodeSurface(node).dom.widget;
+  const old = { name: "pano_preview", type: "pano_preview" };
+  node.widgets.push(old);
+  nodeSurface(node).controller.teardown();
+  assert.equal(node.widgets.includes(own), false);
+  assert.equal(node.widgets.includes(old), true);
 });

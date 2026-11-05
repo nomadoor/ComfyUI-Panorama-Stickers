@@ -46,8 +46,8 @@
     {"id": "dup", "placement": "world", "source": {"kind": "file", "filename": "m.glb", "subfolder": "3d", "storage": "bogus"}, "crop": {"x0": 0.8, "y0": 0.9, "x1": 0.2, "y1": 0.1}, "scale": {"value": -2}, "direction": {"value": {"yaw_deg": 5}}},
     {"id": "no_source", "placement": "sky"},
     {"id": "bad_file", "placement": "sky", "source": {"kind": "file", "filename": ""}},
-    {"id": "bad_data", "placement": "sky", "source": {"kind": "file", "data_url": "javascript:alert(1)"}},
-    {"id": "sticker_1", "placement": "sky", "source": {"kind": "file", "data_url": "data:image/png;base64,AAAA"}, "z_index": 1.5},
+    {"id": "bad_data", "placement": "sky", "source": {"kind": "file", "data_url": "data:image/png;base64,AAAA"}},
+    {"id": "sticker_1", "placement": "sky", "source": {"kind": "file", "filename": "one.png"}, "z_index": 1.5},
     {"id": "padded", "placement": "sky", "source": {"kind": "file", "filename": " s.png ", "subfolder": "a/", "storage": " Output "}}
   ],
   "painting": null,

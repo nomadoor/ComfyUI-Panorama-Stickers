@@ -18,7 +18,8 @@ import { readWheelDirection } from "../pano_wheel.js";
 import { createViewportRestoreScheduler } from "../pano_viewport_restore.js";
 import { DEFAULT_VIEW_HFOV } from "../pano_space.js";
 import { comfy } from "./media.js";
-import { getCachedState, loadSharedUiSettings, surfaceFrame } from "./state.js";
+import { getCachedState, surfaceFrame } from "./state.js";
+import { loadSurfaceUiSettings } from "../editor/ui_settings.js";
 import { stickersSurfaceProjection } from "./legacy_picture.js";
 import { pauseSurfacePlayback } from "./playback.js";
 
@@ -135,7 +136,7 @@ export function bindSurfacePointer(ctx) {
       };
     },
     getInvert: () => {
-      const uiSettings = loadSharedUiSettings();
+      const uiSettings = loadSurfaceUiSettings();
       return {
         x: uiSettings.invert_view_x ? -1 : 1,
         y: uiSettings.invert_view_y ? -1 : 1,
@@ -193,13 +194,13 @@ export function bindSurfacePointer(ctx) {
         const rollGesture = beginCutoutRollGesture({
           frame,
           point,
-          startRollDeg: Number(shot.roll_deg ?? shot.rot_deg ?? 0),
+          startRollDeg: Number(shot.roll_deg ?? 0),
           shiftKey: true,
         });
         if (!rollGesture) return;
         drag = { kind: "roll", pointerId: ev.pointerId, rollGesture };
       } else {
-        const uiSettings = getCachedState(node)?.ui_settings || loadSharedUiSettings();
+        const uiSettings = getCachedState(node)?.ui_settings || loadSurfaceUiSettings();
         drag = {
           kind: "pan",
           pointerId: ev.pointerId,
@@ -468,9 +469,7 @@ export function bindSurfacePointer(ctx) {
     viewportRestoreScheduler.schedule(graphSnapshot);
   };
   const wheelTargets = studioSurface ? [] : stickersMode ? [wrap, canvas] : [wrap];
-  ["wheel", "mousewheel", "DOMMouseScroll"].forEach((name) => {
-    wheelTargets.forEach((target) => target.addEventListener(name, onPreviewWheel, { passive: false, capture: true }));
-  });
+  wheelTargets.forEach((target) => target.addEventListener("wheel", onPreviewWheel, { passive: false, capture: true }));
 
   ["contextmenu", "mousedown", "mouseup", "mousemove", "click", "dblclick"].forEach((name) => {
     canvas.addEventListener(name, (ev) => stopCanvasEventUnlessResizeGrip(ev, eventSurface));

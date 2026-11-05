@@ -25,6 +25,10 @@ from comfyui_pano_suite.core.mesh_render import srgb_to_linear
 from comfyui_pano_suite.core.world_render import ContentSource
 from scene_test_helpers import batch_index_at_center, blob, blobs, camera_state, center, glb_positions, output_size, shoot, state_text, temp_entry_path, triangle_glb, video_frames
 from tools.bake_legacy_goldens import _painting, _stroke
+from comfyui_pano_suite.file_3d import _read_scene_file
+from comfyui_pano_suite.port_sticker import PORT_3D_FIT_FOV_DEG
+from comfyui_pano_suite.scene_files import write_editor_files
+from comfyui_pano_suite.scene_mesh import read_mesh_file
 
 
 RED = [1.0, 0.0, 0.0]
@@ -37,7 +41,7 @@ SQUARE_FACES = [[0, 3, 2], [0, 2, 1]]
 RIGHT = (256, 768)
 # Where the node puts a new port Sticker of `_square()`: its bounding sphere (radius sqrt(0.5) around its origin)
 # fitted to the node's view ahead of the origin (docs/editor-interaction.md, "3D の Sticker を収めて置く").
-SQUARE_FIT = [0.0, 0.0, -math.sqrt(0.5) / math.sin(math.radians(nodes.PORT_3D_FIT_FOV_DEG) / 2.0) * 1.1]
+SQUARE_FIT = [0.0, 0.0, -math.sqrt(0.5) / math.sin(math.radians(PORT_3D_FIT_FOV_DEG) / 2.0) * 1.1]
 
 
 def _square(rgb=RED, size=1.0, unlit=True):
@@ -248,7 +252,7 @@ def test_nothing_the_3d_sticker_uploads_outlives_its_render_pass(tmp_path, monke
 def test_same_3d_file_on_the_sticker_input_is_read_once_and_keeps_its_editor_files(tmp_path, monkeypatch):
     file = _obj_file(tmp_path / "square.obj")
     reads, writes = [], []
-    read, write = nodes.read_mesh_file, nodes.write_editor_files
+    read, write = read_mesh_file, write_editor_files
     monkeypatch.setattr("comfyui_pano_suite.file_3d.read_mesh_file", lambda model: reads.append(model) or read(model))
     monkeypatch.setattr("comfyui_pano_suite.media_ui.write_editor_files", lambda value, progress=None: writes.append(value) or write(value, progress))
 
@@ -372,13 +376,13 @@ def test_a_3d_file_source_is_drawn_as_the_same_file_on_the_sticker_input(make, i
     assert "pano_sticker_files" not in from_file.ui and "pano_sticker_warnings" not in from_file.ui
     layer = from_file.result[0].layers[-1]
     assert set(layer.sources.contents) == {"f"} and "f" not in layer.sources.stickers
-    assert layer.sources.contents["f"] is nodes._read_scene_file(Types.File3D(str(input_dir / "3d" / name)), "sticker")
+    assert layer.sources.contents["f"] is _read_scene_file(Types.File3D(str(input_dir / "3d" / name)), "sticker")
 
 
 def test_a_3d_file_source_is_read_once_across_runs(input_dir, monkeypatch):
     _lit_glb(input_dir / "3d" / "model.glb")
     reads = []
-    read = nodes.read_mesh_file
+    read = read_mesh_file
     monkeypatch.setattr("comfyui_pano_suite.file_3d.read_mesh_file", lambda file: reads.append(file) or read(file))
     state = {"version": 2, "stickers": [_file_sticker("model.glb")]}
 
@@ -520,6 +524,6 @@ def test_a_new_port_sticker_of_off_center_content_is_fitted_and_without_content_
     fitted = _execute(sticker=shifted).result[0].layers[-1].state["stickers"][0]["position"]["value"]
     nothing = _execute(sticker=empty).result[0].layers[-1].state["stickers"][0]["position"]["value"]
 
-    distance = math.sqrt(8.0) / math.sin(math.radians(nodes.PORT_3D_FIT_FOV_DEG) / 2.0) * 1.1
+    distance = math.sqrt(8.0) / math.sin(math.radians(PORT_3D_FIT_FOV_DEG) / 2.0) * 1.1
     assert np.allclose(fitted, [-3.0, 0.0, -distance])
     assert np.allclose(nothing, [0.0, 0.0, -2.0])

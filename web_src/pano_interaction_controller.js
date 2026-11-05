@@ -1,4 +1,4 @@
-import { DEG2RAD, VIEW_HFOV_MAX_DEG, VIEW_HFOV_MIN_DEG, VIEW_PITCH_LIMIT_DEG, fovZoomStep } from "./pano_camera_math.js";
+import { VIEW_HFOV_MAX_DEG, VIEW_HFOV_MIN_DEG, VIEW_PITCH_LIMIT_DEG, fovZoomStep, vFovFromHfov } from "./pano_camera_math.js";
 import { clamp, wrapYaw } from "./pano_math.js";
 import { PANO_FOV_WHEEL_STEP_DEG, readWheelDirection } from "./pano_wheel.js";
 
@@ -12,8 +12,7 @@ export const PANO_INERTIA_STOP_SPEED = 0.8;
 function deriveVerticalFovDeg(horizontalFovDeg, width, height) {
   const w = Math.max(1, Number(width || 1));
   const h = Math.max(1, Number(height || 1));
-  const hf = clamp(Number(horizontalFovDeg || PANO_INITIAL_FOV), 1, 179) * DEG2RAD;
-  return (2 * Math.atan(Math.tan(hf * 0.5) * (h / w))) / DEG2RAD;
+  return vFovFromHfov(clamp(Number(horizontalFovDeg || PANO_INITIAL_FOV), 1, 179), h / w);
 }
 
 export function createPanoInteractionController(options = {}) {
@@ -201,8 +200,8 @@ export function createPanoInteractionController(options = {}) {
     return true;
   }
 
-  function applyWheelEvent(ev, fallbackDelta = 0) {
-    return applyWheel(readWheelDirection(ev, fallbackDelta));
+  function applyWheelEvent(ev) {
+    return applyWheel(readWheelDirection(ev));
   }
 
   function resetView() {

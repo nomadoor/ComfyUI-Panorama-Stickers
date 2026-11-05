@@ -15,6 +15,7 @@ import argparse
 import json
 import platform
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -26,19 +27,25 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from comfyui_pano_suite.nodes import PanoramaStickersNode, PanoramaStudioNode
-from tools.bake_legacy_goldens import ASSETS, ROTATED_POSE, _painting, _sticker, _stroke, build_background_erp, render_only_runtime
+from tools.bake_legacy_goldens import ROTATED_POSE, sticker_assets, _painting, _sticker, _stroke, build_background_erp, render_only_runtime
 
 
-STATE_JSON = json.dumps({
-    "assets": ASSETS,
-    "stickers": [
-        _sticker("rotated", "quadrants", 0, **ROTATED_POSE),
-        _sticker("front", "disc", 1, yaw_deg=40.0, pitch_deg=10.0, hFOV_deg=40.0, vFOV_deg=40.0, rot_deg=0.0),
-    ],
-    "painting": _painting(paint=[
-        _stroke("red", "paint", [(0.1, 0.3), (0.25, 0.35), (0.4, 0.3)], 10, {"r": 1.0, "g": 0.1, "b": 0.1, "a": 1.0}),
-    ]),
-})
+def _state_json() -> str:
+    """The benchmark's v1 state; its sticker images are written to ComfyUI's temp directory (`sticker_assets`)."""
+    return json.dumps({
+        "assets": sticker_assets(),
+        "stickers": [
+            _sticker("rotated", "quadrants", 0, **ROTATED_POSE),
+            _sticker("front", "disc", 1, yaw_deg=40.0, pitch_deg=10.0, hFOV_deg=40.0, vFOV_deg=40.0, rot_deg=0.0),
+        ],
+        "painting": _painting(paint=[
+            _stroke("red", "paint", [(0.1, 0.3), (0.25, 0.35), (0.4, 0.3)], 10, {"r": 1.0, "g": 0.1, "b": 0.1, "a": 1.0}),
+        ]),
+    })
+
+
+# Set by `main` once the sticker images are written.
+STATE_JSON = [None]
 
 
 def run_legacy(bg_erp: torch.Tensor) -> None:
@@ -46,7 +53,7 @@ def run_legacy(bg_erp: torch.Tensor) -> None:
         output_preset="auto",
         coverage="360",
         bg_color="#00ff00",
-        state_json=STATE_JSON,
+        state_json=STATE_JSON[0],
         bg_erp=bg_erp,
         fps=24.0,
     )
@@ -60,7 +67,7 @@ def run_studio(bg_erp: torch.Tensor) -> None:
         background_range="360",
         megapixels=2 * height * height / 2**20,
         multiple=height,
-        state_json=STATE_JSON,
+        state_json=STATE_JSON[0],
         background=bg_erp,
     )
 
@@ -95,8 +102,13 @@ def main() -> int:
     parser.add_argument("--rounds", type=int, default=10)
     args = parser.parse_args()
 
+    import folder_paths
+
     times = {name: [] for name in CANDIDATES}
-    with render_only_runtime():
+    temp = tempfile.TemporaryDirectory()
+    folder_paths.temp_directory = temp.name
+    STATE_JSON[0] = _state_json()
+    with temp, render_only_runtime():
         for run in CANDIDATES.values():
             _time_once(run, args.frames, args.width)
         for _ in range(args.rounds):

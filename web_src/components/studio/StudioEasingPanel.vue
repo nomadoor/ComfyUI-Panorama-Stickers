@@ -79,8 +79,8 @@ function onHandleDown(event, index) {
     drag = null;
     return;
   }
-  window.addEventListener("keydown", onDragKeydown, true);
-  // Its pointercancel, the window's blur and a lost capture give it up as Escape does (ui_drag.js watchDragCancel).
+  // Escape gives the drag up (and does not reach the editor, which would clear the Keyframe selection), as do its
+  // pointercancel, the window's blur and a lost capture (ui_drag.js watchDragCancel).
   drag.stopCancel = watchDragCancel({ element: event.currentTarget, pointerId: event.pointerId, cancel: cancelDrag });
 }
 
@@ -101,13 +101,6 @@ function onHandleUp(event) {
   if (moved && next) send(next, "commit");
 }
 
-function onDragKeydown(event) {
-  if (!drag || event.key !== "Escape") return;
-  // Escape here gives the drag up only; it must not reach the editor (which would clear the Keyframe selection).
-  event.preventDefault();
-  event.stopPropagation();
-  cancelDrag();
-}
 
 function cancelDrag() {
   if (!drag) return;
@@ -120,7 +113,6 @@ function endDrag() {
   drag?.stopCancel?.();
   drag = null;
   live.value = null;
-  window.removeEventListener("keydown", onDragKeydown, true);
 }
 
 onBeforeUnmount(endDrag);

@@ -13,7 +13,7 @@ from . import file_3d
 from .core.gltf_animation import clip_time
 from .core.scene_eval import clip_active
 from .core.scene_state import CAMERA_LANES, DEFAULT_ANIMATION, DEFAULT_CLIP, round_frame
-from .core.video_source import pts_tolerance_frames
+from .core.video_source import pts_half_step, pts_tolerance_frames
 from .core.world_render import SceneContent
 from .pano_scene import PanoSceneValue
 from .scene_mesh import mesh_animation
@@ -104,7 +104,7 @@ def _bg_frames(bg, times, time_base, timing: bool, place: PortMedia | None, fps:
     if timing:
         return [index if index < len(bg.times) else None for index in range(len(times))]
     starts = [*bg.times, bg.times[-1] + 1 / bg.frame_rate]
-    tolerance = max(Fraction(time_base), Fraction(bg.time_base)) / 2
+    tolerance = pts_half_step(max(Fraction(time_base), Fraction(bg.time_base)))
     indices = [bisect.bisect_right(starts, time + tolerance) - 1 for time in times]
     return [index if 0 <= index < len(bg.times) else None for index in indices]
 

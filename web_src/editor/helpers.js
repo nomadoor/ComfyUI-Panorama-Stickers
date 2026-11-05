@@ -72,14 +72,11 @@ export function getWidget(node, name) {
   return null;
 }
 export function getEditorNodeTitle(node, type) {
-  const rawType = String(node?.comfyClass || node?.type || node?.title || "").trim();
+  const rawType = String(node?.comfyClass || node?.type || "").trim();
   const titleMap = {
     PanoramaStickers: "Panorama Stickers",
-    "Panorama Stickers": "Panorama Stickers",
     PanoramaCutout: "Panorama Cutout",
-    "Panorama Cutout": "Panorama Cutout",
     PanoramaPreview: "Panorama Preview",
-    "Panorama Preview": "Panorama Preview",
   };
   if (titleMap[rawType]) return titleMap[rawType];
   if (rawType) return rawType;
@@ -88,14 +85,7 @@ export function getEditorNodeTitle(node, type) {
 }
 export function uid(prefix) { return `${prefix}_${Math.random().toString(16).slice(2, 10)}`; }
 
-export function parseOutputPresetValue(v, fallback = 2048) {
-  if (typeof v === "number" && Number.isFinite(v)) return Math.round(v);
-  const s = String(v ?? "").trim();
-  if (!s) return fallback;
-  const head = s.includes("x") ? s.split("x", 1)[0].trim() : s;
-  const n = Number(head);
-  return Number.isFinite(n) ? Math.round(n) : fallback;
-}
+export { parseOutputPresetValue } from "../pano_editor_state.js";
 
 export function isAutoOutputPresetValue(v) {
   const s = String(v ?? "").trim().toLowerCase();

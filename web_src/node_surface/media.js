@@ -6,6 +6,8 @@ import {
   executionIdMatches,
   preferredImageInputsForNode,
   resolveInputOriginNode,
+  resultUiList,
+  resultUiValue,
 } from "../pano_comfy_media.js";
 import {
   isRenderableMediaReady,
@@ -145,11 +147,10 @@ export const executedRefreshMonitor = {
   },
 };
 
+// The first value under `key` in the node's own result (`outputOverride` in its place when given; pano_comfy_media.js
+// resultUiValue), or null without one.
 export function ownOutputUiValue(node, key, outputOverride = null) {
-  const output = outputOverride || lookupNodeOutputEntry(node?.id);
-  const value = output?.ui && Object.prototype.hasOwnProperty.call(output.ui, key)
-    ? output.ui[key]
-    : output?.[key];
+  const value = resultUiValue(outputOverride || lookupNodeOutputEntry(node?.id), key);
   return Array.isArray(value) ? value[0] : value;
 }
 
@@ -329,11 +330,9 @@ export function getNodePreviewImage(node, assetId, asset, sceneItem = null) {
   return img || null;
 }
 
-// A list in the node's own result `ui` (empty without one).
+// A list in the node's own result `ui` (pano_comfy_media.js resultUiList; empty without one).
 export function ownOutputUiList(node, key) {
-  const output = lookupNodeOutputEntry(node.id);
-  const value = output?.ui && Object.prototype.hasOwnProperty.call(output.ui, key) ? output.ui[key] : output?.[key];
-  return Array.isArray(value) ? value : [];
+  return resultUiList(lookupNodeOutputEntry(node.id), key);
 }
 
 // ADR 0019: the played VIDEO once it shows a frame, else its still; null without a VIDEO.

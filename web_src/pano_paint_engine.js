@@ -52,52 +52,6 @@ function createCanvasSurface(width, height) {
   return { canvas, ctx };
 }
 
-function panoPaintDebugEnabled() {
-  try {
-    if (window?.__PANO_PAINT_DEBUG__ === true) return true;
-    return String(window?.localStorage?.getItem("panoPaintDebug") || "").trim() === "1";
-  } catch {
-    return false;
-  }
-}
-
-function logPaintDebug(phase, payload) {
-  void phase;
-  void payload;
-  return;
-}
-
-function measureAlphaBounds(canvas, threshold = 8) {
-  const ctx = canvas?.getContext?.("2d");
-  const width = Number(canvas?.width || 0);
-  const height = Number(canvas?.height || 0);
-  if (!ctx || width < 1 || height < 1) return null;
-  const data = ctx.getImageData(0, 0, width, height).data;
-  let minX = width;
-  let minY = height;
-  let maxX = -1;
-  let maxY = -1;
-  for (let y = 0; y < height; y += 1) {
-    for (let x = 0; x < width; x += 1) {
-      if (data[(y * width + x) * 4 + 3] <= threshold) continue;
-      if (x < minX) minX = x;
-      if (y < minY) minY = y;
-      if (x > maxX) maxX = x;
-      if (y > maxY) maxY = y;
-    }
-  }
-  if (maxX < minX || maxY < minY) return null;
-  return {
-    minX,
-    minY,
-    maxX,
-    maxY,
-    width: maxX - minX + 1,
-    height: maxY - minY + 1,
-    aspect: Number(((maxX - minX + 1) / Math.max(1, (maxY - minY + 1))).toFixed(4)),
-  };
-}
-
 function createScratchCanvas(width, height) {
   return createPanoCanvas({
     label: "paint.scratch",
@@ -233,19 +187,13 @@ function getRawPoints(stroke) {
 
 // ─── Brush Radius ─────────────────────────────────────────────────────────────
 
+// A positive radiusValue is the radius as a share of the ERP width whatever radiusModel says, as the node reads it
+// (core/paint_strokes.py `_stroke_width_px`); the old degree_norm / world_angle models are not looked at.
 function getRadiusPx(stroke, descriptor) {
   const radiusValue = Number(stroke?.radiusValue);
-  const radiusModel = String(stroke?.radiusModel || "").trim();
   const w = descriptor?.width || 1;
-  if (radiusModel === "erp_uv_norm" && radiusValue > 0) {
-    // radiusValue = radius_px / reference_width (reference = 2048)
-    return Math.max(0.5, radiusValue * w);
-  }
-  if (radiusModel === "degree_norm" && radiusValue > 0) {
-    // radiusValue = angle_radius_degrees / 90; at equator, pixel_radius ≈ angle/360 * width
-    return Math.max(0.5, (radiusValue * 90 / 360) * w);
-  }
-  return Math.max(0.5, Number(stroke?.baseSize || stroke?.size || 10) * 0.5);
+  if (radiusValue > 0) return Math.max(0.5, radiusValue * w);
+  return Math.max(0.5, Number(stroke?.size || 10) * 0.5);
 }
 
 // Stamp spacing in pixels. Falls back to brush-type defaults if not set on the stroke.
@@ -1274,7 +1222,7 @@ export function createPaintEngineManager(options = {}) {
     const allStrokes = [
       ...(Array.isArray(state?.painting?.paint?.strokes) ? state.painting.paint.strokes : []),
       ...(Array.isArray(state?.painting?.mask?.strokes) ? state.painting.mask.strokes : []),
-    // Only ERP_GLOBAL strokes are supported. Legacy FRAME_LOCAL strokes are silently ignored.
+    // Only ERP_GLOBAL strokes exist (pano_paint_types.js normalizePaintingState drops any other).
     ].filter((stroke) => stroke?.targetSpace?.kind === "ERP_GLOBAL");
     const isMask = (stroke) => String(stroke?.layerKind || "paint") === "mask";
     const paint = allStrokes.filter((stroke) => !isMask(stroke));
@@ -1422,19 +1370,6 @@ export function createPaintEngineManager(options = {}) {
       }
     }
 
-    if (panoPaintDebugEnabled()) {
-      logPaintDebug("commit-bounds", {
-        layerKind,
-        toolKind: String(stroke?.toolKind || ""),
-        targetKind: String(targetDesc?.kind || ""),
-        targetWidth: Number(targetDesc?.width || 0),
-        targetHeight: Number(targetDesc?.height || 0),
-        targetViewMode: String(stroke?.targetSpace?.viewMode || ""),
-        strokeAspect: Number(stroke?.aspect ?? 1),
-        activeBounds: measureAlphaBounds(target.currentStroke.canvas),
-        surfaceBounds: measureAlphaBounds(surface.canvas),
-      });
-    }
 
     clearStroke();
     target.activeStroke = null;

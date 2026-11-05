@@ -5,6 +5,7 @@
 import { BoxGeometry, Mesh, MeshStandardMaterial, Scene } from "three";
 import { GLTFExporter } from "three/examples/jsm/exporters/GLTFExporter.js";
 import { openStudioEditor } from "/web_src/studio/editor.js";
+import { servedImage, viewApiURL } from "./view_files.js";
 
 const getContext = HTMLCanvasElement.prototype.getContext;
 HTMLCanvasElement.prototype.getContext = function (type, options = {}) {
@@ -56,7 +57,7 @@ try {
     timeline: AUTO ? { fps: 24 } : { fps: 24, length: 48 },
     ...(AUTO ? { background: { clip: { start: 0, in: 0, duration: 48 } } } : {}),
     stickers: [
-      { id: "sticker_1", placement: "sky", source: { kind: "file", data_url: red }, direction: { value: { yaw_deg: 0, pitch_deg: 0 } }, size: { value: { hFOV_deg: 40, vFOV_deg: 20 } }, z_index: 1 },
+      { id: "sticker_1", placement: "sky", source: servedImage("red.png", red), direction: { value: { yaw_deg: 0, pitch_deg: 0 } }, size: { value: { hFOV_deg: 40, vFOV_deg: 20 } }, z_index: 1 },
       { id: "sticker_2", placement: "world", source: { kind: "file", filename: "box.glb", subfolder: "", storage: "input" }, position: { value: [2.5, -1, -4] }, scale: { value: 1 } },
     ],
   };
@@ -67,7 +68,7 @@ try {
     title: "Panorama Studio",
     __panoStudio: true,
     __panoSceneStateV2: true,
-    inputs: [{ name: "bg_media", link: 1 }],
+    inputs: [{ name: "background", link: 1 }],
     widgets: [widget],
     graph: { getNodeById: (id) => (id === 7 ? origin : null) },
     isInputConnected: (index) => index === 0,
@@ -78,6 +79,7 @@ try {
   const app = { getNodeImageUrls: (target) => (target === origin ? [erp] : []), nodeOutputs: {} };
   // The 3D file route answers with the box (its editor file) and its box.
   const api = {
+    apiURL: viewApiURL,
     fetchApi: async () => {
       studio.routeAsks += 1;
       return { status: 200, json: async () => ({ kind: "mesh", unlit: false, file: { url: box }, box: { min: [-0.5, -0.5, -0.5], max: [0.5, 0.5, 0.5] } }) };

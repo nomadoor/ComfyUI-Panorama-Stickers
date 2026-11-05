@@ -20,6 +20,10 @@ from comfy_extras.nodes_save_3d import save_glb
 from comfyui_pano_suite import nodes, routes
 from comfyui_pano_suite.core.temp_files import TEMP_FILES
 from scene_test_helpers import blob, blobs, temp_entry_path, triangle_glb
+from comfyui_pano_suite.file_3d import _read_scene_file
+from comfyui_pano_suite.media_ui import _scene_ui
+from comfyui_pano_suite.scene_files import write_editor_files
+from comfyui_pano_suite.scene_mesh import read_mesh_file
 
 SQUARE = [[-0.5, 0.5, 0.0], [0.5, 0.5, 0.0], [0.5, -0.5, 0.0], [-0.5, -0.5, 0.0]]
 SQUARE_FACES = [[0, 3, 2], [0, 2, 1]]
@@ -86,13 +90,13 @@ def test_a_splat_file_gets_its_editor_ply(input_dir):
 def test_the_route_and_the_node_read_a_file_once_and_share_its_editor_file(input_dir, monkeypatch):
     path = _glb(input_dir / "3d" / "model.glb")
     reads, writes = [], []
-    read, write = nodes.read_mesh_file, nodes.write_editor_files
+    read, write = read_mesh_file, write_editor_files
     monkeypatch.setattr("comfyui_pano_suite.file_3d.read_mesh_file", lambda file: reads.append(file) or read(file))
     monkeypatch.setattr("comfyui_pano_suite.media_ui.write_editor_files", lambda value, progress=None: writes.append(progress) or write(value, progress))
 
     _status, payload = _post({"filename": "model.glb", "subfolder": "3d"})
     again = _post({"filename": "model.glb", "subfolder": "3d"})[1]
-    on_input = nodes._scene_ui(nodes._read_scene_file(Types.File3D(str(path)), "scene"))
+    on_input = _scene_ui(_read_scene_file(Types.File3D(str(path)), "scene"))
 
     assert len(reads) == 1 and len(writes) == 1
     # Outside a run the writer checks no Cancel and reports no progress.
@@ -103,7 +107,7 @@ def test_the_route_and_the_node_read_a_file_once_and_share_its_editor_file(input
 def test_concurrent_requests_for_one_file_read_and_write_it_once(input_dir, monkeypatch):
     _glb(input_dir / "3d" / "model.glb")
     reads, writes = [], []
-    read, write = nodes.read_mesh_file, nodes.write_editor_files
+    read, write = read_mesh_file, write_editor_files
     started = threading.Barrier(4, timeout=10)
 
     def slow_read(file):

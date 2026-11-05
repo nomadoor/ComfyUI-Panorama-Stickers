@@ -80,7 +80,7 @@ export function erasePaint(painting, eraserStroke, { descriptor: erpDesc, groupS
     const height = erpDesc.height;
     // A stamp's vertical radius on this ERP (the widest of the strokes', wider nibs counted) pads it down; across, a
     // stamp reaches stampHalfWidthPx at the group's most polar row (the whole width where that is half of it).
-    const radius = strokes.reduce((max, stroke) => Math.max(max, getNativeRadiusPxForStrokePoint(stroke, null, width, height)
+    const radius = strokes.reduce((max, stroke) => Math.max(max, getNativeRadiusPxForStrokePoint(stroke, null, width)
       * Math.max(1, Number(stroke?.aspect ?? 1))), 0.5);
     const pad = radius / height;
     const polar = Math.min(minV, 1 - maxV);

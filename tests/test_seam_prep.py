@@ -1,4 +1,5 @@
 """PanoramaSeamPrep: how far the seam moves and where the mask's band is (docs/seam-prep.md)."""
+import inspect
 import math
 
 import pytest
@@ -113,3 +114,11 @@ def test_every_image_of_a_batch_gets_the_same_shift_and_band():
     assert torch.equal(image[1:], torch.cat((batch[1:], batch[1:]), dim=2)[:, :, start_x:start_x + 1024])
     assert torch.equal(mask[0], mask[1]) and torch.equal(mask[:1], single_mask)
     assert torch.equal(blurred[0], blurred[1]) and torch.allclose(blurred[:1], single_blurred, atol=1e-6)
+
+
+def test_execute_defaults_are_the_schema_defaults():
+    # A call that omits an input gets what ComfyUI would pass for it.
+    defaults = {name: param.default for name, param in inspect.signature(PanoramaSeamPrepNode.execute).parameters.items()
+                if param.default is not inspect.Parameter.empty}
+    schema = {input_.id: input_.default for input_ in PanoramaSeamPrepNode.define_schema().inputs if input_.id in defaults}
+    assert defaults == schema == {"seam_width_px": 64, "seam_center_offset_px": 0, "mask_blur_px": 10}

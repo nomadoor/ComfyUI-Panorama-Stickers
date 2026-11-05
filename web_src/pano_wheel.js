@@ -16,16 +16,9 @@ function wheelAmount(event) {
   return deltaY;
 }
 
-export function readWheelDirection(event, fallbackDelta = 0) {
-  const deltaY = wheelAmount(event);
-  if (deltaY != null) return Math.sign(deltaY);
-  const wheelDeltaY = finiteNumber(event?.wheelDeltaY);
-  if (wheelDeltaY != null) return Math.sign(-wheelDeltaY);
-  const wheelDelta = finiteNumber(event?.wheelDelta);
-  if (wheelDelta != null) return Math.sign(-wheelDelta);
-  const detail = finiteNumber(event?.detail);
-  if (detail != null) return Math.sign(detail);
-  return Math.sign(finiteNumber(fallbackDelta) || 0);
+// The direction of a `wheel` event: 1 (rolled toward the user, deltaY > 0), -1 or 0 (no amount).
+export function readWheelDirection(event) {
+  return Math.sign(wheelAmount(event) ?? 0);
 }
 
 // Fine pixel wheel events (a trackpad) add up to one wheel step every this many px (provisional; ADR 0048;

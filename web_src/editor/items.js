@@ -234,7 +234,7 @@ export function createItems(deps) {
       const shot = getActiveCutoutShot();
       const shotId = String(shot?.id || "");
       const rect = shot ? getFrameViewRect(shot) : null;
-      return `${base}:frame:${shotId}:${Math.round(Number(shot?.yaw_deg || 0) * 1000)}:${Math.round(Number(shot?.pitch_deg || 0) * 1000)}:${Math.round(Number(shot?.roll_deg ?? shot?.rot_deg ?? 0) * 1000)}:${Math.round(Number(shot?.hFOV_deg || 0) * 1000)}:${Math.round(Number(shot?.vFOV_deg || 0) * 1000)}:${Math.round(Number(rect?.x || 0))}:${Math.round(Number(rect?.y || 0))}:${Math.round(Number(rect?.w || 0))}:${Math.round(Number(rect?.h || 0))}`;
+      return `${base}:frame:${shotId}:${Math.round(Number(shot?.yaw_deg || 0) * 1000)}:${Math.round(Number(shot?.pitch_deg || 0) * 1000)}:${Math.round(Number(shot?.roll_deg ?? 0) * 1000)}:${Math.round(Number(shot?.hFOV_deg || 0) * 1000)}:${Math.round(Number(shot?.vFOV_deg || 0) * 1000)}:${Math.round(Number(rect?.x || 0))}:${Math.round(Number(rect?.y || 0))}:${Math.round(Number(rect?.w || 0))}:${Math.round(Number(rect?.h || 0))}`;
     }
     return `${base}:view:${Math.round(Number(editor.viewYaw || 0) * 100)}:${Math.round(Number(editor.viewPitch || 0) * 100)}:${Math.round(Number(editor.viewFov || 0) * 100)}:${Math.round(Number(canvas?.width || 0))}:${Math.round(Number(canvas?.height || 0))}`;
   }

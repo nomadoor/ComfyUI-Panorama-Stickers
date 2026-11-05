@@ -158,7 +158,8 @@ export const CAMERA_LANES = [["position", positionValue], ["rotation", rotationV
 export const SCENE_LANES = [["position", positionValue], ["rotation", rotationValue], ["scale", scaleValue]];
 export const SKY_STICKER_LANES = [["direction", directionValue], ["roll", rollValue], ["size", sizeValue], ["opacity", opacityValue], ["curve", curveValue]];
 export const WORLD_STICKER_LANES = [...SCENE_LANES, ["opacity", opacityValue]];
-// A world Sticker's `lens` Lane, which only Pose handoff adds: a Sticker without it has none (a flat plane).
+// A world Sticker's `lens` Lane, which only Pose handoff before ADR 0059 added (read from saved states): a Sticker
+// without it has none (a flat plane).
 const WORLD_LENS_LANE = ["lens", lensValue];
 
 // The Lanes a Sticker has: a world Sticker's `lens` only when it has one.
@@ -249,9 +250,6 @@ function source(raw) {
       subfolder: typeof raw.subfolder === "string" ? raw.subfolder.trim().replace(/^[/\\]+|[/\\]+$/g, "") : "",
       storage: FILE_STORAGES.includes(storage) ? storage : "input",
     };
-  }
-  if (typeof raw.data_url === "string" && raw.data_url.startsWith("data:image")) {
-    return { kind: "file", data_url: raw.data_url };
   }
   return null;
 }
@@ -511,7 +509,7 @@ function sceneAnimation(raw) {
   return animation ? { animation } : {};
 }
 
-// The node's own `bg_media` on the Timeline: its Clip range.
+// The node's own `background` on the Timeline: its Clip range.
 function background(raw) {
   return { clip: clip(isObject(raw) ? raw.clip : undefined) };
 }
@@ -529,7 +527,6 @@ function v1Source(item, assets) {
       storage: String(asset.storage || "input").trim().toLowerCase(),
     };
   }
-  if (assetType === "dataurl") return { kind: "file", data_url: asset.value };
   return null;
 }
 
@@ -684,7 +681,7 @@ export function rebaseSceneState(state, value) {
   return normalizeV2({
     ...state,
     timeline: { fps, length: length === null ? null : Math.max(1, rebase(length)) },
-    camera: state.camera === null ? null : { ...state.camera, ...rebaseLanes(state.camera, CAMERA_LANES, rebase, 0, 0) },
+    camera: { ...state.camera, ...rebaseLanes(state.camera, CAMERA_LANES, rebase, 0, 0) },
     scene: { ...state.scene, clip: scene.clip, ...rebaseLanes(state.scene, SCENE_LANES, rebase, scene.anchor, scene.newAnchor) },
     stickers: state.stickers.map((item) => {
       const { clip, anchor, newAnchor } = rebaseClip(item.clip, rebase);
@@ -724,14 +721,9 @@ function wrapYawDeg(value) {
   return ((((value + 180) % 360) + 360) % 360) - 180;
 }
 
-// A v1 number written as text: ASCII decimal without `_`, with ASCII whitespace around it (docs/scene-state-v2.md).
-// Not Number()'s hex, octal and binary prefixes or its Infinity.
-const V1_NUMBER_TEXT = /^[ \t\n\r\f\v]*[+-]?(?:[0-9]+\.?[0-9]*|\.[0-9]+)(?:[eE][+-]?[0-9]+)?[ \t\n\r\f\v]*$/;
-
+// A v1 pose number: a JSON number only (ADR 0063), else NaN.
 function v1PoseNumber(value) {
-  if (typeof value === "number") return value;
-  if (typeof value !== "string") return NaN;
-  return V1_NUMBER_TEXT.test(value) ? Number(value) : NaN;
+  return typeof value === "number" ? value : NaN;
 }
 
 // Each Camera Lane's Keyframes; an empty or invalid Lane is one Keyframe of its default value at frame 0.
@@ -760,6 +752,8 @@ function v1StickerStateCamera(pose) {
 
 // Reads `sticker_state` v1 or v2 as a normalized v2 sticker_state.
 // Returns null when the text is not a sticker_state, which callers ignore as before.
+// No runtime caller today: kept as the JS twin of core/scene_state.py load_sticker_state, which the parity tests
+// (tests/test_scene_state_parity.py, tests/pano_scene_state.test.mjs) hold to the same fixtures.
 export function loadStickerState(text) {
   if (typeof text !== "string" || !text.trim()) return null;
   let raw;
@@ -773,16 +767,18 @@ export function loadStickerState(text) {
   let camera;
   let sourceAspect;
   let fps;
-  if (version === 1 || version === "1") {
+  if (version === 1) {
     camera = v1StickerStateCamera(raw.pose);
     if (!camera) return null;
     const aspect = v1PoseNumber(raw.source_aspect);
     sourceAspect = Number.isFinite(aspect) && aspect > 0 ? aspect : null;
     fps = 24;
   } else if (version === 2) {
+    // A sticker_state without a readable fps is not read (ADR 0063).
+    fps = timelineFps(raw.fps);
+    if (fps === null) return null;
     camera = stickerStateCamera(raw.camera);
     sourceAspect = positive(raw.source_aspect, null);
-    fps = timelineFps(raw.fps) ?? 24;
   } else {
     throw new Error(`Unsupported sticker_state version ${JSON.stringify(version)}; supported versions are 1 and 2.`);
   }

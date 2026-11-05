@@ -277,11 +277,6 @@ test("the Frame view's hits go by the lens picture only for a κ not shown as 1.
   assert.equal(cameraFrameHit(shotAt(1), fit).objectCamera.lensImage, undefined);
 });
 
-test("a state whose Camera is null has the output view of the default Camera: the origin, yaw 0, level", () => {
-  assert.deepEqual(outputView({ ...loadSceneState(null), camera: null }, 0), { position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0 });
-  assert.deepEqual(outputView({ ...loadSceneState(null), camera: null }, 12.5), { position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0 });
-});
-
 // docs/space-and-view.md "空のグリッド" (ADR 0058): the sky grid goes with the ground grid's switch, its half follows the
 // eye's side of the ground, and the ground's axes are carried on to the horizon from the eye.
 test("the sky grid shows the upper half from at or above the ground, the lower half from below, and carries the ground's axes on from the eye", () => {

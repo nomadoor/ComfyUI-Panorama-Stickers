@@ -40,7 +40,7 @@ function getActivePreviewBackend(node) {
 }
 
 function getNodeTypeName(node) {
-  return String(node?.comfyClass || node?.type || node?.title || "");
+  return String(node?.comfyClass || node?.type || "");
 }
 
 function isStandalonePreviewNode(node) {
@@ -115,16 +115,9 @@ function teardownPreview(node, options = {}) {
   }
   try {
     if (Array.isArray(node.widgets)) {
-      // Ensure we remove the DOM widget even if name/type mapping varies by frontend version.
-      const removable = node.widgets.filter((w) => {
-        if (w === dom?.widget) return true;
-        const name = String(w?.name || "");
-        const type = String(w?.type || "");
-        const animWidgetName = getAnimPreviewWidgetName();
-        if (name === animWidgetName || type === animWidgetName) return true;
-        if (name === "pano_preview" || type === "pano_preview") return true;
-        return name === "preview" && type === "pano_preview";
-      });
+      // The surface's DOM widget: the one it holds, or one of the name it is added under (dom.js).
+      const animWidgetName = getAnimPreviewWidgetName();
+      const removable = node.widgets.filter((w) => w === dom?.widget || String(w?.name || "") === animWidgetName);
       removable.forEach((widget) => removeNodeWidget(node, widget));
     }
   } catch {
@@ -156,9 +149,6 @@ function attachPanoramaPreviewImpl(node, options = {}) {
   surface.noPreview = options.noPreview === true;
   surface.openEditor = typeof options.onOpen === "function" ? options.onOpen : null;
   if (surface.dom?.widget) return;
-  if (typeof node.addDOMWidget !== "function") {
-    return;
-  }
 
   const noPreview = options.noPreview === true;
   const bootMinHeight = noPreview ? 0 : 56;

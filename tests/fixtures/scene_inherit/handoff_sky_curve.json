@@ -64,7 +64,8 @@
           }
         ]
       }
-    }
+    },
+    "fps": 24
   },
   "expected": {
     "id": "sticker_2",

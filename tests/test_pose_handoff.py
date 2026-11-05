@@ -13,10 +13,11 @@ pytest.importorskip(
 
 from comfyui_pano_suite.core.scene_eval import evaluate_scene_state
 from comfyui_pano_suite.core.scene_state import load_scene_state
-from comfyui_pano_suite.nodes import PanoramaStudioNode, _inherit_handoff
+from comfyui_pano_suite.nodes import PanoramaStudioNode
 from scene_test_helpers import camera_state as _camera, output_size, shoot as _shoot, state_text, video_frames as _frames
 from test_studio_camera import _solid, _upstream
 from tools.bake_legacy_goldens import render_only_runtime
+from comfyui_pano_suite.port_sticker import _inherit_handoff
 
 
 def _textured_erp(height=256, width=512):
@@ -132,7 +133,7 @@ def test_camera_cut_stays_a_cut_at_another_fps():
 
 def test_camera_keyframes_of_one_rotation_keep_the_direction_static():
     rotation = {"yaw_deg": 33.0, "pitch_deg": 21.0, "roll_deg": 7.0}
-    sticker_state = json.dumps({"kind": "pano_sticker_state", "version": 2, "camera": {
+    sticker_state = json.dumps({"kind": "pano_sticker_state", "version": 2, "fps": 24.0, "camera": {
         "rotation": [{"frame": 0, "value": rotation}, {"frame": 10, "value": rotation}],
         "fov": [{"frame": 0, "value": 60.0}, {"frame": 10, "value": 40.0}],
     }})
@@ -335,7 +336,8 @@ def test_inheriting_the_handoff_matches_the_fixture_the_editor_shares(name):
     state = load_scene_state(case["state"])
     port = next(item for item in state["stickers"] if item["source"]["kind"] == "port")
 
-    assert _inherit_handoff(state, port, case["handoff"]["placement"], case["handoff"]["lanes"]) == case["expected"]
+    assert case["handoff"]["placement"] == "sky"
+    assert _inherit_handoff(state, port, case["handoff"]["lanes"]) == case["expected"]
 
 
 # The lens curve κ (ADR 0042): a shot through a lens hands a sky Sticker of the same lens (`curve`), so that the same

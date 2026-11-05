@@ -27,7 +27,7 @@ Python のファイルは `comfyui_pano_suite/` の下にある。
   - 画面（ノード上の表示と大きなウィンドウ）は IMAGE の絵をこの `pano_input_images` から読む。つないだ先のファイルは、実行の前と、これが読めないときだけ（`docs/adr/0003-external-input-sticker-failure-boundaries.md` の Amendment 2026-03-11。ウィンドウは `docs/studio-ui.md` の「Preview のウィンドウ」）。
   - IMAGE：旧 Preview と同じく、最初の画像を保存し、バッチを MP4 にエンコードする（`encode_frames_to_mp4`。キーフレームは `EDITOR_KEYINT` フレームごと、B フレームなし）。音声はない。
   - VIDEO：`open_video(video, "source")`（Studio と同じ）で開き、最初に復号できたフレームをプレビュー画像にし、Timeline は `frame_rate` と `times` から決める。全フレームを一括では展開しない（クロップ付きや `VideoFromFile` 以外で `open_video` が `get_components()` に落ちる場合は、それに従う）。MP4 は Studio と同じエディタの MP4（`_editor_mp4`）で、シークしやすいファイルはコアの `save_to(MP4, H264)` でストリームコピーし、それ以外はプロキシを作る。`has_audio` はコピーなら書いた MP4 に音声ストリームがあるか、プロキシなら音声を入れたかで決める。
-  - プレビュー画像と MP4 のために VIDEO を 2 回開く（`open_video` と、コピーの `save_to` またはプロキシの `StreamedVideo`）。PTS の走査は `VideoIndex` を共有するので 1 回だけ。Studio の `bg_media` の VIDEO も同じ方法で MP4 を書く。
+  - プレビュー画像と MP4 のために VIDEO を 2 回開く（`open_video` と、コピーの `save_to` またはプロキシの `StreamedVideo`）。PTS の走査は `VideoIndex` を共有するので 1 回だけ。Studio の `background` の VIDEO も同じ方法で MP4 を書く。
 - 旧ノード（`PanoramaStickers`・`PanoramaCutout`・`PanoramaPreview`）のプレビュー MP4 に入れる `audio` は、フレームの長さ（フレーム数 ÷ fps）に合わせて、長ければ切り、短ければ無音で延ばす（`_fit_audio_to_frame_count`）。伸縮はしないので、速さと音程は変わらず、先頭からフレームと揃う。チャンネルの並びは `docs/studio-node.md` の `video` の音声の `_prepare_audio_layout`。
 - `PANO_SCENE` のときも、出力は入力の同じオブジェクトをそのまま返し、描画はしない（ポートの意味は変えない）。`ui` に、その Scene を見るためのキーを返す（下の「`PANO_SCENE` を見る」）。
 - ノード上の表示（`pano_preview_identity.js` の `isPanoramaPreviewSceneNodeName` が新しい id `PanoramaPreviewNode` を見分け、`pano_editor_extension.js` が付ける）：IMAGE と VIDEO は旧 `PanoramaPreview` の専用 runtime（`docs/legacy-node-surfaces.md`。3DoF の見回し）で、`PANO_SCENE` は下の Scene のビューアで見せる。どちらを使うかは、実行の前から `source` の接続の型（`pano_preview_video.js` の `linkedInputType`。`PANO_SCENE` ならビューア）で決める。実行結果を待たずに表示が決まり、型が変わればすぐ切り替わる。
@@ -39,7 +39,7 @@ Preview は見るための場所で、編集とは分ける（ADR 0041）。Stud
 ### 何を描くか
 
 - エディタの空間の表示と同じ、three.js と Spark の 3D の表示（`docs/threejs-spark-integration.md` の「空間の表示」。SPLAT、メッシュ、深度のグリッド、上流の層の要素、既定の照明）。出力の画素ではない。出力との差は、エディタと同じもの（`docs/threejs-spark-integration.md` の「ノードの出力との差」と、深度のグリッドの色のプロキシの差）で、Preview はそれを足しも減らしもしない。
-- 描くのは `PANO_SCENE` の全部の層（`layers`）で、Studio のエディタが上流の Scene の層を描くのと同じ描き方（`pano_upstream.js` の `upstreamLayerView`）。Preview には自分の層が無い。Sky の Sticker、ペイント、背景（`bg_media`・`bg_color`・Clip range）も描く。
+- 描くのは `PANO_SCENE` の全部の層（`layers`）で、Studio のエディタが上流の Scene の層を描くのと同じ描き方（`pano_upstream.js` の `upstreamLayerView`）。Preview には自分の層が無い。Sky の Sticker、ペイント、背景（`background`・`bg_color`・Clip range）も描く。
 - 描かないもの：Camera（視錐台、軌道、Frame 表示）、ギズモ、選択の枠、選択メニュー、インスペクタ、タイムラインの行、Sticker の追加と削除。グリッドと軸は、空間で迷わないための目印として、エディタと同じく出す（Hide Grid で隠せる。ビューアだけ）。
 - 再生：VIDEO の背景、`port` の素材、動く 3D（MoGe・DA3 の列）は、Timeline に沿って再生する。再生の部品はエディタと同じ（`docs/timeline-ui.md` の再生、`createVideoFollower`、深度のグリッドの色）。
 - 音：背景の VIDEO（上流の Scene の背景を含む）の音は、エディタと同じく背景を再生する `createVideoPlayback` の VIDEO 要素が出す（`port` の素材の `createVideoFollower` はいつも muted）。ノード上ではその VIDEO も muted にする（Studio のノード上の表示と同じ）。大きなウィンドウでは muted にしない。
@@ -120,4 +120,3 @@ Python（Preview の `ui`）と JS（分けた視点と上流の層のモジュ�
 - 考えた別案：ADR 0041。
 - `background_range` 入力は `execute` では読まない（フロントエンドのウィジェットが読む）。`PANO_SCENE` のときは `PanoSceneValue.coverage` が正で、ウィジェットの値は使わない。
 - MatchType はバックエンドで型を検証しないので、`source` が IMAGE（4 次元のテンソル）・VIDEO・`PanoSceneValue` のどれでもなければ `TypeError` にする。
-- 旧 Preview 用の `ensurePanoramaPreviewImageOutput`（`web_src/pano_editor_extension.js`）は、足りない `image` 出力を足す。新しいノード（`PanoramaPreviewNode`）には適用しない（適用すると MatchType の `output` とは別に `image` 出力が増える）。

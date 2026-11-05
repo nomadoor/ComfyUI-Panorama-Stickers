@@ -134,7 +134,7 @@ test("the Studio surface's line says how the Camera shoots, and its picture take
 test("the Studio surface shows the run's size only while the run's inputs are still linked", async () => {
   const stateText = JSON.stringify({ version: 2, camera: { projection: "erp" } });
   const key = studioRunKey(stateText, WIDGETS.megapixels, WIDGETS.multiple, "360", WIDGETS.background_color);
-  for (const [index, name] of ["bg_media", "sticker_image", "scene"].entries()) {
+  for (const [index, name] of ["background", "sticker_image", "scene"].entries()) {
     const links = new Map([[7, { id: 7, origin_id: 3, origin_slot: 0, type: "IMAGE" }], [8, { id: 8, origin_id: 4, origin_slot: 0, type: "IMAGE" }]]);
     const inputs = [{ name, link: 7 }];
     const node = studioNode(JSON.parse(stateText), { inputs });

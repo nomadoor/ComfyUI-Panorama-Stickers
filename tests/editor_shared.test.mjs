@@ -64,3 +64,20 @@ test("the old editor finds the background widgets under Panorama Studio's names 
   assert.equal(getWidget(legacy, BACKGROUND_RANGE_WIDGET_NAMES).value, "360");
   assert.equal(getWidget(legacy, "output_preset"), null);
 });
+
+// One reading of the stored settings (editor/ui_settings.js): the node surface does not take the editor's in-page memory
+// and turns its view by none inverted when nothing is stored.
+test("the node surface's view settings are the stored ones, else none inverted", async () => {
+  const { loadSurfaceUiSettings } = await import("../web_src/editor/ui_settings.js");
+  saveSharedUiSettings({ invert_view_x: true });
+  assert.deepEqual(loadSurfaceUiSettings(), { invert_view_x: false, invert_view_y: false });
+  const store = new Map([["pano_suite.ui_settings.v1", JSON.stringify({ invert_view_y: 1 })]]);
+  globalThis.window = { localStorage: { getItem: (key) => store.get(key) ?? null, setItem: (key, value) => store.set(key, value) } };
+  try {
+    assert.deepEqual(loadSurfaceUiSettings(), { invert_view_x: false, invert_view_y: true });
+    store.set("pano_suite.ui_settings.v1", "{not json");
+    assert.deepEqual(loadSurfaceUiSettings(), { invert_view_x: false, invert_view_y: false });
+  } finally {
+    delete globalThis.window;
+  }
+});

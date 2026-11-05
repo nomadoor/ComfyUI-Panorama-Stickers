@@ -20,8 +20,9 @@ pytest.importorskip(
 from comfyui_pano_suite.core.paint_state import empty_painting_state
 from comfyui_pano_suite.core.render import SceneSources, StickerSource
 from comfyui_pano_suite.core.scene_state import load_scene_state, rebase_scene_state
-from comfyui_pano_suite.nodes import PanoSceneValue, SceneLayer, _override_layers
 from test_scene_state_parity import assert_parity
+from comfyui_pano_suite.pano_scene import PanoSceneValue, SceneLayer
+from comfyui_pano_suite.scene_build import _override_layers
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 FIXTURE = REPO_ROOT / "tests" / "fixtures" / "scene_inherit" / "editor_working.json"

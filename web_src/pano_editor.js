@@ -490,7 +490,7 @@ async function showEditor(node, type, options = {}) {
   const {
     addImageStickerFromFile, applyInitialCutoutFocus, applyRunResult, bindDrag, cancelGesture, closePaintColorPop,
     commitState, disposeMediaSession, editorAnimating, finishKnobRoll, flushFrameWheelCommit, forgetCameraPreviewFrame,
-    getUnwrapRect, hidePaintSizePreview, hideTooltip, migrateLegacyEmbeddedAssets, onCanvasDragOver, onCanvasDrop,
+    getUnwrapRect, hidePaintSizePreview, hideTooltip, onCanvasDragOver, onCanvasDrop,
     onCanvasMouseMove, onCanvasPointerCancel, onCanvasPointerDown, onCanvasPointerMove, onCanvasPointerUp, onCanvasWheel,
     onDeleteKey, onEscClose, onFrameRollKnobDoubleClick, onFrameRollKnobPointerDown, onFrameRollKnobPointerMove,
     onFullscreenChange, onModifierKeyChange, onMoveKeyDown, onRootChange, onRootClick, onRootInput, onRootPointerOut,
@@ -751,10 +751,6 @@ async function showEditor(node, type, options = {}) {
   if (!readOnly && type === "stickers") {
     runBootStep("external-sticker-sync", () => reconcileExternalStickerFromInputs("open"), { rollbackState: true });
   }
-  void migrateLegacyEmbeddedAssets().catch((error) => {
-    uiState.stageWarningDetail = "boot:asset-migration";
-    console.error('[PanoramaStickers] editor boot step "asset-migration" failed', error);
-  });
   runBootStep("history", () => pushHistory());
   runBootStep("undo-redo", syncUndoRedoButtons);
   runBootStep("paint-ui", syncPaintUi);
