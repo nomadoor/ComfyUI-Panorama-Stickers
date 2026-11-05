@@ -851,8 +851,8 @@ Camera タブでは同じ席で無効にする（tooltip は「Not available in 
   - フォーカス：ポインタで押したときは何も出さない。キーボードで移ったときだけ、帯の地を薄く明るくして示す（縁の線は使わない。規則は
     `docs/design.md` の「フォーカス」）。
   - Alt：Frame モードで Alt を押している間は、FOV の目盛りをキーボードのフォーカスと同じ見た目にし、Alt + ホイールで動くのがそこだと
-    示す（操作は `docs/space-and-view.md` の「Frame 表示」。ADR 0061）。見せるのは Alt を押していて視点の操作（ドラッグ、移動のキー）が無い間だけ
-    （Alt + ドラッグのオービットの間も見せない。つまみの Alt の分と同じ。`docs/space-and-view.md` の「視点の操作の部品」）。
+    示す（操作は `docs/space-and-view.md` の「Frame 表示」。ADR 0061）。Alt を押している間は、視点の操作の間も消さない（つまみの Alt の示しと
+    同じ。`docs/space-and-view.md` の「視点の操作の部品」）。
     Lens と Roll は変えない。Camera が動かせないとき（ロックした Camera、読み取り専用のエディタ）と Panorama モードでは変えない。値は
     `docs/design.md`。
   - 一段の値：矢印キーの一回（Shift なし）は小さい目盛り一つ動かし、範囲（インスペクタの同じ行の値の箱の範囲）の端で止め、上の「値の桁」に
