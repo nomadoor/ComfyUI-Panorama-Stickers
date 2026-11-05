@@ -5,7 +5,7 @@ import { skyStickerVfov } from "./pano_editor_state.js";
 import { evaluateSceneState } from "./pano_scene_eval.js";
 import { is3dFileSource } from "./pano_scene_state.js";
 import { watchThreeView } from "./pano_diagnostics.js";
-import { DEG2RAD, RAD2DEG, norm } from "./pano_camera_math.js";
+import { DEG2RAD, RAD2DEG, norm, vFovFromHfov } from "./pano_camera_math.js";
 import { contextHalfExtentsPx, getCutoutCameraParams, shotCurve } from "./pano_cutout_view_math.js";
 import { lensImagePoint, lensRadius, lensRenderPlan, lensStageRay, rotateByQuaternion } from "./pano_lens.js";
 import { worldStickerPlane } from "./pano_space.js";
@@ -31,12 +31,10 @@ export const HIDDEN_PREVIEW_OPACITY = 0.28;
 // The three.js camera for a panorama view with the Camera value's angles. hFOV_deg spans the view
 // width like the previous renderer, so the vertical FOV follows the view's aspect.
 export function viewportCamera(view, width, height) {
-  const aspect = width / height;
-  const tanHalfH = Math.tan(view.hFOV_deg * 0.5 * DEG2RAD);
   return {
     quaternion: rotationToQuaternion(worldRotation(view.yaw_deg, view.pitch_deg, view.roll_deg)),
-    fovY_deg: 2 * Math.atan(tanHalfH / aspect) * RAD2DEG,
-    aspect,
+    fovY_deg: vFovFromHfov(view.hFOV_deg, height / width),
+    aspect: width / height,
   };
 }
 

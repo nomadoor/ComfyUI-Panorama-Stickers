@@ -129,3 +129,41 @@ test("fovZoomStep: rolled away is one FOV step smaller, back is larger", () => {
 test("the FOV number's fine step is one degree", () => {
   assert.equal(VIEW_FOV_FINE_STEP_DEG, 1);
 });
+
+// One rule, one owner: every pinhole hFOV → vFOV goes by vFovFromHfov (and its half tangents by
+// pinholeHalfTangents). The copies before it differed in the last bits; at hFOV 34° over 800 x 600 each of
+// them did, so these pin the owner's values to the bit.
+test("every pinhole hFOV → vFOV gives the owner's value to the last bit", async () => {
+  const { pinholeHalfTangents, vFovFromHfov } = await import("../web_src/pano_camera_math.js");
+  const { skyStickerVfov } = await import("../web_src/pano_editor_state.js");
+  const { viewportCamera } = await import("../web_src/pano_editor_view.js");
+  const { tanHalfFov } = await import("../web_src/space/view.js");
+  const { spaceCamera } = await import("../web_src/space/camera.js");
+  const { createPanoInteractionController } = await import("../web_src/pano_interaction_controller.js");
+  const { reconcileExternalStickerState } = await import("../web_src/pano_stickers_node_surface.js");
+
+  const expected = 25.829116899728213;
+  assert.equal(vFovFromHfov(34, 600 / 800), expected);
+  assert.equal(pinholeHalfTangents(34, 600 / 800).tanY, 0.22929801109399528);
+  assert.equal(tanHalfFov({ hFOV_deg: 34 }, 800, 600).tanY, 0.22929801109399528);
+  assert.equal(skyStickerVfov({ source: { kind: "port" } }, { hFOV_deg: 34, vFOV_deg: 1 }, { width: 800, height: 600 }), expected);
+  assert.equal(viewportCamera({ yaw_deg: 0, pitch_deg: 0, roll_deg: 0, hFOV_deg: 34 }, 800, 600).fovY_deg, expected);
+  assert.equal(spaceCamera({ yaw_deg: 0, pitch_deg: 0, roll_deg: 0, hFOV_deg: 34, position: [0, 0, 0], distance: 1 }, 800, 600).fovY_deg, expected);
+
+  // A drag the height of the view turns the pitch by the view's vFOV.
+  let view = { yaw: 0, pitch: 0, fov: 34 };
+  const controller = createPanoInteractionController({
+    getView: () => view,
+    setView: (next) => { view = next; },
+    getViewportSize: () => ({ w: 800, h: 600 }),
+  });
+  controller.startDrag(0, 0, 1, 1000);
+  controller.moveDrag(0, 600, "pano", 1010);
+  assert.equal(view.pitch, expected);
+
+  const external = reconcileExternalStickerState({ version: 1, stickers: [], assets: {} }, {
+    connected: true, linkId: 1, stateHash: "a", pose: { yaw_deg: 0, pitch_deg: 0, hFOV_deg: 34, rot_deg: 0 },
+    imageWidth: 800, imageHeight: 600,
+  });
+  assert.equal(external.state.stickers.at(-1).vFOV_deg, expected);
+});

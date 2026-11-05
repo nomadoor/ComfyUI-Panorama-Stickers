@@ -244,8 +244,7 @@ export function skyStickerVfov(sticker, value, size) {
     const vfov = 2 * lensAngle(lensRadius(hfov * 0.5, curve) * (size.height / size.width), curve) / DEG2RAD;
     return Math.min(limit, Math.max(0.1, vfov));
   }
-  const hfov = Math.min(179, Math.max(0.1, value.hFOV_deg)) * DEG2RAD;
-  const vfov = 2 * Math.atan(Math.tan(hfov * 0.5) * (size.height / size.width)) / DEG2RAD;
+  const vfov = vFovFromHfov(Math.min(179, Math.max(0.1, value.hFOV_deg)), size.height / size.width);
   return Math.min(179, Math.max(0.1, vfov));
 }
 

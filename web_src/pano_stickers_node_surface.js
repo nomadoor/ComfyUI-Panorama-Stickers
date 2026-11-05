@@ -1,4 +1,5 @@
 import { fileSource, newSceneSticker, parseSceneEditorState, setStickerPose, stickerPose, takeStickerId, unkeyedPose } from "./pano_editor_state.js";
+import { vFovFromHfov } from "./pano_camera_math.js";
 import { createNodeSurfaceSession } from "./pano_node_surface_session.js";
 import { evaluateSticker } from "./pano_scene_eval.js";
 import { isInputConnected, nodePortHandoff, portHandoff, showPortHandoff } from "./pano_port_handoff.js";
@@ -12,7 +13,7 @@ export const NODE_SURFACE_FRAME = 0;
 function computeVerticalFov(hFovDeg, width, height) {
   const hFov = Math.min(179, Math.max(0.1, Number(hFovDeg || 30)));
   const aspectScale = Math.max(1, Number(height || 1)) / Math.max(1, Number(width || 1));
-  const vertical = 2 * Math.atan(Math.tan((hFov * Math.PI / 180) * 0.5) * aspectScale) * 180 / Math.PI;
+  const vertical = vFovFromHfov(hFov, aspectScale);
   return Math.min(179, Math.max(0.1, vertical));
 }
 
