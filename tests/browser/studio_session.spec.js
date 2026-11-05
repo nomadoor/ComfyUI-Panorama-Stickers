@@ -17,10 +17,10 @@ function watch(page) {
 
 const studio = (page, name, ...args) => page.evaluate(([key, rest]) => window.__studio[key](...rest), [name, args]);
 
-async function open(page, testInfo) {
+async function open(page, testInfo, query = "") {
   const problems = watch(page);
   await page.setViewportSize({ width: 1280, height: 800 });
-  await page.goto("/tests/browser/pages/studio_session.html");
+  await page.goto(`/tests/browser/pages/studio_session.html${query}`);
   await page.waitForFunction(() => window.__studio?.ready, null, { timeout: 30_000 });
   expect(await page.evaluate(() => window.__studio.error)).toBeNull();
   await expect(page.locator(".pano-studio-notice")).toHaveCount(0, { timeout: 30_000 });
@@ -120,6 +120,30 @@ test("a length shorter than the playhead brings the playhead to the last frame, 
   await expect(timecode).not.toHaveText("19 / 40");
   await page.locator('[data-tool="undo"]').click();
   await expect(timecode).toHaveText("19 / 20");
+  expect(problems).toEqual([]);
+});
+
+// A Clip range drag keeps the Timeline's range as at its start (docs/timeline-ui.md "タイムラインの長さ"): the playhead
+// stays while the end is trimmed in, and goes to the last frame once it is let go past the new end.
+test("trimming the Clip range that sets the Auto length keeps the playhead during the drag and brings it in after", async ({ page }, testInfo) => {
+  const problems = await open(page, testInfo, "?auto");
+  const frameText = page.locator('[data-tl="time"] .pano-studio-tl-frame');
+  await expect(frameText).toHaveText("0 / 48");
+  const ruler = await page.locator('[data-tl="ruler"]').boundingBox();
+  await page.mouse.click(ruler.x + ruler.width * 0.95, ruler.y + ruler.height / 2);
+  const before = await frameText.textContent();
+  expect(Number(before.split(" / ")[0])).toBeGreaterThan(40);
+  const end = await page.locator('[data-track="background"] [data-part="clip-end"]').boundingBox();
+  await page.mouse.move(end.x + end.width / 2, end.y + end.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(ruler.x + ruler.width * 0.5, end.y + end.height / 2, { steps: 8 });
+  // The playhead stays (the length shown follows the trim).
+  await page.waitForTimeout(200);
+  expect((await frameText.textContent()).split(" / ")[0]).toBe(before.split(" / ")[0]);
+  await page.mouse.up();
+  const length = (await studio(page, "state")).background.clip.duration;
+  expect(length).toBeLessThan(35);
+  await expect(frameText).toHaveText(`${length - 1} / ${length}`);
   expect(problems).toEqual([]);
 });
 

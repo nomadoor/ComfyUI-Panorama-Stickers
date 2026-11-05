@@ -29046,6 +29046,10 @@ function Fj({ state: e, readOnly: t = !1, upstream: n = null, handoff: r = null 
     get canRedo() {
       return !t && u.length > 1 && u.index >= 0 && u.index < u.length - 1;
     },
+    // A gesture is under way (its live changes have not been committed or cancelled yet).
+    get gesturing() {
+      return !!a;
+    },
     readOnly: t,
     // The Pose handoff the port Sticker is shown with, or null (the inspector's and the bar's `handoff`).
     get portHandoff() {
@@ -35320,8 +35324,9 @@ function BK(e) {
   }
   function i() {
     var u;
+    if (t.playing || e.session.gesturing) return;
     const l = _i(n()) - 1;
-    t.playhead > l && !t.playing && ((u = e.playback) == null || u.seek(l));
+    t.playhead > l && ((u = e.playback) == null || u.seek(l));
   }
   const o = () => mg(e.session.state, e.upstream.working()), a = { ground: o(), camera: Nc(e.session.state, 0).position };
   function s() {

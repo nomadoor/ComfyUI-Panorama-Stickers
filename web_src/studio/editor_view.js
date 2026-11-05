@@ -90,10 +90,12 @@ export function createEditorView(ctx) {
   // The playhead never goes past the last frame: a span that got shorter (the length field, Undo, an Auto length after a
   // delete or a new run result) brings it back to the last frame (docs/timeline-ui.md "タイムラインの長さ"). Every
   // change of what the span reads (the state, the inputs' lengths, the upstream layers) comes through syncMedia. While
-  // it plays, the playback keeps its frame inside the span itself (pano_video_playback.js).
+  // it plays, the playback keeps its frame inside the span itself (pano_video_playback.js). While a gesture is under way
+  // (a Timeline drag keeps the range it started with) it waits: the sync that commits or cancels the gesture brings it in.
   function keepPlayheadInSpan() {
+    if (view.playing || ctx.session.gesturing) return;
     const last = spanOf(timelineCtx()) - 1;
-    if (view.playhead > last && !view.playing) ctx.playback?.seek(last);
+    if (view.playhead > last) ctx.playback?.seek(last);
   }
 
   // The stage's world: the ground height (an upstream layer's while the state has none) and the Camera's position at
