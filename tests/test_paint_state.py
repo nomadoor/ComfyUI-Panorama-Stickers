@@ -90,7 +90,8 @@ def test_normalize_painting_state_rejects_unknown_target_space_and_bad_coords():
     assert state["mask"]["strokes"] == []
 
 
-def test_normalize_painting_state_preserves_frame_local_target_space_and_points():
+def test_normalize_painting_state_drops_a_frame_local_stroke():
+    # ADR 0063: a stroke not in ERP_GLOBAL (the old FRAME_LOCAL) is dropped on load.
     state = normalize_painting_state({
         "mask": {
             "strokes": [{
@@ -118,15 +119,7 @@ def test_normalize_painting_state_preserves_frame_local_target_space_and_points(
         },
     })
 
-    stroke = state["mask"]["strokes"][0]
-    point = stroke["geometry"]["points"][0]
-    assert stroke["targetSpace"] == {"kind": "FRAME_LOCAL", "frameId": "frame_a"}
-    assert point["targetKind"] == "FRAME_LOCAL"
-    assert point["frameId"] == "frame_a"
-    assert point["u"] == 1.25
-    assert point["v"] == -0.5
-    assert point["widthScale"] == 1.5
-    assert point["pressureLike"] == 0.25
+    assert state["mask"]["strokes"] == []
 
 
 def test_normalize_painting_state_preserves_raster_object_fractional_z_index():
