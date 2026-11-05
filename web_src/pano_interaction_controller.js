@@ -200,8 +200,8 @@ export function createPanoInteractionController(options = {}) {
     return true;
   }
 
-  function applyWheelEvent(ev, fallbackDelta = 0) {
-    return applyWheel(readWheelDirection(ev, fallbackDelta));
+  function applyWheelEvent(ev) {
+    return applyWheel(readWheelDirection(ev));
   }
 
   function resetView() {

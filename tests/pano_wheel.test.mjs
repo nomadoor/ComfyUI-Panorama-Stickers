@@ -9,14 +9,12 @@ import {
   wheelMeaning,
 } from "../web_src/pano_wheel.js";
 
-test("wheel direction is normalized across modern and legacy event fields", () => {
+test("wheel direction is the sign of the wheel event's deltaY; the old mousewheel fields are not read", () => {
   assert.equal(readWheelDirection({ deltaY: 12 }), 1);
   assert.equal(readWheelDirection({ deltaY: -0.25 }), -1);
   assert.equal(readWheelDirection({ deltaY: 0 }), 0);
-  assert.equal(readWheelDirection({ wheelDeltaY: 120 }), -1);
-  assert.equal(readWheelDirection({ wheelDelta: -120 }), 1);
-  assert.equal(readWheelDirection({ detail: -3 }), -1);
-  assert.equal(readWheelDirection({}, 40), 1);
+  assert.equal(readWheelDirection({ wheelDeltaY: 120 }), 0);
+  assert.equal(readWheelDirection({ wheelDelta: -120, detail: -3 }), 0);
 });
 
 test("wheel capture focuses the Node2 root on pointer entry and cleans up", () => {

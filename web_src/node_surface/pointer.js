@@ -469,9 +469,7 @@ export function bindSurfacePointer(ctx) {
     viewportRestoreScheduler.schedule(graphSnapshot);
   };
   const wheelTargets = studioSurface ? [] : stickersMode ? [wrap, canvas] : [wrap];
-  ["wheel", "mousewheel", "DOMMouseScroll"].forEach((name) => {
-    wheelTargets.forEach((target) => target.addEventListener(name, onPreviewWheel, { passive: false, capture: true }));
-  });
+  wheelTargets.forEach((target) => target.addEventListener("wheel", onPreviewWheel, { passive: false, capture: true }));
 
   ["contextmenu", "mousedown", "mouseup", "mousemove", "click", "dblclick"].forEach((name) => {
     canvas.addEventListener(name, (ev) => stopCanvasEventUnlessResizeGrip(ev, eventSurface));
