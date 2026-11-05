@@ -987,7 +987,16 @@
   opacity: 0.4;
 }
 
+/* The bezier text and its copy button right of it (docs/studio-ui.md "Easing のパネル"). */
+.pano-studio-easing-text-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .pano-studio-easing-text {
+  flex: 1;
+  min-width: 0;
   width: 100%;
   height: var(--studio-field-h);
   padding: 0 8px;

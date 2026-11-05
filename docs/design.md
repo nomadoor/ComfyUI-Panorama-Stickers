@@ -377,7 +377,7 @@ Tailwind の utility（`.hidden { display: none }` など）を持つので、Vu
 
 ## アイコン
 
-- Tabler の outline のアイコンを `web_src/icons.js` が持つ（`ICON` の名前 68 個と、Tabler の名前と SVG の中身を持つ `ICON_PATHS`）。
+- Tabler の outline のアイコンを `web_src/icons.js` が持つ（`ICON` の名前 69 個と、Tabler の名前と SVG の中身を持つ `ICON_PATHS`）。
   `SvgIcon.vue` が `viewBox="0 0 24 24"`、`fill="none"`、`stroke="currentColor"`、`stroke-linecap` と `stroke-linejoin` は `round`、
   class `icon icon-tabler icons-tabler-outline` で描く。
 - 線の太さ：`.pano-modal` の中の Tabler のアイコンと、`.pano-btn-icon`・`.pano-btn-texticon` の中の SVG は `var(--pano-icon-stroke, 2.3)`

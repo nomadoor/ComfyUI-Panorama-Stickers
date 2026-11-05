@@ -1,14 +1,17 @@
 <script setup>
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { clamp } from "../../pano_math.js";
+import { ICON } from "../../icons.js";
 import { formatBezier, parseBezier } from "../../studio/inspector_model.js";
 import { watchDragCancel } from "../../studio/ui_drag.js";
+import StudioIconButton from "./StudioIconButton.vue";
 import StudioResetButton from "./StudioResetButton.vue";
 import StudioSegmented from "./StudioSegmented.vue";
 
 // The Easing panel at the inspector's bottom while Keyframes are selected (docs/studio-ui.md "Easing のパネル";
 // what it changes: docs/timeline-ui.md "Easing"): the heading and its reset, the five presets, the square curve
-// graph whose two control points drag, and the four bezier values as text to copy and paste. Presentational: the
+// graph whose two control points drag, and the four bezier values as text to copy and paste, with a copy button right
+// of it. Presentational: the
 // panel of web_src/studio/inspector_model.js comes in, `edit` goes out ("easing" / "easing-reset" of
 // web_src/studio/inspector_actions.js).
 const props = defineProps({
@@ -151,6 +154,30 @@ function onTextKeydown(event) {
   }
 }
 
+// --- The copy button: the text as the box shows it to the clipboard, then a check for COPIED_MS. Nothing to copy while
+// the Easing is mixed or the panel is off (or the Easing has no four values: Auto, Hold). A refused clipboard does
+// nothing (no check).
+const COPIED_MS = 1200;
+const copied = ref(false);
+const copyOff = computed(() => off.value || props.model.mixed || !props.model.text);
+let copiedTimer = null;
+
+async function copyText() {
+  if (copyOff.value) return;
+  try {
+    await navigator.clipboard.writeText(props.model.text);
+  } catch {
+    return;
+  }
+  copied.value = true;
+  clearTimeout(copiedTimer);
+  copiedTimer = setTimeout(() => {
+    copied.value = false;
+  }, COPIED_MS);
+}
+
+onBeforeUnmount(() => clearTimeout(copiedTimer));
+
 function onPaste(event) {
   const pasted = event.clipboardData?.getData("text") ?? "";
   if (parseBezier(pasted)) {
@@ -205,16 +232,27 @@ function onPaste(event) {
         />
       </template>
     </svg>
-    <input
-      v-model="text"
-      class="pano-studio-easing-text pano-studio-num"
-      spellcheck="false"
-      aria-label="Cubic bezier"
-      :placeholder="placeholder"
-      :disabled="off"
-      @keydown="onTextKeydown"
-      @blur="applyText(text)"
-      @paste="onPaste"
-    >
+    <div class="pano-studio-easing-text-row">
+      <input
+        v-model="text"
+        class="pano-studio-easing-text pano-studio-num"
+        spellcheck="false"
+        aria-label="Cubic bezier"
+        :placeholder="placeholder"
+        :disabled="off"
+        @keydown="onTextKeydown"
+        @blur="applyText(text)"
+        @paste="onPaste"
+      >
+      <StudioIconButton
+        :icon="copied ? ICON.check : ICON.copy"
+        label="Copy cubic bezier"
+        :tip="copied ? 'Copied' : 'Copy'"
+        size="sm"
+        :disabled="copyOff"
+        data-part="easing-copy"
+        @press="copyText"
+      />
+    </div>
   </section>
 </template>
