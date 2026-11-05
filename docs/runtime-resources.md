@@ -40,7 +40,7 @@ Python のファイルは `comfyui_pano_suite/` の下にある。
   - 中身のバイト数は `nbytes`（配列・テンソル、その入れ物、SPLAT・MESH の属性のテンソル）で数える。パスだけの項目（temp の MP4・PNG・PLY/GLB）は 0 バイトなので、項目数を `CACHE_MAX_ENTRIES`（256）で抑える。
   - 入れた配列は読み取り専用にし、`get` も `put` もコピーしない。呼び出し側は書き換えない。
 - 入れるもの（名前空間）：
-  - `image_file`・`image_data_url`：8 ビットの画像（Sticker の `file` の Source、アップロード済みのペイントのラスタ）を、復号した RGBA の uint8 のまま。キーはファイルならパス・更新時刻・大きさ、data URL なら URL の SHA-1（URL の文字列そのものはキーにしない）。
+  - `image_file`：8 ビットの画像（Sticker の `file` の Source、アップロード済みのペイントのラスタ）を、復号した RGBA の uint8 のまま。キーはファイルのパス・更新時刻・大きさ。
   - `painting_erp`：状態のペイント（ストローク、ラスタオブジェクト）を ERP に描いた結果（`render_painting_to_erp`）。1 回の描画のパスの中で同じペイントを何度も求め（ペイントとマスクを別々に、グループごとに）、1 回の実行で複数のパス（最初のフレーム、`video` 出力を読むたび）を描くので、ComfyUI の出力キャッシュでは代わりにならない。ストロークを描くのは CPU で数秒かかることがあるため残す。
   - `cutout_sampling_map`：旧 Cutout の標本化の表。
   - `video`・`scene_files`：エディタ用の MP4・PNG・PLY/GLB・`DA3_GEOMETRY` mono の深度（`.f32`）のパス。`DA3_GEOMETRY` mono の色のプロキシの MP4 は `video` に入る。

@@ -2,7 +2,7 @@
 
 ## Status
 
-Active
+Active（「未知／レガシーのストローク（`FRAME_LOCAL` を含む）は JSON ラウンドトリップで保持する」は ADR 0063 で superseded）
 
 ## Date
 
