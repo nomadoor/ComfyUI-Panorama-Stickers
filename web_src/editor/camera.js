@@ -11,7 +11,6 @@ import {
   getCutoutCameraParams,
   resolveFrameRollDeg,
   shortestAngleDeltaRad,
-  shotCurve,
 } from "../pano_cutout_view_math.js";
 import { aspectPreset } from "../pano_editor_ui_state.js";
 import { clamp, wrapYaw } from "../pano_math.js";
@@ -90,7 +89,7 @@ export function createCamera(deps) {
     const safeRect = runtime.frameSafeRect;
     if (!selected || !safeRect || editor.mode !== "frame") return false;
     const focal = FRAME_GATE_OCCUPANCY * fitFocalPx(safeRect, selected);
-    const next = fovPairForGate(aspectFitGateSize(safeRect, ratio), focal, shotCurve(selected));
+    const next = fovPairForGate(aspectFitGateSize(safeRect, ratio), focal);
     selected.hFOV_deg = next.hFOV_deg;
     selected.vFOV_deg = next.vFOV_deg;
     return true;
@@ -115,7 +114,7 @@ export function createCamera(deps) {
     if (!applyGateAspectAtCurrentScale(selected, ratio)) {
       const vf = clamp(Number(selected.vFOV_deg || 40), 1, 179);
       selected.vFOV_deg = vf;
-      selected.hFOV_deg = deriveHorizontalFovDeg(vf, ratio, shotCurve(selected));
+      selected.hFOV_deg = deriveHorizontalFovDeg(vf, ratio);
     }
     selected.aspect_id = `${aw}:${ah}`;
   }
@@ -128,7 +127,7 @@ export function createCamera(deps) {
     if (!applyGateAspectAtCurrentScale(selected, ratio)) {
       const vf = clamp(Number(selected.vFOV_deg || 40), 1, 179);
       selected.vFOV_deg = vf;
-      selected.hFOV_deg = deriveHorizontalFovDeg(vf, ratio, shotCurve(selected));
+      selected.hFOV_deg = deriveHorizontalFovDeg(vf, ratio);
     }
     selected.aspect_id = pair.label;
     return true;
@@ -152,7 +151,7 @@ export function createCamera(deps) {
     if (!applyGateAspectAtCurrentScale(selected, inverted)) {
       const vf = clamp(Number(selected.vFOV_deg || 60), 1, 179);
       selected.vFOV_deg = vf;
-      selected.hFOV_deg = deriveHorizontalFovDeg(vf, inverted, shotCurve(selected));
+      selected.hFOV_deg = deriveHorizontalFovDeg(vf, inverted);
     }
     if (/^\d+:\d+$/.test(storedAspect)) {
       const [w, h] = storedAspect.split(":");

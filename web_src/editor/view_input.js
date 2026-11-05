@@ -1,6 +1,6 @@
 // What the three.js views draw: the input of a frame (background and Sky layers), built once per frame from
 // the state, and the calls that draw the panorama view, a shot and the Unwrap view with it.
-import { shotCamera, shotLensImage, workingSkyLayers } from "../pano_editor_view.js";
+import { shotCamera, workingSkyLayers } from "../pano_editor_view.js";
 import { evaluateSceneState } from "../pano_scene_eval.js";
 import { loadSceneState } from "../pano_scene_state.js";
 
@@ -8,10 +8,8 @@ export function createViewInput(deps) {
   const {
     canvas, editor, editorView, imageCache, scheduler, state, stillCanvas, videoEl,
   } = deps;
-  // The kind of lens image each owner of a shot view drew last (pano_lens.js lensRenderPlan's `previous`).
-  const lensKinds = new Map();
   // Bound by connect() to the other modules and showEditor.
-  let backgroundColor, backgroundCoverage, buildEditorViewPaintLayers, currentViewCamera, deviceRect, getConnectedErpImage,
+  let backgroundCoverage, buildEditorViewPaintLayers, currentViewCamera, deviceRect, getConnectedErpImage,
     getMediaRevisionToken, getStickerImage, isDecodedImageReady;
 
   // The state v2 the views draw, made again when the state changes (scheduler.stateRevision).
@@ -77,14 +75,11 @@ export function createViewInput(deps) {
   // canvas). Returns the part of the canvas drawn ({ canvas, x, y, width, height }), or null when there is
   // nothing to draw yet.
   // clearColor is what shows where nothing is drawn (as editorView.clear's), transparent without one.
-  // A lens Camera (ADR 0042) draws through the lens pass (pano_editor_view.js shotLensImage): `lens` places its image
-  // in rect's pixels (the Frame view's), else the image fills rect (the camera preview).
-  function drawEditorViewShot(rect, shot, owner, clearColor = null, lens = null) {
+  // The shot is a pinhole (pano_editor_state.js parsePanoEditorState: the legacy nodes never use `curve`).
+  function drawEditorViewShot(rect, shot, owner, clearColor = null) {
     const { background, layers } = editorViewInput();
     if (!background && !layers.length) return null;
-    const lensImage = shotLensImage(shot, rect.w, rect.h, parseInt(String(backgroundColor() ?? "#000000").replace("#", ""), 16) || 0, lens, lensKinds.get(owner) ?? null);
-    lensKinds.set(owner, lensImage?.kind ?? null);
-    return editorView.render({ rect, camera: shotCamera(shot), background, layers, space: null, owner, clearColor, ...(lensImage ? { lens: lensImage } : {}) });
+    return editorView.render({ rect, camera: shotCamera(shot), background, layers, space: null, owner, clearColor });
   }
 
   // The Unwrap view in rect of the 2D overlay, on the three.js canvas. Returns whether it could draw.
@@ -96,7 +91,7 @@ export function createViewInput(deps) {
   return {
     connect(api) {
       ({
-        backgroundColor, backgroundCoverage, buildEditorViewPaintLayers, currentViewCamera, deviceRect, getConnectedErpImage,
+        backgroundCoverage, buildEditorViewPaintLayers, currentViewCamera, deviceRect, getConnectedErpImage,
         getMediaRevisionToken, getStickerImage, isDecodedImageReady,
       } = api);
     },

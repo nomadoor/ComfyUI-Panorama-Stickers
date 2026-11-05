@@ -96,6 +96,26 @@ export function retainActiveCutoutShot(shots, selectedShotId) {
   return { shots: [selected], selectedShotId: retainedId };
 }
 
+// The legacy nodes never use a lens `curve`: their editor and node surfaces draw every v1 shot and Sticker as a pinhole,
+// as Python's legacy nodes do (docs/legacy-node-surfaces.md). This drops it (and an initial pose's) from a parsed v1
+// state `state` (its items are the parse's own copies), so saving leaves it out too. A shot's aspect_id is derived
+// again without it. Returns `state`.
+function pinholeV1Items(state) {
+  for (const item of Array.isArray(state.stickers) ? state.stickers : []) {
+    if (!item || typeof item !== "object") continue;
+    delete item.curve;
+    if (item.initial_pose && typeof item.initial_pose === "object") delete item.initial_pose.curve;
+  }
+  if (Array.isArray(state.shots)) {
+    state.shots = state.shots.map((shot) => {
+      if (!shot || typeof shot !== "object" || !("curve" in shot)) return shot;
+      const { curve: _curve, ...pinhole } = shot;
+      return normalizeCutoutShotItem(pinhole);
+    });
+  }
+  return state;
+}
+
 export function parsePanoEditorState(text, options = {}) {
   const resolvedOptions = {
     outputPreset: 2048,
@@ -145,7 +165,7 @@ export function parsePanoEditorState(text, options = {}) {
     merged.bg_color = String(resolvedOptions.backgroundColor || merged.bg_color || base.bg_color);
     merged.coverage = normalizeCoverageValue(resolvedOptions.coverage);
     delete merged.editor_history;
-    return merged;
+    return pinholeV1Items(merged);
   } catch {
     parseStateJsonCache = { text: trimmed, parsed: null };
     return base;

@@ -625,3 +625,23 @@ test("the node surface reads a result's ui list as the media adapter does", asyn
     delete fakeApp.nodeOutputs[String(node.id)];
   }
 });
+
+// docs/legacy-node-surfaces.md: the legacy nodes never use `curve`; their surfaces draw a v1 shot or Sticker as a pinhole,
+// as Python's legacy output does.
+test("a legacy node surface reads a v1 state's shots and Stickers without their curve", async () => {
+  const { getCachedState } = await import("../web_src/node_surface/state.js");
+  const shot = { id: "shot", yaw_deg: -30, pitch_deg: 5, roll_deg: 0, hFOV_deg: 90, vFOV_deg: 60 };
+  const sticker = { id: "s", asset_id: "a", yaw_deg: 20, pitch_deg: 10, rot_deg: 0, hFOV_deg: 70, vFOV_deg: 50 };
+  const node = createFakeNode({
+    type: CUTOUT,
+    widgets: { state_json: JSON.stringify({ version: 1, shots: [{ ...shot, curve: 0.5 }], stickers: [{ ...sticker, curve: 0.5, initial_pose: { ...sticker, curve: 0.5 } }] }) },
+  });
+  const pinhole = createFakeNode({
+    type: CUTOUT,
+    widgets: { state_json: JSON.stringify({ version: 1, shots: [shot], stickers: [{ ...sticker, initial_pose: { ...sticker } }] }) },
+  });
+  const state = getCachedState(node);
+  const expected = getCachedState(pinhole);
+  assert.deepEqual(state.shots, expected.shots);
+  assert.deepEqual(state.stickers, expected.stickers);
+});
