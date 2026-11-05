@@ -582,10 +582,10 @@ test("Frame mode: Alt + wheel changes the Camera's FOV, not its position, as one
   // Rolled back one: one tick larger.
   await page.mouse.wheel(0, 100);
   expect((await camera(page)).hFOV_deg).toBeCloseTo(before.hFOV_deg - 4, 5);
-  // An Alt drag (an orbit) keeps it lit while Alt is held (docs/studio-ui.md "Camera タブ").
+  // An Alt drag (an orbit) does not light it.
   await page.mouse.down();
   await page.mouse.move(x + 20, y);
-  await expect(fovRuler).toHaveClass(/is-lit/);
+  await expect(fovRuler).not.toHaveClass(/is-lit/);
   await page.mouse.up();
   await page.keyboard.up("Alt");
   await expect(fovRuler).not.toHaveClass(/is-lit/);

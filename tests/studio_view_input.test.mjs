@@ -11,7 +11,6 @@ import {
   fovNumberLit,
   fovRulerLit,
   knobAction,
-  hintKnobs,
   litKnobs,
   navigationAction,
   stageCursor,
@@ -77,11 +76,13 @@ test("the knob of the operation under way lights, whatever drives it", () => {
   assert.deepEqual(litKnobs({}), []);
 });
 
-test("while Alt is held, the knobs of Alt's drags (sphere and road's arrows) are pointed out, not lit", () => {
-  assert.deepEqual(hintKnobs({ altHeld: true }), ["orbit", "move"]);
-  assert.deepEqual(hintKnobs({ altHeld: false }), []);
-  // Alt alone lights nothing; the operation's knob lights over the hint (docs/space-and-view.md "視点の操作の部品").
-  assert.deepEqual(litKnobs({ altHeld: true }), []);
+test("while Alt is held, the knobs of Alt's drags (sphere and arrows) light", () => {
+  assert.deepEqual(litKnobs({ altHeld: true }), ["orbit", "move"]);
+  // Once an operation starts, Alt's knobs go out and only its knob lights (docs/space-and-view.md "視点の操作の部品").
+  assert.deepEqual(litKnobs({ altHeld: true, gesture: "pan" }), ["pan"]);
+  assert.deepEqual(litKnobs({ altHeld: true, gesture: "orbit" }), ["orbit"]);
+  assert.deepEqual(litKnobs({ altHeld: true, gesture: "joystick" }), ["move"]);
+  assert.deepEqual(litKnobs({ altHeld: true, keysMoving: true }), ["move"]);
 });
 
 // --- The cursor.
@@ -181,18 +182,20 @@ test("a gesture begins and ends", () => {
 
 // docs/studio-ui.md "Camera タブ" (ADR 0061): the FOV ruler shows Alt + wheel while Alt is held without a drag, in the
 // Frame view, with a Camera that moves.
-test("the FOV ruler lights with Alt (during a drag too), only in the Frame view with a Camera that moves", () => {
-  const on = { altHeld: true, frame: true, movable: true };
+test("the FOV ruler lights with Alt, not during a drag, only in the Frame view with a Camera that moves", () => {
+  const on = { altHeld: true, operating: false, frame: true, movable: true };
   assert.equal(fovRulerLit(on), true);
   assert.equal(fovRulerLit({ ...on, altHeld: false }), false);
+  assert.equal(fovRulerLit({ ...on, operating: true }), false);
   assert.equal(fovRulerLit({ ...on, frame: false }), false);
   assert.equal(fovRulerLit({ ...on, movable: false }), false);
 });
 
-test("the FOV number lights with Alt (during a drag too), only where Alt + wheel changes the view's FOV", () => {
-  const on = { altHeld: true, space: true };
+test("the FOV number lights with Alt, not during a drag, only where Alt + wheel changes the view's FOV", () => {
+  const on = { altHeld: true, operating: false, space: true };
   assert.equal(fovNumberLit(on), true);
   assert.equal(fovNumberLit({ ...on, altHeld: false }), false);
+  assert.equal(fovNumberLit({ ...on, operating: true }), false);
   // The Camera tab: the number is off there and the FOV ruler lights instead.
   assert.equal(fovNumberLit({ ...on, space: false }), false);
 });

@@ -97,7 +97,6 @@ const timeText = computed(() => `${clock(props.playback.frame / props.playback.f
           <StudioNavWidget
             ref="nav"
             :lit="ui.lit"
-            :hint="ui.hint"
             :help-open="help"
             :center-picking="!!ui.pickingCenter"
             @hover="(knob) => stage?.toolbarHover(knob)"

@@ -41,34 +41,33 @@ export function knobAction(knob) {
   return KNOB_ACTIONS[knob] ?? null;
 }
 
-// The knobs that light (the strong fill; shown only, nothing is kept): the one of the operation under way however it is
-// driven (`gesture`; the movement keys, `keysMoving`, are the road's arrows'). Looking around has no knob. In the
-// knobs' order.
-export function litKnobs({ gesture = null, keysMoving = false }) {
+// The knobs that light (shown only; nothing is kept): the one of the operation under way however it is driven
+// (`gesture`; the movement keys, `keysMoving`, are the road's arrows'), and while Alt is held with no operation under way
+// the knobs of Alt's drags (the sphere and the road's arrows; once one starts only its knob lights). Looking around has
+// no knob. In the knobs' order.
+export function litKnobs({ gesture = null, keysMoving = false, altHeld = false }) {
   const lit = new Set();
   for (const [knob, action] of Object.entries(KNOB_ACTIONS)) if (action === gesture) lit.add(knob);
   if (keysMoving) lit.add("move");
+  if (altHeld && !gesture && !keysMoving) {
+    lit.add("orbit");
+    lit.add("move");
+  }
   return Object.keys(KNOB_ACTIONS).filter((knob) => lit.has(knob));
 }
 
-// The knobs Alt points out (the hover's fill, quieter than the lit one): while Alt is held, the knobs of Alt's drags,
-// the sphere and the road's arrows, during an operation too (docs/space-and-view.md "視点の操作の部品").
-export function hintKnobs({ altHeld = false }) {
-  return altHeld ? ["orbit", "move"] : [];
+// Whether the Camera tab's FOV ruler shows that Alt + wheel changes it (docs/studio-ui.md "Camera タブ"): Alt held
+// with no view operation under way (`operating`: a drag or the movement keys, as the knobs' Alt lighting), in the Frame
+// view (`frame`) with a Camera that moves (`movable`: not locked, not read-only).
+export function fovRulerLit({ altHeld = false, operating = false, frame = false, movable = false }) {
+  return altHeld && !operating && frame && movable;
 }
 
-// Whether the Camera tab's FOV ruler shows that Alt + wheel changes it (docs/studio-ui.md "Camera タブ"): Alt held (during
-// an operation too, as hintKnobs), in the Frame view (`frame`) with a Camera that moves (`movable`: not locked, not
-// read-only).
-export function fovRulerLit({ altHeld = false, frame = false, movable = false }) {
-  return altHeld && frame && movable;
-}
-
-// Whether the View group's FOV number shows that Alt + wheel changes it (docs/space-and-view.md "寄る"): Alt held (during
-// an operation too, as hintKnobs), where the wheel zooms the view (`space`: the 3D tab and the Preview window; in the Camera tab the number is off
+// Whether the View group's FOV number shows that Alt + wheel changes it (docs/space-and-view.md "寄る"): Alt held with no
+// view operation under way (`operating`, as fovRulerLit), where the wheel zooms the view (`space`: the 3D tab and the Preview window; in the Camera tab the number is off
 // and the FOV ruler lights, fovRulerLit).
-export function fovNumberLit({ altHeld = false, space = false }) {
-  return altHeld && space;
+export function fovNumberLit({ altHeld = false, operating = false, space = false }) {
+  return altHeld && !operating && space;
 }
 
 // --- The cursor.

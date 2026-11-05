@@ -68,11 +68,11 @@ test("a held movement key moves the view until Meta goes up, which lets it go", 
 test("Alt alone keeps the browser's default; keys pressed with Alt keep theirs", () => {
   const { stage, ui, key } = setup();
   assert.equal(key("keydown", "AltLeft", { key: "Alt", altKey: true }).defaultPrevented, true);
-  assert.deepEqual(ui.hint, ["orbit", "move"]);
+  assert.deepEqual(ui.lit, ["orbit", "move"]);
   assert.equal(key("keydown", "Digit9", { key: "9", altKey: true }).defaultPrevented, false);
   key("keyup", "Digit9", { key: "9", altKey: true });
   assert.equal(key("keyup", "AltLeft", { key: "Alt" }).defaultPrevented, true);
-  assert.deepEqual(ui.hint, []);
+  assert.deepEqual(ui.lit, []);
   stage.dispose();
 });
 

@@ -250,8 +250,7 @@
   cursor: pointer;
 }
 
-.pano-studio-icon-btn:hover,
-.pano-studio-icon-btn.is-hint {
+.pano-studio-icon-btn:hover {
   background: var(--studio-fill-hover);
   color: var(--studio-fg);
 }

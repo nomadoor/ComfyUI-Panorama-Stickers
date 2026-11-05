@@ -16,7 +16,7 @@ import { liveErpSize } from "./erp_preview.js";
 import { outputErpInput } from "./output_picture.js";
 import { STAGE_CLEAR_COLOR, stageCamera, stageRenderInput, stageRenderSize } from "./stage_view.js";
 import { atResetView, createNotice, createViewCamera, frameSelectedSphere, orbitCenter, skyOnlyNotice as skyOnlyCode, viewFovValue } from "./view_camera.js";
-import { KNOB_CURSOR, createViewInput, fovNumberLit, fovRulerLit, hintKnobs, knobAction, litKnobs, stageCursor } from "./view_input.js";
+import { KNOB_CURSOR, createViewInput, fovNumberLit, fovRulerLit, knobAction, litKnobs, stageCursor } from "./view_input.js";
 import { createWheelSteps } from "../pano_wheel.js";
 import { BOUND_NOTICE_SECONDS, frameSeconds } from "./view_scale.js";
 import { DEFAULT_VIEW_HFOV, projectPoint } from "../pano_space.js";
@@ -38,8 +38,6 @@ export function stageUi() {
     cursor: "",
     // The knobs lit now ("orbit", "pan", "move").
     lit: [],
-    // The knobs Alt points out, in the hover's fill (view_input.js hintKnobs).
-    hint: [],
     // A knob is being dragged: the whole editor shows the grabbing cursor.
     knobDrag: false,
     // A loading guide's band of light runs on the overlay (load_reveal.js; the overlay is marked data-loading-guide).
@@ -523,11 +521,11 @@ export function createStage({
   function syncUi() {
     ui.fov = viewFovValue(shownPose().hFOV_deg);
     ui.atStart = atResetView(camera.destination());
-    ui.fovNumberLit = fovNumberLit({ altHeld: input.altHeld(), space: viewMode() === "space" });
-    ui.fovLit = fovRulerLit({ altHeld: input.altHeld(), frame: viewMode() === "frame", movable: !!cameraTab?.movable() });
+    const operating = !!shared.drag || shared.keysMoving;
+    ui.fovNumberLit = fovNumberLit({ altHeld: input.altHeld(), operating, space: viewMode() === "space" });
+    ui.fovLit = fovRulerLit({ altHeld: input.altHeld(), operating, frame: viewMode() === "frame", movable: !!cameraTab?.movable() });
     const gesture = input.gesture();
-    ui.lit = litKnobs({ gesture, keysMoving: shared.keysMoving });
-    ui.hint = hintKnobs({ altHeld: input.altHeld() });
+    ui.lit = litKnobs({ gesture, keysMoving: shared.keysMoving, altHeld: input.altHeld() });
     ui.knobDrag = !!shared.drag?.knob;
     const dragged = shared.drag?.action === "object" ? shared.objectCursor : null;
     // Set orbit center waits for a click.

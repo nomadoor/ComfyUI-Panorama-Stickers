@@ -13,8 +13,6 @@ import StudioIconButton from "./StudioIconButton.vue";
 defineProps({
   // The knobs lit now: "orbit", "pan", "move".
   lit: { type: Array, default: () => [] },
-  // The knobs Alt points out (the hover's fill).
-  hint: { type: Array, default: () => [] },
   disabled: { type: Boolean, default: false },
   disabledTip: { type: String, default: "" },
   helpOpen: { type: Boolean, default: false },
@@ -53,7 +51,6 @@ const CENTER_TIP = Object.freeze({
         :label="knob.label"
         :tip="disabled && disabledTip ? disabledTip : knob.tip"
         :lit="lit.includes(knob.key)"
-        :hint="hint.includes(knob.key)"
         :disabled="disabled"
         @pointerdown="!disabled && emit('knob', knob.key, $event)"
         @pointerenter="knob.key === 'orbit' && !disabled && emit('hover', 'orbit')"
