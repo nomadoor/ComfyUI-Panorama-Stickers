@@ -501,9 +501,9 @@ Camera である（表示が 1.00 なら pinhole と同じに扱う。保存し�
 
 | つまみ | ドラッグの動き | tooltip |
 |---|---|---|
-| 球 | オービット（キャンバスの Alt + 左ドラッグと同じ。回る中心も同じ） | 「Drag to orbit · Alt+left-drag in the view」 |
-| 手 | パン（右ドラッグと同じ。掴む点は画面の中心の表面の当たり） | 「Drag to pan · right-drag in the view」 |
-| 上下の矢印 | 前後のジョイスティック（Alt + 右ドラッグと同じ） | 「Drag to move forward/back · Alt+right-drag」 |
+| 球 | オービット（キャンバスの Alt + 左ドラッグと同じ。回る中心も同じ） | 「Orbit (Alt+Drag)」 |
+| 手 | パン（右ドラッグと同じ。掴む点は画面の中心の表面の当たり） | 「Pan (Right-drag)」 |
+| 上下の矢印 | 前後のジョイスティック（Alt + 右ドラッグと同じ） | 「Move forward/back (Alt+Right-drag)」 |
 
 - ポインタを載せるとカーソルは `grab`、ドラッグ中は `grabbing`。
 - 操作の最中は、どの手段で動かしていても、その操作に当たるつまみを光らせる（選ばれた状態と同じ灰の強い塗り。色は使わない）：
@@ -540,7 +540,7 @@ Camera である（表示が 1.00 なら pinhole と同じに扱う。保存し�
   ボタンをもう一度押す、タブを変える（撮り方のモードを変えたときも）、ウィンドウがフォーカスを失う（下の「ウィンドウがフォーカスを失ったとき」）。
   `Set ground` の待ち（`docs/studio-ui.md` の「種類ごとの中身」。まだ作っておらず、ボタンも出していない）ができたら、待ちは一度に一つにする：`Set ground` の待ちを
   始めると Set orbit center の待ちをやめ、逆も同じ。
-- tooltip：ふだんは「Set orbit center · or double-click a spot」、待っている間は「Click a spot to orbit around · Esc to cancel」。
+- tooltip：ふだんは「Set orbit center (Double-click)」、待っている間は「Click a spot to orbit around · Esc to cancel」。
 - Camera タブでは使えない（Camera タブで `T` を決め直すのはダブルクリックだけにする。上の「Frame 表示」）。同じ席に出したまま無効にし、
   tooltip は「Not available in the Camera view」。Preview のウィンドウでは 3D タブと同じに働く（下の「Preview のウィンドウ」）。
 

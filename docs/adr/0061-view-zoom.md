@@ -75,7 +75,7 @@ Panorama Preview（`PanoramaPreviewNode`）のノードの上で IMAGE・VIDEO �
   Camera の Lane に記録の規則で書き、続けて回した分を Undo の 1 段にする（ふつうのホイールとは別の段）。ドラッグ・キーの移動の途中、
   読み取り専用、ロックした Camera では何もしない。範囲の端では何も変えず、知らせない（目盛りと同じ）。
 - Alt を押している間、FOV の目盛りをキーボードのフォーカスと同じ見た目にし、Alt + ホイールで動くのがそこだと示す。使えるときの目盛りの
-  tooltip に「Alt+wheel over the view also changes it」を出す。
+  tooltip に「FOV (Alt+Wheel)」を出す（ツールチップの書き方「名前 (操作)」。`docs/studio-ui.md` の「ツールチップ」）。
 - 右下の数字は Camera の H FOV を出し、無効にする（変えるのは左の FOV の目盛り）。
 - Panorama モードの Alt + ホイールは何も変えず、「Not available in Panorama mode」と一行で知らせる。
 - 視点の画角と Camera の H FOV は、どちら向きにも合わせない。左の列の Camera to view が持ってくるのは、今までどおり位置と向きだけ。
