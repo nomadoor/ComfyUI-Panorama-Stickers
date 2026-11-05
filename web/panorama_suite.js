@@ -21629,7 +21629,6 @@ function dz(e) {
       } = Z);
     },
     getSharedLivePaintSurface: C,
-    getLivePaintRevisionSuffix: _,
     isPaintCompositeInteraction: g,
     hitRasterObjectAt: x,
     invalidateLivePaintPreviewCaches: N,

@@ -29,7 +29,7 @@ export function gizmoColor(name, active = false) {
 // rings' radius, the line, Move's balls, the white center dot, Scale's rounded squares, how faint a ring's far half
 // is, below which share of the reach a bar's screen length hides it (the axis runs nearly along the view), and how
 // near a point hits a ball, square or the center dot, or a bar or ring; and the axis guide line a drag shows.
-export const GIZMO_HIDE_RATIO = 0.2;
+const GIZMO_HIDE_RATIO = 0.2;
 export const GIZMO_LOOK = Object.freeze({
   reach: 52,
   lineWidth: 2.5,
@@ -66,7 +66,7 @@ export const GIZMO_LOOK = Object.freeze({
 
 // Move's plane squares (docs/studio-ui.md "ギズモ" "Move の平面の取っ手"): each named by its two axes, colored by the axis
 // across it (Blender's way: XY the Z color, YZ the X color, XZ the Y color).
-export const GIZMO_PLANES = Object.freeze([
+const GIZMO_PLANES = Object.freeze([
   Object.freeze({ name: "xy", axes: [0, 1], normal: "z" }),
   Object.freeze({ name: "yz", axes: [1, 2], normal: "x" }),
   Object.freeze({ name: "xz", axes: [0, 2], normal: "y" }),

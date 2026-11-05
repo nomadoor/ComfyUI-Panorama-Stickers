@@ -16,7 +16,7 @@ export const TIP_EDGE = 8;
 const OPPOSITE = { top: "bottom", bottom: "top", left: "right", right: "left" };
 
 // The side each group of controls prefers: the first ancestor (or the control itself) matching a selector wins.
-export const TIP_SIDES = [
+const TIP_SIDES = [
   [".pano-studio-at-rail", "right"],
   [".pano-studio-at-edge-left", "right"],
   [".pano-studio-at-nav", "left"],

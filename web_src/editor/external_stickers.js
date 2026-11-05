@@ -5,7 +5,7 @@ import { stickerVfovFromAspect } from "../pano_editor_state.js";
 import { runExternalStickerSync } from "../pano_external_sticker_sync.js";
 import { clamp, wrapYaw } from "../pano_math.js";
 import { reconcileExternalStickerState } from "../pano_stickers_node_surface.js";
-import { DEG2RAD, RAD2DEG } from "./constants.js";
+import { DEG2RAD } from "./constants.js";
 
 export function createExternalStickers(deps) {
   const {

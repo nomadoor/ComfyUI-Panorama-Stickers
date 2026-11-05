@@ -3,7 +3,7 @@
 // components/studio/StudioNumberField.vue applies them to pointer events.
 
 // How far (px) the pointer moves before a press on a field becomes a drag instead of a click to type.
-export const DRAG_THRESHOLD_PX = 3;
+const DRAG_THRESHOLD_PX = 3;
 // The fraction of the movement that Shift keeps.
 export const FINE_FACTOR = 0.1;
 // A single pointer movement this large (px) is a jump of the browser (the first event after pointer lock), not a drag.

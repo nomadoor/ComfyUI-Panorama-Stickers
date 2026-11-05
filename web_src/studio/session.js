@@ -38,13 +38,13 @@ import { BACKGROUND_ROW, PAINTING_ROW } from "../pano_timeline.js";
 const EMPTY_SELECTION = Object.freeze({ row: null, keys: [] });
 const NO_KEY_ROWS = new Set([BACKGROUND_ROW, PAINTING_ROW]);
 
-export const CAMERA_UNDELETABLE = "The camera can't be deleted";
+const CAMERA_UNDELETABLE = "The camera can't be deleted";
 
 // The selected Keyframes per owner and Lane: [{ owner, lane, frames }] in the order they were first selected, `lane`
 // null for a closed row's pin (all the row's Lanes at its frame), `frames` sorted. An open row's Keyframes keep their
 // Lanes apart, so an Easing edit changes only their own Lanes (docs/timeline-ui.md "行とポチ"). The background and the
 // painting have no Easing and are left out.
-export function keyframeGroups(selection) {
+function keyframeGroups(selection) {
   const groups = new Map();
   for (const key of selection?.keys ?? []) {
     if (NO_KEY_ROWS.has(key.row)) continue;

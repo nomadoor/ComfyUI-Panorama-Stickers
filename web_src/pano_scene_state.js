@@ -6,13 +6,13 @@ import { LENS_CURVE_DEFAULT, LENS_CURVE_MAX, LENS_CURVE_MIN } from "./pano_lens.
 import { clamp } from "./pano_math.js";
 import { normalizePaintingState } from "./pano_paint_types.js";
 
-export const STATE_VERSION = 2;
-export const STICKER_STATE_KIND = "pano_sticker_state";
+const STATE_VERSION = 2;
+const STICKER_STATE_KIND = "pano_sticker_state";
 const PLACEMENTS = ["sky", "world"];
 // How the Camera shoots; the first is the default of a stored Camera that does not say.
 const PROJECTIONS = ["perspective", "erp"];
 // The spans a Panorama (`erp`) Camera shoots; the first is the default.
-export const ERP_RANGES = Object.freeze([360, 180]);
+const ERP_RANGES = Object.freeze([360, 180]);
 // The Camera a state without one (`camera` missing, null or not an object) reads as (ADR 0048): Panorama at the
 // World origin, which shoots what "no Camera" shot before. core/scene_state.py holds the same values;
 // tests/fixtures/scene_state/camera_default.json holds the two together.
@@ -37,11 +37,11 @@ export const TIMELINE_FPS_MIN = 1;
 export const TIMELINE_FPS_MAX = 1000;
 // The largest Clip range edge and Keyframe frame (either sign) a state keeps: about 2.8 hours at
 // 1000 fps. A length is one of these frames, so a rebase to a higher fps does not cut it short.
-export const TIMELINE_FRAME_MAX = 10000000;
+const TIMELINE_FRAME_MAX = 10000000;
 export const TIMELINE_LENGTH_MAX = TIMELINE_FRAME_MAX;
 // A Camera's aspect is held to 1/CAMERA_ASPECT_LIMIT..CAMERA_ASPECT_LIMIT. The output is at most 8192 on its long side and
 // at least `multiple` (8 or more) on its short one, so any ratio thinner than 8192 : 8 already shoots the same frame.
-export const CAMERA_ASPECT_LIMIT = 2048;
+const CAMERA_ASPECT_LIMIT = 2048;
 // The largest Sticker number (`sticker_<n>`) the `next_sticker_id` counter keeps: JS integers are exact up to here.
 const STICKER_NUMBER_MAX = Number.MAX_SAFE_INTEGER;
 // At most 16 digits (past STICKER_NUMBER_MAX): a longer number is not counted, as in scene_state.py.
@@ -159,7 +159,7 @@ export const SCENE_LANES = [["position", positionValue], ["rotation", rotationVa
 export const SKY_STICKER_LANES = [["direction", directionValue], ["roll", rollValue], ["size", sizeValue], ["opacity", opacityValue], ["curve", curveValue]];
 export const WORLD_STICKER_LANES = [...SCENE_LANES, ["opacity", opacityValue]];
 // A world Sticker's `lens` Lane, which only Pose handoff adds: a Sticker without it has none (a flat plane).
-export const WORLD_LENS_LANE = ["lens", lensValue];
+const WORLD_LENS_LANE = ["lens", lensValue];
 
 // The Lanes a Sticker has: a world Sticker's `lens` only when it has one.
 export function stickerLanes(sticker) {
@@ -280,7 +280,7 @@ export const ANIMATION_SPEED_MIN = 0.1;
 export const ANIMATION_SPEED_MAX = 10;
 export const ANIMATION_DEFAULT = Object.freeze({ clip: null, speed: 1 });
 
-export function animationValue(raw) {
+function animationValue(raw) {
   if (!isObject(raw)) return null;
   const speed = number(raw.speed, null);
   const value = {

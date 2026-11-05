@@ -90,7 +90,7 @@ export function ownerFrame(owner, playhead) {
 }
 
 // The Keyframe dot of a row over the Lanes `names` at the owner's frame: "none", "has" or "now".
-export function keyState(owner, names, frame) {
+function keyState(owner, names, frame) {
   let has = false;
   for (const name of names) {
     const keys = owner[name].keyframes;
@@ -101,7 +101,7 @@ export function keyState(owner, names, frame) {
 }
 
 // The Sticker an upstream element `sticker` (a working copy) is without this node's overrides, at the editor's fps.
-export function inheritedSticker(upstream, sticker, fps) {
+function inheritedSticker(upstream, sticker, fps) {
   const layer = upstream.find((item) => item.key === sticker.origin.layer);
   if (!layer) return null;
   const received = layer.received.timeline.fps === fps ? layer.received : rebaseSceneState(layer.received, fps);
@@ -139,7 +139,7 @@ function rotationFields(value, rollField = "roll_deg") {
 
 // The slider of a value without an upper limit (a world Sticker's scale) reaches this far, or past the value it
 // holds. docs/design.md leaves the value open ("スライダーを付ける値の上限"); this is a provisional one.
-export const SCALE_SLIDER_MAX = 4;
+const SCALE_SLIDER_MAX = 4;
 function scaleSliderMax(value) {
   return Math.max(SCALE_SLIDER_MAX, 2 ** Math.ceil(Math.log2(Math.max(value, 1))));
 }

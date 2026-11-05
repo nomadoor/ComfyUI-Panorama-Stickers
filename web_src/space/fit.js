@@ -11,7 +11,7 @@ import { add, apply } from "./vec.js";
 // The default horizontal FOV of Panorama Studio's view in the editor and on the node.
 export const DEFAULT_VIEW_HFOV = 100;
 // The space between a fitted sphere and the edges of the view.
-export const FIT_MARGIN = 1.1;
+const FIT_MARGIN = 1.1;
 // The FOV a fit takes when it is given none: DEFAULT_VIEW_HFOV made the vertical FOV of a 16:9 view (the node's
 // PORT_3D_FIT_FOV_DEG).
 export const FIT_FALLBACK_FOV_DEG = vFovFromHfov(DEFAULT_VIEW_HFOV, 9 / 16);

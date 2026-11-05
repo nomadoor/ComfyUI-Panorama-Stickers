@@ -78,7 +78,7 @@ export function worldStickerPlane(value, crop, mediaWidth, mediaHeight) {
 // the lens's center `center` (the plane's middle `radius` behind it), the radius scale ÷ (2·g_κ(hFOV ÷ 2)), and the
 // image's half extents in film units (halfX = g_κ(hFOV ÷ 2), halfY by the plane's aspect). The patch is the
 // directions from the center the lens maps into the image; its middle is the plane's position.
-export function lensPatch(plane, lens) {
+function lensPatch(plane, lens) {
   const halfX = lensRadius(lens.hFOV_deg * 0.5 * DEG2RAD, lens.curve);
   const radius = plane.width / (2 * halfX);
   return {

@@ -5,7 +5,7 @@ import { STUDIO_BACKGROUND_INPUT_NAMES, isNodeOutputMediaCurrent, videoLinked } 
 import { rebaseSceneState, timelineFps } from "./pano_scene_state.js";
 
 // The inputs whose VIDEO sets the Timeline fps: Panorama Studio's background and `sticker`.
-export const VIDEO_FPS_INPUTS = [...STUDIO_BACKGROUND_INPUT_NAMES, "sticker"];
+const VIDEO_FPS_INPUTS = [...STUDIO_BACKGROUND_INPUT_NAMES, "sticker"];
 
 // The Timeline fps a VIDEO input set in the node's current result (ADR 0024), or null. It is brought into the range a
 // state keeps, so a faster VIDEO compares equal to the state rebased to it. `media` reads the node's result

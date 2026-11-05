@@ -793,10 +793,6 @@ function applyEraserToSurface(targetCtx, eraserCanvas) {
   targetCtx.restore();
 }
 
-function targetKeyOf(descriptor) {
-  return descriptor.kind === "ERP_GLOBAL" ? "erp" : `frame:${String(descriptor.frameId || "")}`;
-}
-
 // ─── Incremental Stamp Helpers ────────────────────────────────────────────────
 
 // Shared context passed to stamp-walk helpers to keep parameter counts small.

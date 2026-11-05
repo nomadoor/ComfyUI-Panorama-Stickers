@@ -149,7 +149,7 @@ export function parsePanoEditorState(text, options = {}) {
 }
 
 // The fields of the state an Undo step leaves out.
-export const HISTORY_SNAPSHOT_OMITS = Object.freeze(["editor_history", "painting_layer"]);
+const HISTORY_SNAPSHOT_OMITS = Object.freeze(["editor_history", "painting_layer"]);
 
 export function makePanoEditorHistorySnapshot(state) {
   if (!state || typeof state !== "object") return state;

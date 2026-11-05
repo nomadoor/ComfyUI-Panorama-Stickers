@@ -100,7 +100,7 @@ const CUBE_FACE_MAX = 2048;
 const HALF = Math.SQRT1_2;
 // The cube's faces as turns from the World's axes (looking down -z): front, right, left, up, down, back. The cube stands
 // at the Camera's position aligned to the World, so a turn of the Camera alone leaves its faces as they are.
-export const LENS_CUBE_FACES = Object.freeze([
+const LENS_CUBE_FACES = Object.freeze([
   { x: 0, y: 0, z: 0, w: 1 },
   { x: 0, y: -HALF, z: 0, w: HALF },
   { x: 0, y: HALF, z: 0, w: HALF },
@@ -109,16 +109,6 @@ export const LENS_CUBE_FACES = Object.freeze([
   { x: 0, y: 1, z: 0, w: 0 },
 ].map(Object.freeze));
 const IDENTITY = LENS_CUBE_FACES[0];
-
-// a·b: the turn b, then a.
-export function multiplyQuaternions(a, b) {
-  return {
-    x: a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
-    y: a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
-    z: a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w,
-    w: a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z,
-  };
-}
 
 // v turned by q.
 export function rotateByQuaternion(q, v) {
@@ -146,7 +136,7 @@ export function lensFaceCoordinates(face, direction) {
 // Whether the cone of directions within `thetaMax` radians of `forward` (a World direction of length 1) meets the
 // face `quaternion` of the cube (its square, x and y from -1 to 1 at depth 1): the face's directions closest to the
 // axis are inside it, or on one of its edges, each an arc of a great circle.
-export function lensCubeFaceSeen(quaternion, forward, thetaMax) {
+function lensCubeFaceSeen(quaternion, forward, thetaMax) {
   if (thetaMax >= Math.PI) return true;
   const axis = rotateByQuaternion(quaternion, [0, 0, -1]);
   const right = rotateByQuaternion(quaternion, [1, 0, 0]);

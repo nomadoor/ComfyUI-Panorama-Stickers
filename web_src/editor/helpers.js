@@ -38,7 +38,7 @@ export function dirToYawPitch(d) {
 export function lerp(a, b, t) {
   return a + (b - a) * t;
 }
-export function svgToDataUrl(svg) {
+function svgToDataUrl(svg) {
   return `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
 }
 let lassoCursorSvgCache = { fillStyle: "", url: "" };
@@ -105,10 +105,4 @@ export function isAutoOutputPresetValue(v) {
 export function getMediaWidthForSizing(media) {
   const width = Number(media?.naturalWidth || media?.videoWidth || media?.width || 0);
   return Number.isFinite(width) && width > 0 ? Math.round(width) : null;
-}
-
-export function logPaintDebug(phase, payload) {
-  void phase;
-  void payload;
-  return;
 }

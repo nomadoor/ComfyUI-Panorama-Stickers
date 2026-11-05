@@ -13,7 +13,7 @@ import { isUpstreamSticker, upstreamStickerLocked } from "../pano_upstream.js";
 // sky image's frame and handles (stage_overlay.js) take the ice of the Sky drop mark, so the color tells where a thing
 // is (docs/design.md "色").
 export const SELECTED_GUIDE_COLOR = "#e8cf74";
-export const SKY_SELECTED_COLOR = "#aecedb";
+const SKY_SELECTED_COLOR = "#aecedb";
 export const GUIDE_LOOKS = Object.freeze({
   normal: Object.freeze({ light: "rgba(255, 255, 255, 0.32)", dark: "rgba(0, 0, 0, 0.32)", width: 1 }),
   hover: Object.freeze({ light: "rgba(255, 255, 255, 0.9)", dark: "rgba(0, 0, 0, 0.6)", width: 1.5 }),

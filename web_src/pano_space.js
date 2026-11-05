@@ -30,14 +30,12 @@ export {
   switchSpaceMode,
   viewAxes,
   viewFitFov,
-  ZOOM_STEP,
   zoomView,
 } from "./space/view.js";
 export {
   DEFAULT_VIEW_HFOV,
   fit3dPosition,
   FIT_FALLBACK_FOV_DEG,
-  FIT_MARGIN,
   fitDistance,
   NEW_WORLD_STICKER_DISTANCE,
 } from "./space/fit.js";
@@ -67,7 +65,6 @@ export {
   boxCorners,
   contentPoints,
   frameSphere,
-  lensPatch,
   planeCorners,
   planeOutlineSegments,
   sceneContentBox,

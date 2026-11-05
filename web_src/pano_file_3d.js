@@ -62,7 +62,7 @@ export async function requestFile3dEditorFile(source, { fetchApi }) {
   return { ok: true, kind, unlit: kind !== "mesh" || body.unlit !== false, file: body.file, box: body.box ?? null, animation };
 }
 
-export function file3dSourceKey(source) {
+function file3dSourceKey(source) {
   const { storage, subfolder, filename } = sourceValues(source);
   return JSON.stringify([storage, subfolder, filename]);
 }

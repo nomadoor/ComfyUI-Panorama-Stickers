@@ -21,18 +21,18 @@ import { isUpstreamSticker } from "./pano_upstream.js";
 export { paintObjectRowOf, rasterObjectCornersUv, strokePoints };
 
 // How near (px) a corner handle of a selected paint object is hit.
-export const PAINT_CORNER_HIT_PX = 11;
+const PAINT_CORNER_HIT_PX = 11;
 // A raster object is hit where its pixel's alpha (0..255) is over this.
-export const RASTER_HIT_ALPHA = 8;
+const RASTER_HIT_ALPHA = 8;
 // The least ratio a stroke group is scaled by (docs/studio-ui.md "ペイントのまとまり" "大きさを変える").
-export const STROKE_GROUP_MIN_SCALE = 0.02;
+const STROKE_GROUP_MIN_SCALE = 0.02;
 
 // --- ERP points.
 
 // The point that rotationDeg and `scale` about `center` on the paint plane take to `point` (the inverse of a raster
 // object's turn, pano_paint_display.js unturnPaintOffset; docs/render-contract.md "ペイントのラスタの置き方"): u wraps,
 // v not clamped.
-export function inverseTransformErpPointAround(point, center, scale = 1, rotationDeg = 0) {
+function inverseTransformErpPointAround(point, center, scale = 1, rotationDeg = 0) {
   if (!point || typeof point !== "object") return point;
   const cu = Number(center?.u || 0);
   const cv = Number(center?.v || 0);
@@ -387,7 +387,7 @@ export function paintObjectRow(row) {
 
 // The stroke groups of `painting` as the editors count them, without writing it: syncPaintGroups over a copy (a stroke
 // of no group comes as a group of its own at the front, a group without strokes goes), sorted by z_index.
-export function countedPaintGroups(painting, skyStickers) {
+function countedPaintGroups(painting, skyStickers) {
   if (!painting) return [];
   return syncPaintGroups({ ...painting, groups: Array.isArray(painting.groups) ? [...painting.groups] : [] }, skyStickers);
 }
