@@ -389,6 +389,9 @@ function installScenePreviewInstance(node, { app, openEditor, attachPreview, att
         imageInputName: "source",
         onOpen: openMedia,
         opensWindow: () => openEditor.previewWindowTakes?.(node) === true,
+        // The wheel as the editor's: the plain wheel moves forward (nothing to move in a look-around), Alt + wheel and a
+        // pinch zoom (docs/preview-node.md "ノード上", ADR 0061).
+        wheel: "modifier",
       });
     }
     if (install.surface || peekSceneViewer(node)?.surface) hideWidget(node, "Open Preview");

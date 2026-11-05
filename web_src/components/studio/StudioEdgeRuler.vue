@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { CAMERA_RULERS, rulerDragValue, rulerMarks, rulerSnapStep, rulerSnapValue } from "../../studio/frame_layout.js";
 import { FINE_FACTOR, roundValue } from "../../studio/ui_drag.js";
+import { stepWithin } from "../../pano_camera_math.js";
 import StudioKeyDot from "./StudioKeyDot.vue";
 import StudioResetButton from "./StudioResetButton.vue";
 
@@ -43,6 +44,9 @@ const props = defineProps({
   tip: { type: String, default: "" },
   // With Shift, stop at multiples of this (0: Shift makes the movement finer instead).
   snap: { type: Number, default: 0 },
+  // Looks as the keyboard's focus does (Alt held in the Frame view: Alt + wheel changes this ruler; docs/studio-ui.md
+  // "Camera タブ").
+  lit: { type: Boolean, default: false },
 });
 const emit = defineEmits(["input", "change", "cancel", "key", "reset"]);
 
@@ -154,8 +158,8 @@ function onKeydown(event) {
   if (event.shiftKey && props.snap > 0) {
     next = roundValue(rulerSnapStep(props.value, dir, props.snap, { min: props.min, max: props.max }), props.precision);
   } else {
-    const step = props.minor * (event.shiftKey ? FINE_FACTOR : 1);
-    next = roundValue(Math.min(props.max, Math.max(props.min, props.value + dir * step)), props.precision);
+    // One small tick (the FOV ruler's is VIEW_FOV_STEP_DEG: pano_camera_math.js fovStepValue gives the same).
+    next = stepWithin(props.value, dir, { step: props.minor, min: props.min, max: props.max, precision: props.precision, fine: event.shiftKey ? FINE_FACTOR : 1 });
   }
   if (next === props.value) return;
   emit("input", next);
@@ -171,7 +175,7 @@ onBeforeUnmount(() => {
 <template>
   <div
     class="pano-studio-edge-ruler"
-    :class="[vertical ? 'is-vertical' : 'is-horizontal', vertical ? `is-${side}` : '', { 'is-disabled': disabled }]"
+    :class="[vertical ? 'is-vertical' : 'is-horizontal', vertical ? `is-${side}` : '', { 'is-disabled': disabled, 'is-lit': lit && !disabled }]"
     :data-tip="tip || null"
     :data-ruler="name"
   >

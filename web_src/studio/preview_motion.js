@@ -1,12 +1,12 @@
 // The Preview window's view (docs/space-and-view.md "Preview のウィンドウ"): its feel and what it takes from the node and
 // gives back. The operations move the view (view_camera.js createViewCamera, the destination); the view shown follows it
-// by PREVIEW_DAMPING ^ (1000 dt) of the difference each frame, except during an eased action, which keeps its length. A
+// by PREVIEW_DAMPING ^ (1000 dt) of the difference each frame (its FOV at once), except during an eased action, which keeps its length. A
 // look, orbit or pan drag let go while moving coasts at the speed of its last moves (ADR 0010's window, as
 // pano_interaction_controller.js) and slows as the look's inertia does. stage.js takes this as its `follow`.
 import { clamp, shortestYawDelta, wrapYaw } from "../pano_camera_math.js";
 import { PANO_INERTIA_DAMPING, PANO_INERTIA_START_SPEED, PANO_INERTIA_STOP_SPEED } from "../pano_interaction_controller.js";
 import { loadSceneState, sceneGround } from "../pano_scene_state.js";
-import { initialTarget } from "./view_camera.js";
+import { initialTarget, viewFovValue } from "./view_camera.js";
 import { FRAME_FALLBACK_SECONDS, ORBIT_DEG_PER_PIXEL, PITCH_LIMIT, PREVIEW_DAMPING, frameSeconds } from "./view_scale.js";
 
 // The drags that coast.
@@ -22,7 +22,7 @@ const finite = (value) => typeof value === "number" && Number.isFinite(value);
 const angular = (pxPerSecond) => Math.abs(pxPerSecond) * ORBIT_DEG_PER_PIXEL;
 
 function copyPose(p) {
-  return { position: [...p.position], yaw_deg: p.yaw_deg, pitch_deg: p.pitch_deg, roll_deg: p.roll_deg ?? 0, target: [...p.target] };
+  return { position: [...p.position], yaw_deg: p.yaw_deg, pitch_deg: p.pitch_deg, roll_deg: p.roll_deg ?? 0, hFOV_deg: p.hFOV_deg, target: [...p.target] };
 }
 
 // pose: the view shown at first (the view camera's pose).
@@ -54,7 +54,8 @@ export function createPreviewMotion({ pose: start }) {
       settled = true;
       return;
     }
-    shown = { position, yaw_deg: wrapYaw(goal.yaw_deg + yaw), pitch_deg: goal.pitch_deg + pitch, roll_deg: goal.roll_deg ?? 0, target };
+    // The FOV is not followed: a zoom shows at once (docs/space-and-view.md "寄る").
+    shown = { position, yaw_deg: wrapYaw(goal.yaw_deg + yaw), pitch_deg: goal.pitch_deg + pitch, roll_deg: goal.roll_deg ?? 0, hFOV_deg: goal.hFOV_deg, target };
     settled = false;
   }
 
@@ -120,18 +121,19 @@ export function createPreviewMotion({ pose: start }) {
 }
 
 // The pose the window opens with (docs/space-and-view.md "Preview のウィンドウ"): a Scene's node view (`scene`: the
-// Scene viewer's record view, pano_scene_viewer.js sceneViewerRecord) gives P, yaw and pitch; an IMAGE or VIDEO node view
-// (`image`: the legacy Preview runtime's view { yaw, pitch, fov }) gives yaw and pitch from the origin; else the origin.
+// Scene viewer's record view, pano_scene_viewer.js sceneViewerRecord) gives P, yaw, pitch and the FOV; an IMAGE or VIDEO
+// node view (`image`: the legacy Preview runtime's view { yaw, pitch, fov }) gives yaw, pitch and the FOV from the
+// origin; else the origin at DEFAULT_VIEW_HFOV. The FOV is held as the view holds it (view_camera.js viewFovValue).
 export function previewOpeningPose({ scene = null, image = null } = {}) {
-  const origin = { position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0 };
+  const origin = { position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0, hFOV_deg: viewFovValue(null) };
   if (scene) {
     const position = scene.viewPosition;
     if (!Array.isArray(position) || position.length !== 3 || !position.every(finite) || !finite(scene.viewYaw) || !finite(scene.viewPitch)) return origin;
-    return { position: [...position], yaw_deg: scene.viewYaw, pitch_deg: scene.viewPitch };
+    return { position: [...position], yaw_deg: scene.viewYaw, pitch_deg: scene.viewPitch, hFOV_deg: viewFovValue(scene.viewFov) };
   }
   if (image) {
     if (!finite(image.yaw) || !finite(image.pitch)) return origin;
-    return { position: [0, 0, 0], yaw_deg: image.yaw, pitch_deg: image.pitch };
+    return { position: [0, 0, 0], yaw_deg: image.yaw, pitch_deg: image.pitch, hFOV_deg: viewFovValue(image.fov) };
   }
   return origin;
 }
@@ -140,22 +142,23 @@ export function previewOpeningPose({ scene = null, image = null } = {}) {
 // PITCH_LIMIT, with the first T in `world` ({ ground, boxes, content, camera }).
 export function previewOpening(node, world) {
   const p = previewOpeningPose(node);
-  const pose = { position: p.position, yaw_deg: wrapYaw(p.yaw_deg), pitch_deg: clamp(p.pitch_deg, -PITCH_LIMIT, PITCH_LIMIT), roll_deg: 0 };
+  const pose = { position: p.position, yaw_deg: wrapYaw(p.yaw_deg), pitch_deg: clamp(p.pitch_deg, -PITCH_LIMIT, PITCH_LIMIT), roll_deg: 0, hFOV_deg: p.hFOV_deg };
   return { pose: { ...pose, target: initialTarget({ ...pose, target: pose.position }, world) } };
 }
 
 // Hands the window's last view (`pose`, where it was going) back to the node: a Scene viewer's record view takes P,
-// yaw and pitch (and stops any move of its own); an IMAGE or VIDEO runtime (`image`, with its `view`) takes yaw and
-// pitch and keeps its FOV.
+// yaw, pitch and the FOV (and stops any move of its own); an IMAGE or VIDEO runtime (`image`, with its `view`) takes
+// yaw, pitch and the FOV.
 export function previewHandBack(pose, { scene = null, image = null } = {}) {
   if (scene) {
     scene.viewPosition = [...pose.position];
     scene.viewYaw = pose.yaw_deg;
     scene.viewPitch = pose.pitch_deg;
+    scene.viewFov = pose.hFOV_deg;
     scene.viewTransition = null;
     scene.viewMoved = true;
   }
-  if (image) image.view = { ...image.view, yaw: wrapYaw(pose.yaw_deg), pitch: pose.pitch_deg };
+  if (image) image.view = { ...image.view, yaw: wrapYaw(pose.yaw_deg), pitch: pose.pitch_deg, fov: pose.hFOV_deg };
 }
 
 // The ground a Preview stands on (docs/scene-state-v2.md `ground`, read by pano_scene_state.js sceneGround): a Scene's

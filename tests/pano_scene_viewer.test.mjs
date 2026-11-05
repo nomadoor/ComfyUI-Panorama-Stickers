@@ -191,3 +191,23 @@ test("closing the window hands the node the window's last view and playhead, and
   assert.notDeepEqual(owner.record.view.viewPosition, [0, 0, 0]);
   assert.equal(owner.record.frame, 30);
 });
+
+// docs/preview-node.md "ノード上" (ADR 0061): Reset view is off at the start view (the origin, yaw 0, pitch 0, 100°; a
+// transition counts where it goes); a zoom step leaves it, and Reset view brings the FOV back too.
+test("the viewer is at its start view until it moves or zooms, and Reset view brings the FOV back", () => {
+  const { viewer: v, record } = viewer();
+  assert.equal(v.atStart(), true);
+  v.zoom(1);
+  assert.equal(record.view.viewFov, 98);
+  assert.equal(v.atStart(), false);
+  v.resetView();
+  // Going back counts as there.
+  assert.equal(v.atStart(), true);
+  v.tick(performance.now() + 10000);
+  assert.equal(record.view.viewFov, 100);
+  assert.equal(v.atStart(), true);
+  record.view.viewYaw = 360;
+  assert.equal(v.atStart(), true);
+  record.view.viewPosition = [0, 0.5, 0];
+  assert.equal(v.atStart(), false);
+});

@@ -145,17 +145,22 @@ test("the grid starts shown, and a look drag let go while moving coasts until a 
   expect(problems).toEqual([]);
 });
 
-test("an IMAGE opens at the node's yaw and pitch and hands them back on close, keeping the node's FOV", async ({ page }) => {
+// ADR 0061: the FOV goes to the window and back too.
+test("an IMAGE opens at the node's yaw, pitch and FOV and hands them back on close", async ({ page }) => {
   await open(page, "?handoff");
   const pose = await page.evaluate(() => window.__preview.pose());
   expect(pose.position).toEqual([0, 0, 0]);
   expect(pose.yaw_deg).toBeCloseTo(30, 6);
   expect(pose.pitch_deg).toBeCloseTo(5, 6);
+  expect(pose.hFOV_deg).toBe(70);
+  await expect(page.locator("[data-action=fov]")).toHaveText("70°");
+  // Zoomed in the window, the node takes the window's FOV.
+  await page.evaluate(() => document.querySelector("[data-stage-canvas]").dispatchEvent(new WheelEvent("wheel", { deltaY: -100, altKey: true, bubbles: true, cancelable: true })));
   await page.keyboard.press("Escape");
   await expect(page.locator("[data-preview-window]")).toHaveCount(0);
   const view = await page.evaluate(() => window.__preview.runtimeView());
   expect(view.yaw).toBeCloseTo(30, 6);
-  expect(view.fov).toBe(70);
+  expect(view.fov).toBe(68);
   expect(await page.evaluate(() => window.__preview.told)).toContain("draw");
 });
 
@@ -165,6 +170,7 @@ test("a Scene opens at the node viewer's view and playhead, stops the node meanw
   expect(pose.position).toEqual([0.5, 0, 1]);
   expect(pose.yaw_deg).toBeCloseTo(40, 6);
   expect(pose.pitch_deg).toBeCloseTo(-10, 6);
+  expect(pose.hFOV_deg).toBe(100);
   // The node was playing: the window goes on playing from its frame, and the node rests and does not draw.
   let record = await page.evaluate(() => window.__preview.record());
   expect(record.windowOpen).toBe(true);
@@ -185,6 +191,7 @@ test("a Scene opens at the node viewer's view and playhead, stops the node meanw
   expect(record.playing).toBe(false);
   expect(record.view.viewPosition).toEqual([0.5, 0, 1]);
   expect(record.view.viewYaw).toBeCloseTo(40, 6);
+  expect(record.view.viewFov).toBe(100);
   expect(await page.evaluate(() => window.__preview.told)).toEqual(["rest", "activate"]);
   expect(problems).toEqual([]);
 });
@@ -295,4 +302,62 @@ test("as it is: background_range changed while the window is open applies on the
   await page.evaluate(() => window.__preview.setRange("180"));
   await page.setViewportSize({ width: 1400, height: 860 });
   await expect.poll(async () => Math.abs(full - await page.evaluate(() => window.__preview.sample())), { timeout: 20_000 }).toBeGreaterThan(10);
+});
+
+// docs/studio-ui.md "Preview のウィンドウ" and docs/space-and-view.md "寄る" (ADR 0061): the View group has the FOV number
+// and its reset, Reset View (off at the start view), the grid and Fullscreen, no Frame Selected; Alt + wheel zooms at
+// once (not damped), and Reset View brings the FOV back.
+test("the window's View group: the FOV number zooms with Alt + wheel at once, and Reset View brings it back", async ({ page }) => {
+  const problems = await open(page);
+  const number = page.locator("[data-action=fov]");
+  await expect(number).toHaveText("100°");
+  await expect(page.locator("[data-action=frame-selected]")).toHaveCount(0);
+  await expect(page.locator("[data-action=reset-view]")).toHaveAttribute("aria-disabled", "true");
+  const order = await page.locator(".pano-studio-at-buttons [data-action]").evaluateAll((list) => list.map((el) => el.getAttribute("data-action")));
+  expect(order).toEqual(["fov", "fov-reset", "reset-view", "grid", "fullscreen"]);
+  const canvas = page.locator("[data-stage-canvas]");
+  const box = await canvas.boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  // Alt held: the number lights, as it changes with Alt + wheel (docs/space-and-view.md "寄る").
+  await expect(number).not.toHaveClass(/is-lit/);
+  await page.keyboard.down("Alt");
+  await expect(number).toHaveClass(/is-lit/);
+  await page.mouse.wheel(0, -100);
+  await page.mouse.wheel(0, -100);
+  await page.keyboard.up("Alt");
+  await expect(number).not.toHaveClass(/is-lit/);
+  expect((await page.evaluate(() => window.__preview.pose())).hFOV_deg).toBe(96);
+  await expect(number).toHaveText("96°");
+  await page.locator("[data-action=reset-view]").click();
+  await expect(number).toHaveText("100°");
+  await expect(page.locator("[data-action=reset-view]")).toHaveAttribute("aria-disabled", "true");
+  expect(problems).toEqual([]);
+});
+
+// docs/space-and-view.md "Sky だけのときのホイール" (ADR 0061): an IMAGE has no World content: a wheel step moves the view
+// and the top line says Sky only (info) for BOUND_NOTICE_SECONDS; Alt + wheel says nothing. With nothing linked to
+// `source` there is nothing to zoom into and nothing is said.
+test("a wheel step over an IMAGE says Sky only for a while; with nothing linked it says nothing", async ({ page }) => {
+  const problems = await open(page);
+  const canvas = page.locator("[data-stage-canvas]");
+  const box = await canvas.boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.keyboard.down("Alt");
+  await page.mouse.wheel(0, -100);
+  await page.keyboard.up("Alt");
+  await expect(page.locator(".pano-studio-notice")).toHaveCount(0);
+  const before = await page.evaluate(() => window.__preview.pose().position);
+  await page.mouse.wheel(0, -100);
+  const notice = page.locator(".pano-studio-notice");
+  await expect(notice).toHaveText("Sky only · Alt+wheel zooms");
+  await expect(notice).toHaveAttribute("data-notice", "info");
+  await expect.poll(() => page.evaluate(() => window.__preview.pose().position)).not.toEqual(before);
+  await expect(notice).toHaveCount(0, { timeout: 4000 });
+  await page.keyboard.press("Escape");
+  await open(page, "?unlinked");
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.wheel(0, -100);
+  await page.waitForTimeout(300);
+  await expect(page.locator(".pano-studio-notice")).toHaveCount(0);
+  expect(problems).toEqual([]);
 });

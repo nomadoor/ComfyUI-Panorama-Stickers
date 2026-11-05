@@ -14,7 +14,7 @@ Panorama のエディタ（古い UI の旧 Stickers・旧 Cutout・Preview の�
 | 規則 | Python | JS | test |
 |---|---|---|---|
 | モジュールの形（`createX(deps)` の factory、`connect()` で受け取る名前と `let` の宣言、誰も渡していない名前は投げる） | — | `web_src/editor/modules.js` `createEditorModules`、`web_src/editor/*.js` の `createX` | `tests/editor_wiring.test.mjs`、`tests/editor_modules.test.mjs` |
-| 依存の向き（`pano_editor.js` → `editor/*.js` → ライブラリ。`editor/*.js` は `pano_editor.js`・ComfyUI の `app` / `api`・振る舞いを持つモジュールを import しない） | — | `web_src/editor/*.js` の import | `tests/architecture.test.mjs` |
+| 依存の向き（`pano_editor.js` → `editor/*.js` → ライブラリ。`editor/*.js` は `pano_editor.js`・ComfyUI の `app` / `api`・振る舞いを持つモジュールを import しない。ライブラリは `editor/*.js` も `studio/*.js` も import しない） | — | `web_src/editor/*.js` と `web_src/pano_*.js` の import | `tests/architecture.test.mjs` |
 | `web_src` の静的な import に循環を作らない | — | `web_src` の `*.js`・`*.vue` の import | `tests/architecture.test.mjs` |
 | モジュールの一覧と配線（各 factory を `createEditorModules` で一度ずつ作る、配線の名前の過不足がない） | — | `web_src/pano_editor.js` の配線の区画、`web_src/editor/*.js` | `tests/architecture.test.mjs`、`tests/editor_wiring.test.mjs`（下の Module map の責任の欄そのものは test しない） |
 | キャンバスのポインターの操作の振り分け（押したときに始める操作を決める順、`editor.interaction.kind` ごとの動き・離す・取り消す、操作ごとのモジュール） | — | `web_src/editor/pointer_input.js`、`web_src/editor/pointer_*.js` | `tests/editor_pointer_input.test.mjs` |
@@ -90,7 +90,8 @@ export function createHistory(deps) {
 ## Dependency rules
 
 - `web_src` の静的な import に循環を作らない。`tests/architecture.test.mjs` が import のグラフを読み、循環があれば経路を出して落ちる（動的な `import()` と、エディタの `connect()` による結び付けは数えない）。
-- `pano_editor.js` → `editor/*.js` → `pano_*.js`（ライブラリ）の向きだけ。
+- `pano_editor.js` → `editor/*.js` → `pano_*.js`（ライブラリ）の向きだけ。ライブラリ（`pano_editor.js` を除く `pano_*.js`）は
+  `editor/*.js` も新しい UI の `studio/*.js` も import しない（両方の UI が使う規則はライブラリに置く。`tests/architecture.test.mjs`）。
 - `editor/*.js` は `pano_editor.js` を import しない。ComfyUI の `app` / `api` も import せず、
   `deps` で受け取る（ビルドは `../../scripts/` だけを外部として扱う）。
 - 振る舞いを持つモジュール同士は import しない。呼び合いは `connect()` で行う。

@@ -3,11 +3,12 @@
 新しい UI の層（ADR 0044）の、Panorama Studio のエディタと新しい Preview のウィンドウで、使う人が空間の中をどう見て
 どう動くかの規則を定める：視点が一つであること、開いたときの視点と Reset View、量の一覧（目の高さ `E` の倍数の上限と、
 注視点までの距離から求める操作の量）、世界の境界、注視点 `T`、マウスとキーの割り当て（Panorama 表示と Frame 表示）、
-直接の操作となめらかに動く操作、カーソル、視点の操作の部品、オービットの中心の印、地面のグリッドと空のグリッド、World の物のガイドとホバー、
+直接の操作となめらかに動く操作、寄る操作（視点の画角）、カーソル、視点の操作の部品、オービットの中心の印、地面のグリッドと空のグリッド、World の物のガイドとホバー、
 Add とドロップの着く所、Preview のウィンドウの違い、ウィンドウがフォーカスを失ったとき。用語は `CONTEXT.md` に従う。
 決めた理由は ADR 0045（目的と視点）、0046（地面の高さ）、0047（`docs/adr/0047-view-navigation-and-placement.md`。一つの視点の動かし方と、
 新しく置く物の行き先）、0058（`docs/adr/0058-orbit-center-mark-and-sky-grid.md`。オービットの中心を見せて決めること、Reset View の行き先、
-空のグリッド）、0060（`docs/adr/0060-right-drag-pans-middle-drag-looks.md`。右ドラッグのパンと中ボタンの見回し）にある。
+空のグリッド）、0060（`docs/adr/0060-right-drag-pans-middle-drag-looks.md`。右ドラッグのパンと中ボタンの見回し）、0061（`docs/adr/0061-view-zoom.md`。
+寄る操作と Sky だけのときのホイールの知らせ）にある。
 
 Panorama Studio のエディタと新しい Preview のウィンドウは、いつも新しい UI で開く（ADR 0062）。この文書の規則は
 その二つのもので、`docs/editor-interaction.md` の「視点の操作」は、旧ノードのエディタと Preview のノード上の Scene のビューア
@@ -30,19 +31,20 @@ Python はこの文書の規則を持たない（列は `—`）。「（未実�
 
 | 規則 | Python | JS | test |
 |---|---|---|---|
-| 目の高さ `E` と量の一覧 | — | `web_src/studio/view_scale.js` | `tests/studio_view_scale.test.mjs` |
-| 視点が一つであること、開いたときの視点、Reset View（World の原点へ。ADR 0058）、視点の記憶 | — | `web_src/studio/view_camera.js` `openingView`・`rememberView`・`recallView`・`RESET_VIEW`（Reset View の行き先）、開くと閉じるは `web_src/studio/editor.js`・`editor_controller.js`、出力の視点は `web_src/studio/stage_view.js` `outputView`、下の部品 `web_src/pano_view_memory.js` `viewMemory`・`restoredView`、`web_src/pano_node_bridge.js` `editorSession` | `tests/studio_view_camera.test.mjs`、`tests/studio_stage_view.test.mjs`、`tests/pano_view_memory.test.mjs`、`tests/browser/studio_editor.spec.js`、`tests/browser/studio_orbit_center.spec.js`（Reset View） |
-| 世界の境界と、止まったときの知らせ、黙って何もしない操作の知らせ | — | `web_src/studio/view_scale.js` `worldBoundRadius`、`web_src/studio/view_camera.js` `clipToBound`・`createNotice`・`VIEW_NOTICES`、一行の知らせを出すのは `web_src/components/studio/StudioNotice.vue` | `tests/studio_view_scale.test.mjs`、`tests/studio_view_camera.test.mjs`、`tests/browser/studio_editor.spec.js` |
+| 目の高さ `E` と量の一覧 | — | `web_src/studio/view_scale.js`（`WHEEL_STEP_PIXELS` は Preview のノードと共有する `web_src/pano_wheel.js`） | `tests/studio_view_scale.test.mjs`、`tests/pano_wheel.test.mjs` |
+| 視点が一つであること、開いたときの視点、Reset View（World の原点へ。ADR 0058）、視点の記憶 | — | `web_src/studio/view_camera.js` `openingView`・`rememberView`・`recallView`・`RESET_VIEW`（Reset View の行き先）、行き先と記憶の画角（`RESET_VIEW` の画角、`rememberView` が今の画角を書き、`recallView` が読む。持つ値の桁は `viewFovValue`）、始めの視点にいるか `atResetView`（Reset View を無効にする。始めの視点は `web_src/space/view.js` `START_VIEW` で `RESET_VIEW` はこれ、比べ方は同じ所の `sameViewpoint`。Preview のノードの Scene のビューアも同じ二つを使う。状態を `ui.atStart` に書くのは `stage.js`）、開くと閉じるは `web_src/studio/editor.js`・`editor_controller.js`、出力の視点は `web_src/studio/stage_view.js` `outputView`、下の部品 `web_src/pano_view_memory.js` `viewMemory`・`restoredView`、`web_src/pano_node_bridge.js` `editorSession` | `tests/studio_view_camera.test.mjs`、`tests/studio_stage_view.test.mjs`、`tests/pano_view_memory.test.mjs`、`tests/browser/studio_editor.spec.js`、`tests/browser/studio_orbit_center.spec.js`（Reset View）、`tests/browser/studio_editor.spec.js`（画角の記憶と、始めの視点で Reset View が無効になること） |
+| 世界の境界と、止まったときの知らせ、黙って何もしない操作の知らせ、Sky だけのときのホイールの知らせ | — | `web_src/studio/view_scale.js` `worldBoundRadius`、`web_src/studio/view_camera.js` `clipToBound`・`createNotice`・`VIEW_NOTICES`（Panorama モードの Alt + ホイールの知らせ `fov-panorama`、Sky だけの知らせ `sky-only`・`sky-only-frame`）、Sky だけの知らせを出すかは `web_src/studio/view_camera.js` `skyOnlyNotice`（`ui.skyOnly` に書くのは `stage.js` `skyWheel`。`source` に何もつないでいない Preview のウィンドウで出さないのは `web_src/studio/preview_window.js` が渡す `skyOnlyNotice`）、一行の知らせを出すのは `web_src/components/studio/StudioNotice.vue` | `tests/studio_view_scale.test.mjs`、`tests/studio_view_camera.test.mjs`、`tests/browser/studio_editor.spec.js`、`tests/browser/studio_camera_wired.spec.js`・`tests/browser/preview_window.spec.js`（Sky だけの知らせ） |
 | 注視点 `T`（初めの `T`、付いて動くこと、距離の範囲と遠い `T` を範囲に戻すこと、決め直す操作（ダブルクリック、Set orbit center）、回る中心） | — | `web_src/studio/view_camera.js` `initialTarget`・`orbitCenter`・`createViewCamera`、ポインタの下の当たりは `web_src/studio/stage_view.js` `surfaceHit`（GPU の当たりと地面の近い方）、下の部品 `space/view.js` `orbitView`・`viewAxes`・`frameView`、`space/bounds.js` `frameSphere`、`three_view/picker.js` `pick`、`web_src/pano_ray_box.js`。選んだ物（タイムラインで選んだ行の物）の中心は `web_src/studio/stage_content.js` `stickerFrameSphere`、つなぐのは `web_src/studio/editor_content.js` | `tests/studio_view_camera.test.mjs`、`tests/studio_stage_view.test.mjs`、`tests/browser/studio_editor.spec.js` |
-| マウスとキーの割り当て、直接の操作となめらかに動く操作（Panorama 表示と Frame 表示） | — | `web_src/studio/view_input.js` `navigationAction`・`createViewInput`・`createWheelSteps`、`web_src/studio/view_camera.js` `createViewCamera`、事象を受けるのは `web_src/studio/stage_input.js`、下の部品 `web_src/pano_view_keys.js` `keyMoveView`・`createMoveKeys`、`web_src/pano_wheel.js` `readWheelDirection`。Frame 表示の視点（`view_camera.js` `createViewCamera` の `frame`）と Camera の Lane への記録はステージ（`stage_frame_view.js`）と `web_src/studio/editor_edits.js`（`web_src/studio/camera_state.js` `moveCameraPose`。下の記録は `pano_editor_state.js` `setCameraShot`）、続けて回したホイールを Undo の 1 段にまとめる待ちは `view_scale.js` `FRAME_WHEEL_REST_MS`。レンズの Camera（κ ≠ 1）のパンとホイールの GPU の当たりと、パンでポインタの動きを写す点は `web_src/studio/stage_view.js` `lensPickView`・`lensPinholePoint`・`frameViewFov`（下の部品 `pano_lens.js` `lensPickWindow`・`lensAngle`）、使うのは `stage_input.js`。クリックで選ぶのは `stage_objects.js` `press`（レンズの Camera では写した像で。下の「World の物のガイドと、CPU のホバーとクリックの判定」の行）。 | `tests/studio_view_input.test.mjs`、`tests/studio_view_camera.test.mjs`、`tests/studio_stage_view.test.mjs`、`tests/pano_view_keys.test.mjs`、`tests/browser/studio_editor.spec.js`、`tests/browser/studio_camera_wired.spec.js` |
+| マウスとキーの割り当て、直接の操作となめらかに動く操作（Panorama 表示と Frame 表示） | — | `web_src/studio/view_input.js` `navigationAction`・`createViewInput`、ホイールの一段は `web_src/pano_wheel.js` `createWheelSteps`、`web_src/studio/view_camera.js` `createViewCamera`、事象を受けるのは `web_src/studio/stage_input.js`、下の部品 `web_src/pano_view_keys.js` `keyMoveView`・`createMoveKeys`、`web_src/pano_wheel.js` `readWheelDirection`。Frame 表示の視点（`view_camera.js` `createViewCamera` の `frame`）と Camera の Lane への記録はステージ（`stage_frame_view.js`）と `web_src/studio/editor_edits.js`（`web_src/studio/camera_state.js` `moveCameraPose`。下の記録は `pano_editor_state.js` `setCameraShot`）、続けて回したホイールを Undo の 1 段にまとめる待ちは `view_scale.js` `FRAME_WHEEL_REST_MS`。レンズの Camera（κ ≠ 1）のパンとホイールの GPU の当たりと、パンでポインタの動きを写す点は `web_src/studio/stage_view.js` `lensPickView`・`lensPinholePoint`・`frameViewFov`（下の部品 `pano_lens.js` `lensPickWindow`・`lensAngle`）、使うのは `stage_input.js`。クリックで選ぶのは `stage_objects.js` `press`（レンズの Camera では写した像で。下の「World の物のガイドと、CPU のホバーとクリックの判定」の行）。 | `tests/studio_view_input.test.mjs`、`tests/studio_view_camera.test.mjs`、`tests/studio_stage_view.test.mjs`、`tests/pano_view_keys.test.mjs`、`tests/browser/studio_editor.spec.js`、`tests/browser/studio_camera_wired.spec.js` |
+| 寄る操作（Alt + ホイールとピンチで視点の画角を変えること、一段と範囲、右下の画角の数字のドラッグと画角のリセット、Frame 表示で Camera の H FOV を変えること） | — | ホイールの意味（前へ進むか寄るか）は `web_src/pano_wheel.js` `wheelMeaning`、溜めた分を捨てる時は `pano_wheel.js` `createWheelSteps`（Preview のノードの上も同じ関数）、視点の画角を持つのは `web_src/studio/view_camera.js` `createViewCamera`（`zoom`・`setFov`。値の桁は `viewFovValue` で、なめらかに動いている途中を直接の操作が止めたときも丸める）、描く画角は `web_src/studio/stage_view.js` `stageCamera`、事象を受けるのは `web_src/studio/stage_input.js`（`zoom`）、Preview のウィンドウで減衰で追わないのは `web_src/studio/preview_motion.js`。一段の値とドラッグの縮尺は、FOV の目盛りと共有する `web_src/pano_camera_math.js` `VIEW_FOV_STEP_DEG`（2°）・`VIEW_FOV_DRAG_PX_PER_DEG`（4 px で 1°）と一段を求める `fovStepValue`（向き・範囲・値の桁・Shift の細かさを受け取る）、寄る操作の向き（奥へ回すと小さく）は `fovZoomStep` で、視点・Frame 表示の Camera・Preview のノード（Scene のビューアと IMAGE・VIDEO）の寄る操作がどれもこれを呼ぶ。`CAMERA_RULERS.fov` はこの二つを読む。目盛りの矢印キーはどの目盛りも `pano_camera_math.js` `stepWithin` で小さい目盛り一つ動き（`StudioEdgeRuler.vue`）、FOV の目盛りの小さい目盛りは `VIEW_FOV_STEP_DEG` なので `fovStepValue`（同じ `stepWithin` を呼ぶ）と同じ値になる。右下の数字の Shift + 矢印キーの一段は `VIEW_FOV_FINE_STEP_DEG`（`view_camera.js` `viewFovKeyStep`）、ドラッグの式は `frame_layout.js` `rulerDragValue`（縮尺は `CAMERA_RULERS.fov.unitPx`）、範囲は `web_src/pano_camera_math.js` `VIEW_HFOV_MIN_DEG`・`VIEW_HFOV_MAX_DEG`。右下の画角の数字のドラッグと矢印キーは `web_src/components/studio/StudioFovNumber.vue`（Alt を押している間の見た目は `lit`。光る規則は `web_src/studio/view_input.js` `fovNumberLit`、`stage.js` が `ui.fovNumberLit` に書き、`StudioEditor.vue`・`StudioPreviewWindow.vue` が `StudioViewButtons.vue` に渡す）、画角のリセットとともに視点に当てるのは `stage.js` `setFov`・`resetFov`。Frame 表示の Camera の H FOV は目盛りと同じ道で書く（`frame_layout.js` `rulerEdit` を `web_src/studio/editor_edits.js` の `cameraTab.fov` が `session.js` `applyInspector` に渡す）。続けて回した分を Undo の 1 段にまとめ、ドラッグとキーの移動の間は何もしないのは `web_src/studio/stage_frame_view.js` `zoomFrame`（段を閉じるのは `commitFrame`・`cancelFrame`）、Panorama モードの知らせは `stage_input.js` `zoom` | `tests/pano_camera_math.test.mjs`（`fovStepValue`）、`tests/studio_frame_layout.test.mjs`（`CAMERA_RULERS.fov` が同じ値を読むこと）、`tests/studio_view_input.test.mjs`、`tests/studio_view_camera.test.mjs`、`tests/studio_stage_view.test.mjs`、`tests/studio_preview_motion.test.mjs`、`tests/browser/studio_editor.spec.js`、`tests/browser/studio_camera_wired.spec.js`（Frame 表示の Alt + ホイール）、`tests/browser/preview_window.spec.js` |
 | カーソル | — | `web_src/studio/view_input.js` `stageCursor`・`LOOK_CURSOR`・`ORBIT_CURSOR`・`KNOB_CURSOR` | `tests/studio_view_input.test.mjs` |
-| 視点の操作の部品（球・手・矢印、操作中に光ること、Set orbit center のボタンとその待ち） | — | `web_src/components/studio/StudioNavWidget.vue`、光る規則は `web_src/studio/view_input.js` `knobAction`・`litKnobs`、待ちとステージのクリックは `web_src/studio/stage.js`（`pickCenter`・`toolbarHover`）と `stage_input.js`、待ちの一行は `web_src/studio/notice_line.js` `topLine` | `tests/studio_view_input.test.mjs`、`tests/studio_notice_line.test.mjs`、`tests/browser/studio_editor.spec.js`、`tests/browser/studio_orbit_center.spec.js` |
+| 視点の操作の部品（球・四方向の矢印・道の矢印、操作中に光ること、Set orbit center のボタンとその待ち） | — | `web_src/components/studio/StudioNavWidget.vue`、光る規則は `web_src/studio/view_input.js` `knobAction`・`litKnobs`、待ちとステージのクリックは `web_src/studio/stage.js`（`pickCenter`・`toolbarHover`）と `stage_input.js`、待ちの一行は `web_src/studio/notice_line.js` `topLine` | `tests/studio_view_input.test.mjs`、`tests/studio_notice_line.test.mjs`、`tests/browser/studio_editor.spec.js`、`tests/browser/studio_orbit_center.spec.js` |
 | オービットの中心の印（出すとき、置く点、消え方、描く箱） | — | 出すとき・強さ・置く点・描く箱は `web_src/studio/orbit_marker.js` `orbitMarkerAlpha`・`orbitMarkPoint`・`markOnView`（長さは `view_scale.js`）、状態を集めるのは `web_src/studio/stage.js` `orbitMark`（印だけが変わるフレームは重ね描きだけを描く）、描くのは `web_src/studio/stage_overlay.js` | `tests/studio_orbit_marker.test.mjs`、`tests/studio_stage.test.mjs`（重ね描きだけのフレーム）、`tests/browser/studio_orbit_center.spec.js` |
 | 地面のグリッド（何をどの高さに描き、どこで薄れるか）と空のグリッド（何をどの角度に描き、どこで薄れるか、どちらの半球か） | — | `web_src/studio/grid.js` `groundGrid`・`skyGrid`（量は `view_scale.js`）、描く部品は `web_src/pano_ground_grid.js` と `web_src/pano_sky_grid.js`（`docs/threejs-spark-integration.md`）、スイッチは `web_src/components/studio/StudioViewButtons.vue` | `tests/studio_stage_view.test.mjs`、`tests/output_picture.test.mjs`（Panorama モードの目と前方、出力の絵に描かないこと）、`tests/browser/studio_editor.spec.js`、`tests/browser/ground_grid.spec.js`、`tests/browser/studio_sky_grid.spec.js` |
 | World の物のガイドと、CPU のホバーとクリックの判定 | — | `web_src/studio/world_guides.js`（形・中心・箱の判定・見え方。読み込み中のガイドの箱は `web_src/studio/load_reveal.js` が渡す）、Camera の印の形と当たりは `web_src/studio/camera_marker.js`、3D の Sticker の粗い占有グリッドとその光線は `web_src/pano_coarse_grid.js`・`web_src/studio/hit_test.js`、ステージにつなぐのは `web_src/studio/stage_objects.js`、描くのは `web_src/studio/stage_overlay.js`、下の部品 `space/camera.js` `projectPoint`、`space/bounds.js` `boxCorners`。Camera タブ（Frame 表示）では `stage.js` が Frame 表示の枠の箱で描く（`stage_overlay.js` の `origin`）。レンズの Camera（κ ≠ 1）では、`stage.js` が像を持たせた camera（`pano_lens.js` `withLensImage`。κ を丸めて 1 なら持たせない：`stage_view.js` `cameraFrameHit`）を渡し、3D の点の写し方は `pano_lens.js` `lensProjectPoint`、ポインタの光線は `lensStageRay`、線を分けて写すのは `lensPolylines`（`world_guides.js` `screenLines`）。`projectPoint`・`pano_editor_view.js` `viewProjection`・`hit_test.js` `cameraRay` はその camera のときこれらを通る（「レンズの Camera の当たり」） | `tests/studio_world_guides.test.mjs`、`tests/studio_camera_marker.test.mjs`、`tests/studio_stage_objects.test.mjs`、`tests/studio_hit_test.test.mjs`、`tests/pano_lens.test.mjs`、`tests/browser/studio_select.spec.js`、`tests/browser/studio_hit.spec.js`、`tests/browser/studio_camera_wired.spec.js`、`tests/browser/studio_camera_select.spec.js` |
 | Add とドロップの着く所（Add の画像の二択の後の置き場所を含む）と、ドラッグ中の印の形 | — | `web_src/studio/landing.js`（着く所 `landingHit`・`landingBoxes`・`groundLanding`・`groundBelow`、置く値 `skyPose`・`worldImageTransform`・`file3dTransform`・`file3dPosition`・`facingYaw`、印 `dropMarker`、ラベルの置き場所 `dropLabelPlace`）、置くのは `web_src/studio/add_files.js`、下の部品 `three_view/picker.js` `pick`（板を除く当たり）、CPU の箱の当たりは `web_src/studio/view_camera.js` `boxDepth`、`pano_sticker_geometry.js` `buildStickerGeometry`（Sky の枠） | `tests/studio_landing.test.mjs`、`tests/studio_add_files.test.mjs`、`tests/browser/studio_add.spec.js` |
-| Preview のウィンドウの視点（エディタとの違い、引き継ぎ、地面の高さ、減衰と慣性、グリッドの既定） | — | 減衰と慣性は `web_src/studio/preview_motion.js` `createPreviewMotion`（ステージの `follow`、`web_src/studio/stage.js`）、引き継ぎと地面の高さは `preview_motion.js` `previewOpening`・`previewOpeningPose`・`previewHandBack`・`previewGround`（地面の規則は `pano_scene_state.js` `sceneGround`）、つなぐのは `web_src/studio/preview_window.js`、慣性の減り方の値は `web_src/pano_interaction_controller.js`（ADR 0010） | `tests/studio_preview_motion.test.mjs`、`tests/browser/preview_window.spec.js` |
-| ウィンドウがフォーカスを失ったとき、Meta を離したときと右クリックのメニューが開いたときにキーを離すこと | — | `web_src/studio/view_input.js` `createViewInput().lostFocus`、事象を受けるのは `web_src/studio/stage_input.js`（`blur`・`visibilitychange`・Meta の `keyup`・エディタの中の `contextmenu`）、下の部品 `pano_view_keys.js` `createMoveKeys` | `tests/studio_view_input.test.mjs`、`tests/pano_view_keys.test.mjs`、`tests/browser/studio_editor.spec.js`（`blur`・右クリックのメニュー）、`tests/studio_stage.test.mjs`（Meta・右クリックのメニュー） |
+| Preview のウィンドウの視点（エディタとの違い、引き継ぎ、地面の高さ、減衰と慣性、グリッドの既定） | — | 減衰と慣性は `web_src/studio/preview_motion.js` `createPreviewMotion`（ステージの `follow`、`web_src/studio/stage.js`）、引き継ぎと地面の高さは `preview_motion.js` `previewOpening`・`previewOpeningPose`・`previewHandBack`・`previewGround`（画角も引き継ぐ。持つ値の桁は `view_camera.js` `viewFovValue`）（地面の規則は `pano_scene_state.js` `sceneGround`）、つなぐのは `web_src/studio/preview_window.js`、慣性の減り方の値は `web_src/pano_interaction_controller.js`（ADR 0010） | `tests/studio_preview_motion.test.mjs`、`tests/browser/preview_window.spec.js` |
+| ウィンドウがフォーカスを失ったとき、Meta を離したときと右クリックのメニューが開いたときにキーを離すこと。Alt だけの押し離しでブラウザのメニューに移らないこと | — | `web_src/studio/view_input.js` `createViewInput().lostFocus`、事象を受けるのは `web_src/studio/stage_input.js`（`blur`・`visibilitychange`・Meta の `keyup`・エディタの中の `contextmenu`、Alt だけの既定の動きを止めるのは `holdBareAlt`）、下の部品 `pano_view_keys.js` `createMoveKeys` | `tests/studio_view_input.test.mjs`、`tests/pano_view_keys.test.mjs`、`tests/browser/studio_editor.spec.js`（`blur`・右クリックのメニュー）、`tests/studio_stage.test.mjs`（Meta・右クリックのメニュー・Alt だけの押し離し） |
 
 ## 量の一覧
 
@@ -90,7 +92,7 @@ Python はこの文書の規則を持たない（列は `—`）。「（未実�
 | `FRAME_GAP_LIMIT` | 絶対 | 0.1 秒 | 続けて動く操作（ジョイスティック、WASD / QE、Preview の減衰と慣性）が一つのフレームに数える時間の上限。前のフレームからの時間がこれ以上なら（タブが止まっていた、など）、`FRAME_FALLBACK_SECONDS` として数える |
 | `FRAME_FALLBACK_SECONDS` | 絶対 | 1/60 秒 | 上のときに数える時間 |
 | `BOUND_NOTICE_SECONDS` | 絶対 | 2 秒 | 止まったときの知らせと、黙って何もしない操作の知らせ（下の「黙って何もしない操作」）を出しておく長さ（最後に出したときから） |
-| `WHEEL_STEP_PIXELS` | 絶対 | 100 px（仮。試作で詰める） | ピクセル単位の細かいホイールの事象（トラックパッド）を溜めて一段にする量（下の「ホイール」） |
+| `WHEEL_STEP_PIXELS`（`web_src/pano_wheel.js`） | 絶対 | 100 px（仮。試作で詰める） | ピクセル単位の細かいホイールの事象（トラックパッド）を溜めて一段にする量（下の「ホイール」） |
 | `FRAME_WHEEL_REST_MS` | 絶対 | 180 ms（旧 UI の Frame 表示と同じ） | Frame 表示で続けて回したホイールを Undo の 1 段にまとめる待ち。最後の一段からこの時間ホイールが止まったら 1 段にする（下の「Frame 表示」の「記録」） |
 | `DROP_PREVIEW_BOX` | 絶対 | 横 1・高さ 1・奥 1（World の単位）、底の中央が原点 | 箱の大きさが分かる前の 3D ファイルの印と、経路が答える前の読み込み中のガイド |
 | `PREVIEW_DAMPING` | 絶対 | 0.95 | Preview のウィンドウの減衰（下の「Preview のウィンドウ」） |
@@ -99,7 +101,9 @@ Python はこの文書の規則を持たない（列は `—`）。「（未実�
 
 | 名前 | 値 | 持ち主 |
 |---|---|---|
-| `DEFAULT_VIEW_HFOV`（参照） | 100° | `space/fit.js`、`docs/editor-interaction.md`。Panorama 表示と Preview の視点の横の画角で、どの操作も変えない |
+| `DEFAULT_VIEW_HFOV`（参照） | 100° | `space/fit.js`、`docs/editor-interaction.md`。Panorama 表示と Preview の視点の横の画角の既定（開いたとき、Reset View と画角のリセットの行き先）。寄る操作で変わる（下の「寄る」） |
+| `VIEW_HFOV_MIN_DEG`・`VIEW_HFOV_MAX_DEG`（参照） | 35°・140° | `web_src/pano_camera_math.js`。視点の画角の範囲（下の「寄る」。古い UI の視点と同じ値） |
+| `VIEW_FOV_STEP_DEG`・`VIEW_FOV_DRAG_PX_PER_DEG`（参照） | `docs/design.md` の「Camera タブの辺の目盛りの縮尺」 | 置き場所は `web_src/pano_camera_math.js`。右下の画角の数字の Shift + 矢印キーの一段 `VIEW_FOV_FINE_STEP_DEG`（1°。視点の画角が持つ最小の桁）も同じ所。FOV の目盛り、寄る操作の一段、画角の数字のドラッグと矢印キー、Preview のノードの上の寄る操作が同じ値を読み、一段は `fovStepValue` で求める（下の「寄る」） |
 | `KEY_MOVE_FAST` | 4 | `pano_view_keys.js`。WASD / QE の速さに Shift で掛ける数。Alt では遅くしない（下の「直接の操作」の WASD / QE。ADR 0048） |
 | `NEW_STICKER_HFOV`（参照） | 30° | `space/placement.js`。新しい Sky の Sticker の横の画角 |
 | `CAMERA_HIT_PIXELS` | 6 px | `web_src/studio/camera_marker.js`。Camera の印の線の当たりの幅（下の「ホバーの判定」） |
@@ -107,22 +111,26 @@ Python はこの文書の規則を持たない（列は `—`）。「（未実�
 | `COARSE_GRID_SLICE_MS` | 4 ms | `web_src/pano_coarse_grid.js`。そのグリッドを手の空いた時間に作るとき、1 回に使う時間の上限 |
 | `COARSE_GRID_IDLE_TIMEOUT_MS` | 100 ms | `web_src/pano_coarse_grid.js`。手が空かなくても、グリッドを作る次の 1 回が呼ばれるまでの最長の待ち |
 
-視点の roll はいつも 0。Frame 表示の画角は Camera の H FOV である。
+視点の roll はいつも 0。Panorama 表示と Preview の画角は視点の画角（下の「寄る」）、Frame 表示の画角は Camera の H FOV である。
 
 ## 視点は一つ
 
 - Panorama Studio のエディタにも Preview のウィンドウにも、3DoF | 6DoF の切り替えは無い（ADR 0045）。視点はいつも空間を
   自由に動ける。Sky だけの場面（World の内容が無い）、IMAGE・VIDEO を見る Preview も同じ操作で動き、モードを内容で
-  切り替えない。前に進んでも絵が変わらない場面でも、そのことを知らせる文は出さない（エディタでは地面のグリッドが動いて
-  見える。Preview でグリッドを隠しているときも知らせない。ADR 0047）。
+  切り替えない。ホイールの意味も、内容でもポインタの下の物でも変えない（ADR 0061）。前に進んでも絵が変わらない場面で、
+  そのことを知らせるのはホイールだけで、動いたうえで寄る操作を一行で知らせる（下の「Sky だけのときのホイール」。ADR 0061）。
+  パン・ジョイスティック・WASD / QE では知らせない（エディタでは地面のグリッドが動いて見える。Preview でグリッドを隠している
+  ときも知らせない。ADR 0047）。
 - Sky・背景・ペイントは無限遠にあるので、どこに立っていても同じ方向に見え、方向で触れる（`docs/threejs-spark-integration.md`
   の「空間の表示」）。
-- 視点は、位置 `P`（World の glTF の座標）、向き（`yaw`・`pitch`。軸は `pano_space.js` の `viewAxes`。前方を `forward` と書く）と、
-  注視点 `T`（下の「注視点 `T`」）を持つ。
+- 視点は、位置 `P`（World の glTF の座標）、向き（`yaw`・`pitch`。軸は `pano_space.js` の `viewAxes`。前方を `forward` と書く）、
+  横の画角（下の「寄る」）と、注視点 `T`（下の「注視点 `T`」）を持つ。
 - Panorama 表示で視点を動かしても、状態にも Undo にも入らず、再生も止めない。Frame 表示では視点が Camera そのもので、
   動かすと Camera の Lane に入る（下の「Frame 表示」）。
 - Camera はいつも一台あり、消せない（ADR 0048。`docs/studio-node.md` の「Panorama Studio」）。Camera のボタンでカメラを今の視点へ
-  持ってくる・隠す・Undo しても、視点は動かさない（ADR 0045）。
+  持ってくる・隠す・Undo しても、視点は動かさない（ADR 0045）。視点の画角と Camera の H FOV は、どちら向きにも合わせない：
+  Camera のボタンが持ってくるのは視点の位置と向きだけで（`docs/studio-ui.md` の「エディタの中の Camera」）、Camera の H FOV を
+  変えても視点の画角は変わらない（ADR 0061）。
 - ComfyUI の設定「3D view controls」（`PanoramaSuite.Editor.ViewControls`）のプリセットは、新しい UI では読まない。切り替えで、
   Panorama Studio と Preview はこの設定を使わなくなる。
 
@@ -130,15 +138,19 @@ Python はこの文書の規則を持たない（列は `—`）。「（未実�
 
 - 開いたとき：同じページで同じノードの視点を覚えていればそこから（下の「視点の記憶」）。無ければ出力の視点から始める：
   再生ヘッドでの Camera の位置と yaw（Camera はいつもあり、隠していても撮る。ADR 0048。既定の Camera は World の原点と yaw 0）。
-  pitch はどちらも 0（水平。ADR 0046）。`T` は下の「初めの `T`」。
-- Reset View：いつも World の原点・水平（pitch 0）・yaw 0 へ、`ACTION_EASE_SECONDS` で動く（持ち主の決定、2026-11-03。ADR 0058）。
+  pitch はどちらも 0（水平。ADR 0046）。画角は `DEFAULT_VIEW_HFOV`（Camera の H FOV は使わない）。`T` は下の「初めの `T`」。
+- Reset View：いつも World の原点・水平（pitch 0）・yaw 0・画角 `DEFAULT_VIEW_HFOV` へ、`ACTION_EASE_SECONDS` で動く（持ち主の決定、
+  2026-11-03。ADR 0058。画角は ADR 0061）。画角は位置と向きと同じ動きの中で線形に補間する。
   Camera の位置ではない（開いたときの出力の視点とも、覚えた視点とも違うことがある）。原点はパノラマを撮った点で、Camera をどこへ
   動かしても同じ所へ戻れる。`T` は行き先の視点で求めた「初めの `T`」になる。Frame 表示では使えない（ボタンは隠さずに無効）。
   開いたときの視点は上のまま（出力の視点）。
-- 視点の記憶：エディタを閉じたときの表示（Panorama・Frame）、`P`・`yaw`・`pitch`・`d` をノードごとに覚え、同じページで
+  - 始めの視点：位置・yaw・pitch・画角がすべて Reset View の行き先と同じ（数の誤差は数えない。yaw は 360° の回りを同じとみる）
+    間は、ボタンを隠さずに無効にする（tooltip は `docs/studio-ui.md` の「画面の区画」）。なめらかに動いている途中と、Preview の
+    減衰で追っている途中は、行き先の視点で比べる。`T` は比べない。
+- 視点の記憶：エディタを閉じたときの表示（Panorama・Frame）、`P`・`yaw`・`pitch`・画角・`d` をノードごとに覚え、同じページで
   開き直すとそこから始まる（`T` は前方 `d` の点。置き場所と消える時は今の `editorSession(node).view` のまま）。なめらかに
-  動いている途中で閉じたときは、行き先を覚える。覚えた値が使えないとき（数でない、Frame 表示が使えない）は、全部を出力の
-  視点で開く。
+  動いている途中で閉じたときは、行き先を覚える。覚えた値が使えないとき（数でない、画角が範囲の外、Frame 表示が使えない）は、
+  全部を出力の視点で開く。ページを読み込み直すと消え（画角は `DEFAULT_VIEW_HFOV` に戻る）、状態にもワークフローにも保存しない。
 
 ## 世界の境界
 
@@ -173,6 +185,25 @@ Python はこの文書の規則を持たない（列は `—`）。「（未実�
 |---|---|
 | 空（何にも当たらない所、または世界の境界の外の当たり）へのダブルクリックと、Set orbit center の待ちのクリック | 「Nothing to focus on」 |
 | World の内容も選んだ物も無いときの Frame Selected | 「Nothing to frame」 |
+| Camera タブの Panorama モードでの Alt + ホイールとピンチ | 「Not available in Panorama mode」（Panorama モードではどの操作も黙って何も動かさないが、Alt + ホイールは画角を変える操作として一覧で教えているので、効かないことを知らせる。ADR 0061） |
+
+### Sky だけのときのホイール
+
+World の内容が無い（Frame Selected が World の内容の全体に使う球が無い）ときに、Alt なしのホイール（トラックパッドの二本指でなぞるのを
+含む）の一段が実際に視点（Frame 表示では Camera）を動かしたら、今までどおり動かしたうえで、ステージの上端の中央の一行の知らせに次の文を出し、最後の一段から `BOUND_NOTICE_SECONDS`
+で消す（ADR 0061）。前に進んでも Sky・背景・ペイントは大きくならないので、寄る操作（下の「寄る」）の在りかをその場で示す。印は
+「知らせるだけ」（`docs/studio-ui.md` の「一行の知らせの種類」）。
+
+| 場所 | 知らせ |
+|---|---|
+| 3D タブ、Preview のウィンドウ | 「Sky only · Alt+wheel zooms」 |
+| Camera タブの Frame 表示 | 「Sky only · Alt+wheel changes the FOV」 |
+
+- その一段が世界の境界か距離の範囲で止まったときは、止まったときの知らせ（上の「世界の境界」）を出す。何も動かなかった一段
+  （ロックした Camera、読み取り専用のエディタ、ドラッグ中などで受けなかった一段）では出さない。
+- Camera タブの Panorama モード（ホイールで何も動かない）と、`source` に何もつないでいない Preview のウィンドウ（寄って見る物が無い）
+  では出さない。
+- Preview のノードの上には出さない（ノードの上の UI は足さない。持ち主の決定、2026-11-05。ADR 0061）。
 
 ## 注視点 `T`
 
@@ -235,7 +266,8 @@ Camera そのものを動かす。
 | 中ボタンのドラッグ（どこでも） | 見回し。物の上でも選ばず、編集しない（ADR 0060） |
 | Alt + 左ドラッグ、Alt + 中ボタンのドラッグ（どこでも、物やギズモの上でも） | `T`（回る中心）のまわりのオービット（ADR 0060） |
 | Alt + 右ドラッグ（どこでも、物やギズモの上でも） | 前後のジョイスティック（ADR 0060） |
-| ホイール | ポインタの下の点へ近づく・離れる一段 |
+| ホイール、トラックパッドの二本指でなぞる | ポインタの下の点へ近づく・離れる一段（前へ進む） |
+| Alt + ホイール、トラックパッドのピンチ | 寄る：視点の画角を変える一段（下の「寄る」。Frame 表示では Camera の H FOV。下の「Frame 表示」） |
 | W / S・A / D・Q / E のキー | 前後・左右・下上（近道。同じことはマウスでもできる） |
 | ダブルクリック（Panorama 表示と Camera タブの Frame 表示。Alt を押していても同じ） | そこを `T` にして向く（上の「注視点 `T`」。Frame 表示は Camera が向く。下の「Frame 表示」） |
 
@@ -243,7 +275,9 @@ Camera そのものを動かす。
 - Alt を押している間は、物とギズモのホバーの強調をしない（押した瞬間に今の強調も消す）。Alt + ドラッグは必ず視点の
   操作（オービットか前後）なので、強調は誤った合図になる。
 - ステージは右クリックのメニューを出さない（右ドラッグを使うため。キャンバスに右クリックだけの操作は無い）。
-- 表に無いボタンと修飾キーの組み合わせは何もしない。Ctrl・Meta との組み合わせは範囲選択とブラウザに残す。
+- 表に無いボタンと修飾キーの組み合わせは何もしない。Ctrl・Meta との組み合わせは範囲選択とブラウザに残す。ただし Ctrl + ホイールは
+  寄る操作にする：トラックパッドのピンチはブラウザに Ctrl + ホイールとして届き、マウスの Ctrl + ホイールと見分けられないため
+  （ADR 0061）。ステージの上ではブラウザのページの拡大にしない。一覧と tooltip には Ctrl + ホイールを出さない（ピンチと書く）。
 
 ### 直接の操作
 
@@ -314,6 +348,43 @@ Camera そのものを動かす。
   ときは Camera の位置を中心に半径 `CAMERA_FRAME_RADIUS` の球。World の内容が無く、球が決まらないときは動かさず、「黙って何もしない
   操作」の知らせを出す。
 
+### 寄る
+
+視点の画角（横の画角）を変える操作（ADR 0061）。Sky・背景・ペイント・Preview の画像と動画は無限遠にあり、前に進んでも大きく
+ならないので、画角で寄る。3D タブと Preview のウィンドウで同じに働く。Frame 表示は下の「Frame 表示」（Camera の H FOV を変える）。
+
+- 入口：Alt + ホイール、トラックパッドのピンチ（Ctrl + ホイール。上の「マウスとキー」）。Alt + 二本指でなぞるのも同じ。右下の画角の
+  数字のドラッグと、その隣の画角のリセット（置き場所と見た目は `docs/studio-ui.md` の「画面の区画」）。
+- 中心：いつも画面の真ん中。`P`・`yaw`・`pitch`・`T` は変えない。ポインタの位置は使わない。
+- 一段：FOV の目盛りの矢印キー（Shift なし）の一回と同じ量（`VIEW_FOV_STEP_DEG`。上の「量の一覧」の参照の行）。奥へ回す一段（ホイールで近づく向き。ピンチで指を広げる向き）は画角を小さく（寄る）、手前へ回す一段は大きくする。
+  Shift は見ない（ブラウザによっては Shift + ホイールを横のスクロールに変えるため）。Meta を押している間のホイールは、上の「マウスとキー」の
+  Ctrl・Meta の規則のままブラウザに残し、寄る操作にしない（寄る操作は Meta なしの Alt + ホイール）。
+- トラックパッドの細かい事象の溜め方はホイールと同じ（上の「なめらかに動く操作」のホイール、`WHEEL_STEP_PIXELS`）。ホイールの意味
+  （前へ進むか寄るか）が変わったら溜めた分を捨てる（Alt を押した・離した、Ctrl が付いた・外れた）。
+- 範囲：`VIEW_HFOV_MIN_DEG` 以上 `VIEW_HFOV_MAX_DEG` 以下。端で止まった一段は何も変えず、知らせも出さない（目盛りの矢印キーと同じ。
+  右下の数字に端の値が見えている）。
+- なめらかに動く操作との関係：寄る一段は直接の操作として扱う。Reset View・ダブルクリックの向き直し・Frame Selected で動いている途中なら、
+  上の「なめらかに動く操作」のとおり今見えている所で止め、そこから一段を当てる。
+- 当て方：なめらかにせず、その場で当てる（目盛りの矢印キーと同じ）。Preview のウィンドウでも減衰で追わない。ドラッグの途中でも効く
+  （見回しとパンの量は、その時の画角で求める）。状態にも Undo にも入らず、再生も止めない。
+- 値の桁：視点の画角は整数の度に丸めて持つ（右下の数字に見えない桁を持たせない。Camera タブの目盛りの「値の桁」と同じ考え）。
+- 右下の画角の数字のドラッグ：左右のドラッグで変え、右へ動かすと大きくなる。式は FOV の目盛りのドラッグと同じ `rulerDragValue`
+  （縮尺 `VIEW_FOV_DRAG_PX_PER_DEG`）を、ずれの符号を逆にして使う（目盛りは、右・下へ動かすと小さい値が真ん中に来るため）。Shift で細かくする
+  （`FINE_FACTOR`）。ドラッグは丸める前の値を溜め、当てるときに上の「値の桁」に丸めるので、Shift の細かいドラッグでも
+  整数の度ずつ動く。範囲は上と同じ。動かさずに離したときは何もしない。
+- 右下の画角の数字の矢印キー：数字はキーボードのフォーカスを受け、フォーカスがある間の矢印キー（→・↑ で大きく、←・↓ で小さく）は
+  FOV の目盛りの矢印キーと同じく一回で一段（`fovStepValue`）、Shift では `VIEW_FOV_FINE_STEP_DEG`（1°。視点の画角が持つ最小の桁。上の「値の桁」。
+  `FINE_FACTOR` の一段は整数の度に丸めると動かないため）。フォーカスの見た目は
+  `docs/design.md` の「フォーカス」。
+- Alt を押している間の右下の画角の数字：3D タブと Preview のウィンドウで、Alt を押していて視点の操作（ドラッグ、移動のキー）を
+  していない間は、数字の地を hover と同じにし、Alt + ホイールで変わるのがそこだと示す（Camera タブの FOV の目盛りと同じ考え。
+  持ち主、2026-11-05）。操作の間は、つまみの Alt の分と同じく見せない（上の「視点の操作の部品」）。Camera タブでは数字が無効なので光らせない（光るのは FOV の目盛り）。見せるだけで、状態にも
+  Undo にも入らない。見た目は `docs/design.md` の「右下の画角の数字と画角のリセット」。
+- 画角のリセット：画角だけを `DEFAULT_VIEW_HFOV` にする（その場で当てる）。`P`・向き・`T` は変えない。
+- 画角を使う式（見回し、パン、Frame Selected の距離）は、今の画角で求める。なめらかに動いている途中の Frame Selected は、ほかの値と同じく
+  行き先の視点から始めるので、行き先の画角で求める。
+- 覚えること：エディタは上の「視点の記憶」、Preview のウィンドウは下の「Preview のウィンドウ」の引き継ぎ。
+
 ### Frame 表示
 
 この節は撮り方のモードが Frame のときの Camera タブ（Camera から見る）の規則である。Panorama モードの Camera タブは出力の ERP を
@@ -335,11 +406,23 @@ Camera そのものを動かす。
   は、Camera の位置と向きで求めた「初めの `T`」から始める。回る中心は上の「回る中心」と同じ（Camera タブで物を選んでいれば、オービットを始めたときにその中心を `T` にする。Camera そのものは数えない）。Panorama 表示の `T` は Frame 表示の
   間も変えず、Panorama 表示に戻るとそのまま使う。
 - ホイールの一段は、なめらかにせずその場で当てる（Lane に書く値をフレームごとに変えないため）。World の内容が無くても
-  同じに動く。
+  同じに動き、そのうえで上の「Sky だけのときのホイール」の知らせを出す。
+- Alt + ホイールとピンチ：Camera の H FOV を変える一段（ADR 0061）。Camera の位置と向きは動かさず、ポインタの位置も使わない。
+  視点の画角（上の「寄る」）は変えない。
+  - 一段の値は、FOV の目盛りの矢印キー（Shift なし）の一回と同じに決める（量・範囲・値の桁。`docs/studio-ui.md` の「Camera タブ」の
+    辺の目盛り）。向き、Shift を見ないこと、トラックパッドの溜め方は上の「寄る」と同じ。
+  - 端で止まった一段は何も変えず、知らせも出さない（目盛りの矢印キーと同じ。Alt を押している間の目盛りに端の値が見えている）。
+  - 記録は目盛りの矢印キーと同じ道で、Camera の Lane に記録の規則で書く。続けて回した分（`FRAME_WHEEL_REST_MS` 止まるまで）を
+    Undo の 1 段にする。Alt なしのホイールと Alt + ホイールは別の 1 段にする（続けて回していても、切り替えた所で分ける）。
+  - ドラッグの途中と物のドラッグの間は何もしない（Camera の位置と H FOV を同じ 1 段に書かないため）。キーで Camera を動かしている
+    途中も何もしない（キーの動きは離すまでフレームごとに Camera を書き続けるので、H FOV の段と入り混じるため）。読み取り専用の
+    エディタとロックした Camera では、ホイールと同じく何もしない。
+  - Alt を押している間の FOV の目盛りの見た目と、右下の数字（Camera の H FOV を出し、無効）は `docs/studio-ui.md` の「Camera タブ」。
+  - Panorama モードの Alt + ホイールは何も変えず、上の「黙って何もしない操作」の知らせを出す。
 - Frame Selected は Camera を動かす（選んだ物、または World の内容の全体が枠に収まる位置へ、向きを保って）。ホイールと同じ理由で
   なめらかにせずその場で当て、Undo の 1 段にする。Reset View は Camera タブでは無効（`docs/studio-ui.md` の「Camera タブ」）。
 - 記録：どの操作も最初の動きで再生を止め、Camera の Lane に記録の規則で書く（`docs/editor-interaction.md` の「Camera の記録」と
-  `docs/timeline-ui.md`）。一つのドラッグ、続けて回したホイール（`FRAME_WHEEL_REST_MS` 止まるまで）、押してから全部のキーを離すまでが、それぞれ Undo の 1 段。
+  `docs/timeline-ui.md`）。一つのドラッグ、続けて回したホイール（`FRAME_WHEEL_REST_MS` 止まるまで。Alt + ホイールは別の段）、押してから全部のキーを離すまでが、それぞれ Undo の 1 段。
   ドラッグの途中のキーとホイールは、そのドラッグの 1 段に入る。物のドラッグ（選んだ物のギズモ・ハンドル・本体）の間は、キーとホイールで
   Camera は動かない（物と Camera が同じ 1 段に書かれないように）。キーで Camera を動かしている途中に物をドラッグすると、キーの 1 段は
   その前と後に分かれる。
@@ -418,15 +501,22 @@ Camera である（表示が 1.00 なら pinhole と同じに扱う。保存し�
 
 | つまみ | ドラッグの動き | tooltip |
 |---|---|---|
-| 球 | オービット（キャンバスの Alt + 左ドラッグと同じ。回る中心も同じ） | 「Drag to orbit · Alt+left-drag in the view」 |
-| 手 | パン（右ドラッグと同じ。掴む点は画面の中心の表面の当たり） | 「Drag to pan · right-drag in the view」 |
-| 上下の矢印 | 前後のジョイスティック（Alt + 右ドラッグと同じ） | 「Drag to move forward/back · Alt+right-drag」 |
+| 球 | オービット（キャンバスの Alt + 左ドラッグと同じ。回る中心も同じ） | 「Orbit (Alt+Drag)」 |
+| 四方向の矢印 | パン（右ドラッグと同じ。掴む点は画面の中心の表面の当たり） | 「Pan (Right-drag)」 |
+| 道の矢印 | 前後のジョイスティック（Alt + 右ドラッグと同じ） | 「Move forward/back (Alt+Right-drag)」 |
 
 - ポインタを載せるとカーソルは `grab`、ドラッグ中は `grabbing`。
-- 操作の最中は、どの手段で動かしていても、その操作に当たるつまみを光らせる（選ばれた状態と同じ灰の強い塗り。色は使わない）：
-  オービット（Alt + ドラッグ、球のドラッグ）は球、パン（右ドラッグ、手のドラッグ）は手、前後（Alt + 右ドラッグ、矢印のドラッグ、
-  WASD / QE の移動）は矢印。見回しには当たるつまみが無いので光らせない。Alt を押している間は、Alt のドラッグに当たるつまみ
-  （球と矢印）も光らせる。光らせるのは表示だけで、状態にも Undo にも入らない。
+- 操作の最中は、どの手段で動かしていても、その操作に当たるつまみを光らせる。光らせる地は hover と同じ暗い灰（色は使わない）で、
+  つまみ自体をドラッグしている間だけ、ドラッグしているそのつまみを選ばれた状態と同じ灰の強い塗りにする（ほかのつまみは暗い灰のまま。ステージの Alt + ドラッグ・右ドラッグ・移動のキーや、
+  下の Alt の光りでは暗い灰のまま。強い塗りが目立ちすぎるため。持ち主、2026-11-05）：
+  オービット（Alt + ドラッグ、球のドラッグ）は球、パン（右ドラッグ、四方向の矢印のドラッグ）は四方向の矢印、前後（Alt + 右ドラッグ、道の矢印のドラッグ、
+  WASD / QE の移動）は道の矢印。見回しには当たるつまみが無いので光らせない。Alt を押していて、視点の操作（ドラッグ、移動のキー）を
+  していない間は、Alt のドラッグに当たるつまみ（球と道の矢印）も光らせる。操作を始めたら Alt の分は消し、その操作のつまみだけを
+  光らせる（Alt + 左ドラッグなら球だけ、Alt + 右ドラッグなら道の矢印だけ。右下の画角の数字と Camera タブの FOV の目盛りも、
+  操作の間は光らせない。持ち主、2026-11-05）。光らせるのは表示だけで、状態にも Undo にも入らない。
+- Studio を開いている間は、Alt だけを押した・離したときのブラウザの既定の動きを止める（Alt の `keydown`・`keyup` で `preventDefault`）。
+  Windows のブラウザは、Alt だけを押して離すとブラウザのメニューにフォーカスを移し、その後の Alt がページに届かなくなる。
+  そのため、光ったままになったり、押しても光らなくなったりした（持ち主、2026-11-05）。Alt と組み合わせたキーは止めない。
 - 球にポインタを載せている間は、オービットの中心の印を出す（下の「オービットの中心の印」）。
 - つまみの上のホイールと右クリックのメニューは、ステージに渡さない。
 - つまみの席は 3D タブでも Camera タブでも Preview のウィンドウでも同じで、出たり消えたりしない。操作できないとき（読み取り
@@ -454,7 +544,7 @@ Camera である（表示が 1.00 なら pinhole と同じに扱う。保存し�
   ボタンをもう一度押す、タブを変える（撮り方のモードを変えたときも）、ウィンドウがフォーカスを失う（下の「ウィンドウがフォーカスを失ったとき」）。
   `Set ground` の待ち（`docs/studio-ui.md` の「種類ごとの中身」。まだ作っておらず、ボタンも出していない）ができたら、待ちは一度に一つにする：`Set ground` の待ちを
   始めると Set orbit center の待ちをやめ、逆も同じ。
-- tooltip：ふだんは「Set orbit center · or double-click a spot」、待っている間は「Click a spot to orbit around · Esc to cancel」。
+- tooltip：ふだんは「Set orbit center (Double-click)」、待っている間は「Click a spot to orbit around · Esc to cancel」。
 - Camera タブでは使えない（Camera タブで `T` を決め直すのはダブルクリックだけにする。上の「Frame 表示」）。同じ席に出したまま無効にし、
   tooltip は「Not available in the Camera view」。Preview のウィンドウでは 3D タブと同じに働く（下の「Preview のウィンドウ」）。
 
@@ -655,13 +745,13 @@ ADR 0047）。
 - 無いもの：選択、ガイドとホバーの強調、ドロップ、Add、ギズモ、Frame 表示、Frame Selected。物が無いので、左ドラッグはいつも
   見回しで、カーソルは物のカーソルにならない。
 - `T` を決め直すのはダブルクリック、Set orbit center と Reset View だけ（Preview には選択が無いので、回る中心はいつも `T`）。
-- 開いたとき：ノード上の表示から `P`・`yaw`・`pitch` を引き継ぐ（`docs/preview-node.md` の「大きなウィンドウ」）。画角は
-  `DEFAULT_VIEW_HFOV`、`T` は「初めの `T`」で求める。引き継ぐものが無ければ原点、yaw 0、pitch 0。閉じると、ノード上の表示が
-  ウィンドウの最後の `P`・`yaw`・`pitch` を引き継ぐ（今と同じ。なめらかに動いている途中や慣性で動いている途中なら、その時の
-  行き先の視点）。Preview は Camera を使わない。Reset View は原点、yaw 0、pitch 0 へ動く。
-  - `PANO_SCENE`：ノード上の Scene のビューアの視点（位置・yaw・pitch）をそのまま引き継ぎ、閉じると返す。
-  - IMAGE・VIDEO：ノード上の表示は見回しだけ（3DoF）なので、yaw・pitch を引き継ぎ、`P` は原点から始める。閉じると yaw・pitch
-    だけを返す（ウィンドウで動いた `P` は返さない）。ノード上の画角は変えない。
+- 開いたとき：ノード上の表示から `P`・`yaw`・`pitch`・画角を引き継ぐ（`docs/preview-node.md` の「大きなウィンドウ」）。`T` は
+  「初めの `T`」で求める。引き継ぐものが無ければ原点、yaw 0、pitch 0、画角 `DEFAULT_VIEW_HFOV`。閉じると、ノード上の表示が
+  ウィンドウの最後の `P`・`yaw`・`pitch`・画角を引き継ぐ（なめらかに動いている途中や慣性で動いている途中なら、その時の
+  行き先の視点）。Preview は Camera を使わない。Reset View は原点、yaw 0、pitch 0、画角 `DEFAULT_VIEW_HFOV` へ動く。
+  - `PANO_SCENE`：ノード上の Scene のビューアの視点（位置・yaw・pitch・画角）をそのまま引き継ぎ、閉じると返す。
+  - IMAGE・VIDEO：ノード上の表示は見回しだけ（3DoF）なので、yaw・pitch・画角を引き継ぎ、`P` は原点から始める。閉じると yaw・pitch・
+    画角だけを返す（ウィンドウで動いた `P` は返さない）。
 - 地面の高さ `ground`（グリッドの高さと `E`）：`PANO_SCENE` は、その層の状態から `docs/scene-state-v2.md` の `ground` の規則で読む
   （自分の層は無いので、最も下流で `ground` を持つ層のもの、無ければ `GROUND_DEFAULT`）。IMAGE・VIDEO は `GROUND_DEFAULT`。
 - 世界の境界は上と同じ（Camera の項は無い）。
@@ -681,10 +771,12 @@ ADR 0047）。
 - グリッド（地面と空）は、エディタと同じく既定で出す（ADR 0058 が ADR 0047 の「Preview では既定で隠す」を置き換える。空のグリッドで向きが
   分かるのは、見るための場所でも役に立つため）。隠すかどうかは見る人が右下のボタン群の決まった席のスイッチ（on / off）で決める
   （押すたびに状態が反転するボタンにしない。`docs/agents/ux-principles.md`）。席は出たり消えたりしない。World の内容の有無で
-  自動で出し入れせず、隠している間に絵が変わらない移動をしても知らせない（スイッチがいつも見えているため。ADR 0047）。
-- オービットの中心の印と Set orbit center はエディタと同じに働く（上の「オービットの中心の印」「Set orbit center」）。Set orbit center の
-  待ちの文は、Preview のウィンドウにはふだん一行の知らせが無いので、エディタと同じ上端の中央の席に、待っている間だけその一行を出す
-  （`docs/studio-ui.md` の「Preview のウィンドウ」）。
+  自動で出し入れせず、隠している間に絵が変わらない移動をしても知らせない（スイッチがいつも見えているため。ADR 0047）。ホイールだけは、
+  グリッドによらず上の「Sky だけのときのホイール」の知らせを出す（ADR 0061）。
+- オービットの中心の印と Set orbit center はエディタと同じに働く（上の「オービットの中心の印」「Set orbit center」）。Preview のウィンドウには
+  ふだん一行の知らせが無いので、Set orbit center の待ちの文と、上の「Sky だけのときのホイール」の知らせだけを、エディタと同じ上端の中央の
+  席に出す（`docs/studio-ui.md` の「Preview のウィンドウ」）。
+- 寄る操作と右下の画角の数字はエディタの 3D タブと同じ（上の「寄る」）。
 
 ## ウィンドウがフォーカスを失ったとき
 

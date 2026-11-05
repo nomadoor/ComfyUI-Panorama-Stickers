@@ -250,7 +250,8 @@
   cursor: pointer;
 }
 
-.pano-studio-icon-btn:hover {
+.pano-studio-icon-btn:hover,
+.pano-studio-icon-btn.is-hint {
   background: var(--studio-fill-hover);
   color: var(--studio-fg);
 }
@@ -452,6 +453,64 @@
 .pano-studio-float.is-rail .pano-studio-icon-btn svg.icon-tabler-photo-box {
   width: 22px;
   height: 22px;
+}
+
+/* The View group's reset of the FOV keeps the row's reset size (docs/design.md "右下の画角の数字と画角のリセット"). */
+.pano-studio-at-buttons .pano-studio-icon-btn.is-sm {
+  width: var(--studio-btn-sm);
+  height: var(--studio-btn-sm);
+}
+
+.pano-studio-at-buttons .pano-studio-icon-btn.is-sm svg.icon {
+  width: 14px;
+  height: 14px;
+}
+
+/* The View group's FOV number (docs/design.md "右下の画角の数字と画角のリセット", mock B2): a pill as tall as the buttons,
+   no fill but the hover's, the number in the edge ruler's value style, right-aligned in exactly the width of "140°"
+   (a hidden "140°", data-widest, in the same cell). */
+.pano-studio-fov {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  height: var(--studio-knob);
+  padding: 0 6px 0 10px;
+  border-radius: var(--studio-r-part);
+  color: var(--studio-fg);
+  font-size: var(--studio-text-sm);
+  font-weight: var(--studio-weight-head);
+  line-height: 1;
+  cursor: ew-resize;
+  user-select: none;
+  touch-action: none;
+  transition: background-color var(--studio-motion-hover);
+}
+
+.pano-studio-fov:hover,
+.pano-studio-fov.is-lit {
+  background: var(--studio-fill-hover);
+}
+
+.pano-studio-fov-num {
+  display: inline-grid;
+  justify-items: end;
+  font-variant-numeric: tabular-nums;
+}
+
+.pano-studio-fov-num > *,
+.pano-studio-fov-num::after {
+  grid-area: 1 / 1;
+}
+
+.pano-studio-fov-num::after {
+  content: attr(data-widest);
+  visibility: hidden;
+}
+
+.pano-studio-fov[aria-disabled="true"] {
+  opacity: 0.35;
+  background: transparent;
+  cursor: default;
 }
 
 .pano-studio-sep {
@@ -2233,6 +2292,13 @@
 .pano-studio-edge-ruler.is-left .pano-studio-edge-ruler-num { right: 24px; }
 .pano-studio-edge-ruler.is-right .pano-studio-edge-ruler-num { left: 24px; }
 .pano-studio-edge-ruler.is-horizontal .pano-studio-edge-ruler-num { top: 22px; transform: translateX(-50%); }
+
+/* Alt held in the Frame view (docs/studio-ui.md "Camera タブ", docs/design.md): the FOV ruler, which Alt + wheel changes,
+   looks as the keyboard's focus does (its band's fill white 10%, its text white). */
+.pano-studio-edge-ruler.is-lit .pano-studio-edge-ruler-track {
+  background-color: var(--studio-focus-fill);
+  color: var(--studio-focus-fg);
+}
 
 /* Panorama mode: FOV and Lens stay in their places, gray and untouchable. */
 .pano-studio-edge-ruler.is-disabled {

@@ -73,6 +73,9 @@ try {
     editor?.close();
   };
   studio.memory = () => editorSession(node).view;
+  // The 3D tab's view as it shows (its FOV: docs/space-and-view.md "寄る").
+  studio.pose = () => editor?.stage()?.pose() ?? null;
+  studio.stage = () => editor?.stage() ?? null;
   // The stage's pixels, a 64 x 36 sampling of its canvas: [r, g, b] rows.
   studio.sample = () => {
     const canvas = document.querySelector("[data-stage-canvas]");

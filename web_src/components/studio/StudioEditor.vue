@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { createBackdropClose } from "../../studio/backdrop.js";
-import { CAMERA_TAB_LOCKED_TIP, CAMERA_TAB_TIP, cameraButton } from "../../studio/camera_ui.js";
+import { CAMERA_FOV_TIP, CAMERA_TAB_LOCKED_TIP, CAMERA_TAB_TIP, PANORAMA_MODE_TIP, cameraButton } from "../../studio/camera_ui.js";
 import { cameraOf } from "../../studio/camera_state.js";
 import { liveErpRatio } from "../../studio/erp_preview.js";
 import { cameraRulers, rulerEdit } from "../../studio/frame_layout.js";
@@ -136,15 +136,18 @@ const cameraRailButton = computed(() => cameraButton({ projection: camera.value.
 // The stage's knobs: nothing moves in Panorama mode, nor a locked Camera or a read-only editor's in the Camera tab.
 const navOff = computed(() => {
   if (!cameraTab.value) return "";
-  if (panorama.value) return "Not available in Panorama mode";
+  if (panorama.value) return PANORAMA_MODE_TIP;
   if (props.view.readOnly) return "Read-only";
   if (camera.value.locked === true) return CAMERA_TAB_LOCKED_TIP;
   return "";
 });
+// The FOV number (docs/studio-ui.md "右下の View の群", "Camera タブ"): the Camera tab shows the Camera's H FOV in the FOV
+// ruler's text, grayed (the ruler, the inspector and Frame mode's Alt + wheel change it).
+const fovOffTip = computed(() => (panorama.value ? PANORAMA_MODE_TIP : CAMERA_FOV_TIP));
 // --- The list of shortcuts (docs/studio-ui.md "ショートカットの一覧"): what works on the screen now.
 const nav = ref(null);
 const isMac = isMacPlatform();
-const shortcuts = computed(() => shortcutGroups({ tab: props.view.tab, panorama: panorama.value, readOnly: props.view.readOnly, mac: isMac }));
+const shortcuts = computed(() => shortcutGroups({ tab: props.view.tab, panorama: panorama.value, readOnly: props.view.readOnly, locked: camera.value.locked === true, mac: isMac }));
 const helpButton = () => nav.value?.helpButton() ?? null;
 const erpCanvas = ref(null);
 watch(erpCanvas, (element) => props.controller.erpCanvas?.(element ?? null));
@@ -241,7 +244,7 @@ function setCollapsed(value) {
     <div
       ref="root"
       class="pano-studio pano-studio-editor"
-      :class="{ 'is-knob-drag': ui.knobDrag }"
+      :class="{ 'is-knob-drag': !!ui.knobDrag }"
       role="dialog"
       tabindex="-1"
       aria-modal="true"
@@ -284,6 +287,7 @@ function setCollapsed(value) {
                 :tip="rulers.fov.tip"
                 :value-chars="rulers.fov.scale.valueChars"
                 :at-default="rulers.fov.atDefault"
+                :lit="ui.fovLit"
                 :style="stripStyle(place.vertical, true)"
                 @reset="onRuler('fov', 'reset')"
                 @input="(value) => onRuler('fov', 'input', value)"
@@ -382,6 +386,7 @@ function setCollapsed(value) {
             <StudioNavWidget
               ref="nav"
               :lit="ui.lit"
+              :knob-drag="ui.knobDrag"
               :disabled="!!navOff"
               :disabled-tip="navOff"
               :help-open="!!view.shortcuts"
@@ -402,12 +407,20 @@ function setCollapsed(value) {
           </div>
           <StudioViewButtons
             class="pano-studio-at-buttons"
+            :fov="ui.fov"
+            :fov-lit="ui.fovNumberLit"
+            :fov-text="cameraTab && rulers ? rulers.fov.valueText : ''"
+            :fov-disabled="cameraTab"
+            :fov-tip="fovOffTip"
             :grid-shown="!ui.gridHidden"
             :reset-disabled="cameraTab"
             :reset-tip="CAMERA_TAB_TIP"
+            :at-start="ui.atStart"
             :frame-tip="cameraTab ? 'Frame selected · Moves the camera' : ''"
             :frame-disabled="!!navOff"
             :frame-disabled-tip="navOff"
+            @fov="(value) => stage?.setFov(value)"
+            @fov-reset="stage?.resetFov()"
             @frame-selected="stage?.frameSelected()"
             @reset-view="stage?.resetView()"
             @grid="setGrid"

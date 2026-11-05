@@ -90,8 +90,6 @@ export const FRAME_FALLBACK_SECONDS = 1 / 60;
 // How long the stage's one-line notices (the bound stopped the view, an action that does nothing) stay after the
 // last time they were shown.
 export const BOUND_NOTICE_SECONDS = 2;
-// Fine pixel wheel events (a trackpad) add up to one wheel step every this many px (provisional; ADR 0048).
-export const WHEEL_STEP_PIXELS = 100;
 // A run of wheel steps in the Frame view is one Undo step, taken once the wheel has rested this long (the old Frame
 // view's 180 ms, editor/frame_view.js).
 export const FRAME_WHEEL_REST_MS = 180;

@@ -30,7 +30,7 @@ test("every key of the handlers' tables is in the list, and the list names no ke
 test("every button and Alt the stage's navigation takes is in the list, each under the operation it starts", () => {
   const listed = new Map();
   for (const group of full) for (const row of group.rows) for (const ref of row.refs) if (ref.startsWith("button:")) listed.set(ref, row.label);
-  const labels = { look: "Look around", orbit: "Orbit", pan: "Pan", joystick: "Move forward / back" };
+  const labels = { look: "Look around", orbit: "Orbit", pan: "Pan", joystick: "Move forward/back" };
   const taken = [];
   for (const button of [0, 1, 2, 3, 4]) {
     for (const altKey of [false, true]) {
@@ -55,7 +55,7 @@ test("the list shows each key as the table has it, Ctrl as ⌘ on macOS", () => 
   assert.deepEqual(rowOf(full, "Look around").keys, [["Drag"], ["Middle-drag"]]);
   assert.deepEqual(rowOf(full, "Orbit").keys, [["Alt", "Drag"], ["Alt", "Middle-drag"]]);
   assert.deepEqual(rowOf(full, "Pan").keys, [["Right-drag"]]);
-  assert.deepEqual(rowOf(full, "Move forward / back").keys, [["Alt", "Right-drag"]]);
+  assert.deepEqual(rowOf(full, "Move forward/back").keys, [["Alt", "Right-drag"]]);
   assert.deepEqual(rowOf(full, "Move").keys, [["W"], ["S"], ["A"], ["D"], ["Q"], ["E"]]);
   assert.deepEqual(rowOf(full, "Show shortcuts").keys, [["?"]]);
   assert.deepEqual(rowOf(full, "Step back / close").keys, [["Esc"]]);
@@ -139,4 +139,24 @@ test("the Preview window's list (context preview) has no selection or editing ro
   // Without the playback strip, Space does nothing there, so the row and its group are not shown.
   const still = shortcutGroups({ context: "preview", playable: false });
   assert.deepEqual(still.map((group) => group.id), ["view", "editor"]);
+});
+
+// docs/studio-ui.md "ショートカットの一覧" (ADR 0061): the wheel moves toward the pointer; Alt + wheel and a pinch zoom
+// (always in the 3D tab and the Preview window; named Change Camera FOV in the Camera tab's Frame mode, and only where the
+// Camera moves); Panorama mode has no rows; Ctrl + wheel is never shown.
+test("the View group: Move toward the pointer, and Zoom (change FOV) or Change Camera FOV where it works", () => {
+  const row = (groups, label) => groups[0].rows.find((item) => item.label === label);
+  const space = shortcutGroups({ tab: "3d" });
+  assert.deepEqual(row(space, "Move toward the pointer")?.keys, [["Wheel"]]);
+  assert.equal(row(space, "Zoom to the pointer"), undefined);
+  assert.deepEqual(row(space, "Zoom (change FOV)")?.keys, [["Alt", "Wheel"], ["Pinch"]]);
+  assert.ok(row(shortcutGroups({ tab: "3d", readOnly: true }), "Zoom (change FOV)"));
+  assert.ok(row(shortcutGroups({ context: "preview" }), "Zoom (change FOV)"));
+  const frame = shortcutGroups({ tab: "camera", panorama: false });
+  assert.equal(row(frame, "Zoom (change FOV)"), undefined);
+  assert.deepEqual(row(frame, "Change Camera FOV")?.keys, [["Alt", "Wheel"], ["Pinch"]]);
+  assert.equal(row(shortcutGroups({ tab: "camera", panorama: false, readOnly: true }), "Change Camera FOV"), undefined);
+  assert.equal(row(shortcutGroups({ tab: "camera", panorama: false, locked: true }), "Change Camera FOV"), undefined);
+  assert.deepEqual(shortcutGroups({ tab: "camera", panorama: true })[0].rows, []);
+  assert.ok(!space[0].rows.some((item) => item.keys.some((combo) => combo.includes("Ctrl") && combo.includes("Wheel"))));
 });

@@ -1,17 +1,20 @@
 <script setup>
 import { ref } from "vue";
 import { ICON } from "../icons.js";
+import { START_VIEW_TIP } from "../pano_space.js";
 import PanoIconButton from "./shared/PanoIconButton.vue";
 import PanoVideoTransport from "./shared/PanoVideoTransport.vue";
 import PanoViewUnavailable from "./shared/PanoViewUnavailable.vue";
 import SvgIcon from "./shared/SvgIcon.vue";
 
-// The Preview's viewer of a Scene on its node (docs/preview-node.md "ノード上"): the Scene's picture, Reset view and
-// Open viewer at the top right, the playback bar at the bottom, and the play / pause cue of a double click.
+// The Preview's viewer of a Scene on its node (docs/preview-node.md "ノード上"): the Scene's picture, Reset view (the
+// home icon, off at the start view) and Open viewer at the top right, the playback bar at the bottom, and the play /
+// pause cue of a double click.
 // pano_scene_viewer_node.js draws into `canvas` and handles the pointer on it.
 defineProps({
-  // { transport (PanoVideoTransport.vue's state), cue ("play" | "pause" | null), cueKey, viewUnavailable }
-  model: { type: Object, default: () => ({ transport: {}, cue: null, cueKey: 0, viewUnavailable: false }) },
+  // { transport (PanoVideoTransport.vue's state), cue ("play" | "pause" | null), cueKey, viewUnavailable, atStart (the
+  // view is at its start view: Reset view is off) }
+  model: { type: Object, default: () => ({ transport: {}, cue: null, cueKey: 0, viewUnavailable: false, atStart: false }) },
   onAction: { type: Function, default: null },
 });
 const canvas = ref(null);
@@ -23,10 +26,10 @@ defineExpose({ canvas });
     <canvas ref="canvas" class="pano-scene-viewer-canvas" />
     <div class="pano-scene-viewer-buttons" @pointerdown.stop @wheel.stop @dblclick.stop>
       <PanoIconButton
-        :icon="ICON.reset"
+        :icon="ICON.home"
         label="Reset view"
-        tip="Reset view"
-        :attrs="{ 'data-action': 'reset-view' }"
+        :tip="model.atStart ? START_VIEW_TIP : 'Reset view'"
+        :attrs="{ 'data-action': 'reset-view', 'aria-disabled': model.atStart ? 'true' : null }"
         @click="onAction?.({ type: 'reset-view' })"
       />
       <PanoIconButton

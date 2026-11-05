@@ -15,10 +15,11 @@ import { LIVE_ERP_OWNER, OUTPUT_ERP_OWNER, OUTPUT_OWNER, createStageOutput } fro
 import { liveErpSize } from "./erp_preview.js";
 import { outputErpInput } from "./output_picture.js";
 import { STAGE_CLEAR_COLOR, stageCamera, stageRenderInput, stageRenderSize } from "./stage_view.js";
-import { createNotice, createViewCamera, frameSelectedSphere, orbitCenter } from "./view_camera.js";
-import { KNOB_CURSOR, createViewInput, createWheelSteps, knobAction, litKnobs, stageCursor } from "./view_input.js";
+import { atResetView, createNotice, createViewCamera, frameSelectedSphere, orbitCenter, skyOnlyNotice as skyOnlyCode, viewFovValue } from "./view_camera.js";
+import { KNOB_CURSOR, createViewInput, fovNumberLit, fovRulerLit, knobAction, litKnobs, stageCursor } from "./view_input.js";
+import { createWheelSteps } from "../pano_wheel.js";
 import { BOUND_NOTICE_SECONDS, frameSeconds } from "./view_scale.js";
-import { projectPoint } from "../pano_space.js";
+import { DEFAULT_VIEW_HFOV, projectPoint } from "../pano_space.js";
 import { markOnView, orbitMarkPoint, orbitMarkerAlpha, orbitMarkerFading } from "./orbit_marker.js";
 
 // The owners (pano_three_view.js) the live ERP of the Camera tab's Panorama mode, the Output window's Frame picture and
@@ -30,14 +31,16 @@ export function stageUi() {
   return {
     // The three.js view: "loading", "ready" or "failed" (the chunk or WebGL is unavailable).
     view: "loading",
-    // The one-line notice (VIEW_NOTICES' text) or null.
+    // The one-line notice (VIEW_NOTICES' text) or null, and the Sky-only wheel notice (its own, which only tells).
     notice: null,
+    skyOnly: null,
     // The stage's CSS cursor.
     cursor: "",
     // The knobs lit now ("orbit", "pan", "move").
     lit: [],
-    // A knob is being dragged: the whole editor shows the grabbing cursor.
-    knobDrag: false,
+    // The knob being dragged ("orbit", "pan", "move"), or null: the whole editor shows the grabbing cursor and that knob
+    // alone takes the strong fill (docs/space-and-view.md "視点の操作の部品").
+    knobDrag: null,
     // A loading guide's band of light runs on the overlay (load_reveal.js; the overlay is marked data-loading-guide).
     loadingGuide: false,
     // The Hide Grid switch: the grid is hidden (the shell writes it).
@@ -45,6 +48,16 @@ export function stageUi() {
     // Set orbit center waits for a click on the stage (docs/space-and-view.md "Set orbit center"): the button shows it,
     // the top line says what to do, the stage's cursor is a crosshair.
     pickingCenter: false,
+    // The 3D tab's view FOV as it shows, in whole degrees (the FOV number, docs/studio-ui.md "右下の View の群"), and
+    // whether the view is (going to) the start view, where Reset View is off (view_camera.js atResetView).
+    fov: DEFAULT_VIEW_HFOV,
+    atStart: true,
+    // Alt is held with no view operation under way in the Camera tab's Frame view with a Camera that moves: the FOV ruler
+    // shows that Alt + wheel changes it (docs/studio-ui.md "Camera タブ").
+    fovLit: false,
+    // Alt is held with no view operation under way where the wheel zooms the view: the FOV number shows that Alt + wheel
+    // changes it (docs/space-and-view.md "寄る").
+    fovNumberLit: false,
   };
 }
 
@@ -64,7 +77,8 @@ export function stageUi() {
 // tab() ("3d" or "camera"), mode() ("frame" or "panorama": the Camera's projection), shot() (the Camera at the
 // playhead, pano_editor_state.js cameraShot), erpRange() (360 or 180), frame() (the frame box in the stage's CSS px,
 // frame_layout.js frameRect, or null before it is laid out), erpCanvas() (the 2D canvas in the frame that shows the
-// live ERP, or null), movable() (the Camera may move: not locked, not read-only), backgroundColor() (the node's
+// live ERP, or null), movable() (the Camera may move: not locked, not read-only), fov ({ step(step), commit(), cancel() }:
+// the Frame view's Alt + wheel run of the Camera's H FOV, written by the editor), backgroundColor() (the node's
 // background color, a hex RGB: past a lens's reach), output() (the Output window's canvases while it is open:
 // { frame, erp }, a "bitmaprenderer" canvas for Frame mode and a 2D one for the live ERP, or null), and edits ({ live(pose), commit(), cancel() }: the Frame view's
 // moves of the Camera, pose { position, yaw_deg, pitch_deg }, written to its Lanes by the editor). Without it the
@@ -77,6 +91,9 @@ export function stageUi() {
 // animating() the stage draws each frame, and while revealing() an item fades in, so the Output window draws again too.
 // follow: the Preview window's feel (preview_motion.js createPreviewMotion): the view shown follows the moved view and a
 // drag let go coasts. Without it (the editor) the view shown is the moved view.
+// skyOnlyNotice: whether a plain wheel step with no World content says Sky only (docs/space-and-view.md "Sky だけのときの
+// ホイール"); false for a Preview window with nothing linked to `source`, which has nothing to zoom into. An option, as
+// the stage cannot tell that from what it draws: an editor with nothing drawn yet still says it.
 export function createStage({
   canvas,
   overlay = null,
@@ -93,6 +110,7 @@ export function createStage({
   motion: ownMotion = null,
   paint = null,
   follow = null,
+  skyOnlyNotice = true,
   view: makeView = createEditorView,
   win = window,
   now = () => performance.now(),
@@ -101,7 +119,9 @@ export function createStage({
   camera.setWorld({ ground: world.ground, boxes: content()?.boxes ?? [], content: null, camera: world.camera ?? null });
   const input = createViewInput();
   const wheelSteps = createWheelSteps();
-  const notice = createNotice();
+  // The stage's notices, each shown BOUND_NOTICE_SECONDS after its last time: what did not work, and Sky only.
+  const notices = { notice: createNotice(), skyOnly: createNotice() };
+  const noticeTimers = { notice: 0, skyOnly: 0 };
   // The state the stage's parts share (stage_frame_view.js, stage_output.js, stage_input.js).
   const shared = {
     size: { width: 1, height: 1 },
@@ -126,7 +146,6 @@ export function createStage({
     keysCamera: null,
   };
   let lastFrame = 0;
-  let noticeTimer = 0;
   // When (now(), ms) a double click or Set orbit center last set T, for the orbit center's mark (orbit_marker.js), or null.
   let setAt = null;
   // The viewpoint T was set on (the 3D tab's or the Frame view's): the mark shows on that one only.
@@ -174,7 +193,7 @@ export function createStage({
 
   // --- The Camera tab: the Frame view, where the viewpoint is the Camera itself (a viewpoint of its own, whose moves
   // go to the Camera's Lanes), and Panorama mode, where the frame shows the live ERP and nothing moves.
-  const { viewMode, viewport, navCamera, writeFrame, commitFrame, cancelFrame } = createStageFrameView(shared, { cameraTab, camera, world, content, shownPose });
+  const { viewMode, viewport, navCamera, writeFrame, commitFrame, cancelFrame, zoomFrame } = createStageFrameView(shared, { cameraTab, camera, world, content, shownPose });
 
   // The kind of lens image the Frame view drew last (pano_lens.js lensRenderPlan's `previous`).
   let lensKind = null;
@@ -480,20 +499,37 @@ export function createStage({
 
   // --- The notice, the cursor and the knobs.
 
-  function report(result) {
-    if (!result?.notice) return;
-    notice.show(result.notice, now() / 1000);
-    ui.notice = notice.current(now() / 1000);
-    clearTimeout(noticeTimer);
-    noticeTimer = setTimeout(() => {
-      ui.notice = notice.current(now() / 1000);
+  // Shows the notice `code` (VIEW_NOTICES') in `ui[field]` ("notice" or "skyOnly") until BOUND_NOTICE_SECONDS after it.
+  function showNotice(field, code) {
+    notices[field].show(code, now() / 1000);
+    ui[field] = notices[field].current(now() / 1000);
+    clearTimeout(noticeTimers[field]);
+    noticeTimers[field] = setTimeout(() => {
+      ui[field] = notices[field].current(now() / 1000);
     }, BOUND_NOTICE_SECONDS * 1000 + 20);
   }
 
+  function report(result) {
+    if (result?.notice) showNotice("notice", result.notice);
+  }
+
+  // A plain wheel step's result on `view`: the Sky-only notice when it is due (view_camera.js skyOnlyNotice).
+  function skyWheel(view, result) {
+    const code = skyOnlyNotice ? skyOnlyCode(result, { content: content()?.sphere ?? null, frame: view === shared.frameCamera }) : null;
+    if (code) showNotice("skyOnly", code);
+  }
+
   function syncUi() {
+    ui.fov = viewFovValue(shownPose().hFOV_deg);
+    ui.atStart = atResetView(camera.destination());
+    // A view operation under way: a view drag (not an object's or the brush's) or the movement keys.
+    const viewDrag = !!shared.drag && shared.drag.action !== "object" && shared.drag.action !== "paint";
+    const operating = viewDrag || shared.keysMoving;
+    ui.fovNumberLit = fovNumberLit({ altHeld: input.altHeld(), operating, space: viewMode() === "space" });
+    ui.fovLit = fovRulerLit({ altHeld: input.altHeld(), operating, frame: viewMode() === "frame", movable: !!cameraTab?.movable() });
     const gesture = input.gesture();
     ui.lit = litKnobs({ gesture, keysMoving: shared.keysMoving, altHeld: input.altHeld() });
-    ui.knobDrag = !!shared.drag?.knob;
+    ui.knobDrag = shared.drag?.knob ?? null;
     const dragged = shared.drag?.action === "object" ? shared.objectCursor : null;
     // Set orbit center waits for a click.
     if (shared.picking && !shared.drag) {
@@ -513,7 +549,7 @@ export function createStage({
   const { pointOf, hitAt, hoverAt, begin, end, endKeys, objectSelection, listen, unlisten } = createStageInput(shared, {
     canvas, root, world, selected, onEscape, follow, paint, win, now, objectDeps,
     camera, input, wheelSteps, editorView, scheduler, objects,
-    viewMode, viewport, navCamera, commitFrame, cancelFrame,
+    viewMode, viewport, navCamera, commitFrame, cancelFrame, zoomFrame, report, skyWheel,
     stopCoast, local, objectsOn, paintOn, directionsOf, samplesOf, moved, setPicking, setCenterAt, syncUi, requestDraw, resize,
   });
 
@@ -555,6 +591,17 @@ export function createStage({
       stopCoast();
       report(camera.reset());
       requestDraw();
+    },
+    // The FOV number (docs/space-and-view.md "寄る"): the 3D tab's view FOV set to `value` at once, or back to
+    // DEFAULT_VIEW_HFOV (its reset). P, the direction and T stay. Not in the Camera tab.
+    setFov(value) {
+      if (viewMode() !== "space") return;
+      stopCoast();
+      camera.setFov(value);
+      requestDraw();
+    },
+    resetFov() {
+      this.setFov(DEFAULT_VIEW_HFOV);
     },
     // Frame Selected: the selected object (selected(), or `selection` when given: a Timeline row's double click), else
     // the whole World content; with nothing to frame it says so. In the Frame view it moves the Camera at once, as one
@@ -613,7 +660,7 @@ export function createStage({
       commitFrame();
       stopOutput();
       camera.stop();
-      clearTimeout(noticeTimer);
+      Object.values(noticeTimers).forEach(clearTimeout);
       scheduler.stop();
       unlisten();
       editorView.dispose();

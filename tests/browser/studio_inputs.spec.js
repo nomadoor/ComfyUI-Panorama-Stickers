@@ -17,9 +17,9 @@ function watch(page) {
   return problems;
 }
 
-async function open(page, testInfo, which) {
+async function open(page, testInfo, which, viewport = { width: 1440, height: 860 }) {
   const problems = watch(page);
-  await page.setViewportSize({ width: 1440, height: 860 });
+  await page.setViewportSize(viewport);
   await page.goto(`/tests/browser/pages/studio_inputs.html?case=${which}`);
   await page.waitForFunction(() => window.__studio?.ready, null, { timeout: 30_000 });
   expect(await page.evaluate(() => window.__studio.error)).toBeNull();
@@ -153,7 +153,8 @@ const inspectorRow = (page, name) => page.locator(`.pano-studio-inspector [data-
 // docs/studio-ui.md "上流の物の編集": the upstream objects are selected on the stage and edited with the stage's drags,
 // the gizmo, the inspector and the bar, each edit written to the state's `upstream` records as an override.
 test("another Studio's Scene on scene: its objects are selected on the stage and edited as overrides, written to state_json", async ({ page }, testInfo) => {
-  const problems = await open(page, testInfo, "upstream");
+  // Judged at 1920×1080: the bar's buttons stay clear of the wider View group there (ADR 0061).
+  const problems = await open(page, testInfo, "upstream", { width: 1920, height: 1080 });
   const colors = await page.evaluate(() => window.__studio.colors);
   const { sky: [front], world: [board] } = await places(page, { sky: [[0, 0]], world: [[1.6, 0, -3]] });
   await expect.poll(() => stageAt(page, front).then((rgb) => near(rgb, colors.upstreamSky)), { timeout: 10_000 }).toBe(true);
@@ -175,7 +176,8 @@ test("another Studio's Scene on scene: its objects are selected on the stage and
   await expect(page.locator('[data-bar="delete"]')).not.toHaveAttribute("aria-disabled", "true");
   await expect(page.locator('[data-bar="duplicate"]')).toHaveAttribute("aria-disabled", "true");
   // Its body's drag turns it (to the left, away from the board): one override of its direction, nothing else.
-  await drag(page, front, { x: front.x - 120, y: front.y });
+  // 200 px at 1920×1080 (120 at 1440×860): the image is larger on the larger stage and must clear its first place.
+  await drag(page, front, { x: front.x - 200, y: front.y });
   await expect.poll(async () => Object.keys((await overrideOf(page, "sticker_1")) ?? {}).sort()).toEqual(["direction", "id", "placement"]);
   // Overridden: Back to source on in the override colour, the Timeline row's dot in the same colour.
   await expect(page.locator('[data-bar="revert"]')).not.toHaveAttribute("aria-disabled", "true");

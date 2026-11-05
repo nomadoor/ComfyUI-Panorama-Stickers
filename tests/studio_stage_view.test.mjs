@@ -48,6 +48,12 @@ test("the stage's camera looks with the view's 100° across, and its far holds t
   assert.ok(camera.near > 0 && camera.near < 0.1, `near ${camera.near}`);
 });
 
+// docs/space-and-view.md "寄る" (ADR 0061): the stage draws with the view's own FOV.
+test("the stage's camera looks with the pose's FOV when it has one", () => {
+  const camera = stageCamera(level({ hFOV_deg: 50 }), 1000, 500, 48);
+  close(Math.tan(camera.fovY_deg * Math.PI / 360) * 2, Math.tan(25 * Math.PI / 180), 1e-9);
+});
+
 test("the surface hit is the nearer of the GPU pick and the ground; over the sky with no pick, nothing", () => {
   const camera = stageCamera(level(), 1000, 500, 48);
   // The bottom middle of the screen looks down onto the ground at y = -1.6.

@@ -108,3 +108,33 @@ test("a 6DoF drag pans at its depth or orbits about its pivot by the pointer's m
   const expected = orbitView(start, 10, 5, 400, [0, 0, -1]);
   assert.deepEqual([orbit.view.viewYaw, orbit.view.viewPitch], [expected.yaw_deg, expected.pitch_deg]);
 });
+
+// docs/preview-node.md "ノード上" and docs/space-and-view.md "寄る" (ADR 0061): Alt + wheel and a pinch on the Scene viewer
+// change the view's FOV by VIEW_FOV_STEP_DEG within its range, at once, the place and direction staying; a transition
+// under way stops where it shows.
+test("a zoom step changes the view's FOV by one step within the range, and stops a transition where it shows", () => {
+  const h = harness({ view: { viewFov: 100 } });
+  h.navigation.zoomFov(1);
+  assert.equal(h.view.viewFov, 98);
+  h.navigation.zoomFov(-1);
+  h.navigation.zoomFov(-1);
+  assert.equal(h.view.viewFov, 102);
+  assert.deepEqual(h.view.viewPosition, [0, 0, 0]);
+  assert.equal(h.view.viewMoved, false);
+  const low = harness({ view: { viewFov: 35 } });
+  low.navigation.zoomFov(1);
+  assert.equal(low.view.viewFov, 35);
+  const moving = harness({ view: { viewTransition: { to: {} } } });
+  moving.navigation.zoomFov(1);
+  assert.equal(moving.view.viewTransition, null);
+});
+
+// docs/editor-interaction.md "ホイール" reuseWheelPick (ADR 0061): a zoom changes what is under the pointer, so the next
+// wheel step picks again.
+test("a wheel step after a zoom step picks again", () => {
+  const h = harness({ hit: [0, 0, -4] });
+  h.navigation.zoomSpaceAt({ x: 400, y: 200 }, 1);
+  h.navigation.zoomFov(1);
+  h.navigation.zoomSpaceAt({ x: 400, y: 200 }, 1);
+  assert.equal(h.picks.length, 2);
+});

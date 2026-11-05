@@ -5,7 +5,7 @@
 import { shortestYawDelta } from "../pano_camera_math.js";
 import { cameraFrameHit, frameViewFov, stageCamera } from "./stage_view.js";
 import { createViewCamera } from "./view_camera.js";
-import { PITCH_LIMIT } from "./view_scale.js";
+import { FRAME_WHEEL_REST_MS, PITCH_LIMIT } from "./view_scale.js";
 
 // cameraTab, camera (the 3D tab's viewpoint), world, content: createStage's. shownPose(): the 3D tab's view as it shows
 // (stage.js).
@@ -90,21 +90,43 @@ export function createStageFrameView(shared, { cameraTab, camera, world, content
     shared.frameGesture ??= kind;
   }
 
+  // An Alt + wheel run ("fov") is written through the FOV ruler's path (cameraTab.fov), the other kinds through the
+  // Camera's moves (cameraTab.edits).
   function commitFrame() {
     clearTimeout(shared.wheelTimer);
     shared.wheelTimer = 0;
-    if (!shared.frameGesture) return;
+    const kind = shared.frameGesture;
+    if (!kind) return;
     shared.frameGesture = null;
-    cameraTab.edits.commit();
+    if (kind === "fov") cameraTab.fov.commit();
+    else cameraTab.edits.commit();
   }
 
   function cancelFrame() {
     clearTimeout(shared.wheelTimer);
     shared.wheelTimer = 0;
-    if (!shared.frameGesture) return;
+    const kind = shared.frameGesture;
+    if (!kind) return;
     shared.frameGesture = null;
-    cameraTab.edits.cancel();
+    if (kind === "fov") cameraTab.fov.cancel();
+    else cameraTab.edits.cancel();
   }
 
-  return { viewMode, viewport, navCamera, writeFrame, commitFrame, cancelFrame };
+  // One Alt + wheel step in the Frame view (docs/space-and-view.md "Frame 表示"): the Camera's H FOV by the FOV ruler's
+  // arrow-key step (`step` > 0, rolled away, makes it smaller), a run of them one Undo step of its own ("fov", apart from
+  // a plain wheel run). Nothing during a drag (an object's too) or a key move (they write the Camera every frame), nor
+  // where the Camera does not move (locked, read-only). Returns whether the H FOV changed.
+  function zoomFrame(step) {
+    if (shared.drag || shared.keysMoving || !navCamera()) return false;
+    if (shared.frameGesture && shared.frameGesture !== "fov") commitFrame();
+    // A step that stopped at the range's end changes nothing, but a run under way goes on.
+    const changed = cameraTab.fov.step(step);
+    if (changed) shared.frameGesture = "fov";
+    if (shared.frameGesture !== "fov") return false;
+    clearTimeout(shared.wheelTimer);
+    shared.wheelTimer = setTimeout(commitFrame, FRAME_WHEEL_REST_MS);
+    return changed;
+  }
+
+  return { viewMode, viewport, navCamera, writeFrame, commitFrame, cancelFrame, zoomFrame };
 }

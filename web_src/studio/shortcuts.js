@@ -2,6 +2,7 @@
 // table of the editor's keys: studio/editor.js and studio/stage.js (Escape) take the keys it names, and the list shows
 // the same entries, so the two cannot drift. Which key goes to the stage at all is the caller's (stageOwnsKey).
 import { MOVE_KEYS } from "../pano_view_keys.js";
+import { GESTURE_NAMES } from "./input_names.js";
 import { GIZMO_MODES } from "./selection_bar.js";
 import { FINE_FACTOR } from "./ui_drag.js";
 import { navigationAction } from "./view_input.js";
@@ -92,8 +93,8 @@ const keyRow = (label, ...actions) => ({
 });
 
 // The buttons the stage's navigation takes (view_input.js navigationAction), as the list names them.
-const BUTTON_NAMES = Object.freeze({ 0: "Drag", 2: "Right-drag", 1: "Middle-drag" });
-const NAVIGATION_LABELS = Object.freeze({ look: "Look around", orbit: "Orbit", pan: "Pan", joystick: "Move forward / back" });
+const BUTTON_NAMES = Object.freeze({ 0: GESTURE_NAMES.drag, 2: GESTURE_NAMES.rightDrag, 1: GESTURE_NAMES.middleDrag });
+const NAVIGATION_LABELS = Object.freeze({ look: "Look around", orbit: "Orbit", pan: "Pan", joystick: "Move forward/back" });
 
 // action -> { keys, refs } of every button and Alt that starts it.
 function navigationRows() {
@@ -122,9 +123,10 @@ const gestureRow = (label, keys, ref) => ({ label, keys, refs: [`pointer:${ref}`
 // The groups of the list for the screen now: [{ id, title, note, rows: [{ label, keys: [[cap]], refs }] }].
 // context: "editor" (Panorama Studio's editor) | "preview" (the Preview window: nothing to select or edit, the 3D tab's
 // view, no timeline; docs/studio-ui.md "ショートカットの一覧"). tab: "3d" | "camera"; panorama: the Camera's mode is
-// Panorama; readOnly: the editor edits nothing; playable: the Preview window has its playback strip; mac: Ctrl shows
-// as ⌘. A row's `keys` are the combinations that do it; `refs` name the table entries they come from.
-export function shortcutGroups({ context = "editor", tab = "3d", panorama = false, readOnly = false, playable = false, mac = false } = {}) {
+// Panorama; readOnly: the editor edits nothing; locked: the Camera is locked; playable: the Preview window has its
+// playback strip; mac: Ctrl shows as ⌘. A row's `keys` are the combinations that do it; `refs` name the table entries
+// they come from.
+export function shortcutGroups({ context = "editor", tab = "3d", panorama = false, readOnly = false, locked = false, playable = false, mac = false } = {}) {
   const preview = context === "preview";
   const space = preview || tab !== "camera";
   const still = !space && panorama;
@@ -140,29 +142,32 @@ export function shortcutGroups({ context = "editor", tab = "3d", panorama = fals
       nav.joystick,
       moveRow("Move", [["forward", 1], ["forward", -1], ["right", -1], ["right", 1], ["up", -1], ["up", 1]]),
       gestureRow("Move faster (hold)", [["Shift"]], "move-fast"),
-      gestureRow("Zoom to the pointer", [["Wheel"]], "wheel"),
-      ...(space ? [gestureRow("Look at a point", [["Double-click"]], "double-click")] : []),
+      gestureRow("Move toward the pointer", [[GESTURE_NAMES.wheel]], "wheel"),
+      // Alt + wheel and a pinch (docs/space-and-view.md "寄る"): the view's FOV, or in the Frame view the Camera's H FOV,
+      // which a read-only editor or a locked Camera does not change. Ctrl + wheel is the pinch and not shown.
+      ...(space || (!readOnly && !locked) ? [gestureRow(space ? "Zoom (change FOV)" : "Change Camera FOV", [["Alt", GESTURE_NAMES.wheel], [GESTURE_NAMES.pinch]], "zoom")] : []),
+      ...(space ? [gestureRow("Look at a point", [[GESTURE_NAMES.doubleClick]], "double-click")] : []),
     ];
   const objects = preview ? [] : [
-    ...(still ? [] : [gestureRow("Select", [["Click"]], "click")]),
+    ...(still ? [] : [gestureRow("Select", [[GESTURE_NAMES.click]], "click")]),
     ...(space && edits ? [
       { label: "Move / Rotate / Scale", ...(() => {
         const actions = GIZMO_MODES.map((entry) => `gizmo:${entry.mode}`);
         return { keys: actions.flatMap(keysOf), refs: actions.map((action) => `key:${action}`) };
       })() },
-      gestureRow(`Rotate in ${ROTATE_SNAP_DEG}° steps`, [["Shift", "Drag"]], "rotate-snap"),
+      gestureRow(`Rotate in ${ROTATE_SNAP_DEG}° steps`, [["Shift", GESTURE_NAMES.drag]], "rotate-snap"),
     ] : []),
     ...(edits ? [keyRow("Delete", "delete")] : []),
   ];
   const timeline = preview ? (playable ? [keyRow("Play / pause", "play")] : []) : [
     keyRow("Play / pause", "play"),
-    gestureRow("Add to selection", [["Shift", "Click"], ["Shift", "Drag"]], "add-keyframes"),
+    gestureRow("Add to selection", [["Shift", GESTURE_NAMES.click], ["Shift", GESTURE_NAMES.drag]], "add-keyframes"),
     ...(edits ? [keyRow("Copy keyframes", "copy-keys"), keyRow("Cut keyframes", "cut-keys"), keyRow("Paste at the playhead", "paste-keys")] : []),
   ];
   const editor = [
-    ...(edits ? [keyRow("Undo", "undo"), keyRow("Redo", "redo"), gestureRow(`Fine steps (×${FINE_FACTOR})`, [["Shift", "Drag"]], "fine")] : []),
+    ...(edits ? [keyRow("Undo", "undo"), keyRow("Redo", "redo"), gestureRow(`Fine steps (×${FINE_FACTOR})`, [["Shift", GESTURE_NAMES.drag]], "fine")] : []),
     // The Camera tab's Roll ruler stops at the rotation's steps with Shift (frame_layout.js rulerSnapValue).
-    ...(edits && !space ? [gestureRow(`Roll in ${ROTATE_SNAP_DEG}° steps`, [["Shift", "Drag"]], "roll-snap")] : []),
+    ...(edits && !space ? [gestureRow(`Roll in ${ROTATE_SNAP_DEG}° steps`, [["Shift", GESTURE_NAMES.drag]], "roll-snap")] : []),
     keyRow("Show shortcuts", "shortcuts"),
     keyRow("Step back / close", "escape"),
   ];

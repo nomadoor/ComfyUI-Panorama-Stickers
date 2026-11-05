@@ -41,12 +41,12 @@ export function stageRenderSize(cssWidth, cssHeight, devicePixelRatio, screenWid
 // The stage's background where nothing is drawn (no background, outside a 180° one).
 export const STAGE_CLEAR_COLOR = 0x070707;
 
-// The three.js camera (a spaceCamera()) of a pose seen on a stage of width x height CSS px: the horizontal FOV
-// DEFAULT_VIEW_HFOV, near and far for the world bound of `radius` about the origin, so what the bound holds and the
+// The three.js camera (a spaceCamera()) of a pose seen on a stage of width x height CSS px: the pose's horizontal FOV
+// (the view's, docs/space-and-view.md "寄る"; DEFAULT_VIEW_HFOV for a pose without one), near and far for the world bound of `radius` about the origin, so what the bound holds and the
 // grid up to its farthest fade are not cut.
 export function stageCamera(pose, width, height, radius) {
   const distance = Math.hypot(...sub(pose.target, pose.position));
-  const view = { position: pose.position, yaw_deg: pose.yaw_deg, pitch_deg: pose.pitch_deg, roll_deg: pose.roll_deg ?? 0, hFOV_deg: DEFAULT_VIEW_HFOV, distance };
+  const view = { position: pose.position, yaw_deg: pose.yaw_deg, pitch_deg: pose.pitch_deg, roll_deg: pose.roll_deg ?? 0, hFOV_deg: pose.hFOV_deg ?? DEFAULT_VIEW_HFOV, distance };
   return spaceCamera(view, width, height, { center: [0, 0, 0], radius });
 }
 

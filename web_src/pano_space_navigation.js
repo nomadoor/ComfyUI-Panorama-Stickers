@@ -24,6 +24,7 @@ import {
   switchSpaceMode,
   zoomView,
 } from "./pano_space.js";
+import { fovZoomStep } from "./pano_camera_math.js";
 import { keyMoveView } from "./pano_view_keys.js";
 import { spaceModeChoice, startViewTransition, viewTransitionFrame } from "./pano_view_transition.js";
 
@@ -157,7 +158,7 @@ export function createSpaceNavigation({
   }
 
   function spaceViewKey() {
-    return JSON.stringify([view.viewPosition, view.viewYaw, view.viewPitch]);
+    return JSON.stringify([view.viewPosition, view.viewYaw, view.viewPitch, view.viewFov]);
   }
 
   // One 6DoF wheel step at canvas point p toward the point under it (direction > 0) or away. A step reuses the
@@ -173,6 +174,19 @@ export function createSpaceNavigation({
     setSpaceView(zoomView(state, spaceTarget(state, wheel.hit), direction, spaceScale()));
     wheel.view = spaceViewKey();
     wheel.wheelTime = now;
+  }
+
+  // One zoom step (docs/preview-node.md "ノード上", docs/space-and-view.md "寄る"; ADR 0061): the view's FOV smaller by
+  // one FOV step (pano_camera_math.js fovStepValue, within its range) rolled away (`step` > 0), larger back, at once; a
+  // transition under way stops where it shows. The place and direction stay.
+  function zoomFov(step) {
+    cancelViewTransition();
+    const next = fovZoomStep(view.viewFov, step);
+    if (next === view.viewFov) return false;
+    view.viewFov = next;
+    invalidate();
+    draw();
+    return true;
   }
 
   // The drag a 6DoF orbit ("orbit") or pan starts at canvas point p: an orbit about the point under it, a pan at the
@@ -208,7 +222,7 @@ export function createSpaceNavigation({
 
   return {
     spaceModeState, applySpaceMode, spaceScale, spaceViewState, setSpaceView, currentSpaceCamera, applyViewTransitionEnd,
-    transitionView, cancelViewTransition, stepTransition, setSpaceMode, frameSphereView, pickSpace, spaceTarget, zoomSpaceAt,
+    transitionView, cancelViewTransition, stepTransition, setSpaceMode, frameSphereView, pickSpace, spaceTarget, zoomSpaceAt, zoomFov,
     spaceDrag, moveSpaceDrag, keyMove,
   };
 }

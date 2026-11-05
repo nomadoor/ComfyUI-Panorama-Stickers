@@ -66,7 +66,7 @@ test("Set orbit center: hover shows the mark, a press waits (lit, crosshair), a 
   const box = await stage.boundingBox();
   const mid = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
   const button = page.locator('[data-action="orbit-center"]');
-  await expect(button).toHaveAttribute("data-tip", "Set orbit center · or double-click a spot");
+  await expect(button).toHaveAttribute("data-tip", "Set orbit center (Double-click)");
   await button.hover();
   await expect.poll(async () => (await overlayAt(page)).alpha).toBeGreaterThan(150);
   await button.click();
@@ -86,9 +86,9 @@ test("Set orbit center: hover shows the mark, a press waits (lit, crosshair), a 
   await expect.poll(async () => (await overlayAt(page)).drawn).toBe(0);
   expect(await page.evaluate(() => !!document.querySelector(".pano-studio-editor"))).toBe(true);
 
-  // Press, then click the ground below the middle: T goes there and the view turns to it; the mark fades.
+  // Press, then click the ground below the middle, left of the View group (ADR 0061 made it wider): T goes there and the view turns to it; the mark fades.
   await button.click();
-  await page.mouse.click(mid.x + 120, mid.y + 200);
+  await page.mouse.click(mid.x - 120, mid.y + 200);
   await expect(button).not.toHaveClass(/is-waiting/);
   await expect.poll(async () => (await overlayAt(page)).drawn, { timeout: 500 }).toBeGreaterThan(0);
   await expect.poll(async () => (await overlayAt(page)).alpha, { timeout: 1500, intervals: [30] }).toBeGreaterThan(100);
@@ -113,7 +113,7 @@ test("an Alt drag shows the mark while it orbits; a double click shows it at the
   await expect.poll(async () => (await overlayAt(page)).alpha).toBe(0);
 
   // A double click on the ground below the middle: T goes there and the view turns to it; the mark shows, then fades.
-  await page.mouse.dblclick(mid.x + 120, mid.y + 200);
+  await page.mouse.dblclick(mid.x - 120, mid.y + 200);
   // Right after the click the mark is on the clicked world point, carried toward the middle with the view: it shows,
   // but not at the old T in the middle (it does not slide from there).
   let first = await overlayAt(page, null, 14);
@@ -317,6 +317,9 @@ test("the Preview window has Set orbit center: its wait line at the top center, 
 test("Reset View and Frame Selected keep Set orbit center's wait", async ({ page }) => {
   const { problems } = await open(page);
   const button = page.locator('[data-action="orbit-center"]');
+  // Away from the start view (a zoom step), so Reset View can be pressed (ADR 0061).
+  await page.evaluate(() => document.querySelector("[data-stage-canvas]").dispatchEvent(new WheelEvent("wheel", { deltaY: -100, altKey: true, bubbles: true, cancelable: true })));
+  await expect(page.locator('[data-action="reset-view"]')).not.toHaveAttribute("aria-disabled", "true");
   await button.click();
   await page.locator('[data-action="reset-view"]').click();
   await expect(button).toHaveClass(/is-waiting/);
