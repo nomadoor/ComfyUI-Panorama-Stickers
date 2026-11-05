@@ -51,7 +51,8 @@ function makeDefaultState({
   };
 }
 
-function parseOutputPresetValue(value, fallback = 2048) {
+// The output width an output_preset widget value names ("4096x2048" → 4096, a number rounded), or `fallback` without one.
+export function parseOutputPresetValue(value, fallback = 2048) {
   if (typeof value === "number" && Number.isFinite(value)) return Math.round(value);
   const text = String(value ?? "").trim();
   if (!text) return fallback;

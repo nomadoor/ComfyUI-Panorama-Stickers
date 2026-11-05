@@ -7,28 +7,9 @@ import { backgroundColorWidget, isNodeOutputMediaCurrent } from "../pano_preview
 import { portHandoffLinked } from "../pano_port_handoff.js";
 import { nodeSurface, stateSync } from "../pano_node_bridge.js";
 import { ownOutputUiValue } from "./media.js";
-import { loadSharedUiSettings as loadEditorSharedUiSettings } from "../editor/ui_settings.js";
+import { loadSharedUiSettings } from "../editor/ui_settings.js";
 
-const SHARED_UI_SETTINGS_KEY = "pano_suite.ui_settings.v1";
 const PANO_LOADING_MIN_MS = 120;
-
-export function loadSharedUiSettings() {
-  const base = {
-    invert_view_x: false,
-    invert_view_y: false,
-  };
-  try {
-    const text = String(window?.localStorage?.getItem(SHARED_UI_SETTINGS_KEY) || "").trim();
-    if (!text) return base;
-    const parsed = JSON.parse(text);
-    return {
-      invert_view_x: !!parsed?.invert_view_x,
-      invert_view_y: !!parsed?.invert_view_y,
-    };
-  } catch {
-    return base;
-  }
-}
 
 function getEffectiveStateSource(node) {
   const live = stateSync(node)?.liveState;
@@ -76,7 +57,7 @@ function legacySurfaceState(node, source, bg, coverage) {
     outputPreset: getWidget(node, "output_preset")?.value,
     backgroundColor: bg,
     coverage,
-    sharedUiSettings: loadEditorSharedUiSettings(),
+    sharedUiSettings: loadSharedUiSettings(),
   });
 }
 
