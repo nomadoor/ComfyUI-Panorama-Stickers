@@ -407,6 +407,7 @@ function setCollapsed(value) {
           <StudioViewButtons
             class="pano-studio-at-buttons"
             :fov="ui.fov"
+            :fov-lit="ui.fovNumberLit"
             :fov-text="cameraTab && rulers ? rulers.fov.valueText : ''"
             :fov-disabled="cameraTab"
             :fov-tip="fovOffTip"

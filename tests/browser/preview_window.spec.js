@@ -318,10 +318,14 @@ test("the window's View group: the FOV number zooms with Alt + wheel at once, an
   const canvas = page.locator("[data-stage-canvas]");
   const box = await canvas.boundingBox();
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  // Alt held: the number lights, as it changes with Alt + wheel (docs/space-and-view.md "寄る").
+  await expect(number).not.toHaveClass(/is-lit/);
   await page.keyboard.down("Alt");
+  await expect(number).toHaveClass(/is-lit/);
   await page.mouse.wheel(0, -100);
   await page.mouse.wheel(0, -100);
   await page.keyboard.up("Alt");
+  await expect(number).not.toHaveClass(/is-lit/);
   expect((await page.evaluate(() => window.__preview.pose())).hFOV_deg).toBe(96);
   await expect(number).toHaveText("96°");
   await page.locator("[data-action=reset-view]").click();

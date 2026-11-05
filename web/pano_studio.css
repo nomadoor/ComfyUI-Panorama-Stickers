@@ -485,7 +485,8 @@
   transition: background-color var(--studio-motion-hover);
 }
 
-.pano-studio-fov:hover {
+.pano-studio-fov:hover,
+.pano-studio-fov.is-lit {
   background: var(--studio-fill-hover);
 }
 

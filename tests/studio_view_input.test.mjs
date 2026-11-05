@@ -8,6 +8,7 @@ import {
   LOOK_CURSOR,
   ORBIT_CURSOR,
   createViewInput,
+  fovNumberLit,
   fovRulerLit,
   knobAction,
   litKnobs,
@@ -184,4 +185,13 @@ test("the FOV ruler lights with Alt, not during a drag, only in the Frame view w
   assert.equal(fovRulerLit({ ...on, dragging: true }), false);
   assert.equal(fovRulerLit({ ...on, frame: false }), false);
   assert.equal(fovRulerLit({ ...on, movable: false }), false);
+});
+
+test("the FOV number lights with Alt, not during a drag, only where Alt + wheel changes the view's FOV", () => {
+  const on = { altHeld: true, dragging: false, space: true };
+  assert.equal(fovNumberLit(on), true);
+  assert.equal(fovNumberLit({ ...on, altHeld: false }), false);
+  assert.equal(fovNumberLit({ ...on, dragging: true }), false);
+  // The Camera tab: the number is off there and the FOV ruler lights instead.
+  assert.equal(fovNumberLit({ ...on, space: false }), false);
 });

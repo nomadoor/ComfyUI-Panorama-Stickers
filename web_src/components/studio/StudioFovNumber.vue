@@ -19,6 +19,8 @@ const props = defineProps({
   text: { type: String, default: "" },
   disabled: { type: Boolean, default: false },
   tip: { type: String, default: "" },
+  // Alt is held where Alt + wheel changes this number: the hover's fill (stage.js ui.fovNumberLit).
+  lit: { type: Boolean, default: false },
 });
 const emit = defineEmits(["change"]);
 
@@ -71,6 +73,7 @@ onBeforeUnmount(() => {
   <span
     ref="chip"
     class="pano-studio-fov"
+    :class="{ 'is-lit': lit && !disabled }"
     role="spinbutton"
     aria-label="Field of view"
     :aria-valuenow="value"

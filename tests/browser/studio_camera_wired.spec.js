@@ -570,6 +570,8 @@ test("Frame mode: Alt + wheel changes the Camera's FOV, not its position, as one
   await page.keyboard.down("Alt");
   await expect(fovRuler).toHaveClass(/is-lit/);
   await expect(page.locator('[data-ruler="Lens"]')).not.toHaveClass(/is-lit/);
+  // The View group's number is off in the Camera tab: the ruler lights instead (docs/space-and-view.md "寄る").
+  await expect(page.locator('[data-action="fov"]')).not.toHaveClass(/is-lit/);
   // Rolled away three steps: three small ticks smaller.
   for (let i = 0; i < 3; i += 1) await page.mouse.wheel(0, -100);
   let cam = await camera(page);

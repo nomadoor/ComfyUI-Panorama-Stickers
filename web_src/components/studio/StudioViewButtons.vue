@@ -18,6 +18,7 @@ defineProps({
   // The number and its reset stay in place but cannot be used (the Camera tab), `fovTip` says why.
   fovDisabled: { type: Boolean, default: false },
   fovTip: { type: String, default: "" },
+  fovLit: { type: Boolean, default: false },
   // Frame Selected is in the group (the editor; not the Preview window).
   frameSelected: { type: Boolean, default: true },
   gridShown: { type: Boolean, default: true },
@@ -41,6 +42,7 @@ const emit = defineEmits(["fov", "fov-reset", "frame-selected", "reset-view", "g
       :value="fov"
       :text="fovText"
       :disabled="fovDisabled"
+      :lit="fovLit"
       :tip="fovDisabled ? fovTip : 'Field of view · Drag to change'"
       @change="(value) => emit('fov', value)"
     />

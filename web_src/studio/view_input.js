@@ -61,6 +61,13 @@ export function fovRulerLit({ altHeld = false, dragging = false, frame = false, 
   return altHeld && !dragging && frame && movable;
 }
 
+// Whether the View group's FOV number shows that Alt + wheel changes it (docs/space-and-view.md "寄る"): Alt held without
+// a drag, where the wheel zooms the view (`space`: the 3D tab and the Preview window; in the Camera tab the number is off
+// and the FOV ruler lights, fovRulerLit).
+export function fovNumberLit({ altHeld = false, dragging = false, space = false }) {
+  return altHeld && !dragging && space;
+}
+
 // --- The cursor.
 
 function svgCursor(paths, fallback) {

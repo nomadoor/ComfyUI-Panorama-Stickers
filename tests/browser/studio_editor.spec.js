@@ -421,6 +421,19 @@ test("the FOV number drags and steps the view's FOV in a fixed width; its reset 
   await expect(number).toHaveText("100°");
   await expect(reset).toHaveAttribute("aria-disabled", "true");
   expect((await places()).frame.x).toBe(start.frame.x);
+  // Alt held lights it (Alt + wheel changes it), not during an Alt drag (docs/space-and-view.md "寄る").
+  const { x, y } = await stageCenter(page.locator("[data-stage-canvas]"));
+  await page.mouse.move(x, y);
+  await expect(number).not.toHaveClass(/is-lit/);
+  await page.keyboard.down("Alt");
+  await expect(number).toHaveClass(/is-lit/);
+  await page.mouse.down();
+  await page.mouse.move(x + 20, y);
+  await expect(number).not.toHaveClass(/is-lit/);
+  await page.mouse.up();
+  await expect(number).toHaveClass(/is-lit/);
+  await page.keyboard.up("Alt");
+  await expect(number).not.toHaveClass(/is-lit/);
   expect(problems).toEqual([]);
 });
 
