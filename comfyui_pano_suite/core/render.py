@@ -14,7 +14,7 @@ import torch.nn.functional as F
 
 from .display_layers import render_group_layer_from_state, render_raster_layer_from_state, render_remaining_flat_paint_layer_from_state
 from .display_list import build_display_entries
-from .math import camera_basis, lens_drawn, lens_radius, ray_directions, unit_float_tensor, vfov_from_hfov
+from .math import camera_basis, lens_drawn, lens_radius, over_rgba, ray_directions, unit_float_tensor, unpremultiply, vfov_from_hfov
 from .painting import load_painting_layer_payload, render_painting_to_erp
 from .state import coverage_span
 from .world_render import SceneContent, over_by_depth, world_key, world_layer
@@ -453,7 +453,7 @@ def _shoot_sky(layers: list, mask: tuple | None, rays: torch.Tensor, view: torch
         color = _shoot_sticker(layer, levels, item[0], rays) if kind == "sticker" else _sample_filtered(layer, view, wrap=True, levels=levels)
         total = torch.addcmul(color, total, 1.0 - color[..., 3:])
     alpha = total[..., 3:]
-    rgb = torch.where(alpha > 1e-6, total[..., :3] / alpha.clamp_min(1e-6), 0.0)
+    rgb = unpremultiply(total[..., :3], alpha)
     shot_mask = rays.new_zeros(rays.shape[:2]) if mask is None else _sample_filtered(mask[0], view, wrap=True, levels=mask[1])[..., 0]
     return torch.cat([rgb.clamp(0.0, 1.0), alpha], dim=-1), shot_mask
 
@@ -631,7 +631,5 @@ def _layer_sky(layer: RenderLayer, cache: dict, sky_key: tuple, sky_size: tuple[
 
 def _sky_over(below: torch.Tensor, above: torch.Tensor) -> torch.Tensor:
     """The straight-alpha Sky `above` (H, W, 4) composited over `below`, straight-alpha."""
-    alpha = above[..., 3:]
-    total = alpha + below[..., 3:] * (1.0 - alpha)
-    rgb = above[..., :3] * alpha + below[..., :3] * below[..., 3:] * (1.0 - alpha)
-    return torch.cat([torch.where(total > 1e-6, rgb / total.clamp_min(1e-6), 0.0), total], dim=-1)
+    rgb, total = over_rgba(below[..., :3], below[..., 3:], above[..., :3], above[..., 3:])
+    return torch.cat([rgb, total], dim=-1)

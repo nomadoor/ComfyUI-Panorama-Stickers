@@ -12,7 +12,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from .math import lens_radius, ray_directions, unit_float_tensor
+from .math import lens_radius, ray_directions, unit_float_tensor, unpremultiply
 from .world import world_rotation
 
 
@@ -151,7 +151,7 @@ def world_layer(layers, camera: dict, projection, *, device, textures: dict, kep
         return None
     total, depth = composite
     alpha = total[..., 3:]
-    return torch.cat([torch.where(alpha > 1e-6, total[..., :3] / alpha.clamp_min(1e-6), 0.0), alpha], dim=-1), depth
+    return torch.cat([unpremultiply(total[..., :3], alpha), alpha], dim=-1), depth
 
 
 def over_by_depth(composite, layer):
@@ -215,7 +215,7 @@ def _sticker_layer(rays: torch.Tensor, origin: np.ndarray, sticker: dict, textur
     grid = torch.where(inside[..., None], grid, 0.0)
     sampled = F.grid_sample(texture, grid[None], mode="bilinear", padding_mode="border", align_corners=True)[0].permute(1, 2, 0)
     alpha = sampled[..., 3:]
-    rgb = torch.where(alpha > 1e-6, sampled[..., :3] / alpha.clamp_min(1e-6), 0.0)
+    rgb = unpremultiply(sampled[..., :3], alpha)
     alpha = torch.where(inside[..., None], alpha * sticker["opacity"], 0.0)
     return torch.cat([rgb, alpha], dim=-1), torch.where(alpha[..., 0] > 0.0, distance, math.inf)
 
@@ -263,6 +263,6 @@ def _lens_sticker_layer(rays: torch.Tensor, origin: np.ndarray, sticker: dict, t
     grid = torch.where(inside[..., None], grid, 0.0)
     sampled = F.grid_sample(texture, grid[None], mode="bilinear", padding_mode="border", align_corners=True)[0].permute(1, 2, 0)
     alpha = sampled[..., 3:]
-    rgb = torch.where(alpha > 1e-6, sampled[..., :3] / alpha.clamp_min(1e-6), 0.0)
+    rgb = unpremultiply(sampled[..., :3], alpha)
     alpha = torch.where(inside[..., None], alpha * sticker["opacity"], 0.0)
     return torch.cat([rgb, alpha], dim=-1), torch.where(alpha[..., 0] > 0.0, distance, math.inf)

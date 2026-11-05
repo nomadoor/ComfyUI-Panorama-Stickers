@@ -26,12 +26,21 @@ def over_rgb(dst_rgb: np.ndarray, src_rgb: np.ndarray, src_a: np.ndarray) -> np.
     return src_rgb * src_a + dst_rgb * (1.0 - src_a)
 
 
-def over_rgba(dst_rgb: np.ndarray, dst_a: np.ndarray, src_rgb: np.ndarray, src_a: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+def unpremultiply(rgb, alpha):
+    """The premultiplied color `rgb` with alpha `alpha` as straight color: 0 where the alpha is 1e-6 or less. Works
+    on numpy arrays and on torch tensors alike; `alpha` carries a trailing axis of 1 so it broadcasts over rgb."""
+    if isinstance(alpha, torch.Tensor):
+        return torch.where(alpha > 1e-6, rgb / alpha.clamp_min(1e-6), 0.0)
+    return np.where(alpha > 1e-6, rgb / np.maximum(alpha, 1e-6), 0.0)
+
+
+def over_rgba(dst_rgb, dst_a, src_rgb, src_a):
     """Straight-alpha `src` laid over straight-alpha `dst`, as (straight rgb, alpha); the color is 0 where the alpha
-    is 1e-6 or less. Alphas carry a trailing axis of 1 so they broadcast over rgb. Callers clip their inputs."""
+    is 1e-6 or less (`unpremultiply`). numpy arrays or torch tensors; alphas carry a trailing axis of 1 so they
+    broadcast over rgb. Callers clip their inputs."""
     out_a = src_a + dst_a * (1.0 - src_a)
     numer_rgb = src_rgb * src_a + dst_rgb * dst_a * (1.0 - src_a)
-    return np.where(out_a > 1e-6, numer_rgb / np.maximum(out_a, 1e-6), 0.0), out_a
+    return unpremultiply(numer_rgb, out_a), out_a
 
 
 def camera_basis(

@@ -8,7 +8,7 @@ import torch
 
 from comfyui_pano_suite import nodes
 from comfyui_pano_suite.core.cache import file_key
-from comfyui_pano_suite.core.math import over_rgb, over_rgba
+from comfyui_pano_suite.core.math import over_rgb, over_rgba, unpremultiply
 from comfyui_pano_suite.core.scene_eval import segment_easing
 from comfyui_pano_suite.core.scene_state import round_frame
 from comfyui_pano_suite.core.state import coverage_span, normalize_coverage
@@ -29,6 +29,17 @@ def test_over_rgba_zeroes_the_color_at_an_alpha_of_1e_6_or_less():
     rgb, alpha = over_rgba(np.ones((1, 3)), np.array([[0.0]]), np.ones((1, 3)), np.array([[1e-6]]))
     assert rgb.tolist() == [[0.0, 0.0, 0.0]] and alpha.tolist() == [[1e-6]]
     assert over_rgb(np.zeros(3), np.ones(3), np.array([0.25])).tolist() == [0.25, 0.25, 0.25]
+
+
+def test_over_rgba_gives_the_same_bits_on_torch_tensors_as_on_numpy_arrays():
+    rng = np.random.default_rng(3)
+    dst, src = rng.random((64, 4), dtype=np.float32), rng.random((64, 4), dtype=np.float32)
+    src[:8, 3] = [0.0, 1e-7, 1e-6, 2e-6, 0.0, 0.0, 1.0, 0.5]
+    dst[:8, 3] = [0.0, 0.0, 0.0, 0.0, 1e-7, 1.0, 0.0, 0.0]
+    rgb, alpha = over_rgba(dst[:, :3], dst[:, 3:], src[:, :3], src[:, 3:])
+    t_rgb, t_alpha = over_rgba(*(torch.from_numpy(part) for part in (dst[:, :3], dst[:, 3:], src[:, :3], src[:, 3:])))
+    assert np.array_equal(t_rgb.numpy(), rgb) and np.array_equal(t_alpha.numpy(), alpha)
+    assert np.array_equal(unpremultiply(torch.from_numpy(src[:, :3]), torch.from_numpy(src[:, 3:])).numpy(), unpremultiply(src[:, :3], src[:, 3:]))
 
 
 def test_pts_tolerance_is_half_the_time_base_in_seconds_or_timeline_frames():
