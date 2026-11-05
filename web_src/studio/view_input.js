@@ -31,18 +31,19 @@ export function navigationAction({ button, altKey, shiftKey, ctrlKey, metaKey, o
   return actions[0];
 }
 
-// --- The knobs on the stage's right: the sphere ("orbit"), the hand ("pan") and the arrows ("move").
+// --- The knobs on the stage's right: the sphere ("orbit"), the four arrows ("pan") and the road's
+// arrows ("move").
 
 const KNOB_ACTIONS = Object.freeze({ orbit: "orbit", pan: "pan", move: "joystick" });
 
-// The operation a knob's drag does (the hand's grab is the surface hit at the screen center), or null.
+// The operation a knob's drag does (the pan's grab is the surface hit at the screen center), or null.
 export function knobAction(knob) {
   return KNOB_ACTIONS[knob] ?? null;
 }
 
 // The knobs that light (shown only; nothing is kept): the one of the operation under way however it is driven
-// (`gesture`; the movement keys, `keysMoving`, are the arrows'), and while Alt is held the knobs of Alt's drags (the
-// sphere and the arrows). Looking around has no knob. In the knobs' order.
+// (`gesture`; the movement keys, `keysMoving`, are the road's arrows'), and while Alt is held the knobs of Alt's drags (the
+// sphere and the road's arrows). Looking around has no knob. In the knobs' order.
 export function litKnobs({ gesture = null, keysMoving = false, altHeld = false }) {
   const lit = new Set();
   for (const [knob, action] of Object.entries(KNOB_ACTIONS)) if (action === gesture) lit.add(knob);

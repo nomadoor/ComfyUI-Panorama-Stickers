@@ -4,8 +4,8 @@ import { ICON } from "../../icons.js";
 import StudioFloatGroup from "./StudioFloatGroup.vue";
 import StudioIconButton from "./StudioIconButton.vue";
 
-// The view knobs at the right of the stage (docs/space-and-view.md "視点の操作の部品"): the sphere (orbit), the hand
-// (pan) and the arrows (forward / back), each dragged, never a button that flips; below them "?", the list of
+// The view knobs at the right of the stage (docs/space-and-view.md "視点の操作の部品"): the sphere (orbit), the four
+// arrows (pan) and the road's arrows (forward / back), each dragged, never a button that flips; below them "?", the list of
 // shortcuts, lit while the list is open (`helpOpen`; docs/studio-ui.md "ショートカットの一覧"). A knob lights while its
 // operation runs, however it is driven (`lit`). The wheel and the context menu over the knobs do not reach the stage.
 // Presentational: `knob` out with the pointerdown of a knob's drag, `help` out when "?" is pressed; `helpButton()`
@@ -29,8 +29,8 @@ defineExpose({ helpButton: () => help.value?.$el ?? null });
 
 const KNOBS = [
   { key: "orbit", icon: ICON.sphere, label: "Orbit", tip: "Orbit (Alt+Drag)" },
-  { key: "pan", icon: ICON.hand, label: "Pan", tip: "Pan (Right-drag)" },
-  { key: "move", icon: ICON.arrows_vertical, label: "Move forward/back", tip: "Move forward/back (Alt+Right-drag)" },
+  { key: "pan", icon: ICON.pan_move, label: "Pan", tip: "Pan (Right-drag)" },
+  { key: "move", icon: ICON.depth_move, label: "Move forward/back", tip: "Move forward/back (Alt+Right-drag)" },
 ];
 // Set orbit center's tooltips, idle and while it waits for a click (docs/space-and-view.md "Set orbit center").
 const CENTER_TIP = Object.freeze({

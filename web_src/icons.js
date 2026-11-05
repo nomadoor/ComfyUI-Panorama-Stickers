@@ -58,8 +58,8 @@ export const ICON = Object.freeze({
   key_prev: "key_prev",
   key_next: "key_next",
   sphere: "sphere",
-  hand: "hand",
-  arrows_vertical: "arrows_vertical",
+  pan_move: "pan_move",
+  depth_move: "depth_move",
   orbit_center: "orbit_center",
   ease_hold: "ease_hold",
   ease_linear: "ease_linear",
@@ -149,14 +149,16 @@ const TABLER_BODIES = {
   // The new UI's Timeline bar: to the previous and the next Keyframe.
   key_prev: { name: "player-skip-back", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M20 5v14l-12 -7l12 -7' /><path d='M4 5l0 14' />` },
   key_next: { name: "player-skip-forward", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M4 5v14l12 -7l-12 -7' /><path d='M20 5l0 14' />` },
-  // The new UI's view knobs (docs/space-and-view.md "視点の操作の部品"): the sphere (orbit), the hand (pan) and the
-  // up and down arrows (forward / back).
+  // The new UI's view knobs (docs/space-and-view.md "視点の操作の部品"): the sphere (orbit), the four arrows (pan) and
+  // the road's arrows (forward / back).
   sphere: { name: "sphere", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M3 12c0 1.657 4.03 3 9 3s9 -1.343 9 -3' /><path d='M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0' />` },
-  hand: { name: "hand-stop", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M8 13v-7.5a1.5 1.5 0 0 1 3 0v6.5' /><path d='M11 5.5v-2a1.5 1.5 0 1 1 3 0v8.5' /><path d='M14 5.5a1.5 1.5 0 0 1 3 0v6.5' /><path d='M17 7.5a1.5 1.5 0 0 1 3 0v8.5a6 6 0 0 1 -6 6h-2h.208a6 6 0 0 1 -5.012 -2.7a69.74 69.74 0 0 1 -.196 -.3c-.312 -.479 -1.407 -2.388 -3.286 -5.728a1.5 1.5 0 0 1 .536 -2.022a1.867 1.867 0 0 1 2.28 .28l1.47 1.47' />` },
+  pan_move: { name: "arrows-move", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M18 9l3 3l-3 3' /><path d='M15 12h6' /><path d='M6 9l-3 3l3 3' /><path d='M3 12h6' /><path d='M9 18l3 3l3 -3' /><path d='M12 15v6' /><path d='M15 6l-3 -3l-3 3' /><path d='M12 3v6' />` },
   // Set orbit center (docs/design.md "アイコン"): the orbit center's mark (a dot in a ring open at its lower right) and a
   // pointer's click from the lower right, drawn after Tabler's lines.
   orbit_center: { name: "orbit-center", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M9.5 10a1.5 1.5 0 1 0 3 0a1.5 1.5 0 1 0 -3 0' fill='currentColor' /><path d='M17.6 11.4a6.5 6.5 0 1 0 -6.2 6.2' /><path d='M14.5 14.5l6 2.3l-2.6 1.1l-1.1 2.6z' />` },
-  arrows_vertical: { name: "arrows-vertical", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M8 7l4 -4l4 4' /><path d='M8 17l4 4l4 -4' /><path d='M12 3l0 18' />` },
+  // Forward / back (docs/design.md "アイコン"): the up and down arrows between two lines that narrow into the
+  // distance (a road), drawn after Tabler's lines, so it does not read as a part of the pan's four arrows.
+  depth_move: { name: "depth-move", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M3 21l6 -18' /><path d='M21 21l-6 -18' /><path d='M12 7v11' /><path d='M10 9l2 -2l2 2' /><path d='M9.5 15.5l2.5 2.5l2.5 -2.5' />` },
   // The new UI's gizmo modes on the bar at the bottom center (docs/studio-ui.md "下の中央のバー"; specimen-11.html).
   gizmo_move: { name: "arrows-move", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M18 9l3 3l-3 3' /><path d='M15 12h6' /><path d='M6 9l-3 3l3 3' /><path d='M3 12h6' /><path d='M9 18l3 3l3 -3' /><path d='M12 15v6' /><path d='M15 6l-3 -3l-3 3' /><path d='M12 3v6' />` },
   gizmo_rotate: { name: "rotate-clockwise-2", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M12 16h4v4' /><path d='M19.458 11.042c.86 -2.366 .722 -4.58 -.6 -5.9c-2.272 -2.274 -7.185 -1.045 -10.973 2.743c-3.788 3.788 -5.017 8.701 -2.744 10.974c2.227 2.226 6.987 1.093 10.74 -2.515' />` },
