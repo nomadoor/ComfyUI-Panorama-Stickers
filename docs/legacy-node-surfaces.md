@@ -33,7 +33,7 @@ DOM surface（`web_src/node_surface/lifecycle.js` の `attachPanoramaPreviewImpl
 
 - node id `PanoramaStickers`、既存input / output、widget意味論を維持する。
 - `state_json` schemaとERP座標規約を変更しない。
-- `bg_color` の widget は、値が空のときだけ、ノードを作るときと読み込むときに既定の `#00ff00` で埋める。`#000000` を含め、使う人が選んだ色は書き換えない（`web_src/pano_editor_extension.js` `createPanoEditorExtension`）。Python も、空か読めない値を `#00ff00` として描く（`core/state.py` `_normalize_hex_color`）。
+- `bg_color` の widget は、値が空のときだけ、ノードを作るときと読み込むときに既定の `#00ff00` で埋める。`#000000` を含め、使う人が選んだ色は書き換えない（`web_src/pano_editor_extension.js` `createPanoEditorExtension`）。Python も、空か読めない値を `#00ff00` として描く（`comfyui_pano_suite/core/state.py` `_normalize_hex_color`）。
 - background、paint / raster、internal / external stickerは、coverageを含めてbackendと同じdisplay orderで描画する。
 - external stickerを別種のUI objectとして扱わず、通常stickerと同じ選択・変形経路を使う。
 - 次の規則は Panorama Studio の表示と同じで、`docs/studio-node-surface.md` の「表示の構成」に置く：
