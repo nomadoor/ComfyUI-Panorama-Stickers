@@ -124,7 +124,7 @@ test("loaded state is normalized while widget and shared settings remain authori
       },
       { id: "hidden", visible: false, locked: true },
     ],
-    shots: [{ id: "shot_1", hFOV_deg: 90, vFOV_deg: 90, out_w: 1920, out_h: 1080, locked: 1 }],
+    shots: [{ id: "shot_1", hFOV_deg: 90, vFOV_deg: 90, locked: 1 }],
     painting: null,
     painting_layer: { token: "temporary" },
     ui_settings: {

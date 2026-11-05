@@ -264,8 +264,6 @@ export function deriveCutoutAspectLabelFromFov(item) {
 export function normalizeCutoutShotItem(raw) {
   if (!raw || typeof raw !== "object") return raw;
   const next = { ...raw, locked: raw.locked === true };
-  delete next.out_w;
-  delete next.out_h;
   next.aspect_id = deriveCutoutAspectLabelFromFov(next);
   return next;
 }

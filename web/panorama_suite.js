@@ -669,7 +669,7 @@ function ol(e) {
 function qc(e) {
   if (!e || typeof e != "object") return e;
   const t = { ...e, locked: e.locked === !0 };
-  return delete t.out_w, delete t.out_h, t.aspect_id = ol(t), t;
+  return t.aspect_id = ol(t), t;
 }
 function Yv({
   id: e = "",

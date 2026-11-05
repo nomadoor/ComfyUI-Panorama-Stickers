@@ -90,13 +90,11 @@ test("legacy falsy Cutout FOV values retain their default framing", () => {
   }
 });
 
-test("cutout shot normalization derives the canonical aspect and removes legacy output dimensions", () => {
+test("cutout shot normalization derives the canonical aspect", () => {
   const normalized = normalizeCutoutShotItem({
     id: "shot_1",
     hFOV_deg: 90,
     vFOV_deg: 90,
-    out_w: 1920,
-    out_h: 1080,
     locked: 1,
   });
 
@@ -352,4 +350,9 @@ test("roll never changes frame fit or gate geometry", () => {
     assert.equal(fitFocalPx(safeRect, shot), focal);
     assert.deepEqual(gateRectFromFocal(safeRect, shot, focal), gate);
   }
+});
+
+// The old out_w / out_h of a shot are no longer looked for: normalization leaves the fields it does not know as they are.
+test("cutout shot normalization does not look for the old output dimensions", () => {
+  assert.equal(normalizeCutoutShotItem({ id: "s", hFOV_deg: 90, vFOV_deg: 90, out_w: 1920 }).out_w, 1920);
 });

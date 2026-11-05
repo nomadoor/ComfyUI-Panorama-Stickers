@@ -344,7 +344,7 @@ test("the legacy Stickers and Cutout surfaces read state_json as the editor does
   const text = JSON.stringify({
     output_preset: 1024,
     stickers: [{ id: "a", visible: 0, locked: "yes" }, { id: "b" }],
-    shots: [{ id: "s", yaw_deg: 10, pitch_deg: 0, roll_deg: 0, hFOV_deg: 60, vFOV_deg: 40, out_w: 512, out_h: 256, locked: 1 }],
+    shots: [{ id: "s", yaw_deg: 10, pitch_deg: 0, roll_deg: 0, hFOV_deg: 60, vFOV_deg: 40, locked: 1 }],
     painting: { paint: { strokes: "x" } },
   });
   for (const type of [LEGACY, CUTOUT]) {
@@ -354,7 +354,6 @@ test("the legacy Stickers and Cutout surfaces read state_json as the editor does
     const editor = parsePanoEditorState(text, { outputPreset: "2048", backgroundColor: "#abcdef", coverage: 180, sharedUiSettings: null });
     assert.deepEqual(parsed, editor, type);
     assert.deepEqual(parsed.stickers.map((item) => [item.visible, item.locked]), [[true, false], [true, false]]);
-    assert.equal("out_w" in parsed.shots[0], false);
     detach(node);
   }
   // The legacy Cutout has no bg_color widget: the surface, the old editor and a new frame use the one default.
