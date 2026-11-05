@@ -2,6 +2,7 @@
 // group prefers, and the shortcut hint cut from the end of the text. Pure; the layer that shows it is
 // components/studio/StudioTooltip.vue.
 
+import { clamp } from "../pano_math.js";
 import { GESTURE_NAMES } from "./input_names.js";
 
 // Hover this long before the bubble shows (ms).
@@ -86,14 +87,14 @@ export function placeTip({ anchor: control, group = null, size, bounds, side = "
     if (room[second] >= need(second)) chosen = second;
     else chosen = room[second] - need(second) > room[first] - need(first) ? second : first;
   }
-  const clamp = (value, low, high) => Math.max(low, Math.min(value, Math.max(low, high)));
+  // A box larger than the room keeps to its low side.
   let left;
   let top;
   if (chosen === "top" || chosen === "bottom") {
-    left = clamp(anchor.left + (anchor.width - size.width) / 2, inner.left, inner.right - size.width);
+    left = clamp(anchor.left + (anchor.width - size.width) / 2, inner.left, Math.max(inner.left, inner.right - size.width));
     top = chosen === "top" ? anchor.top - gap - size.height : anchor.top + anchor.height + gap;
   } else {
-    top = clamp(anchor.top + (anchor.height - size.height) / 2, inner.top, inner.bottom - size.height);
+    top = clamp(anchor.top + (anchor.height - size.height) / 2, inner.top, Math.max(inner.top, inner.bottom - size.height));
     left = chosen === "left" ? anchor.left - gap - size.width : anchor.left + anchor.width + gap;
   }
   return { left: Math.round(left), top: Math.round(top), side: chosen };

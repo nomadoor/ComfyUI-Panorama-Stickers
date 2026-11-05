@@ -27,6 +27,7 @@ import {
   setStickerPose,
   setWorldStickerField,
 } from "../pano_editor_state.js";
+import { clamp } from "../pano_math.js";
 import { FRAME_EPSILON, evaluateLane } from "../pano_scene_eval.js";
 import { ANIMATION_DEFAULT, ANIMATION_SPEED_MAX, ANIMATION_SPEED_MIN, CAMERA_LANES, DEFAULT_EASING, SKY_STICKER_LANES, WORLD_STICKER_LANES } from "../pano_scene_state.js";
 import { deleteKeyframes, keyLanes, rowLaneNames, setLaneValue, setSegmentEasing } from "../pano_timeline.js";
@@ -40,10 +41,6 @@ import { findSticker, keyframeOwner } from "./row_object.js";
 const SKY_POSE_FIELDS = new Set(["yaw_deg", "pitch_deg", "rot_deg", "hFOV_deg", "vFOV_deg"]);
 
 const result = (changed, extra = {}) => ({ changed, history: false, stopPlayback: false, upstreamRevert: null, ...extra });
-
-function clamp(value, min, max) {
-  return Math.min(max, Math.max(min, value));
-}
 
 // What an edit acts on: { kind, owner }, or null when it is not there or not editable (locked, read-only, an
 // element of an upstream layer whose overrides are not kept).
