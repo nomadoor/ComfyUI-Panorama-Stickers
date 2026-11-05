@@ -4,8 +4,8 @@ import test from "node:test";
 import { HISTORY_LIMIT, createEditorHistory, createHistory, historySnapshot, savedSelectionId } from "../web_src/editor/history.js";
 import { createHistoryController } from "../web_src/pano_paint_history.js";
 
-test("a snapshot is the state without its history and painting layer", () => {
-  const state = { version: 2, stickers: [{ id: "a" }], editor_history: { entries: [] }, painting_layer: { revision: "r" } };
+test("a snapshot is the state without its painting layer", () => {
+  const state = { version: 2, stickers: [{ id: "a" }], painting_layer: { revision: "r" } };
   assert.deepEqual(JSON.parse(historySnapshot(state)), { version: 2, stickers: [{ id: "a" }] });
 });
 

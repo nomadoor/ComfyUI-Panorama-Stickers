@@ -165,7 +165,6 @@ export function parsePanoEditorState(text, options = {}) {
     );
     merged.bg_color = String(resolvedOptions.backgroundColor || merged.bg_color || base.bg_color);
     merged.coverage = normalizeCoverageValue(resolvedOptions.coverage);
-    delete merged.editor_history;
     return pinholeV1Items(merged);
   } catch {
     parseStateJsonCache = { text: trimmed, parsed: null };
@@ -174,7 +173,7 @@ export function parsePanoEditorState(text, options = {}) {
 }
 
 // The fields of the state an Undo step leaves out.
-const HISTORY_SNAPSHOT_OMITS = Object.freeze(["editor_history", "painting_layer"]);
+const HISTORY_SNAPSHOT_OMITS = Object.freeze(["painting_layer"]);
 
 export function makePanoEditorHistorySnapshot(state) {
   if (!state || typeof state !== "object") return state;

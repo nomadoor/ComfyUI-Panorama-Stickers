@@ -2945,12 +2945,12 @@ function om(e, t = {}) {
     return a && (s.ui_settings = Ju({ ...s.ui_settings, ...a })), s.output_preset = im(
       n.outputPreset,
       Number(s.output_preset || r.output_preset)
-    ), s.bg_color = String(n.backgroundColor || s.bg_color || r.bg_color), s.coverage = Lt(n.coverage), delete s.editor_history, dA(s);
+    ), s.bg_color = String(n.backgroundColor || s.bg_color || r.bg_color), s.coverage = Lt(n.coverage), dA(s);
   } catch {
     return $l = { text: i, parsed: null }, r;
   }
 }
-const fA = Object.freeze(["editor_history", "painting_layer"]), pA = 80;
+const fA = Object.freeze(["painting_layer"]), pA = 80;
 function mk(e) {
   const t = BN(pA, { omit: fA });
   return t.record(e), t;
