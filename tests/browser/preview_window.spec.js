@@ -49,6 +49,8 @@ test("an opening that throws leaves nothing behind, and the window opens again",
   for (const where of ["early", "late"]) {
     expect(await page.evaluate((at) => window.__preview.openBroken(at), where)).toBe(where === "early" ? "broken title" : "broken hand-over");
     await expect(page.locator("[data-preview-window]")).toHaveCount(0);
+    // The node's display that was told the window opens (it may have paused its VIDEO) is told it closed.
+    expect(await page.evaluate(() => window.__preview.told.splice(0))).toEqual(where === "early" ? [] : [["closed", {}]]);
     expect(await page.evaluate(() => document.body.childElementCount)).toBe(before);
     expect(await page.evaluate(() => window.__preview.open())).toBe(true);
     await expect(page.locator("[data-preview-window]")).toHaveCount(1);

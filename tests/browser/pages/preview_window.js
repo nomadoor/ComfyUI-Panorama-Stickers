@@ -166,7 +166,7 @@ try {
     const runtime = previewNode(node).runtime;
     const restore = where === "early"
       ? (Object.defineProperty(node, "title", { configurable: true, get() { throw new Error("broken title"); } }), () => Object.defineProperty(node, "title", { configurable: true, writable: true, value: "Panorama Preview" }))
-      : (previewNode(node).runtime = { view: null, windowOpened() { throw new Error("broken hand-over"); }, windowClosed() {}, requestDraw() {}, teardown() {} }, () => (previewNode(node).runtime = runtime));
+      : (previewNode(node).runtime = { view: null, windowOpened() { throw new Error("broken hand-over"); }, windowClosed: (handBack) => told.push(["closed", handBack]), requestDraw() {}, teardown() {} }, () => (previewNode(node).runtime = runtime));
     try {
       const opened = await openPreviewWindow(node, { app, api: null, storage: { getItem: () => null, setItem: () => {} } });
       opened?.close();

@@ -71,6 +71,8 @@ export async function openPreviewWindow(node, { app = null, api = null, storage 
   // What the node handed over when the window opened (its playhead), and whether its Scene viewer was told.
   let handOver = null;
   let sceneViewerTold = false;
+  // Whether the IMAGE / VIDEO runtime was told the window opens (it pauses its VIDEO then).
+  let imageRuntimeTold = false;
   // What the node's VIDEO handed over when the window opened: { time, playing }, or null without one on the node.
   let nodeVideoHandOver = null;
   // The playback strip (a VIDEO source only): the frame shown, its count and fps, whether it plays and loops.
@@ -109,7 +111,7 @@ export async function openPreviewWindow(node, { app = null, api = null, storage 
     if (sceneViewerTold) sceneViewerWindowClosed(node);
     // The node's VIDEO goes on from the window's playhead (its time is that frame's PTS), or from where it was.
     if (finished) imageRuntime?.windowClosed?.(nodeVideoHandOver ? { time: lastFrame / playbackView.fps, playing: lastPlaying } : {});
-    else if (nodeVideoHandOver) imageRuntime?.windowClosed?.(nodeVideoHandOver);
+    else if (imageRuntimeTold) imageRuntime?.windowClosed?.(nodeVideoHandOver ?? {});
     imageRuntime?.requestDraw?.();
     if (finished && document.fullscreenElement) document.exitFullscreen?.().catch?.(() => {});
   };
@@ -373,6 +375,7 @@ export async function openPreviewWindow(node, { app = null, api = null, storage 
       sceneViewerTold = true;
       sceneViewerWindowOpened(node, { close });
     } else {
+      imageRuntimeTold = true;
       nodeVideoHandOver = imageRuntime?.windowOpened?.() ?? null;
       if (nodeVideoHandOver) handOver = { frame: frameShownAt(nodeVideoHandOver.time, playbackView.fps), playing: nodeVideoHandOver.playing };
     }
