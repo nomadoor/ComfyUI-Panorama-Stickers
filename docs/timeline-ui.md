@@ -111,7 +111,7 @@ Panorama Studio はいつも新しい UI で開き、古い UI に Panorama Stud
   - Timeline fps は、`bg_media` と `sticker` に VIDEO がないときだけ変えられる（ADR 0024）。VIDEO があるときは値だけを表示する。VIDEO があるかは、リンクの型（`VIDEO`）か、ノードの現在の実行結果の `ui` の `pano_timeline_fps`（VIDEO が決めた Timeline fps。VIDEO がないときは出さない）で判断する。
   - fps を変えると `rebaseSceneState` で状態を再基準化し、Keyframe・Clip range・長さ・再生ヘッドの時刻を秒で保つ。Undo できる（Undo・Redo で fps が変わるときも再生ヘッドの時刻を秒で保つ）。寄せた結果が今の fps と同じなら何もしない（Undo の段も積まない）。
   - IMAGE バッチの背景のエディタ用 MP4 は、前回の実行の Timeline fps でエンコードされている。エディタで fps を変えると、次に実行するまで背景の映像のフレームと長さがずれて見える。一時的なずれで、`state_json` が変わるので次のキューでノードが実行され、新しい fps の MP4 になる。
-  - 長さの欄は常に数を出す。`timeline.length` が `null` のときは、入力から決まる今の長さ（「タイムラインの長さ」の Auto の長さ。タイムラインの範囲そのもの）を出す（`web_src/components/studio/StudioTimelineBar.vue` の Length の欄、値は `timeline_model.js` の `bar.length`）。UI に「Auto」の語は出さない。数を入れると `timeline.length` になり、ノードの出力の長さになって、タイムラインもちょうどその長さになる（VIDEO や Clip range が長くても延ばさない）。欄を空にしても何も変わらない（元の数に戻る）。
+  - 長さの欄は常に数を出す。`timeline.length` が `null` のときは、入力から決まる今の長さ（「タイムラインの長さ」の Auto の長さ。タイムラインの範囲そのもの）を出す（`web_src/components/studio/StudioTimelineBar.vue` の Length の欄、値は `timeline_model.js` の `bar.length`）。UI に「Auto」の語は出さない。数を入れると `timeline.length` になり、ノードの出力の長さになって、タイムラインもちょうどその長さになる（VIDEO や Clip range が長くても延ばさない）。欄を空にしても何も変わらない（元の数に戻る）。欄をドラッグしている間は、タイムラインの範囲がその長さにすぐ追いつく（Undo の 1 段になるのは放したとき。Escape で取り消すと押す前の長さに戻る。再生ヘッドを最後のフレームへ戻すのは放してから）。fps の欄は放したときにだけ変える（fps を変えると Keyframe の時刻を置き直すので、ドラッグの間に何度も置き直さない）。
   - 欄の右にリセットのボタン（アイコン、`StudioTimelineBar.vue`。`length` に `null` を送る）がある。押すと `timeline.length` を `null` にして、入力から決まる長さに戻す。Undo の 1 段になる。一方向の操作で、切り替えではない（もう一度押しても値には戻らない）。`timeline.length` が `null` のときは無効にする（隠さないので、バーの配置は動かない）。状態の形は変えない（`docs/scene-state-v2.md`）。
   - 欄の値は、状態が持てる範囲（`docs/scene-state-v2.md` の `timeline.fps`・`timeline.length` の行）に寄せる。範囲の外の値はいちばん近い端に寄せる（例：`1e308` はどちらも上限）。数でない値と 0 以下の fps は受け付けず、元の値に戻す。`timelineSpan` は有限でない値を返さず（壊れた入力なら `BROKEN_SPAN` の 100,000）、目盛りは 2,000 個まで（`timelineTicks` の `MAX_TICKS`）にする。
   - エディタを開いたとき、現在の実行結果の `pano_timeline_fps` が状態の `timeline.fps` と違えば、状態をその fps に再基準化する。`pano_timeline_fps` は先に 1〜1000 に寄せてから比べる（`pano_video_fps.js` の `videoTimelineFps`・`sceneAtVideoFps`）。1000 fps を超える VIDEO では状態は 1000 fps になり、次の実行結果からは同じ値と比べるので、再基準化・再生ヘッドの跳び・空の Undo を繰り返さない。ウィジェットの `state_json` は次の編集かキューまで変わらない（ノードは記録された fps で秒を保って読むので、書き込む前でも出力は同じ）。
@@ -189,12 +189,12 @@ Keyframe の選び方（新しい UI。ADR 0048）：
 
 | 操作 | 結果 |
 |---|---|
-| トラックの何も無い所からドラッグ | 囲んだ Keyframe（閉じた行ではポチ、開いた行では Lane の Keyframe）を選ぶ |
+| トラックの何も無い所からドラッグ（トラックの列の、最後の行より下の空いた所も含む） | 囲んだ Keyframe（閉じた行ではポチ、開いた行では Lane の Keyframe）を選ぶ |
 | Keyframe をクリック | その一つだけを選ぶ |
 | Shift ＋ クリック、Shift ＋ ドラッグ | 今の選択に足す |
 | 選んだ Keyframe のどれかをドラッグ | 選んだ全部を同じフレーム数だけ動かす（移動の端と置き換えは上の規則） |
 | Delete | 選んだ全部を消す |
-| トラックの何も無い所をクリック | 選択を外す |
+| トラックの何も無い所をクリック（最後の行より下の空いた所も含む） | 選択を外す |
 
 - Keyframe を選んでいる間は、インスペクタの下端に Easing のパネルが出て、変えると選んだ全部の区間に効く（「混在」の規則は上と同じ）。
 - 再生ヘッドはルーラーのクリックとドラッグだけで動く。トラックのクリックでは動かさない（範囲選択を始めたクリックで再生ヘッドが飛ばない
