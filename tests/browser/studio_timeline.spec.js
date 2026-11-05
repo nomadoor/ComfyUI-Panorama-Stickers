@@ -505,3 +505,38 @@ test("the Length unit mark switches frames and seconds, typed seconds go in as f
   await expect(light.locator('[data-tl="length"] .pano-studio-field-value')).toHaveText("0.04");
   expect((await events(page)).filter((event) => event.name === "edit")).toEqual([]);
 });
+
+// Where the browser has no `field-sizing: content` (Chromium < 123, Firefox), the opened box keeps the reserved width
+// (web/pano_studio.css `@supports not (field-sizing: content)`), so opening it moves nothing. This Chromium has it:
+// the test turns it off and applies the fallback block's rules as such a browser would.
+test("without field-sizing the opened fps and Length boxes keep the reserved width", async ({ page }) => {
+  await open(page);
+  const applied = await page.evaluate(() => {
+    const fallback = [...document.styleSheets].flatMap((sheet) => {
+      try {
+        return [...sheet.cssRules];
+      } catch {
+        return [];
+      }
+    }).filter((rule) => rule instanceof CSSSupportsRule && /not\s*\(\s*field-sizing:\s*content\s*\)/.test(rule.conditionText));
+    const style = document.createElement("style");
+    style.textContent = [
+      ".pano-studio-tl-field .pano-studio-field-input { field-sizing: fixed !important; }",
+      ...fallback.flatMap((rule) => [...rule.cssRules].map((inner) => inner.cssText)),
+    ].join("\n");
+    document.head.append(style);
+    return fallback.length;
+  });
+  expect(applied).toBeGreaterThan(0);
+  const layout = () => dark(page).locator(".pano-studio-tl-bar").evaluate((bar) =>
+    [...bar.querySelectorAll(".pano-studio-tl-field, .pano-studio-tl-field-name, [data-tl]")]
+      .map((el) => `${el.getBoundingClientRect().left}-${el.getBoundingClientRect().right}`).join(" "));
+  for (const name of ["length", "fps"]) {
+    const field = dark(page).locator(`[data-tl="${name}"]`);
+    const shown = await layout();
+    await field.click();
+    await expect(field.locator("input")).toBeFocused();
+    expect(await layout()).toBe(shown);
+    await page.keyboard.press("Escape");
+  }
+});

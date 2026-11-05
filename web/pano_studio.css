@@ -1148,6 +1148,14 @@
   field-sizing: content;
 }
 
+/* Without field-sizing (Chromium < 123, Firefox) an input takes its own ~20 characters: hold it to the reserved width
+   instead, so opening the box moves nothing (a longer typed value scrolls inside it). */
+@supports not (field-sizing: content) {
+  .pano-studio-tl-field .pano-studio-field-input {
+    width: var(--studio-tl-field-ch);
+  }
+}
+
 .pano-studio-tl-field.is-fps {
   --studio-tl-field-ch: 4ch;
 }
