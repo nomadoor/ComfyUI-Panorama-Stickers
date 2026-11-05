@@ -554,7 +554,7 @@ test("in Panorama mode the FOV number's tooltip says it is not available", async
 });
 
 // docs/space-and-view.md "Frame 表示" (ADR 0061): Alt + wheel changes the Camera's H FOV by the FOV ruler's arrow-key
-// step, the position stays, a run is one Undo step apart from a plain wheel run; Alt (without a drag) lights the FOV
+// step, the position stays, a run is one Undo step apart from a plain wheel run; Alt (with no view operation) lights the FOV
 // ruler (docs/studio-ui.md "Camera タブ").
 test("Frame mode: Alt + wheel changes the Camera's FOV, not its position, as one Undo step; Alt lights the FOV ruler", async ({ page }, testInfo) => {
   const problems = await open(page, testInfo);

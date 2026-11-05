@@ -230,6 +230,11 @@ test("the knobs light for their operation, W moves until released or the window 
   await page.mouse.move(sphere.x - 40, sphere.y + 10);
   await expect.poll(lit).toEqual(["orbit"]);
   expect(await strong()).toEqual(["orbit"]);
+  // W during the sphere's drag lights the road's arrows quietly: only the dragged knob is strong.
+  await page.keyboard.down("KeyW");
+  await expect.poll(lit).toEqual(["orbit", "move"]);
+  expect(await strong()).toEqual(["orbit"]);
+  await page.keyboard.up("KeyW");
   await expect(page.locator(".pano-studio-editor")).toHaveClass(/is-knob-drag/);
   await page.mouse.up();
   await expect.poll(lit).toEqual([]);

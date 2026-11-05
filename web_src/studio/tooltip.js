@@ -29,23 +29,29 @@ export const TIP_SIDES = [
   [".pano-studio-at-notice", "bottom"],
 ];
 
-// The group of TIP_SIDES the control sits in (its first ancestor, or itself, that matches), or null.
-export function tipGroup(element) {
-  for (const [selector] of TIP_SIDES) {
+// The entry of TIP_SIDES the control sits in (its first ancestor, or itself, that matches): { element, side }, or null.
+function groupOf(element) {
+  for (const [selector, side] of TIP_SIDES) {
     const group = element?.closest?.(selector);
-    if (group) return group;
+    if (group) return { element: group, side };
   }
   return null;
+}
+
+// The rounded backdrop the bubble's gap is measured from: the floating group (`.pano-studio-float`) inside the
+// control's TIP_SIDES group that holds the control (the paint bar stacks two), or null where the group has none (the
+// edge rulers, the Output preview) and the control's own rect is used.
+export function tipGroup(element) {
+  const group = groupOf(element)?.element;
+  const float = group ? element.closest(".pano-studio-float") : null;
+  return float && group.contains(float) ? float : null;
 }
 
 // The side the control's bubble goes first: its own `data-tip-side`, else its group's, else above.
 export function tipSide(element) {
   const own = element?.getAttribute?.("data-tip-side");
   if (own && OPPOSITE[own]) return own;
-  for (const [selector, side] of TIP_SIDES) {
-    if (element?.closest?.(selector)) return side;
-  }
-  return "top";
+  return groupOf(element)?.side ?? "top";
 }
 
 // Where the bubble of `size` ({ width, height }) goes beside `anchor` (the control's rect: { left, top, width, height }),

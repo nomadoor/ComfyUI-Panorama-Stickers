@@ -13,9 +13,9 @@ import StudioIconButton from "./StudioIconButton.vue";
 defineProps({
   // The knobs lit now: "orbit", "pan", "move".
   lit: { type: Array, default: () => [] },
-  // A knob is being dragged: its light is the strong fill; otherwise the lit knobs take the hover's fill
+  // The knob being dragged, or null: it alone takes the strong fill; the other lit knobs take the hover's fill
   // (docs/space-and-view.md "視点の操作の部品").
-  knobDrag: { type: Boolean, default: false },
+  knobDrag: { type: String, default: null },
   disabled: { type: Boolean, default: false },
   disabledTip: { type: String, default: "" },
   helpOpen: { type: Boolean, default: false },
@@ -53,8 +53,8 @@ const CENTER_TIP = Object.freeze({
         :icon="knob.icon"
         :label="knob.label"
         :tip="disabled && disabledTip ? disabledTip : knob.tip"
-        :lit="knobDrag && lit.includes(knob.key)"
-        :hint="!knobDrag && lit.includes(knob.key)"
+        :lit="knobDrag === knob.key"
+        :hint="knobDrag !== knob.key && lit.includes(knob.key)"
         :disabled="disabled"
         @pointerdown="!disabled && emit('knob', knob.key, $event)"
         @pointerenter="knob.key === 'orbit' && !disabled && emit('hover', 'orbit')"

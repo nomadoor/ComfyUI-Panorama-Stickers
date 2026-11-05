@@ -180,9 +180,9 @@ test("a gesture begins and ends", () => {
   assert.equal(input.gesture(), null);
 });
 
-// docs/studio-ui.md "Camera タブ" (ADR 0061): the FOV ruler shows Alt + wheel while Alt is held without a drag, in the
-// Frame view, with a Camera that moves.
-test("the FOV ruler lights with Alt, not during a drag, only in the Frame view with a Camera that moves", () => {
+// docs/studio-ui.md "Camera タブ" (ADR 0061): the FOV ruler shows Alt + wheel while Alt is held with no view operation
+// (a drag or the movement keys), in the Frame view, with a Camera that moves.
+test("the FOV ruler lights with Alt, not during a view operation, only in the Frame view with a Camera that moves", () => {
   const on = { altHeld: true, operating: false, frame: true, movable: true };
   assert.equal(fovRulerLit(on), true);
   assert.equal(fovRulerLit({ ...on, altHeld: false }), false);
@@ -191,7 +191,7 @@ test("the FOV ruler lights with Alt, not during a drag, only in the Frame view w
   assert.equal(fovRulerLit({ ...on, movable: false }), false);
 });
 
-test("the FOV number lights with Alt, not during a drag, only where Alt + wheel changes the view's FOV", () => {
+test("the FOV number lights with Alt, not during a view operation, only where Alt + wheel changes the view's FOV", () => {
   const on = { altHeld: true, operating: false, space: true };
   assert.equal(fovNumberLit(on), true);
   assert.equal(fovNumberLit({ ...on, altHeld: false }), false);

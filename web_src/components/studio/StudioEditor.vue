@@ -244,7 +244,7 @@ function setCollapsed(value) {
     <div
       ref="root"
       class="pano-studio pano-studio-editor"
-      :class="{ 'is-knob-drag': ui.knobDrag }"
+      :class="{ 'is-knob-drag': !!ui.knobDrag }"
       role="dialog"
       tabindex="-1"
       aria-modal="true"

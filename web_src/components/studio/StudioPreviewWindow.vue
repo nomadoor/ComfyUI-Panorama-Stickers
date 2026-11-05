@@ -75,7 +75,7 @@ const timeText = computed(() => `${clock(props.playback.frame / props.playback.f
     <div
       ref="root"
       class="pano-studio pano-studio-preview"
-      :class="{ 'is-knob-drag': ui.knobDrag }"
+      :class="{ 'is-knob-drag': !!ui.knobDrag }"
       role="dialog"
       tabindex="-1"
       aria-modal="true"

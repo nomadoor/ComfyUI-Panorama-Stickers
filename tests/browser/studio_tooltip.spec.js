@@ -149,3 +149,18 @@ test("no control of the new editor carries a title attribute", async ({ page }) 
   // The buttons keep their accessible names.
   await expect(page.locator('[data-tool="undo"]')).toHaveAttribute("aria-label", "Undo");
 });
+
+// docs/studio-ui.md "ツールチップ" 置く側: the paint bar stacks the colors' float above the tools' float; a tool's bubble
+// stands 8px off its own float's top edge, not above the colors.
+test("a paint tool's bubble stands 8px off the tools' float, below the colors", async ({ page }) => {
+  const problems = await open(page);
+  await page.locator('[data-tool="paint"]').click();
+  await expect(page.locator("[data-paint-colors]")).toBeVisible();
+  await hover(page, page.locator("[data-paint-brush]").first());
+  await expect(shown(page)).toHaveCount(1);
+  await expect(bubble(page)).toHaveAttribute("data-side", "top");
+  const tip = await bubble(page).boundingBox();
+  const tools = await page.locator("[data-paint-bar]").boundingBox();
+  expect(Math.round(tools.y - (tip.y + tip.height))).toBe(8);
+  expect(problems).toEqual([]);
+});

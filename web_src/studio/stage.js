@@ -38,8 +38,9 @@ export function stageUi() {
     cursor: "",
     // The knobs lit now ("orbit", "pan", "move").
     lit: [],
-    // A knob is being dragged: the whole editor shows the grabbing cursor.
-    knobDrag: false,
+    // The knob being dragged ("orbit", "pan", "move"), or null: the whole editor shows the grabbing cursor and that knob
+    // alone takes the strong fill (docs/space-and-view.md "視点の操作の部品").
+    knobDrag: null,
     // A loading guide's band of light runs on the overlay (load_reveal.js; the overlay is marked data-loading-guide).
     loadingGuide: false,
     // The Hide Grid switch: the grid is hidden (the shell writes it).
@@ -51,8 +52,8 @@ export function stageUi() {
     // whether the view is (going to) the start view, where Reset View is off (view_camera.js atResetView).
     fov: DEFAULT_VIEW_HFOV,
     atStart: true,
-    // Alt is held without a drag in the Camera tab's Frame view with a Camera that moves: the FOV ruler shows that Alt +
-    // wheel changes it (docs/studio-ui.md "Camera タブ").
+    // Alt is held with no view operation under way in the Camera tab's Frame view with a Camera that moves: the FOV ruler
+    // shows that Alt + wheel changes it (docs/studio-ui.md "Camera タブ").
     fovLit: false,
     // Alt is held with no view operation under way where the wheel zooms the view: the FOV number shows that Alt + wheel
     // changes it (docs/space-and-view.md "寄る").
@@ -521,12 +522,14 @@ export function createStage({
   function syncUi() {
     ui.fov = viewFovValue(shownPose().hFOV_deg);
     ui.atStart = atResetView(camera.destination());
-    const operating = !!shared.drag || shared.keysMoving;
+    // A view operation under way: a view drag (not an object's or the brush's) or the movement keys.
+    const viewDrag = !!shared.drag && shared.drag.action !== "object" && shared.drag.action !== "paint";
+    const operating = viewDrag || shared.keysMoving;
     ui.fovNumberLit = fovNumberLit({ altHeld: input.altHeld(), operating, space: viewMode() === "space" });
     ui.fovLit = fovRulerLit({ altHeld: input.altHeld(), operating, frame: viewMode() === "frame", movable: !!cameraTab?.movable() });
     const gesture = input.gesture();
     ui.lit = litKnobs({ gesture, keysMoving: shared.keysMoving, altHeld: input.altHeld() });
-    ui.knobDrag = !!shared.drag?.knob;
+    ui.knobDrag = shared.drag?.knob ?? null;
     const dragged = shared.drag?.action === "object" ? shared.objectCursor : null;
     // Set orbit center waits for a click.
     if (shared.picking && !shared.drag) {
