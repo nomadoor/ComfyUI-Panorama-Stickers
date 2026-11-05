@@ -5,7 +5,7 @@ from comfyui_pano_suite.core.state import DEFAULT_STATE, merge_state, normalize_
 
 
 def test_merge_state_handles_none_inputs():
-    state = merge_state(None, None)
+    state = merge_state(None)
 
     assert state["version"] == 1
     assert state["projection_model"] == "pinhole_rectilinear"
@@ -25,7 +25,7 @@ def test_merge_state_handles_none_inputs():
 
 
 def test_merge_state_handles_empty_dict_inputs_and_fallbacks():
-    state = merge_state("{}", "{}", fallback_preset=1024, fallback_bg="#112233")
+    state = merge_state("{}", fallback_preset=1024, fallback_bg="#112233")
 
     assert state["output_preset"] == 1024
     assert state["coverage"] == 360
@@ -41,7 +41,7 @@ def test_merge_state_handles_empty_dict_inputs_and_fallbacks():
 
 def test_merge_state_normalizes_invalid_container_types():
     internal = '{"assets":[],"stickers":{},"shots":"bad","active":[]}'
-    state = merge_state(None, internal)
+    state = merge_state(internal)
 
     assert state["assets"] == {}
     assert state["stickers"] == []
@@ -51,15 +51,15 @@ def test_merge_state_normalizes_invalid_container_types():
 
 
 def test_merge_state_fills_missing_active_keys():
-    state = merge_state(None, '{"active":{"selected_sticker_id":"st_1"}}')
+    state = merge_state('{"active":{"selected_sticker_id":"st_1"}}')
 
     assert state["active"]["selected_sticker_id"] == "st_1"
     assert state["active"]["selected_shot_id"] is None
 
 
 def test_merge_state_normalizes_coverage():
-    state_180 = merge_state(None, '{"coverage":180}')
-    state_invalid = merge_state(None, '{"coverage":"weird"}')
+    state_180 = merge_state('{"coverage":180}')
+    state_invalid = merge_state('{"coverage":"weird"}')
 
     assert state_180["coverage"] == 180
     assert state_invalid["coverage"] == 360
@@ -95,7 +95,7 @@ def test_an_integer_too_long_for_python_falls_back_alone_and_keeps_the_rest_of_t
     # Python's int() refuses more than 4300 digits; JSON.parse reads such a number as an infinity (an invalid value),
     # so only that field takes its default, as load_scene_state does (docs/scene-state-v2.md, 共通の規則).
     huge = "9" * 5000
-    state = merge_state(None, '{"bg_color": "#123456", "coverage": ' + huge + '}')
+    state = merge_state('{"bg_color": "#123456", "coverage": ' + huge + '}')
 
     assert state["bg_color"] == "#123456"
     assert state["coverage"] == 360
@@ -112,7 +112,7 @@ def test_a_sticker_state_with_an_integer_too_long_for_python_is_still_read():
 @pytest.mark.parametrize("literal", ["NaN", "Infinity", "-Infinity"])
 def test_a_state_with_a_nan_or_infinity_literal_is_not_json_as_in_json_parse(literal):
     # JSON.parse throws on these literals, so the text is not read at all (docs/scene-state-v2.md, 共通の規則).
-    state = merge_state(None, '{"bg_color": "#123456", "coverage": ' + literal + '}')
+    state = merge_state('{"bg_color": "#123456", "coverage": ' + literal + '}')
     sticker = parse_sticker_state('{"kind": "pano_sticker_state", "version": 1, "extra": ' + literal + ', '
                                   '"pose": {"yaw_deg": 10, "pitch_deg": 5, "roll_deg": 0, "hFOV_deg": 30}}')
 
@@ -142,7 +142,7 @@ def test_a_non_finite_legacy_sticker_value_takes_its_default_and_the_sticker_sti
     text = json.dumps({"assets": {"a": {"type": "dataurl", "value": _red_png_data_url()}}, "stickers": [sticker]})
     text = text.replace(f'"{field}": {sticker[field]}', f'"{field}": {huge}')
 
-    state = merge_state(None, text)
+    state = merge_state(text)
     canvas = render_stickers_to_rgba_erp(state, 64, 32)
 
     assert canvas[16, 32, 3] > 0.5
@@ -150,7 +150,7 @@ def test_a_non_finite_legacy_sticker_value_takes_its_default_and_the_sticker_sti
 
 def test_a_non_finite_legacy_crop_and_shot_value_is_dropped_so_readers_use_their_default():
     huge = "9" * 5000
-    state = merge_state(None, '{"stickers": [{"id": "s", "crop": {"x0": 0, "x1": ' + huge + '}}], '
+    state = merge_state('{"stickers": [{"id": "s", "crop": {"x0": 0, "x1": ' + huge + '}}], '
                               '"shots": [{"id": "c", "yaw_deg": ' + huge + ', "pitch_deg": 5}]}')
 
     assert state["stickers"][0]["crop"] == {"x0": 0}

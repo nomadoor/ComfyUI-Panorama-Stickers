@@ -82,15 +82,13 @@ def _without_non_finite(value):
     return value
 
 
-def merge_state(state_in: str | None, internal_state: str | None, fallback_preset: int = 2048, fallback_bg: str = "#00ff00") -> dict:
+def merge_state(state_json: str | None, fallback_preset: int = 2048, fallback_bg: str = "#00ff00") -> dict:
     state = deepcopy(DEFAULT_STATE)
     state["output_preset"] = int(fallback_preset)
     state["bg_color"] = fallback_bg
 
-    for src in (internal_state, state_in):
-        parsed = parse_state(src)
-        if parsed is None:
-            continue
+    parsed = parse_state(state_json)
+    if parsed is not None:
         state.update({k: v for k, v in parsed.items() if k in state})
 
     state["version"] = 1

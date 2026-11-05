@@ -169,7 +169,7 @@ class PanoramaStickersNode(io.ComfyNode):
         workspace_w, workspace_h = cls._resolve_overlay_workspace_size(out_w, out_h, coverage_value)
         bg_hex = _normalize_hex_color(bg_color)
         fps_value = max(1.0, finite_float(fps, 24.0))
-        state = merge_state(state_in=None, internal_state=state_json, fallback_preset=out_w, fallback_bg=bg_hex)
+        state = merge_state(state_json, fallback_preset=out_w, fallback_bg=bg_hex)
         warnings = []
         if cls._is_auto_output_preset(output_preset) and not output_uses_bg_size:
             warnings.append("Output preset is auto, but bg_erp is not connected; using 2048 instead.")
@@ -381,7 +381,7 @@ class PanoramaCutoutNode(io.ComfyNode):
     def execute(cls, erp_image, coverage, state_json, output_megapixels=1.0, fps=24.0, audio=None, unique_id=None):
         output_megapixels = max(0.01, finite_float(output_megapixels, 1.0))
         fps_value = max(1.0, finite_float(fps, 24.0))
-        state = merge_state(state_in=None, internal_state=state_json)
+        state = merge_state(state_json)
         coverage_value = normalize_coverage(coverage)
         state["coverage"] = coverage_value
         shots = state.get("shots", []) if isinstance(state, dict) else []
