@@ -386,6 +386,7 @@ function setCollapsed(value) {
             <StudioNavWidget
               ref="nav"
               :lit="ui.lit"
+              :knob-drag="ui.knobDrag"
               :disabled="!!navOff"
               :disabled-tip="navOff"
               :help-open="!!view.shortcuts"

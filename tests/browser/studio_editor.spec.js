@@ -191,7 +191,10 @@ test("a left drag turns the view, the wheel moves it toward the pointer, and the
 
 test("the knobs light for their operation, W moves until released or the window blurs, and Reset View goes home", async ({ page }, testInfo) => {
   const { problems, stage } = await open(page, testInfo);
-  const lit = () => page.evaluate(() => [...document.querySelectorAll("[data-knob].is-lit")].map((el) => el.dataset.knob));
+  // The knobs lit, quietly (the hover's fill) or strongly (the lit fill, only while a knob itself is dragged;
+  // docs/space-and-view.md "視点の操作の部品").
+  const lit = () => page.evaluate(() => [...document.querySelectorAll("[data-knob].is-lit, [data-knob].is-hint")].map((el) => el.dataset.knob));
+  const strong = () => page.evaluate(() => [...document.querySelectorAll("[data-knob].is-lit")].map((el) => el.dataset.knob));
   expect(await lit()).toEqual([]);
   // Alt lights the knobs of Alt's drags.
   await page.keyboard.down("Alt");
@@ -203,6 +206,7 @@ test("the knobs light for their operation, W moves until released or the window 
   await page.mouse.down();
   await page.mouse.move(at.x + 30, at.y);
   await expect.poll(lit).toEqual(["orbit"]);
+  expect(await strong()).toEqual([]);
   await page.mouse.up();
   await expect.poll(lit).toEqual(["orbit", "move"]);
   await page.mouse.down({ button: "right" });
@@ -225,6 +229,7 @@ test("the knobs light for their operation, W moves until released or the window 
   await page.mouse.down();
   await page.mouse.move(sphere.x - 40, sphere.y + 10);
   await expect.poll(lit).toEqual(["orbit"]);
+  expect(await strong()).toEqual(["orbit"]);
   await expect(page.locator(".pano-studio-editor")).toHaveClass(/is-knob-drag/);
   await page.mouse.up();
   await expect.poll(lit).toEqual([]);

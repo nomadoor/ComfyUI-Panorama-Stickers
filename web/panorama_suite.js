@@ -29362,6 +29362,9 @@ const Cj = ["data-drop-place"], Ij = ["d", "fill"], Tj = ["d", "stroke", "stroke
     active: { type: Boolean, default: !1 },
     // A view knob while its operation runs.
     lit: { type: Boolean, default: !1 },
+    // A view knob lit quietly, in the hover's fill: its operation runs from the stage, or Alt points it out (the lit fill
+    // is kept for a knob being dragged).
+    hint: { type: Boolean, default: !1 },
     disabled: { type: Boolean, default: !1 }
   },
   emits: ["press"],
@@ -29372,7 +29375,7 @@ const Cj = ["data-drop-place"], Ij = ["d", "fill"], Tj = ["d", "stroke", "stroke
     }
     return (o, a) => (de(), pe("button", {
       type: "button",
-      class: ze(["pano-studio-icon-btn", { "is-sm": e.size === "sm", "is-knob": e.size === "knob", "is-active": e.active, "is-lit": e.lit }]),
+      class: ze(["pano-studio-icon-btn", { "is-sm": e.size === "sm", "is-knob": e.size === "knob", "is-active": e.active, "is-lit": e.lit, "is-hint": e.hint && !e.lit }]),
       "aria-label": e.label,
       "data-tip": e.tip || e.label,
       "aria-disabled": e.disabled ? "true" : null,
@@ -30652,6 +30655,9 @@ const P8 = ["tabindex", "aria-label", "aria-valuenow", "aria-valuetext", "aria-v
   props: {
     // The knobs lit now: "orbit", "pan", "move".
     lit: { type: Array, default: () => [] },
+    // A knob is being dragged: its light is the strong fill; otherwise the lit knobs take the hover's fill
+    // (docs/space-and-view.md "視点の操作の部品").
+    knobDrag: { type: Boolean, default: !1 },
     disabled: { type: Boolean, default: !1 },
     disabledTip: { type: String, default: "" },
     helpOpen: { type: Boolean, default: !1 },
@@ -30694,12 +30700,13 @@ const P8 = ["tabindex", "aria-label", "aria-valuenow", "aria-valuetext", "aria-v
             icon: u.icon,
             label: u.label,
             tip: e.disabled && e.disabledTip ? e.disabledTip : u.tip,
-            lit: e.lit.includes(u.key),
+            lit: e.knobDrag && e.lit.includes(u.key),
+            hint: !e.knobDrag && e.lit.includes(u.key),
             disabled: e.disabled,
             onPointerdown: (c) => !e.disabled && r("knob", u.key, c),
             onPointerenter: (c) => u.key === "orbit" && !e.disabled && r("hover", "orbit"),
             onPointerleave: (c) => u.key === "orbit" && r("hover", null)
-          }, null, 8, ["data-knob", "icon", "label", "tip", "lit", "disabled", "onPointerdown", "onPointerenter", "onPointerleave"])), 64)),
+          }, null, 8, ["data-knob", "icon", "label", "tip", "lit", "hint", "disabled", "onPointerdown", "onPointerenter", "onPointerleave"])), 64)),
           l[6] || (l[6] = ue("span", { class: "pano-studio-sep" }, null, -1)),
           we(kt, {
             "data-action": "orbit-center",
@@ -32999,6 +33006,7 @@ const uG = ["data-side", "aria-hidden"], cG = {
                 ref_key: "nav",
                 ref: w,
                 lit: e.ui.lit,
+                "knob-drag": e.ui.knobDrag,
                 disabled: !!T.value,
                 "disabled-tip": T.value,
                 "help-open": !!e.view.shortcuts,
@@ -33017,7 +33025,7 @@ const uG = ["data-side", "aria-hidden"], cG = {
                   return (R = xe(s)) == null ? void 0 : R.knobDown(U, $);
                 }),
                 onHelp: Y[24] || (Y[24] = (U) => e.controller.shortcuts(!e.view.shortcuts))
-              }, null, 8, ["lit", "disabled", "disabled-tip", "help-open", "center-picking", "center-off"])
+              }, null, 8, ["lit", "knob-drag", "disabled", "disabled-tip", "help-open", "center-picking", "center-off"])
             ]),
             e.view.shortcuts ? (de(), pe("div", _G, [
               we(Tx, {
@@ -36096,6 +36104,7 @@ const tB = ["aria-label"], nB = {
               ref_key: "nav",
               ref: i,
               lit: e.ui.lit,
+              "knob-drag": e.ui.knobDrag,
               "help-open": a.value,
               "center-picking": !!e.ui.pickingCenter,
               onHover: g[1] || (g[1] = (C) => {
@@ -36111,7 +36120,7 @@ const tB = ["aria-label"], nB = {
                 return (L = xe(l)) == null ? void 0 : L.knobDown(C, _);
               }),
               onHelp: g[4] || (g[4] = (C) => a.value = !a.value)
-            }, null, 8, ["lit", "help-open", "center-picking"])
+            }, null, 8, ["lit", "knob-drag", "help-open", "center-picking"])
           ]),
           a.value ? (de(), pe("div", aB, [
             we(Tx, {
