@@ -416,9 +416,32 @@ function onFps(value) {
   if (fps !== null) emit("edit", { kind: "fps", fps });
 }
 
+// The Length field (docs/timeline-ui.md "タイムラインの長さ"): while it is dragged the range follows it as a live edit
+// from the length before the press; release (or a typed value) commits once from there, a cancel puts that state back.
+// The reset button commits at once. The shell keeps the playhead in the range once the gesture is closed.
+let lengthGesture = null;
+
+function onLengthInput(value) {
+  if (props.readOnly) return;
+  lengthGesture ??= { base: ctx.value, sentLive: false };
+  const { base } = lengthGesture;
+  const edit = lengthEdit(base, value) ?? { state: base.state, upstream: {} };
+  lengthGesture.sentLive = true;
+  emit("edit", { kind: "state", ...edit, phase: "live", stopsPlayback: true });
+}
+
 function onLength(value) {
-  const edit = lengthEdit(ctx.value, value);
+  const gesture = lengthGesture;
+  lengthGesture = null;
+  const edit = lengthEdit(gesture?.base ?? ctx.value, value);
   if (edit) emit("edit", { kind: "state", ...edit, phase: "commit", stopsPlayback: true });
+  else if (gesture?.sentLive) emit("edit", { kind: "state", state: gesture.base.state, upstream: {}, phase: "cancel", stopsPlayback: true });
+}
+
+function onLengthCancel() {
+  const gesture = lengthGesture;
+  lengthGesture = null;
+  if (gesture?.sentLive) emit("edit", { kind: "state", state: gesture.base.state, upstream: {}, phase: "cancel", stopsPlayback: true });
 }
 
 function onGroupAction(group, kind) {
@@ -479,7 +502,9 @@ defineExpose({ handleDelete, copyKeys: copySelectedKeys, pasteKeys: pasteCopiedK
       @jump="onJump"
       @loop-change="(on) => emit('loop-change', on)"
       @fps="onFps"
+      @length-input="onLengthInput"
       @length="onLength"
+      @length-cancel="onLengthCancel"
       @collapse="(folded) => emit('collapse-change', folded)"
     />
     <div v-show="!collapsed" ref="body" class="pano-studio-tl-body">

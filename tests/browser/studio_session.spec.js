@@ -185,6 +185,73 @@ test("the fps and Length names drag their value and open it for typing, with the
   expect(problems).toEqual([]);
 });
 
+// docs/timeline-ui.md "タイムラインの長さ": while the Length field is dragged the Timeline's range follows it; the Undo
+// step is made on release, Escape goes back to the length before the press (an Auto length to Auto, no step, nothing
+// written), and the playhead is brought in to the last frame only after release. Typing still makes one step.
+test("dragging the Length field moves the Timeline's range live; Escape restores Auto, release makes one Undo step", async ({ page }, testInfo) => {
+  const problems = await open(page, testInfo, "?auto");
+  await page.evaluate(() => {
+    Element.prototype.requestPointerLock = () => Promise.reject(new DOMException("refused", "NotAllowedError"));
+  });
+  const frameText = page.locator('[data-tl="time"] .pano-studio-tl-frame');
+  const length = page.locator('[data-tl="length"]');
+  const undo = page.locator('[data-tool="undo"]');
+  const lastTick = () => page.locator('[data-tl="ruler"] .pano-studio-tl-tick').last().textContent().then(Number);
+  await expect(frameText).toHaveText("0 / 48");
+  await expect(undo).toHaveAttribute("aria-disabled", "true");
+  const ticksBefore = await lastTick();
+  const box = await length.boundingBox();
+  const at = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  const press = async (dx) => {
+    await page.mouse.move(at.x, at.y);
+    await page.mouse.down();
+    for (let i = 1; i <= 10; i += 1) await page.mouse.move(at.x + (dx * i) / 10, at.y);
+    await expect(length).toHaveClass(/is-dragging/);
+  };
+
+  // During the drag: the range is the length shown in the field.
+  await press(120);
+  const live = Number(await length.getAttribute("aria-valuenow"));
+  expect(live).toBeGreaterThan(100);
+  await expect(frameText).toHaveText(`0 / ${live}`);
+  expect(await lastTick()).toBeGreaterThan(ticksBefore);
+  expect((await studio(page, "state")).timeline.length).toBe(live);
+  // Escape: back to Auto (null), not to the number 48; no Undo step, nothing written.
+  await page.keyboard.press("Escape");
+  await page.mouse.up();
+  await expect(frameText).toHaveText("0 / 48");
+  expect((await studio(page, "state")).timeline.length).toBeNull();
+  await expect(undo).toHaveAttribute("aria-disabled", "true");
+  expect(await page.evaluate(() => window.__studio.writes)).toBe(0);
+
+  // A shorter length with the playhead past it: the playhead stays during the drag and comes in after release.
+  const ruler = await page.locator('[data-tl="ruler"]').boundingBox();
+  await page.mouse.click(ruler.x + ruler.width * 0.95, ruler.y + ruler.height / 2);
+  const frame = Number((await frameText.textContent()).split(" / ")[0]);
+  expect(frame).toBeGreaterThan(40);
+  await press(-25);
+  const shorter = Number(await length.getAttribute("aria-valuenow"));
+  expect(shorter).toBeLessThan(frame);
+  await expect(frameText).toHaveText(`${frame} / ${shorter}`);
+  await page.mouse.up();
+  await expect(frameText).toHaveText(`${shorter - 1} / ${shorter}`);
+  // One Undo step: Undo goes back to Auto, and there is no step before it.
+  await expect(undo).not.toHaveAttribute("aria-disabled", "true");
+  await undo.click();
+  expect((await studio(page, "state")).timeline.length).toBeNull();
+  await expect(undo).toHaveAttribute("aria-disabled", "true");
+
+  // Typing a length is one Undo step too.
+  await length.click();
+  await length.locator("input").fill("30");
+  await length.locator("input").press("Enter");
+  await expect(frameText).toHaveText(/ \/ 30$/);
+  await undo.click();
+  expect((await studio(page, "state")).timeline.length).toBeNull();
+  await expect(undo).toHaveAttribute("aria-disabled", "true");
+  expect(problems).toEqual([]);
+});
+
 // A Clip range drag keeps the Timeline's range as at its start (docs/timeline-ui.md "タイムラインの長さ"): the playhead
 // stays while the end is trimmed in, and goes to the last frame once it is let go past the new end.
 test("trimming the Clip range that sets the Auto length keeps the playhead during the drag and brings it in after", async ({ page }, testInfo) => {

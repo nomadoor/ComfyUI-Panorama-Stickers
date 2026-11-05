@@ -8,8 +8,10 @@ import StudioNumberField from "./StudioNumberField.vue";
 // The Timeline's bar (docs/studio-ui.md "タイムラインのバー"; what each part does: docs/timeline-ui.md). From the left:
 // play and pause, the previous and the next Keyframe, the loop button (its icon shows the state), the time and frame; on the right the fps
 // field, the Length field and its reset, and the collapse button. Presentational: `bar` (timeline_model.js
-// buildStudioTimeline().bar) in; `play`, `jump` (direction), `loop-change`, `fps`, `length` (a number, or null for
-// the reset) and `collapse` out.
+// buildStudioTimeline().bar) in; `play`, `jump` (direction), `loop-change`, `fps`, `length-input` (each value while
+// the Length field is dragged, and a typed one just before its `length`), `length` (a number once on release or typing,
+// or null for the reset), `length-cancel` (the Length field given up: after a drag, its `length-input` with the value
+// from before comes first) and `collapse` out. fps goes out on release only.
 //
 // The fps and Length fields fill their name with the value, so a press on the name (or the field's padding) drags the
 // value as a press on it does (StudioNumberField startDrag; docs/studio-ui.md "欄").
@@ -17,7 +19,7 @@ const props = defineProps({
   bar: { type: Object, required: true },
   collapsed: { type: Boolean, default: false },
 });
-const emit = defineEmits(["play", "jump", "loop-change", "fps", "length", "collapse"]);
+const emit = defineEmits(["play", "jump", "loop-change", "fps", "length-input", "length", "length-cancel", "collapse"]);
 
 const fpsField = ref(null);
 const lengthField = ref(null);
@@ -106,7 +108,9 @@ const fpsParse = (text) => {
         :disabled="bar.lengthLocked"
         label="Length"
         data-tl="length"
+        @input="(value) => emit('length-input', value)"
         @change="(value) => emit('length', value)"
+        @cancel="emit('length-cancel')"
       />
     </span>
     <StudioIconButton
