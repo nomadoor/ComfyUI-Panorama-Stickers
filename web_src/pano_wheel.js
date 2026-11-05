@@ -5,8 +5,19 @@ function finiteNumber(value) {
   return Number.isFinite(number) ? number : null;
 }
 
-export function readWheelDirection(event, fallbackDelta = 0) {
+// The wheel's amount: deltaY, or deltaX for Shift + wheel that a browser turned into a sideways scroll (deltaY 0, the
+// amount in deltaX: Chromium on Windows), since Shift is not looked at (docs/space-and-view.md "寄る").
+function wheelAmount(event) {
   const deltaY = finiteNumber(event?.deltaY);
+  if (event?.shiftKey && !deltaY) {
+    const deltaX = finiteNumber(event?.deltaX);
+    if (deltaX) return deltaX;
+  }
+  return deltaY;
+}
+
+export function readWheelDirection(event, fallbackDelta = 0) {
+  const deltaY = wheelAmount(event);
   if (deltaY != null) return Math.sign(deltaY);
   const wheelDeltaY = finiteNumber(event?.wheelDeltaY);
   if (wheelDeltaY != null) return Math.sign(-wheelDeltaY);
@@ -31,9 +42,10 @@ export function wheelMeaning(event) {
 }
 
 // The wheel's steps: push(event) gives 1 (nearer: rolled away, deltaY < 0; a smaller FOV for a zoom), -1 (farther) or
-// 0. A line or page event (deltaMode != 0) and a pixel event of WHEEL_STEP_PIXELS or more are one step each. Finer
-// pixel events (a trackpad) add up in one direction to a step every WHEEL_STEP_PIXELS; a change of direction or of the
-// wheel's meaning (wheelMeaning: Alt or Ctrl went down or up) drops what was added up.
+// 0; the amount is wheelAmount's (Shift + wheel that came sideways counts). A line or page event (deltaMode != 0) and a
+// pixel event of WHEEL_STEP_PIXELS or more are one step each. Finer pixel events (a trackpad) add up in one direction
+// to a step every WHEEL_STEP_PIXELS; a change of direction or of the wheel's meaning (wheelMeaning: Alt or Ctrl went
+// down or up) drops what was added up.
 export function createWheelSteps() {
   let added = 0;
   let meaning = "move";
@@ -44,14 +56,15 @@ export function createWheelSteps() {
         added = 0;
         meaning = now;
       }
-      const fine = (event.deltaMode ?? 0) === 0 && Math.abs(event.deltaY) < WHEEL_STEP_PIXELS;
+      const delta = wheelAmount(event) ?? 0;
+      const fine = (event.deltaMode ?? 0) === 0 && Math.abs(delta) < WHEEL_STEP_PIXELS;
       if (!fine) {
         added = 0;
         return -readWheelDirection(event) || 0;
       }
-      if (!event.deltaY) return 0;
-      if (Math.sign(event.deltaY) !== Math.sign(added)) added = 0;
-      added += event.deltaY;
+      if (!delta) return 0;
+      if (Math.sign(delta) !== Math.sign(added)) added = 0;
+      added += delta;
       if (Math.abs(added) < WHEEL_STEP_PIXELS) return 0;
       const direction = Math.sign(added);
       added -= direction * WHEEL_STEP_PIXELS;
