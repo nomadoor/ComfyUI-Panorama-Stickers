@@ -160,6 +160,23 @@ try {
     return !!win;
   };
   preview.close = () => win?.close();
+  // Opens with one throw on the way: "early" before the shell mounts (the node's title), "late" after it mounted (the
+  // node's display taking the hand-over). Returns the error's message, or "opened".
+  preview.openBroken = async (where) => {
+    const runtime = previewNode(node).runtime;
+    const restore = where === "early"
+      ? (Object.defineProperty(node, "title", { configurable: true, get() { throw new Error("broken title"); } }), () => Object.defineProperty(node, "title", { configurable: true, writable: true, value: "Panorama Preview" }))
+      : (previewNode(node).runtime = { view: null, windowOpened() { throw new Error("broken hand-over"); }, windowClosed() {}, requestDraw() {}, teardown() {} }, () => (previewNode(node).runtime = runtime));
+    try {
+      const opened = await openPreviewWindow(node, { app, api: null, storage: { getItem: () => null, setItem: () => {} } });
+      opened?.close();
+      return "opened";
+    } catch (error) {
+      return error.message;
+    } finally {
+      restore();
+    }
+  };
   // Sets the node's background_range while the window is open (as ComfyUI's widget would).
   preview.setRange = (value) => {
     node.widgets.find((widget) => widget.name === "background_range").value = value;

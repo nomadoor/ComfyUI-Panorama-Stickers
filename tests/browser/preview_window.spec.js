@@ -41,6 +41,22 @@ test("✕ closes the window", async ({ page }) => {
   await expect(page.locator("[data-preview-window]")).toHaveCount(0);
 });
 
+test("an opening that throws leaves nothing behind, and the window opens again", async ({ page }) => {
+  await open(page);
+  await page.evaluate(() => window.__preview.close());
+  await expect(page.locator("[data-preview-window]")).toHaveCount(0);
+  const before = await page.evaluate(() => document.body.childElementCount);
+  for (const where of ["early", "late"]) {
+    expect(await page.evaluate((at) => window.__preview.openBroken(at), where)).toBe(where === "early" ? "broken title" : "broken hand-over");
+    await expect(page.locator("[data-preview-window]")).toHaveCount(0);
+    expect(await page.evaluate(() => document.body.childElementCount)).toBe(before);
+    expect(await page.evaluate(() => window.__preview.open())).toBe(true);
+    await expect(page.locator("[data-preview-window]")).toHaveCount(1);
+    await page.evaluate(() => window.__preview.close());
+    await expect(page.locator("[data-preview-window]")).toHaveCount(0);
+  }
+});
+
 test("Escape closes the window and no key reaches ComfyUI behind it", async ({ page }) => {
   await open(page);
   await page.locator("[data-stage-canvas]").click({ position: { x: 300, y: 300 } });

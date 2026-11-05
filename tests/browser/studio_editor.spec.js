@@ -291,6 +291,24 @@ test("Frame Selected with nothing to frame says so on the top-center line; Escap
   expect(problems).toEqual([]);
 });
 
+test("an opening that throws leaves nothing behind, and the editor opens again", async ({ page }, testInfo) => {
+  await open(page, testInfo);
+  await page.evaluate(() => window.__studio.close());
+  await expect(page.locator(".pano-studio-editor")).toHaveCount(0);
+  const before = await page.evaluate(() => document.body.childElementCount);
+  for (const where of ["early", "late"]) {
+    expect(await page.evaluate((at) => window.__studio.openBroken(at), where)).toBe(where === "early" ? "broken title" : "broken redraw");
+    await expect(page.locator(".pano-studio-editor")).toHaveCount(0);
+    expect(await page.evaluate(() => document.body.childElementCount)).toBe(before);
+    expect(await page.evaluate(() => window.__studio.session())).toEqual({ open: false, flush: false });
+    // The next opening works.
+    await page.evaluate(() => window.__studio.open());
+    await expect(page.locator(".pano-studio-editor")).toHaveCount(1);
+    await page.evaluate(() => window.__studio.close());
+    await expect(page.locator(".pano-studio-editor")).toHaveCount(0);
+  }
+});
+
 test("the tabs are 108px each; a click on the backdrop closes like ✕, a drag from inside the frame does not", async ({ page }, testInfo) => {
   const { problems, stage } = await open(page, testInfo);
   const widths = await page.locator(".pano-studio-tabs .pano-studio-seg-item").evaluateAll((items) => items.map((el) => el.getBoundingClientRect().width));
