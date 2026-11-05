@@ -9,9 +9,6 @@ import { DIAGNOSTICS_EXPORT_COMMAND, DIAGNOSTICS_SETTING } from "./pano_diagnost
 import { disposeNodeRuntime, editorSession, nodeSurface, peekSceneViewer, previewNode, stateSync } from "./pano_node_bridge.js";
 import { waitForPendingStickerUploads } from "./pano_sticker_operations.js";
 
-// The queue of Sticker operations is pano_sticker_operations.js's; tests/pano_editor_extension.test.mjs still imports it here.
-export { queuePendingStickerOperation } from "./pano_sticker_operations.js";
-
 const STATE_WIDGET = "state_json";
 
 function getWidget(node, name) {

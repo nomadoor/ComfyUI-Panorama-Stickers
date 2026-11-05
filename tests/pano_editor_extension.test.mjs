@@ -1,11 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import {
-  createPanoEditorExtension,
-  flushPanoStateProducers,
-  queuePendingStickerOperation,
-} from "../web_src/pano_editor_extension.js";
+import { createPanoEditorExtension, flushPanoStateProducers } from "../web_src/pano_editor_extension.js";
+import { queuePendingStickerOperation } from "../web_src/pano_sticker_operations.js";
 import { registerExternalStickerSync } from "../web_src/pano_external_sticker_sync.js";
 import { disposeNodeRuntime, editorSession, nodeSurface, previewNode, sceneViewer, stateSync } from "../web_src/pano_node_bridge.js";
 

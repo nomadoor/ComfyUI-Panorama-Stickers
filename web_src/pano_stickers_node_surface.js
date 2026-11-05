@@ -2,7 +2,7 @@ import { fileSource, newSceneSticker, parseSceneEditorState, setStickerPose, sti
 import { vFovFromHfov } from "./pano_camera_math.js";
 import { createNodeSurfaceSession } from "./pano_node_surface_session.js";
 import { evaluateSticker } from "./pano_scene_eval.js";
-import { isInputConnected, nodePortHandoff, portHandoff, showPortHandoff } from "./pano_port_handoff.js";
+import { isInputConnected, portHandoff, showPortHandoff } from "./pano_port_handoff.js";
 import { loadSceneState } from "./pano_scene_state.js";
 
 const EXTERNAL_STICKER_ID = "sticker_image_1";
@@ -212,10 +212,6 @@ export function portStickerSyncValue(node, { pose = null, handoff = null } = {})
     handoff: !!handoff,
   };
 }
-
-// Whether the Pose handoff can apply, and a node's current one, are pano_port_handoff.js's;
-// tests/pano_stickers_node_surface.test.mjs still imports nodePortHandoff here.
-export { nodePortHandoff };
 
 // Panorama Studio's state_json `text` as its node surface shows it (parseSceneEditorState `options`): the port
 // Sticker with the Pose handoff `handoffValue` of the current result (null without one) as the run draws it.

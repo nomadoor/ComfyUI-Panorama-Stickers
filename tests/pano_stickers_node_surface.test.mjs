@@ -6,13 +6,13 @@ import {
   applyStickersNodeSurfaceAction,
   buildStickersDisplayEntries,
   createStickersNodeSurfaceSession,
-  nodePortHandoff,
   portStickerSyncValue,
   reconcileExternalStickerState,
   reconcilePortStickerState,
   stickersNodeSurfaceModel,
   surfacePoseStickers,
 } from "../web_src/pano_stickers_node_surface.js";
+import { nodePortHandoff } from "../web_src/pano_port_handoff.js";
 import { readFileSync } from "node:fs";
 import { editorActive, editorStateText, parseSceneEditorState, setEditorActive } from "../web_src/pano_editor_state.js";
 import { studioRunKey } from "../web_src/pano_studio_status.js";
