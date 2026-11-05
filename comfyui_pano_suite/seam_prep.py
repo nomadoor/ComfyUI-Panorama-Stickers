@@ -18,7 +18,8 @@ class PanoramaSeamPrepNode(io.ComfyNode):
     - mask_blurred: [B, H, W]
 
     seam_center_offset_px shifts the seam target center from the image midpoint.
-    Positive values move the seam band right, negative values move it left.
+    Positive values move the seam band right, negative values move it left, as far as the band stays whole inside
+    the image.
     """
 
     @classmethod
@@ -101,15 +102,24 @@ class PanoramaSeamPrepNode(io.ComfyNode):
         seam_center_offset_px = int(seam_center_offset_px)
         mask_blur_px = max(0, int(mask_blur_px))
 
+        # The seam is on the left edge of output pixel `seam_x`; the band [seam_x - floor(sw/2), seam_x + ceil(sw/2))
+        # (an odd band's extra pixel on the right) stays whole inside the image, so the offset stops where it would not.
+        # A band as wide as the image covers all of it and does not move the seam (docs/seam-prep.md).
+        if seam_width_px >= width:
+            seam_center_offset_px = 0
+        else:
+            lowest = seam_width_px // 2 - (width + 1) // 2
+            highest = width // 2 - (seam_width_px + 1) // 2
+            seam_center_offset_px = max(lowest, min(seam_center_offset_px, highest))
+
         doubled = torch.cat((img, img), dim=2)
-        start_x = int(width // 2 - seam_center_offset_px)
-        start_x = max(0, min(start_x, width))
+        start_x = width // 2 - seam_center_offset_px
         prepared = doubled[:, :, start_x:start_x + width, :].contiguous().clamp(0.0, 1.0)
 
-        center_x = float(width) * 0.5 + float(seam_center_offset_px)
-        half_width = float(seam_width_px) * 0.5
-        x = torch.arange(width, dtype=img.dtype, device=img.device)
-        band = ((x >= (center_x - half_width)) & (x < (center_x + half_width))).to(dtype=img.dtype)
+        seam_x = width - start_x
+        x = torch.arange(width, device=img.device)
+        band = ((x >= seam_x - seam_width_px // 2) & (x < seam_x + (seam_width_px + 1) // 2)) | (seam_width_px >= width)
+        band = band.to(dtype=img.dtype)
         mask = band.view(1, 1, width).expand(batch, height, width).contiguous()
         mask_blurred = cls._blur_mask(mask, mask_blur_px)
 
