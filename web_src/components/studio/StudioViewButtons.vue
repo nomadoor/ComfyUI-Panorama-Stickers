@@ -43,7 +43,7 @@ const emit = defineEmits(["fov", "fov-reset", "frame-selected", "reset-view", "g
       :text="fovText"
       :disabled="fovDisabled"
       :lit="fovLit"
-      :tip="fovDisabled ? fovTip : 'Field of view · Drag to change'"
+      :tip="fovDisabled ? fovTip : 'Field of view (Alt+Wheel)'"
       @change="(value) => emit('fov', value)"
     />
     <StudioResetButton

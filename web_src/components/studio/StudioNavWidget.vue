@@ -28,13 +28,13 @@ const help = ref(null);
 defineExpose({ helpButton: () => help.value?.$el ?? null });
 
 const KNOBS = [
-  { key: "orbit", icon: ICON.sphere, label: "Orbit", tip: "Drag to orbit · Alt+left-drag in the view" },
-  { key: "pan", icon: ICON.hand, label: "Pan", tip: "Drag to pan · right-drag in the view" },
-  { key: "move", icon: ICON.arrows_vertical, label: "Move forward/back", tip: "Drag to move forward/back · Alt+right-drag" },
+  { key: "orbit", icon: ICON.sphere, label: "Orbit", tip: "Orbit (Alt+Drag)" },
+  { key: "pan", icon: ICON.hand, label: "Pan", tip: "Pan (Right-drag)" },
+  { key: "move", icon: ICON.arrows_vertical, label: "Move forward/back", tip: "Move forward/back (Alt+Right-drag)" },
 ];
 // Set orbit center's tooltips, idle and while it waits for a click (docs/space-and-view.md "Set orbit center").
 const CENTER_TIP = Object.freeze({
-  idle: "Set orbit center · or double-click a spot",
+  idle: "Set orbit center (Double-click)",
   picking: "Click a spot to orbit around · Esc to cancel",
 });
 </script>

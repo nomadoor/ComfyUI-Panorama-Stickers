@@ -66,7 +66,7 @@ test("Set orbit center: hover shows the mark, a press waits (lit, crosshair), a 
   const box = await stage.boundingBox();
   const mid = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
   const button = page.locator('[data-action="orbit-center"]');
-  await expect(button).toHaveAttribute("data-tip", "Set orbit center · or double-click a spot");
+  await expect(button).toHaveAttribute("data-tip", "Set orbit center (Double-click)");
   await button.hover();
   await expect.poll(async () => (await overlayAt(page)).alpha).toBeGreaterThan(150);
   await button.click();

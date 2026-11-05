@@ -92,6 +92,11 @@ test("a trailing (key) is the shortcut hint; other brackets stay text", () => {
   assert.deepEqual(splitTipKeys("Redo (Shift+Ctrl+Z)"), { text: "Redo", keys: "Shift+Ctrl+Z" });
   assert.deepEqual(splitTipKeys("Play (Space)"), { text: "Play", keys: "Space" });
   assert.deepEqual(splitTipKeys("Delete (Del)"), { text: "Delete", keys: "Del" });
+  // Mouse and trackpad gestures, as the shortcut list names them (input_names.js).
+  assert.deepEqual(splitTipKeys("Field of view (Alt+Wheel)"), { text: "Field of view", keys: "Alt+Wheel" });
+  assert.deepEqual(splitTipKeys("Orbit (Alt+Drag)"), { text: "Orbit", keys: "Alt+Drag" });
+  assert.deepEqual(splitTipKeys("Move forward/back (Alt+Right-drag)"), { text: "Move forward/back", keys: "Alt+Right-drag" });
+  assert.deepEqual(splitTipKeys("Set orbit center (Double-click)"), { text: "Set orbit center", keys: "Double-click" });
   assert.deepEqual(splitTipKeys("Keyframe all values here (not the lens)"), { text: "Keyframe all values here (not the lens)", keys: "" });
   assert.deepEqual(splitTipKeys("Loop: on"), { text: "Loop: on", keys: "" });
   assert.deepEqual(splitTipKeys("Paint · in development"), { text: "Paint · in development", keys: "" });

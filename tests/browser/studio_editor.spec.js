@@ -366,7 +366,7 @@ test("the FOV number drags and steps the view's FOV in a fixed width; its reset 
   const reset = page.locator('[data-action="fov-reset"]');
   const fov = async () => (await page.evaluate(() => window.__studio.pose())).hFOV_deg;
   await expect(number).toHaveText("100°");
-  await expect(number).toHaveAttribute("data-tip", "Field of view · Drag to change");
+  await expect(number).toHaveAttribute("data-tip", "Field of view (Alt+Wheel)");
   await expect(reset).toHaveAttribute("aria-disabled", "true");
   const places = async () => page.evaluate(() => {
     const box = (selector) => document.querySelector(selector).getBoundingClientRect().toJSON();

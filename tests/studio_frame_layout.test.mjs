@@ -192,7 +192,7 @@ test("the FOV ruler reads the shared FOV step and drag scale", async () => {
 // grayed, it gives the reason; Lens and Roll have a tooltip only when grayed.
 test("the FOV ruler's tooltip names Alt + wheel while it works", () => {
   const frame = rulersOf(cameraState({ projection: "perspective" }));
-  assert.equal(FOV_WHEEL_TIP, "Alt+wheel over the view also changes it");
+  assert.equal(FOV_WHEEL_TIP, "FOV (Alt+Wheel)");
   assert.equal(frame.fov.tip, FOV_WHEEL_TIP);
   assert.equal(frame.lens.tip, "");
   assert.equal(frame.roll.tip, "");

@@ -2,6 +2,8 @@
 // group prefers, and the shortcut hint cut from the end of the text. Pure; the layer that shows it is
 // components/studio/StudioTooltip.vue.
 
+import { GESTURE_NAMES } from "./input_names.js";
+
 // Hover this long before the bubble shows (ms).
 export const TIP_DELAY = 400;
 // Within this long after a bubble hid, the next control's shows at once (ms).
@@ -75,8 +77,9 @@ export function placeTip({ anchor, size, bounds, side = "top", gap = TIP_GAP, ed
   return { left: Math.round(left), top: Math.round(top), side: chosen };
 }
 
-// The key names a shortcut hint may hold (besides a single character).
+// The key and gesture names a shortcut hint may hold (besides a single character).
 const KEY_NAMES = new Set([
+  ...Object.values(GESTURE_NAMES),
   "Ctrl", "Shift", "Alt", "Cmd", "Meta", "Option", "Space", "Del", "Delete", "Esc", "Escape", "Enter", "Return", "Tab",
   "Backspace", "Home", "End", "PageUp", "PageDown", "Up", "Down", "Left", "Right",
   ...Array.from({ length: 12 }, (_, i) => `F${i + 1}`),
@@ -84,7 +87,7 @@ const KEY_NAMES = new Set([
 const isKey = (token) => token.length === 1 ? /\S/.test(token) : KEY_NAMES.has(token);
 
 // The text and the shortcut of a tip: "Move (1)" → { text: "Move", keys: "1" }. Only a trailing "(…)" whose every
-// "+"-joined part is one character or a key name is a shortcut; other text stays as it is with keys "".
+// "+"-joined part is one character, a key name or a gesture name is a shortcut; other text stays as it is with keys "".
 export function splitTipKeys(tip) {
   const text = String(tip ?? "").trim();
   const match = /^(.*\S)\s*\(([^()]+)\)$/.exec(text);

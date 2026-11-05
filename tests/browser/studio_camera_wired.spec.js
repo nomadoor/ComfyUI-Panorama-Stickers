@@ -561,7 +561,7 @@ test("Frame mode: Alt + wheel changes the Camera's FOV, not its position, as one
   const stage = await stageBox(page);
   const frame = await frameBox(page);
   const fovRuler = page.locator('[data-ruler="FOV"]');
-  await expect(fovRuler).toHaveAttribute("data-tip", "Alt+wheel over the view also changes it");
+  await expect(fovRuler).toHaveAttribute("data-tip", "FOV (Alt+Wheel)");
   const before = await camera(page);
   const x = stage.x + frame.x + frame.width / 2;
   const y = stage.y + frame.y + frame.height / 2;

@@ -131,7 +131,7 @@ export function rulerSnapStep(value, dir, snap, { min = -Infinity, max = Infinit
 // Camera card.
 export const ROLL_RULER_RANGE = Object.freeze({ min: -180, max: 180 });
 // The FOV ruler's tooltip while it works (docs/studio-ui.md "Camera タブ" 辺の目盛りの tooltip; ADR 0061).
-export const FOV_WHEEL_TIP = "Alt+wheel over the view also changes it";
+export const FOV_WHEEL_TIP = "FOV (Alt+Wheel)";
 
 export function cameraRulers(card) {
   if (card?.kind !== "camera") return null;
