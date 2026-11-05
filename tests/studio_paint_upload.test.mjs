@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { loadSceneState, sceneStateText } from "../web_src/pano_scene_state.js";
 import { needsPaintLayer, paintLayerRevision, textWithPaintLayer, uploadPaintLayer } from "../web_src/studio/paint_upload.js";
+import { createStudioPaint } from "../web_src/studio/paint.js";
 
 // The paint layer the new UI uploads when it closes (web_src/studio/paint_upload.js, docs/studio-ui.md "ペイントの道具"):
 // when, with which revision, and how it goes into state_json. The files themselves are pano_paint_upload.js's
@@ -82,4 +83,27 @@ test("the upload sends the canvases the editor draws, with the painting's revisi
   assert.deepEqual(result.paint, ref("pano_paint_4.png"));
   assert.deepEqual(result.mask, ref("pano_mask_4.png"));
   assert.deepEqual(result.groups, [{ id: "ag_a", actionGroupId: "ag_a", image: ref("pano_group_4_ag_a.png") }]);
+});
+
+test("closing keeps the canvases the paint layer is uploaded from until the upload is done, then lets them go", async () => {
+  const previousDocument = globalThis.document;
+  const context = new Proxy({}, { get: () => () => ({ addColorStop() {} }) });
+  globalThis.document = { createElement: () => ({ width: 0, height: 0, getContext: () => context }) };
+  try {
+    const scene = { painting: painting([stroke("a")]), painting_visible: true, stickers: [] };
+    const paint = createStudioPaint({ state: () => scene, tools: () => ({}), edit: () => ({}) });
+    const sources = paint.nodeLayer();
+    let uploaded;
+    const upload = new Promise((resolve) => (uploaded = resolve));
+    paint.dispose(upload);
+    await Promise.resolve();
+    assert.ok(sources.paintCanvas.width > 0, "the upload still reads the paint canvas");
+    assert.ok(sources.groupCanvas("ag_a").width > 0);
+    uploaded();
+    await upload;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.deepEqual([sources.paintCanvas.width, sources.maskCanvas.width], [0, 0]);
+  } finally {
+    globalThis.document = previousDocument;
+  }
 });

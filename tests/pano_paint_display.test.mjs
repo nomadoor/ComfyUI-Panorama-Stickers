@@ -286,6 +286,7 @@ test("engine: own makes its engine on the first group or (with mask) mask asked,
         },
         getGroupDisplayCanvas: (id) => (engine.groups.has(id) ? `canvas:${id}` : null),
         getMaskDisplay: () => ({ media: "mask", revision: "m" }),
+        dispose() {},
       };
       made.push(engine);
       return engine;

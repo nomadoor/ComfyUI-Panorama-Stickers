@@ -13,7 +13,8 @@ import { groundOf } from "./defaults.js";
 import { linkedInputNames, stageEmpty as emptyStage } from "./notice_line.js";
 import { stageUi } from "./stage.js";
 import { outputView } from "./stage_view.js";
-import { readLoopSetting } from "./timeline_actions.js";
+import { readLengthUnitSetting, readLoopSetting } from "./timeline_actions.js";
+import { spanOf } from "./timeline_model.js";
 import { BOUND_NOTICE_SECONDS } from "./view_scale.js";
 import { BACKGROUND_INPUTS, linked, widgetOf, VIDEO_FPS_INPUTS } from "./editor_inputs.js";
 
@@ -27,6 +28,8 @@ export function createEditorView(ctx) {
     playhead: 0,
     playing: false,
     loop: readLoopSetting(ctx.storage),
+    // The unit the Timeline's Length field shows, "frames" or "seconds": kept per browser, not in the state.
+    lengthUnit: readLengthUnitSetting(ctx.storage),
     canUndo: false,
     canRedo: false,
     readOnly: ctx.readOnly,
@@ -83,6 +86,18 @@ export function createEditorView(ctx) {
     view.animations = animations.stickers ?? {};
     // [add-drop] A placed image's size is its decoded file's until its uploaded file has loaded.
     view.imageSizes = { ...ctx.addFiles.sizes(state), ...ctx.stageMedia.imageSizes(state) };
+    keepPlayheadInSpan();
+  }
+
+  // The playhead never goes past the last frame: a span that got shorter (the length field, Undo, an Auto length after a
+  // delete or a new run result) brings it back to the last frame (docs/timeline-ui.md "タイムラインの長さ"). Every
+  // change of what the span reads (the state, the inputs' lengths, the upstream layers) comes through syncMedia. While
+  // it plays, the playback keeps its frame inside the span itself (pano_video_playback.js). While a gesture is under way
+  // (a Timeline drag keeps the range it started with) it waits: the sync that commits or cancels the gesture brings it in.
+  function keepPlayheadInSpan() {
+    if (view.playing || ctx.session.gesturing) return;
+    const last = spanOf(timelineCtx()) - 1;
+    if (view.playhead > last) ctx.playback?.seek(last);
   }
 
   // The stage's world: the ground height (an upstream layer's while the state has none) and the Camera's position at

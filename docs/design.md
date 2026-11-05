@@ -377,7 +377,7 @@ Tailwind の utility（`.hidden { display: none }` など）を持つので、Vu
 
 ## アイコン
 
-- Tabler の outline のアイコンを `web_src/icons.js` が持つ（`ICON` の名前 68 個と、Tabler の名前と SVG の中身を持つ `ICON_PATHS`）。
+- Tabler の outline のアイコンを `web_src/icons.js` が持つ（`ICON` の名前 69 個と、Tabler の名前と SVG の中身を持つ `ICON_PATHS`）。
   `SvgIcon.vue` が `viewBox="0 0 24 24"`、`fill="none"`、`stroke="currentColor"`、`stroke-linecap` と `stroke-linejoin` は `round`、
   class `icon icon-tabler icons-tabler-outline` で描く。
 - 線の太さ：`.pano-modal` の中の Tabler のアイコンと、`.pano-btn-icon`・`.pano-btn-texticon` の中の SVG は `var(--pano-icon-stroke, 2.3)`
@@ -510,6 +510,7 @@ stylesheet の読み込みは上の「この文書が owner である規則」�
 | インスペクタの行の格子 | 名前 62px ／ 1・2・3 は等分 ／ Keyframe のポチ 16px ／ リセット 22px、列の間 4px |
 | 値の箱の中の間 | 軸の文字と値の間 6px（持ち主、2026-10-31：2px では近すぎる）、値と単位の間 2px |
 | 行の間 | 8px |
+| タイムラインの fps と Length の値の幅 | Length は 5 桁（`5ch`）、fps は 4 桁（`4ch`）。等幅の数字で左に寄せる。単位の印（Length の `f`・`s`）はこの幅の外 |
 | インスペクタのカードの見出し | 高さ 24px、一行。左からアイコン・名前（13px / 600）・種類の札（`Sky`・`World`・`Camera` など、11px / 500、二次の文字）を右寄せ。名前は残りの幅に縮み、入らない分は末尾を `…` で切る（折り返さない）。名前と札の間は 8px 以上空け、重ねない。切った名前の全文は名前の `data-tip`（ツールチップ）に出す。見出しとその下の行・札の間は 12px |
 | 値の箱の高さ | 26px（ふだん地なし、hover で値の箱の地） |
 | Keyframe のポチ | 6px の菱形、線 1.25px（無し：二次の灰の線、キーあり：氷の線、今のフレーム：氷の塗り） |

@@ -90,6 +90,24 @@ test("the wheel moves, Alt or Ctrl + wheel zooms, Meta + wheel is the browser's"
   assert.equal(wheelMeaning(wheel({ metaKey: true, altKey: true })), null);
 });
 
+// Shift is not looked at (docs/space-and-view.md "寄る"): a browser that turns Shift + wheel into a sideways scroll
+// (Chromium on Windows) sends deltaY 0 with the amount in deltaX, which counts as the wheel's.
+test("Shift + wheel that came sideways (deltaY 0, the amount in deltaX) steps as the wheel does", () => {
+  assert.equal(readWheelDirection({ deltaY: 0, deltaX: 120, shiftKey: true }), 1);
+  assert.equal(readWheelDirection({ deltaY: 0, deltaX: -4, shiftKey: true }), -1);
+  // Without Shift a sideways scroll is not the wheel's.
+  assert.equal(readWheelDirection({ deltaY: 0, deltaX: 120 }), 0);
+  // With deltaY there, deltaY is the amount.
+  assert.equal(readWheelDirection({ deltaY: -3, deltaX: 120, shiftKey: true }), -1);
+
+  const wheel = createWheelSteps();
+  assert.equal(wheel.push({ deltaY: 0, deltaX: -100, deltaMode: 0, shiftKey: true, altKey: true }), 1);
+  assert.equal(wheel.push({ deltaY: 0, deltaX: 3, deltaMode: 1, shiftKey: true, altKey: true }), -1);
+  assert.equal(wheel.push({ deltaY: 0, deltaX: -60, deltaMode: 0, shiftKey: true }), 0);
+  assert.equal(wheel.push({ deltaY: 0, deltaX: -40, deltaMode: 0, shiftKey: true }), 1);
+  assert.equal(wheel.push({ deltaY: 0, deltaX: -100, deltaMode: 0 }), 0);
+});
+
 test("a change of the wheel's meaning drops what was added up", () => {
   const wheel = createWheelSteps();
   wheel.push({ deltaY: -90, deltaMode: 0 });

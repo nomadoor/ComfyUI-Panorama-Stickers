@@ -79,6 +79,24 @@ test("the background VIDEO sets the fps, and the frame on the stage follows the 
   expect(await page.evaluate(() => window.__studio.state().timeline.fps)).toBe(fps);
   await expect(page.locator('[data-tl="fps"]')).toHaveAttribute("aria-disabled", "true");
   await expect(page.locator('[data-tl="fps"]')).toHaveAttribute("aria-valuenow", String(fps));
+  // A locked field's name does not drag it either and shows the locked field's cursor (docs/studio-ui.md "欄").
+  const fpsName = page.locator(".pano-studio-tl-field-name", { hasText: "fps" });
+  const lockedCursor = await page.locator('[data-tl="fps"]').evaluate((el) => getComputedStyle(el).cursor);
+  expect(await fpsName.evaluate((el) => getComputedStyle(el).cursor)).toBe(lockedCursor);
+  const nameBox = await fpsName.boundingBox();
+  await page.mouse.move(nameBox.x + nameBox.width / 2, nameBox.y + nameBox.height / 2);
+  await page.mouse.down();
+  for (let i = 1; i <= 10; i += 1) await page.mouse.move(nameBox.x + nameBox.width / 2 + i * 5, nameBox.y + nameBox.height / 2);
+  await page.mouse.up();
+  await page.mouse.click(nameBox.x + nameBox.width / 2, nameBox.y + nameBox.height / 2);
+  await expect(page.locator('[data-tl="fps"] input')).toHaveCount(0);
+  await expect(page.locator('[data-tl="fps"]')).not.toHaveClass(/is-dragging/);
+  expect(await page.evaluate(() => window.__studio.state().timeline.fps)).toBe(fps);
+  // ...and gets no hover fill, as a locked inspector field (the filled area is the area that drags).
+  await page.mouse.move(nameBox.x + nameBox.width / 2, nameBox.y + nameBox.height / 2);
+  await page.waitForTimeout(400); // past the hover transition (--studio-motion-hover)
+  const fill = await fpsName.evaluate((el) => getComputedStyle(el.closest(".pano-studio-tl-field")).backgroundColor);
+  expect(fill).toBe("rgba(0, 0, 0, 0)");
   expect((await playhead(page)).span).toBe(frames);
 
   // A seek shows the playhead's frame, later and earlier.

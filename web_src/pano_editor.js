@@ -15,6 +15,7 @@ import { DRAW_REASON, createFrameScheduler } from "./pano_frame_scheduler.js";
 import { createPaintEngineManager } from "./pano_paint_engine.js";
 import {
   createEditorHistory,
+  LEGACY_BACKGROUND_COLOR,
   normalizeCoverageValue,
   parsePanoEditorState,
 } from "./pano_editor_state.js";
@@ -153,7 +154,7 @@ async function showEditor(node, type, options = {}) {
   const shotEditor = type === "cutout";
   const state = parsePanoEditorState(String(stateWidget?.value || ""), {
     outputPreset: resolveEditorOutputPresetWidth(2048),
-    backgroundColor: String(bgWidget?.value || "#00ff00"),
+    backgroundColor: String(bgWidget?.value || LEGACY_BACKGROUND_COLOR),
     coverage: normalizeCoverageValue(coverageWidget?.value),
     sharedUiSettings: loadSharedUiSettings(),
   });
@@ -710,7 +711,10 @@ async function showEditor(node, type, options = {}) {
       }
       vueApp.unmount();
       mountHost.remove();
-      triggerBackgroundPersistenceOnClose();
+      // The paint engine lets go of its canvases once the paint layer upload, which reads them, is done.
+      const uploading = triggerBackgroundPersistenceOnClose();
+      const engine = editor.paintEngine;
+      Promise.resolve(uploading).finally(() => engine?.dispose());
       closeEditorPromise = null;
       return true;
     })().catch((error) => {

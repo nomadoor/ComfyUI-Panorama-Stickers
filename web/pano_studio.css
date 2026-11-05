@@ -987,7 +987,16 @@
   opacity: 0.4;
 }
 
+/* The bezier text and its copy button right of it (docs/studio-ui.md "Easing のパネル"). */
+.pano-studio-easing-text-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .pano-studio-easing-text {
+  flex: 1;
+  min-width: 0;
   width: 100%;
   height: var(--studio-field-h);
   padding: 0 8px;
@@ -1090,7 +1099,8 @@
   flex: 1;
 }
 
-/* fps and Length: the name and the number together, filled while hovered (timeline-2.html ".fld"). */
+/* fps and Length: the name and the number together, filled while hovered (timeline-2.html ".fld"), and dragged from
+   anywhere in that fill with the field's cursor (docs/studio-ui.md "欄"). */
 .pano-studio-tl-field {
   display: inline-flex;
   align-items: center;
@@ -1098,9 +1108,16 @@
   padding: 0 0 0 8px;
   border-radius: var(--studio-r-field);
   font-size: var(--studio-text-sm);
+  cursor: ew-resize;
+  touch-action: none;
+  user-select: none;
 }
 
-.pano-studio-tl-field:hover {
+.pano-studio-tl-field.is-disabled {
+  cursor: default;
+}
+
+.pano-studio-tl-field:not(.is-disabled):hover {
   background: var(--studio-fill);
 }
 
@@ -1118,12 +1135,63 @@
   font-size: var(--studio-text-sm);
 }
 
+/* The value's width is taken first, so more digits move nothing (docs/design.md "タイムラインの fps と Length の値の
+   幅"): Length 5 digits, fps 4, both shown and typed; a longer value grows the field. The digits are tabular
+   (.pano-studio-num) and sit at the left. */
+.pano-studio-tl-field .pano-studio-field-value,
 .pano-studio-tl-field .pano-studio-field-input {
-  width: 4ch;
+  flex: none;
+  min-width: var(--studio-tl-field-ch);
+}
+
+.pano-studio-tl-field .pano-studio-field-input {
+  field-sizing: content;
+}
+
+/* Without field-sizing (Chromium < 123, Firefox) an input takes its own ~20 characters: hold it to the reserved width
+   instead, so opening the box moves nothing (a longer typed value scrolls inside it). */
+@supports not (field-sizing: content) {
+  .pano-studio-tl-field .pano-studio-field-input {
+    width: var(--studio-tl-field-ch);
+  }
+}
+
+.pano-studio-tl-field.is-fps {
+  --studio-tl-field-ch: 4ch;
+}
+
+.pano-studio-tl-field.is-length {
+  --studio-tl-field-ch: 5ch;
+}
+
+/* Length's unit mark (f / s), a button that switches the unit the value shows (docs/timeline-ui.md "タイムラインの長さ"):
+   outside the value's width, 2px after it as a value box's unit (docs/design.md "値の箱の中の間"); its padding takes
+   the field's right padding. It works while the field is disabled (read-only). */
+.pano-studio-tl-field.is-length .pano-studio-field {
+  padding-right: 0;
+}
+
+.pano-studio-tl-unit {
+  align-self: stretch;
+  box-sizing: content-box;
+  width: 1ch; /* f and s take one width: switching moves nothing */
+  padding: 0 8px 0 2px;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  color: var(--studio-fg-2);
+  font-size: var(--studio-text-sm);
+  cursor: pointer;
+}
+
+.pano-studio-tl-unit:hover {
+  color: var(--studio-fg);
 }
 
 .pano-studio-tl-body {
   position: relative;
+  display: flex;
+  flex-direction: column;
   flex: 1;
   min-height: 0;
   overflow-x: hidden;
@@ -1166,6 +1234,7 @@
   position: sticky;
   top: 0;
   z-index: 3;
+  flex: none;
   height: var(--studio-tl-ruler);
   background: var(--studio-panel);
 }
@@ -1341,6 +1410,19 @@
 
 .pano-studio-tl-lines {
   position: relative;
+  flex: none;
+}
+
+/* The empty area below the rows fills the rest of the body; its track column starts a box like an empty spot of a
+   track (docs/timeline-ui.md "Keyframe の選び方"). It draws nothing. */
+.pano-studio-tl-fill {
+  display: grid;
+  flex: 1 0 0;
+  grid-template-columns: var(--studio-tl-head) minmax(0, 1fr);
+}
+
+.pano-studio-tl-fill-track {
+  touch-action: none;
 }
 
 .pano-studio-tl-track {

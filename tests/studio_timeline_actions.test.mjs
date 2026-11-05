@@ -10,17 +10,23 @@ import {
   enteredFps,
   jumpTarget,
   keyRow,
+  LENGTH_UNIT_SETTING_KEY,
   lengthEdit,
+  lengthFromSeconds,
+  lengthSecondsText,
   LOOP_SETTING_KEY,
   moveKeys,
+  readLengthUnitSetting,
   readLoopSetting,
   selectKeys,
   selectRow,
   startClipDrag,
   toggleVisible,
+  writeLengthUnitSetting,
   writeLoopSetting,
 } from "../web_src/studio/timeline_actions.js";
 import { ctxOf, EASE, studioState, upstreamLayer } from "./studio_timeline_fixtures.mjs";
+import { TIMELINE_LENGTH_MAX } from "../web_src/pano_scene_state.js";
 
 const none = { row: null, keys: [] };
 const frames = (lane) => lane.keyframes.map((key) => key.frame);
@@ -268,6 +274,49 @@ test("the loop setting is on by default and remembered in the browser's storage"
   assert.equal(readLoopSetting(broken), true);
   assert.doesNotThrow(() => writeLoopSetting(broken, false));
   assert.equal(readLoopSetting(null), true);
+});
+
+// docs/timeline-ui.md "タイムラインの長さ": the Length field in seconds shows length ÷ fps to two decimals, and seconds
+// typed or dragged go into timeline.length as the nearest frame, at least 1.
+test("the Length field's seconds: length ÷ fps to two decimals, and seconds to the nearest frame of at least 1", () => {
+  assert.equal(lengthSecondsText(96, 24), "4.00");
+  assert.equal(lengthSecondsText(100, 24), "4.17");
+  assert.equal(lengthSecondsText(1, 30), "0.03");
+  assert.equal(lengthSecondsText(10000, 1), "10000.00");
+  assert.equal(lengthFromSeconds(4, 24), 96);
+  assert.equal(lengthFromSeconds(4.17, 24), 100);
+  assert.equal(lengthFromSeconds(2.5, 23.976), 60);
+  assert.equal(lengthFromSeconds(0.01, 24), 1);
+  assert.equal(lengthFromSeconds(0, 24), 1);
+  assert.equal(lengthFromSeconds(-3, 24), 1);
+  assert.equal(lengthFromSeconds(Number.NaN, 24), null);
+  // Huge seconds behave as huge frames: the longest length the state holds.
+  assert.equal(lengthFromSeconds(1e308, 24), TIMELINE_LENGTH_MAX);
+  assert.equal(lengthFromSeconds(Infinity, 24), TIMELINE_LENGTH_MAX);
+  assert.equal(lengthFromSeconds(-Infinity, 24), 1);
+  assert.equal(lengthFromSeconds("abc", 24), null);
+  // A shown value typed back is the same length.
+  for (const [length, fps] of [[48, 24], [100, 24], [7, 30], [1001, 29.97]]) {
+    assert.equal(lengthFromSeconds(Number(lengthSecondsText(length, fps)), fps), length);
+  }
+});
+
+// The unit the Length field shows: frames by default, an editor setting kept per browser like the loop switch.
+test("the Length unit is frames by default and remembered in the browser's storage", () => {
+  const store = new Map();
+  const storage = { getItem: (key) => store.get(key) ?? null, setItem: (key, value) => store.set(key, String(value)) };
+  assert.equal(readLengthUnitSetting(storage), "frames");
+  writeLengthUnitSetting(storage, "seconds");
+  assert.equal(store.get(LENGTH_UNIT_SETTING_KEY), "seconds");
+  assert.equal(readLengthUnitSetting(storage), "seconds");
+  writeLengthUnitSetting(storage, "frames");
+  assert.equal(readLengthUnitSetting(storage), "frames");
+  store.set(LENGTH_UNIT_SETTING_KEY, "minutes");
+  assert.equal(readLengthUnitSetting(storage), "frames");
+  const broken = { getItem: () => { throw new Error("blocked"); }, setItem: () => { throw new Error("blocked"); } };
+  assert.equal(readLengthUnitSetting(broken), "frames");
+  assert.doesNotThrow(() => writeLengthUnitSetting(broken, "seconds"));
+  assert.equal(readLengthUnitSetting(null), "frames");
 });
 
 test("an edit keeps the Easing a moved Keyframe had", () => {

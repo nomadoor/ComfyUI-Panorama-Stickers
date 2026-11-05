@@ -24,9 +24,13 @@ function normalizeUiSettings(raw) {
   };
 }
 
+// The legacy nodes' background colour when the node has none (the legacy Cutout has no bg_color widget) or it is empty:
+// the old editor, a new Cutout frame and the legacy node surfaces use it (as comfyui_pano_suite/core/state.py _normalize_hex_color draws).
+export const LEGACY_BACKGROUND_COLOR = "#00ff00";
+
 function makeDefaultState({
   outputPreset = 2048,
-  backgroundColor = "#00ff00",
+  backgroundColor = LEGACY_BACKGROUND_COLOR,
   coverage = 360,
   sharedUiSettings = null,
 } = {}) {
@@ -95,7 +99,7 @@ export function retainActiveCutoutShot(shots, selectedShotId) {
 export function parsePanoEditorState(text, options = {}) {
   const resolvedOptions = {
     outputPreset: 2048,
-    backgroundColor: "#00ff00",
+    backgroundColor: LEGACY_BACKGROUND_COLOR,
     coverage: 360,
     sharedUiSettings: null,
     ...options,

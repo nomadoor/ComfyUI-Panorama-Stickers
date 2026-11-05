@@ -8,6 +8,7 @@
 // The shell applies an edit (applyEdit), records it as one Undo step and stops playback where the spec says so.
 import { paintObjectRow } from "../pano_paint_objects.js";
 import { clipActive, FRAME_EPSILON } from "../pano_scene_eval.js";
+import { TIMELINE_LENGTH_MAX } from "../pano_scene_state.js";
 import {
   PAINTING_ROW,
   deleteKeyframes,
@@ -347,4 +348,36 @@ export function writeLoopSetting(storage, on) {
   } catch {
     // Blocked storage: the switch still works for this session.
   }
+}
+
+// Which unit the Length field shows, "frames" (the default) or "seconds": an editor setting kept per browser, not in the
+// state, as the loop switch.
+export const LENGTH_UNIT_SETTING_KEY = "PanoramaSuite.Studio.TimelineLengthUnit";
+
+export function readLengthUnitSetting(storage) {
+  try {
+    return storage?.getItem(LENGTH_UNIT_SETTING_KEY) === "seconds" ? "seconds" : "frames";
+  } catch {
+    return "frames";
+  }
+}
+
+export function writeLengthUnitSetting(storage, unit) {
+  try {
+    storage?.setItem(LENGTH_UNIT_SETTING_KEY, unit === "seconds" ? "seconds" : "frames");
+  } catch {
+    // Blocked storage: the unit still switches for this session.
+  }
+}
+
+// The Length field in seconds (docs/timeline-ui.md "タイムラインの長さ"): the length ÷ the Timeline fps to two decimals,
+// and seconds typed or dragged as the nearest frame, at least 1 and at most TIMELINE_LENGTH_MAX (so huge seconds behave as
+// huge frames; null for what is not a number). The state holds frames.
+export function lengthSecondsText(length, fps) {
+  return (length / fps).toFixed(2);
+}
+
+export function lengthFromSeconds(seconds, fps) {
+  const frames = Math.min(TIMELINE_LENGTH_MAX, Number(seconds) * fps);
+  return Number.isNaN(frames) ? null : Math.max(1, Math.round(frames));
 }

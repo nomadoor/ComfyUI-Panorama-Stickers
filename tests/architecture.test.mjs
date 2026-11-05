@@ -180,7 +180,7 @@ const DOM_ALLOWED = [
   "studio/preview_window.js: document.createElement(\"div\")",
   "studio/preview_window.js: document.body.appendChild(mountHost)",
   // The background VIDEO stays in the page, hidden, so it keeps presenting frames (docs/timeline-ui.md).
-  "studio/editor.js: mountHost.appendChild(backgroundVideoElement)",
+  "studio/editor.js: mountHost.appendChild(ctx.backgroundVideoElement)",
   "studio/preview_window.js: mountHost.appendChild(videoElement)",
 ];
 const DOM_BUILD = /[\w$.]*\.(?:createElement|createElementNS|appendChild|append|prepend|insertBefore|insertAdjacentElement|replaceChildren|replaceWith)\([^)]*\)/g;

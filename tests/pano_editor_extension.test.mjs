@@ -127,8 +127,41 @@ test("Panorama Studio opens the Stickers editor and node surface on state v2 wit
   assert.deepEqual([node.__panoSceneStateV2, node.__panoStudio], [true, true]);
   assert.deepEqual([legacy.__panoSceneStateV2, legacy.__panoStudio], [false, false]);
   assert.equal(node.widgets.find((widget) => widget.name === "state_json").hidden, true);
-  // A black bg_color is the user's choice on Panorama Studio; only the legacy node replaces it.
+  // A black bg_color is the user's choice; no node replaces it.
   assert.equal(node.widgets.find((widget) => widget.name === "bg_color").value, "#000000");
+});
+
+test("the legacy Stickers bg_color is filled with #00ff00 only when empty; a chosen #000000 stays", () => {
+  const extension = createPanoEditorExtension({
+    app: { canvas: { setDirty() {} } },
+    openEditor() {},
+    attachStickers() {},
+    attachCutout() {},
+    attachPreview() {},
+    requestFrame(callback) { callback(); },
+    enableStickersPreview: false,
+  });
+  function LegacyNodeType() {}
+  extension.beforeRegisterNodeDef(LegacyNodeType, { name: "PanoramaStickers" });
+  const backgroundOf = (node) => node.widgets.find((widget) => widget.name === "bg_color");
+  const black = makeNode();
+  backgroundOf(black).value = "#000000";
+  const empty = makeNode();
+  const filled = [];
+  backgroundOf(empty).value = "";
+  backgroundOf(empty).callback = (value) => filled.push(value);
+  const missing = makeNode();
+  backgroundOf(missing).value = null;
+
+  LegacyNodeType.prototype.onNodeCreated.call(black);
+  LegacyNodeType.prototype.onConfigure.call(black);
+  LegacyNodeType.prototype.onNodeCreated.call(empty);
+  LegacyNodeType.prototype.onNodeCreated.call(missing);
+
+  assert.equal(backgroundOf(black).value, "#000000");
+  assert.equal(backgroundOf(empty).value, "#00ff00");
+  assert.deepEqual(filled, ["#00ff00"]);
+  assert.equal(backgroundOf(missing).value, "#00ff00");
 });
 
 test("the removed state v2 Stickers and Cutout node ids get no editor", () => {

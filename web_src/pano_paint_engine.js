@@ -34,7 +34,7 @@
 //   between them (pano_paint_sphere.js strokeErpPath) before the midpoint / Catmull-Rom walk, live and on a rebuild
 //   alike, and each stamp is drawn wider across by 1 / cos(latitude) up to the whole width (stampHalfWidthPx).
 
-import { createPanoCanvas } from "./pano_diagnostics.js";
+import { createPanoCanvas, releasePanoCanvas } from "./pano_diagnostics.js";
 import { addRect, createDamageLog, intersectRects, joinRects, shapeRect } from "./pano_paint_damage.js";
 import { stampHalfWidthPx, strokeErpPath } from "./pano_paint_sphere.js";
 
@@ -1616,19 +1616,34 @@ export function createPaintEngineManager(options = {}) {
     return displayLayer(record.surface.canvas, record.damage);
   }
 
+  // Lets go of every canvas the engine made (their pixels go: width and height 0). The engine is done: later calls
+  // draw and make nothing and answer null. The temporary canvases the engines share (the module's) stay.
+  let disposed = false;
+  function dispose() {
+    if (disposed) return;
+    disposed = true;
+    const surfaces = [sharedCurrentStroke, maskTarget.committedMask, paintScratchTarget.committedPaint, globalDisplay, maskDisplay?.surface];
+    for (const group of groupTargets.values()) surfaces.push(group.committedPaint, group.preview?.surface);
+    for (const surface of surfaces) if (surface?.canvas) releasePanoCanvas(surface.canvas);
+    groupTargets.clear();
+    maskDisplay = null;
+  }
+  const live = (method) => (...args) => (disposed ? null : method(...args));
+
   return {
     descriptor: ERP_DESC,
-    rebuildCommitted,
-    beginStroke,
-    appendStrokePoint: appendPoint,
-    updateActiveStroke,
-    commitActiveStroke,
-    cancelActiveStroke,
-    getErpTarget,
-    ensureTarget,
-    getGroupTarget,
-    getGroupDisplay,
-    getGroupDisplayCanvas,
-    getMaskDisplay,
+    rebuildCommitted: live(rebuildCommitted),
+    beginStroke: live(beginStroke),
+    appendStrokePoint: live(appendPoint),
+    updateActiveStroke: live(updateActiveStroke),
+    commitActiveStroke: live(commitActiveStroke),
+    cancelActiveStroke: live(cancelActiveStroke),
+    getErpTarget: live(getErpTarget),
+    ensureTarget: live(ensureTarget),
+    getGroupTarget: live(getGroupTarget),
+    getGroupDisplay: live(getGroupDisplay),
+    getGroupDisplayCanvas: live(getGroupDisplayCanvas),
+    getMaskDisplay: live(getMaskDisplay),
+    dispose,
   };
 }

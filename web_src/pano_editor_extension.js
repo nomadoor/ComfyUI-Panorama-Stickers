@@ -1,4 +1,4 @@
-import { normalizeCoverageValue, parsePanoEditorState } from "./pano_editor_state.js";
+import { LEGACY_BACKGROUND_COLOR, normalizeCoverageValue, parsePanoEditorState } from "./pano_editor_state.js";
 import { applyCutoutNodeSurfaceAction } from "./pano_cutout_node_surface.js";
 import { isPanoramaPreviewNodeName, isPanoramaPreviewSceneNodeName } from "./pano_preview_identity.js";
 import { linkedInputType } from "./pano_preview_video.js";
@@ -225,9 +225,10 @@ function installEditorButton(nodeType, {
       node.__panoSceneStateV2 = sceneStateV2;
       node.__panoStudio = studio;
       const background = getWidget(node, "bg_color");
-      if (!sceneStateV2 && background && (background.value == null || String(background.value).trim() === "" || String(background.value).toLowerCase() === "#000000")) {
-        background.value = "#00ff00";
-        background.callback?.("#00ff00");
+      // An empty bg_color gets the default (docs/legacy-node-surfaces.md); a colour the user chose, black included, stays.
+      if (!sceneStateV2 && background && (background.value == null || String(background.value).trim() === "")) {
+        background.value = LEGACY_BACKGROUND_COLOR;
+        background.callback?.(LEGACY_BACKGROUND_COLOR);
       }
       ensureActionButtonWidget(node, buttonText, () => openEditor(node, "stickers"));
       if (enableStickersPreview) {

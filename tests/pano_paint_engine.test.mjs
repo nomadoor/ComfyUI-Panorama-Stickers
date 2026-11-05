@@ -192,3 +192,40 @@ test("a stroke whose neighbours get great-circle points paints the same pixels l
     assert.deepEqual(a, b);
   });
 });
+
+test("dispose lets go of every canvas the engine made, and later calls draw nothing", () => {
+  const previousDocument = globalThis.document;
+  const made = [];
+  globalThis.document = { createElement: () => { const canvas = fakeCanvas(); made.push(canvas); return canvas; } };
+  const paint = (actionGroupId, u) => ({ ...maskStroke(), layerKind: "paint", actionGroupId, geometry: { geometryKind: "freehand", rawPoints: [{ u, v: 0.5 }] } });
+  // Draws two groups, the mask, the composed display and a group with a live stroke (its preview canvas).
+  const use = (engine) => {
+    engine.rebuildCommitted({ painting: { paint: { strokes: [paint("g1", 0.2), paint("g2", 0.7)] }, mask: { strokes: [maskStroke()] } } });
+    engine.getErpTarget(["g1", "g2"]);
+    engine.getMaskDisplay();
+    const live = paint("g1", 0.3);
+    engine.beginStroke(live);
+    engine.appendStrokePoint(engine.ensureTarget(), 0.3, 0.5, live);
+    engine.getGroupDisplay("g1");
+  };
+  try {
+    // The temporary canvases every engine shares (the module's) are made by a first engine; they are not one engine's.
+    use(createPaintEngineManager({ width: 64, height: 32 }));
+    const shared = made.length;
+    const engine = createPaintEngineManager({ width: 64, height: 32 });
+    use(engine);
+    const madeByEngine = made.slice(shared);
+    assert.equal(madeByEngine.length, 8, "the shared stroke, mask, scratch, display, two groups, a preview and the mask display");
+
+    engine.dispose();
+    assert.deepEqual(madeByEngine.map((canvas) => [canvas.width, canvas.height]), madeByEngine.map(() => [0, 0]));
+    const count = made.length;
+    assert.equal(engine.getGroupDisplay("g1"), null);
+    assert.equal(engine.getMaskDisplay(), null);
+    engine.rebuildCommitted({ painting: { paint: { strokes: [paint("g3", 0.5)] } } });
+    engine.dispose();
+    assert.equal(made.length, count, "nothing is made after dispose");
+  } finally {
+    globalThis.document = previousDocument;
+  }
+});

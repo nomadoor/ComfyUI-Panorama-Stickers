@@ -38,6 +38,7 @@ async function boxUrl() {
   return URL.createObjectURL(new Blob([glb], { type: "model/gltf-binary" }));
 }
 
+const AUTO = new URLSearchParams(location.search).has("auto");
 const studio = (window.__studio = { ready: false, error: null, writes: 0, routeAsks: 0 });
 const storage = new Map();
 const memoryStorage = { getItem: (key) => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, String(value)) };
@@ -51,7 +52,9 @@ try {
   }).toDataURL("image/png");
   const state = {
     version: 2,
-    timeline: { fps: 24, length: 48 },
+    // ?auto: no length; the background image's Clip range (48 frames) sets the Auto length.
+    timeline: AUTO ? { fps: 24 } : { fps: 24, length: 48 },
+    ...(AUTO ? { background: { clip: { start: 0, in: 0, duration: 48 } } } : {}),
     stickers: [
       { id: "sticker_1", placement: "sky", source: { kind: "file", data_url: red }, direction: { value: { yaw_deg: 0, pitch_deg: 0 } }, size: { value: { hFOV_deg: 40, vFOV_deg: 20 } }, z_index: 1 },
       { id: "sticker_2", placement: "world", source: { kind: "file", filename: "box.glb", subfolder: "", storage: "input" }, position: { value: [2.5, -1, -4] }, scale: { value: 1 } },
@@ -85,6 +88,8 @@ try {
     editor = await openStudioEditor(node, { app, api, storage: memoryStorage });
   };
   studio.close = () => editor?.close();
+  // The browser's storage the editor keeps its settings in (the loop switch, the Length unit).
+  studio.stored = (key) => storage.get(key) ?? null;
   studio.text = () => widget.value;
   studio.state = () => JSON.parse(JSON.stringify(editor.session.state));
   studio.selection = () => JSON.parse(JSON.stringify(editor.session.selection));

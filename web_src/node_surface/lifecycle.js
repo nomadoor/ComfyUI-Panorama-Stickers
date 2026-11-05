@@ -486,7 +486,6 @@ function restoreDom(ctx) {
   surface.paintDisplay?.dispose?.();
   surface.paintDisplay = null;
   surface.paintInput = null;
-  surface.paintState = null;
   unregisterExternalStickerSync();
   viewportRestoreScheduler.dispose();
   if (ctx.dropCueTimer) clearTimeout(ctx.dropCueTimer);

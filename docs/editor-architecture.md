@@ -272,10 +272,8 @@ Undo の段を積まず、`state_json` にも書かない。
 大きさの変更と新しいグループは全体になる。キャンバスだけを使う呼び出し側（ノード上の面、上流の Scene の層、
 ノードへ送る塗りの層）は `getGroupDisplayCanvas`（`getGroupDisplay` の `media`）を使い、`revision` は自分で持つ。
 
-`skyPaintLayers` は正規化した状態（`normalizePaintingState` の `painting`）を受け取る。ノード上の面のうち旧
-Stickers / Cutout ノード（状態 v2 でないもの）は widget の JSON をそのまま読む（`parseState`）ので、`painting` が
-無いか欠けていることがある。`surfacePaintLayers` は `painting` を正規化してから渡し、同じ `painting` の間は
-正規化の結果を面のレコード（`nodeSurface(node).paintState`）に持つ。面のエンジン（面のレコードの `paintDisplay` が持つ）は `painting` が変わるたびに
+`skyPaintLayers` は正規化した状態（`normalizePaintingState` の `painting`）を受け取る。ノード上の面は、旧 Stickers / Cutout ノードの `state_json` も、エディタと同じ `parsePanoEditorState`（`pano_editor_state.js`）で読む（`node_surface/state.js`）。そのため、形の崩れた Cutout の shot や Sticker の `visible`・`locked` も、エディタと同じ形に整えて描く。ノード上で編集すると、その整えた状態を `state_json` に書く（旧エディタで保存したときと同じ）。
+面のエンジン（面のレコードの `paintDisplay` が持つ）は `painting` が変わるたびに
 描き直し、その回数を `revision` に数えるので、同じグループにストロークを足しても（キャンバスも数も同じでも）
 ビューはキャンバスを上げ直す。ノード上の面でペイントを隠すと、ラスタオブジェクトのキャンバスを手放し
 （`paintDisplay` が尋ねられなかったラスタを手放す）、見せたときに作り直す。

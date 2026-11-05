@@ -621,6 +621,10 @@ export function createStudioSession({ state: opening, readOnly = false, upstream
     get canRedo() {
       return !readOnly && history.length > 1 && history.index >= 0 && history.index < history.length - 1;
     },
+    // A gesture is under way (its live changes have not been committed or cancelled yet).
+    get gesturing() {
+      return !!gestureBase;
+    },
     readOnly,
     // The Pose handoff the port Sticker is shown with, or null (the inspector's and the bar's `handoff`).
     get portHandoff() {

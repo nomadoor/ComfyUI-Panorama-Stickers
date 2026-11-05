@@ -31,6 +31,7 @@ export const ICON = Object.freeze({
   fullscreen_close: "fullscreen_close",
   chevron: "chevron",
   copy: "copy",
+  check: "check",
   bring_front: "bring_front",
   send_back: "send_back",
   order_front: "order_front",
@@ -116,6 +117,8 @@ const TABLER_BODIES = {
   fullscreen_close: { name: "minimize", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M15 19v-2a2 2 0 0 1 2 -2h2' /><path d='M15 5v2a2 2 0 0 0 2 2h2' /><path d='M5 15h2a2 2 0 0 1 2 2v2' /><path d='M5 9h2a2 2 0 0 0 2 -2v-2' />` },
   chevron: { name: "chevron-down", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M6 9l6 6l6 -6' />` },
   copy: { name: "copy", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M7 9.667a2.667 2.667 0 0 1 2.667 -2.667h8.666a2.667 2.667 0 0 1 2.667 2.667v8.666a2.667 2.667 0 0 1 -2.667 2.667h-8.666a2.667 2.667 0 0 1 -2.667 -2.667l0 -8.666' /><path d='M4.012 16.737a2.005 2.005 0 0 1 -1.012 -1.737v-10c0 -1.1 .9 -2 2 -2h10c.75 0 1.158 .385 1.5 1' />` },
+  // The Easing panel's copy button for a moment after it copied (docs/studio-ui.md "Easing のパネル").
+  check: { name: "check", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M5 12l5 5l10 -10' />` },
   bring_front: { name: "stack-front", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M12 4l-8 4l8 4l8 -4l-8 -4' /><path d='M8 14l-4 2l8 4l8 -4l-4 -2' /><path d='M8 10l-4 2l8 4l8 -4l-4 -2' />` },
   send_back: { name: "stack-back", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M4 8l8 4l8 -4l-8 -4l-8 4' /><path d='M12 16l-4 -2l-4 2l8 4l8 -4l-4 -2l-4 2' /><path d='M8 10l-4 2l4 2m8 0l4 -2l-4 -2' />` },
   // The new UI's bring to front / send to back of a sky image (docs/design.md "新しい UI の見た目" "アイコン"): two

@@ -23,6 +23,7 @@ import {
 import PanoPreviewNodeSurface from "./components/PanoPreviewNodeSurface.vue";
 import { isRenderableMediaReady, mediaPlayheadRevisionToken } from "./pano_media_session.js";
 import { peekPreviewNode, previewNode } from "./pano_node_bridge.js";
+import { chainWidgetCallback } from "./pano_widget_callback.js";
 import { createComfyMediaAdapter } from "./pano_comfy_media.js";
 import { normalizeCoverageValue } from "./pano_editor_state.js";
 
@@ -130,8 +131,9 @@ class PreviewNodeRuntime {
       onConnectionsChange: node.onConnectionsChange,
       onResize: node.onResize,
       onRemoved: node.onRemoved,
-      coverageWidgetCallback: null,
     };
+    // Stops the coverage widget's listener (installHooks).
+    this.unchainCoverage = null;
     this.tick = this.tick.bind(this);
     this.onResizeDom = this.onResizeDom.bind(this);
   }
@@ -166,16 +168,8 @@ class PreviewNodeRuntime {
       return out;
     };
     const coverageWidget = this.node?.widgets?.find?.((widget) => widget?.name === "background_range" || widget?.name === "coverage") || null;
-    if (coverageWidget) {
-      this.orig.coverageWidgetCallback = typeof coverageWidget.callback === "function"
-        ? coverageWidget.callback.bind(coverageWidget)
-        : null;
-      coverageWidget.callback = (...args) => {
-        const out = self.orig.coverageWidgetCallback ? self.orig.coverageWidgetCallback(...args) : undefined;
-        self.requestDraw();
-        return out;
-      };
-    }
+    // A coverage change draws again, chained onto the widget's callback (pano_widget_callback.js).
+    this.unchainCoverage = chainWidgetCallback(coverageWidget, () => self.requestDraw());
   }
 
   installErrorForeground() {
@@ -593,10 +587,8 @@ class PreviewNodeRuntime {
     this.node.onConnectionsChange = this.orig.onConnectionsChange;
     this.node.onResize = this.orig.onResize;
     this.node.onRemoved = this.orig.onRemoved;
-    const coverageWidget = this.node?.widgets?.find?.((widget) => widget?.name === "background_range" || widget?.name === "coverage") || null;
-    if (coverageWidget) {
-      coverageWidget.callback = this.orig.coverageWidgetCallback;
-    }
+    this.unchainCoverage?.();
+    this.unchainCoverage = null;
     this.previewView.dispose();
     previewNode(this.node).runtime = null;
   }

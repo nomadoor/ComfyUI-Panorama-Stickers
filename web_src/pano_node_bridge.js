@@ -55,10 +55,9 @@ const GROUPS = {
     studioInputs: null,
     scene: null,
     renderCache: null,
-    // The paint the surface draws (pano_surface_paint.js): its display, what the last draw gave it, its normalized painting.
+    // The paint the surface draws (pano_surface_paint.js): its display and what the last draw gave it.
     paintDisplay: null,
     paintInput: null,
-    paintState: null,
     bootMinHeightActive: false,
     bootMinHeightTimer: null,
     resizeSettleTimer: null,

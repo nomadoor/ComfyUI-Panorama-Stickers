@@ -446,6 +446,7 @@ function setCollapsed(value) {
             :playhead="view.playhead"
             :playing="view.playing"
             :loop="view.loop"
+            :length-unit="view.lengthUnit"
             :read-only="view.readOnly"
             :media="view.media"
             :background="view.background"
@@ -459,6 +460,7 @@ function setCollapsed(value) {
             @edit="(payload) => controller.timelineEdit(payload)"
             @frame-selected="(row) => controller.frameSelected(row)"
             @loop-change="(on) => controller.loop(on)"
+            @length-unit-change="(unit) => controller.lengthUnit(unit)"
             @collapse-change="setCollapsed"
           />
         </div>
