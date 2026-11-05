@@ -158,7 +158,8 @@ export const CAMERA_LANES = [["position", positionValue], ["rotation", rotationV
 export const SCENE_LANES = [["position", positionValue], ["rotation", rotationValue], ["scale", scaleValue]];
 export const SKY_STICKER_LANES = [["direction", directionValue], ["roll", rollValue], ["size", sizeValue], ["opacity", opacityValue], ["curve", curveValue]];
 export const WORLD_STICKER_LANES = [...SCENE_LANES, ["opacity", opacityValue]];
-// A world Sticker's `lens` Lane, which only Pose handoff adds: a Sticker without it has none (a flat plane).
+// A world Sticker's `lens` Lane, which only Pose handoff before ADR 0059 added (read from saved states): a Sticker
+// without it has none (a flat plane).
 const WORLD_LENS_LANE = ["lens", lensValue];
 
 // The Lanes a Sticker has: a world Sticker's `lens` only when it has one.

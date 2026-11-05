@@ -14,7 +14,6 @@ import {
   storedPortSticker,
   syncPortHandoffPair,
 } from "../web_src/pano_port_handoff.js";
-import { evaluateSticker } from "../web_src/pano_scene_eval.js";
 import { createStickersNodeSurfaceSession, portStickerSyncValue, surfaceSceneEditorState } from "../web_src/pano_stickers_node_surface.js";
 import { loadSceneState, sceneStateText } from "../web_src/pano_scene_state.js";
 
@@ -22,14 +21,20 @@ import { loadSceneState, sceneStateText } from "../web_src/pano_scene_state.js";
 const handoffFixture = (name) => JSON.parse(readFileSync(new URL(`./fixtures/scene_inherit/${name}.json`, import.meta.url), "utf8"));
 // What a run hands the port Sticker (nodes.py `_handoff_lanes`), as `pano_sticker_handoff` gives it.
 const SKY_HANDOFF = { ...handoffFixture("handoff_same_placement").handoff, fps: 24 };
-const WORLD_HANDOFF = { ...handoffFixture("handoff_sky_to_world").handoff, fps: 24 };
+// What a run before ADR 0059 could hand: a world Sticker. Such a result is no longer applied.
+const WORLD_LANES = {
+  position: { value: [0, 0, -2], keyframes: [{ frame: 0, value: [0, 0, -2], easing: "auto" }, { frame: 8, value: [1, 0, -2], easing: "hold" }] },
+  rotation: { value: { yaw_deg: 0, pitch_deg: 0, roll_deg: 0 }, keyframes: [] },
+  scale: { value: 4, keyframes: [] },
+};
+const OLD_WORLD_HANDOFF = { placement: "world", lanes: WORLD_LANES, fps: 24 };
 const CROP = { x0: 0.1, y0: 0.2, x1: 0.9, y1: 0.8 };
 const SKY_PORT = {
   id: "sticker_2", source: { kind: "port" }, z_index: 1, clip: { start: 2, in: 0, duration: null }, crop: CROP,
   direction: { value: { yaw_deg: -90, pitch_deg: 0 } }, size: { value: { hFOV_deg: 20, vFOV_deg: 20 } },
   opacity: { value: 0.5 },
 };
-const [FILE_STICKER] = handoffFixture("handoff_sky_to_world").state.stickers;
+const FILE_STICKER = { id: "sticker_1", source: { kind: "file", filename: "a.png" }, z_index: 4 };
 
 // A saved state with its Scene id (ADR 0030), which the first write would give it.
 function stateText(stickers, fps = 24) {
@@ -98,15 +103,8 @@ test("an edit of a shown Lane makes it an override and stores it; Revert to upst
   assert.equal(revertHandoffLane(state, edited, handoff, "roll"), false);
 });
 
-test("a handoff of the other placement replaces the port Sticker, keeping its crop and opacity, both ways", () => {
-  const sky = working(stateText([FILE_STICKER, { ...SKY_PORT, handoff_overrides: ["direction", "opacity"] }]));
-  const toWorld = inheritPortHandoff(sky, port(sky), portHandoff(WORLD_HANDOFF));
-
-  assert.deepEqual([toWorld.id, toWorld.placement, toWorld.crop, toWorld.opacity.value, toWorld.clip.start], ["sticker_2", "world", CROP, 0.5, 2]);
-  assert.deepEqual([toWorld.handoff_overrides, "direction" in toWorld, "z_index" in toWorld], [["opacity"], false, false]);
-  assert.deepEqual(toWorld.position.keyframes.map((key) => [key.frame, key.easing]), [[0, "auto"], [8, "hold"]]);
-
-  const world = working(stateText([FILE_STICKER, { ...SKY_PORT, ...WORLD_HANDOFF.lanes, placement: "world", handoff_overrides: ["position", "opacity"] }]));
+test("the handoff replaces a stored world port Sticker by a sky one, keeping its crop and opacity", () => {
+  const world = working(stateText([FILE_STICKER, { ...SKY_PORT, ...WORLD_LANES, placement: "world", handoff_overrides: ["position", "opacity"] }]));
   const toSky = inheritPortHandoff(world, port(world), portHandoff(SKY_HANDOFF));
 
   // Above the other sky Stickers, as the node adds it.
@@ -118,15 +116,11 @@ test("a handoff of the other placement replaces the port Sticker, keeping its cr
   assert.deepEqual(storedPortSticker(edited, port(world)), edited);
 });
 
-test("a world handoff shows its Keyframes", () => {
+test("a world handoff of a run before ADR 0059 is not applied", () => {
   const state = working(stateText([{ ...SKY_PORT, clip: { start: 0, in: 0, duration: null } }]));
 
-  const shown = showPortHandoff(state, portHandoff(WORLD_HANDOFF));
-
-  const sticker = port(shown);
-  assert.deepEqual(evaluateSticker(sticker, 4).position, [0.5, 0, -2]);
-  assert.deepEqual(evaluateSticker(sticker, 8).position, [1, 0, -2]);
-  assert.equal(port(state).placement, "sky", "the working state is not changed");
+  assert.equal(portHandoff([OLD_WORLD_HANDOFF]), null);
+  assert.equal(showPortHandoff(state, portHandoff(OLD_WORLD_HANDOFF)), state);
 });
 
 test("a handoff at another fps is rebased to the editor's, as the whole state is", () => {
@@ -140,22 +134,22 @@ test("a handoff at another fps is rebased to the editor's, as the whole state is
 
 test("the node surface shows the handoff without writing state_json, and its sync-port writes nothing", () => {
   const text = stateText([FILE_STICKER, SKY_PORT]);
-  const node = studioNode(WORLD_HANDOFF);
+  const node = studioNode(SKY_HANDOFF);
   const commits = [];
   const session = createStickersNodeSurfaceSession({
-    readState: () => surfaceSceneEditorState(text, {}, [WORLD_HANDOFF]),
+    readState: () => surfaceSceneEditorState(text, {}, [SKY_HANDOFF]),
     commitState: (state) => commits.push(state),
   });
 
-  assert.equal(port(surfaceSceneEditorState(text, {}, [WORLD_HANDOFF])).placement, "world");
-  assert.equal(port(surfaceSceneEditorState(text, {}, null)).placement, "sky");
+  assert.equal(port(surfaceSceneEditorState(text, {}, [SKY_HANDOFF])).roll.value, 3);
+  assert.deepEqual(port(surfaceSceneEditorState(text, {}, null)), port(surfaceSceneEditorState(text, {}, [OLD_WORLD_HANDOFF])));
   const replace = { placement: "world", position: [0, 0, -2], rotation: { yaw_deg: 0, pitch_deg: 0, roll_deg: 0 }, scale: 4, replace: true };
-  assert.equal(session.apply({ type: "sync-port", value: portStickerSyncValue(node, { pose: replace, handoff: [WORLD_HANDOFF] }) }), false);
+  assert.equal(session.apply({ type: "sync-port", value: portStickerSyncValue(node, { pose: replace, handoff: [SKY_HANDOFF] }) }), false);
   assert.deepEqual(commits, []);
 });
 
 // Held to the node's `_inherit_handoff` by the same fixtures (tests/test_pose_handoff.py).
-// Every `handoff_*` case there is, the lens's (ADR 0042) among them.
+// Every `handoff_*` case there is, the lens curve's (ADR 0042) among them.
 const HANDOFF_FIXTURES = readdirSync(new URL("./fixtures/scene_inherit/", import.meta.url))
   .filter((file) => /^handoff_.*\.json$/.test(file)).map((file) => file.slice(0, -5)).sort();
 for (const name of HANDOFF_FIXTURES) {
@@ -167,15 +161,9 @@ for (const name of HANDOFF_FIXTURES) {
   });
 }
 
-// ADR 0042: the handoff hands its lens too, as the node's `_inherit_handoff` does.
-test("the handoff hands a sky Sticker's curve and a world Sticker's lens, and a pinhole shot takes the lens away", () => {
+// ADR 0042: the handoff hands its lens curve too, as the node's `_inherit_handoff` does.
+test("the handoff hands a sky Sticker's curve", () => {
   const source = { kind: "port" };
-  const world = loadSceneState({ version: 2, stickers: [{ id: "p", placement: "world", source, lens: { value: { curve: 0.5, hFOV_deg: 120 } } }] });
-  const lens = { value: { curve: 0, hFOV_deg: 200 }, keyframes: [] };
-  const handed = inheritPortHandoff(world, world.stickers[0], portHandoff({ placement: "world", lanes: { position: { value: [0, 0, -2] }, lens }, fps: 24 }));
-  assert.deepEqual(handed.lens, lens);
-  const pinhole = inheritPortHandoff(world, world.stickers[0], portHandoff({ placement: "world", lanes: { position: { value: [0, 0, -2] } }, fps: 24 }));
-  assert.equal(Object.hasOwn(pinhole, "lens"), false);
   const sky = loadSceneState({ version: 2, stickers: [{ id: "p", placement: "sky", source }] });
   const curve = { value: 0.3, keyframes: [{ frame: 0, value: 0.3, easing: [0.42, 0, 0.58, 1] }] };
   assert.deepEqual(inheritPortHandoff(sky, sky.stickers[0], portHandoff({ placement: "sky", lanes: { curve }, fps: 24 })).curve, curve);
@@ -206,7 +194,7 @@ test("a Lane taken off the overrides and back to the handoff is not recorded as 
 });
 
 test("the port Sticker an editor shows after applying the handoff is the one the node surface shows", () => {
-  for (const [raw, value] of [[SKY_PORT, SKY_HANDOFF], [{ ...SKY_PORT, handoff_overrides: ["size"] }, WORLD_HANDOFF]]) {
+  for (const [raw, value] of [[SKY_PORT, SKY_HANDOFF], [{ ...SKY_PORT, handoff_overrides: ["size"] }, SKY_HANDOFF], [{ ...SKY_PORT, ...WORLD_LANES, placement: "world" }, SKY_HANDOFF]]) {
     const text = sceneStateText(loadSceneState({ version: 2, stickers: [raw] }));
     const opened = parseSceneEditorState(text, {});
     const { shown } = syncPortHandoffPair(opened, NO_PORT_HANDOFF_PAIR, portHandoff([value]), { restored: true });

@@ -211,7 +211,8 @@ def _lens_value(raw):
     return {"curve": _curve_value(raw.get("curve")), "hFOV_deg": _camera_fov_value(raw.get("hFOV_deg"))}
 
 
-# A `world` Sticker's lens (ADR 0042): only Pose handoff writes it, so a Sticker has it only when its state does.
+# A `world` Sticker's lens (ADR 0042): only Pose handoff before ADR 0059 wrote it, so a Sticker has it only when its
+# saved state does.
 WORLD_STICKER_LENS = ("lens", _lens_value)
 
 

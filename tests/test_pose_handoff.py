@@ -335,7 +335,8 @@ def test_inheriting_the_handoff_matches_the_fixture_the_editor_shares(name):
     state = load_scene_state(case["state"])
     port = next(item for item in state["stickers"] if item["source"]["kind"] == "port")
 
-    assert _inherit_handoff(state, port, case["handoff"]["placement"], case["handoff"]["lanes"]) == case["expected"]
+    assert case["handoff"]["placement"] == "sky"
+    assert _inherit_handoff(state, port, case["handoff"]["lanes"]) == case["expected"]
 
 
 # The lens curve κ (ADR 0042): a shot through a lens hands a sky Sticker of the same lens (`curve`), so that the same

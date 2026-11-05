@@ -758,12 +758,12 @@ test("with a Pose handoff, the node's replace pose is not written: the handoff i
   const node = stickersNode(["sticker", "sticker_state"], { sticker: "IMAGE" });
   const state = v2EditorState({ stickers: [{ id: "sticker_4", source: { kind: "port" }, z_index: 2 }] });
   const pose = { placement: "world", position: [0, 0, -1], rotation: { yaw_deg: 0, pitch_deg: 0, roll_deg: 0 }, scale: 2, replace: true };
-  const handoff = [{ placement: "world", lanes: {}, fps: 24 }];
+  const handoff = [{ placement: "sky", lanes: {}, fps: 24 }];
 
   const result = reconcilePortStickerState(state, portStickerSyncValue(node, { pose, handoff }));
 
   assert.equal(result.changed, false);
-  assert.equal(nodePortHandoff(node, handoff).placement, "world");
+  assert.equal(nodePortHandoff(node, handoff).placement, "sky");
   assert.equal(nodePortHandoff(stickersNode(["sticker"]), handoff), null, "sticker_state is no longer connected");
 });
 
