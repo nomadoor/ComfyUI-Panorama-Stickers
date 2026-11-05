@@ -8,7 +8,10 @@ const check = (window.__check = { done: false, error: null, fonts: null, textBox
 window.__events = [];
 
 try {
-  createApp(StudioUiScene, { onEvent: (event) => window.__events.push(event) }).mount("#app");
+  const app = createApp(StudioUiScene, { onEvent: (event) => window.__events.push(event) });
+  app.mount("#app");
+  // Unmounts the scene, as closing the editor unmounts its fields.
+  window.__unmount = () => app.unmount();
   const faces = ["500 12px", "600 12px", "700 12px"];
   await Promise.all(faces.map((face) => document.fonts.load(`${face} "Plus Jakarta Sans"`)));
   await document.fonts.ready;

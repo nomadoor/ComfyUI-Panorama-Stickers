@@ -144,14 +144,23 @@ function onLockChange() {
 
 const ESCAPE_AFTER_LOCK_MS = 500;
 
+// Stops keeping the browser's Escape from the editor (swallowEscape); the field going away stops it too.
+let stopSwallowing = () => {};
+
 function swallowEscape() {
+  stopSwallowing();
   const swallow = (event) => {
     if (event.key !== "Escape") return;
     event.preventDefault();
     event.stopPropagation();
   };
   window.addEventListener("keydown", swallow, true);
-  setTimeout(() => window.removeEventListener("keydown", swallow, true), ESCAPE_AFTER_LOCK_MS);
+  const timer = setTimeout(() => stopSwallowing(), ESCAPE_AFTER_LOCK_MS);
+  stopSwallowing = () => {
+    clearTimeout(timer);
+    window.removeEventListener("keydown", swallow, true);
+    stopSwallowing = () => {};
+  };
 }
 
 function cancelDrag() {
@@ -227,7 +236,10 @@ function onKeydown(event) {
   }
 }
 
-onBeforeUnmount(endDrag);
+onBeforeUnmount(() => {
+  endDrag();
+  stopSwallowing();
+});
 
 defineExpose({ startEditing });
 </script>

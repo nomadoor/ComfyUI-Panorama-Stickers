@@ -237,6 +237,26 @@ test("the browser ending the lock (its Escape) is the same as Escape, and that E
   expect(problems).toEqual([]);
 });
 
+test("a field unmounted right after the browser ended its lock lets the page's next Escape through", async ({ page }) => {
+  await open(page);
+  await fakeLock(page, "grant");
+  await page.evaluate(() => {
+    window.__escapes = 0;
+    window.addEventListener("keydown", (event) => event.key === "Escape" && (window.__escapes += 1));
+  });
+  const field = col(page, "dark").locator('[data-field="pos-Z"]');
+  const at = await press(page, field);
+  await moveRight(page, at, 6, 8);
+  await expect.poll(() => page.evaluate(() => !!document.pointerLockElement)).toBe(true);
+  await page.evaluate(() => window.__breakLock());
+  await expect.poll(async () => (await page.evaluate(() => window.__events.map((e) => e.name))).includes("posZ:cancel")).toBe(true);
+  await page.mouse.up();
+  // The editor closes within the moment the field keeps the browser's Escape from it.
+  await page.evaluate(() => window.__unmount());
+  await page.keyboard.press("Escape");
+  expect(await page.evaluate(() => window.__escapes)).toBe(1);
+});
+
 test("a click without moving opens the box for typing; Enter sends the typed value once, Escape keeps the old one", async ({ page }) => {
   const { problems } = await open(page);
   const target = col(page, "light").locator('[data-field="pos-Z"]');
