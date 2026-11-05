@@ -107,6 +107,7 @@ const items = computed(() => {
 
 const root = ref(null);
 const ruler = ref(null);
+const rulerLine = ref(null);
 const lines = ref(null);
 const body = ref(null);
 const fill = ref(null);
@@ -218,20 +219,46 @@ function onTrackDown(event) {
   if (event.button !== 0 || drag) return;
   event.preventDefault();
   const rect = lines.value.getBoundingClientRect();
-  beginDrag(event, { type: "marquee", line: lineAt(event.clientY), additive: event.shiftKey, ax: event.clientX - rect.left, ay: event.clientY - rect.top, bx: event.clientX, by: event.clientY });
+  beginDrag(event, { type: "marquee", additive: event.shiftKey, ax: event.clientX - rect.left, ay: event.clientY - rect.top, bx: event.clientX, by: event.clientY });
   body.value?.addEventListener("scroll", drawMarquee);
 }
 
-// The box from its start to the pointer, in the lines' coordinates, held to the track column's height (the lines and
-// the empty area below them) so a pointer past the body's end does not grow its scroll.
+// The box from its start to the pointer, in the lines' coordinates, held between the ruler's bottom (the ruler is sticky:
+// the box's top edge and corners stay in sight above the rows scrolled under it) and the track column's bottom (the
+// lines and the empty area below them, so a pointer past the body's end does not grow its scroll). The pointer may go
+// past both; the box as drawn is what it selects (docs/timeline-ui.md "Keyframe の選び方").
+function marqueeBox() {
+  const rect = lines.value.getBoundingClientRect();
+  const top = rulerLine.value ? rulerLine.value.getBoundingClientRect().bottom - rect.top : 0;
+  const bottom = fill.value ? fill.value.getBoundingClientRect().bottom - rect.top : rect.height;
+  const hold = (y) => Math.max(top, Math.min(bottom, y));
+  const bx = drag.bx - rect.left;
+  const by = hold(drag.by - rect.top);
+  const ay = hold(drag.ay);
+  return { left: Math.min(drag.ax, bx), top: Math.min(ay, by), width: Math.abs(bx - drag.ax), height: Math.abs(by - ay) };
+}
+
 function drawMarquee() {
   if (!drag || drag.type !== "marquee" || !drag.moved) return;
+  marquee.value = marqueeBox();
+}
+
+// The Keyframes inside a box (marqueeBox): on the track lines it overlaps, between the frames at its two sides.
+function keysInBox(box) {
   const rect = lines.value.getBoundingClientRect();
-  const bottom = fill.value ? fill.value.getBoundingClientRect().bottom - rect.top : rect.height;
-  const bx = drag.bx - rect.left;
-  const by = Math.min(bottom, drag.by - rect.top);
-  const ay = Math.min(bottom, drag.ay);
-  marquee.value = { left: Math.min(drag.ax, bx), top: Math.min(ay, by), width: Math.abs(bx - drag.ax), height: Math.abs(by - ay) };
+  const top = rect.top + box.top;
+  const bottom = top + box.height;
+  const covered = [...lines.value.querySelectorAll("[data-line]")]
+    .filter((track) => {
+      const r = track.getBoundingClientRect();
+      return r.top < bottom && r.bottom > top;
+    })
+    .map((track) => Number(track.dataset.line));
+  if (!covered.length) return [];
+  const ruled = ruler.value.getBoundingClientRect();
+  const toFrame = (clientX) => xToFrameExact(clientX - ruled.left, span.value, width.value, TRACK_PAD);
+  const left = rect.left + box.left;
+  return keysInRange(model.value.lines, Math.min(...covered), Math.max(...covered), toFrame(left), toFrame(left + box.width));
 }
 
 function onKeyDown(event, line, key) {
@@ -294,18 +321,6 @@ function onMove(event) {
   }
 }
 
-// The track line under a y (client), held to the first and the last: above the first row it is the first, below the
-// last (the empty area under the rows) the last.
-function lineAt(clientY) {
-  const tracks = [...lines.value.querySelectorAll("[data-line]")];
-  if (!tracks.length) return 0;
-  for (const track of tracks) {
-    const rect = track.getBoundingClientRect();
-    if (clientY < rect.bottom) return Number(track.dataset.line);
-  }
-  return Number(tracks[tracks.length - 1].dataset.line);
-}
-
 function onUp(event) {
   if (!drag || event.pointerId !== drag.pointerId) return;
   const current = drag;
@@ -316,16 +331,18 @@ function onUp(event) {
     return;
   }
   if (current.type === "marquee") {
+    if (current.moved) {
+      current.bx = event.clientX;
+      current.by = event.clientY;
+      current.box = marqueeBox();
+    }
     endDrag();
     if (!current.moved) {
       // An empty click lets the Keyframes go (with Shift it keeps them).
       if (!current.additive) emit("select", selectKeys(props.selection, [], { additive: false }));
       return;
     }
-    const rect = ruler.value.getBoundingClientRect();
-    const toFrame = (clientX) => xToFrameExact(clientX - rect.left, span.value, width.value, TRACK_PAD);
-    const hits = keysInRange(model.value.lines, current.line, lineAt(event.clientY), toFrame(current.x0), toFrame(event.clientX));
-    emit("select", selectKeys(props.selection, hits, { additive: current.additive }));
+    emit("select", selectKeys(props.selection, keysInBox(current.box), { additive: current.additive }));
     return;
   }
   endDrag();
@@ -508,7 +525,7 @@ defineExpose({ handleDelete, copyKeys: copySelectedKeys, pasteKeys: pasteCopiedK
       @collapse="(folded) => emit('collapse-change', folded)"
     />
     <div v-show="!collapsed" ref="body" class="pano-studio-tl-body">
-      <div class="pano-studio-tl-line is-ruler">
+      <div ref="rulerLine" class="pano-studio-tl-line is-ruler">
         <div class="pano-studio-tl-head is-ruler" />
         <div ref="ruler" class="pano-studio-tl-ruler" data-tl="ruler" @pointerdown="onRulerDown">
           <span

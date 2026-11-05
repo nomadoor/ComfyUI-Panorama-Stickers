@@ -180,6 +180,57 @@ test("the empty area below the rows starts a box and clears on a click, without 
   expect((await events(page)).filter((event) => event.name === "seek")).toEqual([]);
 });
 
+// docs/timeline-ui.md "Keyframe の選び方": the box stays between the ruler's bottom and the track column's bottom, its
+// top edge and corners always seen, and it selects the Keyframes inside the box as drawn (the cursor may go past it).
+async function marqueeBox(page) {
+  return dark(page).locator(".pano-studio-tl-marquee").evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    return { top: r.top, bottom: r.bottom };
+  });
+}
+
+test("a box dragged up past the ruler stops at the ruler's bottom and selects what it shows", async ({ page }) => {
+  await open(page);
+  const ruler = dark(page).locator(".pano-studio-tl-line.is-ruler");
+  const rulerBottom = await ruler.evaluate((el) => el.getBoundingClientRect().bottom);
+  const lines = await dark(page).locator(".pano-studio-tl-lines").boundingBox();
+  const below = lines.y + lines.height + 20;
+  // From below the rows up into the bar above the ruler, frames 45..49: the Camera's key at 48.
+  await page.mouse.move(await frameX(page, 45), below);
+  await page.mouse.down();
+  await page.mouse.move(await frameX(page, 49), rulerBottom - 40, { steps: 6 });
+  const box = await marqueeBox(page);
+  expect(Math.abs(box.top - rulerBottom)).toBeLessThan(0.5);
+  const fillBottom = await dark(page).locator('[data-tl="fill"]').evaluate((el) => el.getBoundingClientRect().bottom);
+  expect(box.bottom).toBeLessThanOrEqual(fillBottom + 0.5);
+  await page.mouse.up();
+  expect((await scene(page, "selection")).keys).toEqual([{ row: "camera", lane: null, frame: 48 }]);
+});
+
+test("in a scrolled body the box stops at the ruler's bottom and leaves the rows under the ruler out", async ({ page }) => {
+  await open(page);
+  // A short Timeline whose rows do not fit, scrolled to its end: the Camera's row is behind the ruler or above it.
+  await dark(page).locator(".area").evaluate((el) => { el.style.height = "150px"; });
+  const body = dark(page).locator(".pano-studio-tl-body");
+  await body.evaluate((el) => { el.scrollTop = el.scrollHeight; });
+  expect(await body.evaluate((el) => el.scrollTop)).toBeGreaterThan(20);
+  const ruler = dark(page).locator(".pano-studio-tl-line.is-ruler");
+  const rulerBottom = await ruler.evaluate((el) => el.getBoundingClientRect().bottom);
+  const camera = await dark(page).locator('[data-track="camera"]').evaluate((el) => el.getBoundingClientRect().bottom);
+  expect(camera).toBeLessThanOrEqual(rulerBottom);
+  const fill = await dark(page).locator('[data-tl="fill"]').boundingBox();
+  await page.mouse.move(await frameX(page, 45), fill.y + fill.height - 4);
+  await page.mouse.down();
+  await page.mouse.move(await frameX(page, 49), rulerBottom - 60, { steps: 6 });
+  const box = await marqueeBox(page);
+  expect(Math.abs(box.top - rulerBottom)).toBeLessThan(0.5);
+  const bodyBottom = await body.evaluate((el) => el.getBoundingClientRect().bottom);
+  expect(box.bottom).toBeLessThanOrEqual(bodyBottom + 0.5);
+  await page.mouse.up();
+  // The upstream key at 50 is outside 45..49; the Camera's key at 48 is under the ruler, outside the box.
+  expect((await scene(page, "selection")).keys).toEqual([]);
+});
+
 test("dragging selected Keyframes moves them; Escape puts them back", async ({ page }) => {
   await open(page);
   const key = dark(page).locator('[data-track="camera"] .pano-studio-tl-key').nth(1);
