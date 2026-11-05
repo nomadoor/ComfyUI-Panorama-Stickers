@@ -47,12 +47,12 @@ Panorama Studio のノードは届かない）。古い UI で開くのは旧ノ
 
 `pano_editor.js` に残るのは次だけ。
 
-1. ノードの widget と state の読み込み、`uiState`（Vue に渡す reactive）、Vue のモーダルの mount、
+1. ノードの widget と state の読み込み、`uiState`（Vue に渡す reactive。初期値は `pano_editor_ui_state.js` の `buildEditorUiState`）、Vue のモーダルの mount、
    ブリッジとして使う DOM の参照。
 2. エディタの共有の値：`state`、`editor`、`timeline`、`runtime`、`scheduler`、`dragFrames`、
    `editorView`、`viewController`、キャッシュの Map、静止画のキャンバス。
 3. 配線の区画（`createEditorModules`）。
-4. DOM のイベントの登録（本体はモジュールの関数）、`closeEditor`、起動の手順（`runBootStep`）。
+4. DOM のイベントの登録と、閉じるときの解除（`bindEditorDom` の一か所。本体はモジュールの関数）、`closeEditor`、起動の手順（`runBootStep`）。
 
 ## Module shape
 
@@ -109,7 +109,7 @@ export function createHistory(deps) {
 
 | Module | Responsibility |
 | --- | --- |
-| `pano_editor.js` | Composition：値、`uiState`、Vue、配線、イベントの登録、`closeEditor`、起動 |
+| `pano_editor.js` | Composition：値、`uiState`、Vue、配線、イベントの登録と解除（`bindEditorDom`）、`closeEditor`、起動 |
 | `editor/modules.js` | `createEditorModules`：factory を作ってつなぐ。名前の過不足を投げる |
 | `editor/constants.js` | 定数 |
 | `editor/helpers.js` | 小さな純粋な関数（easing、ベクトル、2D の幾何、色、ノードの値） |
