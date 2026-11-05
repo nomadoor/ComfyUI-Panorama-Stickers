@@ -120,26 +120,23 @@ def test_a_state_with_a_nan_or_infinity_literal_is_not_json_as_in_json_parse(lit
     assert sticker is None
 
 
-def _red_png_data_url():
-    import base64
-    import io
-
+def _red_png_asset(folder):
+    """A red 4x4 PNG in `folder`, ComfyUI's temp directory (tests/conftest.py), as a v1 `comfy_image` asset."""
     from PIL import Image
 
-    buf = io.BytesIO()
-    Image.new("RGBA", (4, 4), (255, 0, 0, 255)).save(buf, format="PNG")
-    return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
+    Image.new("RGBA", (4, 4), (255, 0, 0, 255)).save(folder / "red.png", format="PNG")
+    return {"type": "comfy_image", "filename": "red.png", "subfolder": "", "storage": "temp"}
 
 
 @pytest.mark.parametrize("field", ["yaw_deg", "pitch_deg", "hFOV_deg", "vFOV_deg", "rot_deg", "z_index"])
-def test_a_non_finite_legacy_sticker_value_takes_its_default_and_the_sticker_still_draws(field):
+def test_a_non_finite_legacy_sticker_value_takes_its_default_and_the_sticker_still_draws(field, tmp_path):
     # parse_json reads an integer too long for a double as an infinity (as JSON.parse does); the renderer reads the
     # field with its default instead of failing on it (docs/scene-state-v2.md, 共通の規則).
     from comfyui_pano_suite.core.stickers import render_stickers_to_rgba_erp
 
     huge = "9" * 5000
     sticker = {"id": "s", "asset_id": "a", "yaw_deg": 0, "pitch_deg": 0, "hFOV_deg": 40, "vFOV_deg": 40, "rot_deg": 0, "z_index": 0}
-    text = json.dumps({"assets": {"a": {"type": "dataurl", "value": _red_png_data_url()}}, "stickers": [sticker]})
+    text = json.dumps({"assets": {"a": _red_png_asset(tmp_path)}, "stickers": [sticker]})
     text = text.replace(f'"{field}": {sticker[field]}', f'"{field}": {huge}')
 
     state = merge_state(text)

@@ -168,8 +168,7 @@ def test_3d_file_sources_are_told_by_the_extension_table():
     for case in table["cases"]:
         source = {"kind": "file", "filename": case["filename"], "subfolder": "3d", "storage": "input"}
         assert is_3d_file_source(source) is case["is_3d"], case["filename"]
-    # A data URL is an image, and so is the port.
-    assert is_3d_file_source({"kind": "file", "data_url": "data:image/png;base64,AAAA"}) is False
+    # The port is not a 3D file.
     assert is_3d_file_source({"kind": "port"}) is False
 
 

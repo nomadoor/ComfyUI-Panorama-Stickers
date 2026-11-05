@@ -1,4 +1,3 @@
-import base64
 import io
 import json
 
@@ -19,7 +18,7 @@ from comfyui_pano_suite.scene_video import SceneVideo
 from scene_test_helpers import blob, blobs, center as _center, output_size
 from test_legacy_goldens import _golden_mismatch
 from tools import bake_legacy_goldens
-from tools.bake_legacy_goldens import ASSETS, FIXTURE_DIR, _painting, _stroke, build_background_erp
+from tools.bake_legacy_goldens import FIXTURE_DIR, sticker_source, _painting, _stroke, build_background_erp
 from tools.golden_png import read_png16
 from comfyui_pano_suite.pano_scene import PanoSceneValue
 from comfyui_pano_suite.studio_node import _studio_output_size, _studio_run_key
@@ -76,7 +75,7 @@ def test_the_default_camera_reproduces_the_golden(name, monkeypatch):
 
 
 def _quadrants():
-    return {"kind": "file", "data_url": ASSETS["quadrants"]["value"]}
+    return sticker_source("quadrants")
 
 
 def _world_and_keyframed_state():
@@ -363,22 +362,23 @@ def test_scene_output_is_the_built_scene_without_the_camera():
     assert scene.media_ui["pano_input_images"]
 
 
-def _png_data_url(width, height):
+def _png(width, height):
     buffer = io.BytesIO()
     Image.new("RGBA", (width, height)).save(buffer, format="PNG")
-    return "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode("ascii")
+    return buffer.getvalue()
 
 
-@pytest.mark.parametrize("data_url", [
-    "data:image/png;base64",  # no comma
-    "data:image/png;base64,abc",  # bad base64 padding
+@pytest.mark.parametrize("content", [
+    b"not an image",
+    b"",
     "bomb",  # past PIL's decompression bomb limit
 ])
-def test_a_data_url_that_cannot_be_decoded_is_not_drawn_with_a_warning(data_url, monkeypatch):
-    if data_url == "bomb":
-        data_url = _png_data_url(64, 64)
+def test_a_file_that_cannot_be_decoded_is_not_drawn_with_a_warning(content, monkeypatch, tmp_path):
+    if content == "bomb":
+        content = _png(64, 64)
         monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", 64)
-    state = {"version": 2, "stickers": [{"id": "sticker_1", "source": {"kind": "file", "data_url": data_url}}]}
+    (tmp_path / "bad.png").write_bytes(content)
+    state = {"version": 2, "stickers": [{"id": "sticker_1", "source": {"kind": "file", "filename": "bad.png", "storage": "temp"}}]}
 
     ui = _studio(state).ui
 

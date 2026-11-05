@@ -456,8 +456,7 @@ test("a file Source is a 3D file by the extension of its filename alone, as Load
   for (const { filename, is_3d: expected } of formats.cases) {
     assert.equal(is3dFileSource({ kind: "file", filename, subfolder: "3d", storage: "input" }), expected, filename);
   }
-  // An embedded image, the port and a Source without a filename are not 3D files.
-  assert.equal(is3dFileSource({ kind: "file", data_url: "data:image/png;base64,AAAA" }), false);
+  // The port and a Source without a filename are not 3D files.
   assert.equal(is3dFileSource({ kind: "port" }), false);
   assert.equal(is3dFileSource(null), false);
   // Loading the state keeps a 3D file Source as it is, and its placement.

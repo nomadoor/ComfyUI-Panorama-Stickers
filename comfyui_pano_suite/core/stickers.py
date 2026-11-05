@@ -1,6 +1,3 @@
-import base64
-import hashlib
-import io
 import math
 from pathlib import Path
 
@@ -31,16 +28,6 @@ def read_image_file_rgba8(path: Path) -> np.ndarray:
     """An image file as straight-alpha RGBA uint8 (h, w, 4), decoded once per version of the file (its path,
     modification time, and size) and kept read-only in the shared cache (`cache.py`)."""
     return CACHE.get_or_put("image_file", file_key(path), lambda: _decode_rgba8(path))
-
-
-def _load_dataurl_rgba8(v: str) -> np.ndarray:
-    """A data URL image as `read_image_file_rgba8` reads a file, keyed by the hash of the URL. A URL without data
-    raises ValueError, as one whose base64 or image cannot be decoded does."""
-    _header, comma, data = v.partition(",")
-    if not comma:
-        raise ValueError("The data URL has no data.")
-    key = hashlib.sha1(v.encode("utf-8")).hexdigest()
-    return CACHE.get_or_put("image_data_url", key, lambda: _decode_rgba8(io.BytesIO(base64.b64decode(data))))
 
 
 def comfy_file_path(filename: str, subfolder: str, storage: str) -> Path | None:
@@ -79,8 +66,6 @@ def load_source_rgba(source: dict) -> np.ndarray | None:
     """Read a state v2 `file` Source as straight-alpha RGBA uint8 (h, w, 4), read-only, or None when it cannot be
     read."""
     try:
-        if "data_url" in source:
-            return _load_dataurl_rgba8(source["data_url"])
         return _load_comfy_file_rgba8(source["filename"], source["subfolder"], source["storage"])
     except (OSError, ValueError):
         return None
@@ -92,12 +77,6 @@ def _load_asset_rgba(asset_info: dict, base_dir: Path | None = None) -> np.ndarr
     t = str(asset_info.get("type") or "").strip().lower()
 
     try:
-        if t == "dataurl":
-            v = str(asset_info.get("value") or "")
-            if not v.startswith("data:image"):
-                return None
-            return unit_float(_load_dataurl_rgba8(v))
-
         if t == "path":
             v = str(asset_info.get("value") or asset_info.get("path") or "").strip()
             if not v:

@@ -247,7 +247,9 @@
       "placement": "sky",
       "source": {
         "kind": "file",
-        "data_url": "data:image/png;base64,AAAA"
+        "filename": "one.png",
+        "subfolder": "",
+        "storage": "input"
       },
       "clip": {
         "start": 0,

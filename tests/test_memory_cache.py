@@ -144,19 +144,6 @@ def _image(height=6, width=8):
     return np.random.default_rng(1).integers(0, 256, (height, width, 4), dtype=np.uint8)
 
 
-def test_a_data_url_source_is_kept_as_its_uint8_pixels_once():
-    image = _image()
-    source = {"kind": "file", "data_url": "data:image/png;base64," + base64.b64encode(_png(image)).decode()}
-
-    first = load_source_rgba(source)
-    second = load_source_rgba(dict(source))
-
-    assert first.dtype == np.uint8 and np.array_equal(first, image)
-    assert second is first and not first.flags.writeable
-    # The URL itself is not kept as a key.
-    assert all(len(str(key)) < 200 for key in CACHE._entries)
-
-
 def test_a_file_source_is_read_once_per_version(tmp_path, monkeypatch):
     monkeypatch.setattr(folder_paths, "get_input_directory", lambda: str(tmp_path))
     image = _image()

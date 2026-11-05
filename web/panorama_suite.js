@@ -1203,7 +1203,7 @@ function rE(e) {
       storage: WP.includes(t) ? t : "input"
     };
   }
-  return typeof e.data_url == "string" && e.data_url.startsWith("data:image") ? { kind: "file", data_url: e.data_url } : null;
+  return null;
 }
 const g1 = Object.freeze([".gltf", ".glb", ".obj", ".fbx", ".stl", ".spz", ".splat", ".ply", ".ksplat"]);
 function y1(e) {
@@ -1375,14 +1375,12 @@ function hE(e) {
 function mE(e, t) {
   if (e.source_kind === "external_image") return { kind: "port" };
   const n = typeof e.asset_id == "string" && Object.hasOwn(t, e.asset_id) ? t[e.asset_id] : null;
-  if (!ft(n)) return null;
-  const r = String(n.type || "").trim().toLowerCase();
-  return r === "comfy_image" ? {
+  return ft(n) && String(n.type || "").trim().toLowerCase() === "comfy_image" ? {
     kind: "file",
     filename: String(n.filename || "").trim(),
     subfolder: String(n.subfolder || "").trim().replace(/^[/\\]+|[/\\]+$/g, ""),
     storage: String(n.storage || "input").trim().toLowerCase()
-  } : r === "dataurl" ? { kind: "file", data_url: n.value } : null;
+  } : null;
 }
 function gE(e) {
   const t = (Array.isArray(e) ? e : []).find(ft);

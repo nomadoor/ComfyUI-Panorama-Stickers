@@ -57,14 +57,9 @@ def test_comfy_image_without_value_loads(monkeypatch, tmp_path):
     assert 0.0 <= float(arr[0, 0, 1]) <= 1.0
 
 
-def test_dataurl_valid_loads():
-    arr = stickers_mod._load_asset_rgba({
-        "type": "dataurl",
-        "value": _dataurl_from_png(),
-    })
-    assert arr is not None
-    assert arr.shape == (2, 3, 4)
-    assert float(arr[..., 3].min()) > 0.99
+def test_an_embedded_image_asset_is_not_read():
+    # ADR 0063: an embedded image (`dataurl`) is no longer read.
+    assert stickers_mod._load_asset_rgba({"type": "dataurl", "value": _dataurl_from_png()}) is None
 
 
 def test_path_accepts_value_and_path_key(tmp_path):
@@ -113,8 +108,6 @@ def test_invalid_inputs_return_none(monkeypatch, tmp_path):
         None,
         {},
         {"type": "unknown", "value": "x"},
-        {"type": "dataurl"},
-        {"type": "dataurl", "value": "not-a-data-url"},
         {"type": "path"},
         {"type": "path", "value": ""},
         {"type": "comfy_image", "filename": ""},

@@ -20,6 +20,7 @@ from tools.bake_legacy_goldens import (
     CUTOUT_SHOT,
     FIXTURE_DIR,
     ROTATED_POSE,
+    STICKER_SUBFOLDER,
     _run_stickers,
     _sticker,
     build_background_erp,
@@ -65,10 +66,11 @@ def test_golden_comparison_detects_small_sticker_shifts(yaw_offset, matches):
 
 
 def test_baking_a_case_writes_nothing_to_the_comfyui_temp_directory(tmp_path):
-    # conftest points ComfyUI's temp directory at tmp_path; render_only_runtime must keep it empty.
+    # conftest points ComfyUI's temp directory at tmp_path; render_only_runtime must keep it empty but for the sticker
+    # images the case reads (`sticker_assets`).
     CASES["stickers_paint_interleaved"]()
 
-    assert list(tmp_path.rglob("*")) == []
+    assert [path for path in tmp_path.rglob("*") if path.relative_to(tmp_path).parts[0] != STICKER_SUBFOLDER] == []
 
 
 # Editor canvases of several widths, so both width- and height-limited gates are covered.

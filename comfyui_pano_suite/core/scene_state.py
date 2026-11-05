@@ -310,15 +310,12 @@ def _source(raw):
             "subfolder": subfolder.strip().strip("/\\") if isinstance(subfolder, str) else "",
             "storage": storage if storage in FILE_STORAGES else "input",
         }
-    data_url = raw.get("data_url")
-    if isinstance(data_url, str) and data_url.startswith("data:image"):
-        return {"kind": "file", "data_url": data_url}
     return None
 
 
 def normalize_source(raw):
-    """A Source as a loaded state holds it (`port`, a `file` with `filename`, `subfolder`, and `storage`, or a v1
-    `data_url`), or None when it is not valid."""
+    """A Source as a loaded state holds it (`port`, or a `file` with `filename`, `subfolder`, and `storage`), or None
+    when it is not valid."""
     return _source(raw)
 
 
@@ -577,8 +574,6 @@ def _v1_source(sticker, assets):
             "subfolder": str(asset.get("subfolder") or "").strip().strip("/\\"),
             "storage": str(asset.get("storage") or "input").strip().lower(),
         }
-    if asset_type == "dataurl":
-        return {"kind": "file", "data_url": asset.get("value")}
     return None
 
 

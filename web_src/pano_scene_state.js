@@ -251,9 +251,6 @@ function source(raw) {
       storage: FILE_STORAGES.includes(storage) ? storage : "input",
     };
   }
-  if (typeof raw.data_url === "string" && raw.data_url.startsWith("data:image")) {
-    return { kind: "file", data_url: raw.data_url };
-  }
   return null;
 }
 
@@ -530,7 +527,6 @@ function v1Source(item, assets) {
       storage: String(asset.storage || "input").trim().toLowerCase(),
     };
   }
-  if (assetType === "dataurl") return { kind: "file", data_url: asset.value };
   return null;
 }
 

@@ -145,13 +145,6 @@ test("an upstream object's bar: Lock and Delete work, Back to source is there (b
   assert.equal(button(chair, "lock").icon, ICON.lock_closed);
 });
 
-test("an upstream object without a file name is named by its own id in the bar, as its Timeline row, not its working id", () => {
-  const layers = upstreamWorkingLayers([{ sceneState: loadSceneState({ version: 2, id: "scene_up", stickers: [
-    { id: "sky_7", placement: "sky", source: { kind: "file", data_url: "data:image/png;base64,AA==" } },
-  ] }), ui: {} }], [], 24);
-  assert.equal(selectionBar({ state, row: "upstream:scene_up:sky_7", upstream: layers }).name, "sky_7");
-});
-
 test("an object of an upstream layer whose overrides cannot be kept has its bar with every edit off, saying why", () => {
   const bar = selectionBar({ state, row: "upstream:#1:sky_9", upstream });
   for (const key of ["front", "back", "duplicate", "replace", "lock", "delete", "revert"]) {

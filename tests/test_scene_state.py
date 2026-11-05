@@ -312,7 +312,7 @@ def test_evaluate_returns_static_values_without_keyframes():
     assert out["camera"] == {"position": [0.0, 0.0, 0.0], "yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0, "hFOV_deg": 90.0, "curve": 1.0, "aspect": 16.0 / 9.0}
     camera = evaluate_scene_state(load_scene_state('{"version":2,"camera":{}}'), 3.25)["camera"]
     assert camera == {"position": [0.0, 0.0, 0.0], "yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0, "hFOV_deg": 90.0, "curve": 1.0, "aspect": 1.0}
-    assert [s["active"] for s in out["stickers"]] == [False, True, True]
+    assert [s["active"] for s in out["stickers"]] == [False, True]
     assert out["stickers"][0]["yaw_deg"] == 190.0
 
 
