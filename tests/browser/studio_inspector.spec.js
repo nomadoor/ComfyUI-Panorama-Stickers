@@ -372,14 +372,6 @@ test("the Easing copy button copies the bezier text, shows a check for a moment,
   await expect(copy.locator("svg.icon-tabler-copy")).toHaveCount(1, { timeout: 5000 });
   expect(await scene(page, "history")).toBe(history);
 
-  // A refused clipboard: quietly nothing (no check, no error).
-  await page.evaluate(() => {
-    navigator.clipboard.writeText = () => Promise.reject(new DOMException("refused", "NotAllowedError"));
-  });
-  await copy.click();
-  await page.waitForTimeout(100);
-  await expect(copy.locator("svg.icon-tabler-copy")).toHaveCount(1);
-
   // Mixed: the two segments from 0 to 24 with different Easings.
   await page.evaluate(() => {
     navigator.clipboard.writeText = () => { window.__copied = true; return Promise.resolve(); };
@@ -394,6 +386,63 @@ test("the Easing copy button copies the bezier text, shows a check for a moment,
   await expect(copy).toHaveAttribute("aria-disabled", "true");
   await copy.click({ force: true });
   expect(await page.evaluate(() => window.__copied ?? false)).toBe(false);
+  expect(problems).toEqual([]);
+});
+
+// Where the page has no navigator.clipboard (ComfyUI opened over plain http from another PC) or it refuses, the button
+// copies the bezier box's selected text with the browser's copy command; the check shows only when a copy happened, and
+// "Copy failed" (a cross) when neither could copy. A check still showing when the button turns off goes.
+test("the Easing copy button falls back to the copy command, says when copying failed, and drops its check when it turns off", async ({ page, context }) => {
+  const problems = await open(page);
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await scene(page, "select", { ids: ["sticker_1"], keyframes: { owner: "sticker_1", lane: null, frames: [0] } });
+  const panel = page.locator(".pano-studio-easing");
+  const copy = panel.locator('[data-part="easing-copy"]');
+  await expect(copy).not.toHaveAttribute("aria-disabled", "true");
+
+  // Turned off within the moment: the check goes, and does not come back when it turns on again.
+  await copy.click();
+  await expect(copy.locator("svg.icon-tabler-check")).toHaveCount(1);
+  await scene(page, "select", { ids: ["sticker_1"], keyframes: { owner: "sticker_1", lane: null, frames: [24] } });
+  await scene(page, "select", { ids: ["sticker_1"], keyframes: { owner: "sticker_1", lane: null, frames: [0] } });
+  await expect(copy).not.toHaveAttribute("aria-disabled", "true");
+  await expect(copy.locator("svg.icon-tabler-copy")).toHaveCount(1);
+  await expect(copy).toHaveAttribute("data-tip", "Copy");
+
+  // No navigator.clipboard (a page not served over https): the copy command copies the box's text.
+  await page.evaluate(async () => {
+    window.__clipboard = navigator.clipboard;
+    await window.__clipboard.writeText("before");
+    Object.defineProperty(navigator, "clipboard", { value: undefined, configurable: true });
+  });
+  await copy.click();
+  await expect(copy.locator("svg.icon-tabler-check")).toHaveCount(1);
+  expect(await page.evaluate(() => window.__clipboard.readText())).toBe("0.42, 0, 0.58, 1");
+  await expect(copy.locator("svg.icon-tabler-copy")).toHaveCount(1, { timeout: 5000 });
+
+  // A refused navigator.clipboard falls back the same way.
+  await page.evaluate(async () => {
+    await window.__clipboard.writeText("before");
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText: () => Promise.reject(new DOMException("refused", "NotAllowedError")) },
+      configurable: true,
+    });
+  });
+  await copy.click();
+  await expect(copy.locator("svg.icon-tabler-check")).toHaveCount(1);
+  expect(await page.evaluate(() => window.__clipboard.readText())).toBe("0.42, 0, 0.58, 1");
+  await expect(copy.locator("svg.icon-tabler-copy")).toHaveCount(1, { timeout: 5000 });
+
+  // Neither can copy: no check, "Copy failed" and a cross for a moment.
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, "clipboard", { value: undefined, configurable: true });
+    document.execCommand = () => false;
+  });
+  await copy.click();
+  await expect(copy).toHaveAttribute("data-tip", "Copy failed");
+  await expect(copy.locator("svg.icon-tabler-check")).toHaveCount(0);
+  await expect(copy.locator("svg.icon-tabler-x")).toHaveCount(1);
+  await expect(copy).toHaveAttribute("data-tip", "Copy", { timeout: 5000 });
   expect(problems).toEqual([]);
 });
 

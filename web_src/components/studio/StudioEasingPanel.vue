@@ -155,28 +155,63 @@ function onTextKeydown(event) {
 }
 
 // --- The copy button: the text as the box shows it to the clipboard, then a check for COPIED_MS. Nothing to copy while
-// the Easing is mixed or the panel is off (or the Easing has no four values: Auto, Hold). A refused clipboard does
-// nothing (no check).
+// the Easing is mixed or the panel is off (or the Easing has no four values: Auto, Hold). Where navigator.clipboard is
+// missing (a page not served over https, such as ComfyUI opened from another PC) or refuses, the box's text is selected
+// and copied with the browser's copy command; when neither copies, a cross and "Copy failed" show for COPIED_MS
+// instead (never a silent no-op). Turning off drops what shows.
 const COPIED_MS = 1200;
-const copied = ref(false);
+// null, "copied" or "failed".
+const copyResult = ref(null);
 const copyOff = computed(() => off.value || props.model.mixed || !props.model.text);
-let copiedTimer = null;
+const textBox = ref(null);
+let copyTimer = null;
 
-async function copyText() {
-  if (copyOff.value) return;
-  try {
-    await navigator.clipboard.writeText(props.model.text);
-  } catch {
-    return;
-  }
-  copied.value = true;
-  clearTimeout(copiedTimer);
-  copiedTimer = setTimeout(() => {
-    copied.value = false;
-  }, COPIED_MS);
+const copyIcon = computed(() => (copyResult.value === "copied" ? ICON.check : copyResult.value === "failed" ? ICON.close : ICON.copy));
+const copyTip = computed(() => (copyResult.value === "copied" ? "Copied" : copyResult.value === "failed" ? "Copy failed" : "Copy"));
+
+function showCopyResult(result) {
+  clearTimeout(copyTimer);
+  copyResult.value = result;
+  copyTimer = result ? setTimeout(() => (copyResult.value = null), COPIED_MS) : null;
 }
 
-onBeforeUnmount(() => clearTimeout(copiedTimer));
+watch(copyOff, (isOff) => {
+  if (isOff) showCopyResult(null);
+});
+
+// The box's text selected and copied with the browser's copy command; whether it copied.
+function copyWithCommand(button) {
+  const box = textBox.value;
+  if (!box) return false;
+  try {
+    box.focus({ preventScroll: true });
+    box.select();
+    return document.execCommand("copy") === true;
+  } catch {
+    return false;
+  } finally {
+    box.setSelectionRange?.(0, 0);
+    button?.focus?.({ preventScroll: true });
+  }
+}
+
+async function copyText(event) {
+  if (copyOff.value) return;
+  const button = event?.currentTarget ?? null;
+  let copied = false;
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(props.model.text);
+      copied = true;
+    } catch {
+      copied = false;
+    }
+  }
+  if (!copied) copied = copyWithCommand(button);
+  showCopyResult(copied ? "copied" : "failed");
+}
+
+onBeforeUnmount(() => clearTimeout(copyTimer));
 
 function onPaste(event) {
   const pasted = event.clipboardData?.getData("text") ?? "";
@@ -234,6 +269,7 @@ function onPaste(event) {
     </svg>
     <div class="pano-studio-easing-text-row">
       <input
+        ref="textBox"
         v-model="text"
         class="pano-studio-easing-text pano-studio-num"
         spellcheck="false"
@@ -245,9 +281,9 @@ function onPaste(event) {
         @paste="onPaste"
       >
       <StudioIconButton
-        :icon="copied ? ICON.check : ICON.copy"
+        :icon="copyIcon"
         label="Copy cubic bezier"
-        :tip="copied ? 'Copied' : 'Copy'"
+        :tip="copyTip"
         size="sm"
         :disabled="copyOff"
         data-part="easing-copy"
