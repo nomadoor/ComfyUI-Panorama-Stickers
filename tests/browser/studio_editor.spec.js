@@ -196,10 +196,23 @@ test("the knobs light for their operation, W moves until released or the window 
   // Alt lights the knobs of Alt's drags.
   await page.keyboard.down("Alt");
   await expect.poll(lit).toEqual(["orbit", "move"]);
+  // Once an Alt drag starts only its knob lights: Alt + left drag orbits, Alt + right drag moves forward/back
+  // (docs/space-and-view.md "視点の操作の部品").
+  const at = await stageCenter(stage);
+  await page.mouse.move(at.x, at.y);
+  await page.mouse.down();
+  await page.mouse.move(at.x + 30, at.y);
+  await expect.poll(lit).toEqual(["orbit"]);
+  await page.mouse.up();
+  await expect.poll(lit).toEqual(["orbit", "move"]);
+  await page.mouse.down({ button: "right" });
+  await page.mouse.move(at.x + 30, at.y + 30);
+  await expect.poll(lit).toEqual(["move"]);
+  await page.mouse.up({ button: "right" });
+  await expect.poll(lit).toEqual(["orbit", "move"]);
   await page.keyboard.up("Alt");
   await expect.poll(lit).toEqual([]);
-  // A right drag on the stage pans: the hand lights (ADR 0060).
-  const at = await stageCenter(stage);
+  // A right drag on the stage pans: the four arrows light (ADR 0060).
   await page.mouse.move(at.x, at.y);
   await page.mouse.down({ button: "right" });
   await page.mouse.move(at.x + 30, at.y + 10);

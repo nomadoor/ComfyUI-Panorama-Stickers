@@ -31,8 +31,8 @@ const emit = defineEmits(["press"]);
 const groups = computed(() => [
   [
     { key: "cursor", icon: ICON.cursor_tool, label: "Cursor", active: props.tool === "cursor" },
-    { key: "paint", icon: ICON.palette_tool, label: "Paint", active: props.tool === "paint", disabled: !props.canPaint, tip: props.canPaint ? "Paint" : "Paint · Read-only" },
-    { key: "mask", icon: ICON.circle_dashed_tool, label: "Mask", active: props.tool === "mask", disabled: !props.canPaint, tip: props.canPaint ? "Mask" : "Mask · Read-only" },
+    { key: "paint", icon: ICON.palette_tool, label: "Paint", active: props.tool === "paint", disabled: !props.canPaint, tip: props.canPaint ? "Paint on Sky" : "Paint on Sky · Read-only" },
+    { key: "mask", icon: ICON.circle_dashed_tool, label: "Mask", active: props.tool === "mask", disabled: !props.canPaint, tip: props.canPaint ? "Mask on Sky" : "Mask on Sky · Read-only" },
   ],
   [
     { key: "add", icon: "", drawn: "add", label: "Add", disabled: !props.canAdd, tip: "Add an image or a 3D file" },

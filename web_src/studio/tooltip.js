@@ -29,6 +29,15 @@ export const TIP_SIDES = [
   [".pano-studio-at-notice", "bottom"],
 ];
 
+// The group of TIP_SIDES the control sits in (its first ancestor, or itself, that matches), or null.
+export function tipGroup(element) {
+  for (const [selector] of TIP_SIDES) {
+    const group = element?.closest?.(selector);
+    if (group) return group;
+  }
+  return null;
+}
+
 // The side the control's bubble goes first: its own `data-tip-side`, else its group's, else above.
 export function tipSide(element) {
   const own = element?.getAttribute?.("data-tip-side");
@@ -40,10 +49,18 @@ export function tipSide(element) {
 }
 
 // Where the bubble of `size` ({ width, height }) goes beside `anchor` (the control's rect: { left, top, width, height }),
-// inside `bounds` (the editor's rect) less `edge`, `gap` away from the control. The preferred `side` first; the
-// opposite one when it would leave the bounds; when both would, the side that leaves them less. Along the side it is
-// centered on the control and pushed back inside the bounds. Returns { left, top, side } in the rects' coordinates.
-export function placeTip({ anchor, size, bounds, side = "top", gap = TIP_GAP, edge = TIP_EDGE }) {
+// inside `bounds` (the editor's rect) less `edge`, `gap` away from the control, or, for a control in a group, from the
+// group's rect (`group`, its rounded backdrop) on the axis the bubble goes along: a column's bubbles all stand `gap`
+// off its edge whatever each control's size. The preferred `side` first; the opposite one when it would leave the
+// bounds; when both would, the side that leaves them less. Along the side it is centered on the control and pushed
+// back inside the bounds. Returns { left, top, side } in the rects' coordinates.
+export function placeTip({ anchor: control, group = null, size, bounds, side = "top", gap = TIP_GAP, edge = TIP_EDGE }) {
+  const first = OPPOSITE[side] ? side : "top";
+  const across = first === "left" || first === "right";
+  const outer = group ?? control;
+  const anchor = across
+    ? { left: outer.left, width: outer.width, top: control.top, height: control.height }
+    : { left: control.left, width: control.width, top: outer.top, height: outer.height };
   const inner = {
     left: bounds.left + edge,
     top: bounds.top + edge,
@@ -57,7 +74,6 @@ export function placeTip({ anchor, size, bounds, side = "top", gap = TIP_GAP, ed
     right: inner.right - (anchor.left + anchor.width + gap),
   };
   const need = (s) => (s === "top" || s === "bottom" ? size.height : size.width);
-  const first = OPPOSITE[side] ? side : "top";
   const second = OPPOSITE[first];
   let chosen = first;
   if (room[first] < need(first)) {

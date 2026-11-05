@@ -33,7 +33,7 @@ async function hover(page, locator) {
   await locator.hover();
 }
 
-test("a left-column button's bubble shows to its right after the delay, 8px away, with the shortcut as a hint", async ({ page }) => {
+test("a left-column button's bubble shows to its right after the delay, 8px off the column, with the shortcut as a hint", async ({ page }) => {
   const problems = await open(page);
   const undo = page.locator('[data-tool="undo"]');
   await hover(page, undo);
@@ -47,7 +47,9 @@ test("a left-column button's bubble shows to its right after the delay, 8px away
   const tip = await bubble(page).boundingBox();
   const button = await undo.boundingBox();
   expect(overlaps(tip, button)).toBe(false);
-  expect(Math.round(tip.x - (button.x + button.width))).toBe(8);
+  // 8px off the column's backdrop, not the button (docs/studio-ui.md "ツールチップ" 置く側).
+  const column = await page.locator(".pano-studio-at-rail").boundingBox();
+  expect(Math.round(tip.x - (column.x + column.width))).toBe(8);
   // Centered on the button along its side.
   expect(Math.abs(tip.y + tip.height / 2 - (button.y + button.height / 2))).toBeLessThanOrEqual(1);
   // The pointer leaves: it hides at once.

@@ -104,3 +104,19 @@ test("a trailing (key) is the shortcut hint; other brackets stay text", () => {
   assert.deepEqual(splitTipKeys(""), { text: "", keys: "" });
   assert.deepEqual(splitTipKeys(null), { text: "", keys: "" });
 });
+
+// docs/studio-ui.md "ツールチップ" 置く側: in a group the gap is measured from the group's backdrop on the axis the bubble
+// goes along, and the bubble stays centered on the control across it.
+test("a control in a group: the bubble stands the gap off the group's edge, centered on the control", () => {
+  const group = { left: 100, top: 200, width: 46, height: 160 };
+  const control = { left: 106, top: 250, width: 34, height: 34 };
+  const right = placeTip({ anchor: control, group, size, bounds, side: "right" });
+  assert.deepEqual(right, { left: 146 + TIP_GAP, top: 250 + (34 - 24) / 2, side: "right" });
+  // A smaller control in a row: the bubble still stands off the row's top edge.
+  const row = { left: 500, top: 520, width: 220, height: 46 };
+  const small = { left: 560, top: 532, width: 22, height: 22 };
+  const top = placeTip({ anchor: small, group: row, size, bounds, side: "top" });
+  assert.deepEqual(top, { left: 560 + (22 - 80) / 2, top: 520 - TIP_GAP - 24, side: "top" });
+  // Without a group the control's own rect.
+  assert.equal(placeTip({ anchor: small, size, bounds, side: "top" }).top, 532 - TIP_GAP - 24);
+});

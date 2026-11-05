@@ -521,8 +521,9 @@ export function createStage({
   function syncUi() {
     ui.fov = viewFovValue(shownPose().hFOV_deg);
     ui.atStart = atResetView(camera.destination());
-    ui.fovNumberLit = fovNumberLit({ altHeld: input.altHeld(), dragging: !!shared.drag, space: viewMode() === "space" });
-    ui.fovLit = fovRulerLit({ altHeld: input.altHeld(), dragging: !!shared.drag, frame: viewMode() === "frame", movable: !!cameraTab?.movable() });
+    const operating = !!shared.drag || shared.keysMoving;
+    ui.fovNumberLit = fovNumberLit({ altHeld: input.altHeld(), operating, space: viewMode() === "space" });
+    ui.fovLit = fovRulerLit({ altHeld: input.altHeld(), operating, frame: viewMode() === "frame", movable: !!cameraTab?.movable() });
     const gesture = input.gesture();
     ui.lit = litKnobs({ gesture, keysMoving: shared.keysMoving, altHeld: input.altHeld() });
     ui.knobDrag = !!shared.drag?.knob;
