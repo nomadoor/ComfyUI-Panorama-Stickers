@@ -1122,6 +1122,8 @@ Camera タブでは同じ席で無効にする（tooltip は「Not available in 
   「This node's saved state can't be read, so changes won't be saved」を、エディタを閉じるまで出す。編集を受けてから捨てると気づかずに
   作業を失うので、編集そのものを受けない（読み取り専用のエディタと同じく、Add は無効、ドロップは受けない）。元のテキストはそのまま残り、
   ノードの実行が理由を出す。
+- 開く途中で失敗したときは、それまでに作ったものを放し、ノードはもう一度開ける。`state_json` は書かず、ペイントの層もアップロードしない
+  （`web_src/studio/editor.js` の `release`。Preview のウィンドウも同じく放す：`web_src/studio/preview_window.js`）。
 
 ## Preview のウィンドウ
 
