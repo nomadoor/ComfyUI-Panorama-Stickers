@@ -12,7 +12,7 @@ from comfyui_pano_suite.core.math import over_rgb, over_rgba, unpremultiply
 from comfyui_pano_suite.core.scene_eval import segment_easing
 from comfyui_pano_suite.core.scene_state import round_frame
 from comfyui_pano_suite.core.state import coverage_span, normalize_coverage
-from comfyui_pano_suite.core.video_source import cut_audio, pts_tolerance, pts_tolerance_frames
+from comfyui_pano_suite.core.video_source import cut_audio, pts_half_step, pts_tolerance, pts_tolerance_frames
 
 
 def test_coverage_span_is_180_or_else_360_and_raises_on_what_int_cannot_read():
@@ -49,6 +49,20 @@ def test_pts_tolerance_is_half_the_time_base_in_seconds_or_timeline_frames():
 
 def test_round_frame_rounds_half_up():
     assert [round_frame(value) for value in (0.5, 1.5, -0.5, -1.5, 2.4999)] == [1, 2, 0, -1, 2]
+
+
+def test_pts_half_step_is_exact_and_pts_tolerance_is_its_float():
+    assert pts_half_step(Fraction(1, 30000)) == Fraction(1, 60000)
+    assert pts_half_step(0) == 0
+    for time_base in (Fraction(1, 1000), Fraction(1001, 30000), Fraction(1, 90000), 0.04):
+        assert pts_tolerance(time_base) == float(time_base) / 2
+
+
+def test_round_frame_rounds_a_fraction_exactly():
+    just_under_half = Fraction(1, 2) - Fraction(1, 10**20)
+    assert float(just_under_half) + 0.5 == 1.0
+    assert round_frame(just_under_half) == 0
+    assert round_frame(Fraction(5, 2)) == 3 and round_frame(Fraction(-1, 2)) == 0
     assert round_frame(Fraction(5, 2)) == 3
 
 

@@ -1,7 +1,6 @@
 """(b) and (c) of Panorama Studio (`docs/studio-node.md`, "描画"): each output frame of a Scene rendered with the shared
 render function, the device memory a pass needs (`docs/runtime-resources.md`), the background's audio, and the
 first frame and `video` outputs."""
-import math
 from dataclasses import replace
 from fractions import Fraction
 
@@ -11,7 +10,7 @@ from . import file_3d
 from .core.cache import nbytes
 from .core.render import RenderLayer, StickerSource, render_frame
 from .core.scene_eval import evaluate_scene_state
-from .core.scene_state import DEFAULT_CLIP
+from .core.scene_state import DEFAULT_CLIP, round_frame
 from .core.world_render import ContentSource, SceneContent
 from .pano_scene import PanoSceneValue
 from .port_sticker import _port_rgba
@@ -170,7 +169,7 @@ def _bg_audio(bg, bg_clip: tuple | None, frames: int, rate: Fraction) -> dict | 
     waveform = audio["waveform"]
     placed = waveform.new_zeros((*waveform.shape[:-1], int(seconds * sample_rate)))
     # The media's sample i plays at output sample i + shift.
-    shift = math.floor(origin * sample_rate + Fraction(1, 2))
+    shift = round_frame(origin * sample_rate)
     first = max(int(start * sample_rate), shift)
     last = min(int(end * sample_rate), shift + waveform.shape[-1], placed.shape[-1])
     if last > first:

@@ -18,9 +18,14 @@ _BYTE_FORMATS = ("yuvj420p", "yuvj422p", "yuvj444p", "rgb24", "rgba", "pal8")
 _log = logging.getLogger(__name__)
 
 
+def pts_half_step(time_base) -> Fraction:
+    """Half the step `time_base` that PTS are rounded to, in seconds, exactly: a time within it of a PTS is that frame."""
+    return Fraction(time_base) / 2
+
+
 def pts_tolerance(time_base) -> float:
-    """Half the step `time_base` that PTS are rounded to, in seconds: a time within it of a PTS is that frame."""
-    return float(time_base) / 2
+    """`pts_half_step` of `time_base` as a float."""
+    return float(pts_half_step(time_base))
 
 
 def pts_tolerance_frames(time_base, stored_fps: float) -> float:

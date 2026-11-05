@@ -8,6 +8,7 @@ import json
 import math
 import re
 from copy import deepcopy
+from fractions import Fraction
 
 from .math import CURVE_MAX, CURVE_MIN
 from .paint_state import normalize_painting_state
@@ -105,9 +106,13 @@ def _clamp(value, lo, hi):
     return max(lo, min(hi, value))
 
 
+_HALF = Fraction(1, 2)
+
+
 def round_frame(value):
-    """`value` (frames) to the nearest whole frame, a half up: floor(value + 0.5)."""
-    return math.floor(value + 0.5)
+    """`value` (frames, or audio samples) to the nearest whole one, a half up: floor(value + 0.5). A Fraction is
+    rounded exactly (a float would round its last bits first)."""
+    return math.floor(value + (_HALF if isinstance(value, Fraction) else 0.5))
 
 
 def _frame(value):
