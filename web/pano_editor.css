@@ -754,65 +754,6 @@
   min-width: 35px;
   height: 35px;
 }
-/* A small segmented control of text segments (PanoSegments.vue): Move | Rotate | Scale in a world
-   Sticker's selection menu (#72). Its segments are as wide as the widest one, so the marker slides by
-   whole segments. Its items are not .pano-segment, which the side panel's settings use. */
-.pano-segments {
-  --pano-segment-pad: 3px;
-  position: relative;
-  display: inline-grid;
-  grid-auto-flow: column;
-  grid-auto-columns: 1fr;
-  height: 40px;
-  padding: var(--pano-segment-pad);
-  box-sizing: border-box;
-  border-radius: calc(var(--pano-float-radius) - var(--pano-float-pad));
-  background: var(--pano-bg-control);
-}
-.pano-selection-menu .pano-segments {
-  height: 35px;
-}
-.pano-segments::before {
-  content: "";
-  position: absolute;
-  top: var(--pano-segment-pad);
-  bottom: var(--pano-segment-pad);
-  left: var(--pano-segment-pad);
-  width: calc((100% - var(--pano-segment-pad) * 2) / var(--pano-segment-count, 2));
-  border-radius: calc(var(--pano-float-radius) - var(--pano-float-pad) - var(--pano-segment-pad));
-  background: var(--pano-surface-3);
-  transform: translateX(calc(var(--pano-segment-index, 0) * 100%));
-  transition: transform 170ms cubic-bezier(0.2, 0, 0, 1);
-  pointer-events: none;
-}
-.pano-segments-item {
-  position: relative;
-  z-index: 1;
-  min-width: 44px;
-  padding: 0 10px;
-  border: 0;
-  background: transparent;
-  color: var(--pano-muted);
-  font: inherit;
-  font-size: 12px;
-  font-weight: 500;
-  letter-spacing: 0.01em;
-  cursor: pointer;
-  appearance: none;
-  -webkit-appearance: none;
-  transition: color 100ms ease;
-}
-.pano-segments-item:not(.active):hover {
-  color: var(--pano-muted-strong);
-}
-.pano-segments-item.active {
-  color: var(--pano-text);
-}
-.pano-segments-item:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 1px var(--pano-accent);
-  border-radius: calc(var(--pano-float-radius) - var(--pano-float-pad) - var(--pano-segment-pad));
-}
 .pano-floating-left .pano-btn.pano-btn-icon.pano-btn-icon-accent {
   color: var(--pano-emphasis-text);
   background: var(--pano-emphasis-bg);

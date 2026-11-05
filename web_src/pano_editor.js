@@ -208,7 +208,6 @@ async function showEditor(node, type, options = {}) {
       dragging: false,
       armed: false,
     },
-    fovValue: "100°",
     outputPreviewToggle: {
       visible: false,
       icon: ICON.fullscreen,

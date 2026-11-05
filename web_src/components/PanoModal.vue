@@ -219,7 +219,6 @@ watch(() => props.open, (nextOpen) => {
 
           <PanoFloatingRight
             :buttons="uiState.floatingButtons || floatingButtons"
-            :fov-value="uiState.fovValue || '100°'"
             :preview="uiState.cameraPreview || {}"
             :preview-toggle="uiState.outputPreviewToggle || {}"
           />

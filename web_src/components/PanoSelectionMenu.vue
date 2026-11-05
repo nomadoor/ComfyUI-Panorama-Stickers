@@ -1,5 +1,4 @@
 <script setup>
-import PanoSegments from "./PanoSegments.vue";
 import SvgIcon from "./shared/SvgIcon.vue";
 
 defineProps({
@@ -36,12 +35,6 @@ defineProps({
           >{{ choice.label }}</button>
         </div>
       </div>
-      <PanoSegments
-        v-else-if="item.kind === 'segments'"
-        :buttons="item.buttons || []"
-        :attr="item.attr"
-        :label="item.label"
-      />
       <button
         v-else
         class="pano-btn pano-btn-icon"
