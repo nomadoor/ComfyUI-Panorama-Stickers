@@ -16034,8 +16034,7 @@ function xR(e, t = {}) {
   if (W_(e)) return;
   n.mode = String(t.mode || "stickers") === "cutout" ? "cutout" : "stickers";
   const o = n.mode === "stickers", a = o && e.__panoStudio === !0, s = o && !a, l = n.mode !== "cutout" && !a;
-  if (n.noPreview = t.noPreview === !0, n.openEditor = typeof t.onOpen == "function" ? t.onOpen : null, (S = n.dom) != null && S.widget || typeof e.addDOMWidget != "function")
-    return;
+  if (n.noPreview = t.noPreview === !0, n.openEditor = typeof t.onOpen == "function" ? t.onOpen : null, (S = n.dom) != null && S.widget) return;
   const c = t.noPreview === !0, f = {
     node: e,
     surface: n,
@@ -26128,7 +26127,7 @@ function b3(e) {
 }
 function v3(e, { app: t, uiList: n, mediaSource: r, mediaAssetSource: i, revisionOf: o, editorFile: a = null, refreshFile: s, openViewer: l, acquire: c = Jm }) {
   const d = pm(e);
-  if (d.surface || typeof (e == null ? void 0 : e.addDOMWidget) != "function") return;
+  if (d.surface) return;
   const u = b3(e), f = () => {
     var ne, I, z;
     return GN((z = (I = (ne = t == null ? void 0 : t.ui) == null ? void 0 : ne.settings) == null ? void 0 : I.getSettingValue) == null ? void 0 : z.call(I, Dk));

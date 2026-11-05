@@ -43,7 +43,7 @@ function sceneViewerRecordOf(node) {
 // Sticker's editor file; openViewer(node): the window.
 export function attachSceneViewerNode(node, { app, uiList, mediaSource, mediaAssetSource, revisionOf, editorFile = null, refreshFile, openViewer, acquire = acquirePreviewView }) {
   const owner = sceneViewer(node);
-  if (owner.surface || typeof node?.addDOMWidget !== "function") return;
+  if (owner.surface) return;
   const record = sceneViewerRecordOf(node);
   const viewControls = () => viewControlsPreset(app?.ui?.settings?.getSettingValue?.(VIEW_CONTROLS_SETTING_ID));
 

@@ -149,9 +149,6 @@ function attachPanoramaPreviewImpl(node, options = {}) {
   surface.noPreview = options.noPreview === true;
   surface.openEditor = typeof options.onOpen === "function" ? options.onOpen : null;
   if (surface.dom?.widget) return;
-  if (typeof node.addDOMWidget !== "function") {
-    return;
-  }
 
   const noPreview = options.noPreview === true;
   const bootMinHeight = noPreview ? 0 : 56;
