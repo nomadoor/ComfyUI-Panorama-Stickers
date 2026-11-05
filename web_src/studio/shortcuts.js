@@ -94,7 +94,7 @@ const keyRow = (label, ...actions) => ({
 
 // The buttons the stage's navigation takes (view_input.js navigationAction), as the list names them.
 const BUTTON_NAMES = Object.freeze({ 0: GESTURE_NAMES.drag, 2: GESTURE_NAMES.rightDrag, 1: GESTURE_NAMES.middleDrag });
-const NAVIGATION_LABELS = Object.freeze({ look: "Look around", orbit: "Orbit", pan: "Pan", joystick: "Move forward / back" });
+const NAVIGATION_LABELS = Object.freeze({ look: "Look around", orbit: "Orbit", pan: "Pan", joystick: "Move forward/back" });
 
 // action -> { keys, refs } of every button and Alt that starts it.
 function navigationRows() {

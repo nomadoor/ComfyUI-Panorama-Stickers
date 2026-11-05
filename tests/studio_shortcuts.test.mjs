@@ -30,7 +30,7 @@ test("every key of the handlers' tables is in the list, and the list names no ke
 test("every button and Alt the stage's navigation takes is in the list, each under the operation it starts", () => {
   const listed = new Map();
   for (const group of full) for (const row of group.rows) for (const ref of row.refs) if (ref.startsWith("button:")) listed.set(ref, row.label);
-  const labels = { look: "Look around", orbit: "Orbit", pan: "Pan", joystick: "Move forward / back" };
+  const labels = { look: "Look around", orbit: "Orbit", pan: "Pan", joystick: "Move forward/back" };
   const taken = [];
   for (const button of [0, 1, 2, 3, 4]) {
     for (const altKey of [false, true]) {
@@ -55,7 +55,7 @@ test("the list shows each key as the table has it, Ctrl as ⌘ on macOS", () => 
   assert.deepEqual(rowOf(full, "Look around").keys, [["Drag"], ["Middle-drag"]]);
   assert.deepEqual(rowOf(full, "Orbit").keys, [["Alt", "Drag"], ["Alt", "Middle-drag"]]);
   assert.deepEqual(rowOf(full, "Pan").keys, [["Right-drag"]]);
-  assert.deepEqual(rowOf(full, "Move forward / back").keys, [["Alt", "Right-drag"]]);
+  assert.deepEqual(rowOf(full, "Move forward/back").keys, [["Alt", "Right-drag"]]);
   assert.deepEqual(rowOf(full, "Move").keys, [["W"], ["S"], ["A"], ["D"], ["Q"], ["E"]]);
   assert.deepEqual(rowOf(full, "Show shortcuts").keys, [["?"]]);
   assert.deepEqual(rowOf(full, "Step back / close").keys, [["Esc"]]);

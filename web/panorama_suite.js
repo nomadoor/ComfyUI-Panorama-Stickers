@@ -28755,7 +28755,7 @@ const Mx = (e) => _x.find((t) => t.action === e).keys, ar = (e, ...t) => ({
   label: e,
   keys: t.flatMap(Mx),
   refs: t.map((n) => `key:${n}`)
-}), Sj = Object.freeze({ 0: yn.drag, 2: yn.rightDrag, 1: yn.middleDrag }), Zb = Object.freeze({ look: "Look around", orbit: "Orbit", pan: "Pan", joystick: "Move forward / back" });
+}), Sj = Object.freeze({ 0: yn.drag, 2: yn.rightDrag, 1: yn.middleDrag }), Zb = Object.freeze({ look: "Look around", orbit: "Orbit", pan: "Pan", joystick: "Move forward/back" });
 function _j() {
   const e = {};
   for (const t of [!1, !0])
