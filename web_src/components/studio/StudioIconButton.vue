@@ -14,7 +14,7 @@ const props = defineProps({
   size: { type: String, default: "md" },
   // The chosen one of a group (a tool); not a toggle.
   active: { type: Boolean, default: false },
-  // A view knob while its operation runs.
+  // The strong fill: a view knob being dragged, or a button whose panel is open ("?").
   lit: { type: Boolean, default: false },
   // A view knob lit quietly, in the hover's fill: its operation runs from the stage, or Alt points it out (the lit fill
   // is kept for a knob being dragged).

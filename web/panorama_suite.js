@@ -29360,7 +29360,7 @@ const Cj = ["data-drop-place"], Ij = ["d", "fill"], Tj = ["d", "stroke", "stroke
     size: { type: String, default: "md" },
     // The chosen one of a group (a tool); not a toggle.
     active: { type: Boolean, default: !1 },
-    // A view knob while its operation runs.
+    // The strong fill: a view knob being dragged, or a button whose panel is open ("?").
     lit: { type: Boolean, default: !1 },
     // A view knob lit quietly, in the hover's fill: its operation runs from the stage, or Alt points it out (the lit fill
     // is kept for a knob being dragged).
@@ -34868,8 +34868,8 @@ function Zx() {
     // Alt is held without a drag in the Camera tab's Frame view with a Camera that moves: the FOV ruler shows that Alt +
     // wheel changes it (docs/studio-ui.md "Camera タブ").
     fovLit: !1,
-    // Alt is held without a drag where the wheel zooms the view: the FOV number shows that Alt + wheel changes it
-    // (docs/space-and-view.md "寄る").
+    // Alt is held with no view operation under way where the wheel zooms the view: the FOV number shows that Alt + wheel
+    // changes it (docs/space-and-view.md "寄る").
     fovNumberLit: !1
   };
 }

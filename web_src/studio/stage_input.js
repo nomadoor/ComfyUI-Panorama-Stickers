@@ -378,7 +378,7 @@ export function createStageInput(shared, {
   }
 
   // Alt alone, pressed or let go, would move the focus to the browser's menu on Windows, and the next Alt would not
-  // reach the page (docs/space-and-view.md "つまみ"). Keys pressed with Alt keep their meaning.
+  // reach the page (docs/space-and-view.md "視点の操作の部品"). Keys pressed with Alt keep their meaning.
   function holdBareAlt(event) {
     if (event.key === "Alt") event.preventDefault();
   }

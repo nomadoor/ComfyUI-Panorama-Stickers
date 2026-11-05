@@ -54,8 +54,8 @@ export function stageUi() {
     // Alt is held without a drag in the Camera tab's Frame view with a Camera that moves: the FOV ruler shows that Alt +
     // wheel changes it (docs/studio-ui.md "Camera タブ").
     fovLit: false,
-    // Alt is held without a drag where the wheel zooms the view: the FOV number shows that Alt + wheel changes it
-    // (docs/space-and-view.md "寄る").
+    // Alt is held with no view operation under way where the wheel zooms the view: the FOV number shows that Alt + wheel
+    // changes it (docs/space-and-view.md "寄る").
     fovNumberLit: false,
   };
 }
