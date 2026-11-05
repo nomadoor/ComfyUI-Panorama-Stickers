@@ -19,6 +19,7 @@ from comfyui_pano_suite import nodes
 from comfyui_pano_suite.core import video as core_video
 from comfyui_pano_suite.core.video_source import MaterializedVideo
 from comfyui_pano_suite.nodes import PanoramaPreviewSceneNode
+from comfyui_pano_suite.core.video import encode_editor_mp4, save_editor_frames
 
 # A variable frame rate: the gaps are 40, 60 and 20 ms.
 VFR_MS = [0, 40, 100, 120, 160, 220, 240, 280, 340, 360, 400, 460, 480, 520, 580, 600, 640, 700, 720, 760]
@@ -126,7 +127,7 @@ def test_a_large_video_gets_a_proxy_capped_in_size(tmp_path, monkeypatch):
 
 def test_the_proxy_is_encoded_once_per_video(tmp_path, monkeypatch):
     encoded = []
-    encode = nodes.encode_editor_mp4
+    encode = encode_editor_mp4
     monkeypatch.setattr("comfyui_pano_suite.media_ui.encode_editor_mp4", lambda opened, progress=None: encoded.append(opened) or encode(opened, progress))
     video = _file(tmp_path, "long.mp4", gop=250)
 
@@ -269,7 +270,7 @@ def test_a_single_image_or_frame_sticker_has_no_mp4(tmp_path):
 
 def test_the_sticker_proxy_is_encoded_once_while_its_input_stays_the_same(tmp_path, monkeypatch):
     encoded = []
-    encode = nodes.encode_editor_mp4
+    encode = encode_editor_mp4
     monkeypatch.setattr("comfyui_pano_suite.media_ui.encode_editor_mp4", lambda opened, progress=None: encoded.append(opened) or encode(opened, progress))
     video = _file(tmp_path, "sticker.mp4", gop=250)
     batch = torch.rand((3, 16, 32, 3))
@@ -286,7 +287,7 @@ def test_the_sticker_proxy_is_encoded_once_while_its_input_stays_the_same(tmp_pa
 
 def test_an_rgba_sticker_image_batch_keeps_its_alpha_as_pngs(tmp_path, monkeypatch):
     saved = []
-    save = nodes.save_editor_frames
+    save = save_editor_frames
     monkeypatch.setattr("comfyui_pano_suite.media_ui.save_editor_frames", lambda images, progress=None: saved.append(images) or save(images, progress))
     batch = torch.rand((3, 16, 32, 4))
     state = json.dumps({"version": 2, "timeline": {"fps": 12}})

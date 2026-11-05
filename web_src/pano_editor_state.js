@@ -438,7 +438,6 @@ export function fileSource(asset) {
 
 // The v1 asset of a file Source, which the editor's image loading (mediaAssetSource) reads.
 export function sourceAsset(source) {
-  if (source.data_url) return { type: "dataurl", value: source.data_url };
   return { type: "comfy_image", filename: source.filename, subfolder: source.subfolder, storage: source.storage };
 }
 

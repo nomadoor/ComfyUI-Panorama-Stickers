@@ -5,6 +5,7 @@
 import { editorSession } from "/web_src/pano_node_bridge.js";
 import { openStudioEditor } from "/web_src/studio/editor.js";
 import { rememberView } from "/web_src/studio/view_camera.js";
+import { servedImage, viewApiURL } from "./view_files.js";
 
 const getContext = HTMLCanvasElement.prototype.getContext;
 HTMLCanvasElement.prototype.getContext = function (type, options = {}) {
@@ -44,7 +45,7 @@ export const STATE = {
     {
       id: "sticker_1",
       placement: "sky",
-      source: { kind: "file", data_url: canvasUrl(160, 120, "#2fbf4f") },
+      source: servedImage("green.png", canvasUrl(160, 120, "#2fbf4f")),
       direction: { value: { yaw_deg: 0, pitch_deg: 0 } },
       size: { value: { hFOV_deg: 16, vFOV_deg: 12 } },
       z_index: 1,
@@ -52,7 +53,7 @@ export const STATE = {
     {
       id: "sticker_2",
       placement: "world",
-      source: { kind: "file", data_url: canvasUrl(160, 80, "#2f5fdf") },
+      source: servedImage("blue.png", canvasUrl(160, 80, "#2f5fdf")),
       position: { value: [0, -0.7, -2] },
       scale: { value: 0.8 },
     },
@@ -91,7 +92,7 @@ try {
   };
   const app = { getNodeImageUrls: (target) => (target === origin ? [url] : []), nodeOutputs: {} };
   editorSession(node).view = rememberView({ position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0, target: [0, 0, -2] }, "panorama");
-  const editor = await openStudioEditor(node, { app, storage: { getItem: () => null, setItem() {} } });
+  const editor = await openStudioEditor(node, { app, api: { apiURL: viewApiURL }, storage: { getItem: () => null, setItem() {} } });
   studio.session = editor.session;
   studio.paint = editor.paint;
   // The stage's pixels at (x, y) CSS px of the stage: [r, g, b, a].

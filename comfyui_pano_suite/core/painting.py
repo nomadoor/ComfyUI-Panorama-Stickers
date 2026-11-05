@@ -9,7 +9,7 @@ import json
 import numpy as np
 
 from .cache import CACHE
-from .math import over_rgb
+from .math import over_rgb, unpremultiply
 from .paint_rasters import (
     _composite_raster_patch,
     _decode_raster_data_url,
@@ -64,7 +64,7 @@ def _sample_box(texels: np.ndarray, size: tuple[int, int], local_u: np.ndarray, 
     bottom += (np.take(texels, row + below + right, axis=0) - bottom) * fx
     top += (bottom - top) * fy
     alpha = top[:, 3:4]
-    top[:, :3] = np.where(alpha > 1e-6, top[:, :3] / np.maximum(alpha, 1e-6), 0.0)
+    top[:, :3] = unpremultiply(top[:, :3], alpha)
     out.reshape(-1, 4)[inside] = top
     return out
 

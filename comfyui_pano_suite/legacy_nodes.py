@@ -4,7 +4,6 @@ painting, and the batched outputs with their preview. The node classes are in `n
 import json
 import logging
 import math
-from pathlib import Path
 
 import comfy.model_management
 import numpy as np
@@ -438,7 +437,6 @@ def _build_overlay_erp_rgba_and_mask(
     erp_width: int,
     erp_height: int,
     painting_payload: dict | None = None,
-    base_dir: Path | None = None,
     quality: str = "export",
     ui_ret: dict | None = None,
     warning_key: str | None = None,
@@ -456,7 +454,6 @@ def _build_overlay_erp_rgba_and_mask(
         int(erp_width),
         int(erp_height),
         painting_payload=painting_payload,
-        base_dir=base_dir,
         quality=quality,
     )
     painting_state = state.get("painting")

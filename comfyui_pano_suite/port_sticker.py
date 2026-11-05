@@ -41,9 +41,9 @@ def _lane_numbers(value) -> tuple:
     return tuple(value) if isinstance(value, list) else (value,)
 
 
-def _handoff_lanes(sticker_state: dict, fps: float) -> tuple[str, dict]:
-    """The placement and Lanes of the port Sticker that put it back where the Camera of `sticker_state` shot it
-    (Pose handoff), at the Timeline `fps` of the state. The Sticker's clip frame is the time of its media.
+def _handoff_lanes(sticker_state: dict, fps: float) -> dict:
+    """The Lanes of the port Sticker that put it back where the Camera of `sticker_state` shot it (Pose handoff),
+    at the Timeline `fps` of the state. The Sticker's clip frame is the time of its media.
 
     It is always a `sky` Sticker (direction, roll, size and lens curve), wherever the Camera stands (ADR 0059): at
     infinity it covers what was at infinity from any position, and seen from the Camera it covers the shot.
@@ -68,7 +68,6 @@ def _handoff_lanes(sticker_state: dict, fps: float) -> tuple[str, dict]:
             # Yaw and roll keep turning past 180 instead of jumping back a whole turn between Keyframes.
             value = {**value, "yaw_deg": _nearest_turn(value["yaw_deg"], shots[-1]["yaw_deg"]), "roll_deg": _nearest_turn(value["roll_deg"], shots[-1]["roll_deg"])}
         shots.append(value)
-    placement = "sky"
     direction = [{"yaw_deg": value["yaw_deg"], "pitch_deg": value["pitch_deg"]} for value in shots]
     roll = [value["roll_deg"] for value in shots]
     # A port Sticker's vFOV follows its media (`derive_vfov`); stored, it is hFOV (docs/scene-state-v2.md).
@@ -83,7 +82,7 @@ def _handoff_lanes(sticker_state: dict, fps: float) -> tuple[str, dict]:
             for frame, value in zip(frames, values)
         ] if moves else []
         lanes[name] = {"value": values[0], "keyframes": keyframes}
-    return placement, lanes
+    return lanes
 
 
 # The view a 3D port Sticker that the node adds is fitted to (docs/editor-interaction.md, "3D の Sticker を収めて
@@ -109,30 +108,24 @@ def _top_sky_z_index(state: dict) -> int:
     return max((sticker["z_index"] for sticker in state["stickers"] if sticker["placement"] == "sky"), default=-1) + 1
 
 
-def _port_sticker(state: dict, handoff: tuple[str, dict] | None) -> dict:
-    """The port Sticker appended when the state has none, placed by the `handoff` (`_handoff_lanes`) when given."""
-    placement, lanes = handoff or ("sky", {"direction": {"value": {"yaw_deg": 0.0, "pitch_deg": 0.0}}, "roll": {"value": 0.0}, "size": {"value": {"hFOV_deg": 30.0, "vFOV_deg": 30.0}}})
-    raw = {"id": _take_sticker_id(state), "placement": placement, "source": {"kind": "port"}, **lanes}
-    if placement == "sky":
-        raw["z_index"] = _top_sky_z_index(state)
+def _port_sticker(state: dict, handoff: dict | None) -> dict:
+    """The sky port Sticker appended when the state has none, with the Lanes of the `handoff` (`_handoff_lanes`)
+    when given."""
+    lanes = handoff or {"direction": {"value": {"yaw_deg": 0.0, "pitch_deg": 0.0}}, "roll": {"value": 0.0}, "size": {"value": {"hFOV_deg": 30.0, "vFOV_deg": 30.0}}}
+    raw = {"id": _take_sticker_id(state), "placement": "sky", "source": {"kind": "port"}, **lanes, "z_index": _top_sky_z_index(state)}
     return load_scene_state({"version": 2, "stickers": [raw]})["stickers"][0]
 
 
-def _inherit_handoff(state: dict, stored: dict, placement: str, lanes: dict) -> dict:
-    """The stored port Sticker with the Lanes of the handoff (`_handoff_lanes`), except those in its
-    `handoff_overrides`, which keep their stored value (ADR 0030). The placement follows the handoff: a stored
-    Sticker of the other placement is replaced under the same id, keeping its Clip range, visibility, lock, crop,
-    opacity, and the `handoff_overrides` of Lanes the new placement has; its other Lanes and overrides are dropped."""
-    if stored["placement"] == placement:
+def _inherit_handoff(state: dict, stored: dict, lanes: dict) -> dict:
+    """The stored port Sticker with the sky Lanes of the handoff (`_handoff_lanes`), except those in its
+    `handoff_overrides`, which keep their stored value (ADR 0030). A stored `world` Sticker is replaced by a sky
+    one under the same id, keeping its Clip range, visibility, lock, crop, opacity, and the `handoff_overrides` of
+    sky Lanes; its world Lanes and their overrides are dropped."""
+    if stored["placement"] == "sky":
         raw = {**stored, **{name: lane for name, lane in lanes.items() if name not in stored["handoff_overrides"]}}
-        if "lens" not in lanes:
-            # A shot through a pinhole alone hands today's plane, whatever lens an earlier shot handed.
-            raw.pop("lens", None)
     else:
         kept = {key: stored[key] for key in ("id", "source", "clip", "visible", "locked", "crop", "opacity", "handoff_overrides")}
-        raw = {**kept, "placement": placement, **lanes}
-        if placement == "sky":
-            raw["z_index"] = _top_sky_z_index(state)
+        raw = {**kept, "placement": "sky", **lanes, "z_index": _top_sky_z_index(state)}
     return load_scene_state({"version": 2, "stickers": [raw]})["stickers"][0]
 
 
@@ -142,7 +135,7 @@ def _port_rgba(image: torch.Tensor) -> np.ndarray:
     return np.concatenate([image[..., :3], alpha], axis=-1)
 
 
-def _port_media(state: dict, sticker, sticker_state, warnings: list[str]) -> tuple[PortMedia | None, tuple[str, dict] | None]:
+def _port_media(state: dict, sticker, sticker_state, warnings: list[str]) -> tuple[PortMedia | None, dict | None]:
     """The media on the sticker input, on the port Sticker, and the handoff (`_handoff_lanes`) it got from
     `sticker_state` (None without one, or for 3D media).
 
@@ -164,7 +157,7 @@ def _port_media(state: dict, sticker, sticker_state, warnings: list[str]) -> tup
         state["stickers"].append(_world_port_sticker(state, sticker) if is_3d else _port_sticker(state, handoff))
         index = len(state["stickers"]) - 1
     elif handoff is not None:
-        state["stickers"][index] = _inherit_handoff(state, state["stickers"][index], *handoff)
+        state["stickers"][index] = _inherit_handoff(state, state["stickers"][index], handoff)
     elif is_3d and state["stickers"][index]["placement"] == "sky":
         stored = state["stickers"][index]
         state["stickers"][index] = {**_world_port_sticker(state, sticker, stored["id"]), **{key: stored[key] for key in ("clip", "visible", "locked", "animation") if key in stored}}

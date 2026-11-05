@@ -76,7 +76,7 @@ class PanoramaSeamPrepNode(io.ComfyNode):
         return work.clamp(0.0, 1.0)
 
     @classmethod
-    def execute(cls, image, seam_width_px=64, seam_center_offset_px=0, mask_blur_px=0):
+    def execute(cls, image, seam_width_px=64, seam_center_offset_px=0, mask_blur_px=10):
         if image is None or not hasattr(image, "shape"):
             empty_img = torch.zeros((1, 1, 1, 3), dtype=torch.float32)
             empty_mask = torch.zeros((1, 1, 1), dtype=torch.float32)

@@ -202,7 +202,6 @@ export function createComfyMediaAdapter({ app, api, ImageCtor, imageState, read:
   const assetSource = (asset) => {
     if (!asset || typeof asset !== "object") return "";
     const type = String(asset.type || "").trim().toLowerCase();
-    if (type === "dataurl") return String(asset.value || "");
     if (type !== "comfy_image") return "";
     const filename = String(asset.filename || "").trim();
     if (!filename) return "";

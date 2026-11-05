@@ -12,7 +12,8 @@ import folder_paths
 from comfy_api.latest import Types
 from comfy_extras.nodes_gaussian_splat import _C0
 
-from comfyui_pano_suite.nodes import PanoramaStudioNode, PanoSceneValue
+from comfyui_pano_suite.nodes import PanoramaStudioNode
+from comfyui_pano_suite.pano_scene import PanoSceneValue
 
 
 def temp_entry_path(entry) -> Path:

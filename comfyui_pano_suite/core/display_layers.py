@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from pathlib import Path
 import time
 
 import numpy as np
 
 from .cutout import sample_cutout_from_sampling_map
 from .display_list import alpha_composite_over_rgba, build_display_entries
-from .math import unit_float
+from .math import unit_float, unpremultiply
 from .painting import render_painting_to_erp
 from .stickers import render_stickers_to_rgba_erp
 
@@ -109,7 +108,6 @@ def compose_display_list_to_overlay_rgba(
     height: int,
     *,
     painting_payload: dict | None = None,
-    base_dir: Path | None = None,
     quality: str = "export",
 ) -> tuple[np.ndarray, bool, dict]:
     canvas = np.zeros((height, width, 4), dtype=np.float32)
@@ -140,7 +138,6 @@ def compose_display_list_to_overlay_rgba(
                 sticker_state,
                 width,
                 height,
-                base_dir=base_dir,
                 quality=quality,
                 stickers_override=[entry.get("item")],
                 coverage_override=360,
@@ -182,12 +179,7 @@ def sample_overlay_rgba_from_sampling_map(
     premultiplied = source[..., :3] * alpha[..., None]
     warped_premultiplied = sample_cutout_from_sampling_map(premultiplied, sampling_map)
     warped_alpha = sample_cutout_from_sampling_map(alpha, sampling_map)
-    safe_alpha = np.maximum(warped_alpha[..., None], 1e-6)
-    warped_rgb = np.where(
-        warped_alpha[..., None] > 1e-6,
-        warped_premultiplied / safe_alpha,
-        0.0,
-    )
+    warped_rgb = unpremultiply(warped_premultiplied, warped_alpha[..., None])
     return np.dstack([
         np.clip(warped_rgb, 0.0, 1.0),
         np.clip(warped_alpha, 0.0, 1.0),

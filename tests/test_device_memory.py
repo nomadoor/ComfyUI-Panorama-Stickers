@@ -8,7 +8,10 @@ pytest.importorskip("comfy_api.latest", reason="ComfyUI's real V3 API is require
 
 from comfyui_pano_suite import nodes
 from comfyui_pano_suite.core.cache import nbytes
-from comfyui_pano_suite.nodes import RENDER_FLOATS_PER_PIXEL, PanoramaStickersNode, PanoramaStudioNode
+from comfyui_pano_suite.nodes import PanoramaStickersNode, PanoramaStudioNode
+from comfy_api.latest import Types
+from comfyui_pano_suite.legacy_nodes import _estimate_sticker_chunk_size
+from comfyui_pano_suite.scene_render import DEVICE_SOURCE_FACTOR, RENDER_FLOATS_PER_PIXEL
 
 
 def _record_free_memory(monkeypatch, device=torch.device("cpu"), free=0):
@@ -33,14 +36,14 @@ def test_each_render_pass_frees_its_estimate_once(monkeypatch):
     assert device == torch.device("cpu")
     pixels = 256 * 128
     sources = 64 * 128 * 3 * 4 + 40 * 30 * 4 * 4
-    assert required == pixels * RENDER_FLOATS_PER_PIXEL * 4 + sources * nodes.DEVICE_SOURCE_FACTOR
+    assert required == pixels * RENDER_FLOATS_PER_PIXEL * 4 + sources * DEVICE_SOURCE_FACTOR
     result[3].get_components()
     assert len(calls) == 2
 
 
 def test_the_estimate_counts_the_3d_media(monkeypatch, tmp_path):
     calls = _record_free_memory(monkeypatch)
-    splat = nodes.Types.SPLAT(torch.zeros(1, 50, 3), torch.full((1, 50, 3), 0.01), torch.tensor([[[1.0, 0, 0, 0]]]).expand(1, 50, 4),
+    splat = Types.SPLAT(torch.zeros(1, 50, 3), torch.full((1, 50, 3), 0.01), torch.tensor([[[1.0, 0, 0, 0]]]).expand(1, 50, 4),
                               torch.zeros(1, 50, 1), torch.zeros(1, 50, 1, 3))
 
     PanoramaStudioNode.execute(background_color="#00ff00", background_range="360", megapixels=256 * 128 / 2**20, multiple=128, world=splat)
@@ -94,8 +97,8 @@ def test_legacy_chunk_size_reads_free_memory_from_comfy(monkeypatch):
     monkeypatch.setattr(nodes.comfy.model_management, "is_device_cpu", lambda device: False)
     monkeypatch.setattr(nodes.comfy.model_management, "get_free_memory", lambda device: 10 * (64 * 32 * 16 * 2 * 2) / 0.45)
 
-    assert nodes._estimate_sticker_chunk_size(100, 32, 64, torch.device("cuda")) == 10
-    assert nodes._estimate_sticker_chunk_size(4, 32, 64, torch.device("cuda")) == 4
+    assert _estimate_sticker_chunk_size(100, 32, 64, torch.device("cuda")) == 10
+    assert _estimate_sticker_chunk_size(4, 32, 64, torch.device("cuda")) == 4
 
 
 def test_legacy_stickers_does_not_empty_the_cache_per_chunk(monkeypatch):

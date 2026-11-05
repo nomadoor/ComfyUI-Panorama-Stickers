@@ -77,7 +77,8 @@ test("normalizes Comfy image entries and sticker assets through the public API U
     "/api/view?filename=frame+01.png&type=temp&subfolder=shots%2Fa",
   );
   assert.equal(media.source({ src: "blob:preview" }), "blob:preview");
-  assert.equal(media.assetSource({ type: "dataurl", value: "data:image/png;base64,AA==" }), "data:image/png;base64,AA==");
+  // ADR 0063: an embedded image is not read.
+  assert.equal(media.assetSource({ type: "dataurl", value: "data:image/png;base64,AA==" }), "");
   assert.equal(
     media.assetSource({ type: "comfy_image", filename: "asset.png", subfolder: "stickers", storage: "input" }),
     "/api/view?filename=asset.png&type=input&subfolder=stickers",

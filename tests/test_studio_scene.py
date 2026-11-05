@@ -21,16 +21,17 @@ from comfy_api.latest import Types
 from comfyui_pano_suite.core import render as render_module
 from comfyui_pano_suite.core.scene_eval import evaluate_scene_state
 from comfyui_pano_suite.core.scene_state import load_scene_state
-from comfyui_pano_suite.nodes import PanoramaStudioNode, PanoSceneValue
+from comfyui_pano_suite.nodes import PanoramaStudioNode
 from comfyui_pano_suite.scene_video import SceneVideo
 from test_legacy_goldens import _golden_mismatch
 from scene_test_helpers import output_size
 from tools import bake_legacy_goldens
-from tools.bake_legacy_goldens import ASSETS, FIXTURE_DIR, _painting, _stroke, build_background_erp
+from tools.bake_legacy_goldens import FIXTURE_DIR, sticker_assets, _painting, _stroke, build_background_erp
 
 
 # Panorama Studio without a Camera: the Scene it builds, shot as the ERP from the World origin.
 from tools.golden_png import read_png16
+from comfyui_pano_suite.pano_scene import PanoSceneValue
 
 
 def _execute(state=None, **inputs):
@@ -77,7 +78,7 @@ def _save_from_editor(state_json: str) -> str:
 
 
 def _run_saved_by_editor(coverage: str, stickers=(), painting=None):
-    state = {"assets": ASSETS, "stickers": list(stickers)}
+    state = {"assets": sticker_assets(), "stickers": list(stickers)}
     if painting is not None:
         state["painting"] = painting
     saved = _save_from_editor(json.dumps(state))

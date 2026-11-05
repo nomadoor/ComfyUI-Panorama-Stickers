@@ -26,6 +26,7 @@ import { editorSession } from "/web_src/pano_node_bridge.js";
 import { openStudioEditor } from "/web_src/studio/editor.js";
 import { rememberView } from "/web_src/studio/view_camera.js";
 import { makeVideo } from "./media.js";
+import { servedImage, viewApiURL } from "./view_files.js";
 
 const getContext = HTMLCanvasElement.prototype.getContext;
 HTMLCanvasElement.prototype.getContext = function (type, options = {}) {
@@ -117,8 +118,8 @@ function upstreamCase(own, world = false) {
     timeline: { fps: 24 },
     camera: null,
     stickers: [
-      { id: "sticker_1", placement: "sky", source: { kind: "file", data_url: dataUrl(160, 120, fill(COLORS.upstreamSky)) }, direction: { value: { yaw_deg: 0, pitch_deg: 0 } }, size: { value: { hFOV_deg: 30, vFOV_deg: 22.5 } } },
-      { id: "sticker_2", placement: "world", source: { kind: "file", data_url: dataUrl(128, 128, fill(COLORS.upstreamBoard)) }, position: { value: [1.6, 0, -3] }, scale: { value: 1.2 } },
+      { id: "sticker_1", placement: "sky", source: servedImage("upstream_sky.png", dataUrl(160, 120, fill(COLORS.upstreamSky))), direction: { value: { yaw_deg: 0, pitch_deg: 0 } }, size: { value: { hFOV_deg: 30, vFOV_deg: 22.5 } } },
+      { id: "sticker_2", placement: "world", source: servedImage("upstream_board.png", dataUrl(128, 128, fill(COLORS.upstreamBoard))), position: { value: [1.6, 0, -3] }, scale: { value: 1.2 } },
     ],
   };
   return {
@@ -191,7 +192,7 @@ try {
   const late = which.startsWith("upstream-late") || which === "handoff-late" ? setup.result : null;
   if (late) setup.result = which === "handoff-late" ? { pano_sticker_input_images: late.pano_sticker_input_images } : {};
   // ComfyUI's api, for the `executed` event of a result that comes later.
-  const api = which.startsWith("handoff") ? new EventTarget() : null;
+  const api = Object.assign(which.startsWith("handoff") ? new EventTarget() : {}, { apiURL: viewApiURL });
   // Each input comes from a node of its own: ids 100, 101, ...
   const origins = setup.inputs.map((input, index) => ({ id: 100 + index, title: input.name, type: input.type, image: input.image ?? null }));
   const graphNodes = [...origins, ...(setup.upstreamNode ? [setup.upstreamNode] : [])];
@@ -239,7 +240,7 @@ try {
   // The run's result arrives in ComfyUI's store (the editor reads it on its next draw).
   studio.arrive = () => {
     if (late) app.nodeOutputs[31] = late;
-    api?.dispatchEvent(Object.assign(new Event("executed"), { detail: { node: "31", display_node: "31", output: late } }));
+    api.dispatchEvent?.(Object.assign(new Event("executed"), { detail: { node: "31", display_node: "31", output: late } }));
   };
   studio.ready = true;
 } catch (error) {

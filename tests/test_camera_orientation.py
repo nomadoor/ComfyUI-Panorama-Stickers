@@ -6,7 +6,7 @@ import numpy as np
 
 from comfyui_pano_suite.core.cutout import build_cutout_sampling_map
 from comfyui_pano_suite.core.math import camera_basis
-from comfyui_pano_suite.core.stickers import compose_single_sticker_to_canvas_erp
+from comfyui_pano_suite.core.stickers import render_stickers_to_rgba_erp
 from comfyui_pano_suite.core.world import (
     pano_to_world,
     panorama_angles,
@@ -195,19 +195,18 @@ def test_sticker_screen_right_keeps_increasing_erp_longitude_near_the_pole():
     sticker_image = np.zeros((2, 2, 4), dtype=np.float32)
     sticker_image[:, 0] = [1.0, 0.0, 0.0, 1.0]
     sticker_image[:, 1] = [0.0, 1.0, 0.0, 1.0]
-    canvas = np.zeros((180, 360, 4), dtype=np.float32)
 
-    rendered = compose_single_sticker_to_canvas_erp(
-        canvas,
-        {
+    rendered = render_stickers_to_rgba_erp(
+        {"stickers": [{
             "image_rgba": sticker_image,
             "yaw_deg": 0.0,
             "pitch_deg": 89.0,
             "hFOV_deg": 20.0,
             "vFOV_deg": 10.0,
             "rot_deg": 0.0,
-        },
-        {},
+        }]},
+        360,
+        180,
     )
 
     red_pixels = np.argwhere((rendered[..., 0] > rendered[..., 1]) & (rendered[..., 3] > 0.1))

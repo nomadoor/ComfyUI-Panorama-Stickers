@@ -6,7 +6,6 @@ them. The three legacy node classes are defined here, with their helpers in `leg
 `tests/test_nodes_preview.py` builds them from a fresh import of this module with a stand-in ComfyUI API."""
 import hashlib
 import logging
-from pathlib import Path
 
 # Also read as `nodes.comfy.model_management` by the tests that replace ComfyUI's device functions.
 import comfy.model_management
@@ -45,36 +44,6 @@ from .node_runtime import NODE_RUNTIME, _NodeProgress, _audio_signature, _tensor
 from .preview_node import PanoramaPreviewSceneNode, _preview_ui
 from .seam_prep import PanoramaSeamPrepNode
 from .studio_node import PanoramaStudioNode
-
-# Read as `nodes.<name>` by tests, tools, and parity scripts. Each lives and is called in the module it is imported
-# from; a test that replaces one patches that module, since replacing it here reaches no caller.
-from comfy_api.latest import Types  # noqa: F401
-
-from .core.display_layers import (  # noqa: F401
-    compose_display_list_to_overlay_rgba as _compose_display_list_to_overlay_rgba,
-)
-from .core.render import render_frame  # noqa: F401
-from .core.scene_eval import evaluate_scene_state  # noqa: F401
-from .core.state import hex_to_rgb01  # noqa: F401
-from .core.video import editor_ready, encode_editor_mp4, save_editor_frames  # noqa: F401
-from .file_3d import _read_scene_file, _scene_content  # noqa: F401
-from .legacy_nodes import _estimate_sticker_chunk_size  # noqa: F401
-from .media_ui import _bg_media_ui, _port_media_ui, _scene_ui  # noqa: F401
-from .pano_scene import PanoSceneValue, SceneLayer  # noqa: F401
-from .port_sticker import (  # noqa: F401
-    PORT_3D_FIT_FOV_DEG,
-    _handoff_lanes,
-    _in_hold,
-    _inherit_handoff,
-    _port_media,
-    _take_sticker_id,
-)
-from .scene_build import _override_layers, _painting_sources, _upstream_ui  # noqa: F401
-from .scene_files import write_editor_files  # noqa: F401
-from .scene_mesh import read_mesh_file  # noqa: F401
-from .scene_render import DEVICE_SOURCE_FACTOR, RENDER_FLOATS_PER_PIXEL, _render_frames  # noqa: F401
-from .scene_timeline import _decide_timeline, _timing_video  # noqa: F401
-from .studio_node import STUDIO_MAX_OUTPUT_SIDE, _studio_output_size, _studio_run_key  # noqa: F401
 
 
 def _common_video_preview_inputs(*, default_fps: float = 24.0) -> list:
@@ -199,7 +168,7 @@ class PanoramaStickersNode(io.ComfyNode):
         workspace_w, workspace_h = cls._resolve_overlay_workspace_size(out_w, out_h, coverage_value)
         bg_hex = _normalize_hex_color(bg_color)
         fps_value = max(1.0, finite_float(fps, 24.0))
-        state = merge_state(state_in=None, internal_state=state_json, fallback_preset=out_w, fallback_bg=bg_hex)
+        state = merge_state(state_json, fallback_preset=out_w, fallback_bg=bg_hex)
         warnings = []
         if cls._is_auto_output_preset(output_preset) and not output_uses_bg_size:
             warnings.append("Output preset is auto, but bg_erp is not connected; using 2048 instead.")
@@ -303,7 +272,6 @@ class PanoramaStickersNode(io.ComfyNode):
             erp_width=workspace_w,
             erp_height=workspace_h,
             painting_payload=painting_payload,
-            base_dir=Path.cwd(),
             quality="export",
             ui_ret=ui_ret,
             warning_key="pano_sticker_warnings",
@@ -411,7 +379,7 @@ class PanoramaCutoutNode(io.ComfyNode):
     def execute(cls, erp_image, coverage, state_json, output_megapixels=1.0, fps=24.0, audio=None, unique_id=None):
         output_megapixels = max(0.01, finite_float(output_megapixels, 1.0))
         fps_value = max(1.0, finite_float(fps, 24.0))
-        state = merge_state(state_in=None, internal_state=state_json)
+        state = merge_state(state_json)
         coverage_value = normalize_coverage(coverage)
         state["coverage"] = coverage_value
         shots = state.get("shots", []) if isinstance(state, dict) else []
@@ -469,7 +437,6 @@ class PanoramaCutoutNode(io.ComfyNode):
                     erp_width=ow,
                     erp_height=oh,
                     painting_payload=painting_payload,
-                    base_dir=Path.cwd(),
                     quality="export",
                     ui_ret=ui_ret,
                     warning_key="pano_cutout_warnings",
@@ -556,7 +523,6 @@ class PanoramaCutoutNode(io.ComfyNode):
                 erp_width=int(src.shape[1]),
                 erp_height=int(src.shape[0]),
                 painting_payload=painting_payload,
-                base_dir=Path.cwd(),
                 quality="export",
                 ui_ret=ui_ret,
                 warning_key="pano_cutout_warnings",

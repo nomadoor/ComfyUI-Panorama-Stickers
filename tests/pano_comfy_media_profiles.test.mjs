@@ -87,7 +87,7 @@ test("the nodeSurface profile builds the same view candidates and asset URLs as 
   assert.deepEqual(media.sourceCandidates(""), []);
   assert.equal(media.assetSource({ type: "comfy_image", filename: "s.png", subfolder: "stk", storage: "temp" }), "/api/view?filename=s.png&type=temp&subfolder=stk");
   assert.equal(media.assetSource({ type: "comfy_image", filename: "s.png" }), "/api/view?filename=s.png&type=input");
-  assert.equal(media.assetSource({ type: "dataurl", value: "data:x" }), "data:x");
+  assert.equal(media.assetSource({ type: "dataurl", value: "data:x" }), "");
 });
 
 test("a profile is named; an unknown name throws", () => {

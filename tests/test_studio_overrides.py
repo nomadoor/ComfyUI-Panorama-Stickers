@@ -1,8 +1,7 @@
 """Panorama Studio applies its overrides of the upstream layers (`upstream`, ADR 0030) to the Scene it shoots and
 passes on."""
 
-import base64
-import io
+from pathlib import Path
 
 import pytest
 import torch
@@ -14,6 +13,7 @@ pytest.importorskip(
     reason="ComfyUI's real V3 API is required to run the Panorama Studio node",
 )
 
+import folder_paths
 from comfyui_pano_suite import sticker_media
 from test_stickers_scene_video import _cfr
 from test_studio_upstream import BLUE, GREEN, RED, _center, _frames, _shows, _sky_port, _solid, _studio
@@ -21,13 +21,14 @@ from tools.bake_legacy_goldens import _painting, _stroke
 
 
 def _file(*colors):
-    """A `file` Source one pixel high with a column per color from the left."""
+    """A `file` Source one pixel high with a column per color from the left, written to ComfyUI's temp directory
+    (the test's own, tests/conftest.py)."""
     image = Image.new("RGB", (len(colors), 1))
     for x, rgb in enumerate(colors):
         image.putpixel((x, 0), tuple(round(value * 255) for value in rgb))
-    buf = io.BytesIO()
-    image.save(buf, format="PNG")
-    return {"kind": "file", "data_url": "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")}
+    name = "file_" + "_".join(f"{round(value * 255):02x}" for rgb in colors for value in rgb) + ".png"
+    image.save(Path(folder_paths.get_temp_directory()) / name, format="PNG")
+    return {"kind": "file", "filename": name, "subfolder": "", "storage": "temp"}
 
 
 def _sky(sticker_id, rgb, yaw_deg=0.0, **sticker):

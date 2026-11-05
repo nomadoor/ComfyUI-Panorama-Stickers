@@ -9,6 +9,7 @@ import { openStudioEditor } from "/web_src/studio/editor.js";
 import { rememberView } from "/web_src/studio/view_camera.js";
 import { panoPoint } from "./live_erp_scene.js";
 import { CAMERA, MARKERS, MARKER_DISTANCE, SKY_MARKER } from "./studio_camera_wired_scene.js";
+import { servedImage, viewApiURL } from "./view_files.js";
 
 const getContext = HTMLCanvasElement.prototype.getContext;
 HTMLCanvasElement.prototype.getContext = function (type, options = {}) {
@@ -71,7 +72,7 @@ const STATE = {
     ...(params.has("sky") ? [] : MARKERS).map(([name, yaw, pitch, rgb], index) => ({
       id: `sticker_${index + 1}`,
       placement: "world",
-      source: { kind: "file", data_url: solid(`rgb(${rgb.join(",")})`) },
+      source: servedImage(`solid_${rgb.join("_")}.png`, solid(`rgb(${rgb.join(",")})`)),
       position: { value: at(yaw, pitch) },
       rotation: { value: facingRotation(at(yaw, pitch), CAMERA.position) },
       scale: { value: 0.6 },
@@ -79,7 +80,7 @@ const STATE = {
     {
       id: "sticker_9",
       placement: "sky",
-      source: { kind: "file", data_url: solid(`rgb(${SKY_MARKER[3].join(",")})`) },
+      source: servedImage("sky_marker.png", solid(`rgb(${SKY_MARKER[3].join(",")})`)),
       direction: { value: { yaw_deg: SKY_MARKER[1], pitch_deg: SKY_MARKER[2] } },
       size: { value: { hFOV_deg: 8, vFOV_deg: 8 } },
       z_index: 1,
@@ -115,7 +116,7 @@ try {
   };
   const app = { getNodeImageUrls: (target) => (target === origin ? [url] : []), nodeOutputs: {} };
   editorSession(node).view = rememberView({ position: [0, 0.4, 2.6], yaw_deg: 0, pitch_deg: -6, target: [0, -0.2, -1] }, "panorama");
-  const editor = await openStudioEditor(node, { app, api: null, storage: memoryStorage });
+  const editor = await openStudioEditor(node, { app, api: { apiURL: viewApiURL }, storage: memoryStorage });
   studio.session = editor.session;
   studio.stage = () => editor.stage();
   studio.node = node;

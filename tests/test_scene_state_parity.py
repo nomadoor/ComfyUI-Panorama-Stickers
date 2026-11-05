@@ -168,14 +168,13 @@ def test_3d_file_sources_are_told_by_the_extension_table():
     for case in table["cases"]:
         source = {"kind": "file", "filename": case["filename"], "subfolder": "3d", "storage": "input"}
         assert is_3d_file_source(source) is case["is_3d"], case["filename"]
-    # A data URL is an image, and so is the port.
-    assert is_3d_file_source({"kind": "file", "data_url": "data:image/png;base64,AAAA"}) is False
+    # The port is not a 3D file.
     assert is_3d_file_source({"kind": "port"}) is False
 
 
 @pytest.mark.parametrize("case", json.loads((FIXTURES / "sticker_ids.json").read_text(encoding="utf-8"))["take"])
 def test_the_node_takes_sticker_ids_as_the_shared_fixture(case):
-    from comfyui_pano_suite.nodes import _take_sticker_id
+    from comfyui_pano_suite.port_sticker import _take_sticker_id
 
     state = load_scene_state(json.dumps(case["state"]))
     ids = []

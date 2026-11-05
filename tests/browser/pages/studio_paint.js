@@ -7,6 +7,7 @@ import { editorSession } from "/web_src/pano_node_bridge.js";
 import { openStudioEditor } from "/web_src/studio/editor.js";
 import { rememberView } from "/web_src/studio/view_camera.js";
 import { createPaintInput } from "/web_src/editor/paint_input.js";
+import { servedImage, viewApiURL } from "./view_files.js";
 
 const getContext = HTMLCanvasElement.prototype.getContext;
 HTMLCanvasElement.prototype.getContext = function (type, options = {}) {
@@ -45,7 +46,7 @@ export const STATE = {
     {
       id: "sticker_1",
       placement: "sky",
-      source: { kind: "file", data_url: poster },
+      source: servedImage("poster.png", poster),
       direction: { value: { yaw_deg: -40, pitch_deg: 10 } },
       size: { value: { hFOV_deg: 16, vFOV_deg: 12 } },
       z_index: 1,
@@ -61,6 +62,7 @@ const dataUrlOf = (blob) => new Promise((resolve) => {
   reader.readAsDataURL(blob);
 });
 const api = {
+  apiURL: viewApiURL,
   async fetchApi(path, { body }) {
     const image = body.get("image");
     const upload = { path, name: image.name, type: body.get("type"), subfolder: body.get("subfolder"), overwrite: body.get("overwrite") };
