@@ -54,8 +54,6 @@ TIMELINE_LENGTH_MAX = TIMELINE_FRAME_MAX
 # A Camera's aspect is held to 1/CAMERA_ASPECT_LIMIT..CAMERA_ASPECT_LIMIT. The output is at most 8192 on its long side and
 # at least `multiple` (8 or more) on its short one, so any ratio thinner than 8192 : 8 already shoots the same frame.
 CAMERA_ASPECT_LIMIT = 2048.0
-# A v1 number written as text: ASCII decimal without `_`, with ASCII whitespace around it.
-V1_NUMBER_TEXT = re.compile(r"[ \t\n\r\f\v]*[+-]?(?:[0-9]+\.?[0-9]*|\.[0-9]+)(?:[eE][+-]?[0-9]+)?[ \t\n\r\f\v]*")
 # The largest Sticker number (`sticker_<n>`) the `next_sticker_id` counter keeps: JS integers are exact up to here.
 STICKER_NUMBER_MAX = 2**53 - 1
 # At most 16 digits (past STICKER_NUMBER_MAX): a longer number is not counted, and int() of a very long one raises.
@@ -723,11 +721,10 @@ def rebase_upstream_record(record: dict, layer_state: dict) -> dict:
 
 
 def _v1_pose_number(value):
-    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+    """A v1 pose number: a JSON number only (ADR 0063), else NaN."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
         return math.nan
-    if not isinstance(value, str):
-        return _float(value)
-    return float(value) if V1_NUMBER_TEXT.fullmatch(value) else math.nan
+    return _float(value)
 
 
 def _sticker_state_camera(raw):
@@ -765,7 +762,7 @@ def load_sticker_state(text) -> dict | None:
     if not isinstance(raw, dict) or raw.get("kind") != STICKER_STATE_KIND:
         return None
     version = raw.get("version")
-    if not isinstance(version, bool) and version in (1, "1"):
+    if not isinstance(version, bool) and version == 1:
         camera = _v1_sticker_state_camera(raw.get("pose"))
         if camera is None:
             return None
@@ -773,9 +770,12 @@ def load_sticker_state(text) -> dict | None:
         source_aspect = aspect if math.isfinite(aspect) and aspect > 0.0 else None
         fps = 24.0
     elif not isinstance(version, bool) and version == 2:
+        # A sticker_state without a readable fps is not read (ADR 0063).
+        fps = _timeline_fps(raw.get("fps"))
+        if fps is None:
+            return None
         camera = _sticker_state_camera(raw.get("camera"))
         source_aspect = _positive(raw.get("source_aspect"), None)
-        fps = _timeline_fps(raw.get("fps")) or 24.0
     else:
         raise ValueError(f"Unsupported sticker_state version {version!r}; supported versions are 1 and 2.")
     return {

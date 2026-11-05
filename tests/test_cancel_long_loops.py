@@ -175,7 +175,7 @@ def test_cancelled_legacy_stickers_batch_leaves_no_preview_mp4(tmp_path, monkeyp
 
 def _handoff():
     keys = [{"frame": frame, "value": {"yaw_deg": frame * 9.0, "pitch_deg": 0.0, "roll_deg": 0.0}} for frame in (0, 10)]
-    _handoff_lanes(load_sticker_state(json.dumps({"kind": STICKER_STATE_KIND, "version": 2, "camera": {"rotation": keys}})), 24.0)
+    _handoff_lanes(load_sticker_state(json.dumps({"kind": STICKER_STATE_KIND, "version": 2, "fps": 24.0, "camera": {"rotation": keys}})), 24.0)
 
 
 def _timeline():

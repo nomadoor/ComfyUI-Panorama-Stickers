@@ -290,7 +290,7 @@ def test_load_sticker_state_rejects_unknown_version():
 
 
 def test_sticker_state_v2_without_camera_gets_one_default_keyframe_per_lane():
-    parsed = load_sticker_state('{"kind":"pano_sticker_state","version":2,"camera":[]}')
+    parsed = load_sticker_state('{"kind":"pano_sticker_state","version":2,"fps":24,"camera":[]}')
     easing = [0.42, 0.0, 0.58, 1.0]
     assert parsed["camera"] == {
         "position": [{"frame": 0, "value": [0.0, 0.0, 0.0], "easing": easing}],
@@ -352,26 +352,23 @@ def test_json_non_finite_constants_are_rejected(constant):
     assert load_sticker_state(f'{{"kind":"pano_sticker_state","version":2,"fps":{constant}}}') is None
 
 
-def test_sticker_state_v1_accepts_numeric_strings():
-    parsed = load_sticker_state('{"kind":"pano_sticker_state","version":"1","pose":{"yaw_deg":"190","pitch_deg":" -100 ","roll_deg":2,"hFOV_deg":"30"},"source_aspect":"1.5"}')
+def test_sticker_state_v1_reads_json_numbers_only():
+    # ADR 0063: numbers written as text and a version written as text are not read.
+    pose = '"pose":{"yaw_deg":190,"pitch_deg":-100,"roll_deg":2,"hFOV_deg":30}'
+    parsed = load_sticker_state('{"kind":"pano_sticker_state","version":1,%s,"source_aspect":"1.5"}' % pose)
     assert parsed["camera"]["rotation"][0]["value"] == {"yaw_deg": -170.0, "pitch_deg": -89.9, "roll_deg": 2.0}
-    assert parsed["camera"]["fov"][0]["value"] == 30.0
-    assert parsed["source_aspect"] == 1.5
-    assert load_sticker_state('{"kind":"pano_sticker_state","version":1,"pose":{"yaw_deg":"","pitch_deg":0,"roll_deg":0,"hFOV_deg":30}}') is None
-    assert load_sticker_state('{"kind":"pano_sticker_state","version":1,"pose":{"yaw_deg":true,"pitch_deg":0,"roll_deg":0,"hFOV_deg":30}}') is None
-
-
-def test_a_v1_pose_number_is_read_as_the_fixture_shared_with_js_says():
-    for case in json.loads(read_fixture("sticker_state_v1_numbers"))["cases"]:
-        text = '{"kind":"pano_sticker_state","version":1,"pose":{"yaw_deg":0,"pitch_deg":0,"roll_deg":0,"hFOV_deg":%s}}' % case["json"]
-        parsed = load_sticker_state(text)
-        assert (None if parsed is None else parsed["camera"]["fov"][0]["value"]) == case["fov"], case["json"][:20]
+    assert parsed["source_aspect"] is None
+    with pytest.raises(ValueError, match="Unsupported sticker_state version"):
+        load_sticker_state('{"kind":"pano_sticker_state","version":"1",%s}' % pose)
+    for value in ('"30"', '""', "true"):
+        assert load_sticker_state('{"kind":"pano_sticker_state","version":1,"pose":{"yaw_deg":0,"pitch_deg":0,"roll_deg":0,"hFOV_deg":%s}}' % value) is None
 
 
 def test_a_sticker_state_fps_is_read_as_the_fixture_shared_with_js_says():
     for case in json.loads(read_fixture("sticker_state_fps"))["cases"]:
         parsed = load_sticker_state('{"kind":"pano_sticker_state","version":2,"fps":%s}' % case["json"])
-        assert parsed["fps"] == pytest.approx(case["expected"]), case["json"][:20]
+        assert (None if parsed is None else parsed["fps"]) == pytest.approx(case["expected"]), case["json"][:20]
+    assert load_sticker_state('{"kind":"pano_sticker_state","version":2}') is None
 
 
 def test_a_camera_aspect_is_read_as_the_fixture_shared_with_js_says():

@@ -287,7 +287,7 @@ def test_scene_input_is_shot_from_this_camera_with_a_perspective_projection(monk
 
 
 def test_scene_input_draws_its_sky_stickers_over_bg_color():
-    sticker_state = json.dumps({"kind": "pano_sticker_state", "version": 2, "camera": {"rotation": [{"frame": 0, "value": {"yaw_deg": 90.0}}], "fov": [{"frame": 0, "value": 40.0}]}})
+    sticker_state = json.dumps({"kind": "pano_sticker_state", "version": 2, "fps": 24.0, "camera": {"rotation": [{"frame": 0, "value": {"yaw_deg": 90.0}}], "fov": [{"frame": 0, "value": 40.0}]}})
     scene = _upstream(sticker=_solid([0.0, 0.0, 1.0]), sticker_state=sticker_state)[0]
 
     at_sticker = _shoot(scene, _camera(yaw_deg=90.0, hFOV_deg=10.0), background_color="#00ff00")[0]

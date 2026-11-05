@@ -722,14 +722,9 @@ function wrapYawDeg(value) {
   return ((((value + 180) % 360) + 360) % 360) - 180;
 }
 
-// A v1 number written as text: ASCII decimal without `_`, with ASCII whitespace around it (docs/scene-state-v2.md).
-// Not Number()'s hex, octal and binary prefixes or its Infinity.
-const V1_NUMBER_TEXT = /^[ \t\n\r\f\v]*[+-]?(?:[0-9]+\.?[0-9]*|\.[0-9]+)(?:[eE][+-]?[0-9]+)?[ \t\n\r\f\v]*$/;
-
+// A v1 pose number: a JSON number only (ADR 0063), else NaN.
 function v1PoseNumber(value) {
-  if (typeof value === "number") return value;
-  if (typeof value !== "string") return NaN;
-  return V1_NUMBER_TEXT.test(value) ? Number(value) : NaN;
+  return typeof value === "number" ? value : NaN;
 }
 
 // Each Camera Lane's Keyframes; an empty or invalid Lane is one Keyframe of its default value at frame 0.
@@ -771,16 +766,18 @@ export function loadStickerState(text) {
   let camera;
   let sourceAspect;
   let fps;
-  if (version === 1 || version === "1") {
+  if (version === 1) {
     camera = v1StickerStateCamera(raw.pose);
     if (!camera) return null;
     const aspect = v1PoseNumber(raw.source_aspect);
     sourceAspect = Number.isFinite(aspect) && aspect > 0 ? aspect : null;
     fps = 24;
   } else if (version === 2) {
+    // A sticker_state without a readable fps is not read (ADR 0063).
+    fps = timelineFps(raw.fps);
+    if (fps === null) return null;
     camera = stickerStateCamera(raw.camera);
     sourceAspect = positive(raw.source_aspect, null);
-    fps = timelineFps(raw.fps) ?? 24;
   } else {
     throw new Error(`Unsupported sticker_state version ${JSON.stringify(version)}; supported versions are 1 and 2.`);
   }

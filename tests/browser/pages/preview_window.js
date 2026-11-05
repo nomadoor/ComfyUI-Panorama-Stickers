@@ -5,6 +5,7 @@ import { openPreviewWindow } from "/web_src/studio/preview_window.js";
 import { peekSceneViewer, previewNode, sceneViewer } from "/web_src/pano_node_bridge.js";
 import { makeVideo } from "./media.js";
 import { pauseNodeVideoForWindow, resumeNodeVideoFromWindow } from "/web_src/pano_preview_node_surface.js";
+import { servedImage, viewApiURL } from "./view_files.js";
 
 // ?video: the source is a VIDEO (its gray goes from dark to light over its length), in the node's result.
 const VIDEO = new URLSearchParams(location.search).has("video");
@@ -99,7 +100,7 @@ try {
     id: "scene_up",
     timeline: { fps: 24 },
     camera: null,
-    stickers: [{ id: "sticker_1", placement: "world", source: { kind: "file", data_url: solid(128, 128, "#e02020") }, position: { value: [0, 0, -3] }, scale: { value: 1.2 } }],
+    stickers: [{ id: "sticker_1", placement: "world", source: servedImage("red.png", solid(128, 128, "#e02020")), position: { value: [0, 0, -3] }, scale: { value: 1.2 } }],
   };
   const nodeOutputs = SCENE
     ? {
@@ -156,7 +157,7 @@ try {
   const app = { getNodeImageUrls: (target) => (target === origin && url && !PROCESSED ? [url] : []), nodeOutputs };
   let win = null;
   preview.open = async () => {
-    win = await openPreviewWindow(node, { app, api: null, storage: { getItem: () => null, setItem: () => {} } });
+    win = await openPreviewWindow(node, { app, api: { apiURL: viewApiURL }, storage: { getItem: () => null, setItem: () => {} } });
     return !!win;
   };
   preview.close = () => win?.close();
@@ -168,7 +169,7 @@ try {
       ? (Object.defineProperty(node, "title", { configurable: true, get() { throw new Error("broken title"); } }), () => Object.defineProperty(node, "title", { configurable: true, writable: true, value: "Panorama Preview" }))
       : (previewNode(node).runtime = { view: null, windowOpened() { throw new Error("broken hand-over"); }, windowClosed: (handBack) => told.push(["closed", handBack]), requestDraw() {}, teardown() {} }, () => (previewNode(node).runtime = runtime));
     try {
-      const opened = await openPreviewWindow(node, { app, api: null, storage: { getItem: () => null, setItem: () => {} } });
+      const opened = await openPreviewWindow(node, { app, api: { apiURL: viewApiURL }, storage: { getItem: () => null, setItem: () => {} } });
       opened?.close();
       return "opened";
     } catch (error) {

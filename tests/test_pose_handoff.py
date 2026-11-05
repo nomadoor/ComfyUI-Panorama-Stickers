@@ -133,7 +133,7 @@ def test_camera_cut_stays_a_cut_at_another_fps():
 
 def test_camera_keyframes_of_one_rotation_keep_the_direction_static():
     rotation = {"yaw_deg": 33.0, "pitch_deg": 21.0, "roll_deg": 7.0}
-    sticker_state = json.dumps({"kind": "pano_sticker_state", "version": 2, "camera": {
+    sticker_state = json.dumps({"kind": "pano_sticker_state", "version": 2, "fps": 24.0, "camera": {
         "rotation": [{"frame": 0, "value": rotation}, {"frame": 10, "value": rotation}],
         "fov": [{"frame": 0, "value": 60.0}, {"frame": 10, "value": 40.0}],
     }})

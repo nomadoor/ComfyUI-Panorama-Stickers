@@ -3097,7 +3097,7 @@ function fm(e) {
   return { kind: "file", filename: e.filename, subfolder: e.subfolder, storage: e.storage };
 }
 function nc(e) {
-  return e.data_url ? { type: "dataurl", value: e.data_url } : { type: "comfy_image", filename: e.filename, subfolder: e.subfolder, storage: e.storage };
+  return { type: "comfy_image", filename: e.filename, subfolder: e.subfolder, storage: e.storage };
 }
 function fs(e) {
   const t = v1(new Set(e.stickers.map((n) => n.id)), e.next_sticker_id);
@@ -8701,10 +8701,7 @@ function ua({ app: e, api: t, ImageCtor: n, imageState: r, read: i = "editor" } 
     }
     return typeof (w == null ? void 0 : w.src) == "string" && w.src ? w.src : typeof (w == null ? void 0 : w.url) == "string" && w.url ? w.url : a(w);
   }, l = (w) => {
-    if (!w || typeof w != "object") return "";
-    const T = String(w.type || "").trim().toLowerCase();
-    if (T === "dataurl") return String(w.value || "");
-    if (T !== "comfy_image") return "";
+    if (!w || typeof w != "object" || String(w.type || "").trim().toLowerCase() !== "comfy_image") return "";
     const N = String(w.filename || "").trim();
     return N ? a({
       filename: N,

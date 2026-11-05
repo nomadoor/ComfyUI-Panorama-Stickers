@@ -63,7 +63,7 @@ test("a row selected in the Timeline shows in the inspector; an edit changes the
   const problems = await open(page, testInfo);
   await sceneShown(page);
   await rowName(page, "sticker_1").click();
-  await expect(cardTitle(page)).toHaveText("sticker_1");
+  await expect(cardTitle(page)).toHaveText("red.png");
   await expect(page.locator('.pano-studio-tl-head[data-head="sticker_1"]')).toHaveClass(/is-selected/);
   await expect(page.locator('[data-tool="undo"]')).toHaveAttribute("aria-disabled", "true");
 

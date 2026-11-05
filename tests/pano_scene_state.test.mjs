@@ -119,19 +119,26 @@ test("a hold Cut lands on a frame that misses the Keyframe only by float roundin
   assert.equal(yawAt(24 - 1e-5), 0);
 });
 
-// The same cases test_scene_state.py reads.
-test("a v1 pose number is read as the fixture shared with Python says", () => {
-  for (const { json, fov } of JSON.parse(fixture("sticker_state_v1_numbers")).cases) {
-    const parsed = loadStickerState(`{"kind":"pano_sticker_state","version":1,"pose":{"yaw_deg":0,"pitch_deg":0,"roll_deg":0,"hFOV_deg":${json}}}`);
-    assert.equal(parsed === null ? null : parsed.camera.fov[0].value, fov, json.slice(0, 20));
+// ADR 0063, as test_scene_state.py: numbers written as text and a version written as text are not read.
+test("a v1 sticker_state reads JSON numbers only", () => {
+  const pose = '"pose":{"yaw_deg":190,"pitch_deg":-100,"roll_deg":2,"hFOV_deg":30}';
+  const parsed = loadStickerState(`{"kind":"pano_sticker_state","version":1,${pose},"source_aspect":"1.5"}`);
+  assert.deepEqual(parsed.camera.rotation[0].value, { yaw_deg: -170, pitch_deg: -89.9, roll_deg: 2 });
+  assert.equal(parsed.source_aspect, null);
+  assert.throws(() => loadStickerState(`{"kind":"pano_sticker_state","version":"1",${pose}}`), /Unsupported sticker_state version/);
+  for (const value of ['"30"', '""', "true"]) {
+    assert.equal(loadStickerState(`{"kind":"pano_sticker_state","version":1,"pose":{"yaw_deg":0,"pitch_deg":0,"roll_deg":0,"hFOV_deg":${value}}}`), null);
   }
 });
 
 // The same cases test_scene_state.py reads.
 test("a sticker_state fps is read as the fixture shared with Python says", () => {
   for (const { json, expected } of JSON.parse(fixture("sticker_state_fps")).cases) {
-    assertClose(loadStickerState(`{"kind":"pano_sticker_state","version":2,"fps":${json}}`).fps, expected, json.slice(0, 20));
+    const parsed = loadStickerState(`{"kind":"pano_sticker_state","version":2,"fps":${json}}`);
+    if (expected === null) assert.equal(parsed, null, json.slice(0, 20));
+    else assertClose(parsed.fps, expected, json.slice(0, 20));
   }
+  assert.equal(loadStickerState('{"kind":"pano_sticker_state","version":2}'), null);
 });
 
 // The same cases test_scene_state.py reads.
@@ -169,14 +176,6 @@ test("a camera aspect is read as the fixture shared with Python says", () => {
   for (const { shot, expected } of table.v1_shots) {
     assertClose(loadSceneState({ version: 1, shots: [shot] }).camera.aspect, expected, JSON.stringify(shot));
   }
-});
-
-test("sticker_state v1 accepts numeric strings like the old parser", () => {
-  const parsed = loadStickerState('{"kind":"pano_sticker_state","version":"1","pose":{"yaw_deg":"190","pitch_deg":" -100 ","roll_deg":2,"hFOV_deg":"30"},"source_aspect":"1.5"}');
-  assert.deepEqual(parsed.camera.rotation[0].value, { yaw_deg: -170, pitch_deg: -89.9, roll_deg: 2 });
-  assert.equal(parsed.camera.fov[0].value, 30);
-  assert.deepEqual(parsed.camera.position[0].value, [0, 0, 0]);
-  assert.equal(parsed.source_aspect, 1.5);
 });
 
 test("Clip range edges use the same frame epsilon", () => {
