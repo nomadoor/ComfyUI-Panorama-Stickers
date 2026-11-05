@@ -4,7 +4,7 @@ Preview ノードの入力と素通しの規則、旧ノードのプレビュー
 
 この文書が持たない規則：Panorama Studio の出力（`docs/studio-node.md`）、`PANO_SCENE` の形と上流の Scene の `ui` のキー（`docs/studio-node.md` の「`PANO_SCENE`」「上流の Scene」）、空間の表示の描き方と出力との差（`docs/threejs-spark-integration.md`）、視点の操作とプリセット（`docs/editor-interaction.md` の「視点の操作」）、IMAGE・VIDEO の表示の runtime（`docs/legacy-node-surfaces.md` の「PanoramaPreview」）。決めた理由は ADR 0041。
 
-新しい UI の層（ADR 0044）に切り替えるとき、新しい Preview の大きなウィンドウの視点の規則（「`PANO_SCENE` を見る」の始めの視点・視点の操作・大きなウィンドウの右下の群のうち視点に関わるもの）は `docs/space-and-view.md` の「Preview のウィンドウ」に移る。切り替えるまでは古い UI がこの文書の規則で動くので、ここの記述は消さずに残す。
+大きなウィンドウは新しい UI の Preview のウィンドウで開く（ADR 0062）。その画面の規則は `docs/studio-ui.md` の「Preview のウィンドウ」、視点の規則は `docs/space-and-view.md` の「Preview のウィンドウ」が持つ。この文書の「`PANO_SCENE` を見る」の視点の規則は、ノード上の Scene のビューアのものである。
 
 ## この文書が owner である規則
 
@@ -13,7 +13,7 @@ Preview ノードの入力と素通しの規則、旧ノードのプレビュー
 | Preview ノード | `preview_node.py` `PanoramaPreviewSceneNode` | — | `tests/test_pano_scene_preview.py`、`tests/test_studio_upstream.py` |
 | `PANO_SCENE` を見るための `ui`（上流の Scene と同じキー） | `preview_node.py` `PanoramaPreviewSceneNode.execute`・`_preview_scene_ui`（`scene_build.py` の `_upstream_ui` を呼ぶ。キーの形の owner は `docs/studio-node.md` の「上流の Scene」） | — | `tests/test_pano_scene_preview.py` `test_a_pano_scene_preview_gives_the_upstream_keys` |
 | ノード上の表示を `PanoramaPreviewNode` に結ぶ（実行の前は接続の型で、IMAGE・VIDEO の表示か Scene のビューアかを決める） | — | `web_src/pano_preview_identity.js` `isPanoramaPreviewSceneNodeName`、`web_src/pano_editor_extension.js` `createPanoEditorExtension`、`web_src/pano_preview_video.js` `linkedInputType`・`BACKGROUND_INPUT_NAMES`（`source` を含む） | `tests/pano_editor_extension.test.mjs`（「the Preview shows a linked Scene in the Scene viewer and IMAGE or VIDEO in the legacy Preview's view, switching with the link」） |
-| Scene のビューア（読み取り専用の空間の表示、ノード上と大きなウィンドウ、動くのは最後に操作した 1 つ、再生の帯） | — | `web_src/pano_scene_viewer.js` `createSceneViewer`・`createSceneViewerHost`・`sceneViewerRecord`（下の分けたモジュールを組み立てる）、ノード上は `web_src/pano_scene_viewer_node.js` と `web_src/components/PanoSceneViewerNodeSurface.vue`、ウィンドウは `web_src/pano_scene_viewer_window.js` と `web_src/components/PanoModal.vue` の `viewer` の配置（`web_src/modal_shell_presets.js`）、`web_src/pano_space_navigation.js` `createSpaceNavigation`、`web_src/pano_upstream_layers.js` `createUpstreamLayers`・`refreshGoneUpstreamFiles`、`web_src/pano_preview_view.js` の `acquire(onChange, { items: true })` | `tests/pano_scene_viewer.test.mjs`、`tests/editor_space_navigation.test.mjs`、`tests/pano_preview_view.test.mjs`、`tests/pano_editor_ui_state.test.mjs`（「the viewer layout has no tools, view tabs or paint, and keeps the bottom-right group where the editor has it」）、`tests/browser/scene_viewer.spec.js`（`tests/browser/pages/scene_viewer.*`） |
+| Scene のビューア（読み取り専用の空間の表示、ノード上と大きなウィンドウ、動くのは最後に操作した 1 つ、再生の帯） | — | `web_src/pano_scene_viewer.js` `createSceneViewer`・`createSceneViewerHost`・`sceneViewerRecord`（下の分けたモジュールを組み立てる）、ノード上は `web_src/pano_scene_viewer_node.js` と `web_src/components/PanoSceneViewerNodeSurface.vue`（大きなウィンドウは `docs/studio-ui.md` の「Preview のウィンドウ」）、`web_src/pano_space_navigation.js` `createSpaceNavigation`、`web_src/pano_upstream_layers.js` `createUpstreamLayers`・`refreshGoneUpstreamFiles`、`web_src/pano_preview_view.js` の `acquire(onChange, { items: true })` | `tests/pano_scene_viewer.test.mjs`、`tests/pano_space_navigation.test.mjs`、`tests/pano_preview_view.test.mjs`、`tests/browser/scene_viewer.spec.js`（`tests/browser/pages/scene_viewer.*`） |
 | 旧ノードのプレビュー MP4 の音声の長さ | `core/video.py` `_fit_audio_to_frame_count` | — | `tests/test_preview_audio.py` |
 
 Python のファイルは `comfyui_pano_suite/` の下にある。
@@ -59,20 +59,20 @@ Preview は見るための場所で、編集とは分ける（ADR 0041）。Stud
 Scene を見る表示（ビューア）は、エディタの部品を、エディタから独立したモジュールに分けて使う。エディタそのものをノードの中に載せない。
 
 - 分けたもの（振る舞いを変えない整理）：
-  - 視点の操作の配線（`editor/space.js` の 3DoF・6DoF、ドラッグとホイールの動き、`pickSurface` での中心と先、遷移、キーの移動、Reset View・Frame Selected）を `web_src/pano_space_navigation.js` の `createSpaceNavigation` に移した（`tests/editor_space_navigation.test.mjs`）。エディタの選択・ギズモ・Camera に触れる部分は `editor/space.js` に残す。
-  - 上流の層の組み立て（`editor/upstream.js` の `pano_upstream_layers` の読み込み、層ごとの素材の follower、`upstreamViewInput`、ファイルの 404 の問い合わせ直し）を `web_src/pano_upstream_layers.js` の `createUpstreamLayers`・`refreshGoneUpstreamFiles` に移した。上書きの記録・編集の書き戻しは `editor/upstream.js` に残す。
+  - 視点の操作の配線（`editor/space.js` の 3DoF・6DoF、ドラッグとホイールの動き、`pickSurface` での中心と先、遷移、キーの移動、Reset View・Frame Selected）を `web_src/pano_space_navigation.js` の `createSpaceNavigation` に移した。
+  - 上流の層の組み立て（エディタの `pano_upstream_layers` の読み込み、層ごとの素材の follower、描く物（`viewInput`）、ファイルの 404 の問い合わせ直し）を `web_src/pano_upstream_layers.js` の `createUpstreamLayers`・`refreshGoneUpstreamFiles` に移した。上書きの記録・編集の書き戻しは `web_src/pano_upstream_edits.js` の `createUpstreamEdits`（新しい UI の `web_src/studio/upstream.js` が使う）。
   - エディタは分けたモジュールを呼ぶだけになる。
-- ビューアの組み立て（`pano_scene_viewer.js` の `createSceneViewer`）：分けた 2 つのモジュールと、再生の部品（`createNodePlayback`、深度のグリッドの色）を 1 つの Scene の表示に組み立てる。ノード上と大きなウィンドウの両方がこれを使う（組み立てを二か所に書かないため。付け替えの仕組みは持たない）。描く先だけが違う：ノード上は共有のビュー（`pano_preview_view.js` の `acquirePreviewView`。`pano_scene_viewer_node.js`）、ウィンドウは `PanoModal.vue` の `viewer` の配置のステージ（`pano_scene_viewer_window.js`）。
+- ビューアの組み立て（`pano_scene_viewer.js` の `createSceneViewer`）：分けた 2 つのモジュールと、再生の部品（`createNodePlayback`、深度のグリッドの色）を 1 つの Scene の表示に組み立てる。ノード上の表示がこれを使い、共有のビュー（`pano_preview_view.js` の `acquirePreviewView`。`pano_scene_viewer_node.js`）に描く。大きなウィンドウは新しい UI のステージで描き（`docs/studio-ui.md` の「Preview のウィンドウ」）、ビューアからは視点と再生の位置の記録（`sceneViewerRecord`）だけを引き継ぐ。
 - 要素の読み込みの知らせ：共有のビューは、要素が読み込めたときと自分のスプラットを並べ替え直したときの知らせを、`acquire(onChange, { items: true })` で求めたノードにだけ送る。求めるのは Scene のビューアだけで、ほかのノード上の表示（Studio・旧ノード・旧 Preview）は今までどおり知らせを受けず、描き直しが増えない（`tests/pano_preview_view.test.mjs` の「an item loaded or splats sorted in the shared view are told only to the nodes that draw 3D items」）。
 - データ：Preview の実行結果の `pano_upstream_layers` を、Studio のエディタと同じく上流の層として読む（`pano_upstream_layers.js`）。実行結果が新しいかは、Preview の `source` の接続で判断する（`isNodeOutputMediaCurrent`）。そのため `source` は背景のチャンネルの入力名（`BACKGROUND_INPUT_NAMES`）に入る。`source` を持つのはこのノードだけなので、旧ノードの判定は変わらない。Preview の状態は空の状態 v2（Sticker なし、Camera なし、`upstream` は空）で、どこにも保存しない。ペイントの層を描く大きさは、エディタの既定と同じ 2048 × 1024 に固定する（`pano_scene_viewer.js` の `paintTarget`）。Preview は Scene を作った Studio の出力の大きさを受け取らないためで、ペイントの多い Scene では Studio のエディタより粗く見えることがある。
 - 当たり判定：視点の操作が使う `pickSurface`（オービットの中心とホイールの先）だけを使う。Sticker を選ぶ当たり判定（`pickSticker`）は使わない。
 - 始めの視点：World の原点で、ERP の正面（yaw 0、pitch 0、エディタの既定の画角）を向く。`PANO_SCENE` は 6DoF から始める（エディタは 3DoF から始めるが、Preview は動き回って見る場所なので）。IMAGE・VIDEO は 3DoF だけ。
-- 視点の操作：エディタと同じ 6DoF のプリセット（`PanoramaSuite.Editor.ViewControls`、`docs/editor-interaction.md` の「6DoF の操作」）。ピボット・パン・ズームの規則も同じ。
+- 視点の操作：エディタと同じ 6DoF のプリセット（`PanoramaSuite.Editor.ViewControls`、`docs/editor-interaction.md` の「視点の操作」）。ピボット・パン・ズームの規則も同じ。
 - 視点は状態にも設定にも保存しない。
 
 #### ノード上
 
-- 置くもの（`PANO_SCENE` のとき）：Vue の overlay の右上に、アイコンのボタンを 2 つ：`Reset view`（原点の正面に戻る。エディタの Reset View と同じ遷移。小さなノードで迷ったときに戻る手段が要るため）と `Open viewer`（下の大きなウィンドウ）。下端に再生の帯（下の「再生の帯」）。IMAGE・VIDEO のときは旧 Preview の runtime の表示のまま。ただし、設定 `PanoramaSuite.Editor.NewUI` がオンで新しい Preview のウィンドウがそのノードを開くとき（`web_src/editor_choice.js` `previewUsesNewWindow`）、右上のボタンはブラウザの全画面ではなく `Open viewer` になり、新しいウィンドウ（`docs/studio-ui.md` の「Preview のウィンドウ」）を開く。新しいウィンドウが開くのは、`source` に IMAGE か VIDEO をつないだときと、`source` に何もつないでいないとき（`source` の差し口に link が無いとき。黒いステージのウィンドウ。持ち主、2026-10-31）。link はあるが型が分からないとき（型の無い Reroute を通したときなど）は `Fullscreen` のまま。どの入口も同じ選び方（`createEditorChooser`）を通す。設定がオフのときは、旧 Preview と同じ `Fullscreen` のまま（`web_src/pano_preview_previewnode.js` の `opensWindow`）。
+- 置くもの（`PANO_SCENE` のとき）：Vue の overlay の右上に、アイコンのボタンを 2 つ：`Reset view`（原点の正面に戻る。エディタの Reset View と同じ遷移。小さなノードで迷ったときに戻る手段が要るため）と `Open viewer`（下の大きなウィンドウ）。下端に再生の帯（下の「再生の帯」）。IMAGE・VIDEO のときは旧 Preview の runtime の表示のまま。ただし、新しい Preview のウィンドウがそのノードを開くとき（`web_src/editor_choice.js` `previewUsesNewWindow`）、右上のボタンはブラウザの全画面ではなく `Open viewer` になり、新しいウィンドウ（`docs/studio-ui.md` の「Preview のウィンドウ」）を開く。新しいウィンドウが開くのは、`source` に IMAGE か VIDEO をつないだときと、`source` に何もつないでいないとき（`source` の差し口に link が無いとき。黒いステージのウィンドウ。持ち主、2026-10-31）。link はあるが型が分からないとき（型の無い Reroute を通したときなど）は `Fullscreen` のまま。どの入口も同じ選び方（`createEditorChooser`。ボタンの切り替えは `web_src/pano_preview_previewnode.js` の `opensWindow`）を通す。
 - マウス：エディタと同じプリセットの表を、ノードの上でもそのまま使う（同じ操作を二通り覚えさせないため）。オブジェクトの操作が無いので、左ドラッグはいつも表の「何もないところ」の扱い。surface の上の押し下げ・ドラッグ・ホイールは surface が受け、ComfyUI のキャンバスのパンやノードの移動にしない（Studio のノード上の表示と同じ）。ノードのタイトルの帯は ComfyUI のまま。
 - ホイール：Studio のノード上の表示と同じ捕捉の規則（`docs/studio-node-surface.md` の「見回し」）で受け、エディタと同じポインタの下へのズームにする。
 - 右クリックのメニュー：右ドラッグを使うプリセット（Default・Unity-like）では、surface の上の右クリックのメニューを抑止する（エディタの 6DoF と同じ。ノードのメニューはタイトルの帯の右クリックで出る）。
@@ -83,9 +83,7 @@ Scene を見る表示（ビューア）は、エディタの部品を、エデ�
 
 #### 大きなウィンドウ
 
-- `Open viewer`（ノード上）か、ノード上の表示を付けられなかったときに残る `Open Preview` のボタン（widget。表示を付けたときは隠す、`pano_editor_extension.js`）で開く。`PanoModal.vue` の `viewer` の配置（`modal_shell_presets.js`、`pano_scene_viewer_window.js`）で、エディタのモーダルの外枠をそのまま使う（AGENTS.md の「Modal UI must be Vue」）。
-- 置くもの：ステージ、右下の視点の操作のボタン群（`PanoFloatingRight.vue`。空間の群（3DoF | 6DoF と、Frame Selected と同じ場所の `Frame all`。選べるものが無いので、いつも全体を収める）、Reset View、Hide Grid、Fullscreen）、下端の再生の帯、閉じるボタンだけ。サイドパネル、ツール、インスペクタ、タイムライン、Undo、選択メニューは出さない。
-- キー：エディタと同じ WASD・QE の移動（`docs/editor-interaction.md` の「キーボードの移動」）と、Space の再生と一時停止。Escape で閉じる。
+- `Open viewer`（ノード上）か、ノード上の表示を付けられなかったときに残る `Open Preview` のボタン（widget。表示を付けたときは隠す、`pano_editor_extension.js`）で開く。開くのは新しい UI の Preview のウィンドウ（`web_src/studio/preview_window.js` `openPreviewWindow`）で、置くもの・キー・見た目は `docs/studio-ui.md` の「Preview のウィンドウ」、視点は `docs/space-and-view.md` の「Preview のウィンドウ」が持つ（ADR 0062）。
 - 開くと、ノードと同じ視点と再生の位置から続ける。閉じるとノードはウィンドウの最後の視点と位置を引き継ぐ。ウィンドウはエディタと同じく自分の WebGL の context を持ち、開いている間だけ使う。
 
 #### 再生の帯
@@ -107,9 +105,9 @@ Scene を見る表示（ビューア）は、エディタの部品を、エデ�
 Python（Preview の `ui`）と JS（分けた視点と上流の層のモジュール、ビューアの組み立て、ノード上の表示）、エディタとノード上の表示をまたぐ。ノードの id・ポートの意味（出力は入力の素通し）・状態は変えない。`ui` に上流の Scene のキーが加わる。
 
 - 作らないもの：編集、Camera、Preview での描画（出力の画素）、歩くモード、Preview だけの視点の操作のプリセット、エディタ全体をノードの中に載せること。
-- owner：`ui` のキーの形は `docs/studio-node.md` の「上流の Scene」（`_upstream_ui`）。描き方は `docs/threejs-spark-integration.md`、視点の操作の規則は `docs/editor-interaction.md`（コードは分けた `pano_space_navigation.js`）、上流の層の組み立ては `pano_upstream_layers.js`（分けたもの）、ビューアの組み立てと `viewer` の配置はこの文書（`pano_scene_viewer.js`・`pano_scene_viewer_node.js`・`pano_scene_viewer_window.js`・`PanoModal.vue`）。
-- data の流れ：`PANO_SCENE` → `_preview_scene_ui`（`_upstream_ui`）→ 実行結果の `ui` → `pano_upstream_layers.js`（上流の層）＋ `pano_space_navigation.js`（視点）→ `createSceneViewer` → ノード上は共有のビュー、ウィンドウは `PanoModal.vue` の `viewer`。出力のポートには入力をそのまま返す。
-- 一致を守る test：`tests/test_pano_scene_preview.py` の `test_a_pano_scene_preview_gives_the_upstream_keys`（Studio に同じ `PANO_SCENE` をつないだときの上流のキーと同じ値、出力が入力と同じオブジェクト、描画しない）、`tests/pano_editor_extension.test.mjs`（新しい id に表示が付き、`image` 出力が増えない）、`tests/pano_editor_ui_state.test.mjs`（`viewer` でサイドパネル・タイムライン・ツール・ギズモ・選択が出ない、右下の群の位置が変わらない）、`tests/pano_scene_viewer.test.mjs`（最後に操作したノードだけ描き直す、ほかは写した絵のまま、ノードごとの視点と再生の位置、要素の読み込みの知らせ、404 の問い合わせ直し）、`tests/editor_space_navigation.test.mjs`（分けた視点の操作）、`tests/browser/scene_viewer.spec.js`（2 つの Preview が 1 つの WebGL context で描け、6DoF で動かしても描ける）。
+- owner：`ui` のキーの形は `docs/studio-node.md` の「上流の Scene」（`_upstream_ui`）。描き方は `docs/threejs-spark-integration.md`、視点の操作の規則は `docs/editor-interaction.md`（コードは分けた `pano_space_navigation.js`）、上流の層の組み立ては `pano_upstream_layers.js`（分けたもの）、ビューアの組み立てはこの文書（`pano_scene_viewer.js`・`pano_scene_viewer_node.js`）。
+- data の流れ：`PANO_SCENE` → `_preview_scene_ui`（`_upstream_ui`）→ 実行結果の `ui` → `pano_upstream_layers.js`（上流の層）＋ `pano_space_navigation.js`（視点）→ `createSceneViewer` → ノード上の共有のビュー。大きなウィンドウは `web_src/studio/preview_window.js` `openPreviewWindow` が新しい UI のステージで描き、ビューアからは視点と再生の位置の記録（`sceneViewerRecord`）だけを引き継ぐ。出力のポートには入力をそのまま返す。
+- 一致を守る test：`tests/test_pano_scene_preview.py` の `test_a_pano_scene_preview_gives_the_upstream_keys`（Studio に同じ `PANO_SCENE` をつないだときの上流のキーと同じ値、出力が入力と同じオブジェクト、描画しない）、`tests/pano_editor_extension.test.mjs`（新しい id に表示が付き、`image` 出力が増えない）、`tests/browser/preview_window.spec.js`（ウィンドウにインスペクタ・タイムライン・左の列が無い、`PANO_SCENE` を読み取り専用で描く、ショートカットの一覧に選択と編集の行が無い）、`tests/pano_scene_viewer.test.mjs`（最後に操作したノードだけ描き直す、ほかは写した絵のまま、ノードごとの視点と再生の位置、要素の読み込みの知らせ、404 の問い合わせ直し）、`tests/browser/scene_viewer.spec.js`（2 つの Preview が 1 つの WebGL context で描け、6DoF で動かしても描ける）。
 - 考えた別案：ADR 0041。
 - `background_range` 入力は `execute` では読まない（フロントエンドのウィジェットが読む）。`PANO_SCENE` のときは `PanoSceneValue.coverage` が正で、ウィジェットの値は使わない。
 - MatchType はバックエンドで型を検証しないので、`source` が IMAGE（4 次元のテンソル）・VIDEO・`PanoSceneValue` のどれでもなければ `TypeError` にする。

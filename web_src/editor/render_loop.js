@@ -13,15 +13,15 @@ import { easeInCubic, easeInOutCubic, easeOutCubic, lerp } from "./helpers.js";
 export function createRenderLoop(deps) {
   const {
     app, backgroundCanvas, canvas, editor, editorView, node, readOnly, runtime, scheduler, shotEditor, stageWrap,
-    state, timeline, type, uiState, viewController,
+    state, type, uiState, viewController,
   } = deps;
   // Bound by connect() to the other modules and showEditor.
   let drawCutoutOutputPreview, drawCutoutPanoPassepartout, drawFrameRollOverlay,
     drawFrameViewBackground, drawGridPano, drawGridUnwrap, drawLassoOutlineOverlay, drawObjects,
     endEditorViewFrame, getActiveCutoutShot, getCutoutPanoDimTarget, getSharedLivePaintSurface,
-    getStageImageStatus, isPaintCompositeInteraction, measureFrameSafeRect, moveKeys, playback,
-    rebuildPaintEngineIfNeeded, stepKeyMove, stepViewTransition, syncCutoutShot, syncFloatingViewButtonState, syncFrameRollKnob,
-    syncLookAtFrameButtonState, syncViewToggleState, updateSelectionMenu, upstreamNotice, file3dImportNotice, file3dNotice, depthVideoNotice, frameWheelNotice;
+    getStageImageStatus, isPaintCompositeInteraction, measureFrameSafeRect, playback,
+    rebuildPaintEngineIfNeeded, stepViewTransition, syncFrameRollKnob,
+    syncLookAtFrameButtonState, syncViewToggleState, updateSelectionMenu;
 
   // Removes the editor from the diagnostics samples (set when the render loop starts).
   let removeDiagnosticsSource = () => {};
@@ -63,11 +63,6 @@ export function createRenderLoop(deps) {
     const stageStatus = getStageImageStatus();
     uiState.stageStatus = stageStatus.status;
     uiState.stageStatusDetail = stageStatus.detail;
-    // Panorama Studio notes a 3D file being placed ("Loading 3D model…", or why it failed), a 3D file in the
-    // editor that could not be read, a depth grid waiting for its colors ("Loading depth video…") or too large, that the Scene linked to `scene` shows once the workflow has run, or that its
-    // background takes the place of bg_media. A wheel in the Frame view that cannot move the picture says how to
-    // zoom (frame_view.js frameWheelNotice).
-    uiState.stageNotice = frameWheelNotice() || file3dImportNotice() || file3dNotice() || depthVideoNotice() || upstreamNotice();
     if (stageStatus.status === IMAGE_LOADING) {
       stageWrap?.removeAttribute("data-stage-ready");
       stageWrap?.setAttribute("data-stage-loading-kind", stageStatus.detail);
@@ -90,7 +85,7 @@ export function createRenderLoop(deps) {
   }
 
   function isDragging() {
-    return !!editor.interaction || !!timeline.drag;
+    return !!editor.interaction;
   }
 
   function syncNodeLivePreviewSources() {
@@ -182,10 +177,9 @@ export function createRenderLoop(deps) {
   }
 
   // Whether the next frame must run although nothing asked for it: something moves by itself or a fade
-  // has not reached its end. A drag, and a movement key held, keep the frames going until they end.
+  // has not reached its end. A drag keeps the frames going until it ends.
   function editorAnimating() {
     return !!editor.viewTransition
-      || moveKeys.held
       || !!viewController.state.inertia.active
       || runtime.pendingStableLayoutFrames > 0
       || Math.abs(Number(editor.frameRollOverlayAlpha || 0) - Number(editor.frameRollOverlayTarget || 0)) > 1e-6
@@ -204,7 +198,6 @@ export function createRenderLoop(deps) {
     reasons.forEach((reason) => runtime.reasons.add(reason));
     if (reasons.size) runtime.dirty = true;
     if ([...reasons].some((reason) => reason !== DRAW_REASON.OVERLAY)) runtime.backgroundDirty = true;
-    syncCutoutShot();
     const dt = runtime.lastTickTs > 0 ? Math.max(0.001, (ts - runtime.lastTickTs) / 1000) : (1 / 60);
     runtime.lastTickTs = ts;
     const activeRoll = editor.mode === "frame" && editor.interaction?.kind === "roll_frame"
@@ -297,11 +290,6 @@ export function createRenderLoop(deps) {
       runtime.dirty = true;
     }
 
-    if (stepKeyMove(ts)) {
-      runtime.backgroundDirty = true;
-      runtime.dirty = true;
-    }
-
     editor.viewInertia.vx = Number(viewController.state.inertia.vx || 0);
     editor.viewInertia.vy = Number(viewController.state.inertia.vy || 0);
     editor.viewInertia.active = !!viewController.state.inertia.active;
@@ -362,7 +350,7 @@ export function createRenderLoop(deps) {
   }
 
   // The stage follows its layout before the browser paints, in the same frame: a canvas left at
-  // its old size for a frame shows its frame stretched, which made the Timeline's slide judder.
+  // its old size for a frame shows its frame stretched.
   const stageResizeObserver = new ResizeObserver(redrawNow);
   // Moved to a screen of another pixel ratio, the stage keeps its CSS size; the three.js canvas follows the
   // new ratio.
@@ -384,7 +372,6 @@ export function createRenderLoop(deps) {
       readOnly,
       mode: editor.mode,
       interaction: editor.interaction?.kind ?? null,
-      timelineDrag: !!timeline.drag,
       playing: !!playback.playing,
     }));
   }
@@ -403,9 +390,9 @@ export function createRenderLoop(deps) {
         drawCutoutOutputPreview, drawCutoutPanoPassepartout, drawFrameRollOverlay,
         drawFrameViewBackground, drawGridPano, drawGridUnwrap, drawLassoOutlineOverlay, drawObjects,
         endEditorViewFrame, getActiveCutoutShot, getCutoutPanoDimTarget, getSharedLivePaintSurface,
-        getStageImageStatus, isPaintCompositeInteraction, measureFrameSafeRect, moveKeys, playback,
-        rebuildPaintEngineIfNeeded, stepKeyMove, stepViewTransition, syncCutoutShot, syncFloatingViewButtonState, syncFrameRollKnob,
-        syncLookAtFrameButtonState, syncViewToggleState, updateSelectionMenu, upstreamNotice, file3dImportNotice, file3dNotice, depthVideoNotice, frameWheelNotice,
+        getStageImageStatus, isPaintCompositeInteraction, measureFrameSafeRect, playback,
+        rebuildPaintEngineIfNeeded, stepViewTransition, syncFrameRollKnob,
+        syncLookAtFrameButtonState, syncViewToggleState, updateSelectionMenu,
       } = api);
     },
     requestDraw, syncCanvasSize, startAnimation, editorAnimating, tick, stageResizeObserver, watchPixelRatio,

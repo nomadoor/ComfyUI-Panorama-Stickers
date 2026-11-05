@@ -131,8 +131,7 @@ Python と JS の両方の test が同じファイルを読む。Python と JS �
 フィクスチャで守る）：`aspect` 16 / 9、`projection` `erp`（Panorama モード）、
 `erp_range` 360、`visible` `true`、`locked` `false`、`position` (0, 0, 0)、`rotation` yaw 0・pitch 0・roll 0、`fov` 90、`curve` 1。どの Lane も Keyframe を持たない。
 この Camera の出力は、今までの「Camera が無い」ときの出力（World の原点から回転 0 の 360° の ERP）と同じである。
-- 既定の Camera の値（`aspect` 16 / 9・`fov` 90 など）の持ち主はこの定数一つである。エディタの `newStudioCamera`（`pano_editor_state.js`。今は
-  同じ値を手で書いている）は、この定数から作るように直すか、Camera が消せなくなる切り替えで消す（Camera を新しく置く操作が無くなるため）。
+- 既定の Camera の値（`aspect` 16 / 9・`fov` 90 など）の持ち主はこの定数一つである。新しい UI は既定の Camera をこの定数から作る（`web_src/studio/defaults.js`）。
 - オブジェクトの `camera` の欠けたフィールドは、今までどおり上の表の既定値（`aspect` 1.0、`projection` `perspective` など）で埋める。
   既定の Camera の値と表の既定値が違うのは、オブジェクトの欠けたフィールドを読み替えると、これまで保存した Camera の撮り方が変わるため
   である（保存するテキストは `perspective` を書かないので、`projection` の既定を `erp` にすると、保存した Frame の Camera が Panorama に
@@ -554,7 +553,7 @@ applyUpstreamOverrides(layerState, record) // -> object, web_src/pano_scene_inhe
 - `deleted` にある `id` の Sticker を除く。
 - `id` と `placement` が同じ Sticker に、Sticker の上書きの各フィールド（`visible`・`locked`・`clip`・`crop`・`z_index`・Lane）を置き換える。Lane は丸ごと置き換え、上書きの無い Lane は層のまま。`placement` が違う上書きは当てない。
 - `scene` の上書き（`visible`・`clip`）と `painting_visible` は、そのフィールドを置き換える。
-- 層に無い `id` の上書きと消した記録は何もしない。Sticker の並び順は変えない。そうした記録は、エディタが編集を書き戻すとき（Undo の段を積むとき）に、今の実行結果にその層があれば捨てる（上流で消した要素の上書きと消した記録。結果に無い層の記録は捨てない。開いて閉じただけでは捨てない。`docs/editor-interaction.md` の「上流の Scene の表示と編集」）。
+- 層に無い `id` の上書きと消した記録は何もしない。Sticker の並び順は変えない。そうした記録は、エディタが編集を書き戻すとき（Undo の段を積むとき）に、今の実行結果にその層があれば捨てる（上流で消した要素の上書きと消した記録。結果に無い層の記録は捨てない。開いて閉じただけでは捨てない。`docs/editor-interaction.md` の「上流の Scene の作業コピーと上書き」）。
 - 当てたときの結果の `upstream` は `[]`、`id`・`timeline`・`next_sticker_id` は層のまま。結果は正規化済みの状態で、`load_scene_state` に通しても同じになる。
 - 鎖（A → B → C）では、B の記録を A に当てた結果に、C の記録を当てる。後に当てた記録が勝つ。
 - `PANO_SCENE` の層の状態は、自分の `upstream` を持たない（`[]`）。Panorama Studio が `scene` 出力で自分の層の `upstream` を空にするためである（`scene_build.py` の `_scene_output`。上流の層はすでに上流の Studio が空にしている）。下流が層に当てる記録は、下流の状態の `upstream` だけである。

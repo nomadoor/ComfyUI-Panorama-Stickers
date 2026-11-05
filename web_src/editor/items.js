@@ -1,71 +1,36 @@
 // The items the editor shows and selects: sky Stickers, Cutout shots, paint stroke groups and raster
-// objects, and in Panorama Studio the upstream Scene's working Stickers (ADR 0030). Looks them up by id, orders
-// them for display and moves them.
+// objects. Looks them up by id, orders them for display and moves them.
 import { getCutoutAspectLabel } from "../pano_cutout_view_math.js";
-import { CAMERA_SHOT_ID, setCameraField, setStickerPose, stickerPose } from "../pano_editor_state.js";
 import { HIDDEN_PREVIEW_OPACITY } from "../pano_editor_view.js";
 import {
   frameCornersUv, moveStrokeGroupTo, offsetRasterObject, rasterObjectCenterUv, rasterObjectCornersUv,
   scaleRasterObject, skyDisplayOrder, strokeGroupCenterUv, transformStrokeGroup,
 } from "../pano_paint_objects.js";
 import { ensurePaintGroup, nextPaintZIndex, paintingGroups, shortestWrappedDelta, statePainting, strokeGroupFrame, syncPaintGroups } from "../pano_paint_strokes.js";
-import { isUpstreamSticker } from "../pano_upstream.js";
 import { EXTERNAL_STICKER_ID, EXTERNAL_STICKER_SOURCE_KIND } from "./constants.js";
 
 export function createItems(deps) {
   const {
-    cameraV2, canvas, editor, sceneV2, state, stateV2, type,
+    canvas, editor, state, type,
   } = deps;
   // Bound by connect() to the other modules and showEditor.
   let getActiveCutoutShot, getBrushPresetIdForTool, getFrameViewRect, getPaintingLayerList, getPaintingRevisionKey,
-    getSelected, getStickerImage, sceneStickerShown, upstreamStickerImage, upstreamStickers;
+    getSelected;
 
   function getList() {
     if (type !== "stickers") return state.shots;
-    return sceneV2 ? [...skyStickers(), ...upstreamSkyStickers()] : skyStickers();
+    return skyStickers();
   }
-  // The Stickers the canvas shows and edits. World Stickers of state v2 only appear in the Timeline.
+  // The Stickers the canvas shows and edits.
   function skyStickers() {
-    return sceneV2 ? state.stickers.filter((item) => item.placement === "sky") : state.stickers;
+    return state.stickers;
   }
-  // The upstream Scene's working sky Stickers (upstream.js), from back to front: under the node's own Sky, each
-  // layer over the one upstream of it, and in a layer by z_index.
-  function upstreamSkyStickers() {
-    if (!sceneV2) return [];
-    const stickers = upstreamStickers();
-    const layers = [...new Set(stickers.map((item) => item.origin.layer))];
-    return stickers.filter((item) => item.placement === "sky")
-      .sort((a, b) => layers.indexOf(a.origin.layer) - layers.indexOf(b.origin.layer) || a.z_index - b.z_index);
-  }
-  // The Sticker with `id`: the node's own, or an upstream working Sticker.
-  function stickerById(id) {
-    return state.stickers.find((item) => item.id === id) || upstreamStickers().find((item) => item.id === id) || null;
-  }
-  function isSceneSticker(item) {
-    return sceneV2 && isStickerItem(item);
-  }
-  // A Sticker added from a file has no file Source until its upload finishes (addSceneStickerFromFile).
-  function isUploadingSticker(item) {
-    return item.source.kind === "file" && !item.source.filename && !item.source.data_url;
-  }
-  // The pose fields the canvas geometry and the inspector read: a Sticker of state v2 at the
-  // editor's Timeline frame (the port Sticker at the vFOV of its media's first frame, as the view
-  // draws it), the item itself otherwise.
+  // The pose fields the canvas geometry and the inspector read: the item's own (state v1).
   function poseOf(item) {
-    if (!isSceneSticker(item)) return item;
-    const media = !isExternalSticker(item) ? null : isUpstreamSticker(item) ? upstreamStickerImage(item) : getStickerImage(item);
-    return stickerPose(item, editor.frame, media && { width: media.naturalWidth || media.width, height: media.naturalHeight || media.height });
+    return item;
   }
-  // Panorama Studio's Camera (docs/editor-interaction.md): its angle of view goes to the Camera's `fov`, its V FOV
-  // is computed from the aspect and not written, its pose goes to the shot, which syncCutoutShot writes back.
   function writePose(item, pose) {
-    if (isSceneSticker(item)) setStickerPose(item, editor.frame, pose);
-    else if (cameraV2 && item?.id === CAMERA_SHOT_ID && state.camera) {
-      const { hFOV_deg: hFov, vFOV_deg: vFov, ...rest } = pose;
-      void vFov;
-      if (hFov !== undefined) setCameraField(state.camera, editor.frame, "hFOV_deg", hFov);
-      Object.assign(item, rest);
-    } else Object.assign(item, pose);
+    Object.assign(item, pose);
   }
   function getPaintingGroupList() {
     return paintingGroups(statePainting(state));
@@ -197,20 +162,19 @@ export function createItems(deps) {
       .map((item) => getRasterObjectItem(makeRasterObjectSelectionId(item?.id || "")))
       .filter(Boolean);
   }
-  // The Stickers the Cutout editor selects and moves; the sky ones in Panorama Studio's, as the Stickers
-  // editor does.
+  // The Stickers the Cutout editor selects and moves.
   function cutoutStickers() {
     return !Array.isArray(state.stickers) ? [] : skyStickers();
   }
   function getCutoutSelectableItems() {
     const shots = Array.isArray(state.shots) ? state.shots : [];
-    return [...shots, ...cutoutStickers(), ...upstreamSkyStickers()];
+    return [...shots, ...cutoutStickers()];
   }
   function isShotItem(item) {
     return !!item && Array.isArray(state.shots) && state.shots.includes(item);
   }
   function isStickerItem(item) {
-    return !!item && ((Array.isArray(state.stickers) && state.stickers.includes(item)) || isUpstreamSticker(item));
+    return !!item && Array.isArray(state.stickers) && state.stickers.includes(item);
   }
   function getRasterObjectList() {
     return Array.isArray(state.painting?.raster_objects) ? state.painting.raster_objects : [];
@@ -326,7 +290,6 @@ export function createItems(deps) {
   }
   function isExternalSticker(item) {
     if (!item || typeof item !== "object") return false;
-    if (stateV2) return item.source?.kind === "port";
     return String(item.id || "") === EXTERNAL_STICKER_ID
       || String(item.source_kind || "") === EXTERNAL_STICKER_SOURCE_KIND;
   }
@@ -374,7 +337,6 @@ export function createItems(deps) {
       Number(pose?.rot_deg || 0).toFixed(4),
       Number(pose?.roll_deg || 0).toFixed(4),
       getCutoutAspectLabel(pose),
-      isSceneSticker(item) && sceneStickerShown(item),
     ].join(":");
     if (editor.mode === "frame") {
       const shot = getActiveCutoutShot();
@@ -397,10 +359,10 @@ export function createItems(deps) {
     connect(api) {
       ({
         getActiveCutoutShot, getBrushPresetIdForTool, getFrameViewRect, getPaintingLayerList, getPaintingRevisionKey,
-        getSelected, getStickerImage, sceneStickerShown, upstreamStickerImage, upstreamStickers,
+        getSelected,
       } = api);
     },
-    getList, skyStickers, upstreamSkyStickers, stickerById, isSceneSticker, isUploadingSticker, poseOf, writePose, getPaintingGroupList,
+    getList, skyStickers, poseOf, writePose, getPaintingGroupList,
     makeStrokeGroupSelectionId, makeRasterObjectSelectionId, parseRasterObjectSelectionId,
     ensurePaintingGroupEntry, getFrameCornersUv, ensureGroupFrame, getDisplayListObjects,
     getOrderedPaintGroupIds, getOrderedDisplayListObjects, getSelectableStrokeGroupItems,

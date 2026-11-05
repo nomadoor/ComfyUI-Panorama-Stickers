@@ -1,7 +1,7 @@
 // The Preview's viewer of a Scene (docs/preview-node.md "`PANO_SCENE` を見る", ADR 0041): the Scene's layers drawn as
 // the editor draws an upstream Scene (pano_upstream_layers.js), the view moved as the editor's space view moves
 // (pano_space_navigation.js), and its Timeline played. Nothing is edited: no gizmo, no selection, no Camera. The node
-// surface (pano_scene_viewer_node.js) and the window (pano_scene_viewer_window.js) draw what it builds.
+// surface (pano_scene_viewer_node.js) draws what it builds.
 import { createPanoCanvas, createPanoVideo, releasePanoCanvas } from "./pano_diagnostics.js";
 import { createDepthColors, withDepthColor } from "./pano_depth_color.js";
 import { bgColorBackground, backgroundClipAt } from "./pano_port_media.js";

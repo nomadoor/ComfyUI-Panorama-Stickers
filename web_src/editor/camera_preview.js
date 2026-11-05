@@ -1,4 +1,4 @@
-// The camera preview of the Cutout editor and Panorama Studio: what the shot sees, drawn on the stage's
+// The camera preview of the Cutout editor: what the shot sees, drawn on the stage's
 // three.js canvas and shown in the preview's own canvas.
 import { deriveCutoutAspectFromFov } from "../pano_cutout_view_math.js";
 import { DRAW_REASON } from "../pano_frame_scheduler.js";
@@ -31,10 +31,10 @@ export function getCutoutPreviewViewportSize(shot, expanded = false) {
 
 export function createCameraPreview(deps) {
   const {
-    backgroundCanvas, cutoutPreviewCanvas, cutoutPreviewHost, editor, editorView, runtime, shotEditor, studio, uiState,
+    backgroundCanvas, cutoutPreviewCanvas, cutoutPreviewHost, editor, editorView, runtime, shotEditor, uiState,
   } = deps;
   // Bound by connect() to the other modules and showEditor.
-  let cameraPreviewShown, drawEditorViewShot, getActiveCutoutShot, getConnectedErpImage;
+  let drawEditorViewShot, getActiveCutoutShot, getConnectedErpImage;
 
   // The camera preview's last frame ({ width, height }), or null; it draws again when what it shows can
   // have changed (drawScene's reasons) or its size changes.
@@ -80,10 +80,8 @@ export function createCameraPreview(deps) {
   function drawCutoutOutputPreview(drawView, reasons) {
     editor.outputPreviewRect = null;
     uiState.outputPreviewToggle.visible = editor.mode !== "frame" && !!getActiveCutoutShot();
-    // Panorama Studio's preview keeps one size: it has no size toggle.
-    if (studio) uiState.outputPreviewToggle.visible = false;
     if (!shotEditor || !uiState.cameraPreview) return;
-    if (editor.mode === "frame" || !cameraPreviewShown()) {
+    if (editor.mode === "frame") {
       uiState.cameraPreview.visible = false;
       uiState.cameraPreview.settled = false;
       dropCameraPreview();
@@ -174,7 +172,7 @@ export function createCameraPreview(deps) {
   return {
     connect(api) {
       ({
-        cameraPreviewShown, drawEditorViewShot, getActiveCutoutShot, getConnectedErpImage,
+        drawEditorViewShot, getActiveCutoutShot, getConnectedErpImage,
       } = api);
     },
     drawCutoutOutputPreview, forgetCameraPreviewFrame,

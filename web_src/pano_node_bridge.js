@@ -134,7 +134,7 @@ export const peekSceneViewer = (node) => existing(node, "sceneViewer");
 // Whether the node's modal editor is open.
 export const editorOpen = (node) => existing(node, "editorSession")?.open === true;
 
-// The window on the node's Scene (pano_scene_viewer_window.js, { close() }) opened: the node does not draw while it
+// The window on the node's Scene (studio/preview_window.js, { close() }) opened: the node does not draw while it
 // is open.
 export function sceneViewerWindowOpened(node, window) {
   const owner = group(node, "sceneViewer");

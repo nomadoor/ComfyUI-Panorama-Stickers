@@ -19,7 +19,7 @@ const props = defineProps({
   state: { type: Object, required: true },
   // { ids: [...], paint?: true, keyframes?: { owner, lane, frames } } (inspector_model.js buildInspectorModel).
   selection: { type: Object, default: () => ({ ids: [] }) },
-  // "3d" | "camera" (the Camera tab keeps the Camera's card on top; Set ground is off in its Panorama mode).
+  // "3d" | "camera" (the Camera tab keeps the Camera's card on top).
   tab: { type: String, default: "3d" },
   // The Timeline frame.
   playhead: { type: Number, default: 0 },

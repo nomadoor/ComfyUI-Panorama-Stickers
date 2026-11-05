@@ -1,11 +1,11 @@
 // The edits of the upstream layers' working copies, written back as the node's `upstream` records (ADR 0030,
 // docs/studio-ui.md "上流の物の編集" "書き戻し", docs/studio-node.md "エディタでの編集" "エディタでの消す・戻す"):
 // the baseline the working copies are compared with (pano_upstream.js upstreamBaseline), when it is written back,
-// and the operations that change the records (Delete, the reverts, Restore deleted, the pruning). The old editor
-// (editor/upstream.js) and the new one (studio/upstream.js) use it alike; what is written where is pano_upstream.js's.
+// and the operations that change the records (Delete, the reverts, Restore deleted, the pruning). The new editor
+// (studio/upstream.js) uses it; what is written where is pano_upstream.js's.
 //
-// records(): the node's `upstream` records (state v2; [] for none). setRecords(records): writes them (the old editor
-// into its state, the new one replaces its working state). layers: the layers of the node's result with their working
+// records(): the node's `upstream` records (state v2; [] for none). setRecords(records): writes them (the new editor
+// replaces its working state). layers: the layers of the node's result with their working
 // copies (pano_upstream_layers.js createUpstreamLayers: `entries`, `current`, `rebuild`), whose onRebuild calls
 // rebuilt(working) here. fps(): the editor's Timeline fps.
 import {

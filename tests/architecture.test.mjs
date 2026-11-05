@@ -65,7 +65,8 @@ test("the modules of web_src import each other without a cycle", () => {
   assert.equal(findCycle(graph)?.join(" -> ") ?? null, null);
 });
 
-// ADR 0044 "新旧の境": the new UI and the old UI do not import each other (web_src/main.js imports both).
+// ADR 0044 "新旧の境" (the list as ADR 0062 left it): the new UI and the old UI do not import each other
+// (web_src/main.js imports both).
 const OLD_UI_FILES = [
   "pano_editor.js",
   "pano_editor_ui_state.js",
@@ -73,8 +74,7 @@ const OLD_UI_FILES = [
   ...[
     "PanoModal", "PanoToolRail", "PanoFrameRail", "PanoFrameRollKnob", "PanoPaintDock", "PanoPaintOverlays",
     "PanoSidePanel", "PanoSelectionMenu", "PanoSegments", "PanoConfirmDialog", "PanoTooltip", "PanoImageFilePicker",
-    "PanoFloatingRight", "PanoViewToggle", "PanoUpstreamOrigin", "PanoEasingGraph", "PanoTimeline",
-    "PanoTimelineGroup", "PanoCutoutAspectPicker",
+    "PanoFloatingRight", "PanoViewToggle", "PanoCutoutAspectPicker",
   ].map((name) => `components/${name}.vue`),
 ];
 test("the new UI and the old UI do not import each other", () => {

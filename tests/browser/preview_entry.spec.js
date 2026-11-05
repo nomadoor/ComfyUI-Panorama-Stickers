@@ -1,10 +1,8 @@
 import { expect, test } from "@playwright/test";
 
-// docs/preview-node.md "ノード上": with the setting PanoramaSuite.Editor.NewUI on, the Panorama Preview node opens
-// the new Preview window (docs/studio-ui.md "Preview のウィンドウ") from its node surface for IMAGE, VIDEO and
-// PANO_SCENE, through web_src/main.js as ComfyUI loads it (tests/browser/pages/preview_entry.html: the node has the
-// MatchType `source` the real frontend builds), and with nothing linked to the source (an empty black stage). With the
-// setting off, IMAGE and VIDEO keep the browser's fullscreen.
+// docs/preview-node.md "ノード上": the Panorama Preview node opens the new Preview window (docs/studio-ui.md
+// "Preview のウィンドウ") from its node surface for IMAGE, VIDEO and PANO_SCENE, through web_src/main.js as ComfyUI loads it (tests/browser/pages/preview_entry.html: the node has the
+// MatchType `source` the real frontend builds), and with nothing linked to the source (an empty black stage).
 
 // A 4×2 PNG for the /view the node surface asks for.
 const PNG = Buffer.from(
@@ -39,16 +37,6 @@ for (const [name, query, button] of [
     expect(problems).toEqual([]);
   });
 }
-
-test("with the setting off, the IMAGE node surface's top-right button is the browser's fullscreen", async ({ page }) => {
-  await load(page, "?off");
-  const button = page.locator('#graph [aria-label="Fullscreen"]');
-  await expect(button).toBeVisible({ timeout: 20_000 });
-  await expect(page.locator('#graph [aria-label="Open viewer"]')).toHaveCount(0);
-  await button.click();
-  await expect.poll(() => page.evaluate(() => window.__entry.fullscreenAsked)).toBe(1);
-  await expect(page.locator("[data-preview-window]")).toHaveCount(0);
-});
 
 test("the IMAGE node surface reads the picture of its origin's result", async ({ page }) => {
   const views = [];

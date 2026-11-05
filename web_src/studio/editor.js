@@ -1,5 +1,5 @@
-// Panorama Studio's editor in the new UI (ADR 0044). In development: web_src/main.js opens it only while the
-// setting PanoramaSuite.Editor.NewUI is on. It puts together the node (its state_json, its inputs and its result), the
+// Panorama Studio's editor in the new UI (ADR 0044). web_src/main.js always opens it for Panorama Studio, read-only
+// too (ADR 0062). It puts together the node (its state_json, its inputs and its result), the
 // session (session.js: the working state, the shared selection, Undo), the stage (stage.js) and what it draws of the
 // state at the playhead (stage_content.js), the background VIDEO and the playback of the Timeline that drives it
 // (pano_media_session.js createBackgroundVideo, as the old editor; pano_video_fps.js for the fps a VIDEO sets), the

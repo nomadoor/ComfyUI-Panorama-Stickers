@@ -209,12 +209,6 @@ export function ownerTimed(owner) {
   return ownerLanes(owner).some((lane) => lane.keyframes.length > 0) || (!!owner.clip && !defaultClip(owner.clip));
 }
 
-// Whether anything in the state changes over time; the editor's Timeline opens by itself when it does.
-// The Camera's Keyframes count only with `camera` (Panorama Studio); the background's Clip range always.
-export function isTimed(state, { camera = false } = {}) {
-  return [...(camera && state.camera ? [state.camera] : []), state.background, state.scene, ...state.stickers].some(ownerTimed);
-}
-
 // The span timelineSpan gives a broken input (a length or frame that is not a finite number).
 export const BROKEN_SPAN = 100000;
 

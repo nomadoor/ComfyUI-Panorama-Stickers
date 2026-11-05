@@ -95,14 +95,6 @@ function boxProps(row, field) {
 
         <template v-else-if="row.control === 'ground'">
           <StudioNumberField v-bind="{ ...boxProps(row, row.fields[0]), ...on(row, row.fields[0]) }" />
-          <button
-            type="button"
-            class="pano-studio-text-btn"
-            data-action="set-ground"
-            :data-tip="row.setGround.tip"
-            :aria-disabled="row.setGround.disabled ? 'true' : null"
-            @click="row.setGround.disabled || send({ type: 'set-ground' })"
-          >Set ground</button>
         </template>
 
         <template v-else-if="row.control === 'choice'">

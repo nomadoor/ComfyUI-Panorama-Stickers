@@ -8,7 +8,6 @@
 //   { type: "choice", target, field, value }       the Camera's Mode (projection) and Range (erp_range), a 3D's Clip
 //   { type: "key", target, row }                   a row's Keyframe dot
 //   { type: "reset", target, row }                 a row's reset (the Camera's "roll": its Roll alone)
-//   { type: "set-ground" }                         Set ground: the shell starts picking the ground (no state change)
 //   { type: "easing", keyframes, easing, phase }   a preset, the curve or the bezier text of the Easing panel
 //   { type: "easing-reset", keyframes }            the Easing panel's reset
 // `target` is a card's target ({ kind: "sticker" | "camera" | "scene", id }), `keyframes` the selection's
@@ -220,7 +219,6 @@ export function applyInspectorEdit(state, edit, context = {}) {
   const ctx = { playhead: 0, readOnly: false, upstream: [], animations: {}, handoff: null, ...context };
   if (edit.phase === "cancel") return result(false, { cancel: true });
   if (ctx.readOnly) return result(false);
-  if (edit.type === "set-ground") return result(false);
   if (edit.type === "easing" || edit.type === "easing-reset") {
     const easing = edit.type === "easing-reset" ? [...DEFAULT_EASING] : edit.easing;
     const changed = applyEasing(state, edit.keyframes, easing, ctx.upstream);

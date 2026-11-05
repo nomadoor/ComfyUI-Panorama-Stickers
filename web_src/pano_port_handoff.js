@@ -10,9 +10,6 @@ import { loadSceneState, rebaseSceneState, SKY_STICKER_LANES, timelineFps, WORLD
 // Sticker's `lens` when a shot was not through a pinhole alone.
 export const HANDOFF_LANES = { sky: ["direction", "roll", "size", "curve"], world: ["position", "rotation", "scale", "lens"] };
 
-// The handed Lanes the inspector's Upstream row lists: not the lens Lanes, which have no row (ADR 0042).
-export const HANDOFF_ROW_LANES = { sky: ["direction", "roll", "size"], world: ["position", "rotation", "scale"] };
-
 // The Lanes an edit can make overrides of, in the order a state keeps `handoff_overrides` (its Sticker's Lanes;
 // a world Sticker's `lens`, which only the handoff writes, is not one).
 const OVERRIDE_ORDER = { sky: SKY_STICKER_LANES.map(([name]) => name), world: WORLD_STICKER_LANES.map(([name]) => name) };
@@ -143,8 +140,8 @@ export function revertHandoffLane(state, sticker, handoff, name) {
 
 // --- The pair an editor keeps while it shows the Pose handoff (docs/editor-interaction.md "`port` の Sticker の Pose
 // handoff の表示と記録"): { stored, shown, handoff, fps }, the port Sticker the state keeps, the one shown the last
-// time, the handoff shown, and the Timeline fps they are at. Both editors call these: they take values and return
-// values, and never change the state they are given (the old editor writes what they return into its own state).
+// time, the handoff shown, and the Timeline fps they are at. The new editor (studio/session.js) calls these: they
+// take values and return values, and never change the state they are given.
 
 export const NO_PORT_HANDOFF_PAIR = Object.freeze({ stored: null, shown: null, handoff: null, fps: null });
 
@@ -206,20 +203,3 @@ export function storedPortState(state, pair) {
   return { ...state, stickers: state.stickers.map((item) => (item.source?.kind === "port" ? pair.stored : item)) };
 }
 
-// "Revert to upstream" of the Lane `name` of the shown port Sticker of `state`: { shown, pair } with that Lane
-// following the pair's handoff again, its value kept as the stored one too (not an edit), or null when it was no
-// override (or the Sticker is locked, or no handoff is shown).
-export function revertPortHandoffPairLane(state, pair, name) {
-  const port = portOf(state);
-  if (!port || port.locked || !pair?.handoff) return null;
-  const shown = clone(port);
-  if (!revertHandoffLane(state, shown, pair.handoff, name)) return null;
-  return { shown, pair: { ...pair, shown: clone(shown), stored: { ...pair.stored, [name]: clone(shown[name]) } } };
-}
-
-// The old inspector's "Revert to upstream" buttons of the port Sticker `sticker`: one per Lane a handoff of its
-// placement gives, overridden while the pair shows a handoff of that placement and the Lane is in its overrides.
-export function handoffRowLanes(pair, sticker) {
-  const shown = !!pair?.handoff && pair.handoff.placement === sticker.placement;
-  return HANDOFF_ROW_LANES[sticker.placement].map((name) => ({ name, overridden: shown && sticker.handoff_overrides.includes(name) }));
-}

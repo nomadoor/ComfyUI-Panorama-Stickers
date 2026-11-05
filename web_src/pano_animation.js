@@ -13,12 +13,6 @@ export function animationClipIndex(clips, animation) {
   return index >= 0 ? index : 0;
 }
 
-// Whether `animation` names a clip the file does not have (it plays the first; the editor says so).
-export function animationClipMissing(clips, animation) {
-  const name = animation?.clip ?? null;
-  return name !== null && Array.isArray(clips) && clips.length > 0 && !clips.some((clip) => clip?.name === name);
-}
-
 // The Timeline frames one cycle of the clip lasts (its duration ÷ speed, rounded up to a frame at `fps`), or null
 // without a clip of a positive duration.
 export function animationCycleFrames(clips, animation, fps) {

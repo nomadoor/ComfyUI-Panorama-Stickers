@@ -10,19 +10,13 @@ import { add, dot, mul, norm, vec3 } from "./helpers.js";
 
 export function createProjection(deps) {
   const {
-    backgroundCanvas, canvas, editor, state, studio,
+    backgroundCanvas, canvas, editor,
   } = deps;
   // Bound by connect() to the other modules and showEditor.
-  let cameraShoots, getActiveCutoutShot, getFrameViewRect, poseOf, projectSceneItemDir, shortestWrappedDelta;
+  let getActiveCutoutShot, getFrameViewRect, poseOf, projectSceneItemDir, shortestWrappedDelta;
 
   // The panorama view's projection, rebuilt when its camera or the canvas size changes.
   let viewProjectionCache = { key: [], projection: null };
-
-  // Whether Panorama Studio's Camera shoots a 360-degree ERP (ADR 0029); the Cutout shoots every Camera
-  // through its frame.
-  function isErpCamera() {
-    return studio && cameraShoots() && state.camera.projection === "erp";
-  }
 
   // The panorama view's three.js camera. The overlays and hit testing use its projection, so they
   // match the drawn frame.
@@ -330,10 +324,10 @@ export function createProjection(deps) {
   return {
     connect(api) {
       ({
-        cameraShoots, getActiveCutoutShot, getFrameViewRect, poseOf, projectSceneItemDir, shortestWrappedDelta,
+        getActiveCutoutShot, getFrameViewRect, poseOf, projectSceneItemDir, shortestWrappedDelta,
       } = api);
     },
-    isErpCamera, currentViewCamera, currentViewProjection, projectDir, screenToWorldDir, getUnwrapRect,
+    currentViewCamera, currentViewProjection, projectDir, screenToWorldDir, getUnwrapRect,
     projectDirUnwrap, getStickerFrame, stickerDirFromFrame, stickerCornersDir, stickerSampleDir,
     projectEditorPoints, projectErpPointToEditor, frameLocalPointToWorldDir,
     erpPointToWorldDir, worldDirToFrameLocalPoint, projectLassoPointsToCurrentView,

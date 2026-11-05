@@ -44,24 +44,28 @@ test("a draw asked for after the editor closed does nothing: the node keeps read
   assert.equal(asked.length, 1);
 });
 
-test("the editor's timers end when it closes: the Frame view's wheel notice draws nothing afterwards", (t) => {
+test("the editor's timers end when it closes: the Frame view's wheel takes no Undo step afterwards", (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   globalThis.window = { setTimeout: (run, ms) => setTimeout(run, ms), clearTimeout: (id) => clearTimeout(id) };
   t.after(() => delete globalThis.window);
   const timers = createTimers();
-  let draws = 0;
-  const shot = { id: "camera", yaw_deg: 0, pitch_deg: 0, hFOV_deg: 90, vFOV_deg: 60, curve: 1, position: [0, 0, 0] };
+  const steps = [];
+  const shot = { id: "shot_1", yaw_deg: 0, pitch_deg: 0, hFOV_deg: 90, vFOV_deg: 60 };
+  const editor = { mode: "frame" };
   const frameView = createFrameView({
-    cameraV2: true, canvas: { width: 1280, height: 720 }, editor: { mode: "frame" }, readOnly: false,
-    editorView: { contentRevision: () => 1, pickSurface: () => null },
+    canvas: { width: 1280, height: 720 }, editor, readOnly: false,
     runtime: { frameSafeRect: { x: 0, y: 0, w: 1280, h: 720 } }, shotEditor: true, timers, uiState: {},
   });
-  frameView.connect({ getActiveCutoutShot: () => shot, hasSpaceContent: () => false, requestDraw: () => { draws += 1; } });
+  frameView.connect({
+    commitAndRefreshNode: () => steps.push("commit"), getActiveCutoutShot: () => shot, pushHistory: () => steps.push("step"),
+    requestDraw() {}, updateSidePanel() {}, writePose: (item, pose) => Object.assign(item, pose),
+  });
   frameView.wheelFrameView({ x: 640, y: 360 }, -1);
-  assert.equal(draws, 1);
+  assert.notEqual(shot.hFOV_deg, 90);
   timers.clearAll();
   t.mock.timers.tick(5000);
-  assert.equal(draws, 1);
+  assert.deepEqual(steps, []);
+  assert.equal(editor.frameWheelChanged, true, "the wheel run had not rested when the editor closed");
 });
 
 test("closing the editor lets its background VIDEO go: no source is left loading", (t) => {
@@ -89,9 +93,9 @@ test("closing the editor lets its background VIDEO go: no source is left loading
     comfyMedia: { uiList: () => [], uiValue: () => null }, editor: {}, imageCache: new Map(),
     mediaAssetSource: () => "", mediaSource: () => "", node: { id: 7, inputs: [] },
     scheduler: { requestFrame: () => 0, cancelFrame() {} }, stageWrap: {}, state: { stickers: [] },
-    stateV2: false, studio: false, type: "stickers", uiState: { videoTransport: {} }, videoEl,
+    type: "stickers", uiState: { videoTransport: {} }, videoEl,
   });
-  media.connect({ requestDraw() {}, syncTimeline() {} });
+  media.connect({ requestDraw() {} });
   videoEl.calls.length = 0;
   media.disposeMediaSession();
   assert.equal(videoEl.getAttribute("src"), null);

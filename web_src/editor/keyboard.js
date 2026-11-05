@@ -1,24 +1,18 @@
-// The editor's keys, listened to on the window while it is open: Escape, Delete, Space for playback,
-// W A S D Q E moving the 6DoF view and the Frame view's Camera, the modifiers of the marquee and the tools, and Undo / Redo.
-import { createMoveKeys, isMoveKey } from "../pano_view_keys.js";
+// The editor's keys, listened to on the window while it is open: Escape, Delete, W A S D Q E kept from ComfyUI, the
+// modifiers of the marquee and the tools, and Undo / Redo.
+import { isMoveKey } from "../pano_view_keys.js";
 import { isFormControl, isTextField, stageOwnsKey as keyIsStages } from "../pano_key_focus.js";
 
 export function createKeyboard(deps) {
   const {
-    editor, overlay, readOnly, stateV2, timeline, uiState,
+    editor, overlay, readOnly, uiState,
   } = deps;
   // Bound by connect() to the other modules and showEditor.
-  let canKeyMove, cancelLiveEdits, cancelViewTransition, closeEditor, deleteSelected,
-    deleteSelectedKeyframes, deleteSelectedWorldSticker, endFrameKeyMove, getHistoryCapabilities, getSelected,
-    restoreHistory, setFullscreenState, settleCanvasConfirm, startAnimation, syncFrameRollKnob, togglePlayback,
-    updateCursor;
-
-  // The movement keys held down (pano_view_keys.js); space.js moves the view by them each frame.
-  const moveKeys = createMoveKeys();
+  let cancelLiveEdits, closeEditor, deleteSelected, getHistoryCapabilities, getSelected, restoreHistory,
+    setFullscreenState, settleCanvasConfirm, syncFrameRollKnob, updateCursor;
 
   // Escape takes back one thing, the innermost: the confirm dialog (Cancel), a field being typed in (it
-  // leaves the field), a pointer's edit under way (any gesture or Timeline drag), full screen, and last the
-  // editor itself.
+  // leaves the field), a pointer's edit under way (any gesture), full screen, and last the editor itself.
   function onEscClose(ev) {
     if (ev.key !== "Escape") return;
     if (uiState.confirmDialog.visible) {
@@ -71,17 +65,6 @@ export function createKeyboard(deps) {
     // Unlike Undo, Delete removes what is selected, so no form control takes it to the stage: Backspace on a focused
     // slider or checkbox deletes nothing.
     if (!stageOwnsKey(ev) || isFormControl(ev.composedPath()[0])) return;
-    if (timeline.selection) {
-      deleteSelectedKeyframes();
-      ev.preventDefault();
-      ev.stopPropagation();
-      return;
-    }
-    if (deleteSelectedWorldSticker()) {
-      ev.preventDefault();
-      ev.stopPropagation();
-      return;
-    }
     const selected = getSelected();
     if (!selected) return;
     deleteSelected();
@@ -93,73 +76,14 @@ export function createKeyboard(deps) {
   function stageOwnsKey(ev) {
     return keyIsStages(ev, overlay, { dialogOpen: uiState.confirmDialog.visible });
   }
-  // Space plays and stops the Timeline like its play button, also over a focused button or slider.
-  // Space with Ctrl, Meta or Alt is left to the browser and the OS, and typing keeps its spaces.
-  function spaceTogglesPlayback(ev) {
-    if (ev.code !== "Space" || ev.ctrlKey || ev.metaKey || ev.altKey) return false;
-    if (readOnly || !stateV2 || !uiState.timeline.visible) return false;
-    return stageOwnsKey(ev);
-  }
-  function onSpaceKey(ev) {
-    if (!spaceTogglesPlayback(ev)) return;
-    ev.preventDefault();
-    ev.stopPropagation();
-    if (!ev.repeat) togglePlayback();
-  }
-  // Firefox clicks a focused button on keyup, so the keyup is held back too.
-  function onSpaceKeyUp(ev) {
-    if (!spaceTogglesPlayback(ev)) return;
-    ev.preventDefault();
-    ev.stopPropagation();
-  }
-  // W A S D Q E move the 6DoF view, and the Frame view's Camera, while held, with Shift faster and Alt
-  // slower, whatever the pointer does (canKeyMove, space.js stepKeyMove). While the stage has the keys
-  // they are taken from ComfyUI (its W and A open sidebars behind the editor) and the browser (Alt + D, E,
-  // F) also where nothing moves (3DoF, Unwrap); Ctrl and Meta leave them to the browser and the OS.
-  // Pressing one where it moves stops a view transition, as grabbing the view does.
+  // W A S D Q E move nothing in this editor, but while the stage has the keys they are taken from ComfyUI (its W and
+  // A open sidebars behind the editor) and the browser (Alt + D, E, F); Ctrl and Meta leave them to the browser and
+  // the OS.
   function onMoveKeyDown(ev) {
-    moveKeys.modifiers(ev);
-    if (!isMoveKey(ev.code)) return;
-    // A held key repeating where the stage does not have the keys (focus gone to a field) lets go, so
-    // typing there does not move the view.
-    if (!stageOwnsKey(ev)) {
-      releaseMoveKey(ev.code);
-      return;
-    }
+    if (!isMoveKey(ev.code) || !stageOwnsKey(ev)) return;
     if (ev.ctrlKey || ev.metaKey) return;
     ev.preventDefault();
     ev.stopPropagation();
-    if (!canKeyMove()) return;
-    moveKeys.press(ev.code, ev.timeStamp);
-    if (!ev.repeat) cancelViewTransition();
-    startAnimation(() => {});
-  }
-  // A key let go is released wherever the focus has gone. macOS sends no keyup for a key let go while
-  // Meta is down, so Meta going up lets every key go.
-  function onMoveKeyUp(ev) {
-    moveKeys.modifiers(ev);
-    if (ev.key === "Meta") releaseMoveKeys();
-    if (!releaseMoveKey(ev.code)) return;
-    ev.preventDefault();
-    ev.stopPropagation();
-  }
-  // The last key let go ends the move: the Frame view's Camera moved by it is one Undo step.
-  function releaseMoveKey(code) {
-    if (!moveKeys.release(code)) return false;
-    if (!moveKeys.held) endFrameKeyMove();
-    return true;
-  }
-  function releaseMoveKeys() {
-    if (!moveKeys.held) return;
-    moveKeys.releaseAll();
-    endFrameKeyMove();
-  }
-  function onVisibilityChange() {
-    if (document.hidden) releaseMoveKeys();
-  }
-  // Chromium sends no keyup while the context menu is open.
-  function onContextMenu() {
-    releaseMoveKeys();
   }
   function onModifierKeyChange(ev) {
     const next = !!(ev.ctrlKey || ev.metaKey);
@@ -170,11 +94,10 @@ export function createKeyboard(deps) {
     syncFrameRollKnob();
     updateCursor(editor.pointerPos);
   }
-  // Leaving the window lets every key go, and cancels a pointer's edit under way: its pointerup may never
-  // come, and a hover afterwards must not move anything.
+  // Leaving the window cancels a pointer's edit under way: its pointerup may never come, and a hover afterwards
+  // must not move anything.
   function onWindowBlur() {
     cancelLiveEdits();
-    releaseMoveKeys();
     editor.marqueeModifier = false;
     editor.altModifier = false;
     syncFrameRollKnob();
@@ -197,13 +120,10 @@ export function createKeyboard(deps) {
   return {
     connect(api) {
       ({
-        canKeyMove, cancelLiveEdits, cancelViewTransition, closeEditor, deleteSelected,
-        deleteSelectedKeyframes, deleteSelectedWorldSticker, endFrameKeyMove, getHistoryCapabilities, getSelected,
-        restoreHistory, setFullscreenState, settleCanvasConfirm, startAnimation, syncFrameRollKnob, togglePlayback,
-        updateCursor,
+        cancelLiveEdits, closeEditor, deleteSelected, getHistoryCapabilities, getSelected, restoreHistory,
+        setFullscreenState, settleCanvasConfirm, syncFrameRollKnob, updateCursor,
       } = api);
     },
-    moveKeys, onEscClose, onDeleteKey, onSpaceKey, onSpaceKeyUp, onMoveKeyDown, onMoveKeyUp, onVisibilityChange,
-    onContextMenu, onModifierKeyChange, onWindowBlur, onUndoRedoKey,
+    onEscClose, onDeleteKey, onMoveKeyDown, onModifierKeyChange, onWindowBlur, onUndoRedoKey,
   };
 }

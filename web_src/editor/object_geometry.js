@@ -11,15 +11,15 @@ const OUTLINE_SAMPLES = 24;
 
 export function createObjectGeometry(deps) {
   const {
-    cameraV2, canvas, editor, state,
+    canvas, editor, state,
   } = deps;
   // Bound by connect() to the other modules and showEditor.
   let currentViewProjection, cutoutStickers, ensureGroupFrame, getActiveCutoutShot, getBrushPresetIdForTool,
     getFrameCornersUv, getFrameViewRect, getRasterObjectCenterUv, getRasterObjectGeomCacheKey,
     getRasterObjectTransformedErpPoints, getSceneItemGeomCacheKey, getStickerFrame, getStrokeGeomCacheKey,
-    getStrokeGroupCenterUv, getStrokeGroupStrokes, isFreeSpaceView, isRasterObjectItem, isSceneSticker,
+    getStrokeGroupCenterUv, getStrokeGroupStrokes, isRasterObjectItem,
     isShotItem, isStickerItem, isStrokeGroupItem, paintingShown, poseOf, projectDir, projectDirUnwrap,
-    projectEditorPoints, projectErpPointToEditor, sceneStickerShown, stickerCornersDir, stickerDirFromFrame,
+    projectEditorPoints, projectErpPointToEditor, stickerCornersDir, stickerDirFromFrame,
     stickerSampleDir, worldDirToFrameLocalPoint;
 
   function buildStrokeGroupGeom(item, cacheKey) {
@@ -166,7 +166,6 @@ export function createObjectGeometry(deps) {
   }
 
   function buildSceneItemGeom(item) {
-    if (isSceneSticker(item) && !sceneStickerShown(item)) return { visible: false };
     const pose = poseOf(item);
     const centerDir = yawPitchToDir(Number(pose.yaw_deg || 0), Number(pose.pitch_deg || 0));
     const frameShot = editor.mode === "frame" ? getActiveCutoutShot() : null;
@@ -268,8 +267,6 @@ export function createObjectGeometry(deps) {
   }
 
   function objectGeom(item) {
-    // In 6DoF Panorama Studio's Camera is its frustum in space, picked and moved with the gizmo.
-    if (cameraV2 && isShotItem(item) && isFreeSpaceView()) return { visible: false };
     if (!paintingShown() && (isStrokeGroupItem(item) || isRasterObjectItem(item))) return { visible: false };
     if (isStrokeGroupItem(item)) {
       const actionGroupId = String(item.actionGroupId || item.id || "").trim();
@@ -333,9 +330,9 @@ export function createObjectGeometry(deps) {
         currentViewProjection, cutoutStickers, ensureGroupFrame, getActiveCutoutShot, getBrushPresetIdForTool,
         getFrameCornersUv, getFrameViewRect, getRasterObjectCenterUv, getRasterObjectGeomCacheKey,
         getRasterObjectTransformedErpPoints, getSceneItemGeomCacheKey, getStickerFrame, getStrokeGeomCacheKey,
-        getStrokeGroupCenterUv, getStrokeGroupStrokes, isFreeSpaceView, isRasterObjectItem, isSceneSticker,
+        getStrokeGroupCenterUv, getStrokeGroupStrokes, isRasterObjectItem,
         isShotItem, isStickerItem, isStrokeGroupItem, paintingShown, poseOf, projectDir, projectDirUnwrap,
-        projectEditorPoints, projectErpPointToEditor, sceneStickerShown, stickerCornersDir, stickerDirFromFrame,
+        projectEditorPoints, projectErpPointToEditor, stickerCornersDir, stickerDirFromFrame,
         stickerSampleDir, worldDirToFrameLocalPoint,
       } = api);
     },

@@ -1,9 +1,8 @@
 // The upstream Scene in the new editor (docs/studio-ui.md "ノードの入力から来た物"): the layers of another Studio's
 // Scene on the `scene` input, from the node's result (`pano_upstream_layers`, docs/studio-node.md "上流の Scene"), with
-// the node's own overrides applied in working copies (pano_upstream_layers.js createUpstreamLayers, shared with the old
-// editor and the Preview), what the stage draws of them at a frame, their groups of Timeline rows, the edits of the
-// working copies written back as the overrides (docs/studio-ui.md "上流の物の編集", pano_upstream_edits.js, shared with
-// the old editor), the upstream length the Auto length counts, whether the editor waits for a run to show them. The upstream background that stands in while the node has no background of its own is
+// the node's own overrides applied in working copies (pano_upstream_layers.js createUpstreamLayers, shared with the
+// Preview), what the stage draws of them at a frame, their groups of Timeline rows, the edits of the
+// working copies written back as the overrides (docs/studio-ui.md "上流の物の編集", pano_upstream_edits.js), the upstream length the Auto length counts, whether the editor waits for a run to show them. The upstream background that stands in while the node has no background of its own is
 // pano_background_choice.js's.
 import { portMediaMeta } from "../pano_port_media.js";
 import {

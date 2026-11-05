@@ -3,7 +3,6 @@ import test from "node:test";
 
 import { HISTORY_LIMIT, createEditorHistory, createHistory, historySnapshot, savedSelectionId } from "../web_src/editor/history.js";
 import { createHistoryController } from "../web_src/pano_paint_history.js";
-import { loadSceneState } from "../web_src/pano_scene_state.js";
 
 test("a snapshot is the state without its history and painting layer", () => {
   const state = { version: 2, stickers: [{ id: "a" }], editor_history: { entries: [] }, painting_layer: { revision: "r" } };
@@ -108,46 +107,42 @@ test("the step list keeps the last 80 steps by default and Undo stops at the old
   assert.equal(undone, 79);
 });
 
-// The editor's history module over a Panorama Studio state, with its Undo history.
-function editorHistory({ readOnly = false, uploading = () => false } = {}) {
+// The editor's history module over a legacy Stickers state (v1), with its Undo history.
+function editorHistory({ readOnly = false } = {}) {
   const noop = () => {};
-  const state = { ...loadSceneState({ version: 2, camera: {}, stickers: [{ id: "a", source: { kind: "port" } }, { id: "b", source: { kind: "file", filename: "b.png" } }] }), active: { selected_sticker_id: "a", selected_shot_id: null } };
+  const state = {
+    stickers: [{ id: "a", asset_id: "asset_a", yaw_deg: 0 }, { id: "b", asset_id: "asset_b", yaw_deg: 10 }],
+    assets: {},
+    active: { selected_sticker_id: "a", selected_shot_id: null },
+  };
   const editor = { frame: 0, historyController: createEditorHistory(state), selectedId: "a", selectedIds: ["a"] };
-  const calls = { commits: 0, buttons: 0, cleared: 0 };
-  // The state the node keeps differs from the working one only by what syncPortHandoff writes back.
-  let stored = (working) => working;
-  const history = createHistory({ editor, readOnly, runtime: {}, state, stateV2: true, studio: true, type: "stickers" });
+  const calls = { commits: 0, buttons: 0 };
+  const history = createHistory({ editor, readOnly, runtime: {}, state, type: "stickers" });
   history.connect({
-    cancelLiveEdits: () => false,
-    clearWorldSelection: () => { calls.cleared += 1; }, commitState: () => { calls.commits += 1; },
-    getActiveCutoutShot: () => (state.camera ? { id: "camera" } : null), isUploadingSticker: uploading,
-    markObjectVisualsDirty: noop, markPaintStrokeVisualsDirty: noop, playback: { seek: noop }, pruneUpstreamRecords: noop,
-    rebuildUpstreamWorking: noop, releaseHiddenSelection: noop, requestDraw: noop, stopTimelinePlayback: noop,
-    storedEditorState: () => stored(state), syncCutoutShot: noop, syncPaintUi: noop, syncPortHandoff: noop,
-    syncUndoRedoButtons: () => { calls.buttons += 1; }, syncUpstreamEdits: noop, updateSidePanel: noop,
+    cancelLiveEdits: () => false, commitState: () => { calls.commits += 1; }, markObjectVisualsDirty: noop,
+    markPaintStrokeVisualsDirty: noop, releaseHiddenSelection: noop, requestDraw: noop, syncPaintUi: noop,
+    syncUndoRedoButtons: () => { calls.buttons += 1; }, updateSidePanel: noop,
   });
-  return { state, editor, history, calls, setStored: (fn) => { stored = fn; } };
+  return { state, editor, history, calls };
 }
 
-test("pushHistory records the state as the node keeps it, and Undo and Redo restore it and its selection", () => {
-  const { state, editor, history, calls, setStored } = editorHistory();
+test("pushHistory records the state, and Undo and Redo restore it and its selection", () => {
+  const { state, editor, history, calls } = editorHistory();
   const opened = structuredClone(state);
-  state.stickers[1].opacity.value = 0.5;
+  state.stickers[1].yaw_deg = 45;
   state.active.selected_sticker_id = "b";
-  // The port Sticker as stored (the handoff's Lanes are not), not as it is shown.
-  setStored((working) => ({ ...working, stickers: working.stickers.map((item) => (item.id === "a" ? { ...item, roll: { value: 9, keyframes: [] } } : item)) }));
   history.pushHistory();
-  assert.equal(JSON.parse(editor.historyController.entries[1]).stickers[0].roll.value, 9);
+  assert.equal(JSON.parse(editor.historyController.entries[1]).stickers[1].yaw_deg, 45);
   assert.deepEqual(history.getHistoryCapabilities(), { canUndo: true, canRedo: false });
 
-  editor.selectedId = "camera";
+  editor.selectedId = "other";
   history.restoreHistory(-1);
   assert.deepEqual(state.stickers, opened.stickers);
   assert.deepEqual([editor.selectedId, editor.selectedIds], ["a", ["a"]]);
   assert.deepEqual(history.getHistoryCapabilities(), { canUndo: false, canRedo: true });
 
   history.restoreHistory(1);
-  assert.deepEqual([state.stickers[1].opacity.value, state.stickers[0].roll.value], [0.5, 9]);
+  assert.equal(state.stickers[1].yaw_deg, 45);
   assert.deepEqual([editor.selectedId, editor.selectedIds], ["b", ["b"]]);
   assert.equal(calls.commits, 2);
   // Past the newest step nothing is restored or written.
@@ -155,49 +150,25 @@ test("pushHistory records the state as the node keeps it, and Undo and Redo rest
   assert.equal(calls.commits, 2);
 });
 
-test("Panorama Studio's Camera stays selected when the restored step selects it and no Sticker", () => {
-  const { state, editor, history } = editorHistory();
-  state.active.selected_sticker_id = null;
-  state.active.selected_shot_id = "camera";
-  state.camera.fov.value = 60;
-  history.pushHistory();
-  history.restoreHistory(-1);
-  history.restoreHistory(1);
-  assert.deepEqual([editor.selectedId, editor.selectedIds], ["camera", ["camera"]]);
-});
-
-test("a read-only editor records nothing, and a Sticker still uploading waits for its upload", () => {
+test("a read-only editor records nothing", () => {
   const readOnly = editorHistory({ readOnly: true });
-  readOnly.state.stickers[1].opacity.value = 0.5;
+  readOnly.state.stickers[1].yaw_deg = 45;
   readOnly.history.pushHistory();
   assert.equal(readOnly.editor.historyController.entries.length, 1);
-
-  const uploading = editorHistory({ uploading: (item) => item.id === "b" });
-  uploading.state.stickers[1].opacity.value = 0.5;
-  uploading.history.pushHistory();
-  assert.equal(uploading.editor.historyController.entries.length, 1);
 });
 
-// docs/editor-interaction.md「上書きの掃除」: only an edit prunes the upstream records. The steps of opening and of a
-// selection change keep them, so selecting writes nothing to state_json.
-test("an edit's step prunes the overrides of elements gone upstream; opening and selecting do not", () => {
-  const state = { stickers: [], step: 0 };
-  const editor = {};
-  editor.historyController = createEditorHistory(state);
-  const history = createHistory({ editor, readOnly: false, state, stateV2: true });
-  let pruned = 0;
+// docs/editor-interaction.md「ポインタの取り消しとフォーカスの喪失」: Undo cancels a pointer's edit under way before it
+// changes anything (a run's result: tests/editor_media_session_inputs.test.mjs).
+test("Undo cancels a pointer's edit under way first", () => {
+  const order = [];
+  const { state, history } = editorHistory();
   history.connect({
-    cancelLiveEdits: () => false,
-    isUploadingSticker: () => false, pruneUpstreamRecords: () => { pruned += 1; }, storedEditorState: () => state,
-    syncCutoutShot() {}, syncPortHandoff() {},
-    syncUndoRedoButtons() {}, syncUpstreamEdits() {},
+    cancelLiveEdits: () => { order.push(`cancel ${state.stickers[1].yaw_deg}`); return false; }, commitState() {},
+    markObjectVisualsDirty() {}, markPaintStrokeVisualsDirty() {}, releaseHiddenSelection() {}, requestDraw() {},
+    syncPaintUi() {}, syncUndoRedoButtons() {}, updateSidePanel() {},
   });
-  history.pushHistory({ initial: true });
-  state.step = 1;
-  history.pushHistory({ prune: false });
-  assert.equal(pruned, 0);
-  assert.equal(editor.historyController.entries.length, 2, "the selection's step is kept");
-  state.step = 2;
+  state.stickers[1].yaw_deg = 45;
   history.pushHistory();
-  assert.equal(pruned, 1);
+  history.restoreHistory(-1);
+  assert.deepEqual(order, ["cancel 45"], "on the state it then restores from");
 });
