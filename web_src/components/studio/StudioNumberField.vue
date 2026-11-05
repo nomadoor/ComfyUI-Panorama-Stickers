@@ -1,13 +1,14 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, ref } from "vue";
 import {
-  clampValue, dragStep, dragValue, formatNumber, parseNumber, passedDragThreshold,
+  clampValue, dragStep, dragValue, formatNumber, parseNumber, passedDragThreshold, watchDragCancel,
 } from "../../studio/ui_drag.js";
 
 // A value box of the inspector (docs/studio-ui.md "欄"). No fill until hovered. Dragging the box left and right
 // changes the value: the cursor is hidden by pointer lock so the drag does not stop at the screen edge, and when
 // the lock is refused the same drag runs with the cursor shown. Shift makes it 1/10. Releasing without moving
-// opens the box for typing. Escape during a drag (or the browser ending the lock with Escape) puts the value back.
+// opens the box for typing. Escape during a drag (or the browser ending the lock with Escape) puts the value back, as do
+// its pointercancel and the window's blur (ui_drag.js watchDragCancel; not a lost capture: the pointer lock takes it).
 //
 // Presentational: `value` in; `input` (each change during a drag or on typing), `change` (once when a drag or a
 // typed value ends with a different value: one Undo step), `cancel` (a drag or typing given up; an `input` with the
@@ -62,9 +63,9 @@ function onPointerDown(event) {
   root.value?.setPointerCapture?.(event.pointerId);
   window.addEventListener("pointermove", onPointerMove, true);
   window.addEventListener("pointerup", onPointerUp, true);
-  window.addEventListener("pointercancel", onPointerCancel, true);
   window.addEventListener("keydown", onDragKeydown, true);
   document.addEventListener("pointerlockchange", onLockChange);
+  drag.stopCancel = watchDragCancel({ element: root.value, pointerId: event.pointerId, cancel: cancelDrag, lostCapture: false });
 }
 
 function requestLock() {
@@ -113,10 +114,6 @@ function onPointerUp(event) {
   // The start may be off the drag's grid (an interpolated value): back on its grid point counts as where it began.
   if (sent !== start && sent !== dragValue(start, limits.value)) emit("change", sent);
   else emit("cancel");
-}
-
-function onPointerCancel(event) {
-  if (drag && event.pointerId === drag.pointerId) cancelDrag();
 }
 
 function onDragKeydown(event) {
@@ -174,6 +171,7 @@ function cancelDrag() {
 function endDrag() {
   if (!drag) return;
   drag.ending = true;
+  drag.stopCancel();
   if (document.pointerLockElement === root.value) document.exitPointerLock?.();
   try {
     root.value?.releasePointerCapture?.(drag.pointerId);
@@ -182,7 +180,6 @@ function endDrag() {
   }
   window.removeEventListener("pointermove", onPointerMove, true);
   window.removeEventListener("pointerup", onPointerUp, true);
-  window.removeEventListener("pointercancel", onPointerCancel, true);
   window.removeEventListener("keydown", onDragKeydown, true);
   document.removeEventListener("pointerlockchange", onLockChange);
   drag = null;

@@ -257,6 +257,49 @@ test("a field unmounted right after the browser ended its lock lets the page's n
   expect(await page.evaluate(() => window.__escapes)).toBe(1);
 });
 
+test("a value box's drag is cancelled by the window's blur as by Escape", async ({ page }) => {
+  const { problems } = await open(page);
+  await fakeLock(page, "refuse");
+  const field = col(page, "dark").locator('[data-field="pos-X"]');
+  const at = await press(page, field);
+  await moveRight(page, at, 6, 8);
+  await page.evaluate(() => window.dispatchEvent(new Event("blur")));
+  await page.mouse.up();
+  const log = await events(page);
+  expect(log.filter((e) => e.name === "posX:input").at(-1).value).toBe(1.2);
+  expect(log.some((e) => e.name === "posX:cancel")).toBe(true);
+  expect(log.some((e) => e.name === "posX:change")).toBe(false);
+  expect(problems).toEqual([]);
+});
+
+// docs/editor-interaction.md "ポインタの取り消しとフォーカスの喪失": pointercancel, the window's blur and a lost capture
+// cancel a slider's drag as Escape does.
+for (const trigger of ["pointercancel", "blur", "lostpointercapture"]) {
+  test(`a slider's drag is cancelled by ${trigger}: the value goes back and it sends cancel, no change`, async ({ page }) => {
+    const { problems } = await open(page);
+    await page.evaluate(() => document.addEventListener("pointerdown", (event) => (window.__pointerId = event.pointerId), true));
+    const slider = col(page, "dark").locator(".pano-studio-slider").first();
+    const box = await slider.boundingBox();
+    await page.mouse.move(box.x + box.width * 0.2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width * 0.6, box.y + box.height / 2, { steps: 4 });
+    await slider.evaluate((el, kind) => {
+      const pointerId = window.__pointerId;
+      if (kind === "blur") window.dispatchEvent(new Event("blur"));
+      else el.dispatchEvent(new PointerEvent(kind, { pointerId, bubbles: true }));
+    }, trigger);
+    await page.mouse.up();
+    const log = await events(page);
+    const inputs = log.filter((e) => e.name === "scale:input");
+    expect(inputs.length).toBeGreaterThan(1);
+    expect(log.some((e) => e.name === "scale:cancel")).toBe(true);
+    expect(log.some((e) => e.name === "scale:change")).toBe(false);
+    // The last input puts back the value the drag started from.
+    expect(inputs.at(-1).value).toBe(1);
+    expect(problems).toEqual([]);
+  });
+}
+
 test("a click without moving opens the box for typing; Enter sends the typed value once, Escape keeps the old one", async ({ page }) => {
   const { problems } = await open(page);
   const target = col(page, "light").locator('[data-field="pos-Z"]');

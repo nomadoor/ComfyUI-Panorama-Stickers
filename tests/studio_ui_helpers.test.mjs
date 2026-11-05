@@ -158,3 +158,36 @@ test("the Aspect field names the common ratios and reads them back", () => {
   assert.equal(parseAspect("0:1"), null);
   assert.equal(parseAspect("wide"), null);
 });
+
+// docs/editor-interaction.md "ポインタの取り消しとフォーカスの喪失": what cancels a field's drag besides Escape.
+test("a field's drag is cancelled by its pointer's pointercancel, the window's blur and its lost capture, until stopped", async () => {
+  const { watchDragCancel } = await import("../web_src/studio/ui_drag.js");
+  const target = () => {
+    const listeners = new Map();
+    return {
+      addEventListener: (type, fn) => listeners.set(type, [...(listeners.get(type) ?? []), fn]),
+      removeEventListener: (type, fn) => listeners.set(type, (listeners.get(type) ?? []).filter((item) => item !== fn)),
+      fire: (type, event = {}) => (listeners.get(type) ?? []).forEach((fn) => fn({ type, ...event })),
+      count: () => [...listeners.values()].reduce((sum, list) => sum + list.length, 0),
+    };
+  };
+  const win = target();
+  const element = target();
+  let cancels = 0;
+  const stop = watchDragCancel({ element, pointerId: 3, cancel: () => (cancels += 1), win });
+  win.fire("pointercancel", { pointerId: 9 });
+  element.fire("lostpointercapture", { pointerId: 9 });
+  assert.equal(cancels, 0, "another pointer's events are not the drag's");
+  win.fire("pointercancel", { pointerId: 3 });
+  win.fire("blur");
+  element.fire("lostpointercapture", { pointerId: 3 });
+  assert.equal(cancels, 3);
+  stop();
+  assert.deepEqual([win.count(), element.count()], [0, 0]);
+
+  // A drag that gives its capture up on purpose (the pointer lock of a value box) is not cancelled by losing it.
+  const locked = watchDragCancel({ element, pointerId: 3, cancel: () => (cancels += 1), win, lostCapture: false });
+  element.fire("lostpointercapture", { pointerId: 3 });
+  assert.equal(cancels, 3);
+  locked();
+});

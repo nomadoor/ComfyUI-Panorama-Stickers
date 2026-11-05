@@ -182,11 +182,12 @@ Panorama Studio のノード上の UI は、`sticker` 入力の素材を `source
 
 ## ポインタの取り消しとフォーカスの喪失
 
-進行中のポインターの操作は、次のときに取り消す（古い UI は `pointer_input.js` の `cancelLiveEdits`。新しい UI のステージとインスペクタの欄も同じきっかけで取り消す：`web_src/studio/stage_input.js`、`docs/studio-ui.md`）。取り消しの規則（一つの取り消し口、操作ごとに戻すもの、Undo の段も `state_json` の書き込みもしないこと、視点はその場で止めること、描きかけのストロークを全体で捨てること）の古い UI の owner は `docs/editor-architecture.md` の「Pointer gestures」の「操作の取り消し」、新しい UI のタイムラインのドラッグは `docs/timeline-ui.md` の「タイムラインの表示」。
+進行中のポインターの操作は、次のときに取り消す（古い UI は `pointer_input.js` の `cancelLiveEdits`。新しい UI のステージとインスペクタの欄も同じきっかけで取り消す：`web_src/studio/stage_input.js`、欄・スライダー・Easing の取っ手・辺の目盛りは `web_src/studio/ui_drag.js` `watchDragCancel`、`docs/studio-ui.md`）。取り消しの規則（一つの取り消し口、操作ごとに戻すもの、Undo の段も `state_json` の書き込みもしないこと、視点はその場で止めること、描きかけのストロークを全体で捨てること）の古い UI の owner は `docs/editor-architecture.md` の「Pointer gestures」の「操作の取り消し」、新しい UI のタイムラインのドラッグは `docs/timeline-ui.md` の「タイムラインの表示」。
 
 - `pointercancel`（その操作のポインタのもの）。
 - ウィンドウの `blur`（エディタの外へフォーカスが移った。`keyboard.js` の `onWindowBlur`）。取り消した後のホバーは何も動かさない。
 - 操作の途中の `lostpointercapture`（`pointerup` の無いまま捕捉を失った）。
+  新しい UI のインスペクタの数値の欄（`StudioNumberField.vue`）は例外で、これでは取り消さない。欄のドラッグはポインタを閉じ込め（pointer lock）、閉じ込めると捕捉は作りとして外れるため。欄はほかのきっかけ（`pointercancel`、ウィンドウの `blur`、Escape）と、閉じ込めがドラッグの途中で外れたときに取り消す（`docs/studio-ui.md`）。
 - Escape（操作の途中なら、どの操作でも。上の「キーと確認のダイアログ」の順の、確認のダイアログと入力の欄の次）。
 - Undo、Delete、実行結果の届いたとき（`executed`）は、先に途中の操作を取り消してから行う（古い UI は `history.js` の `restoreHistory`、`commands.js` の `deleteSelected`、`media_session.js` の `applyRunResult`）。
 - 操作の途中に押された 2 本目のポインタは無視する（操作は最初のポインタの `pointerId` のまま続き、ほかのポインタの動き・離す・取り消しも無視する。ロールのつまみも、操作の途中には始めない）。

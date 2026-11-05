@@ -1,10 +1,11 @@
 <script setup>
 import { computed, onBeforeUnmount, ref } from "vue";
+import { watchDragCancel } from "../../studio/ui_drag.js";
 import { pointerPos, posToValue, valueToPos } from "../../studio/ui_slider.js";
 
 // A slider of the inspector (docs/studio-ui.md "行の格子"; looks: docs/design.md): a thin line, a round knob, the
 // part left of the knob filled. A press on the line moves the knob there and the drag goes on; Escape during the
-// drag puts the value back. Arrow keys step it. A slider given `snapTo` lands only where it says (the Aspect slider's
+// drag puts the value back, as do its pointercancel, the window's blur and a lost capture (ui_drag.js watchDragCancel). Arrow keys step it. A slider given `snapTo` lands only where it says (the Aspect slider's
 // presets), and one given `stepTo` steps its keys there.
 //
 // Presentational: `value` in; `input` (each change), `change` (once when a drag or a key press ends with a different
@@ -58,6 +59,7 @@ function onPointerDown(event) {
   drag = { pointerId: event.pointerId, start: props.value, sent: props.value };
   root.value.setPointerCapture?.(event.pointerId);
   window.addEventListener("keydown", onDragKeydown, true);
+  drag.stopCancel = watchDragCancel({ element: root.value, pointerId: event.pointerId, cancel: cancelDrag });
   moveTo(event.clientX);
 }
 
@@ -79,6 +81,12 @@ function onDragKeydown(event) {
   if (!drag || event.key !== "Escape") return;
   event.preventDefault();
   event.stopPropagation();
+  cancelDrag();
+}
+
+// The value goes back to where the drag started, and the drag ends with cancel.
+function cancelDrag() {
+  if (!drag) return;
   const { start, sent } = drag;
   endDrag();
   if (sent !== start) emit("input", start);
@@ -87,6 +95,7 @@ function onDragKeydown(event) {
 
 function endDrag() {
   if (!drag) return;
+  drag.stopCancel();
   try {
     root.value?.releasePointerCapture?.(drag.pointerId);
   } catch {
@@ -132,7 +141,6 @@ onBeforeUnmount(endDrag);
     @pointerdown="onPointerDown"
     @pointermove="onPointerMove"
     @pointerup="onPointerUp"
-    @pointercancel="endDrag"
     @keydown="onKeydown"
   >
     <i

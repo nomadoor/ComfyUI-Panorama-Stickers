@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { CAMERA_RULERS, rulerDragValue, rulerMarks, rulerSnapStep, rulerSnapValue } from "../../studio/frame_layout.js";
-import { FINE_FACTOR, roundValue } from "../../studio/ui_drag.js";
+import { FINE_FACTOR, roundValue, watchDragCancel } from "../../studio/ui_drag.js";
 import { stepWithin } from "../../pano_camera_math.js";
 import StudioKeyDot from "./StudioKeyDot.vue";
 import StudioResetButton from "./StudioResetButton.vue";
@@ -91,6 +91,9 @@ function onPointerDown(event) {
   drag = { pointerId: event.pointerId, start: props.value, sent: props.value, raw: props.value, at: coord(event) };
   track.value.setPointerCapture?.(event.pointerId);
   window.addEventListener("keydown", onDragKeydown, true);
+  // Its pointercancel, the window's blur and a lost capture cancel it as Escape does (docs/editor-interaction.md
+  // "ポインタの取り消しとフォーカスの喪失", ui_drag.js watchDragCancel).
+  drag.stopCancel = watchDragCancel({ element: track.value, pointerId: event.pointerId, cancel: cancelDrag });
 }
 
 function onPointerMove(event) {
@@ -122,15 +125,9 @@ function onDragKeydown(event) {
   cancelDrag();
 }
 
-// The browser took the pointer away: the drag is cancelled as with Escape (docs/editor-interaction.md "ポインタの取り消しと
-// フォーカスの喪失").
-function onPointerCancel(event) {
-  if (!drag || event.pointerId !== drag.pointerId) return;
-  cancelDrag();
-}
-
 // The value goes back to where the drag started, and the drag ends with cancel.
 function cancelDrag() {
+  if (!drag) return;
   const { start, sent } = drag;
   endDrag();
   if (sent !== start) emit("input", start);
@@ -139,6 +136,7 @@ function cancelDrag() {
 
 function endDrag() {
   if (!drag) return;
+  drag.stopCancel();
   try {
     track.value?.releasePointerCapture?.(drag.pointerId);
   } catch {
@@ -195,7 +193,6 @@ onBeforeUnmount(() => {
       @pointerdown="onPointerDown"
       @pointermove="onPointerMove"
       @pointerup="onPointerUp"
-      @pointercancel="onPointerCancel"
       @keydown="onKeydown"
     >
       <div class="pano-studio-edge-ruler-scale" data-ruler-ticks>

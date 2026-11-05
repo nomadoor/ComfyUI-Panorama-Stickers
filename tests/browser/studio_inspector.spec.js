@@ -346,6 +346,34 @@ test("selecting Keyframes brings the Easing panel at the bottom: presets, a squa
   expect(problems).toEqual([]);
 });
 
+for (const trigger of ["pointercancel", "blur", "lostpointercapture"]) {
+  test(`an Easing handle's drag is cancelled by ${trigger}: the curve goes back, no Undo step, and the next edit records`, async ({ page }) => {
+    const problems = await open(page);
+    await scene(page, "select", { ids: ["sticker_1"], keyframes: { owner: "sticker_1", lane: null, frames: [0] } });
+    const panel = page.locator(".pano-studio-easing");
+    await expect(panel).toBeVisible();
+    await page.evaluate(() => document.addEventListener("pointerdown", (event) => (window.__pointerId = event.pointerId), true));
+    const before = (await scene(page, "state")).stickers[0].position.keyframes[0].easing;
+    const history = await scene(page, "history");
+    const handle = panel.locator('[data-handle="0"]');
+    const hb = await handle.boundingBox();
+    await page.mouse.move(hb.x + hb.width / 2, hb.y + hb.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(hb.x + 20, hb.y - 30, { steps: 5 });
+    await handle.evaluate((el, kind) => {
+      if (kind === "blur") window.dispatchEvent(new Event("blur"));
+      else el.dispatchEvent(new PointerEvent(kind, { pointerId: window.__pointerId, bubbles: true }));
+    }, trigger);
+    await page.mouse.up();
+    expect((await scene(page, "state")).stickers[0].position.keyframes[0].easing).toEqual(before);
+    expect(await scene(page, "history")).toBe(history);
+    await panel.locator('[data-value="Linear"]').click();
+    expect((await scene(page, "state")).stickers[0].position.keyframes[0].easing).toEqual([0, 0, 1, 1]);
+    expect(await scene(page, "history")).toBe(history + 1);
+    expect(problems).toEqual([]);
+  });
+}
+
 test("in a short inspector the graph shrinks, square, to leave EASING_MIN_ABOVE above the panel", async ({ page }) => {
   const problems = await open(page);
   await scene(page, "height", 560);

@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { clamp } from "../../pano_math.js";
 import { formatBezier, parseBezier } from "../../studio/inspector_model.js";
+import { watchDragCancel } from "../../studio/ui_drag.js";
 import StudioResetButton from "./StudioResetButton.vue";
 import StudioSegmented from "./StudioSegmented.vue";
 
@@ -70,6 +71,8 @@ function onHandleDown(event, index) {
   drag = { pointerId: event.pointerId, index, start: [...curve.value], moved: false };
   event.currentTarget.setPointerCapture?.(event.pointerId);
   window.addEventListener("keydown", onDragKeydown, true);
+  // Its pointercancel, the window's blur and a lost capture give it up as Escape does (ui_drag.js watchDragCancel).
+  drag.stopCancel = watchDragCancel({ element: event.currentTarget, pointerId: event.pointerId, cancel: cancelDrag });
 }
 
 function onHandleMove(event) {
@@ -94,12 +97,18 @@ function onDragKeydown(event) {
   // Escape here gives the drag up only; it must not reach the editor (which would clear the Keyframe selection).
   event.preventDefault();
   event.stopPropagation();
+  cancelDrag();
+}
+
+function cancelDrag() {
+  if (!drag) return;
   const { moved } = drag;
   endDrag();
   if (moved) emit("edit", { type: "easing", keyframes: props.model.keyframes, phase: "cancel" });
 }
 
 function endDrag() {
+  drag?.stopCancel();
   drag = null;
   live.value = null;
   window.removeEventListener("keydown", onDragKeydown, true);
@@ -187,7 +196,6 @@ function onPaste(event) {
           @pointerdown="onHandleDown($event, index)"
           @pointermove="onHandleMove"
           @pointerup="onHandleUp"
-          @pointercancel="endDrag"
         />
       </template>
     </svg>
