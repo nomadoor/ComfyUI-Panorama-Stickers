@@ -6,6 +6,8 @@
 `docs/studio-node-surface.md` にある。旧 `PanoramaStickers` と `PanoramaCutout` の表示は Panorama Studio と同じ
 DOM surface（`web_src/node_surface/lifecycle.js` の `attachPanoramaPreviewImpl`、絵は `node_surface/legacy_picture.js` の `drawCanvas`、ノード上の編集は `node_surface/editing.js`・`pointer.js`。外からは `web_src/pano_preview_runtime.js` を import する）を使い、`PanoramaPreview` は専用の runtime を使う。
 
+旧ノード（エディタとノード上の表示）は `curve` を見ず、いつもピンホールで描く。Python の旧ノードの出力と同じ（v1 の state を読むときに Sticker と shot の `curve` を外すので、保存した `state_json` にも残らない。`web_src/pano_editor_state.js` `parsePanoEditorState`）。
+
 この文書が持たない規則：Panorama Studio の表示と、旧 `PanoramaStickers` がそれと共有する規則（`docs/studio-node-surface.md`）、
 エディタの操作（`docs/editor-interaction.md`）。
 
