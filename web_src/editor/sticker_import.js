@@ -1,5 +1,5 @@
 // Images that become Stickers: picked or dropped image files added as Stickers, replacing a Sticker's image,
-// uploading them, the legacy embedded assets moved to files, and the drop cue on the stage.
+// uploading them, and the drop cue on the stage.
 import { queuePendingStickerOperation } from "../pano_sticker_operations.js";
 import {
   decodeStickerImageFile,
