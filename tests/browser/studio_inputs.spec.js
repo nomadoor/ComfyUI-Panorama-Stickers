@@ -241,6 +241,39 @@ test("another Studio's Scene on scene: its objects are selected on the stage and
   expect(problems).toEqual([]);
 });
 
+// docs/design.md "動き" (only the hover eases a button's colours) and "色" 桃: the drag that first overrides an upstream
+// object turns Back to source on in the override colour at once on release, not by way of the plain icon colour at
+// full strength (a white flash); a further drag does not toggle it.
+test("Back to source turns to the override colour at once when a drag first overrides an upstream object, and stays during the next drag", async ({ page }, testInfo) => {
+  const problems = await open(page, testInfo, "upstream", { width: 1920, height: 1080 });
+  const { sky: [front] } = await places(page, { sky: [[0, 0]] });
+  const colors = await page.evaluate(() => window.__studio.colors);
+  await expect.poll(() => stageAt(page, front).then((rgb) => near(rgb, colors.upstreamSky)), { timeout: 10_000 }).toBe(true);
+  await page.mouse.click(front.x, front.y);
+  await expect.poll(() => selectedRow(page)).toBe("upstream:scene_up:sticker_1");
+  const revert = page.locator('[data-bar="revert"]');
+  await expect(revert).not.toHaveClass(/is-override/);
+  // Each change of its class or aria-disabled, with the colour and opacity it has at that moment.
+  await revert.evaluate((button) => {
+    const seen = (window.__revertSeen = []);
+    const read = () => seen.push({ override: button.classList.contains("is-override"), disabled: button.getAttribute("aria-disabled") === "true", color: getComputedStyle(button).color, opacity: getComputedStyle(button).opacity });
+    new MutationObserver(read).observe(button, { attributes: true, attributeFilter: ["class", "aria-disabled"] });
+  });
+  await drag(page, front, { x: front.x - 200, y: front.y });
+  await expect(revert).toHaveClass(/is-override/);
+  const first = await page.evaluate(() => window.__revertSeen.splice(0));
+  const on = first.find((entry) => entry.override && !entry.disabled);
+  expect(on, JSON.stringify(first)).toBeTruthy();
+  expect(on.color, JSON.stringify(first)).toBe(OVERRIDE_RGB);
+  expect(on.opacity).toBe("1");
+  // A further drag of the overridden object: the button does not change at all.
+  await drag(page, { x: front.x - 200, y: front.y }, { x: front.x - 260, y: front.y });
+  await page.waitForTimeout(300);
+  expect(await page.evaluate(() => window.__revertSeen)).toEqual([]);
+  await expect(revert).toHaveCSS("color", OVERRIDE_RGB);
+  expect(problems).toEqual([]);
+});
+
 // docs/timeline-ui.md "上流の層の行": the own `world` is drawn over the upstream layers, so its `scene` row stays.
 test("an upstream Scene and the node's own world: the own scene row shows above the group and its eye edits the state", async ({ page }, testInfo) => {
   const problems = await open(page, testInfo, "upstream-world");

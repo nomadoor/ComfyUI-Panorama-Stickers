@@ -2402,6 +2402,14 @@
   transition-duration: 0s;
 }
 
+/* Only the hover eases a colour (docs/design.md "動き"): a button turning on or off, and Back to source taking or losing
+   the override colour, change at once. Easing them showed the plain icon colour at full strength for a moment before
+   the override colour (a flash on the release of the drag that first overrides an upstream object). */
+.pano-studio .pano-studio-icon-btn.is-override,
+.pano-studio .pano-studio-icon-btn[aria-disabled="true"] {
+  transition-property: background-color;
+}
+
 /* Less motion asked by the system: nothing moves; the loading ring shows still. */
 @media (prefers-reduced-motion: reduce) {
   .pano-studio *,
