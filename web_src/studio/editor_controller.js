@@ -10,7 +10,7 @@ import { gizmoModeOfKey, selectedKind } from "./selection_bar.js";
 import { editorKeyAction } from "./shortcuts.js";
 import { createStage } from "./stage.js";
 import { outputView } from "./stage_view.js";
-import { writeLoopSetting } from "./timeline_actions.js";
+import { writeLengthUnitSetting, writeLoopSetting } from "./timeline_actions.js";
 import { openingView } from "./view_camera.js";
 
 // The keys and the controller.
@@ -132,6 +132,11 @@ export function createEditorController(ctx) {
     loop: (on) => {
       ctx.view.loop = !!on;
       writeLoopSetting(ctx.storage, ctx.view.loop);
+    },
+    // The Length field's unit mark: allowed read-only (it changes no state, docs/timeline-ui.md "タイムラインの長さ").
+    lengthUnit: (unit) => {
+      ctx.view.lengthUnit = unit === "seconds" ? "seconds" : "frames";
+      writeLengthUnitSetting(ctx.storage, ctx.view.lengthUnit);
     },
     frameSelected: (row) => ctx.stage?.frameSelected(ctx.selectionOf(row)),
     setTab: ctx.setTab,

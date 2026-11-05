@@ -389,3 +389,76 @@ test("the list of shortcuts opens and closes with ?, Escape closes it before the
   await expect(page.locator(".pano-studio-editor")).toHaveCount(1);
   expect(problems).toEqual([]);
 });
+
+// docs/timeline-ui.md "タイムラインの長さ": the unit mark switches the Length field between frames and seconds in place;
+// in seconds a drag still moves one frame a step (live, Escape back to Auto, one Undo step on release) and typed seconds
+// go in as the nearest frame. The unit is kept per browser, not in the state.
+test("the Length field shows seconds by its unit mark; drags and typing still give whole frames; the unit is remembered", async ({ page }, testInfo) => {
+  const problems = await open(page, testInfo, "?auto");
+  await page.evaluate(() => {
+    Element.prototype.requestPointerLock = () => Promise.reject(new DOMException("refused", "NotAllowedError"));
+  });
+  const length = page.locator('[data-tl="length"]');
+  const unit = page.locator('.pano-studio-tl-bar [data-part="length-unit"]');
+  const undo = page.locator('[data-tool="undo"]');
+  await expect(unit).toHaveText("f");
+  await expect(unit).toHaveAttribute("data-tip", "Show seconds");
+  await expect(length).toHaveAttribute("aria-valuetext", "48");
+  await unit.click();
+  await expect(unit).toHaveText("s");
+  await expect(unit).toHaveAttribute("data-tip", "Show frames");
+  await expect(length.locator(".pano-studio-field-value")).toHaveText("2.00");
+  // Switching the unit changes nothing in the state: no Undo step, nothing written.
+  expect((await studio(page, "state")).timeline.length).toBeNull();
+  await expect(undo).toHaveAttribute("aria-disabled", "true");
+  expect(await page.evaluate(() => window.__studio.writes)).toBe(0);
+
+  // A drag: whole frames, shown in seconds; the range follows; Escape goes back to Auto.
+  const box = await length.boundingBox();
+  const at = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  await page.mouse.move(at.x, at.y);
+  await page.mouse.down();
+  for (let i = 1; i <= 10; i += 1) await page.mouse.move(at.x + i * 3, at.y);
+  await expect(length).toHaveClass(/is-dragging/);
+  const live = Number(await length.getAttribute("aria-valuenow"));
+  expect(Number.isInteger(live)).toBe(true);
+  expect(live).toBeGreaterThan(48);
+  expect(live).toBeLessThan(48 + 40);
+  await expect(length.locator(".pano-studio-field-value")).toHaveText((live / 24).toFixed(2));
+  expect((await studio(page, "state")).timeline.length).toBe(live);
+  await page.keyboard.press("Escape");
+  await page.mouse.up();
+  expect((await studio(page, "state")).timeline.length).toBeNull();
+  await expect(undo).toHaveAttribute("aria-disabled", "true");
+
+  // Released: one Undo step, a whole frame.
+  await page.mouse.move(at.x, at.y);
+  await page.mouse.down();
+  for (let i = 1; i <= 10; i += 1) await page.mouse.move(at.x + i * 2, at.y);
+  await page.mouse.up();
+  const released = (await studio(page, "state")).timeline.length;
+  expect(Number.isInteger(released)).toBe(true);
+  expect(released).toBeGreaterThan(48);
+  await undo.click();
+  expect((await studio(page, "state")).timeline.length).toBeNull();
+
+  // Typed seconds: the nearest frame (2.51 s × 24 = 60.24 → 60), shown back in seconds.
+  await length.click();
+  await expect(length.locator("input")).toHaveValue("2.00");
+  await length.locator("input").fill("2.51");
+  await length.locator("input").press("Enter");
+  expect((await studio(page, "state")).timeline.length).toBe(60);
+  await expect(length.locator(".pano-studio-field-value")).toHaveText("2.50");
+
+  // Kept per browser, not in the state: open again and it still shows seconds.
+  expect(await studio(page, "stored", "PanoramaSuite.Studio.TimelineLengthUnit")).toBe("seconds");
+  expect(JSON.parse(await studio(page, "text"))).not.toHaveProperty("timeline.length_unit");
+  await studio(page, "close");
+  await studio(page, "open");
+  await expect(page.locator('.pano-studio-tl-bar [data-part="length-unit"]')).toHaveText("s");
+  await expect(page.locator('[data-tl="length"] .pano-studio-field-value')).toHaveText("2.50");
+  await page.locator('.pano-studio-tl-bar [data-part="length-unit"]').click();
+  await expect(page.locator('[data-tl="length"] .pano-studio-field-value')).toHaveText("60");
+  expect(await studio(page, "stored", "PanoramaSuite.Studio.TimelineLengthUnit")).toBe("frames");
+  expect(problems).toEqual([]);
+});

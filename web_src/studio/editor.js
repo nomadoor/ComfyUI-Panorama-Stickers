@@ -83,7 +83,7 @@ function release(ctx, { vueApp, mountHost, flushBeforeQueue, finished }) {
 }
 
 // Opens the editor for `node`. app and api are ComfyUI's (web_src/main.js passes them); storage keeps the sizes the
-// user gives the regions and the loop switch (localStorage). readOnly opens it without edits (nothing is written).
+// user gives the regions, the loop switch and the Length unit (localStorage). readOnly opens it without edits (nothing is written).
 // Returns { close, session } for the caller (session: session.js's, to read the working state), or null when it is
 // open already.
 export async function openStudioEditor(node, { app = null, api = null, storage = globalThis.localStorage, readOnly = false } = {}) {

@@ -1,5 +1,5 @@
 <script setup>
-import { onBeforeUnmount, shallowRef } from "vue";
+import { onBeforeUnmount, reactive, shallowRef } from "vue";
 import StudioTimeline from "/web_src/components/studio/StudioTimeline.vue";
 import { applyEdit } from "/web_src/studio/timeline_actions.js";
 import { ctxOf, studioState, upstreamLayer } from "/tests/studio_timeline_fixtures.mjs";
@@ -19,6 +19,8 @@ const playhead = shallowRef(24);
 const playing = shallowRef(false);
 const loop = shallowRef(true);
 const collapsed = shallowRef(false);
+// The Length unit of each theme's Timeline (the light one is read-only and switches too).
+const units = reactive({ dark: "frames", light: "frames" });
 let clock = null;
 
 const log = (name, value) => props.onEvent({ name, value: value === undefined ? null : JSON.parse(JSON.stringify(value)) });
@@ -107,12 +109,14 @@ const THEMES = ["dark", "light"];
           :loop="loop"
           :read-only="theme === 'light'"
           :collapsed="collapsed && theme === 'dark'"
+          :length-unit="units[theme]"
           @seek="onSeek"
           @play="onPlay"
           @select="onSelect"
           @edit="onEdit"
           @frame-selected="(id) => log('frame-selected', id)"
           @loop-change="(on) => { log('loop-change', on); loop = on; }"
+          @length-unit-change="(unit) => { log('length-unit-change', unit); units[theme] = unit; }"
           @collapse-change="(folded) => { log('collapse-change', folded); collapsed = folded; }"
         />
       </div>

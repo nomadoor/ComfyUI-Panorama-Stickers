@@ -457,3 +457,51 @@ test("the fps and Length fields keep their width as digits are added, shown and 
   expect(await layout()).toBe(byFps[0]);
   await page.keyboard.press("Escape");
 });
+
+// docs/timeline-ui.md "タイムラインの長さ": the unit mark right of the Length number switches frames and seconds in place,
+// outside the value's width; the read-only Timeline switches it too (it changes nothing in the state).
+test("the Length unit mark switches frames and seconds, typed seconds go in as frames, and it works read-only", async ({ page }) => {
+  await open(page);
+  const length = dark(page).locator('[data-tl="length"]');
+  const unit = dark(page).locator('[data-part="length-unit"]');
+  await expect(unit).toHaveText("f");
+  await expect(unit).toHaveAttribute("data-tip", "Show seconds");
+  const fieldRight = await length.evaluate((el) => el.getBoundingClientRect().right);
+  expect(await unit.evaluate((el) => el.getBoundingClientRect().left)).toBeGreaterThanOrEqual(fieldRight - 0.5);
+  // Switching in place: nothing in the bar moves.
+  const places = () => dark(page).locator(".pano-studio-tl-bar").evaluate((bar) =>
+    [...bar.querySelectorAll(".pano-studio-tl-field, [data-tl], [data-part]")].map((el) => {
+      const r = el.getBoundingClientRect();
+      return `${r.left}-${r.right}`;
+    }).join(" "));
+  const before = await places();
+  await unit.click();
+  expect(await places()).toBe(before);
+  await expect(unit).toHaveText("s");
+  await expect(unit).toHaveAttribute("data-tip", "Show frames");
+  // 100 frames at 24 fps.
+  await expect(length.locator(".pano-studio-field-value")).toHaveText("4.17");
+  expect((await events(page)).filter((event) => event.name === "edit")).toEqual([]);
+  await length.click();
+  await length.locator("input").fill("2");
+  await length.locator("input").press("Enter");
+  expect((await scene(page, "state")).timeline.length).toBe(48);
+  await expect(length.locator(".pano-studio-field-value")).toHaveText("2.00");
+  // Less than a frame is one frame.
+  await length.click();
+  await length.locator("input").fill("0");
+  await length.locator("input").press("Enter");
+  expect((await scene(page, "state")).timeline.length).toBe(1);
+  await expect(length.locator(".pano-studio-field-value")).toHaveText("0.04");
+  await unit.click();
+  await expect(length.locator(".pano-studio-field-value")).toHaveText("1");
+
+  // Read-only: the field stays shut, the mark still switches the display.
+  const light = page.locator('[data-theme-col="light"]');
+  const lightUnit = light.locator('[data-part="length-unit"]');
+  await events(page);
+  await lightUnit.click();
+  await expect(lightUnit).toHaveText("s");
+  await expect(light.locator('[data-tl="length"] .pano-studio-field-value')).toHaveText("0.04");
+  expect((await events(page)).filter((event) => event.name === "edit")).toEqual([]);
+});

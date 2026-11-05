@@ -13,7 +13,7 @@ import { groundOf } from "./defaults.js";
 import { linkedInputNames, stageEmpty as emptyStage } from "./notice_line.js";
 import { stageUi } from "./stage.js";
 import { outputView } from "./stage_view.js";
-import { readLoopSetting } from "./timeline_actions.js";
+import { readLengthUnitSetting, readLoopSetting } from "./timeline_actions.js";
 import { spanOf } from "./timeline_model.js";
 import { BOUND_NOTICE_SECONDS } from "./view_scale.js";
 import { BACKGROUND_INPUTS, linked, widgetOf, VIDEO_FPS_INPUTS } from "./editor_inputs.js";
@@ -28,6 +28,8 @@ export function createEditorView(ctx) {
     playhead: 0,
     playing: false,
     loop: readLoopSetting(ctx.storage),
+    // The unit the Timeline's Length field shows, "frames" or "seconds": kept per browser, not in the state.
+    lengthUnit: readLengthUnitSetting(ctx.storage),
     canUndo: false,
     canRedo: false,
     readOnly: ctx.readOnly,

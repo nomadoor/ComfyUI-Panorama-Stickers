@@ -1147,6 +1147,30 @@
   --studio-tl-field-ch: 5ch;
 }
 
+/* Length's unit mark (f / s), a button that switches the unit the value shows (docs/timeline-ui.md "タイムラインの長さ"):
+   outside the value's width, 2px after it as a value box's unit (docs/design.md "値の箱の中の間"); its padding takes
+   the field's right padding. It works while the field is disabled (read-only). */
+.pano-studio-tl-field.is-length .pano-studio-field {
+  padding-right: 0;
+}
+
+.pano-studio-tl-unit {
+  align-self: stretch;
+  box-sizing: content-box;
+  width: 1ch; /* f and s take one width: switching moves nothing */
+  padding: 0 8px 0 2px;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  color: var(--studio-fg-2);
+  font-size: var(--studio-text-sm);
+  cursor: pointer;
+}
+
+.pano-studio-tl-unit:hover {
+  color: var(--studio-fg);
+}
+
 .pano-studio-tl-body {
   position: relative;
   display: flex;

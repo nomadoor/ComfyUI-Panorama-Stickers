@@ -88,6 +88,8 @@ try {
     editor = await openStudioEditor(node, { app, api, storage: memoryStorage });
   };
   studio.close = () => editor?.close();
+  // The browser's storage the editor keeps its settings in (the loop switch, the Length unit).
+  studio.stored = (key) => storage.get(key) ?? null;
   studio.text = () => widget.value;
   studio.state = () => JSON.parse(JSON.stringify(editor.session.state));
   studio.selection = () => JSON.parse(JSON.stringify(editor.session.selection));

@@ -46,6 +46,8 @@ import StudioTimelineHead from "./StudioTimelineHead.vue";
 //     { kind: "revert-upstream-layer" | "restore-upstream-deleted", key }
 //   frame-selected(id)       a double-click on a row's name: Frame Selected on its object
 //   loop-change(on)          the loop switch (the shell keeps it per browser: timeline_actions.js writeLoopSetting)
+//   length-unit-change(unit) the Length field's unit mark, "frames" or "seconds" (`lengthUnit`; the shell keeps it per
+//                            browser: timeline_actions.js writeLengthUnitSetting). Allowed read-only: it changes no state.
 //   collapse-change(folded)  the collapse button
 // handleDelete() (exposed): deletes the selected Keyframes and returns true, or returns false when the Delete key is
 // the selected object's (docs/timeline-ui.md "記録の規則"). The Timeline calls it itself for Delete inside it.
@@ -65,8 +67,9 @@ const props = defineProps({
   sceneRow: { type: Boolean, default: false },
   fpsLocked: { type: Boolean, default: false },
   collapsed: { type: Boolean, default: false },
+  lengthUnit: { type: String, default: "frames" },
 });
-const emit = defineEmits(["seek", "play", "select", "edit", "frame-selected", "loop-change", "collapse-change"]);
+const emit = defineEmits(["seek", "play", "select", "edit", "frame-selected", "loop-change", "length-unit-change", "collapse-change"]);
 
 // The empty space at both ends of a track (docs/timeline-ui.md "タイムラインの長さ": only a visual margin).
 const TRACK_PAD = 8;
@@ -515,6 +518,7 @@ defineExpose({ handleDelete, copyKeys: copySelectedKeys, pasteKeys: pasteCopiedK
     <StudioTimelineBar
       :bar="model.bar"
       :collapsed="collapsed"
+      :length-unit="lengthUnit"
       @play="emit('play')"
       @jump="onJump"
       @loop-change="(on) => emit('loop-change', on)"
@@ -522,6 +526,7 @@ defineExpose({ handleDelete, copyKeys: copySelectedKeys, pasteKeys: pasteCopiedK
       @length-input="onLengthInput"
       @length="onLength"
       @length-cancel="onLengthCancel"
+      @length-unit="(unit) => emit('length-unit-change', unit)"
       @collapse="(folded) => emit('collapse-change', folded)"
     />
     <div v-show="!collapsed" ref="body" class="pano-studio-tl-body">
