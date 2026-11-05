@@ -71,6 +71,8 @@ DOM surface（`web_src/node_surface/lifecycle.js` の `attachPanoramaPreviewImpl
 - prompt queue、Full Editor開始、teardown前に未確定gestureをflushする。
 - Full Editor開始時は進行中の画像operationもsettleまで待ち、成功した追加を含む最新stateを読む。
 
+- 背景の画像は背景の入力（`bg_erp`・`erp_image`。名前の並びは `web_src/pano_preview_video.js` `BACKGROUND_INPUT_NAMES`）につないだ先だけから読む（`web_src/pano_comfy_media.js` `surfaceImageInputIndices`。読み方は `docs/studio-node-surface.md` と同じ `nodeSurfaceLinkedSource`）。`sticker_image` など、ほかの IMAGE の入力は背景にしない（`tests/pano_comfy_media_profiles.test.mjs`、`tests/browser/legacy_editors.spec.js`）。
+
 ### 背景の VIDEO
 
 - 背景の動画は先頭のframeを表示し、canvas左下の再生・一時停止を切り替えるボタン（play / pause）でloop再生（muted）・停止する。ボタンは再生できるVIDEOがあるときだけ出す。
