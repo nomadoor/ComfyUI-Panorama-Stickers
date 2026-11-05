@@ -11,6 +11,7 @@ import { topLine } from "../../studio/notice_line.js";
 import { selectionBar } from "../../studio/selection_bar.js";
 import { isMacPlatform, shortcutGroups } from "../../studio/shortcuts.js";
 import { trackInputMode } from "../../studio/input_modality.js";
+import { watchDragCancel } from "../../studio/ui_drag.js";
 import { inspectorSelection } from "../../studio/session.js";
 import { WORLD_FILE_ACCEPT } from "../../pano_sticker_file_import.js";
 import { STUDIO_SIZE_DEFAULTS, studioNodeStatus } from "../../pano_studio_status.js";
@@ -84,6 +85,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   stopInputMode?.();
   window.removeEventListener("resize", fitTimeline);
+  endSplit();
 });
 
 // --- The top-center line and its kind (studio/notice_line.js).
@@ -215,23 +217,49 @@ function fitTimeline() {
   shownHeight.value = timelineHeight(wantedHeight.value, total);
 }
 
+// Escape, its pointercancel, the window's blur and a lost capture put back the height at the press, kept as it was
+// (ui_drag.js watchDragCancel; the editor does not take that Escape).
 let split = null;
 function onSplitDown(event) {
-  if (event.button !== 0 || collapsed.value) return;
+  if (event.button !== 0 || collapsed.value || split) return;
   event.preventDefault();
-  event.currentTarget.setPointerCapture?.(event.pointerId);
-  split = { y: event.clientY, height: shownHeight.value };
+  const element = event.currentTarget;
+  try {
+    element.setPointerCapture?.(event.pointerId);
+  } catch {
+    return;
+  }
+  split = { pointerId: event.pointerId, element, y: event.clientY, height: shownHeight.value, wanted: wantedHeight.value };
+  split.stopCancel = watchDragCancel({ element, pointerId: event.pointerId, cancel: cancelSplit });
 }
 function onSplitMove(event) {
-  if (!split) return;
+  if (!split || event.pointerId !== split.pointerId) return;
   wantedHeight.value = split.height + (split.y - event.clientY);
   fitTimeline();
   wantedHeight.value = shownHeight.value;
 }
-function onSplitUp() {
-  if (!split) return;
-  split = null;
+function onSplitUp(event) {
+  if (!split || event.pointerId !== split.pointerId) return;
+  endSplit();
   saveTimelineHeight(props.storage, shownHeight.value);
+}
+function cancelSplit() {
+  if (!split) return;
+  const { wanted } = split;
+  endSplit();
+  wantedHeight.value = wanted;
+  fitTimeline();
+}
+function endSplit() {
+  if (!split) return;
+  const { pointerId, element, stopCancel } = split;
+  split = null;
+  stopCancel?.();
+  try {
+    element.releasePointerCapture?.(pointerId);
+  } catch {
+    // The capture was already gone.
+  }
 }
 function setCollapsed(value) {
   collapsed.value = !!value;
@@ -435,7 +463,6 @@ function setCollapsed(value) {
           @pointerdown="onSplitDown"
           @pointermove="onSplitMove"
           @pointerup="onSplitUp"
-          @pointercancel="onSplitUp"
         />
         <div class="pano-studio-timeline" data-region="timeline" :style="timelineStyle">
           <StudioTimeline

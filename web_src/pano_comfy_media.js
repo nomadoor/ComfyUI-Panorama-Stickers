@@ -122,6 +122,16 @@ export function preferredImageInputsForNode(node, preferredInputNames = []) {
   return out.length ? out : preferredInputNames;
 }
 
+// The indices in `node.inputs` of the image inputs the node surfaces read (preferredImageInputsForNode), in that order.
+// Only these: another IMAGE input (the legacy Stickers node's sticker_image) is not the background
+// (docs/studio-node-surface.md, docs/legacy-node-surfaces.md).
+export function surfaceImageInputIndices(node, preferredInputNames = []) {
+  const inputs = Array.isArray(node?.inputs) ? node.inputs : [];
+  return preferredImageInputsForNode(node, preferredInputNames)
+    .map((name) => inputs.findIndex((input) => String(input?.name || "") === String(name)))
+    .filter((index) => index >= 0);
+}
+
 function isDirectMediaUrl(src) {
   const value = String(src || "").trim();
   return !!value && (
@@ -365,17 +375,9 @@ export function createComfyMediaAdapter({ app, api, ImageCtor, imageState, read:
       }
     }
 
-    const preferredResolved = preferredImageInputsForNode(node, preferredInputNames);
-    const preferred = preferredResolved
-      .map((name) => inputs.findIndex((i) => String(i?.name || "") === String(name)))
-      .filter((idx) => idx >= 0);
-    const imageTyped = inputs
-      .map((input, idx) => ({ input, idx }))
-      .filter(({ input }) => String(input?.type || "").toUpperCase() === "IMAGE")
-      .map(({ idx }) => idx);
-    const indices = [...new Set([...preferred, ...imageTyped])];
+    const indices = surfaceImageInputIndices(node, preferredInputNames);
     log("image-resolve", {
-      inputCandidates: preferredResolved,
+      inputCandidates: preferredImageInputsForNode(node, preferredInputNames),
       resolvedIndices: indices,
       stage: "start",
     });

@@ -4,10 +4,10 @@
 import {
   createComfyMediaAdapter,
   executionIdMatches,
-  preferredImageInputsForNode,
   resolveInputOriginNode,
   resultUiList,
   resultUiValue,
+  surfaceImageInputIndices,
 } from "../pano_comfy_media.js";
 import {
   isRenderableMediaReady,
@@ -84,21 +84,12 @@ function originNodeOf(node, slot) {
   return resolveInputOriginNode(node, slot, node.graph ? node.getInputLink(slot)?.origin_id : null);
 }
 
-// The nodes whose outputs the media of a node is read from: the nodes its image inputs come from, and every
+// The nodes whose outputs the media of a node is read from: the nodes its background inputs come from, and every
 // node above them.
 function getMediaSourceIds(node, preferredInputNames = BACKGROUND_INPUT_NAMES) {
   const inputs = Array.isArray(node?.inputs) ? node.inputs : [];
   if (!inputs.length) return new Set();
-  const preferredResolved = preferredImageInputsForNode(node, preferredInputNames);
-  const preferred = preferredResolved
-    .map((name) => inputs.findIndex((i) => String(i?.name || "") === String(name)))
-    .filter((idx) => idx >= 0);
-  const imageTyped = inputs
-    .map((input, idx) => ({ input, idx }))
-    .filter(({ input }) => String(input?.type || "").toUpperCase() === "IMAGE")
-    .map(({ idx }) => idx);
-  const indices = [...new Set([...preferred, ...imageTyped])];
-  return sourceNodeIds(node, indices, originNodeOf);
+  return sourceNodeIds(node, surfaceImageInputIndices(node, preferredInputNames), originNodeOf);
 }
 
 export const executedRefreshMonitor = {

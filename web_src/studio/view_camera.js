@@ -292,7 +292,7 @@ function unrolled(dx, dy, rollDeg) {
 export function createViewCamera({ pose: start, frame = false }) {
   let pose = copyPose(start);
   if (!frame) pose.roll_deg = 0;
-  // An eased move: { from, to, elapsed, seconds }.
+  // An eased move: { from, to, elapsed, seconds, focus (the turn to a T a double click or Set orbit center set) }.
   let ease = null;
   // The destination of the last eased action, which the world bound holds until the next one.
   let destination = null;
@@ -340,14 +340,15 @@ export function createViewCamera({ pose: start, frame = false }) {
     return ease ? ease.to : pose;
   }
 
-  // Goes to `to`: eased over `seconds` from what shows, or at once in the Frame view (or with no seconds).
-  function go(to, seconds) {
+  // Goes to `to`: eased over `seconds` from what shows, or at once in the Frame view (or with no seconds). `focus`: the
+  // turn to a T just set (focusing()).
+  function go(to, seconds, focus = false) {
     if (frame || !seconds) {
       pose = to;
       ease = null;
       return;
     }
-    ease = { from: shown(), to, elapsed: 0, seconds };
+    ease = { from: shown(), to, elapsed: 0, seconds, focus };
     pose = to;
   }
 
@@ -384,6 +385,9 @@ export function createViewCamera({ pose: start, frame = false }) {
     pose: () => copyPose(shown()),
     destination: () => copyPose(pose),
     animating: () => !!ease,
+    // Whether the eased move under way is the turn to a T a double click or Set orbit center set (focus), not another
+    // eased move that took over from it (the orbit center's mark stays on the set point during that turn only).
+    focusing: () => !!ease?.focus,
     // The world bound's radius now.
     bound,
 
@@ -546,7 +550,7 @@ export function createViewCamera({ pose: start, frame = false }) {
       const pitch = clamp(Math.asin(clamp(offset[1] / away, -1, 1)) * RAD2DEG, -PITCH_LIMIT, PITCH_LIMIT);
       const to = { ...base, yaw_deg: wrapYaw(yaw + 0), pitch_deg: pitch, target };
       destination = [...to.position];
-      go(to, ACTION_EASE_SECONDS);
+      go(to, ACTION_EASE_SECONDS, true);
       return result(true);
     },
 

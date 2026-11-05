@@ -452,7 +452,8 @@ export function createStage({
 
   // The orbit center's mark (docs/space-and-view.md "オービットの中心の印"; orbit_marker.js) on the 3D tab, the Frame view
   // (a Camera that can move) and the Preview window: { x, y, alpha } in the view's CSS px, or null. Its point is a World
-  // point (orbit_marker.js orbitMarkPoint) with T as it is set (the destination, not one an eased move carries).
+  // point (orbit_marker.js orbitMarkPoint) with T of the view shown (the eased T during a wheel step, Frame Selected or
+  // Reset View), but the set point (the destination) while the view turns to a T just set (view_camera.js focusing).
   function orbitMark(view) {
     const mode = viewMode();
     if (mode !== "space" && mode !== "frame") return null;
@@ -473,7 +474,8 @@ export function createStage({
     // The next orbit's center is looked up only when the mark can be on it.
     const wantsCenter = (state.alt || state.orbitKnob) && !state.orbiting && !state.picking;
     const nextCenter = wantsCenter ? orbitCenter({ selection: frame ? objectSelection() : selected(), frame }) : null;
-    const point = orbitMarkPoint({ ...state, target: nav.destination().target, nextCenter });
+    const target = nav.focusing() ? nav.destination().target : (nav === camera ? shownPose() : nav.pose()).target;
+    const point = orbitMarkPoint({ ...state, target, nextCenter });
     // The Frame view's camera spans more than the frame box (its context reaches the stage's edges): the mark stays in
     // the box.
     const frameBox = frame ? cameraTab.frame() : null;

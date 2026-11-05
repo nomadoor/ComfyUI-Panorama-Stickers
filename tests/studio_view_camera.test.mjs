@@ -427,6 +427,24 @@ test("a double click makes the hit T and turns to it over ACTION_EASE_SECONDS, P
   close(at.y, 250);
 });
 
+// docs/space-and-view.md "オービットの中心の印" 置く点: the mark stays on the set point only during the turn to it.
+test("focusing() is true during the turn to a T just set, and not once another eased move takes over or it ends", () => {
+  const view = camera();
+  assert.equal(view.focusing(), false);
+  view.focus([4, -1.6, -4]);
+  view.step(0.1);
+  assert.equal(view.focusing(), true);
+  view.step(0.4);
+  assert.equal(view.focusing(), false);
+  view.focus([-4, -1.6, -4]);
+  view.step(0.1);
+  view.wheel(1, null);
+  assert.equal(view.animating(), true);
+  assert.equal(view.focusing(), false);
+  view.frameSelected({ center: [0, 0, -6], radius: 1 });
+  assert.equal(view.focusing(), false);
+});
+
 test("a double click on nothing moves nothing and says so", () => {
   const view = camera();
   assert.equal(view.focus(null).notice, "nothing-to-focus");

@@ -182,7 +182,7 @@ Panorama Studio のノード上の UI は、`sticker` 入力の素材を `source
 
 ## ポインタの取り消しとフォーカスの喪失
 
-進行中のポインターの操作は、次のときに取り消す（古い UI は `pointer_input.js` の `cancelLiveEdits`。新しい UI のステージとインスペクタの欄も同じきっかけで取り消す：`web_src/studio/stage_input.js`、欄・スライダー・Easing の取っ手・辺の目盛りは `web_src/studio/ui_drag.js` `watchDragCancel`、`docs/studio-ui.md`）。取り消しの規則（一つの取り消し口、操作ごとに戻すもの、Undo の段も `state_json` の書き込みもしないこと、視点はその場で止めること、描きかけのストロークを全体で捨てること）の古い UI の owner は `docs/editor-architecture.md` の「Pointer gestures」の「操作の取り消し」、新しい UI のタイムラインのドラッグは `docs/timeline-ui.md` の「タイムラインの表示」。
+進行中のポインターの操作は、次のときに取り消す（古い UI は `pointer_input.js` の `cancelLiveEdits`。新しい UI のステージとインスペクタの欄も同じきっかけで取り消す：`web_src/studio/stage_input.js`、欄・スライダー・Easing の取っ手・辺の目盛り・右下の画角の数字・タイムラインの境界・Output の小窓の角は `web_src/studio/ui_drag.js` `watchDragCancel`、`docs/studio-ui.md`）。取り消しの規則（一つの取り消し口、操作ごとに戻すもの、Undo の段も `state_json` の書き込みもしないこと、視点はその場で止めること、描きかけのストロークを全体で捨てること）の古い UI の owner は `docs/editor-architecture.md` の「Pointer gestures」の「操作の取り消し」、新しい UI のタイムラインのドラッグは `docs/timeline-ui.md` の「タイムラインの表示」。
 
 - `pointercancel`（その操作のポインタのもの）。
 - ウィンドウの `blur`（エディタの外へフォーカスが移った。`keyboard.js` の `onWindowBlur`）。取り消した後のホバーは何も動かさない。

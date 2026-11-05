@@ -478,6 +478,47 @@ test("the FOV number drags and steps the view's FOV in a fixed width; its reset 
   expect(problems).toEqual([]);
 });
 
+// docs/studio-ui.md "閉じ方" (the Escape order's row 1) and docs/editor-interaction.md "ポインタの取り消しとフォーカスの喪失":
+// Escape during the drag of the FOV number, the timeline's border or the Output window's corner cancels that drag, puts
+// back the value at the press and leaves the editor open; a window blur cancels them the same way.
+test("Escape or a blur during the drag of the FOV number, the timeline's border or the Output corner puts it back; the editor stays", async ({ page }, testInfo) => {
+  const { problems } = await open(page, testInfo);
+  const editor = page.locator(".pano-studio-editor");
+  const fov = async () => (await page.evaluate(() => window.__studio.pose())).hFOV_deg;
+  const timelineHeight = () => page.locator('[data-region="timeline"]').evaluate((el) => el.getBoundingClientRect().height);
+  const outputWidth = () => page.locator(".pano-studio-output").evaluate((el) => el.getBoundingClientRect().width);
+  await page.locator('[data-action="output-fold"]').click();
+  await expect(page.locator(".pano-studio-output")).not.toHaveClass(/is-collapsed/);
+  await page.waitForTimeout(300);
+  // Presses `selector`, moves by (dx, dy), checks the move took, then ends with `end` (Escape or a blur).
+  const dragThenCancel = async (selector, dx, dy, read, end) => {
+    const box = await page.locator(selector).boundingBox();
+    const x = box.x + box.width / 2;
+    const y = box.y + box.height / 2;
+    const before = await read();
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.mouse.move(x + dx / 2, y + dy / 2);
+    await page.mouse.move(x + dx, y + dy);
+    await expect.poll(read).not.toBe(before);
+    if (end === "Escape") await page.keyboard.press("Escape");
+    else await page.evaluate(() => window.dispatchEvent(new Event("blur")));
+    await expect.poll(read).toBe(before);
+    await expect(editor).toHaveCount(1);
+    // Moving on after the cancel changes nothing; the release does not either.
+    await page.mouse.move(x + dx * 2, y + dy * 2);
+    await page.mouse.up();
+    expect(await read()).toBe(before);
+  };
+  for (const end of ["Escape", "blur"]) {
+    await dragThenCancel('[data-action="fov"]', 40, 0, fov, end);
+    await expect(page.locator('[data-action="fov"]')).toHaveText("100°");
+    await dragThenCancel('[data-region="splitter"]', 0, -60, timelineHeight, end);
+    await dragThenCancel('[data-action="output-resize"]', -60, 0, outputWidth, end);
+  }
+  expect(problems).toEqual([]);
+});
+
 // docs/space-and-view.md "Sky だけのときのホイール" (ADR 0061): no World content: the wheel moves and says Sky only.
 test("a wheel step with only the background says Sky only and Alt+wheel zooms", async ({ page }, testInfo) => {
   const { problems, stage } = await open(page, testInfo);
