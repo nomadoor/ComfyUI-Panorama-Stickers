@@ -175,7 +175,7 @@ def test_3d_file_sources_are_told_by_the_extension_table():
 
 @pytest.mark.parametrize("case", json.loads((FIXTURES / "sticker_ids.json").read_text(encoding="utf-8"))["take"])
 def test_the_node_takes_sticker_ids_as_the_shared_fixture(case):
-    from comfyui_pano_suite.nodes import _take_sticker_id
+    from comfyui_pano_suite.port_sticker import _take_sticker_id
 
     state = load_scene_state(json.dumps(case["state"]))
     ids = []

@@ -13,15 +13,16 @@ pytest.importorskip(
     reason="ComfyUI's real V3 API is required to run the Panorama Studio node",
 )
 
-from comfyui_pano_suite import nodes
 from comfyui_pano_suite.core.scene_state import STICKER_NUMBER_MAX, load_scene_state
-from comfyui_pano_suite.nodes import PanoramaStudioNode, PanoSceneValue
+from comfyui_pano_suite.nodes import PanoramaStudioNode
 from comfyui_pano_suite.scene_video import SceneVideo
 from scene_test_helpers import blob, blobs, center as _center, output_size
 from test_legacy_goldens import _golden_mismatch
 from tools import bake_legacy_goldens
 from tools.bake_legacy_goldens import ASSETS, FIXTURE_DIR, _painting, _stroke, build_background_erp
 from tools.golden_png import read_png16
+from comfyui_pano_suite.pano_scene import PanoSceneValue
+from comfyui_pano_suite.studio_node import _studio_output_size, _studio_run_key
 
 
 def _studio(state=None, **inputs):
@@ -269,7 +270,7 @@ def test_warnings_of_a_3d_sticker_with_sticker_state_come_in_order():
 def _size(state=None, megapixels=2.0, multiple=8):
     warnings = []
     loaded = load_scene_state(json.dumps({"version": 2, **(state or {})}))
-    width, height, _reduced_from = nodes._studio_output_size(loaded, megapixels, multiple, warnings)
+    width, height, _reduced_from = _studio_output_size(loaded, megapixels, multiple, warnings)
     return (width, height), warnings
 
 
@@ -302,19 +303,19 @@ def test_the_ui_reports_the_output_size_with_the_inputs_it_was_made_from():
 
     assert result.result[1].shape == (1, 256, 512, 3)
     assert result.ui["pano_output_size"] == [{"width": 512, "height": 256, "capped": False, "reduced_from": None,
-                                              "key": nodes._studio_run_key(state_json, 0.125, 8, "360", "#00ff00")}]
+                                              "key": _studio_run_key(state_json, 0.125, 8, "360", "#00ff00")}]
     # The width that output_size auto read is gone with it (ADR 0048).
     assert "pano_bg_width" not in result.ui
 
 
 def test_the_run_key_changes_with_the_state_and_the_widgets():
-    key = nodes._studio_run_key("{}", 2.0, 8, "360", "#00ff00")
+    key = _studio_run_key("{}", 2.0, 8, "360", "#00ff00")
 
-    assert key == nodes._studio_run_key("{}", 2, 8, "360", "#00ff00")
+    assert key == _studio_run_key("{}", 2, 8, "360", "#00ff00")
     # background_color changes the output.
     others = [("{ }", 2.0, 8, "360", "#00ff00"), ("{}", 2.5, 8, "360", "#00ff00"), ("{}", 2.0, 16, "360", "#00ff00"),
               ("{}", 2.0, 8, "180", "#00ff00"), ("{}", 2.0, 8, "360", "#ff0000")]
-    assert len({key, *(nodes._studio_run_key(*args) for args in others)}) == 6
+    assert len({key, *(_studio_run_key(*args) for args in others)}) == 6
 
 
 @pytest.mark.parametrize("projection", ["erp", "perspective"])

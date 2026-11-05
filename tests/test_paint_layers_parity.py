@@ -13,7 +13,7 @@ import pytest
 from comfyui_pano_suite.core.render import StickerSource, _sky_layers
 from comfyui_pano_suite.core.scene_eval import evaluate_scene_state
 from comfyui_pano_suite.core.scene_state import load_scene_state
-from comfyui_pano_suite.nodes import _painting_sources
+from comfyui_pano_suite.scene_build import _painting_sources
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 # An opaque 2 x 2 PNG.

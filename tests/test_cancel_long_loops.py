@@ -21,6 +21,8 @@ from comfyui_pano_suite.progress import loop_progress
 from comfyui_pano_suite.scene_files import write_editor_files
 from comfyui_pano_suite.scene_video import SceneVideo
 from test_stickers_scene_video import _cfr
+from comfyui_pano_suite.port_sticker import _handoff_lanes
+from comfyui_pano_suite.scene_timeline import _decide_timeline
 
 
 def _cancel_at(step: int):
@@ -173,11 +175,11 @@ def test_cancelled_legacy_stickers_batch_leaves_no_preview_mp4(tmp_path, monkeyp
 
 def _handoff():
     keys = [{"frame": frame, "value": {"yaw_deg": frame * 9.0, "pitch_deg": 0.0, "roll_deg": 0.0}} for frame in (0, 10)]
-    nodes._handoff_lanes(load_sticker_state(json.dumps({"kind": STICKER_STATE_KIND, "version": 2, "camera": {"rotation": keys}})), 24.0)
+    _handoff_lanes(load_sticker_state(json.dumps({"kind": STICKER_STATE_KIND, "version": 2, "camera": {"rotation": keys}})), 24.0)
 
 
 def _timeline():
-    nodes._decide_timeline(load_scene_state(json.dumps({"version": 2, "timeline": {"length": 10}})), None, None)
+    _decide_timeline(load_scene_state(json.dumps({"version": 2, "timeline": {"length": 10}})), None, None)
 
 
 def _components():

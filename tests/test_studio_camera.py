@@ -14,7 +14,6 @@ pytest.importorskip(
 import av
 from comfy_api.latest import InputImpl
 
-from comfyui_pano_suite import nodes
 from comfyui_pano_suite.core import render as render_module
 from comfyui_pano_suite.core.scene_state import load_scene_state, load_sticker_state
 from comfyui_pano_suite.core.world_render import SceneContent
@@ -25,6 +24,8 @@ from test_legacy_goldens import _golden_mismatch
 from test_world_render import _ball
 from tools.bake_legacy_goldens import CUTOUT_SHOT, FIXTURE_DIR, STUDIO_SHOT_SIZE, build_background_erp, studio_shot_size
 from tools.golden_png import read_png16
+from comfyui_pano_suite.core.render import render_frame
+from comfyui_pano_suite.scene_timeline import _decide_timeline
 
 
 # Panorama Studio shooting through a Camera: an ERP on `background`, or the Scene on its `scene` input.
@@ -187,7 +188,7 @@ def test_sticker_state_holds_the_camera_value_as_one_keyframe_and_the_source_asp
 def test_timeline_of_a_state_without_a_camera_has_no_camera_keyframes_to_count():
     state = load_scene_state({"version": 2, "timeline": {"fps": 24.0}})
 
-    assert len(nodes._decide_timeline(state, None, None)[3]) == 1
+    assert len(_decide_timeline(state, None, None)[3]) == 1
 
 
 def test_legacy_shot_becomes_the_sticker_state_camera():
@@ -259,7 +260,7 @@ def _upstream(state=None, **inputs):
 
 def _record_projections(monkeypatch):
     projections = []
-    original = nodes.render_frame
+    original = render_frame
 
     def recording(layers, camera, projection, **kwargs):
         projections.append((camera, projection))

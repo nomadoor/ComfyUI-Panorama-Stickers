@@ -19,11 +19,13 @@ pytest.importorskip(
     reason="ComfyUI's real V3 API is required to run the Panorama Studio node",
 )
 
-from comfyui_pano_suite import nodes
 from comfyui_pano_suite.core.scene_eval import evaluate_scene_state
 from comfyui_pano_suite.core.scene_state import load_scene_state
 from comfyui_pano_suite.sticker_media import open_video
 from test_stickers_timed_sticker import _ntsc_pts, _write_red_video
+from comfyui_pano_suite.media_ui import _port_media_ui
+from comfyui_pano_suite.port_sticker import _port_media
+from comfyui_pano_suite.scene_timeline import _decide_timeline, _timing_video
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -45,8 +47,8 @@ JS_SCRIPT = textwrap.dedent(
 def _drawn(state, bg, port, frames):
     """The port media's frame that the `video` output draws at each Timeline frame (`PortMedia.index_at` inside the
     Clip range), None where it draws none."""
-    fps = float(nodes._decide_timeline(state, bg, port)[0])
-    timing = nodes._timing_video(bg, port)
+    fps = float(_decide_timeline(state, bg, port)[0])
+    timing = _timing_video(bg, port)
     tolerance = 0 if timing is None else float(timing.time_base) / 2 * state["timeline"]["fps"]
     drawn = []
     for frame in frames:
@@ -57,10 +59,10 @@ def _drawn(state, bg, port, frames):
 
 def _case(state_json, sticker, bg=None):
     state = load_scene_state(json.dumps(state_json))
-    port, _handoff = nodes._port_media(state, sticker, "", [])
-    rate, _times, time_base, _frames = nodes._decide_timeline(state, bg, port)
+    port, _handoff = _port_media(state, sticker, "", [])
+    rate, _times, time_base, _frames = _decide_timeline(state, bg, port)
     fps = float(rate)
-    meta = nodes._port_media_ui(port, fps, time_base)["pano_sticker_input_video_meta"][0]
+    meta = _port_media_ui(port, fps, time_base)["pano_sticker_input_video_meta"][0]
     # The editor's playhead is on whole Timeline frames.
     frames = list(range(24))
     times = None if port.times is None else [float(time) for time in port.times]

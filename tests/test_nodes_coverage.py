@@ -5,6 +5,8 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 
+from comfyui_pano_suite.core.display_layers import compose_display_list_to_overlay_rgba
+
 
 def _load_nodes_module():
     class _NodeOutput:
@@ -90,7 +92,6 @@ def _load_nodes_module():
 
 
 def test_compose_display_list_to_overlay_rgba_keeps_workspace_shape():
-    nodes_module = _load_nodes_module()
     layer = np.zeros((1024, 2048, 4), dtype=np.float32)
     layer[..., 1] = 1.0
     layer[..., 3] = 1.0
@@ -99,7 +100,7 @@ def test_compose_display_list_to_overlay_rgba_keeps_workspace_shape():
         "painting": {"groups": [{"id": "group_1", "type": "strokeGroup", "actionGroupId": "ag_1", "z_index": 0}]},
     }
 
-    out, used, stats = nodes_module._compose_display_list_to_overlay_rgba(
+    out, used, stats = compose_display_list_to_overlay_rgba(
         state,
         2048,
         1024,

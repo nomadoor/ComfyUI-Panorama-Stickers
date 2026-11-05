@@ -22,7 +22,7 @@ def _case_ids():
 
 @pytest.mark.parametrize("case", FIXTURE["cases"], ids=_case_ids())
 def test_python_places_each_case(case):
-    from comfyui_pano_suite.nodes import PORT_3D_FIT_FOV_DEG
+    from comfyui_pano_suite.port_sticker import PORT_3D_FIT_FOV_DEG
 
     position = fit_3d_position(case["eye"], case["dir"], case["center"], case["radius"], case["rotation"], case["fov_deg"], case["min_distance"], PORT_3D_FIT_FOV_DEG)
 
@@ -32,7 +32,7 @@ def test_python_places_each_case(case):
 
 
 def test_the_constants_are_the_fixtures():
-    from comfyui_pano_suite.nodes import PORT_3D_FIT_FOV_DEG
+    from comfyui_pano_suite.port_sticker import PORT_3D_FIT_FOV_DEG
 
     assert (FIT_MARGIN, FIT_3D_MIN_DISTANCE, NEW_WORLD_STICKER_DISTANCE) == (FIXTURE["fit_margin"], FIXTURE["fit_3d_min_distance"], FIXTURE["new_world_sticker_distance"])
     # The editor's default horizontal 100 degrees on a 16:9 view, vertically.

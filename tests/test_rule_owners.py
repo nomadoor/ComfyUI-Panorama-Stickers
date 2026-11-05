@@ -13,6 +13,8 @@ from comfyui_pano_suite.core.scene_eval import segment_easing
 from comfyui_pano_suite.core.scene_state import round_frame
 from comfyui_pano_suite.core.state import coverage_span, normalize_coverage
 from comfyui_pano_suite.core.video_source import cut_audio, pts_half_step, pts_tolerance, pts_tolerance_frames
+from comfyui_pano_suite.core.state import hex_to_rgb01
+from comfyui_pano_suite.port_sticker import _in_hold
 
 
 def test_coverage_span_is_180_or_else_360_and_raises_on_what_int_cannot_read():
@@ -69,7 +71,7 @@ def test_round_frame_rounds_a_fraction_exactly():
 def test_segment_easing_is_the_easing_of_the_keyframe_that_starts_the_segment():
     keys = [{"frame": 0, "easing": "hold"}, {"frame": 10, "easing": "linear"}, {"frame": 20, "easing": "auto"}]
     assert [segment_easing(keys, frame) for frame in (-1, 0, 9.5, 10, 15, 20 - 1e-7, 20, 25)] == [None, "hold", "hold", "linear", "linear", None, None, None]
-    assert nodes._in_hold(keys, 5) and not nodes._in_hold(keys, 15)
+    assert _in_hold(keys, 5) and not _in_hold(keys, 15)
 
 
 def test_file_key_is_the_path_modification_time_and_size(tmp_path):
@@ -89,7 +91,7 @@ def test_cut_audio_keeps_the_first_seconds():
 
 
 def test_hex_to_rgb01_expands_three_digits_and_falls_back_to_green():
-    assert nodes.hex_to_rgb01("#abc").tolist() == nodes.hex_to_rgb01("#aabbcc").tolist()
-    assert nodes.hex_to_rgb01("FF0000").tolist() == [1.0, 0.0, 0.0]
-    assert nodes.hex_to_rgb01("nope").tolist() == [0.0, 1.0, 0.0]
+    assert hex_to_rgb01("#abc").tolist() == hex_to_rgb01("#aabbcc").tolist()
+    assert hex_to_rgb01("FF0000").tolist() == [1.0, 0.0, 0.0]
+    assert hex_to_rgb01("nope").tolist() == [0.0, 1.0, 0.0]
     assert nodes._normalize_hex_color(" #ABC ") == "#aabbcc"

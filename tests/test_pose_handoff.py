@@ -13,10 +13,11 @@ pytest.importorskip(
 
 from comfyui_pano_suite.core.scene_eval import evaluate_scene_state
 from comfyui_pano_suite.core.scene_state import load_scene_state
-from comfyui_pano_suite.nodes import PanoramaStudioNode, _inherit_handoff
+from comfyui_pano_suite.nodes import PanoramaStudioNode
 from scene_test_helpers import camera_state as _camera, output_size, shoot as _shoot, state_text, video_frames as _frames
 from test_studio_camera import _solid, _upstream
 from tools.bake_legacy_goldens import render_only_runtime
+from comfyui_pano_suite.port_sticker import _inherit_handoff
 
 
 def _textured_erp(height=256, width=512):

@@ -17,8 +17,11 @@ from comfy_api.latest import InputImpl
 
 from comfyui_pano_suite import nodes, sticker_media
 from comfyui_pano_suite.core.scene_state import load_scene_state
-from comfyui_pano_suite.nodes import PanoramaPreviewSceneNode, PanoramaStudioNode, PanoSceneValue
+from comfyui_pano_suite.nodes import PanoramaPreviewSceneNode, PanoramaStudioNode
 from scene_test_helpers import output_size
+from comfyui_pano_suite.core.video import encode_editor_mp4
+from comfyui_pano_suite.pano_scene import PanoSceneValue
+from comfyui_pano_suite.scene_timeline import _decide_timeline
 
 
 STATE = {"version": 2, "timeline": {"fps": 30.0}}
@@ -212,7 +215,7 @@ def test_preview_image_ui_is_the_keys_the_legacy_runtime_reads():
 
 def test_preview_decides_its_timeline_with_the_stickers_rules(monkeypatch, tmp_path):
     decided = []
-    original = nodes._decide_timeline
+    original = _decide_timeline
 
     def recording(state, bg, port):
         result = original(state, bg, port)
@@ -290,7 +293,6 @@ def test_studio_ui_saves_video_media_without_reading_it_whole(tmp_path, monkeypa
 
 def test_studio_ui_makes_the_background_mp4_once_per_input(tmp_path, monkeypatch):
     encoded = []
-    encode_editor_mp4 = nodes.encode_editor_mp4
     monkeypatch.setattr("comfyui_pano_suite.media_ui.encode_editor_mp4", lambda opened, progress=None: encoded.append(opened) or encode_editor_mp4(opened, progress))
     video = _video(tmp_path, count=6)
     images = _solid([0.5, 0.5, 0.5], batch=3)

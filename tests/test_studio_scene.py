@@ -21,7 +21,7 @@ from comfy_api.latest import Types
 from comfyui_pano_suite.core import render as render_module
 from comfyui_pano_suite.core.scene_eval import evaluate_scene_state
 from comfyui_pano_suite.core.scene_state import load_scene_state
-from comfyui_pano_suite.nodes import PanoramaStudioNode, PanoSceneValue
+from comfyui_pano_suite.nodes import PanoramaStudioNode
 from comfyui_pano_suite.scene_video import SceneVideo
 from test_legacy_goldens import _golden_mismatch
 from scene_test_helpers import output_size
@@ -31,6 +31,7 @@ from tools.bake_legacy_goldens import ASSETS, FIXTURE_DIR, _painting, _stroke, b
 
 # Panorama Studio without a Camera: the Scene it builds, shot as the ERP from the World origin.
 from tools.golden_png import read_png16
+from comfyui_pano_suite.pano_scene import PanoSceneValue
 
 
 def _execute(state=None, **inputs):

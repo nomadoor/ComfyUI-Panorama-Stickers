@@ -26,6 +26,7 @@ from comfyui_pano_suite.core.scene_eval import evaluate_scene_state
 from comfyui_pano_suite.core.scene_state import load_scene_state
 from comfyui_pano_suite.core.stickers import load_source_rgba
 from tools.bake_legacy_goldens import _painting, _stroke
+from comfy_api.latest import Types
 
 
 def _array(megabytes: int) -> np.ndarray:
@@ -127,7 +128,7 @@ def test_a_value_that_is_no_longer_valid_is_made_again_and_none_is_not_kept():
 
 
 def test_nbytes_counts_the_tensors_of_a_splat():
-    splat = nodes.Types.SPLAT(torch.zeros(1, 10, 3), torch.zeros(1, 10, 3), torch.zeros(1, 10, 4), torch.zeros(1, 10, 1), torch.zeros(1, 10, 1, 3))
+    splat = Types.SPLAT(torch.zeros(1, 10, 3), torch.zeros(1, 10, 3), torch.zeros(1, 10, 4), torch.zeros(1, 10, 1), torch.zeros(1, 10, 1, 3))
 
     assert nbytes(splat) == 10 * (3 + 3 + 4 + 1 + 3) * 4
     assert nbytes((np.zeros(4, np.uint8), {"a": torch.zeros(2)}, "text")) == 4 + 8
