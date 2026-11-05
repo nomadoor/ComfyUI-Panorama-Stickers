@@ -193,24 +193,27 @@ test("the knobs light for their operation, W moves until released or the window 
   const { problems, stage } = await open(page, testInfo);
   const lit = () => page.evaluate(() => [...document.querySelectorAll("[data-knob].is-lit")].map((el) => el.dataset.knob));
   expect(await lit()).toEqual([]);
-  // Alt lights the knobs of Alt's drags.
-  await page.keyboard.down("Alt");
-  await expect.poll(lit).toEqual(["orbit", "move"]);
-  // Once an Alt drag starts only its knob lights: Alt + left drag orbits, Alt + right drag moves forward/back
+  // Alt points out the knobs of Alt's drags in the hover's fill, during a drag too; the drag's knob lights over it
   // (docs/space-and-view.md "視点の操作の部品").
+  const hint = () => page.evaluate(() => [...document.querySelectorAll("[data-knob].is-hint")].map((el) => el.dataset.knob));
+  await page.keyboard.down("Alt");
+  await expect.poll(hint).toEqual(["orbit", "move"]);
+  expect(await lit()).toEqual([]);
   const at = await stageCenter(stage);
   await page.mouse.move(at.x, at.y);
   await page.mouse.down();
   await page.mouse.move(at.x + 30, at.y);
   await expect.poll(lit).toEqual(["orbit"]);
+  expect(await hint()).toEqual(["move"]);
   await page.mouse.up();
-  await expect.poll(lit).toEqual(["orbit", "move"]);
+  await expect.poll(lit).toEqual([]);
   await page.mouse.down({ button: "right" });
   await page.mouse.move(at.x + 30, at.y + 30);
   await expect.poll(lit).toEqual(["move"]);
+  expect(await hint()).toEqual(["orbit"]);
   await page.mouse.up({ button: "right" });
-  await expect.poll(lit).toEqual(["orbit", "move"]);
   await page.keyboard.up("Alt");
+  await expect.poll(hint).toEqual([]);
   await expect.poll(lit).toEqual([]);
   // A right drag on the stage pans: the four arrows light (ADR 0060).
   await page.mouse.move(at.x, at.y);
@@ -434,7 +437,7 @@ test("the FOV number drags and steps the view's FOV in a fixed width; its reset 
   await expect(number).toHaveText("100°");
   await expect(reset).toHaveAttribute("aria-disabled", "true");
   expect((await places()).frame.x).toBe(start.frame.x);
-  // Alt held lights it (Alt + wheel changes it), not during an Alt drag (docs/space-and-view.md "寄る").
+  // Alt held lights it (Alt + wheel changes it), during an Alt drag too (docs/space-and-view.md "寄る").
   const { x, y } = await stageCenter(page.locator("[data-stage-canvas]"));
   await page.mouse.move(x, y);
   await expect(number).not.toHaveClass(/is-lit/);
@@ -442,7 +445,7 @@ test("the FOV number drags and steps the view's FOV in a fixed width; its reset 
   await expect(number).toHaveClass(/is-lit/);
   await page.mouse.down();
   await page.mouse.move(x + 20, y);
-  await expect(number).not.toHaveClass(/is-lit/);
+  await expect(number).toHaveClass(/is-lit/);
   await page.mouse.up();
   await expect(number).toHaveClass(/is-lit/);
   await page.keyboard.up("Alt");

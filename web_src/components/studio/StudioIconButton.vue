@@ -16,6 +16,8 @@ const props = defineProps({
   active: { type: Boolean, default: false },
   // A view knob while its operation runs.
   lit: { type: Boolean, default: false },
+  // A view knob Alt points out: the hover's fill (the lit fill wins).
+  hint: { type: Boolean, default: false },
   disabled: { type: Boolean, default: false },
 });
 const emit = defineEmits(["press"]);
@@ -30,7 +32,7 @@ function onClick(event) {
   <button
     type="button"
     class="pano-studio-icon-btn"
-    :class="{ 'is-sm': size === 'sm', 'is-knob': size === 'knob', 'is-active': active, 'is-lit': lit }"
+    :class="{ 'is-sm': size === 'sm', 'is-knob': size === 'knob', 'is-active': active, 'is-lit': lit, 'is-hint': hint && !lit }"
     :aria-label="label"
     :data-tip="tip || label"
     :aria-disabled="disabled ? 'true' : null"
