@@ -213,3 +213,11 @@ test("the eraser reaches a stroke group near the pole from the other side of the
   });
   assert.deepEqual(asked, ["g1"]);
 }));
+
+// ADR 0008: only ERP_GLOBAL strokes; an old FRAME_LOCAL stroke is dropped when the painting is read.
+test("a FRAME_LOCAL stroke is dropped and an ERP_GLOBAL one kept", () => {
+  const points = [{ u: 0.2, v: 0.5 }, { u: 0.3, v: 0.5 }];
+  const stroke = (id, targetSpace) => ({ ...lineStroke(points), id, targetSpace });
+  const painting = normalizePaintingState({ paint: { strokes: [stroke("old", { kind: "FRAME_LOCAL", frameId: "f" }), stroke("erp", { kind: "ERP_GLOBAL" })] } });
+  assert.deepEqual(painting.paint.strokes.map((item) => item.id), ["erp"]);
+});

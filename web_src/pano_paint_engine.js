@@ -1274,7 +1274,7 @@ export function createPaintEngineManager(options = {}) {
     const allStrokes = [
       ...(Array.isArray(state?.painting?.paint?.strokes) ? state.painting.paint.strokes : []),
       ...(Array.isArray(state?.painting?.mask?.strokes) ? state.painting.mask.strokes : []),
-    // Only ERP_GLOBAL strokes are supported. Legacy FRAME_LOCAL strokes are silently ignored.
+    // Only ERP_GLOBAL strokes exist (pano_paint_types.js normalizePaintingState drops any other).
     ].filter((stroke) => stroke?.targetSpace?.kind === "ERP_GLOBAL");
     const isMask = (stroke) => String(stroke?.layerKind || "paint") === "mask";
     const paint = allStrokes.filter((stroke) => !isMask(stroke));
