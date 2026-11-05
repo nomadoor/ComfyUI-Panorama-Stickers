@@ -148,7 +148,7 @@ Panorama Studio はいつも新しい UI で開き、古い UI に Panorama Stud
 - タイムラインの範囲（`pano_timeline.js` の `timelineSpan`）は、`timeline.length` があればその値、なければ Auto の長さ（入力から決まる長さ。この文書の中の呼び名で、UI には出さない）。最小の長さはない。
 - Auto の長さ（`autoTimelineLength`）は、ノードの `_decide_timeline` と同じ規則で、状態と、エディタが知っている入力の長さから編集のたびに求め直す（前回の実行結果の長さをそのまま使うのではない）。規則の owner は `docs/studio-node.md` の「Scene の組み立てと撮影の入口」の出力の長さと、上流の Scene があるときの同じ文書の「上流の Scene」の長さで、ここには書き写さない。`tests/test_timeline_length_parity.py` が、状態と入力の表でノードの長さと一致することを確かめる。
 - エディタが知っている入力の長さ：
-  - 背景：ノードの現在の実行結果のエディタ用 MP4 のメタ情報（`pano_input_video_meta` の `frames`・`duration`）。VIDEO か IMAGE バッチかはリンクの型で見る。MP4 の無い IMAGE（`bg_media` に IMAGE がつながっている）は 1 枚の IMAGE とみなす（実行前の IMAGE バッチも、実行までは 1 枚として数える）。上流の Scene の背景を使うときは数えない（上流の長さにすでに入っている）。
+  - 背景：ノードの現在の実行結果のエディタ用 MP4 のメタ情報（`pano_input_video_meta` の `frames`・`duration`）。VIDEO か IMAGE バッチかはリンクの型で見る。MP4 の無い IMAGE（`background` に IMAGE がつながっている）は 1 枚の IMAGE とみなす（実行前の IMAGE バッチも、実行までは 1 枚として数える）。上流の Scene の背景を使うときは数えない（上流の長さにすでに入っている）。
   - `port` の Sticker の素材：現在の実行結果の `pano_sticker_input_video_meta`、3D の素材は `pano_sticker_files` の要素の数（`pano_port_media.js` の `portMediaMeta`）。
   - `scene` 入力の要素：現在の実行結果の `pano_scene_files` の数。
   - 上流の Scene：実行結果の `pano_upstream_frames`（上流の出力のフレーム数）。
@@ -213,7 +213,7 @@ Keyframe の選び方（新しい UI。ADR 0048）：
 判定は一か所（`timeline_model.js` の `hasOwnTime`）で、自分の行と上流の層の行に同じ規則を使う。
 
 - 自分の時間を持つ物：
-  - 背景（「背景の行」）の VIDEO と IMAGE バッチ（エディタが知っている背景の長さ。VIDEO は、実行前でも `bg_media` が VIDEO の型でつながっていれば数える）。
+  - 背景（「背景の行」）の VIDEO と IMAGE バッチ（エディタが知っている背景の長さ。VIDEO は、実行前でも `background` が VIDEO の型でつながっていれば数える）。
   - `port` の Sticker の素材が VIDEO か、2 枚以上の IMAGE バッチ（3D の素材は 2 つ以上）のとき（`portMediaMeta`。上流の層の行はその層の素材）。
   - アニメーションを持つ 3D ファイルの Sticker と `scene`（「glTF のアニメーション」。clip の 1 周の長さが分かるとき）。
   - `scene` の行で、`scene` 入力の内容が 2 つ以上の要素を持つとき（上流の層の行はその層の要素の数）。
@@ -288,9 +288,9 @@ Camera は Keyframe だけで動く（撮り方のモードは持たない）。
 
 ## 背景の行
 
-Panorama Studio の自分の `bg_media` は、タイムラインの自分の行の先頭に「Background」の行（パノラマのアイコン）を持つ。行は状態の `background.clip`（`docs/scene-state-v2.md` の「背景の Clip range」）を Sticker の行と同じ Clip range のバーで表し（新しい UI では、VIDEO と IMAGE バッチのとき、または既定でない Clip range のときだけ。「Clip range のバー（新しい UI）」）、移動（`start` を動かし、`in` は保つ）と両端の切り詰め（頭は `start` と `in` を一緒に動かし、素材の位置は動かない。終わりは `duration`）ができる。操作は `web_src/studio/timeline_actions.js` の `applyClipDrag` で、Sticker と同じく操作ごとに Undo の 1 段になる。
+Panorama Studio の自分の `background` は、タイムラインの自分の行の先頭に「Background」の行（パノラマのアイコン）を持つ。行は状態の `background.clip`（`docs/scene-state-v2.md` の「背景の Clip range」）を Sticker の行と同じ Clip range のバーで表し（新しい UI では、VIDEO と IMAGE バッチのとき、または既定でない Clip range のときだけ。「Clip range のバー（新しい UI）」）、移動（`start` を動かし、`in` は保つ）と両端の切り詰め（頭は `start` と `in` を一緒に動かし、素材の位置は動かない。終わりは `duration`）ができる。操作は `web_src/studio/timeline_actions.js` の `applyClipDrag` で、Sticker と同じく操作ごとに Undo の 1 段になる。
 
-- 行が出るのは、`bg_media` がつながっていて、上流の Scene の背景が代わりに使われていないとき（`web_src/studio/editor_view.js` の `view.background`。`scene` の行が `scene` のリンクで出るのと同じく、リンクで決める）。つないでいないときは出さない。リンクはエディタの外で変わるので、編集の途中で行が出入りしてほかの行が動くことはない。
+- 行が出るのは、`background` がつながっていて、上流の Scene の背景が代わりに使われていないとき（`web_src/studio/editor_view.js` の `view.background`。`scene` の行が `scene` のリンクで出るのと同じく、リンクで決める）。つないでいないときは出さない。リンクはエディタの外で変わるので、編集の途中で行が出入りしてほかの行が動くことはない。
 - 目のアイコンは無く（場所だけ空ける）、Keyframe も Lane も無い（行のポチは出さず、行を開くボタンは無効。`key-row` は何もしない）。背景を隠す手段は無い。
 - `duration` の無い Clip range のバーは、VIDEO と IMAGE バッチでは素材の終わり（`bgMediaEnd`）で終わり、1 枚の IMAGE と素材がまだ分からないときはタイムラインの終わりまで描く。
 - 出力の長さが Auto のとき、背景の Clip range を動かしても切り詰めても長さが変わらない規則（例を含む）は `docs/studio-node.md` の出力の長さにある。移動は始まりが出力の中にある限り終わりより先へ出てよく、終わりのトリムは出力の終わりで止まる（Sticker と同じ。「タイムラインの長さ」）。長さを変えるときは長さの欄に値を入れる（長さは VIDEO より長くできる）。

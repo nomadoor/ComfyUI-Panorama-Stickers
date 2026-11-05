@@ -511,7 +511,7 @@ function sceneAnimation(raw) {
   return animation ? { animation } : {};
 }
 
-// The node's own `bg_media` on the Timeline: its Clip range.
+// The node's own `background` on the Timeline: its Clip range.
 function background(raw) {
   return { clip: clip(isObject(raw) ? raw.clip : undefined) };
 }
