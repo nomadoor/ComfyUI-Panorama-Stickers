@@ -15,6 +15,7 @@ import { DRAW_REASON, createFrameScheduler } from "./pano_frame_scheduler.js";
 import { createPaintEngineManager } from "./pano_paint_engine.js";
 import {
   createEditorHistory,
+  LEGACY_BACKGROUND_COLOR,
   normalizeCoverageValue,
   parsePanoEditorState,
 } from "./pano_editor_state.js";
@@ -153,7 +154,7 @@ async function showEditor(node, type, options = {}) {
   const shotEditor = type === "cutout";
   const state = parsePanoEditorState(String(stateWidget?.value || ""), {
     outputPreset: resolveEditorOutputPresetWidth(2048),
-    backgroundColor: String(bgWidget?.value || "#00ff00"),
+    backgroundColor: String(bgWidget?.value || LEGACY_BACKGROUND_COLOR),
     coverage: normalizeCoverageValue(coverageWidget?.value),
     sharedUiSettings: loadSharedUiSettings(),
   });

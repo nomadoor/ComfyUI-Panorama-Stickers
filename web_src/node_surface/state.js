@@ -1,6 +1,6 @@
 // The node state an on-node surface shows and edits: its state_json (or the live state while an edit runs) parsed once
 // per change, the Timeline frame it shows, its loaded state v2, and its loading flag.
-import { editorActive, normalizeCoverageValue, parsePanoEditorState } from "../pano_editor_state.js";
+import { editorActive, LEGACY_BACKGROUND_COLOR, normalizeCoverageValue, parsePanoEditorState } from "../pano_editor_state.js";
 import { loadSceneState } from "../pano_scene_state.js";
 import { NODE_SURFACE_FRAME, surfaceSceneEditorState } from "../pano_stickers_node_surface.js";
 import { backgroundColorWidget, isNodeOutputMediaCurrent } from "../pano_preview_video.js";
@@ -45,7 +45,9 @@ export function getCachedState(node) {
   const liveVersion = sync.liveStateVersion;
   // Panorama Studio and the Preview name these `background_color` and `background_range` (ADR 0048); the legacy nodes
   // `bg_color` and `coverage`.
-  const bg = String(backgroundColorWidget((name) => getWidget(node, name))?.value || "#1a1a1e");
+  // Without the widget (the legacy Cutout has none) or with it empty: the legacy nodes' default (pano_editor_state.js),
+  // Panorama Studio's dark gray.
+  const bg = String(backgroundColorWidget((name) => getWidget(node, name))?.value || (node.__panoSceneStateV2 ? "#1a1a1e" : LEGACY_BACKGROUND_COLOR));
   const coverage = normalizeCoverageValue((getWidget(node, "background_range") ?? getWidget(node, "coverage"))?.value || 360);
   const sceneText = node.__panoSceneStateV2 && typeof source === "string";
   // The handoff applies while the inputs it came from are linked as they were (the cache follows that too).

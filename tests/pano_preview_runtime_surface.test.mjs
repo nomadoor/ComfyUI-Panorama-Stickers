@@ -17,6 +17,7 @@ import {
 
 const runtime = await import("../web_src/pano_preview_runtime.js");
 const { editorSession, mediaCache, nodeSurface, stateSync } = await import("../web_src/pano_node_bridge.js");
+const { LEGACY_BACKGROUND_COLOR } = await import("../web_src/pano_editor_state.js");
 
 // Every attached node is torn down after its test, also when the test failed before doing it, so one failure does not
 // leave listeners or a playing surface behind for the next tests.
@@ -319,9 +320,10 @@ test("teardown disconnects the resize observer and removes the DOM widget", () =
 test("the legacy surface parses state_json with the node's bg_color and coverage, falling back to the defaults", () => {
   const cases = [
     [{ state_json: "not json", bg_color: "#abcdef", coverage: 180 }, { bg_color: "#abcdef", coverage: 180, stickers: [], shots: [] }],
-    [{ state_json: "" }, { bg_color: "#1a1a1e", coverage: 360, stickers: [], shots: [] }],
+    // Without a bg_color widget (the legacy Cutout has none) the legacy nodes' default shows, as in the old editor.
+    [{ state_json: "" }, { bg_color: LEGACY_BACKGROUND_COLOR, coverage: 360, stickers: [], shots: [] }],
     // The node's bg_color widget wins over the state's (as in the editor); here there is none, so the default shows.
-    [{ state_json: JSON.stringify({ coverage: 180, stickers: "x", shots: [], bg_color: "#010203" }), coverage: 360 }, { bg_color: "#1a1a1e", coverage: 360, stickers: [], shots: [] }],
+    [{ state_json: JSON.stringify({ coverage: 180, stickers: "x", shots: [], bg_color: "#010203" }), coverage: 360 }, { bg_color: LEGACY_BACKGROUND_COLOR, coverage: 360, stickers: [], shots: [] }],
   ];
   for (const [widgets, expected] of cases) {
     const node = createFakeNode({ type: LEGACY, widgets });
@@ -355,6 +357,12 @@ test("the legacy Stickers and Cutout surfaces read state_json as the editor does
     assert.equal("out_w" in parsed.shots[0], false);
     detach(node);
   }
+  // The legacy Cutout has no bg_color widget: the surface, the old editor and a new frame use the one default.
+  const cutout = createFakeNode({ type: CUTOUT, widgets: { state_json: text, coverage: 360 } });
+  attachPanoramaPreview(cutout, {});
+  assert.equal(stateSync(cutout).parsedState.parsed.bg_color, LEGACY_BACKGROUND_COLOR);
+  assert.equal(parsePanoEditorState(text).bg_color, LEGACY_BACKGROUND_COLOR);
+  detach(cutout);
 });
 
 test("the legacy surface reads the live state before state_json", () => {

@@ -2,6 +2,7 @@
 // left to upload on close, and the node's previews.
 import {
   editorStateWrite,
+  LEGACY_BACKGROUND_COLOR,
   normalizeCoverageValue,
 } from "../pano_editor_state.js";
 import { peekNodeSurface, peekPreviewNode } from "../pano_node_bridge.js";
@@ -20,7 +21,7 @@ export function createCommit(deps) {
     state.alpha_mode = "straight";
     if (presetWidget) state.output_preset = resolveEditorOutputPresetWidth(Number(state.output_preset || 2048));
     if (coverageWidget) state.coverage = normalizeCoverageValue(coverageWidget.value);
-    if (bgWidget) state.bg_color = String(bgWidget.value || state.bg_color || "#00ff00");
+    if (bgWidget) state.bg_color = String(bgWidget.value || state.bg_color || LEGACY_BACKGROUND_COLOR);
     commitState();
     node.setDirtyCanvas(true, true);
   }
