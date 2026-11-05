@@ -415,9 +415,10 @@ function handleDelete() {
   return true;
 }
 
-// A press inside the Timeline gives it the keyboard (Delete), as the drags' preventDefault keeps focus where it was.
+// A press inside the Timeline gives it the keyboard (Delete), as the drags' preventDefault keeps focus where it was. A
+// field (the fps and Length names drag their field too: docs/studio-ui.md "欄") keeps it where it was.
 function onPointerDownCapture(event) {
-  if (event.target?.closest?.("input, textarea, select, [contenteditable='true'], [role='spinbutton']")) return;
+  if (event.target?.closest?.("input, textarea, select, [contenteditable='true'], [role='spinbutton'], .pano-studio-tl-field")) return;
   root.value?.focus({ preventScroll: true });
 }
 

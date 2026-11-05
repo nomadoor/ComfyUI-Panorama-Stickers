@@ -123,6 +123,68 @@ test("a length shorter than the playhead brings the playhead to the last frame, 
   expect(problems).toEqual([]);
 });
 
+// docs/studio-ui.md "欄": the area filled on hover is the area that drags. The fps and Length fields fill their name
+// with the value, so a press on the name drags the value and a click on it without moving opens the box for typing,
+// and the name shows the field's arrows cursor.
+test("the fps and Length names drag their value and open it for typing, with the field's cursor", async ({ page }, testInfo) => {
+  const problems = await open(page, testInfo);
+  // A refused pointer lock: the field drags with the cursor shown (headless Chromium's lock stalls the mouse).
+  await page.evaluate(() => {
+    Element.prototype.requestPointerLock = () => Promise.reject(new DOMException("refused", "NotAllowedError"));
+  });
+  const name = (text) => page.locator(".pano-studio-tl-field-name", { hasText: text });
+  const length = page.locator('[data-tl="length"]');
+  const fps = page.locator('[data-tl="fps"]');
+  const dragFrom = async (locator, dx) => {
+    const box = await locator.boundingBox();
+    const at = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+    await page.mouse.move(at.x, at.y);
+    await page.mouse.down();
+    for (let i = 1; i <= 10; i += 1) await page.mouse.move(at.x + (dx * i) / 10, at.y);
+    await page.mouse.up();
+  };
+  await expect(length).toHaveAttribute("aria-valuenow", "48");
+  // A press on the name, as one on the value, leaves the keyboard where it was (the Timeline does not take it, so a
+  // later Delete does not delete Keyframes).
+  await page.evaluate(() => document.activeElement?.blur?.());
+  const focusBefore = await page.evaluate(() => document.activeElement === document.body);
+  expect(focusBefore).toBe(true);
+  await dragFrom(name("Length"), 50);
+  expect(await page.evaluate(() => document.activeElement === document.body)).toBe(true);
+  await expect(length).not.toHaveAttribute("aria-valuenow", "48");
+  expect(Number(await length.getAttribute("aria-valuenow"))).toBeGreaterThan(48);
+  expect((await studio(page, "state")).timeline.length).toBe(Number(await length.getAttribute("aria-valuenow")));
+
+  // Escape during a drag from the name puts the value back, as from the value.
+  const dragged = await length.getAttribute("aria-valuenow");
+  const box = await name("Length").boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  for (let i = 1; i <= 10; i += 1) await page.mouse.move(box.x + box.width / 2 + i * 5, box.y + box.height / 2);
+  await expect(length).toHaveClass(/is-dragging/);
+  await expect(length).not.toHaveAttribute("aria-valuenow", dragged);
+  await page.keyboard.press("Escape");
+  await page.mouse.up();
+  await expect(length).toHaveAttribute("aria-valuenow", dragged);
+  await expect(page.locator('[data-region="stage"]')).toBeVisible();
+
+  const fpsBefore = (await studio(page, "state")).timeline.fps;
+  await dragFrom(name("fps"), 50);
+  await expect.poll(async () => (await studio(page, "state")).timeline.fps).toBeGreaterThan(fpsBefore);
+
+  // A click on the name without moving: the box opens for typing, as a click on the value does.
+  await name("Length").click();
+  await expect(length.locator("input")).toBeFocused();
+  await length.locator("input").fill("30");
+  await length.locator("input").press("Enter");
+  await expect(length).toHaveAttribute("aria-valuenow", "30");
+  for (const [text, fieldOf] of [["Length", length], ["fps", fps]]) {
+    expect(await name(text).evaluate((el) => getComputedStyle(el).cursor)).toBe("ew-resize");
+    expect(await fieldOf.evaluate((el) => getComputedStyle(el).cursor)).toBe("ew-resize");
+  }
+  expect(problems).toEqual([]);
+});
+
 // A Clip range drag keeps the Timeline's range as at its start (docs/timeline-ui.md "タイムラインの長さ"): the playhead
 // stays while the end is trimmed in, and goes to the last frame once it is let go past the new end.
 test("trimming the Clip range that sets the Auto length keeps the playhead during the drag and brings it in after", async ({ page }, testInfo) => {

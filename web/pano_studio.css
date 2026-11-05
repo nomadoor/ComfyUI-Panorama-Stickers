@@ -1090,7 +1090,8 @@
   flex: 1;
 }
 
-/* fps and Length: the name and the number together, filled while hovered (timeline-2.html ".fld"). */
+/* fps and Length: the name and the number together, filled while hovered (timeline-2.html ".fld"), and dragged from
+   anywhere in that fill with the field's cursor (docs/studio-ui.md "欄"). */
 .pano-studio-tl-field {
   display: inline-flex;
   align-items: center;
@@ -1098,9 +1099,16 @@
   padding: 0 0 0 8px;
   border-radius: var(--studio-r-field);
   font-size: var(--studio-text-sm);
+  cursor: ew-resize;
+  touch-action: none;
+  user-select: none;
 }
 
-.pano-studio-tl-field:hover {
+.pano-studio-tl-field.is-disabled {
+  cursor: default;
+}
+
+.pano-studio-tl-field:not(.is-disabled):hover {
   background: var(--studio-fill);
 }
 

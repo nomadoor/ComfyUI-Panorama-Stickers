@@ -1,4 +1,5 @@
 <script setup>
+import { ref } from "vue";
 import { ICON } from "../../icons.js";
 import { TIMELINE_FPS_MAX, TIMELINE_FPS_MIN } from "../../pano_scene_state.js";
 import StudioIconButton from "./StudioIconButton.vue";
@@ -9,11 +10,17 @@ import StudioNumberField from "./StudioNumberField.vue";
 // field, the Length field and its reset, and the collapse button. Presentational: `bar` (timeline_model.js
 // buildStudioTimeline().bar) in; `play`, `jump` (direction), `loop-change`, `fps`, `length` (a number, or null for
 // the reset) and `collapse` out.
+//
+// The fps and Length fields fill their name with the value, so a press on the name (or the field's padding) drags the
+// value as a press on it does (StudioNumberField startDrag; docs/studio-ui.md "欄").
 const props = defineProps({
   bar: { type: Object, required: true },
   collapsed: { type: Boolean, default: false },
 });
 const emit = defineEmits(["play", "jump", "loop-change", "fps", "length", "collapse"]);
+
+const fpsField = ref(null);
+const lengthField = ref(null);
 
 // fps as typed: up to three decimals, without trailing zeros.
 const fpsText = (value) => String(Math.round(value * 1000) / 1000);
@@ -61,9 +68,15 @@ const fpsParse = (text) => {
       <span class="pano-studio-tl-frame">{{ bar.frameText }}</span>
     </span>
     <span class="pano-studio-tl-spacer" />
-    <span class="pano-studio-tl-field" :data-tip="bar.fpsTip">
+    <span
+      class="pano-studio-tl-field"
+      :class="{ 'is-disabled': bar.fpsLocked }"
+      :data-tip="bar.fpsTip"
+      @pointerdown="fpsField?.startDrag($event)"
+    >
       <span class="pano-studio-tl-field-name">fps</span>
       <StudioNumberField
+        ref="fpsField"
         :value="bar.fps"
         :step="1"
         :precision="3"
@@ -77,9 +90,15 @@ const fpsParse = (text) => {
         @change="(value) => emit('fps', value)"
       />
     </span>
-    <span class="pano-studio-tl-field" data-tip="Output length in frames">
+    <span
+      class="pano-studio-tl-field"
+      :class="{ 'is-disabled': bar.lengthLocked }"
+      data-tip="Output length in frames"
+      @pointerdown="lengthField?.startDrag($event)"
+    >
       <span class="pano-studio-tl-field-name">Length</span>
       <StudioNumberField
+        ref="lengthField"
         :value="bar.length"
         :step="1"
         :precision="0"

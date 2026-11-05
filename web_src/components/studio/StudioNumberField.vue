@@ -13,6 +13,11 @@ import {
 // Presentational: `value` in; `input` (each change during a drag or on typing), `change` (once when a drag or a
 // typed value ends with a different value: one Undo step), `cancel` (a drag or typing given up; an `input` with the
 // value from before comes first when a drag had moved it) out.
+//
+// A wrapper that fills a name together with the box (the Timeline's fps and Length, docs/studio-ui.md "欄") passes
+// presses on that name to the exposed `startDrag(event)`: the same drag, lock, Shift, Escape and click-to-type as a
+// press on the box, nothing while the box is disabled or open. A press on the box itself that bubbles to the wrapper
+// is the one already taken and is ignored.
 const props = defineProps({
   value: { type: Number, default: 0 },
   // The short axis name before the value ("X").
@@ -47,7 +52,7 @@ const limits = computed(() => ({ step: props.step, precision: props.precision, m
 
 let drag = null;
 
-function onPointerDown(event) {
+function startDrag(event) {
   if (props.disabled || editing.value || event.button !== 0 || drag) return;
   event.preventDefault();
   drag = {
@@ -244,7 +249,7 @@ onBeforeUnmount(() => {
   stopSwallowing();
 });
 
-defineExpose({ startEditing });
+defineExpose({ startEditing, startDrag });
 </script>
 
 <template>
@@ -260,7 +265,7 @@ defineExpose({ startEditing });
     :aria-valuemin="Number.isFinite(min) ? min : null"
     :aria-valuemax="Number.isFinite(max) ? max : null"
     :aria-disabled="disabled ? 'true' : null"
-    @pointerdown="onPointerDown"
+    @pointerdown="startDrag"
     @keydown="onKeydown"
   >
     <span v-if="axis" class="pano-studio-field-axis pano-studio-cap">{{ axis }}</span>

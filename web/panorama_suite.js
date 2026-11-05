@@ -4218,13 +4218,13 @@ function bO(e) {
     }
   }), t;
 }
-function ze(e) {
+function $e(e) {
   let t = "";
   if (Pt(e))
     t = e;
   else if (Ue(e))
     for (let n = 0; n < e.length; n++) {
-      const r = ze(e[n]);
+      const r = $e(e[n]);
       r && (t += r + " ");
     }
   else if (pt(e))
@@ -5094,7 +5094,7 @@ function tn(e) {
   return e ? e.__v_isRef === !0 : !1;
 }
 // @__NO_SIDE_EFFECTS__
-function Ie(e) {
+function Ce(e) {
   return hw(e, !1);
 }
 // @__NO_SIDE_EFFECTS__
@@ -7733,7 +7733,7 @@ function YC(e, t = null, n = null, r = 0, i = null, o = !1) {
   if (iI(e) && (e = e.__vccOpts), t) {
     t = XC(t);
     let { class: s, style: l } = t;
-    s && !Pt(s) && (t.class = ze(s)), pt(l) && (/* @__PURE__ */ Am(l) && !Ue(l) && (l = jt({}, l)), t.style = je(l));
+    s && !Pt(s) && (t.class = $e(s)), pt(l) && (/* @__PURE__ */ Am(l) && !Ue(l) && (l = jt({}, l)), t.style = je(l));
   }
   const a = Pt(e) ? 1 : qw(e) ? 128 : _w(e) ? 64 : pt(e) ? 4 : Je(e) ? 2 : 0;
   return ue(
@@ -7847,7 +7847,7 @@ function yn(...e) {
     const r = e[n];
     for (const i in r)
       if (i === "class")
-        t.class !== r.class && (t.class = ze([t.class, r.class]));
+        t.class !== r.class && (t.class = $e([t.class, r.class]));
       else if (i === "style")
         t.style = je([t.style, r.style]);
       else if (ad(i)) {
@@ -11540,7 +11540,7 @@ const ke = Object.freeze({
       stroke: "currentColor",
       "stroke-linecap": "round",
       "stroke-linejoin": "round",
-      class: ze(["icon icon-tabler icons-tabler-outline", [
+      class: $e(["icon icon-tabler icons-tabler-outline", [
         n.value.name ? `icon-tabler-${n.value.name}` : "",
         e.className
       ]]),
@@ -11614,7 +11614,7 @@ const ke = Object.freeze({
       { value: "4:3", label: "4:3" },
       { value: "3:2", label: "3:2" },
       { value: "16:9", label: "16:9" }
-    ]), o = /* @__PURE__ */ Ie("1"), a = /* @__PURE__ */ Ie("1"), s = /* @__PURE__ */ Ie(null), l = Pe(() => n.model.disabled === !0 || n.model.locked === !0 || n.model.hasShot === !1), u = Pe(() => {
+    ]), o = /* @__PURE__ */ Ce("1"), a = /* @__PURE__ */ Ce("1"), s = /* @__PURE__ */ Ce(null), l = Pe(() => n.model.disabled === !0 || n.model.locked === !0 || n.model.hasShot === !1), u = Pe(() => {
       const m = Array.isArray(n.model.aspectChoices) ? n.model.aspectChoices : [], b = String(n.model.aspectLabel || "");
       return m.length ? m.map((g) => {
         const k = typeof g == "string" ? g : String((g == null ? void 0 : g.value) || ""), v = typeof g == "string" ? g : String((g == null ? void 0 : g.label) || k);
@@ -11669,7 +11669,7 @@ const ke = Object.freeze({
     return (m, b) => (de(), pe("div", {
       ref_key: "rootElement",
       ref: s,
-      class: ze(["pano-frame-aspect-control pano-cutout-aspect-picker", `is-${e.mode}`])
+      class: $e(["pano-frame-aspect-control pano-cutout-aspect-picker", `is-${e.mode}`])
     }, [
       e.mode === "rail" ? (de(), Xe(Lt, {
         key: 0,
@@ -11701,7 +11701,7 @@ const ke = Object.freeze({
       Sr(ue("div", CF, [
         (de(!0), pe(Ne, null, We(u.value, (g) => (de(), pe("button", {
           key: g.value,
-          class: ze(["pano-btn pano-frame-aspect-choice", { active: g.active === !0 }]),
+          class: $e(["pano-btn pano-frame-aspect-choice", { active: g.active === !0 }]),
           type: "button",
           "data-action": "frame-aspect-set",
           "data-aspect": g.value,
@@ -11755,7 +11755,7 @@ const ke = Object.freeze({
 }, $F = {
   __name: "PanoCutoutNodeHelp",
   setup(e) {
-    const t = /* @__PURE__ */ Ie(!1), n = Object.freeze([
+    const t = /* @__PURE__ */ Ce(!1), n = Object.freeze([
       ["Drag", "Pan view"],
       ["Shift + Drag", "Roll frame"],
       ["Wheel", "Adjust FOV"],
@@ -11765,7 +11765,7 @@ const ke = Object.freeze({
       ["Full Editor", "Detailed editing"]
     ]);
     return (r, i) => (de(), pe("div", {
-      class: ze(["pano-cutout-node-help", { "is-pinned": t.value }]),
+      class: $e(["pano-cutout-node-help", { "is-pinned": t.value }]),
       onPointerdown: i[1] || (i[1] = lt(() => {
       }, ["stop"])),
       onWheel: i[2] || (i[2] = lt(() => {
@@ -11882,7 +11882,7 @@ const ke = Object.freeze({
   __name: "PanoImageFilePicker",
   emits: ["file-selected", "file-cancelled"],
   setup(e, { expose: t, emit: n }) {
-    const r = n, i = /* @__PURE__ */ Ie(null);
+    const r = n, i = /* @__PURE__ */ Ce(null);
     let o, a = !1;
     function s() {
       if (!a) return { active: !1, intent: void 0 };
@@ -11926,7 +11926,7 @@ const ke = Object.freeze({
 }, WF = {
   __name: "PanoStickersNodeHelp",
   setup(e) {
-    const t = /* @__PURE__ */ Ie(!1), n = Object.freeze([
+    const t = /* @__PURE__ */ Ce(!1), n = Object.freeze([
       ["Add Image", "Choose an image file"],
       ["Drop image", "Add at view center"],
       ["Sticker drag", "Move sticker"],
@@ -11939,7 +11939,7 @@ const ke = Object.freeze({
       ["Full Editor", "Detailed editing"]
     ]);
     return (r, i) => (de(), pe("div", {
-      class: ze(["pano-stickers-node-help", { "is-pinned": t.value }]),
+      class: $e(["pano-stickers-node-help", { "is-pinned": t.value }]),
       onPointerdown: i[1] || (i[1] = lt(() => {
       }, ["stop"])),
       onWheel: i[2] || (i[2] = lt(() => {
@@ -11978,7 +11978,7 @@ const ke = Object.freeze({
     onAction: { type: Function, default: null }
   },
   setup(e) {
-    const t = e, n = /* @__PURE__ */ Ie(null);
+    const t = e, n = /* @__PURE__ */ Ce(null);
     function r(a) {
       var s;
       (s = t.onAction) == null || s.call(t, a);
@@ -12140,7 +12140,7 @@ const ke = Object.freeze({
           }, null, 8, ["icon"])
         ], 44, eD)) : Te("", !0),
         ue("button", {
-          class: ze(["pano-studio-node-open", { "is-compact": i.value }]),
+          class: $e(["pano-studio-node-open", { "is-compact": i.value }]),
           type: "button",
           "data-action": "open-editor",
           title: i.value ? "Open Studio" : null,
@@ -16916,7 +16916,7 @@ const WR = { class: "pano-floating-right" }, UR = ["data-settled"], YR = ["data-
         "data-settled": e.preview.settled === !0 ? "true" : "false"
       }, [
         ue("div", {
-          class: ze(["pano-camera-preview", { "pano-camera-preview-expanded": e.preview.expanded === !0 }]),
+          class: $e(["pano-camera-preview", { "pano-camera-preview-expanded": e.preview.expanded === !0 }]),
           "data-ready": e.preview.ready ? "true" : "false",
           "data-settled": e.preview.settled === !0 ? "true" : "false",
           style: je({
@@ -16958,7 +16958,7 @@ const WR = { class: "pano-floating-right" }, UR = ["data-settled"], YR = ["data-
   setup(e) {
     const t = e, n = Array.from({ length: 24 }, (i, o) => o * 15), r = Pe(() => `rotate(${Number(t.model.rollDeg || 0)} 20 20)`);
     return (i, o) => Sr((de(), pe("div", {
-      class: ze(["pano-btn pano-btn-icon pano-frame-roll-knob", { dragging: e.model.dragging === !0, armed: e.model.armed === !0 }]),
+      class: $e(["pano-btn pano-btn-icon pano-frame-roll-knob", { dragging: e.model.dragging === !0, armed: e.model.armed === !0 }]),
       "data-frame-roll-knob": "",
       "data-tip": "Roll",
       "aria-hidden": "true"
@@ -16972,7 +16972,7 @@ const WR = { class: "pano-floating-right" }, UR = ["data-settled"], YR = ["data-
         }, null, -1)),
         (de(!0), pe(Ne, null, We(xe(n), (a) => (de(), pe("line", {
           key: a,
-          class: ze(["pano-frame-roll-knob-tick", { zero: a === 0 }]),
+          class: $e(["pano-frame-roll-knob-tick", { zero: a === 0 }]),
           x1: "20",
           y1: "4",
           x2: "20",
@@ -17006,7 +17006,7 @@ const WR = { class: "pano-floating-right" }, UR = ["data-settled"], YR = ["data-
   },
   setup(e) {
     return (t, n) => (de(), pe("div", {
-      class: ze(["pano-frame-rail", { "is-hidden": e.model.visible !== !0 }]),
+      class: $e(["pano-frame-rail", { "is-hidden": e.model.visible !== !0 }]),
       "data-frame-rail": ""
     }, [
       we(QS, {
@@ -17035,7 +17035,7 @@ const WR = { class: "pano-floating-right" }, UR = ["data-settled"], YR = ["data-
     model: { type: Object, default: () => ({}) }
   },
   setup(e) {
-    const t = e, n = /* @__PURE__ */ Ie(null), r = /* @__PURE__ */ Ie(null);
+    const t = e, n = /* @__PURE__ */ Ce(null), r = /* @__PURE__ */ Ce(null);
     let i = null;
     function o() {
       const c = r.value;
@@ -17156,25 +17156,25 @@ const WR = { class: "pano-floating-right" }, UR = ["data-settled"], YR = ["data-
       return r ? { "--swatch": String(r.cssColor || "") } : {};
     }
     return (r, i) => (de(), pe("div", {
-      class: ze(["pano-paint-dock", { "is-hidden": e.state.visible === !1 }]),
+      class: $e(["pano-paint-dock", { "is-hidden": e.state.visible === !1 }]),
       "data-paint-dock": ""
     }, [
       (de(!0), pe(Ne, null, We(e.panes, (o) => {
         var a;
         return de(), pe("div", {
           key: o.key,
-          class: ze(["pano-paint-pane", { "is-active": e.state.activePane === o.key }]),
+          class: $e(["pano-paint-pane", { "is-active": e.state.activePane === o.key }]),
           "data-paint-pane": o.key
         }, [
           o.showColorFloat ? (de(), pe("div", {
             key: 0,
-            class: ze(["pano-paint-color-float", { disabled: e.state.colorEnabled === !1 }]),
+            class: $e(["pano-paint-color-float", { disabled: e.state.colorEnabled === !1 }]),
             "data-paint-color-row": "",
             hidden: e.state.showColorRow === !1
           }, [
             (de(!0), pe(Ne, null, We(e.paintSwatches, (s) => (de(), pe("button", {
               key: s.id,
-              class: ze(["pano-paint-color-dot", { active: e.state.activeSwatchId === s.id }]),
+              class: $e(["pano-paint-color-dot", { active: e.state.activeSwatchId === s.id }]),
               type: "button",
               "data-paint-color-swatch": s.id,
               "aria-label": s.label,
@@ -17183,7 +17183,7 @@ const WR = { class: "pano-floating-right" }, UR = ["data-settled"], YR = ["data-
               disabled: e.state.colorEnabled === !1
             }, null, 14, d5))), 128)),
             ue("button", {
-              class: ze(["pano-paint-color-dot pano-paint-color-dot-rainbow", { active: e.state.customColorActive === !0 }]),
+              class: $e(["pano-paint-color-dot pano-paint-color-dot-rainbow", { active: e.state.customColorActive === !0 }]),
               type: "button",
               "data-paint-color-custom": "",
               "aria-label": "Custom color",
@@ -17248,7 +17248,7 @@ const WR = { class: "pano-floating-right" }, UR = ["data-settled"], YR = ["data-
                 ue("div", _5, [
                   (de(!0), pe(Ne, null, We(e.state.historyEntries || [], (s) => (de(), pe("button", {
                     key: s.index,
-                    class: ze(["pano-paint-color-history-dot", { empty: !s.color }]),
+                    class: $e(["pano-paint-color-history-dot", { empty: !s.color }]),
                     type: "button",
                     "data-paint-history-index": s.index,
                     "aria-label": `Recent color ${s.index + 1}`,
@@ -17280,7 +17280,7 @@ const WR = { class: "pano-floating-right" }, UR = ["data-settled"], YR = ["data-
               }), 128))
             ], 8, P5),
             ue("div", {
-              class: ze(["pano-paint-size-row", { disabled: e.state.sizeDisabled === !0 }]),
+              class: $e(["pano-paint-size-row", { disabled: e.state.sizeDisabled === !0 }]),
               "data-paint-size-row": "",
               hidden: e.state.showSizeRow === !1
             }, [
@@ -17318,7 +17318,7 @@ const WR = { class: "pano-floating-right" }, UR = ["data-settled"], YR = ["data-
 }, I5 = {
   __name: "PanoPaintOverlays",
   setup(e, { expose: t }) {
-    const n = /* @__PURE__ */ Ie(null), r = /* @__PURE__ */ Ie(null), i = /* @__PURE__ */ Ie(null);
+    const n = /* @__PURE__ */ Ce(null), r = /* @__PURE__ */ Ce(null), i = /* @__PURE__ */ Ce(null);
     function o() {
       return {
         cursor: n.value,
@@ -17377,13 +17377,13 @@ const WR = { class: "pano-floating-right" }, UR = ["data-settled"], YR = ["data-
             }, null, 8, ["icon"])
           ]),
           ue("div", {
-            class: ze(["pano-aspect-popover", { open: r.open === !0 }]),
+            class: $e(["pano-aspect-popover", { open: r.open === !0 }]),
             role: "dialog",
             "aria-label": "Aspect Ratio"
           }, [
             (de(!0), pe(Ne, null, We(r.choices || [], (i) => (de(), pe("button", {
               key: i.value,
-              class: ze(["pano-btn pano-aspect-choice", { active: i.active === !0 }]),
+              class: $e(["pano-btn pano-aspect-choice", { active: i.active === !0 }]),
               type: "button",
               "data-action": "aspect-set",
               "data-aspect": i.value
@@ -17549,7 +17549,7 @@ const WR = { class: "pano-floating-right" }, UR = ["data-settled"], YR = ["data-
                   (de(!0), pe(Ne, null, We(e.model.selectionPicker.items || [], (h) => (de(), pe("button", {
                     key: h.id,
                     type: "button",
-                    class: ze(["pano-picker-item", { active: h.active === !0 }]),
+                    class: $e(["pano-picker-item", { active: h.active === !0 }]),
                     "data-action": "select-picker-item",
                     "data-selection-id": h.id
                   }, [
@@ -17577,7 +17577,7 @@ const WR = { class: "pano-floating-right" }, UR = ["data-settled"], YR = ["data-
               ], 8, i$)
             ])) : Te("", !0),
             ue("div", {
-              class: ze(["pano-params", { disabled: e.model.paramsDisabled === !0 }])
+              class: $e(["pano-params", { disabled: e.model.paramsDisabled === !0 }])
             }, [
               (e.model.notes || []).length ? (de(!0), pe(Ne, { key: 0 }, We(e.model.notes, (h) => (de(), pe("div", {
                 key: h,
@@ -17597,7 +17597,7 @@ const WR = { class: "pano-floating-right" }, UR = ["data-settled"], YR = ["data-
                       class: "pano-axis-field"
                     }, [
                       ue("span", {
-                        class: ze(["pano-axis", { disabled: i(m, e.model) }]),
+                        class: $e(["pano-axis", { disabled: i(m, e.model) }]),
                         title: m.label,
                         onPointerdown: (b) => a(b, m)
                       }, De(m.short), 43, s$),
@@ -17747,7 +17747,7 @@ const WR = { class: "pano-floating-right" }, UR = ["data-settled"], YR = ["data-
         (e.model.footerButtons || []).length ? (de(), pe("div", P$, [
           (de(!0), pe(Ne, null, We(e.model.footerButtons, (h) => (de(), pe("button", {
             key: h.action,
-            class: ze(["pano-btn", { "pano-btn-primary": h.primary === !0 }]),
+            class: $e(["pano-btn", { "pano-btn-primary": h.primary === !0 }]),
             type: "button",
             "data-action": h.action
           }, De(h.label), 11, E$))), 128))
@@ -17762,7 +17762,7 @@ const WR = { class: "pano-floating-right" }, UR = ["data-settled"], YR = ["data-
   },
   setup(e) {
     return (t, n) => (de(), pe("div", {
-      class: ze(["pano-tooltip", {
+      class: $e(["pano-tooltip", {
         show: e.model.visible === !0,
         "pano-tooltip-footer": e.model.variant === "footer",
         "pano-tooltip-tool-rail": e.model.variant === "tool-rail",
@@ -17872,7 +17872,7 @@ const WR = { class: "pano-floating-right" }, UR = ["data-settled"], YR = ["data-
         src: "",
         label: ""
       }));
-    }), g = /* @__PURE__ */ Ie(/* @__PURE__ */ new Set()), k = (S) => String((S == null ? void 0 : S.id) || (S == null ? void 0 : S.src) || (S == null ? void 0 : S.label) || ""), v = (S) => g.value.has(k(S)), y = (S) => {
+    }), g = /* @__PURE__ */ Ce(/* @__PURE__ */ new Set()), k = (S) => String((S == null ? void 0 : S.id) || (S == null ? void 0 : S.src) || (S == null ? void 0 : S.label) || ""), v = (S) => g.value.has(k(S)), y = (S) => {
       const F = new Set(g.value);
       F.add(k(S)), g.value = F;
     };
@@ -17889,7 +17889,7 @@ const WR = { class: "pano-floating-right" }, UR = ["data-settled"], YR = ["data-
       };
     });
     return (S, F) => (de(), pe("div", {
-      class: ze(["pano-video-transport", { "is-hidden": e.state.visible !== !0, "pano-video-transport-playback": n.value }]),
+      class: $e(["pano-video-transport", { "is-hidden": e.state.visible !== !0, "pano-video-transport-playback": n.value }]),
       "data-video-ready": e.state.ready === !0 ? "true" : "false",
       style: je(N.value)
     }, [
@@ -17915,7 +17915,7 @@ const WR = { class: "pano-floating-right" }, UR = ["data-settled"], YR = ["data-
           n.value ? Te("", !0) : (de(), pe("div", R$, [
             (de(!0), pe(Ne, null, We(b.value, (A) => (de(), pe("div", {
               key: k(A),
-              class: ze(["pano-video-thumb", {
+              class: $e(["pano-video-thumb", {
                 "is-placeholder": !A.src,
                 "is-loaded": A.src && v(A)
               }])
@@ -18016,7 +18016,7 @@ const WR = { class: "pano-floating-right" }, UR = ["data-settled"], YR = ["data-
         }, [
           (de(!0), pe(Ne, null, We(e.buttons, (i) => Sr((de(), pe("button", {
             key: i.key,
-            class: ze(["pano-view-btn", [i.extraClass, { active: i.pressed === "true" }]]),
+            class: $e(["pano-view-btn", [i.extraClass, { active: i.pressed === "true" }]]),
             "data-view": i.key,
             "aria-pressed": i.pressed,
             "aria-label": i.label,
@@ -18119,7 +18119,7 @@ const q$ = ["aria-label"], J$ = { class: "pano-stage-column" }, Z$ = { class: "p
   setup(e, { expose: t, emit: n }) {
     const r = e, i = n;
     let o = "", a = !1, s = null;
-    const l = /* @__PURE__ */ Ie(null), u = /* @__PURE__ */ Ie(null), d = /* @__PURE__ */ Ie(null);
+    const l = /* @__PURE__ */ Ce(null), u = /* @__PURE__ */ Ce(null), d = /* @__PURE__ */ Ce(null);
     function c() {
       var x, w;
       return ((w = (x = d.value) == null ? void 0 : x.getRefs) == null ? void 0 : w.call(x)) || {
@@ -24354,43 +24354,43 @@ function Jz(e) {
       H(Me, he);
       return;
     }
-    const ve = k(), Ae = g(), Ce = ve.length > 1 ? b(ve) : Ae ? W(Ae) : null;
+    const ve = k(), Ae = g(), Ie = ve.length > 1 ? b(ve) : Ae ? W(Ae) : null;
     if (n.primaryTool === "cursor" && (Me.ctrlKey || Me.metaKey)) {
       n.interaction = { kind: "marquee_select", start: he, current: he }, ce(he), t.setPointerCapture(Me.pointerId), ne({ localOnly: !0, reason: Le.OVERLAY });
       return;
     }
-    if (ve.length > 1 && (Ce != null && Ce.visible)) {
-      if ((ve.some((_t) => F(_t)) ? { kind: "none" } : v(Ce, he)).kind === "move") {
-        V(Me, he, ve, Ce);
+    if (ve.length > 1 && (Ie != null && Ie.visible)) {
+      if ((ve.some((_t) => F(_t)) ? { kind: "none" } : v(Ie, he)).kind === "move") {
+        V(Me, he, ve, Ie);
         return;
       }
-    } else if (Ae && (Ce != null && Ce.visible)) {
-      const Ye = F(Ae) ? { kind: "none" } : v(Ce, he, Ae);
+    } else if (Ae && (Ie != null && Ie.visible)) {
+      const Ye = F(Ae) ? { kind: "none" } : v(Ie, he, Ae);
       if (Ye.kind === "scale") {
-        _(Me, he, Ae, Ce, Ye);
+        _(Me, he, Ae, Ie, Ye);
         return;
       }
       if (Ye.kind === "scale_x" || Ye.kind === "scale_y") {
-        q(Me, he, Ae, Ce, Ye);
+        q(Me, he, Ae, Ie, Ye);
         return;
       }
       if (Ye.kind === "rotate") {
-        L(Me, he, Ae, Ce);
+        L(Me, he, Ae, Ie);
         return;
       }
       if (Ye.kind === "move") {
-        K(Me, he, Ae, Ce);
+        K(Me, he, Ae, Ie);
         return;
       }
     }
-    const $e = N(he);
-    if ($e) {
-      const Ye = n.selectedId !== $e.item.id;
-      if (Ye && n.selectedId && (ae(), d()), X($e.item), o && Ye && (n.cutoutAspectOpen = !1), Ye && fe(), ie(), ne(), F($e.item)) {
+    const ze = N(he);
+    if (ze) {
+      const Ye = n.selectedId !== ze.item.id;
+      if (Ye && n.selectedId && (ae(), d()), X(ze.item), o && Ye && (n.cutoutAspectOpen = !1), Ye && fe(), ie(), ne(), F(ze.item)) {
         ce(he);
         return;
       }
-      O(Me, he, $e);
+      O(Me, he, ze);
       return;
     }
     const Ze = !!n.selectedId;
@@ -24463,10 +24463,10 @@ function Jz(e) {
     }
   }
   function _e(Me) {
-    var ve, Ae, Ce, $e;
+    var ve, Ae, Ie, ze;
     if (Re(Me)) return;
     const he = n.interaction;
-    (he == null ? void 0 : he.kind) === "roll_frame" && he.source === "knob" || (((ve = n.interaction) == null ? void 0 : ve.kind) === "paint_stroke" || ((Ae = n.interaction) == null ? void 0 : Ae.kind) === "paint_lasso_fill" ? h() : ((Ce = n.interaction) == null ? void 0 : Ce.kind) === "marquee_select" ? p() : ["pan_frame", "roll_frame"].includes(($e = n.interaction) == null ? void 0 : $e.kind) ? c() : n.interaction && n.interaction.kind !== "view" && m(), n.interaction = null, Se = null, (he == null ? void 0 : he.kind) === "roll_frame" && y(), S(), he && he.kind === "view" && f(), D(), ie(), ce(n.pointerPos), ne());
+    (he == null ? void 0 : he.kind) === "roll_frame" && he.source === "knob" || (((ve = n.interaction) == null ? void 0 : ve.kind) === "paint_stroke" || ((Ae = n.interaction) == null ? void 0 : Ae.kind) === "paint_lasso_fill" ? h() : ((Ie = n.interaction) == null ? void 0 : Ie.kind) === "marquee_select" ? p() : ["pan_frame", "roll_frame"].includes((ze = n.interaction) == null ? void 0 : ze.kind) ? c() : n.interaction && n.interaction.kind !== "view" && m(), n.interaction = null, Se = null, (he == null ? void 0 : he.kind) === "roll_frame" && y(), S(), he && he.kind === "view" && f(), D(), ie(), ce(n.pointerPos), ne());
   }
   function Ve(Me) {
     Re(Me) || Ke();
@@ -25550,8 +25550,8 @@ function o3(e) {
     }
     const Ae = Fe.target.closest("[data-paint-history-index]");
     if (!Ae) return;
-    const Ce = Number(Ae.getAttribute("data-paint-history-index")), $e = t.customPaintHistory[Ce];
-    $e && (t.customPaintColor = Rt($e), t.paintColor = Rt($e), q());
+    const Ie = Number(Ae.getAttribute("data-paint-history-index")), ze = t.customPaintHistory[Ie];
+    ze && (t.customPaintColor = Rt(ze), t.paintColor = Rt(ze), q());
   }
   function fe(Fe) {
     const Me = Fe.target.closest("[data-video-seek]");
@@ -25563,25 +25563,25 @@ function o3(e) {
     const he = Fe.target.closest("[data-video-volume]");
     if (he) {
       if (!(h instanceof HTMLVideoElement)) return;
-      const Ce = be(Number(he.value || 0), 0, 1);
-      h.volume = Ce, h.muted = Ce <= 1e-4, E({
+      const Ie = be(Number(he.value || 0), 0, 1);
+      h.volume = Ie, h.muted = Ie <= 1e-4, E({
         hasAudio: p.videoTransport.hasAudio,
         muted: h.muted,
-        volume: Ce
+        volume: Ie
       });
       return;
     }
     const ve = Fe.target.closest("[data-paint-size-slider]");
     if (ve) {
       if (ve.disabled) return;
-      const Ce = Math.max(1, Math.min(120, Math.round(Number(ve.value)))), $e = w(t.primaryTool === "paint" ? t.paintTool : t.maskTool);
-      t.brushSizes[$e] = Ce, q(), G();
+      const Ie = Math.max(1, Math.min(120, Math.round(Number(ve.value)))), ze = w(t.primaryTool === "paint" ? t.paintTool : t.maskTool);
+      t.brushSizes[ze] = Ie, q(), G();
       return;
     }
     const Ae = Fe.target.closest("[data-paint-alpha-slider]");
     if (Ae) {
-      const Ce = { ...t.customPaintColor, a: be(Number(Ae.value) / 100, 0, 1) };
-      t.customPaintColor = Rt(Ce), t.paintColor = Rt(Ce), q();
+      const Ie = { ...t.customPaintColor, a: be(Number(Ae.value) / 100, 0, 1) };
+      t.customPaintColor = Rt(Ie), t.paintColor = Rt(Ie), q();
     }
   }
   function me(Fe) {
@@ -25611,22 +25611,22 @@ function o3(e) {
   function Oe(Fe, Me) {
     var Ze;
     if (!o) return;
-    const he = o.getBoundingClientRect(), ve = be((Fe - he.left) / Math.max(1, he.width), 0, 1), Ae = 1 - be((Me - he.top) / Math.max(1, he.height), 0, 1), Ce = Dc(t.customPaintColor), $e = { ...Jo(Ce.h, ve, Ae), a: Number(((Ze = t.customPaintColor) == null ? void 0 : Ze.a) ?? 1) };
-    t.customPaintColor = Rt($e), t.paintColor = Rt($e), q();
+    const he = o.getBoundingClientRect(), ve = be((Fe - he.left) / Math.max(1, he.width), 0, 1), Ae = 1 - be((Me - he.top) / Math.max(1, he.height), 0, 1), Ie = Dc(t.customPaintColor), ze = { ...Jo(Ie.h, ve, Ae), a: Number(((Ze = t.customPaintColor) == null ? void 0 : Ze.a) ?? 1) };
+    t.customPaintColor = Rt(ze), t.paintColor = Rt(ze), q();
   }
   function Re(Fe) {
-    var Ce;
+    var Ie;
     if (!a) return;
-    const Me = a.getBoundingClientRect(), he = be((Fe - Me.left) / Math.max(1, Me.width), 0, 1), ve = Dc(t.customPaintColor), Ae = { ...Jo(he, ve.s, ve.v), a: Number(((Ce = t.customPaintColor) == null ? void 0 : Ce.a) ?? 1) };
+    const Me = a.getBoundingClientRect(), he = be((Fe - Me.left) / Math.max(1, Me.width), 0, 1), ve = Dc(t.customPaintColor), Ae = { ...Jo(he, ve.s, ve.v), a: Number(((Ie = t.customPaintColor) == null ? void 0 : Ie.a) ?? 1) };
     t.customPaintColor = Rt(Ae), t.paintColor = Rt(Ae), q();
   }
   function Qe(Fe, Me) {
     const he = Fe.pointerId;
     Me(Fe);
-    const ve = (Ce) => {
-      Ce.pointerId === he && Me(Ce);
-    }, Ae = (Ce) => {
-      Ce.pointerId === he && (window.removeEventListener("pointermove", ve), window.removeEventListener("pointerup", Ae), window.removeEventListener("pointercancel", Ae));
+    const ve = (Ie) => {
+      Ie.pointerId === he && Me(Ie);
+    }, Ae = (Ie) => {
+      Ie.pointerId === he && (window.removeEventListener("pointermove", ve), window.removeEventListener("pointerup", Ae), window.removeEventListener("pointercancel", Ae));
     };
     window.addEventListener("pointermove", ve), window.addEventListener("pointerup", Ae), window.addEventListener("pointercancel", Ae);
   }
@@ -25833,7 +25833,7 @@ const u3 = { class: "pano-scene-viewer-surface" }, c3 = {
     onAction: { type: Function, default: null }
   },
   setup(e, { expose: t }) {
-    const n = /* @__PURE__ */ Ie(null);
+    const n = /* @__PURE__ */ Ce(null);
     return t({ canvas: n }), (r, i) => (de(), pe("div", u3, [
       ue("canvas", {
         ref_key: "canvas",
@@ -26393,7 +26393,7 @@ async function w3(e, t, n = {}) {
   const M = x.querySelector("[data-paint-color-row]"), E = x.querySelector("[data-paint-color-pop]"), O = x.querySelector("[data-paint-color-sv]"), Y = x.querySelector("[data-paint-color-sv-cursor]"), K = x.querySelector("[data-paint-hue-strip]"), V = x.querySelector("[data-paint-hue-handle]");
   P == null || P.removeAttribute("data-stage-ready"), P == null || P.setAttribute("data-stage-loading-kind", "boot"), w.style.opacity = "1", T.style.opacity = "0", i && (le == null || le.remove(), x.classList.add("pano-modal-readonly")), x.addEventListener("pointerdown", () => oe.wake(), !0), x.addEventListener("pointerdown", (Ee) => {
     var et;
-    Ee.target.closest("[data-frame-roll-knob]") || $e(), !Ee.target.closest(".pano-picker") && (Ee.target.closest("[data-paint-color-row]") || (x.querySelectorAll(".pano-picker-pop").forEach((rr) => {
+    Ee.target.closest("[data-frame-roll-knob]") || ze(), !Ee.target.closest(".pano-picker") && (Ee.target.closest("[data-paint-color-row]") || (x.querySelectorAll(".pano-picker-pop").forEach((rr) => {
       rr.hidden = !0;
     }), Ke(!0), h && $.cutoutAspectOpen && !Ee.target.closest(".pano-aspect-popover") && !Ee.target.closest("[data-action='aspect']") && ($.cutoutAspectOpen = !1, $.menuMode = "", $.menuSize.measured = !1, z2(), nr()), (et = v.frameRail) != null && et.aspectOpen && !Ee.target.closest(".pano-frame-aspect-control") && (v.frameRail.aspectOpen = !1)));
   });
@@ -26554,8 +26554,8 @@ async function w3(e, t, n = {}) {
     flushFrameWheelCommit: he,
     forgetCameraPreviewFrame: ve,
     getUnwrapRect: Ae,
-    hidePaintSizePreview: Ce,
-    hideTooltip: $e,
+    hidePaintSizePreview: Ie,
+    hideTooltip: ze,
     migrateLegacyEmbeddedAssets: Ze,
     onCanvasDragOver: Ye,
     onCanvasDrop: _t,
@@ -26734,16 +26734,16 @@ async function w3(e, t, n = {}) {
         typeof ((et = Ee.target) == null ? void 0 : et.blur) == "function" && Ee.target.blur();
         return;
       }
-      Ee.target.closest("[data-paint-size-slider]") && Ce();
+      Ee.target.closest("[data-paint-size-slider]") && Ie();
     }), x.addEventListener("pointercancel", (Ee) => {
       var et;
       if (Ee.target.closest("[data-video-volume]")) {
         typeof ((et = Ee.target) == null ? void 0 : et.blur) == "function" && Ee.target.blur();
         return;
       }
-      Ee.target.closest("[data-paint-size-slider]") && Ce();
+      Ee.target.closest("[data-paint-size-slider]") && Ie();
     }), x.addEventListener("focusout", (Ee) => {
-      Ee.target.closest("[data-paint-size-slider]") && Ce();
+      Ee.target.closest("[data-paint-size-slider]") && Ie();
     }), x.addEventListener("pointerover", g2), x.addEventListener("pointerout", m2), O && (O.onpointerdown = (Ee) => {
       Ee.preventDefault(), Ee.stopPropagation(), _e(Ee, (et) => $2(et.clientX, et.clientY));
     }), K && (K.onpointerdown = (Ee) => {
@@ -26778,7 +26778,7 @@ async function w3(e, t, n = {}) {
       var ir, Il, ti, Tl, Fl, py, hy, Dl, my;
       const Ee = KN(e);
       Ee && (Ee.open = !1), he(), r || Be(), M2(), document.fullscreenElement === C && ((ir = document.exitFullscreen) == null || ir.call(document).catch(() => {
-      })), ly.unbindDocument(), un(e).liveState = null, (Ee == null ? void 0 : Ee.flushBeforeQueue) === sy && (Ee.flushBeforeQueue = null), (Tl = (ti = (Il = $s(e)) == null ? void 0 : Il.dom) == null ? void 0 : ti.requestDraw) == null || Tl.call(ti), (py = (Fl = e.graph) == null ? void 0 : Fl.setDirtyCanvas) == null || py.call(Fl, !0, !0), (my = (Dl = (hy = Ln) == null ? void 0 : hy.canvas) == null ? void 0 : Dl.setDirty) == null || my.call(Dl, !0, !0), $e(), A2(), me.clearAll(), oy(!1), ot(), ce.dispose(), x2(!1), ly.unbindWindow(), !r && t === "stickers" && (e.onConnectionsChange === Kd && (e.onConnectionsChange = Gd), uy()), F.unmount(), y.remove();
+      })), ly.unbindDocument(), un(e).liveState = null, (Ee == null ? void 0 : Ee.flushBeforeQueue) === sy && (Ee.flushBeforeQueue = null), (Tl = (ti = (Il = $s(e)) == null ? void 0 : Il.dom) == null ? void 0 : ti.requestDraw) == null || Tl.call(ti), (py = (Fl = e.graph) == null ? void 0 : Fl.setDirtyCanvas) == null || py.call(Fl, !0, !0), (my = (Dl = (hy = Ln) == null ? void 0 : hy.canvas) == null ? void 0 : Dl.setDirty) == null || my.call(Dl, !0, !0), ze(), A2(), me.clearAll(), oy(!1), ot(), ce.dispose(), x2(!1), ly.unbindWindow(), !r && t === "stickers" && (e.onConnectionsChange === Kd && (e.onConnectionsChange = Gd), uy()), F.unmount(), y.remove();
       const et = L2(), rr = $.paintEngine;
       return Promise.resolve(et).finally(() => rr == null ? void 0 : rr.dispose()), ko = null, !0;
     })().catch((Ee) => (console.error("[PanoramaCutoutSync] closeEditor failed", Ee), ko = null, !1)), ko);
@@ -29117,7 +29117,7 @@ const Lj = ["data-drop-place"], Rj = ["d", "fill"], $j = ["d", "stroke", "stroke
     mark: { type: Object, required: !0 }
   },
   setup(e) {
-    const t = e, n = (c, f = !1) => c.length ? `M${c.map((p) => `${p.x.toFixed(2)} ${p.y.toFixed(2)}`).join(" L")}${f ? " Z" : ""}` : "", r = Pe(() => t.mark.fills.map((c) => n(c, !0))), i = Pe(() => t.mark.brackets.map((c) => n(c)).join(" ")), o = Pe(() => !!t.mark.sky), a = Pe(() => br.colors[o.value ? "sky" : "world"]), s = /* @__PURE__ */ Ie(null), l = /* @__PURE__ */ Ie({ width: 72, height: 26 });
+    const t = e, n = (c, f = !1) => c.length ? `M${c.map((p) => `${p.x.toFixed(2)} ${p.y.toFixed(2)}`).join(" L")}${f ? " Z" : ""}` : "", r = Pe(() => t.mark.fills.map((c) => n(c, !0))), i = Pe(() => t.mark.brackets.map((c) => n(c)).join(" ")), o = Pe(() => !!t.mark.sky), a = Pe(() => br.colors[o.value ? "sky" : "world"]), s = /* @__PURE__ */ Ce(null), l = /* @__PURE__ */ Ce({ width: 72, height: 26 });
     function u() {
       const c = s.value;
       c != null && c.offsetWidth && (c.offsetWidth !== l.value.width || c.offsetHeight !== l.value.height) && (l.value = { width: c.offsetWidth, height: c.offsetHeight });
@@ -29152,7 +29152,7 @@ const Lj = ["data-drop-place"], Rj = ["d", "fill"], $j = ["d", "stroke", "stroke
       ue("div", {
         ref_key: "label",
         ref: s,
-        class: ze(["pano-studio-drop-label", o.value ? "is-sky" : "is-world"]),
+        class: $e(["pano-studio-drop-label", o.value ? "is-sky" : "is-world"]),
         style: je({ left: `${d.value.x}px`, top: `${d.value.y}px` }),
         "data-drop-label": ""
       }, [
@@ -29171,7 +29171,7 @@ const Lj = ["data-drop-place"], Rj = ["d", "fill"], $j = ["d", "stroke", "stroke
       { corner: "tr", d: "M3 3H37Q45 3 45 11V45" },
       { corner: "br", d: "M45 3V37Q45 45 37 45H3" },
       { corner: "bl", d: "M45 45H11Q3 45 3 37V3" }
-    ]), n = /* @__PURE__ */ Ie(!0);
+    ]), n = /* @__PURE__ */ Ce(!0);
     function r(i) {
       i.target === i.currentTarget && i.animationName.endsWith("-life") && (n.value = !1);
     }
@@ -29185,7 +29185,7 @@ const Lj = ["data-drop-place"], Rj = ["d", "fill"], $j = ["d", "stroke", "stroke
       o[0] || (o[0] = ue("div", { class: "pano-studio-cue-fill" }, null, -1)),
       (de(!0), pe(Ne, null, We(xe(t), (a) => (de(), pe("svg", {
         key: a.corner,
-        class: ze(["pano-studio-cue-bracket", `is-${a.corner}`]),
+        class: $e(["pano-studio-cue-bracket", `is-${a.corner}`]),
         "data-cue-bracket": "",
         viewBox: "0 0 48 48"
       }, [
@@ -29208,7 +29208,7 @@ const Lj = ["data-drop-place"], Rj = ["d", "fill"], $j = ["d", "stroke", "stroke
   },
   emits: ["rect"],
   setup(e, { emit: t }) {
-    const n = e, r = t, i = /* @__PURE__ */ Ie(null), o = /* @__PURE__ */ Ie({ width: 0, height: 0 }), a = Pe(() => IV(o.value.width, o.value.height, n.aspect, px)), s = Pe(() => TV(a.value)), l = Pe(() => {
+    const n = e, r = t, i = /* @__PURE__ */ Ce(null), o = /* @__PURE__ */ Ce({ width: 0, height: 0 }), a = Pe(() => IV(o.value.width, o.value.height, n.aspect, px)), s = Pe(() => TV(a.value)), l = Pe(() => {
       const { x: f, y: p, width: h, height: m } = a.value, b = (g) => `${Math.max(0, g)}px`;
       return [
         { left: 0, right: 0, top: 0, height: b(p) },
@@ -29268,7 +29268,7 @@ const Lj = ["data-drop-place"], Rj = ["d", "fill"], $j = ["d", "stroke", "stroke
   },
   emits: ["answer"],
   setup(e, { emit: t }) {
-    const n = t, r = /* @__PURE__ */ Ie(null);
+    const n = t, r = /* @__PURE__ */ Ce(null);
     return nn(() => Qn(() => {
       var i;
       return (i = r.value) == null ? void 0 : i.focus({ preventScroll: !0 });
@@ -29322,7 +29322,7 @@ const Lj = ["data-drop-place"], Rj = ["d", "fill"], $j = ["d", "stroke", "stroke
     }
     return (o, a) => (de(), pe("button", {
       type: "button",
-      class: ze(["pano-studio-keydot", { "is-has": e.state === "has", "is-now": e.state === "now" }]),
+      class: $e(["pano-studio-keydot", { "is-has": e.state === "has", "is-now": e.state === "now" }]),
       "aria-label": e.label,
       "aria-pressed": e.state === "now" ? "true" : "false",
       "aria-disabled": e.disabled ? "true" : null,
@@ -29358,7 +29358,7 @@ const Lj = ["data-drop-place"], Rj = ["d", "fill"], $j = ["d", "stroke", "stroke
     }
     return (o, a) => (de(), pe("button", {
       type: "button",
-      class: ze(["pano-studio-icon-btn", { "is-sm": e.size === "sm", "is-knob": e.size === "knob", "is-active": e.active, "is-lit": e.lit, "is-hint": e.hint && !e.lit }]),
+      class: $e(["pano-studio-icon-btn", { "is-sm": e.size === "sm", "is-knob": e.size === "knob", "is-active": e.active, "is-lit": e.lit, "is-hint": e.hint && !e.lit }]),
       "aria-label": e.label,
       "data-tip": e.tip || e.label,
       "aria-disabled": e.disabled ? "true" : null,
@@ -29433,7 +29433,7 @@ const Lj = ["data-drop-place"], Rj = ["d", "fill"], $j = ["d", "stroke", "stroke
   },
   emits: ["input", "change", "cancel", "key", "reset"],
   setup(e, { emit: t }) {
-    const n = e, r = t, i = Pe(() => n.orientation !== "horizontal"), o = /* @__PURE__ */ Ie(null), a = /* @__PURE__ */ Ie(0), s = /* @__PURE__ */ Ie(null), l = Pe(() => s.value ?? n.value), u = Pe(() => FV({
+    const n = e, r = t, i = Pe(() => n.orientation !== "horizontal"), o = /* @__PURE__ */ Ce(null), a = /* @__PURE__ */ Ce(0), s = /* @__PURE__ */ Ce(null), l = Pe(() => s.value ?? n.value), u = Pe(() => FV({
       value: l.value,
       length: a.value,
       unitPx: n.unitPx,
@@ -29509,7 +29509,7 @@ const Lj = ["data-drop-place"], Rj = ["d", "fill"], $j = ["d", "stroke", "stroke
     return It(() => {
       y(), c == null || c.disconnect();
     }), (S, F) => (de(), pe("div", {
-      class: ze(["pano-studio-edge-ruler", [i.value ? "is-vertical" : "is-horizontal", i.value ? `is-${e.side}` : "", { "is-disabled": e.disabled, "is-lit": e.lit && !e.disabled }]]),
+      class: $e(["pano-studio-edge-ruler", [i.value ? "is-vertical" : "is-horizontal", i.value ? `is-${e.side}` : "", { "is-disabled": e.disabled, "is-lit": e.lit && !e.disabled }]]),
       "data-tip": e.tip || null,
       "data-ruler": e.name
     }, [
@@ -29614,7 +29614,7 @@ const Lj = ["data-drop-place"], Rj = ["d", "fill"], $j = ["d", "stroke", "stroke
       s(c[f]), (p = u.currentTarget.querySelectorAll("button")[f]) == null || p.focus();
     }
     return (u, d) => (de(), pe("div", {
-      class: ze(["pano-studio-seg", [{ "is-fill": e.fill, "is-disabled": e.disabled }, e.extraClass]]),
+      class: $e(["pano-studio-seg", [{ "is-fill": e.fill, "is-disabled": e.disabled }, e.extraClass]]),
       role: e.role,
       "aria-label": e.label || null,
       "aria-disabled": e.disabled ? "true" : null,
@@ -29625,7 +29625,7 @@ const Lj = ["data-drop-place"], Rj = ["d", "fill"], $j = ["d", "stroke", "stroke
       (de(!0), pe(Ne, null, We(e.options, (c) => (de(), pe("button", {
         key: c.value,
         type: "button",
-        class: ze(["pano-studio-seg-item", { "is-active": c.value === e.value }]),
+        class: $e(["pano-studio-seg-item", { "is-active": c.value === e.value }]),
         role: o(),
         "aria-checked": o() === "radio" ? String(c.value === e.value) : null,
         "aria-selected": o() === "tab" ? String(c.value === e.value) : null,
@@ -29654,7 +29654,7 @@ const Lj = ["data-drop-place"], Rj = ["d", "fill"], $j = ["d", "stroke", "stroke
   },
   emits: ["edit"],
   setup(e, { emit: t }) {
-    const n = e, r = t, i = Pe(() => n.disabled || !n.model.segment), o = /* @__PURE__ */ Ie(null), a = Pe(() => o.value ?? (Array.isArray(n.model.easing) ? n.model.easing : null)), s = Pe(() => Math.max(0, n.graphSide - Xa * 2)), l = (P) => Xa + P * s.value, u = (P) => Xa + (1 - P) * s.value, d = Pe(() => {
+    const n = e, r = t, i = Pe(() => n.disabled || !n.model.segment), o = /* @__PURE__ */ Ce(null), a = Pe(() => o.value ?? (Array.isArray(n.model.easing) ? n.model.easing : null)), s = Pe(() => Math.max(0, n.graphSide - Xa * 2)), l = (P) => Xa + P * s.value, u = (P) => Xa + (1 - P) * s.value, d = Pe(() => {
       if (n.model.easing === "hold") return `M${l(0)} ${u(0)} H${l(1)} V${u(1)}`;
       if (!a.value) return "";
       const [P, j, z, B] = a.value;
@@ -29670,7 +29670,7 @@ const Lj = ["data-drop-place"], Rj = ["d", "fill"], $j = ["d", "stroke", "stroke
       const j = n.model.presets.find((z) => z.label === P);
       j && !i.value && h(Array.isArray(j.easing) ? [...j.easing] : j.easing, "commit");
     }
-    const b = /* @__PURE__ */ Ie(null);
+    const b = /* @__PURE__ */ Ce(null);
     let g = null;
     function k(P) {
       const j = b.value.getBoundingClientRect(), z = j.width / n.graphSide, B = be(((P.clientX - j.left) / z - Xa) / s.value, 0, 1), U = be(1 - ((P.clientY - j.top) / z - Xa) / s.value, 0, 1);
@@ -29712,7 +29712,7 @@ const Lj = ["data-drop-place"], Rj = ["d", "fill"], $j = ["d", "stroke", "stroke
       (P = g == null ? void 0 : g.stopCancel) == null || P.call(g), g = null, o.value = null, window.removeEventListener("keydown", S, !0);
     }
     It(A);
-    const C = /* @__PURE__ */ Ie(n.model.text);
+    const C = /* @__PURE__ */ Ce(n.model.text);
     Bt(() => n.model.text, (P) => {
       C.value = P;
     });
@@ -29729,7 +29729,7 @@ const Lj = ["data-drop-place"], Rj = ["d", "fill"], $j = ["d", "stroke", "stroke
       Gb(j) && (P.preventDefault(), x(j));
     }
     return (P, j) => (de(), pe("section", {
-      class: ze(["pano-studio-easing", { "is-disabled": i.value }]),
+      class: $e(["pano-studio-easing", { "is-disabled": i.value }]),
       "aria-label": "Easing"
     }, [
       ue("header", c8, [
@@ -29899,7 +29899,7 @@ const C8 = ["tabindex", "aria-label", "aria-valuenow", "aria-valuetext", "aria-v
   },
   emits: ["input", "change", "cancel"],
   setup(e, { emit: t }) {
-    const n = e, r = t, i = /* @__PURE__ */ Ie(null), o = /* @__PURE__ */ Ie(null), a = Pe(() => o.value ?? n.value), s = Pe(() => n.toPos ? n.toPos(a.value) : k8(a.value, n.min, n.max)), l = Pe(() => `${(s.value * 100).toFixed(3)}%`), u = (v) => n.fromPos ? n.fromPos(v) : w8(v, n.min, n.max);
+    const n = e, r = t, i = /* @__PURE__ */ Ce(null), o = /* @__PURE__ */ Ce(null), a = Pe(() => o.value ?? n.value), s = Pe(() => n.toPos ? n.toPos(a.value) : k8(a.value, n.min, n.max)), l = Pe(() => `${(s.value * 100).toFixed(3)}%`), u = (v) => n.fromPos ? n.fromPos(v) : w8(v, n.min, n.max);
     let d = null;
     function c(v) {
       const y = i.value.getBoundingClientRect(), N = S8(v, y), S = u(n.snapTo ? n.snapTo(N) : N);
@@ -29978,7 +29978,7 @@ const C8 = ["tabindex", "aria-label", "aria-valuenow", "aria-valuetext", "aria-v
     }, [
       (de(!0), pe(Ne, null, We(e.ticks, (N, S) => (de(), pe("i", {
         key: S,
-        class: ze(["pano-studio-slider-tick", { "is-mid": S === e.midTick }]),
+        class: $e(["pano-studio-slider-tick", { "is-mid": S === e.midTick }]),
         style: je({ left: `${N * 100}%` })
       }, null, 6))), 128)),
       e.fill ? (de(), pe("div", {
@@ -30080,7 +30080,7 @@ const C8 = ["tabindex", "aria-label", "aria-valuenow", "aria-valuetext", "aria-v
   setup(e, { emit: t }) {
     const n = t;
     return (r, i) => (de(), pe("div", {
-      class: ze(["pano-studio-row", { "is-disabled": e.disabled }]),
+      class: $e(["pano-studio-row", { "is-disabled": e.disabled }]),
       role: "group",
       "aria-label": e.name,
       "aria-disabled": e.disabled ? "true" : null,
@@ -30167,7 +30167,7 @@ const C8 = ["tabindex", "aria-label", "aria-valuenow", "aria-valuetext", "aria-v
       (de(!0), pe(Ne, null, We(e.options, (l) => (de(), pe("button", {
         key: l.value,
         type: "button",
-        class: ze(["pano-studio-mode-tile", { "is-active": l.value === e.value }]),
+        class: $e(["pano-studio-mode-tile", { "is-active": l.value === e.value }]),
         role: "radio",
         "aria-checked": String(l.value === e.value),
         "aria-disabled": e.disabled ? "true" : null,
@@ -30237,7 +30237,7 @@ const C8 = ["tabindex", "aria-label", "aria-valuenow", "aria-valuetext", "aria-v
   },
   emits: ["input", "change", "cancel"],
   setup(e, { expose: t, emit: n }) {
-    const r = e, i = n, o = /* @__PURE__ */ Ie(null), a = /* @__PURE__ */ Ie(null), s = /* @__PURE__ */ Ie(!1), l = /* @__PURE__ */ Ie(""), u = /* @__PURE__ */ Ie(!1), d = /* @__PURE__ */ Ie(null), c = Pe(() => d.value ?? r.value), f = Pe(() => r.format ? r.format(c.value) : NV(c.value, r.precision)), p = Pe(() => ({ step: r.step, precision: r.precision, min: r.min, max: r.max }));
+    const r = e, i = n, o = /* @__PURE__ */ Ce(null), a = /* @__PURE__ */ Ce(null), s = /* @__PURE__ */ Ce(!1), l = /* @__PURE__ */ Ce(""), u = /* @__PURE__ */ Ce(!1), d = /* @__PURE__ */ Ce(null), c = Pe(() => d.value ?? r.value), f = Pe(() => r.format ? r.format(c.value) : NV(c.value, r.precision)), p = Pe(() => ({ step: r.step, precision: r.precision, min: r.min, max: r.max }));
     let h = null;
     function m(P) {
       var j, z;
@@ -30357,10 +30357,10 @@ const C8 = ["tabindex", "aria-label", "aria-valuenow", "aria-valuetext", "aria-v
     }
     return It(() => {
       A(), N();
-    }), t({ startEditing: C }), (P, j) => (de(), pe("div", {
+    }), t({ startEditing: C, startDrag: m }), (P, j) => (de(), pe("div", {
       ref_key: "root",
       ref: o,
-      class: ze(["pano-studio-field pano-studio-num", { "is-dragging": u.value, "is-editing": s.value }]),
+      class: $e(["pano-studio-field pano-studio-num", { "is-dragging": u.value, "is-editing": s.value }]),
       role: "spinbutton",
       tabindex: e.disabled ? -1 : 0,
       "aria-label": e.label || e.axis || null,
@@ -30584,11 +30584,11 @@ const C8 = ["tabindex", "aria-label", "aria-valuenow", "aria-valuetext", "aria-v
       portSize: n.portSize,
       imageSizes: n.imageSizes,
       handoff: n.handoff
-    })), o = /* @__PURE__ */ Ie(null), a = /* @__PURE__ */ Ie(null), s = /* @__PURE__ */ Ie(null), l = /* @__PURE__ */ Ie({ width: 0, height: 0, head: 0, chrome: 0 }), u = Pe(() => U3({
+    })), o = /* @__PURE__ */ Ce(null), a = /* @__PURE__ */ Ce(null), s = /* @__PURE__ */ Ce(null), l = /* @__PURE__ */ Ce({ width: 0, height: 0, head: 0, chrome: 0 }), u = Pe(() => U3({
       width: l.value.width,
       height: l.value.height - l.value.head,
       chrome: l.value.chrome
-    })), d = /* @__PURE__ */ Ie(0);
+    })), d = /* @__PURE__ */ Ce(0);
     function c() {
       var g, k;
       const p = o.value;
@@ -30670,7 +30670,7 @@ const C8 = ["tabindex", "aria-label", "aria-valuenow", "aria-valuetext", "aria-v
   },
   setup(e) {
     return (t, n) => (de(), pe("div", {
-      class: ze(["pano-studio-float", `is-${e.layout}`]),
+      class: $e(["pano-studio-float", `is-${e.layout}`]),
       role: "toolbar",
       "aria-label": e.label || null,
       "aria-orientation": e.layout === "rail" || e.layout === "knobs" ? "vertical" : "horizontal"
@@ -30696,7 +30696,7 @@ const C8 = ["tabindex", "aria-label", "aria-valuenow", "aria-valuetext", "aria-v
   },
   emits: ["knob", "help", "hover", "center"],
   setup(e, { expose: t, emit: n }) {
-    const r = n, i = /* @__PURE__ */ Ie(null);
+    const r = n, i = /* @__PURE__ */ Ce(null);
     t({ helpButton: () => {
       var s;
       return ((s = i.value) == null ? void 0 : s.$el) ?? null;
@@ -30742,7 +30742,7 @@ const C8 = ["tabindex", "aria-label", "aria-valuenow", "aria-valuetext", "aria-v
             icon: xe(ke).orbit_center,
             label: "Set orbit center",
             tip: e.centerOff || (e.centerPicking ? xe(a).picking : xe(a).idle),
-            class: ze({ "is-waiting": e.centerPicking }),
+            class: $e({ "is-waiting": e.centerPicking }),
             disabled: !!e.centerOff,
             "aria-pressed": e.centerPicking ? "true" : "false",
             onPointerenter: l[0] || (l[0] = (u) => !e.centerOff && r("hover", "center")),
@@ -30785,7 +30785,7 @@ const C8 = ["tabindex", "aria-label", "aria-valuenow", "aria-valuetext", "aria-v
   setup(e) {
     return (t, n) => e.text ? (de(), pe("div", {
       key: 0,
-      class: ze(["pano-studio-float pano-studio-notice", `is-${e.kind}`]),
+      class: $e(["pano-studio-float pano-studio-notice", `is-${e.kind}`]),
       role: "status",
       "aria-live": "polite",
       "data-notice": e.kind
@@ -30826,11 +30826,11 @@ const C8 = ["tabindex", "aria-label", "aria-valuenow", "aria-valuetext", "aria-v
   },
   emits: ["open"],
   setup(e, { emit: t }) {
-    const n = e, r = t, i = WV(n.storage), o = /* @__PURE__ */ Ie(i.width), a = /* @__PURE__ */ Ie(i.collapsed), s = Pe(() => qb(o.value, n.ratio)), l = Pe(() => YV({ collapsed: a.value, suspended: n.suspended }));
+    const n = e, r = t, i = WV(n.storage), o = /* @__PURE__ */ Ce(i.width), a = /* @__PURE__ */ Ce(i.collapsed), s = Pe(() => qb(o.value, n.ratio)), l = Pe(() => YV({ collapsed: a.value, suspended: n.suspended }));
     Bt(() => l.value.open, (S) => r("open", S)), Bt(() => n.reveal, () => {
       n.suspended || !a.value || (a.value = !1, b());
     });
-    const u = /* @__PURE__ */ Ie(null), d = /* @__PURE__ */ Ie(88);
+    const u = /* @__PURE__ */ Ce(null), d = /* @__PURE__ */ Ce(88);
     let c = null;
     function f() {
       var S;
@@ -30866,7 +30866,7 @@ const C8 = ["tabindex", "aria-label", "aria-valuenow", "aria-valuetext", "aria-v
       k && (k = null, b());
     }
     return (S, F) => (de(), pe("div", {
-      class: ze(["pano-studio-output", { "is-collapsed": l.value.folded, "is-suspended": e.suspended }]),
+      class: $e(["pano-studio-output", { "is-collapsed": l.value.folded, "is-suspended": e.suspended }]),
       style: je({ "--studio-output-line": `${xe(Uf)}px`, ...l.value.folded ? { width: `${d.value}px`, height: `${xe(Uf)}px` } : { width: `${s.value.width}px`, height: `${s.value.height}px` } }),
       "data-region": "output"
     }, [
@@ -30927,7 +30927,7 @@ const C8 = ["tabindex", "aria-label", "aria-valuenow", "aria-valuetext", "aria-v
           "data-tip": e.line.cap || null
         }, De(e.line.size), 9, E6),
         ue("span", {
-          class: ze(["pano-studio-output-chevron", { "is-folded": l.value.folded }]),
+          class: $e(["pano-studio-output-chevron", { "is-folded": l.value.folded }]),
           "aria-hidden": "true",
           "data-output-chevron": ""
         }, [
@@ -31026,7 +31026,7 @@ const C8 = ["tabindex", "aria-label", "aria-valuenow", "aria-valuetext", "aria-v
         (de(!0), pe(Ne, null, We(e.recent, (g, k) => (de(), pe("button", {
           key: k,
           type: "button",
-          class: ze(["pano-studio-paint-dot", { "is-empty": !g }]),
+          class: $e(["pano-studio-paint-dot", { "is-empty": !g }]),
           style: je(g ? { "--dot": g } : null),
           "data-paint-recent": k,
           "aria-label": `Recent color ${k + 1}`,
@@ -31047,7 +31047,7 @@ const C8 = ["tabindex", "aria-label", "aria-valuenow", "aria-valuetext", "aria-v
   },
   emits: ["edit"],
   setup(e, { emit: t }) {
-    const n = e, r = t, i = Pe(() => n.model.size), o = Pe(() => i.value.max - i.value.min), a = (c) => Math.round(c * o.value) / o.value, s = (c) => r("edit", { kind: "size", value: Math.round(c) }), l = /* @__PURE__ */ Ie(null), u = /* @__PURE__ */ Ie(null);
+    const n = e, r = t, i = Pe(() => n.model.size), o = Pe(() => i.value.max - i.value.min), a = (c) => Math.round(c * o.value) / o.value, s = (c) => r("edit", { kind: "size", value: Math.round(c) }), l = /* @__PURE__ */ Ce(null), u = /* @__PURE__ */ Ce(null);
     function d(c) {
       var f, p, h;
       (f = n.model.colors) != null && f.custom.open && ((p = l.value) != null && p.contains(c.target) || (h = u.value) != null && h.contains(c.target) || r("edit", { kind: "close-color" }));
@@ -31072,14 +31072,14 @@ const C8 = ["tabindex", "aria-label", "aria-valuenow", "aria-valuetext", "aria-v
           key: 1,
           layout: "row",
           label: "Color",
-          class: ze(["pano-studio-paint-colors", { "is-disabled": !e.model.colors.enabled }]),
+          class: $e(["pano-studio-paint-colors", { "is-disabled": !e.model.colors.enabled }]),
           "data-paint-colors": ""
         }, {
           default: Ft(() => [
             (de(!0), pe(Ne, null, We(e.model.colors.swatches, (h) => (de(), pe("button", {
               key: h.id,
               type: "button",
-              class: ze(["pano-studio-paint-dot", { "is-active": h.active }]),
+              class: $e(["pano-studio-paint-dot", { "is-active": h.active }]),
               style: je({ "--dot": h.css }),
               "data-paint-swatch": h.id,
               "data-tip": e.model.colors.enabled ? h.label : `${h.label} · not for the eraser`,
@@ -31095,7 +31095,7 @@ const C8 = ["tabindex", "aria-label", "aria-valuenow", "aria-valuetext", "aria-v
             }, [
               ue("button", {
                 type: "button",
-                class: ze(["pano-studio-paint-dot is-custom", { "is-active": e.model.colors.custom.active }]),
+                class: $e(["pano-studio-paint-dot is-custom", { "is-active": e.model.colors.custom.active }]),
                 style: je({ "--dot": e.model.colors.custom.css }),
                 "data-paint-custom": "",
                 "data-tip": e.model.colors.enabled ? "Custom color" : "Custom color · not for the eraser",
@@ -31150,7 +31150,7 @@ const C8 = ["tabindex", "aria-label", "aria-valuenow", "aria-valuetext", "aria-v
                 onChange: s
               }, null, 8, ["value", "min", "max", "disabled", "value-text"]),
               ue("span", {
-                class: ze(["pano-studio-paint-size-value", { "is-disabled": i.value.disabled }])
+                class: $e(["pano-studio-paint-size-value", { "is-disabled": i.value.disabled }])
               }, De(i.value.value), 3)
             ], 8, V6),
             f[6] || (f[6] = ue("span", { class: "pano-studio-sep" }, null, -1)),
@@ -31181,7 +31181,7 @@ const C8 = ["tabindex", "aria-label", "aria-valuenow", "aria-valuetext", "aria-v
   __name: "StudioPlaceChoice",
   emits: ["choose", "cancel"],
   setup(e, { emit: t }) {
-    const n = t, r = /* @__PURE__ */ Ie(null), i = [
+    const n = t, r = /* @__PURE__ */ Ce(null), i = [
       { side: "sky", label: "Sky", tip: "Put the image in the sky, where the view looks" },
       { side: "world", label: "World", tip: "Stand the image in the World, ahead of the view" }
     ];
@@ -31217,7 +31217,7 @@ const C8 = ["tabindex", "aria-label", "aria-valuenow", "aria-valuetext", "aria-v
         (de(), pe(Ne, null, We(i, (u) => ue("button", {
           key: u.side,
           type: "button",
-          class: ze(["pano-studio-place-tile", `is-${u.side}`]),
+          class: $e(["pano-studio-place-tile", `is-${u.side}`]),
           "data-place": u.side,
           "data-tip": u.tip,
           onClick: (d) => n("choose", u.side)
@@ -31264,7 +31264,7 @@ const C8 = ["tabindex", "aria-label", "aria-valuenow", "aria-valuetext", "aria-v
             icon: e.model.icon
           }, null, 8, ["icon"]),
           ue("span", {
-            class: ze(["pano-studio-bar-name", { "is-fixed": e.model.fixedName }])
+            class: $e(["pano-studio-bar-name", { "is-fixed": e.model.fixedName }])
           }, De(e.model.name), 3)
         ], 8, U6),
         (de(!0), pe(Ne, null, We(e.model.groups, (o, a) => (de(), pe(Ne, { key: a }, [
@@ -31277,7 +31277,7 @@ const C8 = ["tabindex", "aria-label", "aria-valuenow", "aria-valuetext", "aria-v
             tip: s.tip,
             active: s.active,
             disabled: s.disabled,
-            class: ze({ "is-override": s.overridden }),
+            class: $e({ "is-override": s.overridden }),
             onPress: (l) => n("press", s.key)
           }, null, 8, ["data-bar", "icon", "label", "tip", "active", "disabled", "class", "onPress"]))), 128))
         ], 64))), 128))
@@ -31316,7 +31316,7 @@ const C8 = ["tabindex", "aria-label", "aria-valuenow", "aria-valuetext", "aria-v
           u.push(l[0][d]);
       return { shared: u, alternatives: l.map((d) => d.slice(u.length)) };
     }
-    const o = /* @__PURE__ */ Ie(null);
+    const o = /* @__PURE__ */ Ce(null);
     let a = !1;
     function s(l) {
       var d, c;
@@ -31625,9 +31625,6 @@ const _H = { class: "pano-studio-tl-bar" }, MH = {
   class: "pano-studio-tl-time pano-studio-num",
   "data-tl": "time"
 }, xH = { class: "pano-studio-tl-timecode" }, PH = { class: "pano-studio-tl-frame" }, EH = ["data-tip"], AH = {
-  class: "pano-studio-tl-field",
-  "data-tip": "Output length in frames"
-}, NH = {
   __name: "StudioTimelineBar",
   props: {
     bar: { type: Object, required: !0 },
@@ -31635,32 +31632,32 @@ const _H = { class: "pano-studio-tl-bar" }, MH = {
   },
   emits: ["play", "jump", "loop-change", "fps", "length", "collapse"],
   setup(e, { emit: t }) {
-    const n = e, r = t, i = (a) => String(Math.round(a * 1e3) / 1e3), o = (a) => {
-      const s = Number(String(a).trim());
-      return Number.isFinite(s) ? s : null;
+    const n = e, r = t, i = /* @__PURE__ */ Ce(null), o = /* @__PURE__ */ Ce(null), a = (l) => String(Math.round(l * 1e3) / 1e3), s = (l) => {
+      const u = Number(String(l).trim());
+      return Number.isFinite(u) ? u : null;
     };
-    return (a, s) => (de(), pe("div", _H, [
+    return (l, u) => (de(), pe("div", _H, [
       we(kt, {
         icon: e.bar.playing ? xe(ke).pause : xe(ke).play,
         label: e.bar.playing ? "Pause" : "Play",
         tip: e.bar.playing ? "Pause (Space)" : "Play (Space)",
         disabled: !e.bar.playable,
         "data-tl": "play",
-        onPress: s[0] || (s[0] = (l) => r("play"))
+        onPress: u[0] || (u[0] = (d) => r("play"))
       }, null, 8, ["icon", "label", "tip", "disabled"]),
       we(kt, {
         icon: xe(ke).key_prev,
         label: "Previous Keyframe",
         disabled: e.bar.prev.disabled,
         "data-tl": "prev",
-        onPress: s[1] || (s[1] = (l) => r("jump", -1))
+        onPress: u[1] || (u[1] = (d) => r("jump", -1))
       }, null, 8, ["icon", "disabled"]),
       we(kt, {
         icon: xe(ke).key_next,
         label: "Next Keyframe",
         disabled: e.bar.next.disabled,
         "data-tl": "next",
-        onPress: s[2] || (s[2] = (l) => r("jump", 1))
+        onPress: u[2] || (u[2] = (d) => r("jump", 1))
       }, null, 8, ["icon", "disabled"]),
       we(kt, {
         role: "switch",
@@ -31669,35 +31666,50 @@ const _H = { class: "pano-studio-tl-bar" }, MH = {
         label: "Loop",
         tip: e.bar.loop ? "Loop: on" : "Loop: off",
         "data-tl": "loop",
-        onPress: s[3] || (s[3] = (l) => r("loop-change", !n.bar.loop))
+        onPress: u[3] || (u[3] = (d) => r("loop-change", !n.bar.loop))
       }, null, 8, ["aria-checked", "icon", "tip"]),
       ue("span", MH, [
         ue("span", xH, De(e.bar.timecode), 1),
         ue("span", PH, De(e.bar.frameText), 1)
       ]),
-      s[10] || (s[10] = ue("span", { class: "pano-studio-tl-spacer" }, null, -1)),
+      u[12] || (u[12] = ue("span", { class: "pano-studio-tl-spacer" }, null, -1)),
       ue("span", {
-        class: "pano-studio-tl-field",
-        "data-tip": e.bar.fpsTip
+        class: $e(["pano-studio-tl-field", { "is-disabled": e.bar.fpsLocked }]),
+        "data-tip": e.bar.fpsTip,
+        onPointerdown: u[5] || (u[5] = (d) => {
+          var c;
+          return (c = i.value) == null ? void 0 : c.startDrag(d);
+        })
       }, [
-        s[8] || (s[8] = ue("span", { class: "pano-studio-tl-field-name" }, "fps", -1)),
+        u[10] || (u[10] = ue("span", { class: "pano-studio-tl-field-name" }, "fps", -1)),
         we(Vo, {
+          ref_key: "fpsField",
+          ref: i,
           value: e.bar.fps,
           step: 1,
           precision: 3,
           min: xe(o1),
           max: xe(Lh),
-          format: i,
-          parse: o,
+          format: a,
+          parse: s,
           disabled: e.bar.fpsLocked,
           label: "Timeline fps",
           "data-tl": "fps",
-          onChange: s[4] || (s[4] = (l) => r("fps", l))
+          onChange: u[4] || (u[4] = (d) => r("fps", d))
         }, null, 8, ["value", "min", "max", "disabled"])
-      ], 8, EH),
-      ue("span", AH, [
-        s[9] || (s[9] = ue("span", { class: "pano-studio-tl-field-name" }, "Length", -1)),
+      ], 42, EH),
+      ue("span", {
+        class: $e(["pano-studio-tl-field", { "is-disabled": e.bar.lengthLocked }]),
+        "data-tip": "Output length in frames",
+        onPointerdown: u[7] || (u[7] = (d) => {
+          var c;
+          return (c = o.value) == null ? void 0 : c.startDrag(d);
+        })
+      }, [
+        u[11] || (u[11] = ue("span", { class: "pano-studio-tl-field-name" }, "Length", -1)),
         we(Vo, {
+          ref_key: "lengthField",
+          ref: o,
           value: e.bar.length,
           step: 1,
           precision: 0,
@@ -31705,37 +31717,37 @@ const _H = { class: "pano-studio-tl-bar" }, MH = {
           disabled: e.bar.lengthLocked,
           label: "Length",
           "data-tl": "length",
-          onChange: s[5] || (s[5] = (l) => r("length", l))
+          onChange: u[6] || (u[6] = (d) => r("length", d))
         }, null, 8, ["value", "disabled"])
-      ]),
+      ], 34),
       we(kt, {
         icon: xe(ke).reset,
         label: "Reset length to the inputs",
         size: "sm",
         disabled: e.bar.lengthResetDisabled,
         "data-tl": "length-reset",
-        onPress: s[6] || (s[6] = (l) => r("length", null))
+        onPress: u[8] || (u[8] = (d) => r("length", null))
       }, null, 8, ["icon", "disabled"]),
       we(kt, {
         icon: xe(ke).chevron,
         label: e.collapsed ? "Expand the timeline" : "Collapse the timeline",
         size: "sm",
-        class: ze({ "is-flipped": e.collapsed }),
+        class: $e({ "is-flipped": e.collapsed }),
         "data-tl": "collapse",
-        onPress: s[7] || (s[7] = (l) => r("collapse", !e.collapsed))
+        onPress: u[9] || (u[9] = (d) => r("collapse", !e.collapsed))
       }, null, 8, ["icon", "label", "class"])
     ]));
   }
-}, OH = ["data-head"], CH = { class: "pano-studio-tl-head-name" }, IH = ["data-head"], TH = ["aria-label", "data-tip", "aria-disabled"], FH = {
+}, NH = ["data-head"], OH = { class: "pano-studio-tl-head-name" }, CH = ["data-head"], IH = ["aria-label", "data-tip", "aria-disabled"], TH = {
   key: 1,
   class: "pano-studio-tl-head-gap"
-}, DH = ["aria-label", "aria-expanded", "aria-disabled"], LH = {
+}, FH = ["aria-label", "aria-expanded", "aria-disabled"], DH = {
   key: 3,
   class: "pano-studio-tl-head-gap"
-}, RH = ["data-tip"], $H = ["data-tip"], zH = {
+}, LH = ["data-tip"], RH = ["data-tip"], $H = {
   key: 6,
   class: "pano-studio-tl-head-dot-gap"
-}, VH = {
+}, zH = {
   __name: "StudioTimelineHead",
   props: {
     row: { type: Object, required: !0 },
@@ -31753,13 +31765,13 @@ const _H = { class: "pano-studio-tl-bar" }, MH = {
     }
     return (a, s) => e.lane ? (de(), pe("div", {
       key: 0,
-      class: ze(["pano-studio-tl-head is-lane", { "is-selected": e.row.selected }]),
+      class: $e(["pano-studio-tl-head is-lane", { "is-selected": e.row.selected }]),
       "data-head": `${e.row.id}:${e.lane.lane}`
     }, [
-      ue("span", CH, De(e.lane.label), 1)
-    ], 10, OH)) : (de(), pe("div", {
+      ue("span", OH, De(e.lane.label), 1)
+    ], 10, NH)) : (de(), pe("div", {
       key: 1,
-      class: ze(["pano-studio-tl-head", { "is-selected": e.row.selected, "is-hidden": e.row.eye && e.row.eye.icon === xe(ke).eye_dashed }]),
+      class: $e(["pano-studio-tl-head", { "is-selected": e.row.selected, "is-hidden": e.row.eye && e.row.eye.icon === xe(ke).eye_dashed }]),
       "data-head": e.row.id
     }, [
       e.row.eye ? (de(), pe("button", {
@@ -31775,11 +31787,11 @@ const _H = { class: "pano-studio-tl-bar" }, MH = {
         we(dt, {
           icon: e.row.eye.icon
         }, null, 8, ["icon"])
-      ], 8, TH)) : (de(), pe("span", FH)),
+      ], 8, IH)) : (de(), pe("span", TH)),
       e.row.expand !== "none" ? (de(), pe("button", {
         key: 2,
         type: "button",
-        class: ze(["pano-studio-tl-head-btn pano-studio-tl-expand", { "is-open": e.row.open }]),
+        class: $e(["pano-studio-tl-head-btn pano-studio-tl-expand", { "is-open": e.row.open }]),
         "aria-label": e.row.open ? "Close the Lanes" : "Open the Lanes",
         "aria-expanded": e.row.expand === "yes" ? e.row.open ? "true" : "false" : null,
         "aria-disabled": e.row.expand === "yes" ? null : "true",
@@ -31790,7 +31802,7 @@ const _H = { class: "pano-studio-tl-bar" }, MH = {
           class: "pano-studio-tl-tri",
           "aria-hidden": "true"
         }, null, -1)
-      ])], 10, DH)) : (de(), pe("span", LH)),
+      ])], 10, FH)) : (de(), pe("span", DH)),
       we(dt, {
         "class-name": "pano-studio-tl-head-icon",
         icon: e.row.icon
@@ -31801,12 +31813,12 @@ const _H = { class: "pano-studio-tl-bar" }, MH = {
         "data-part": "name",
         onClick: s[0] || (s[0] = (l) => r("select")),
         onDblclick: s[1] || (s[1] = (l) => r("frame"))
-      }, De(e.row.label), 41, RH),
+      }, De(e.row.label), 41, LH),
       e.row.upstream ? (de(), pe("span", {
         key: 4,
-        class: ze(["pano-studio-tl-override", { "is-on": e.row.overridden }]),
+        class: $e(["pano-studio-tl-override", { "is-on": e.row.overridden }]),
         "data-tip": e.row.overridden ? "Overridden in this node" : null
-      }, null, 10, $H)) : Te("", !0),
+      }, null, 10, RH)) : Te("", !0),
       e.row.dot ? (de(), Xe(Gg, {
         key: 5,
         state: e.row.dot.state,
@@ -31815,10 +31827,10 @@ const _H = { class: "pano-studio-tl-bar" }, MH = {
         tip: e.row.dot.tip,
         "data-part": "dot",
         onToggle: s[2] || (s[2] = (l) => r("key"))
-      }, null, 8, ["state", "disabled", "tip"])) : (de(), pe("span", zH))
-    ], 10, IH));
+      }, null, 8, ["state", "disabled", "tip"])) : (de(), pe("span", $H))
+    ], 10, CH));
   }
-}, jH = { class: "pano-studio-tl-body" }, HH = { class: "pano-studio-tl-line is-ruler" }, GH = ["data-tip", "data-group"], KH = { class: "pano-studio-tl-group-name" }, BH = { class: "pano-studio-tl-group-actions" }, WH = ["data-tip", "aria-disabled", "onClick"], UH = ["aria-disabled", "onClick"], YH = ["data-line", "data-track", "onPointerdown"], XH = ["onPointerdown"], qH = ["onPointerdown"], JH = ["onPointerdown"], ZH = ["data-frame", "onPointerdown"], qa = 8, QH = {
+}, VH = { class: "pano-studio-tl-body" }, jH = { class: "pano-studio-tl-line is-ruler" }, HH = ["data-tip", "data-group"], GH = { class: "pano-studio-tl-group-name" }, KH = { class: "pano-studio-tl-group-actions" }, BH = ["data-tip", "aria-disabled", "onClick"], WH = ["aria-disabled", "onClick"], UH = ["data-line", "data-track", "onPointerdown"], YH = ["onPointerdown"], XH = ["onPointerdown"], qH = ["onPointerdown"], JH = ["data-frame", "onPointerdown"], qa = 8, ZH = {
   __name: "StudioTimeline",
   props: {
     state: { type: Object, required: !0 },
@@ -31861,7 +31873,7 @@ const _H = { class: "pano-studio-tl-bar" }, MH = {
       for (const _ of s.value.groups)
         H.push({ type: "group", key: `g:${_.key}`, group: _ }), _.rows.forEach(L);
       return H;
-    }), u = /* @__PURE__ */ Ie(null), d = /* @__PURE__ */ Ie(null), c = /* @__PURE__ */ Ie(null), f = /* @__PURE__ */ Ie(0);
+    }), u = /* @__PURE__ */ Ce(null), d = /* @__PURE__ */ Ce(null), c = /* @__PURE__ */ Ce(null), f = /* @__PURE__ */ Ce(0);
     let p = null;
     nn(() => {
       const H = () => {
@@ -31885,7 +31897,7 @@ const _H = { class: "pano-studio-tl-bar" }, MH = {
       return { left: `${$}px`, width: `${Math.max(2, L - $)}px` };
     }
     let N = null;
-    const S = /* @__PURE__ */ Ie(null);
+    const S = /* @__PURE__ */ Ce(null);
     let F = null, A = null;
     const C = lH({
       requestFrame: (H) => requestAnimationFrame(H),
@@ -32060,7 +32072,7 @@ const _H = { class: "pano-studio-tl-bar" }, MH = {
     }
     function O(H) {
       var $, L, _;
-      (L = ($ = H.target) == null ? void 0 : $.closest) != null && L.call($, "input, textarea, select, [contenteditable='true'], [role='spinbutton']") || (_ = u.value) == null || _.focus({ preventScroll: !0 });
+      (L = ($ = H.target) == null ? void 0 : $.closest) != null && L.call($, "input, textarea, select, [contenteditable='true'], [role='spinbutton'], .pano-studio-tl-field") || (_ = u.value) == null || _.focus({ preventScroll: !0 });
     }
     function Y(H) {
       var L;
@@ -32078,12 +32090,12 @@ const _H = { class: "pano-studio-tl-bar" }, MH = {
     return t({ handleDelete: E, copyKeys: K, pasteKeys: V }), (H, $) => (de(), pe("div", {
       ref_key: "root",
       ref: u,
-      class: ze(["pano-studio-tl", { "is-collapsed": e.collapsed }]),
+      class: $e(["pano-studio-tl", { "is-collapsed": e.collapsed }]),
       tabindex: "-1",
       onPointerdownCapture: O,
       onKeydown: Y
     }, [
-      we(NH, {
+      we(AH, {
         bar: s.value.bar,
         collapsed: e.collapsed,
         onPlay: $[0] || ($[0] = (L) => i("play")),
@@ -32093,8 +32105,8 @@ const _H = { class: "pano-studio-tl-bar" }, MH = {
         onLength: q,
         onCollapse: $[2] || ($[2] = (L) => i("collapse-change", L))
       }, null, 8, ["bar", "collapsed"]),
-      Sr(ue("div", jH, [
-        ue("div", HH, [
+      Sr(ue("div", VH, [
+        ue("div", jH, [
           $[3] || ($[3] = ue("div", { class: "pano-studio-tl-head is-ruler" }, null, -1)),
           ue("div", {
             ref_key: "ruler",
@@ -32137,8 +32149,8 @@ const _H = { class: "pano-studio-tl-bar" }, MH = {
               "data-tip": L.group.tip,
               "data-group": L.group.key
             }, [
-              ue("span", KH, De(L.group.label), 1),
-              ue("span", BH, [
+              ue("span", GH, De(L.group.label), 1),
+              ue("span", KH, [
                 ue("button", {
                   type: "button",
                   class: "pano-studio-tl-chip",
@@ -32146,20 +32158,20 @@ const _H = { class: "pano-studio-tl-bar" }, MH = {
                   "aria-disabled": L.group.revert.disabled ? "true" : null,
                   "data-part": "revert",
                   onClick: (_) => M(L.group, "revert-upstream-layer")
-                }, "Revert", 8, WH),
+                }, "Revert", 8, BH),
                 ue("button", {
                   type: "button",
                   class: "pano-studio-tl-chip",
                   "aria-disabled": L.group.restore.disabled ? "true" : null,
                   "data-part": "restore",
                   onClick: (_) => M(L.group, "restore-upstream-deleted")
-                }, De(L.group.restore.label), 9, UH)
+                }, De(L.group.restore.label), 9, WH)
               ])
-            ], 8, GH)) : (de(), pe("div", {
+            ], 8, HH)) : (de(), pe("div", {
               key: 1,
-              class: ze(["pano-studio-tl-line", { "is-lane": L.type === "lane", "is-selected": L.row.selected }])
+              class: $e(["pano-studio-tl-line", { "is-lane": L.type === "lane", "is-selected": L.row.selected }])
             }, [
-              we(VH, {
+              we(zH, {
                 row: L.row,
                 lane: L.type === "lane" ? L.lane : null,
                 onEye: (_) => G(L.row.id),
@@ -32176,7 +32188,7 @@ const _H = { class: "pano-studio-tl-bar" }, MH = {
               }, [
                 L.type === "row" && L.row.clip ? (de(), pe("div", {
                   key: 0,
-                  class: ze(["pano-studio-tl-clip", { "is-background": L.row.kind === "background", "is-fixed": !L.row.clipEditable }]),
+                  class: $e(["pano-studio-tl-clip", { "is-background": L.row.kind === "background", "is-fixed": !L.row.clipEditable }]),
                   style: je(y(L.row.clip)),
                   "data-part": "clip",
                   onPointerdown: lt((_) => U(_, L.row, "move"), ["stop"])
@@ -32185,21 +32197,21 @@ const _H = { class: "pano-studio-tl-bar" }, MH = {
                     class: "pano-studio-tl-clip-edge is-start",
                     "data-part": "clip-start",
                     onPointerdown: lt((_) => U(_, L.row, "start"), ["stop"])
-                  }, null, 40, qH),
+                  }, null, 40, XH),
                   ue("span", {
                     class: "pano-studio-tl-clip-edge is-end",
                     "data-part": "clip-end",
                     onPointerdown: lt((_) => U(_, L.row, "end"), ["stop"])
-                  }, null, 40, JH)
-                ], 46, XH)) : Te("", !0),
+                  }, null, 40, qH)
+                ], 46, YH)) : Te("", !0),
                 (de(!0), pe(Ne, null, We(L.type === "lane" ? L.lane.keys : L.row.pins, (_) => (de(), pe("span", {
                   key: _.ownerFrame,
-                  class: ze(["pano-studio-tl-key", { "is-half": !_.full, "is-selected": _.selected }]),
+                  class: $e(["pano-studio-tl-key", { "is-half": !_.full, "is-selected": _.selected }]),
                   style: je({ left: `${m(_.frame)}px` }),
                   "data-frame": _.frame,
                   onPointerdown: lt((R) => B(R, s.value.lines[L.line], _), ["stop"])
-                }, null, 46, ZH))), 128))
-              ], 40, YH)
+                }, null, 46, JH))), 128))
+              ], 40, UH)
             ], 2))
           ], 64))), 128)),
           ue("div", {
@@ -32217,7 +32229,7 @@ const _H = { class: "pano-studio-tl-bar" }, MH = {
       ])
     ], 34));
   }
-}, eG = {
+}, QH = {
   xmlns: "http://www.w3.org/2000/svg",
   viewBox: "0 0 24 24",
   fill: "none",
@@ -32226,11 +32238,11 @@ const _H = { class: "pano-studio-tl-bar" }, MH = {
   "stroke-linejoin": "round",
   class: "icon icon-tabler icons-tabler-outline icon-tabler-photo-box",
   "aria-hidden": "true"
-}, tG = ["mask"], nG = {
+}, eG = ["mask"], tG = {
   __name: "StudioAddIcon",
   setup(e) {
     const t = `add-icon-mask-${aC()}`;
-    return (n, r) => (de(), pe("svg", eG, [
+    return (n, r) => (de(), pe("svg", QH, [
       ue("defs", null, [
         ue("mask", {
           id: t,
@@ -32260,14 +32272,14 @@ const _H = { class: "pano-studio-tl-bar" }, MH = {
         mask: `url(#${t})`
       }, [...r[1] || (r[1] = [
         Mp('<g transform="translate(-1 -1) scale(.78)"><path d="M15 8h.01"></path><path d="M3 6a3 3 0 0 1 3 -3h12a3 3 0 0 1 3 3v12a3 3 0 0 1 -3 3h-12a3 3 0 0 1 -3 -3v-12"></path><path d="M3 16l5 -5c.928 -.893 2.072 -.893 3 0l5 5"></path><path d="M14 14l1 -1c.928 -.893 2.072 -.893 3 0l3 3"></path></g>', 1)
-      ])], 8, tG),
+      ])], 8, eG),
       r[2] || (r[2] = Mp('<g transform="translate(7.4 7.88) scale(.72)"><path d="M12 3l8 4.5l0 9l-8 4.5l-8 -4.5l0 -9l8 -4.5"></path><path d="M12 12l8 -4.5"></path><path d="M12 12l0 9"></path><path d="M12 12l-8 -4.5"></path></g>', 1))
     ]));
   }
-}, rG = {
+}, nG = {
   key: 0,
   class: "pano-studio-sep"
-}, iG = {
+}, rG = {
   __name: "StudioToolRail",
   props: {
     // Undo and Redo can be pressed (there is something to take back or to do again).
@@ -32303,7 +32315,7 @@ const _H = { class: "pano-studio-tl-bar" }, MH = {
     }, {
       default: Ft(() => [
         (de(!0), pe(Ne, null, We(i.value, (s, l) => (de(), pe(Ne, { key: l }, [
-          l ? (de(), pe("span", rG)) : Te("", !0),
+          l ? (de(), pe("span", nG)) : Te("", !0),
           (de(!0), pe(Ne, null, We(s, (u) => (de(), Xe(kt, {
             key: u.key,
             "data-tool": u.key,
@@ -32315,7 +32327,7 @@ const _H = { class: "pano-studio-tl-bar" }, MH = {
             onPress: (d) => r("press", u.key)
           }, {
             default: Ft(() => [
-              u.drawn === "add" ? (de(), Xe(nG, { key: 0 })) : Te("", !0)
+              u.drawn === "add" ? (de(), Xe(tG, { key: 0 })) : Te("", !0)
             ]),
             _: 2
           }, 1032, ["data-tool", "icon", "label", "tip", "active", "disabled", "onPress"]))), 128))
@@ -32341,7 +32353,7 @@ const _H = { class: "pano-studio-tl-bar" }, MH = {
       _: 1
     }));
   }
-}, oG = 400, aG = 300, sG = 8, lG = 8, hh = { top: "bottom", bottom: "top", left: "right", right: "left" }, uG = [
+}, iG = 400, oG = 300, aG = 8, sG = 8, hh = { top: "bottom", bottom: "top", left: "right", right: "left" }, lG = [
   [".pano-studio-at-rail", "right"],
   [".pano-studio-at-edge-left", "right"],
   [".pano-studio-at-nav", "left"],
@@ -32355,23 +32367,23 @@ const _H = { class: "pano-studio-tl-bar" }, MH = {
 ];
 function Ux(e) {
   var t;
-  for (const [n, r] of uG) {
+  for (const [n, r] of lG) {
     const i = (t = e == null ? void 0 : e.closest) == null ? void 0 : t.call(e, n);
     if (i) return { element: i, side: r };
   }
   return null;
 }
-function cG(e) {
+function uG(e) {
   var r;
   const t = (r = Ux(e)) == null ? void 0 : r.element, n = t ? e.closest(".pano-studio-float") : null;
   return n && t.contains(n) ? n : null;
 }
-function dG(e) {
+function cG(e) {
   var n, r;
   const t = (n = e == null ? void 0 : e.getAttribute) == null ? void 0 : n.call(e, "data-tip-side");
   return t && hh[t] ? t : ((r = Ux(e)) == null ? void 0 : r.side) ?? "top";
 }
-function fG({ anchor: e, group: t = null, size: n, bounds: r, side: i = "top", gap: o = sG, edge: a = lG }) {
+function dG({ anchor: e, group: t = null, size: n, bounds: r, side: i = "top", gap: o = aG, edge: a = sG }) {
   const s = hh[i] ? i : "top", l = s === "left" || s === "right", u = t ?? e, d = l ? { left: u.left, width: u.width, top: e.top, height: e.height } : { left: e.left, width: e.width, top: u.top, height: u.height }, c = {
     left: r.left + a,
     top: r.top + a,
@@ -32389,7 +32401,7 @@ function fG({ anchor: e, group: t = null, size: n, bounds: r, side: i = "top", g
   let g, k;
   return m === "top" || m === "bottom" ? (g = b(d.left + (d.width - n.width) / 2, c.left, c.right - n.width), k = m === "top" ? d.top - o - n.height : d.top + d.height + o) : (k = b(d.top + (d.height - n.height) / 2, c.top, c.bottom - n.height), g = m === "left" ? d.left - o - n.width : d.left + d.width + o), { left: Math.round(g), top: Math.round(k), side: m };
 }
-const pG = /* @__PURE__ */ new Set([
+const fG = /* @__PURE__ */ new Set([
   ...Object.values(gn),
   "Ctrl",
   "Shift",
@@ -32415,14 +32427,14 @@ const pG = /* @__PURE__ */ new Set([
   "Left",
   "Right",
   ...Array.from({ length: 12 }, (e, t) => `F${t + 1}`)
-]), hG = (e) => e.length === 1 ? /\S/.test(e) : pG.has(e);
+]), pG = (e) => e.length === 1 ? /\S/.test(e) : fG.has(e);
 function sv(e) {
   const t = String(e ?? "").trim(), n = /^(.*\S)\s*\(([^()]+)\)$/.exec(t);
   if (!n) return { text: t, keys: "" };
   const i = n[2].trim().split("+").map((o) => o.trim());
-  return !i.length || !i.every((o) => o && hG(o)) ? { text: t, keys: "" } : { text: n[1], keys: i.join("+") };
+  return !i.length || !i.every((o) => o && pG(o)) ? { text: t, keys: "" } : { text: n[1], keys: i.join("+") };
 }
-const mG = ["data-side", "aria-hidden"], gG = {
+const hG = ["data-side", "aria-hidden"], mG = {
   key: 0,
   class: "pano-studio-tip-keys"
 }, Yx = {
@@ -32431,7 +32443,7 @@ const mG = ["data-side", "aria-hidden"], gG = {
     root: { type: Object, default: null }
   },
   setup(e) {
-    const t = e, n = /* @__PURE__ */ Ie(null), r = /* @__PURE__ */ qn({ visible: !1, text: "", keys: "", left: 0, top: 0, side: "top" });
+    const t = e, n = /* @__PURE__ */ Ce(null), r = /* @__PURE__ */ qn({ visible: !1, text: "", keys: "", left: 0, top: 0, side: "top" });
     let i = null, o = 0, a = 0, s = -1 / 0, l = !1, u = null;
     const d = (x) => {
       var w;
@@ -32454,7 +32466,7 @@ const mG = ["data-side", "aria-hidden"], gG = {
       r.text = T.text, r.keys = T.keys;
       const P = n.value;
       if (P) {
-        const z = x.getBoundingClientRect(), B = i.getBoundingClientRect(), U = ((j = cG(i)) == null ? void 0 : j.getBoundingClientRect()) ?? null, W = fG({ anchor: B, group: U, size: { width: P.offsetWidth, height: P.offsetHeight }, bounds: z, side: dG(i) });
+        const z = x.getBoundingClientRect(), B = i.getBoundingClientRect(), U = ((j = uG(i)) == null ? void 0 : j.getBoundingClientRect()) ?? null, W = dG({ anchor: B, group: U, size: { width: P.offsetWidth, height: P.offsetHeight }, bounds: z, side: cG(i) });
         r.left = W.left - z.left, r.top = W.top - z.top, r.side = W.side;
       }
       r.visible = !0, a = requestAnimationFrame(h);
@@ -32465,13 +32477,13 @@ const mG = ["data-side", "aria-hidden"], gG = {
       r.text = w.text, r.keys = w.keys, await Qn(), i === x && (a && cancelAnimationFrame(a), h());
     }
     function b(x) {
-      if (f(), i = x, r.visible || performance.now() - s < aG) {
+      if (f(), i = x, r.visible || performance.now() - s < oG) {
         m(x);
         return;
       }
       o = setTimeout(() => {
         o = 0, i === x && m(x);
-      }, oG);
+      }, iG);
     }
     function g(x) {
       const w = c(x.target);
@@ -32530,7 +32542,7 @@ const mG = ["data-side", "aria-hidden"], gG = {
     }), (x, w) => (de(), pe("div", {
       ref_key: "bubble",
       ref: n,
-      class: ze(["pano-studio-tip", { "is-shown": r.visible }]),
+      class: $e(["pano-studio-tip", { "is-shown": r.visible }]),
       "data-side": r.side,
       "data-tooltip": "",
       role: "tooltip",
@@ -32538,10 +32550,10 @@ const mG = ["data-side", "aria-hidden"], gG = {
       style: je({ left: `${r.left}px`, top: `${r.top}px` })
     }, [
       Qw(De(r.text), 1),
-      r.keys ? (de(), pe("kbd", gG, De(r.keys), 1)) : Te("", !0)
-    ], 14, mG));
+      r.keys ? (de(), pe("kbd", mG, De(r.keys), 1)) : Te("", !0)
+    ], 14, hG));
   }
-}, yG = ["aria-valuenow", "aria-valuetext", "aria-valuemin", "aria-valuemax", "aria-disabled", "tabindex", "data-tip"], bG = ["data-widest"], vG = { "data-fov-text": "" }, kG = {
+}, gG = ["aria-valuenow", "aria-valuetext", "aria-valuemin", "aria-valuemax", "aria-disabled", "tabindex", "data-tip"], yG = ["data-widest"], bG = { "data-fov-text": "" }, vG = {
   __name: "StudioFovNumber",
   props: {
     value: { type: Number, default: 100 },
@@ -32553,7 +32565,7 @@ const mG = ["data-side", "aria-hidden"], gG = {
   },
   emits: ["change"],
   setup(e, { emit: t }) {
-    const n = e, r = t, i = /* @__PURE__ */ Ie(null);
+    const n = e, r = t, i = /* @__PURE__ */ Ce(null);
     let o = null;
     function a(d) {
       var c, f, p;
@@ -32587,7 +32599,7 @@ const mG = ["data-side", "aria-hidden"], gG = {
     }), (d, c) => (de(), pe("span", {
       ref_key: "chip",
       ref: i,
-      class: ze(["pano-studio-fov", { "is-lit": e.lit && !e.disabled }]),
+      class: $e(["pano-studio-fov", { "is-lit": e.lit && !e.disabled }]),
       role: "spinbutton",
       "aria-label": "Field of view",
       "aria-valuenow": e.value,
@@ -32609,9 +32621,9 @@ const mG = ["data-side", "aria-hidden"], gG = {
         class: "pano-studio-fov-num",
         "data-widest": `${xe(vr)}°`
       }, [
-        ue("span", vG, De(e.text || `${e.value}°`), 1)
-      ], 8, bG)
-    ], 42, yG));
+        ue("span", bG, De(e.text || `${e.value}°`), 1)
+      ], 8, yG)
+    ], 42, gG));
   }
 }, Xx = {
   __name: "StudioViewButtons",
@@ -32645,7 +32657,7 @@ const mG = ["data-side", "aria-hidden"], gG = {
       label: "View"
     }, {
       default: Ft(() => [
-        we(kG, {
+        we(vG, {
           value: e.fov,
           text: e.fovText,
           disabled: e.fovDisabled,
@@ -32692,19 +32704,19 @@ const mG = ["data-side", "aria-hidden"], gG = {
       _: 3
     }));
   }
-}, wG = ["aria-label"], SG = {
+}, kG = ["aria-label"], wG = {
   class: "pano-studio-stage",
   "data-region": "stage"
-}, _G = ["data-loading-guide"], MG = ["accept"], xG = {
+}, SG = ["data-loading-guide"], _G = ["accept"], MG = {
   key: 3,
   class: "pano-studio-place-layer"
-}, PG = { class: "pano-studio-at-notice" }, EG = { class: "pano-studio-at-output" }, AG = { class: "pano-studio-at-nav" }, NG = {
+}, xG = { class: "pano-studio-at-notice" }, PG = { class: "pano-studio-at-output" }, EG = { class: "pano-studio-at-nav" }, AG = {
   key: 5,
   class: "pano-studio-at-shortcuts"
-}, OG = {
+}, NG = {
   class: "pano-studio-at-bar",
   "data-region": "bar"
-}, CG = {
+}, OG = {
   __name: "StudioEditor",
   props: {
     nodeTitle: { type: String, default: "" },
@@ -32714,7 +32726,7 @@ const mG = ["data-side", "aria-hidden"], gG = {
     controller: { type: Object, required: !0 }
   },
   setup(e) {
-    const t = e, n = /* @__PURE__ */ Ie(null), r = /* @__PURE__ */ Ie(null), i = /* @__PURE__ */ Ie(null), o = /* @__PURE__ */ Ie(null), a = /* @__PURE__ */ Ie(null);
+    const t = e, n = /* @__PURE__ */ Ce(null), r = /* @__PURE__ */ Ce(null), i = /* @__PURE__ */ Ce(null), o = /* @__PURE__ */ Ce(null), a = /* @__PURE__ */ Ce(null);
     let s = null, l = null;
     const u = Pe(() => {
       const K = Fj(t.view.selection);
@@ -32761,15 +32773,15 @@ const mG = ["data-side", "aria-hidden"], gG = {
     function F(K, V) {
       return V ? { top: `${K.offset}px`, height: `${K.length}px` } : { left: `${K.offset}px`, width: `${K.length}px` };
     }
-    const A = Pe(() => F3({ projection: g.value.projection, locked: g.value.locked === !0, readOnly: t.view.readOnly })), C = Pe(() => d.value ? k.value ? Vb : t.view.readOnly ? "Read-only" : g.value.locked === !0 ? XM : "" : ""), x = Pe(() => k.value ? Vb : T3), w = /* @__PURE__ */ Ie(null), T = Ox(), P = Pe(() => Tx({ tab: t.view.tab, panorama: k.value, readOnly: t.view.readOnly, locked: g.value.locked === !0, mac: T })), j = () => {
+    const A = Pe(() => F3({ projection: g.value.projection, locked: g.value.locked === !0, readOnly: t.view.readOnly })), C = Pe(() => d.value ? k.value ? Vb : t.view.readOnly ? "Read-only" : g.value.locked === !0 ? XM : "" : ""), x = Pe(() => k.value ? Vb : T3), w = /* @__PURE__ */ Ce(null), T = Ox(), P = Pe(() => Tx({ tab: t.view.tab, panorama: k.value, readOnly: t.view.readOnly, locked: g.value.locked === !0, mac: T })), j = () => {
       var K;
       return ((K = w.value) == null ? void 0 : K.helpButton()) ?? null;
-    }, z = /* @__PURE__ */ Ie(null);
+    }, z = /* @__PURE__ */ Ce(null);
     Bt(z, (K) => {
       var V, H;
       return (H = (V = t.controller).erpCanvas) == null ? void 0 : H.call(V, K ?? null);
     });
-    const B = Pe(() => DS({ camera: g.value }, t.view.sizeWidgets ?? Np)), U = /* @__PURE__ */ Ie(null), W = /* @__PURE__ */ Ie(null), le = /* @__PURE__ */ Ie(!1);
+    const B = Pe(() => DS({ camera: g.value }, t.view.sizeWidgets ?? Np)), U = /* @__PURE__ */ Ce(null), W = /* @__PURE__ */ Ce(null), le = /* @__PURE__ */ Ce(!1);
     let ae = null;
     function ne() {
       var K, V;
@@ -32780,7 +32792,7 @@ const mG = ["data-side", "aria-hidden"], gG = {
       const H = K ?? V;
       H && typeof ResizeObserver == "function" && (ae = new ResizeObserver(ne), ae.observe(H)), ne();
     }), It(() => ae == null ? void 0 : ae.disconnect());
-    const te = /* @__PURE__ */ Ie(null);
+    const te = /* @__PURE__ */ Ce(null);
     function ee(K) {
       if (K !== "add") {
         t.controller.rail(K);
@@ -32795,7 +32807,7 @@ const mG = ["data-side", "aria-hidden"], gG = {
     function Z(K) {
       t.ui.gridHidden = !K, s == null || s.redraw();
     }
-    const I = /* @__PURE__ */ Ie(KV(t.storage)), G = /* @__PURE__ */ Ie(I.value), re = /* @__PURE__ */ Ie(!1), se = Pe(() => ({ height: `${re.value ? VV : G.value}px` }));
+    const I = /* @__PURE__ */ Ce(KV(t.storage)), G = /* @__PURE__ */ Ce(I.value), re = /* @__PURE__ */ Ce(!1), se = Pe(() => ({ height: `${re.value ? VV : G.value}px` }));
     function X() {
       var V;
       const K = ((V = r.value) == null ? void 0 : V.getBoundingClientRect().height) || window.innerHeight;
@@ -32824,7 +32836,7 @@ const mG = ["data-side", "aria-hidden"], gG = {
       ue("div", {
         ref_key: "root",
         ref: n,
-        class: ze(["pano-studio pano-studio-editor", { "is-knob-drag": !!e.ui.knobDrag }]),
+        class: $e(["pano-studio pano-studio-editor", { "is-knob-drag": !!e.ui.knobDrag }]),
         role: "dialog",
         tabindex: "-1",
         "aria-modal": "true",
@@ -32835,7 +32847,7 @@ const mG = ["data-side", "aria-hidden"], gG = {
           ref: r,
           class: "pano-studio-main"
         }, [
-          ue("div", SG, [
+          ue("div", wG, [
             ue("canvas", {
               ref_key: "canvas",
               ref: i,
@@ -32846,11 +32858,11 @@ const mG = ["data-side", "aria-hidden"], gG = {
             ue("canvas", {
               ref_key: "overlay",
               ref: o,
-              class: ze(["pano-studio-stage-overlay", { "is-loading-guide": e.ui.loadingGuide }]),
+              class: $e(["pano-studio-stage-overlay", { "is-loading-guide": e.ui.loadingGuide }]),
               "data-stage-overlay": "",
               "data-loading-guide": e.ui.loadingGuide ? "" : null,
               "aria-hidden": "true"
-            }, null, 10, _G),
+            }, null, 10, SG),
             e.ui.drop ? (de(), Xe(jj, {
               key: 0,
               mark: e.ui.drop
@@ -32962,7 +32974,7 @@ const mG = ["data-side", "aria-hidden"], gG = {
               value: e.view.tab,
               onSelect: V[16] || (V[16] = (H) => e.controller.setTab(H))
             }, null, 8, ["value"]),
-            we(iG, {
+            we(rG, {
               class: "pano-studio-at-rail",
               "can-undo": e.view.canUndo,
               "can-redo": e.view.canRedo,
@@ -32981,8 +32993,8 @@ const mG = ["data-side", "aria-hidden"], gG = {
               hidden: "",
               "data-add-picker": "",
               onChange: Q
-            }, null, 40, MG),
-            e.ui.choice ? (de(), pe("div", xG, [
+            }, null, 40, _G),
+            e.ui.choice ? (de(), pe("div", MG, [
               we(W6, {
                 onChoose: V[17] || (V[17] = (H) => e.controller.place(H)),
                 onCancel: V[18] || (V[18] = (H) => e.controller.cancelPlace())
@@ -32995,13 +33007,13 @@ const mG = ["data-side", "aria-hidden"], gG = {
               confirm: e.view.confirm.confirm,
               onAnswer: V[19] || (V[19] = (H) => e.controller.confirm(H))
             }, null, 8, ["title", "body", "confirm"])) : Te("", !0),
-            ue("div", PG, [
+            ue("div", xG, [
               we(Vx, {
                 text: c.value.text,
                 kind: c.value.kind
               }, null, 8, ["text", "kind"])
             ]),
-            ue("div", EG, [
+            ue("div", PG, [
               we(A6, {
                 storage: e.storage,
                 ratio: v.value,
@@ -33031,7 +33043,7 @@ const mG = ["data-side", "aria-hidden"], gG = {
                 _: 1
               }, 8, ["storage", "ratio", "line", "suspended", "suspended-tip", "reveal"])
             ]),
-            ue("div", AG, [
+            ue("div", EG, [
               we(zx, {
                 ref_key: "nav",
                 ref: w,
@@ -33057,14 +33069,14 @@ const mG = ["data-side", "aria-hidden"], gG = {
                 onHelp: V[24] || (V[24] = (H) => e.controller.shortcuts(!e.view.shortcuts))
               }, null, 8, ["lit", "knob-drag", "disabled", "disabled-tip", "help-open", "center-picking", "center-off"])
             ]),
-            e.view.shortcuts ? (de(), pe("div", NG, [
+            e.view.shortcuts ? (de(), pe("div", AG, [
               we(jx, {
                 groups: P.value,
                 toggle: j,
                 onClose: V[25] || (V[25] = (H) => e.controller.shortcuts(!1))
               }, null, 8, ["groups"])
             ])) : Te("", !0),
-            ue("div", OG, [
+            ue("div", NG, [
               h.value ? (de(), Xe(j6, {
                 key: 0,
                 model: h.value,
@@ -33109,7 +33121,7 @@ const mG = ["data-side", "aria-hidden"], gG = {
             }, null, 8, ["fov", "fov-lit", "fov-text", "fov-disabled", "fov-tip", "grid-shown", "reset-disabled", "reset-tip", "at-start", "frame-tip", "frame-disabled", "frame-disabled-tip"])
           ]),
           ue("div", {
-            class: ze(["pano-studio-splitter", { "is-collapsed": re.value }]),
+            class: $e(["pano-studio-splitter", { "is-collapsed": re.value }]),
             role: "separator",
             "aria-orientation": "horizontal",
             "aria-label": "Timeline height",
@@ -33124,7 +33136,7 @@ const mG = ["data-side", "aria-hidden"], gG = {
             "data-region": "timeline",
             style: je(se.value)
           }, [
-            we(QH, {
+            we(ZH, {
               ref_key: "timeline",
               ref: a,
               state: e.view.state,
@@ -33166,20 +33178,20 @@ const mG = ["data-side", "aria-hidden"], gG = {
           onClose: V[39] || (V[39] = (H) => e.controller.close())
         }, null, 8, ["state", "selection", "tab", "playhead", "node-name", "read-only", "upstream", "animations", "image-sizes", "port-size", "handoff"]),
         we(Yx, { root: n.value }, null, 8, ["root"])
-      ], 10, wG)
+      ], 10, kG)
     ], 32));
   }
 };
-function IG(e) {
+function CG(e) {
   var n;
   const t = Number((n = e == null ? void 0 : e.exec_info) == null ? void 0 : n.queue_remaining);
   return Number.isFinite(t) && t > 0;
 }
-function TG(e, t = () => {
+function IG(e, t = () => {
 }) {
   let n = !1;
   const r = (i) => {
-    const o = IG(i == null ? void 0 : i.detail);
+    const o = CG(i == null ? void 0 : i.detail);
     n !== o && (n = o, t(n));
   };
   return e != null && e.addEventListener && e.addEventListener("status", r), {
@@ -33190,7 +33202,7 @@ function TG(e, t = () => {
   };
 }
 const lv = (e) => !!(e != null && e.complete) && Number(e.naturalWidth) > 0;
-function FG({ uiList: e, source: t, current: n, fps: r, playing: i, onChange: o = () => {
+function TG({ uiList: e, source: t, current: n, fps: r, playing: i, onChange: o = () => {
 }, ImageCtor: a = globalThis.Image }) {
   const s = /* @__PURE__ */ new Map();
   let l = !1;
@@ -33239,14 +33251,14 @@ function FG({ uiList: e, source: t, current: n, fps: r, playing: i, onChange: o 
     }
   };
 }
-const DG = Gm.studio.image, cu = (e) => !!(e != null && e.complete) && e.naturalWidth > 0;
+const FG = Gm.studio.image, cu = (e) => !!(e != null && e.complete) && e.naturalWidth > 0;
 function qx({ media: e, node: t, inputs: n, channel: r, cacheKey: i, onChange: o = () => {
 }, current: a = at }) {
   let s = null, l = "none";
   const u = (f) => {
     f === s && (l = cu(f) ? "ready" : "failed", o());
   }, d = () => e.resolvePreferredExactLinkedSource(t, n).src ? e.loadPreferredExactLinkedImage(t, n, u, i) : null;
-  return s = (a(t, r) ? e.uiImage(t, DG, /* @__PURE__ */ new Map(), (f) => {
+  return s = (a(t, r) ? e.uiImage(t, FG, /* @__PURE__ */ new Map(), (f) => {
     f === s && (cu(f) ? l = "ready" : (s = d(), l = s ? cu(s) ? "ready" : "loading" : "failed"), o());
   }) : null) ?? d(), s && (l = cu(s) ? "ready" : "loading"), { image: () => s, state: () => l };
 }
@@ -33258,8 +33270,8 @@ function al(e, t) {
 function mh(e, t) {
   return xx(e).some((n) => t.includes(n));
 }
-const LG = [...Ma, "sticker"];
-function RG(e, t) {
+const DG = [...Ma, "sticker"];
+function LG(e, t) {
   var r;
   let n;
   try {
@@ -33270,7 +33282,7 @@ function RG(e, t) {
   return yk(n, gk(e, t));
 }
 const uv = (e) => !!(e != null && e.complete) && e.naturalWidth > 0;
-function $G(e, t, n, r) {
+function RG(e, t, n, r) {
   let i = null, o = "none";
   if (r.from === "upstream")
     i = t.uiImage(e, r.keys.image, /* @__PURE__ */ new Map(), (s) => {
@@ -33296,7 +33308,7 @@ function $G(e, t, n, r) {
     coverage: a
   };
 }
-function zG(e) {
+function $G(e) {
   var s;
   const t = D_({
     assetSource: e.media.assetSource,
@@ -33305,7 +33317,7 @@ function zG(e) {
     onChange: () => {
       e.closed || (e.syncMedia(), e.redraw(Le.MEDIA));
     }
-  }), n = FG({
+  }), n = TG({
     uiList: (l) => e.media.uiList(e.node, l),
     source: e.media.source,
     current: () => at(e.node, "external-sticker"),
@@ -33344,7 +33356,7 @@ function zG(e) {
   });
   return { stageMedia: t, portMedia: n, upstreamList: r, upstream: o, currentHandoff: () => at(e.node, "sticker-handoff") ? eF(e.node, e.media.uiValue(e.node, "pano_sticker_handoff")) : null };
 }
-function VG(e) {
+function zG(e) {
   const t = xd({
     createVideo: () => Yn(document, "studio.depth-video"),
     createCanvas: () => wt({ label: "studio.depth-still" }),
@@ -33355,7 +33367,7 @@ function VG(e) {
   }), n = (u, d) => {
     var c;
     return t.picture(u, d, !!((c = e.backgroundVideo) != null && c.playback.advancing));
-  }, r = TG(e.api, () => {
+  }, r = IG(e.api, () => {
     e.closed || e.redraw(Le.MEDIA);
   }), i = () => Ji(e.node, "scene") === $m || !!e.upstreamList(), o = (u) => e.media.uiList(e.node, u), a = (u) => at(e.node, u);
   return { depthColors: t, depthColor: n, comfyRunning: r, upstreamLinked: i, uiList: o, current: a, backgroundNow: () => bc("editor", {
@@ -33367,7 +33379,7 @@ function VG(e) {
     fps: e.session.state.timeline.fps
   }), sceneFiles: () => at(e.node, "scene") ? aa(e.media.uiList(e.node, "pano_scene_files"), e.media.uiList(e.node, "pano_scene_meta"), e.media.source) : null };
 }
-const jG = Object.freeze({
+const VG = Object.freeze({
   normal: Object.freeze({
     line: "rgba(255, 255, 255, 0.85)",
     hiddenLine: "rgba(255, 255, 255, 0.35)",
@@ -33380,17 +33392,17 @@ const jG = Object.freeze({
     width: 2,
     fill: "rgba(232, 207, 116, 0.18)"
   })
-}), du = Object.freeze({ color: "rgba(0, 0, 0, 0.3)", hiddenColor: "rgba(0, 0, 0, 0.12)", width: 3.5 }), HG = "rgba(255, 255, 255, 0.35)", GG = 3, KG = 6, cv = 48, Vu = (e, t) => [e[0] - t[0], e[1] - t[1], e[2] - t[2]], Ug = (e, t) => [e[0] + t[0], e[1] + t[1], e[2] + t[2]], Jx = (e, t) => [e[0] * t, e[1] * t, e[2] * t], qf = (e, t) => e[0] * t[0] + e[1] * t[1] + e[2] * t[2], BG = (e, t) => [e[1] * t[2] - e[2] * t[1], e[2] * t[0] - e[0] * t[2], e[0] * t[1] - e[1] * t[0]], WG = (e, t, n) => e.map((r, i) => r + (t[i] - r) * n), dv = (e) => Jx(e.reduce(Ug, [0, 0, 0]), 1 / e.length);
-function UG(e, t, n) {
+}), du = Object.freeze({ color: "rgba(0, 0, 0, 0.3)", hiddenColor: "rgba(0, 0, 0, 0.12)", width: 3.5 }), jG = "rgba(255, 255, 255, 0.35)", HG = 3, GG = 6, cv = 48, Vu = (e, t) => [e[0] - t[0], e[1] - t[1], e[2] - t[2]], Ug = (e, t) => [e[0] + t[0], e[1] + t[1], e[2] + t[2]], Jx = (e, t) => [e[0] * t, e[1] * t, e[2] * t], qf = (e, t) => e[0] * t[0] + e[1] * t[1] + e[2] * t[2], KG = (e, t) => [e[1] * t[2] - e[2] * t[1], e[2] * t[0] - e[0] * t[2], e[0] * t[1] - e[1] * t[0]], BG = (e, t, n) => e.map((r, i) => r + (t[i] - r) * n), dv = (e) => Jx(e.reduce(Ug, [0, 0, 0]), 1 / e.length);
+function WG(e, t, n) {
   if (e.visible === !1) return !1;
   const { CAMERA_GUIDE_LENGTH: r } = Vn(jn(n));
   return Math.hypot(...Vu(e.position, t)) >= r;
 }
-function YG(e, t, n, r) {
+function UG(e, t, n, r) {
   const { CAMERA_GUIDE_LENGTH: i } = Vn(jn(r)), o = Pc(t, e.position);
   return o > 0 ? Math.max(i, bL * o / Ec(t, n)) : i;
 }
-function XG(e, t, n) {
+function YG(e, t, n) {
   if (t === "erp") {
     const h = Ot(e.yaw_deg, e.pitch_deg, e.roll_deg), m = (y, N, S) => Ug(v_(h, [y, N, S]), e.position), b = n * 0.25, g = Array.from({ length: cv }, (y, N) => {
       const S = N / cv * Math.PI * 2;
@@ -33415,7 +33427,7 @@ function fv(e, t, n, r) {
   const i = e.near * 1.001, o = (l) => Pc(e, l), a = [];
   if (t.forEach((l, u) => {
     const d = t[(u + 1) % t.length], c = o(l), f = o(d);
-    c > i && a.push(l), c > i != f > i && a.push(WG(l, d, (i - c) / (f - c)));
+    c > i && a.push(l), c > i != f > i && a.push(BG(l, d, (i - c) / (f - c)));
   }), a.length < 3) return null;
   const s = a.map((l) => Nt(e, l, n, r));
   return s.every(Boolean) ? s.map(({ x: l, y: u }) => ({ x: l, y: u })) : null;
@@ -33423,7 +33435,7 @@ function fv(e, t, n, r) {
 function Jf(e, t, n, r, i) {
   return k_(e, [t, n], r, i);
 }
-function qG(e, t, n, r) {
+function XG(e, t, n, r) {
   const i = t.position, o = [], a = (f) => {
     const p = Nt(t, f, n, r);
     return p ? { x: p.x, y: p.y } : null;
@@ -33445,7 +33457,7 @@ function qG(e, t, n, r) {
     const p = dv(f);
     let h = [0, 0, 0];
     return f.forEach((m, b) => {
-      h = Ug(h, BG(m, f[(b + 1) % f.length]));
+      h = Ug(h, KG(m, f[(b + 1) % f.length]));
     }), qf(h, Vu(p, s)) < 0 && (h = Jx(h, -1)), { middle: p, front: qf(h, Vu(i, p)) > 0 };
   }), u = xc(t), d = e.faces.map((f, p) => ({ points: fv(t, f, n, r), depth: qf(Vu(l[p].middle, i), u) })).filter((f) => f.points).sort((f, p) => p.depth - f.depth).map((f) => f.points);
   for (const f of e.edges) {
@@ -33457,16 +33469,16 @@ function qG(e, t, n, r) {
   const c = e.top ? fv(t, e.top, n, r) : null;
   return { fills: d, lines: o, top: c, dot: a(e.apex), circle: null };
 }
-function pv(e, t, n = KG) {
+function pv(e, t, n = GG) {
   return e ? e.circle && Math.hypot(t.x - e.circle.x, t.y - e.circle.y) <= e.circle.r || e.fills.some((r) => tl(t, r)) || e.top && tl(t, e.top) ? !0 : e.lines.some((r) => Ip(t, r.a, r.b) <= n) : !1;
 }
-const JG = (e, t) => [e[0] - t[0], e[1] - t[1], e[2] - t[2]];
-function ZG(e, t, n, r) {
+const qG = (e, t) => [e[0] - t[0], e[1] - t[1], e[2] - t[2]];
+function JG(e, t, n, r) {
   if (e.lensImage) return Gv(e, t.x, t.y);
   const i = Wr(e.quaternion), o = (p) => [i[0][p], i[1][p], i[2][p]], a = o(0), s = o(1), l = o(2).map((p) => -p), u = Math.tan(e.fovY_deg * Math.PI / 360), d = u * e.aspect, c = (t.x / n * 2 - 1) * d, f = (1 - t.y / r * 2) * u;
   return { origin: [...e.position], direction: [0, 1, 2].map((p) => l[p] + a[p] * c + s[p] * f) };
 }
-function QG(e, t, n) {
+function ZG(e, t, n) {
   const { min: r, max: i, n: o, cells: a } = e;
   let s = 0, l = 1 / 0;
   for (let m = 0; m < 3; m += 1) {
@@ -33492,8 +33504,8 @@ function QG(e, t, n) {
   }
   return null;
 }
-function eK(e, t, n, r, i, o) {
-  const a = ZG(n, r, i, o);
+function QG(e, t, n, r, i, o) {
+  const a = JG(n, r, i, o);
   if (!a) return null;
   let s = null;
   for (const l of e) {
@@ -33503,7 +33515,7 @@ function eK(e, t, n, r, i, o) {
       const { position: c, scale: f, yaw_deg: p, pitch_deg: h, roll_deg: m } = l.value;
       if (!(f > 0)) continue;
       const b = Ot(p, h, m), g = (k) => [0, 1, 2].map((v) => (b[0][v] * k[0] + b[1][v] * k[1] + b[2][v] * k[2]) / f);
-      u = QG(d, g(JG(a.origin, c)), g(a.direction)), u !== null && u < n.near && (u = null);
+      u = ZG(d, g(qG(a.origin, c)), g(a.direction)), u !== null && u < n.near && (u = null);
     } else if (JD([l], n, r, i, o)) {
       const c = Nt(n, l.center, i, o);
       u = c ? c.z : 1 / 0;
@@ -33512,9 +33524,9 @@ function eK(e, t, n, r, i, o) {
   }
   return (s == null ? void 0 : s.id) ?? null;
 }
-const tK = Object.freeze({ groups: /* @__PURE__ */ new Map(), rasters: [] });
+const eK = Object.freeze({ groups: /* @__PURE__ */ new Map(), rasters: [] });
 function na(e) {
-  return e.painting_visible === !1 ? tK : IM(e);
+  return e.painting_visible === !1 ? eK : IM(e);
 }
 function Yc(e, t) {
   return gh(e, _r(t));
@@ -33534,7 +33546,7 @@ function hv(e) {
     rotateHandle: { x: t.x + i * Fc, y: t.y + o * Fc }
   };
 }
-function nK(e, t, n) {
+function tK(e, t, n) {
   let r = null, i;
   if (t.kind === "group") {
     const u = na(e).groups.get(t.id);
@@ -33560,7 +33572,7 @@ function nK(e, t, n) {
   }
   return { visible: !0, center: r, corners: o, outline: l, ...hv(o) };
 }
-function rK(e, t, n) {
+function nK(e, t, n) {
   const r = na(e).groups.get(t);
   return r ? r.strokes.map((i) => {
     var a;
@@ -33572,7 +33584,7 @@ function rK(e, t, n) {
     };
   }).filter((i) => i.points.length) : [];
 }
-function iK(e, t) {
+function rK(e, t) {
   var i;
   const n = e.painting, r = (o) => t.kind === "group" && String((o == null ? void 0 : o.actionGroupId) || "").trim() === t.id;
   return {
@@ -33585,7 +33597,7 @@ function iK(e, t) {
     }
   };
 }
-function oK(e, t, n) {
+function iK(e, t, n) {
   const r = e.quaternion, i = e.lensImage, o = i ? `|${i.curve},${i.focalPx},${i.centerX},${i.centerY}` : "";
   return `${r.x},${r.y},${r.z},${r.w}|${e.fovY_deg}|${e.aspect}|${t}|${n}${o}`;
 }
@@ -33593,7 +33605,7 @@ const Fo = () => ({ move() {
 }, end() {
 }, cancel() {
 } });
-function aK({ state: e, projection: t, edits: n }) {
+function oK({ state: e, projection: t, edits: n }) {
   function r(s, l, u, d) {
     var m;
     if (s === "rotate") return o(l, d);
@@ -33653,7 +33665,7 @@ function aK({ state: e, projection: t, edits: n }) {
     n.live((u) => {
       const d = u.painting;
       return !d || (bo(d, Vr(u)), !l(d)) ? !1 : (u.painting_layer = null, !0);
-    }, (u) => iK(u, s));
+    }, (u) => rK(u, s));
   }
   return { paintDrag: r };
 }
@@ -33685,7 +33697,7 @@ function e2(e, t) {
     i.placement !== "sky" || !n.has(i.id) || r.push(Zx(i, t.evaluated.stickers[o]));
   }), r;
 }
-function sK(e, t, n = [], r = 0) {
+function aK(e, t, n = [], r = 0) {
   const i = e2(e, t).map((s) => ({ kind: "sky", row: s.id, item: s, zIndex: s.z_index })), o = na(e);
   for (const [s, { group: l }] of o.groups)
     i.push({ kind: "group", id: s, row: Bi("group", s), item: l, locked: l.locked === !0, zIndex: Math.trunc(Number(l.z_index) || 0) });
@@ -33693,7 +33705,7 @@ function sK(e, t, n = [], r = 0) {
     i.push({ kind: "raster", id: s.id, row: Bi("raster", s.id), item: s, locked: s.locked === !0, zIndex: Math.trunc(Number(s.z_index) || 0) });
   return [...i.map((s, l) => ({ entry: s, order: l })).sort((s, l) => l.entry.zIndex - s.entry.zIndex || l.order - s.order).map(({ entry: s }) => s), ...Qx(n, t, r).map((s) => ({ kind: "sky", row: s.id, item: s }))];
 }
-function lK({ playhead: e, projection: t, edits: n, draftOf: r, stickerOf: i }) {
+function sK({ playhead: e, projection: t, edits: n, draftOf: r, stickerOf: i }) {
   function o(a, s, l, u) {
     const d = e(), c = l.center, f = { x: u.x - c.x, y: u.y - c.y }, p = Math.max(1, Math.hypot(u.x - c.x, u.y - c.y)), h = Math.atan2(u.y - c.y, u.x - c.x), m = r(s.id), b = (g) => n.live((k) => {
       const v = i(k, s.id);
@@ -33726,7 +33738,7 @@ function lK({ playhead: e, projection: t, edits: n, draftOf: r, stickerOf: i }) 
   return o;
 }
 const Zf = "default";
-function uK({
+function lK({
   editorView: e,
   camera: t,
   size: n,
@@ -33756,7 +33768,7 @@ function uK({
   }
   let C = null;
   function x() {
-    const { width: M, height: E } = n(), O = t(), Y = oK(O, M, E);
+    const { width: M, height: E } = n(), O = t(), Y = iK(O, M, E);
     (C == null ? void 0 : C.key) !== Y && (C = { key: Y, projection: Ta(O, M, E), state: null, frames: /* @__PURE__ */ new Map(), paths: /* @__PURE__ */ new Map() });
     const K = C;
     return K.state !== r() && (K.state = r(), K.frames.clear(), K.paths.clear()), K;
@@ -33765,12 +33777,12 @@ function uK({
     return x().projection;
   }
   function T(M, E) {
-    return M.frames.has(E.row) || M.frames.set(E.row, nK(M.state, E, M.projection)), M.frames.get(E.row);
+    return M.frames.has(E.row) || M.frames.set(E.row, tK(M.state, E, M.projection)), M.frames.get(E.row);
   }
   function P(M, E) {
-    return M.paths.has(E.row) || M.paths.set(E.row, rK(M.state, E.id, M.projection)), M.paths.get(E.row);
+    return M.paths.has(E.row) || M.paths.set(E.row, nK(M.state, E.id, M.projection)), M.paths.get(E.row);
   }
-  const j = lK({ playhead: o, projection: w, edits: l, draftOf: F, stickerOf: S }), { paintDrag: z } = aK({ state: r, projection: w, edits: l });
+  const j = sK({ playhead: o, projection: w, edits: l, draftOf: F, stickerOf: S }), { paintDrag: z } = oK({ state: r, projection: w, edits: l });
   function B() {
     if (!y()) return null;
     const M = a(), E = Vg(r(), M, m());
@@ -33805,7 +33817,7 @@ function uK({
   let ae = { state: null, content: null, objects: [] };
   function ne() {
     const M = r(), E = i();
-    return (ae.state !== M || ae.content !== E) && (ae = { state: M, content: E, objects: sK(M, E, m(), o()) }), ae.objects;
+    return (ae.state !== M || ae.content !== E) && (ae = { state: M, content: E, objects: aK(M, E, m(), o()) }), ae.objects;
   }
   function te(M) {
     const E = x();
@@ -33834,13 +33846,13 @@ function uK({
   function Q() {
     if (d() !== "3d") return null;
     const M = N(), E = t();
-    if (!UG(M, E.position, c())) return null;
-    const { width: O, height: Y } = n(), K = YG(M, E, Y, c());
-    return qG(XG(M, M.projection, K), E, O, Y);
+    if (!WG(M, E.position, c())) return null;
+    const { width: O, height: Y } = n(), K = UG(M, E, Y, c());
+    return XG(YG(M, M.projection, K), E, O, Y);
   }
   function Z(M) {
     const { width: E, height: O } = n();
-    return eK(ee(), (Y) => {
+    return QG(ee(), (Y) => {
       var K;
       return ((K = e.sceneGrid) == null ? void 0 : K.call(e, Y)) ?? null;
     }, t(), M, E, O);
@@ -33972,12 +33984,12 @@ function uK({
     }
   };
 }
-const mv = 1400, cK = 250, dK = 40, fu = Object.freeze({ band: 0.35, lineAlpha: 0.9, fillAlpha: 0.18, extraWidth: 1 });
+const mv = 1400, uK = 250, cK = 40, fu = Object.freeze({ band: 0.35, lineAlpha: 0.9, fillAlpha: 0.18, extraWidth: 1 });
 function gv(e) {
   return 1 - (1 - Math.max(0, Math.min(1, e))) ** 2;
 }
-function fK({ now: e = () => performance.now(), reducedMotion: t = () => !1 } = {}) {
-  const n = /* @__PURE__ */ new Map(), r = (i) => i.elapsed / cK;
+function dK({ now: e = () => performance.now(), reducedMotion: t = () => !1 } = {}) {
+  const n = /* @__PURE__ */ new Map(), r = (i) => i.elapsed / uK;
   return {
     // A 3D file was placed as `id`: it loads from now.
     start(i) {
@@ -34001,7 +34013,7 @@ function fK({ now: e = () => performance.now(), reducedMotion: t = () => !1 } = 
       const a = n.get(i);
       if (!a || !o) return;
       const s = e();
-      a.revealAt !== null && (a.elapsed += Math.min(Math.max(0, s - a.revealAt), dK)), a.revealAt = s, (t() || r(a) >= 1) && n.delete(i);
+      a.revealAt !== null && (a.elapsed += Math.min(Math.max(0, s - a.revealAt), cK)), a.revealAt = s, (t() || r(a) >= 1) && n.delete(i);
     },
     // The stand-in box of its guide while its item has not drawn, else null.
     pendingBox(i) {
@@ -34038,7 +34050,7 @@ const t2 = Object.freeze([
   Object.freeze({ key: "eraser", label: "Mask eraser", icon: ke.eraser_tool }),
   Object.freeze({ key: "lasso_fill", label: "Mask lasso", icon: ke.lasso_tool })
 ]), bh = 1, r2 = 120, i2 = 8;
-function pK() {
+function fK() {
   return {
     tool: "cursor",
     paintBrush: "pen",
@@ -34052,26 +34064,26 @@ function pK() {
     colorStart: null
   };
 }
-const Ui = (e) => e.tool === "paint" || e.tool === "mask", hK = (e) => e.tool === "mask" ? "mask" : "paint", jd = (e) => e.tool === "mask" ? e.maskBrush : e.paintBrush;
+const Ui = (e) => e.tool === "paint" || e.tool === "mask", pK = (e) => e.tool === "mask" ? "mask" : "paint", jd = (e) => e.tool === "mask" ? e.maskBrush : e.paintBrush;
 function vh(e) {
   return { brushSizes: e.brushSizes, activePresetId: e.activePresetId, paintColor: e.paintColor, viewMode: "pano" };
 }
 const o2 = (e) => Ai(jd(e), e.activePresetId);
-function mK(e, t) {
+function hK(e, t) {
   return t !== "cursor" && t !== "paint" && t !== "mask" || (t !== e.tool && Yi(e), e.tool = t), e;
 }
-function gK(e, t) {
+function mK(e, t) {
   return e.tool === "mask" ? (n2.some((n) => n.key === t) && (e.maskBrush = t), e) : (t2.some((n) => n.key === t) && (e.paintBrush = t, Kt[t] && (e.activePresetId = t), t === "eraser" && Yi(e)), e);
 }
-function yK(e, t) {
+function gK(e, t) {
   const n = Math.max(bh, Math.min(r2, Math.round(Number(t) || bh)));
   return e.brushSizes = { ...e.brushSizes, [o2(e)]: n }, e;
 }
-function bK(e, t) {
+function yK(e, t) {
   const n = ro.find((r) => r.id === t);
   return n && (e.paintColor = Rt(n.color), Yi(e, !0)), e;
 }
-function vK(e) {
+function bK(e) {
   return e.colorStart || (e.colorStart = Rt(e.customColor)), e;
 }
 function Yi(e, t = !1) {
@@ -34084,7 +34096,7 @@ function Yi(e, t = !1) {
 function yv(e, t) {
   return e.customColor = Rt(t), e.paintColor = Rt(t), e;
 }
-function kK(e, { readOnly: t = !1 } = {}) {
+function vK(e, { readOnly: t = !1 } = {}) {
   var l;
   if (!Ui(e)) return null;
   const n = e.tool === "mask", r = jd(e), i = (n ? n2 : t2).map((u) => ({ ...u, active: u.key === r })), o = { value: e.brushSizes[o2(e)] ?? 10, min: bh, max: r2, disabled: r === "lasso_fill" }, a = ((l = ro.find((u) => io(e.paintColor, u.color))) == null ? void 0 : l.id) ?? "", s = n ? null : {
@@ -34106,7 +34118,7 @@ function kK(e, { readOnly: t = !1 } = {}) {
     clear: { key: n ? "clear-mask" : "clear-paint", label: n ? "Clear mask" : "Clear paint", disabled: t }
   };
 }
-function wK(e) {
+function kK(e) {
   const t = e === "mask" ? "Mask" : "Paint";
   return { title: `Clear ${t}`, body: `This will remove all ${e === "mask" ? "mask" : "paint"} strokes in the current node.`, confirm: `Clear ${t}` };
 }
@@ -34119,18 +34131,18 @@ const hi = Object.freeze({
   mask: Object.freeze({ r: 34 / 255, g: 197 / 255, b: 94 / 255, a: 1 }),
   minRadius: 3
 });
-function SK(e, t) {
+function wK(e, t) {
   const n = Math.hypot(e.x, e.y, e.z) || 1, r = Math.hypot(t.x, t.y, t.z) || 1, i = (e.x * t.x + e.y * t.y + e.z * t.z) / (n * r);
   return Math.acos(Math.max(-1, Math.min(1, i)));
 }
-function _K(e, t, n) {
+function SK(e, t, n) {
   if (!Ui(e) || !t) return null;
   const r = jd(e);
   if (r === "lasso_fill") return null;
-  const o = rM(r, vh(e)) * 0.5 / 2048 * 2 * Math.PI, a = n(t), s = n({ x: t.x, y: t.y + 1 }), l = a && s ? SK(a, s) : 0, u = Math.max(hi.minRadius, l > 0 ? o / l : hi.minRadius), d = e.tool === "mask", c = r === "eraser" ? null : vn(d ? hi.mask : e.paintColor, hi.fillAlpha);
+  const o = rM(r, vh(e)) * 0.5 / 2048 * 2 * Math.PI, a = n(t), s = n({ x: t.x, y: t.y + 1 }), l = a && s ? wK(a, s) : 0, u = Math.max(hi.minRadius, l > 0 ? o / l : hi.minRadius), d = e.tool === "mask", c = r === "eraser" ? null : vn(d ? hi.mask : e.paintColor, hi.fillAlpha);
   return { x: t.x, y: t.y, radius: u, fill: c };
 }
-function MK({ state: e, tools: t, edit: n, onStart: r = () => {
+function _K({ state: e, tools: t, edit: n, onStart: r = () => {
 }, onChange: i = () => {
 }, now: o = () => performance.now() }) {
   const a = El();
@@ -34207,7 +34219,7 @@ function MK({ state: e, tools: t, edit: n, onStart: r = () => {
     const T = C(A);
     if (!T) return null;
     m(), h();
-    const P = hK(w), j = jd(w), z = Jr(T, o()), B = { kind: "ERP_GLOBAL" }, U = j === "lasso_fill", W = U ? sM(P, j, [z], B, vh(w)) : aM(P, j, [z], B, vh(w));
+    const P = pK(w), j = jd(w), z = Jr(T, o()), B = { kind: "ERP_GLOBAL" }, U = j === "lasso_fill", W = U ? sM(P, j, [z], B, vh(w)) : aM(P, j, [z], B, vh(w));
     d = { layerKind: P, stroke: W }, s.beginStroke(W, a), U ? s.updateActiveStroke(W, a) : s.appendStrokePoint(s.ensureTarget(a), z.u, z.v, W), p(), r(), i();
     function le(ne) {
       const te = C(ne);
@@ -34285,31 +34297,31 @@ const kh = Object.freeze({
   under: "rgba(0, 0, 0, 0.35)",
   underWidth: 3.25
 });
-function xK({ alt: e = !1, orbitKnob: t = !1, centerButton: n = !1, picking: r = !1, orbiting: i = !1, sinceSet: o = null } = {}) {
+function MK({ alt: e = !1, orbitKnob: t = !1, centerButton: n = !1, picking: r = !1, orbiting: i = !1, sinceSet: o = null } = {}) {
   return e || t || n || r || i ? 1 : o === null || !(o >= 0) ? 0 : o <= Fp ? 1 : Math.max(0, 1 - (o - Fp) / x_);
 }
-function PK(e) {
+function xK(e) {
   return e !== null && e >= 0 && e < Fp + x_;
 }
-function EK({ alt: e = !1, orbitKnob: t = !1, picking: n = !1, orbiting: r = !1, target: i, nextCenter: o = null }) {
+function PK({ alt: e = !1, orbitKnob: t = !1, picking: n = !1, orbiting: r = !1, target: i, nextCenter: o = null }) {
   return (e || t) && !r && !n ? o ?? i : i;
 }
-function AK(e, t) {
+function EK(e, t) {
   if (!e) return null;
   const n = kh.ringRadius + kh.underWidth / 2;
   return e.x < t.x - n || e.y < t.y - n || e.x > t.x + t.width + n || e.y > t.y + t.height + n ? null : { x: e.x, y: e.y };
 }
-const bv = 5, NK = 3.5, vv = 6;
+const bv = 5, AK = 3.5, vv = 6;
 function Ja(e, t, n, r = !1) {
   e.lineCap = r ? "butt" : "round", e.lineJoin = "round", e.setLineDash(r ? WD : []), e.strokeStyle = n.dark, e.lineWidth = n.width + BD, e.stroke(t), e.strokeStyle = n.light, e.lineWidth = n.width, e.stroke(t), e.setLineDash([]);
 }
-function OK(e, t, n, r) {
+function NK(e, t, n, r) {
   const i = new Path2D();
   for (const o of t)
     for (const a of yg(e, o, n, r)) a.forEach((s, l) => l ? i.lineTo(s.x, s.y) : i.moveTo(s.x, s.y));
   return i;
 }
-function CK(e) {
+function OK(e) {
   const t = [...e].sort((i, o) => i.x - o.x || i.y - o.y), n = (i, o, a) => (o.x - i.x) * (a.y - i.y) - (o.y - i.y) * (a.x - i.x), r = (i) => {
     const o = [];
     for (const a of i) {
@@ -34320,7 +34332,7 @@ function CK(e) {
   };
   return [...r(t), ...r([...t].reverse())];
 }
-function IK(e, t, { corners: n, phase: r, shimmer: i }, o, a, s, l) {
+function CK(e, t, { corners: n, phase: r, shimmer: i }, o, a, s, l) {
   const u = n.map((y) => Nt(t, y, s, l)).filter(Boolean);
   if (u.length < 3) return;
   const d = u.map((y) => y.x), c = u.map((y) => y.y), f = Math.min(...d), p = Math.min(...c), h = Math.max(...d), m = Math.max(...c);
@@ -34330,7 +34342,7 @@ function IK(e, t, { corners: n, phase: r, shimmer: i }, o, a, s, l) {
     for (const F of S) N.addColorStop(F, `rgba(255, 255, 255, ${(y * i * k(F)).toFixed(4)})`);
     return N;
   };
-  e.fillStyle = v(fu.fillAlpha), e.fill(sl(CK(u))), e.lineCap = "round", e.lineJoin = "round", e.strokeStyle = v(fu.lineAlpha), e.lineWidth = a.width + fu.extraWidth, e.stroke(o);
+  e.fillStyle = v(fu.fillAlpha), e.fill(sl(OK(u))), e.lineCap = "round", e.lineJoin = "round", e.strokeStyle = v(fu.lineAlpha), e.lineWidth = a.width + fu.extraWidth, e.stroke(o);
 }
 function Za(e, t, n) {
   e.beginPath(), e.arc(t.x, t.y, n, 0, Math.PI * 2), e.fillStyle = si.skySelected.light, e.fill(), e.lineWidth = 1.5, e.strokeStyle = si.skySelected.dark, e.stroke();
@@ -34345,23 +34357,23 @@ function kv(e) {
     t.moveTo(n.x, n.y), t.lineTo(r.x, r.y);
   return t;
 }
-function TK(e, t, n) {
+function IK(e, t, n) {
   e.beginPath(), e.arc(t.x, t.y, n, 0, Math.PI * 2), e.fillStyle = "#ffffff", e.fill();
 }
-function FK(e, t, n) {
-  const r = jG[n];
+function TK(e, t, n) {
+  const r = VG[n];
   e.lineCap = "round", e.lineJoin = "round", e.fillStyle = r.fill, t.circle && (e.beginPath(), e.arc(t.circle.x, t.circle.y, t.circle.r, 0, Math.PI * 2), e.fill());
   for (const l of t.fills) e.fill(sl(l));
   const i = kv(t.lines.filter((l) => l.hidden)), o = kv(t.lines.filter((l) => !l.hidden)), a = new Path2D();
   t.circle && a.arc(t.circle.x, t.circle.y, t.circle.r, 0, Math.PI * 2);
   const s = t.top ? sl(t.top) : null;
-  e.lineWidth = du.width, e.strokeStyle = du.hiddenColor, e.stroke(i), e.lineWidth = r.width, e.strokeStyle = r.hiddenLine, e.stroke(i), e.lineWidth = du.width, e.strokeStyle = du.color, e.stroke(a), e.stroke(o), s && e.stroke(s), e.lineWidth = r.width, e.strokeStyle = r.line, e.stroke(a), e.stroke(o), s && (e.fillStyle = HG, e.fill(s), e.stroke(s)), t.dot && TK(e, t.dot, GG);
+  e.lineWidth = du.width, e.strokeStyle = du.hiddenColor, e.stroke(i), e.lineWidth = r.width, e.strokeStyle = r.hiddenLine, e.stroke(i), e.lineWidth = du.width, e.strokeStyle = du.color, e.stroke(a), e.stroke(o), s && e.stroke(s), e.lineWidth = r.width, e.strokeStyle = r.line, e.stroke(a), e.stroke(o), s && (e.fillStyle = jG, e.fill(s), e.stroke(s)), t.dot && IK(e, t.dot, HG);
 }
 function wv(e, t, n, r) {
   const i = n / 2;
   e.beginPath(), e.roundRect(t.x - i, t.y - i, n, n, r), e.fill();
 }
-function DK(e, t, n, r = []) {
+function FK(e, t, n, r = []) {
   const i = (l) => l === n, o = bn;
   e.lineCap = "round", e.lineJoin = "round";
   for (const l of r)
@@ -34401,10 +34413,10 @@ function DK(e, t, n, r = []) {
   const s = i("center") ? o.activeCenterRadius : o.centerRadius;
   e.beginPath(), e.arc(t.center.x, t.center.y, s, 0, Math.PI * 2), e.fillStyle = "#ffffff", e.fill(), e.lineWidth = o.centerRim, e.strokeStyle = o.under, e.stroke();
 }
-function LK(e, { camera: t, width: n, height: r, ratio: i = 1, origin: o = { x: 0, y: 0 }, scene: a, ring: s = null, orbit: l = null }) {
-  e.setTransform(1, 0, 0, 1, 0, 0), e.clearRect(0, 0, e.canvas.width, e.canvas.height), e.setTransform(i, 0, 0, i, i * o.x, i * o.y), a && zK(e, t, n, r, a), s && $K(e, s), l && RK(e, l);
+function DK(e, { camera: t, width: n, height: r, ratio: i = 1, origin: o = { x: 0, y: 0 }, scene: a, ring: s = null, orbit: l = null }) {
+  e.setTransform(1, 0, 0, 1, 0, 0), e.clearRect(0, 0, e.canvas.width, e.canvas.height), e.setTransform(i, 0, 0, i, i * o.x, i * o.y), a && $K(e, t, n, r, a), s && RK(e, s), l && LK(e, l);
 }
-function RK(e, { x: t, y: n, alpha: r, box: i }) {
+function LK(e, { x: t, y: n, alpha: r, box: i }) {
   const o = kh;
   e.save(), e.beginPath(), e.rect(i.x, i.y, i.width, i.height), e.clip(), e.globalAlpha = Math.max(0, Math.min(1, r));
   const a = new Path2D();
@@ -34412,22 +34424,22 @@ function RK(e, { x: t, y: n, alpha: r, box: i }) {
   const s = new Path2D();
   s.arc(t, n, o.dotRadius, 0, Math.PI * 2), e.fillStyle = o.dot, e.fill(s), e.lineWidth = o.dotRim, e.strokeStyle = o.under, e.stroke(s), e.restore();
 }
-function $K(e, { x: t, y: n, radius: r, fill: i }) {
+function RK(e, { x: t, y: n, radius: r, fill: i }) {
   const o = new Path2D();
   o.arc(t, n, r, 0, Math.PI * 2), i && (e.fillStyle = i, e.fill(o)), e.lineWidth = hi.underWidth, e.strokeStyle = hi.under, e.stroke(o), e.lineWidth = hi.lineWidth, e.strokeStyle = hi.line, e.stroke(o);
 }
-function zK(e, t, n, r, i) {
+function $K(e, t, n, r, i) {
   const o = { normal: 0, hover: 1, selected: 2 }, a = [...i.guides].sort((s, l) => o[s.look] - o[l.look]);
   for (const s of a) {
-    const l = OK(t, s.segments, n, r);
-    Ja(e, l, si[s.look], !!s.dashed), s.shimmer > 0 && IK(e, t, s, l, si[s.look], n, r);
+    const l = NK(t, s.segments, n, r);
+    Ja(e, l, si[s.look], !!s.dashed), s.shimmer > 0 && CK(e, t, s, l, si[s.look], n, r);
   }
-  if (i.camera && FK(e, i.camera.screen, i.camera.look), i.sky) {
+  if (i.camera && TK(e, i.camera.screen, i.camera.look), i.sky) {
     const { geometry: s, handles: l } = i.sky, u = new Path2D();
     if (s.boundaryEdges.flat().forEach((d, c) => c ? u.lineTo(d.x, d.y) : u.moveTo(d.x, d.y)), u.closePath(), Ja(e, u, si.skySelected, !!i.sky.dashed), l) {
       const d = new Path2D();
       d.moveTo(s.rotateStemBase.x, s.rotateStemBase.y), d.lineTo(s.rotateHandle.x, s.rotateHandle.y), Ja(e, d, si.skySelected);
-      for (const c of s.edgeMidpoints ?? []) Za(e, c, NK);
+      for (const c of s.edgeMidpoints ?? []) Za(e, c, AK);
       for (const c of s.corners) Za(e, c, bv);
       Za(e, s.rotateHandle, vv);
     }
@@ -34441,9 +34453,9 @@ function zK(e, t, n, r, i) {
       Za(e, s.rotateHandle, vv);
     }
   }
-  i.gizmo && DK(e, i.gizmo.handles, i.gizmo.active, i.gizmo.guides);
+  i.gizmo && FK(e, i.gizmo.handles, i.gizmo.active, i.gizmo.guides);
 }
-function VK(e, { cameraTab: t, camera: n, world: r, content: i, shownPose: o }) {
+function zK(e, { cameraTab: t, camera: n, world: r, content: i, shownPose: o }) {
   function a() {
     return !t || t.tab() !== "camera" ? "space" : t.mode() === "panorama" ? "erp" : "frame";
   }
@@ -34513,8 +34525,8 @@ function VK(e, { cameraTab: t, camera: n, world: r, content: i, shownPose: o }) 
   }
   return { viewMode: a, viewport: d, navCamera: c, writeFrame: f, commitFrame: p, cancelFrame: h, zoomFrame: m };
 }
-const jK = 600, HK = 3;
-function GK(e, {
+const VK = 600, jK = 3;
+function HK(e, {
   canvas: t,
   root: n,
   world: r,
@@ -34608,7 +34620,7 @@ function GK(e, {
     f.beginGesture(ge), e.drag = { action: ge, pointerId: Ve, last: _e, start: _e, offset: 0, knob: Ke, camera: Be, panLast: ge === "pan" && !Ke ? I(_e) : null }, W(), le();
   }
   function X(ge, _e = {}) {
-    if (Math.hypot(ge.x - e.drag.start.x, ge.y - e.drag.start.y) > HK && (e.drag.moved = !0), e.drag.action === "paint") {
+    if (Math.hypot(ge.x - e.drag.start.x, ge.y - e.drag.start.y) > jK && (e.drag.moved = !0), e.drag.action === "paint") {
       e.drag.last = ge, e.drag.handler.move(ge, _e), le();
       return;
     }
@@ -34731,7 +34743,7 @@ function GK(e, {
   }
   function _(ge) {
     const _e = g();
-    ge.button !== 0 || _e !== "space" && _e !== "frame" || T() || _e === "frame" && (s != null && s.active()) || u() - ne < jK || U(te(ge));
+    ge.button !== 0 || _e !== "space" && _e !== "frame" || T() || _e === "frame" && (s != null && s.active()) || u() - ne < VK || U(te(ge));
   }
   function R(ge) {
     ge.preventDefault();
@@ -34801,8 +34813,8 @@ function GK(e, {
   }
   return { pointOf: te, hitAt: Z, hoverAt: G, begin: se, end: q, endKeys: M, objectSelection: E, listen: Re, unlisten: Qe };
 }
-const Sv = "studio-live-erp", wh = "studio-output", Sh = "studio-output-erp", KK = /* @__PURE__ */ new Set([Le.VIEW, Le.OVERLAY, Le.SPLAT_STAGE, Le.PAINT]);
-function BK(e, { canvas: t, cameraTab: n, world: r, background: i, win: o, editorView: a, camera: s }) {
+const Sv = "studio-live-erp", wh = "studio-output", Sh = "studio-output-erp", GK = /* @__PURE__ */ new Set([Le.VIEW, Le.OVERLAY, Le.SPLAT_STAGE, Le.PAINT]);
+function KK(e, { canvas: t, cameraTab: n, world: r, background: i, win: o, editorView: a, camera: s }) {
   let l = null, u = null, d = 0, c = !1;
   function f() {
     var F;
@@ -34817,7 +34829,7 @@ function BK(e, { canvas: t, cameraTab: n, world: r, background: i, win: o, edito
     l && (a.releaseSplats(l.kind === "erp" ? Sh : wh), l = null);
   }
   function h(k, v) {
-    return !l || l.canvas !== k.canvas || l.width !== k.width || l.height !== k.height || [...v].some((y) => !KK.has(y));
+    return !l || l.canvas !== k.canvas || l.width !== k.width || l.height !== k.height || [...v].some((y) => !GK.has(y));
   }
   function m(k, v, y) {
     var T;
@@ -34978,7 +34990,7 @@ function s2({
       var he;
       return v.animating() || ((he = A.drag) == null ? void 0 : he.action) === "joystick" || A.keysMoving || !!(f != null && f.animating()) || !!(h != null && h.animating());
     }
-  }), z = n ? uK({
+  }), z = n ? lK({
     ...n,
     editorView: P,
     // On a lens Camera's Frame view the camera carries its bent picture (docs/space-and-view.md "レンズの Camera の当たり").
@@ -34989,7 +35001,7 @@ function s2({
     },
     content: () => l(),
     ground: () => a.ground
-  }) : null, { viewMode: B, viewport: U, navCamera: W, writeFrame: le, commitFrame: ae, cancelFrame: ne, zoomFrame: te } = VK(A, { cameraTab: r, camera: v, world: a, content: l, shownPose: I });
+  }) : null, { viewMode: B, viewport: U, navCamera: W, writeFrame: le, commitFrame: ae, cancelFrame: ne, zoomFrame: te } = zK(A, { cameraTab: r, camera: v, world: a, content: l, shownPose: I });
   let ee = null, Q = "space", Z = null;
   function I() {
     return h ? h.pose() : v.pose();
@@ -35014,8 +35026,8 @@ function s2({
   function M(he, ve) {
     const Ae = typeof (he == null ? void 0 : he.getCoalescedEvents) == "function" ? he.getCoalescedEvents() : [];
     if (!Ae.length) return [ve];
-    const Ce = U();
-    return Ae.map(($e) => re(Re($e), Ce));
+    const Ie = U();
+    return Ae.map((ze) => re(Re(ze), Ie));
   }
   function E(he, ve, Ae) {
     ye(ve), he === A.frameCamera && A.frameCamera && (ve != null && ve.moved) && le(Ae);
@@ -35024,26 +35036,26 @@ function s2({
     var Ze, Ye;
     const he = e.getBoundingClientRect();
     A.size = { width: Math.max(1, he.width), height: Math.max(1, he.height) }, v.setScreen({ width: A.size.width, height: A.size.height });
-    const ve = g.devicePixelRatio || 1, Ae = ((Ze = g.screen) == null ? void 0 : Ze.width) || A.size.width, Ce = ((Ye = g.screen) == null ? void 0 : Ye.height) || A.size.height, $e = ML(A.size.width, A.size.height, ve, Math.max(Ae, A.size.width), Math.max(Ce, A.size.height));
-    P.resize($e.width, $e.height);
+    const ve = g.devicePixelRatio || 1, Ae = ((Ze = g.screen) == null ? void 0 : Ze.width) || A.size.width, Ie = ((Ye = g.screen) == null ? void 0 : Ye.height) || A.size.height, ze = ML(A.size.width, A.size.height, ve, Math.max(Ae, A.size.width), Math.max(Ie, A.size.height));
+    P.resize(ze.width, ze.height);
   }
   function Y(he, ve = /* @__PURE__ */ new Set()) {
     var Oi, Ci, Nl, $a, za;
     f != null && f.revealing() && ve.add(Le.MEDIA);
-    const Ae = v.animating() || !!A.drag || A.keysMoving || !!(f != null && f.animating()) || !!(h != null && h.animating()), Ce = C ? bg((he - C) / 1e3) : 0;
-    C = he, v.step(Ce);
-    const $e = y.keyMotion(he);
-    A.keysMoving && !$e && !A.drag && Ke(), A.keysMoving = !!$e, $e && !A.keysCamera && !A.drag && (A.keysCamera = W(), (Oi = A.keysCamera) == null || Oi.beginKeys());
+    const Ae = v.animating() || !!A.drag || A.keysMoving || !!(f != null && f.animating()) || !!(h != null && h.animating()), Ie = C ? bg((he - C) / 1e3) : 0;
+    C = he, v.step(Ie);
+    const ze = y.keyMotion(he);
+    A.keysMoving && !ze && !A.drag && Ke(), A.keysMoving = !!ze, ze && !A.keysCamera && !A.drag && (A.keysCamera = W(), (Oi = A.keysCamera) == null || Oi.beginKeys());
     const Ze = !!A.frameCamera && A.keysCamera === A.frameCamera && ((Ci = A.drag) == null ? void 0 : Ci.action) === "object";
-    if ($e && A.keysCamera && !Ze && E(A.keysCamera, A.keysCamera.keys($e.direction, $e.seconds, $e.fast), "keys"), ((Nl = A.drag) == null ? void 0 : Nl.action) === "joystick" && Ce > 0 && A.drag.camera && E(A.drag.camera, A.drag.camera.joystick(A.drag.offset, Ce), "drag"), h) {
-      const vo = h.step(Ce, v);
+    if (ze && A.keysCamera && !Ze && E(A.keysCamera, A.keysCamera.keys(ze.direction, ze.seconds, ze.fast), "keys"), ((Nl = A.drag) == null ? void 0 : Nl.action) === "joystick" && Ie > 0 && A.drag.camera && E(A.drag.camera, A.drag.camera.joystick(A.drag.offset, Ie), "drag"), h) {
+      const vo = h.step(Ie, v);
       ye(vo.result), vo.ended && !A.drag && !A.keysMoving && v.endGesture();
     }
-    if (!v.animating() && !$e && (($a = A.drag) == null ? void 0 : $a.action) !== "joystick" && !(h != null && h.animating()) && (C = 0), x !== null && (PK(ce()) ? fe(Le.OVERLAY) : x = null), !P.ready) return;
+    if (!v.animating() && !ze && (($a = A.drag) == null ? void 0 : $a.action) !== "joystick" && !(h != null && h.animating()) && (C = 0), x !== null && (xK(ce()) ? fe(Le.OVERLAY) : x = null), !P.ready) return;
     const Ye = l();
     v.setWorld({ ground: a.ground, boxes: (Ye == null ? void 0 : Ye.boxes) ?? [], camera: a.camera ?? null, content: (Ye == null ? void 0 : Ye.sphere) ?? null }), (za = A.frameCamera) == null || za.setWorld({ ground: a.ground, boxes: (Ye == null ? void 0 : Ye.boxes) ?? [], camera: null, content: (Ye == null ? void 0 : Ye.sphere) ?? null });
     const _t = B(), Ge = _t !== Q;
-    if (Ge && K(_t), !Ae && !Ge && !$e && ve.size > 0 && [...ve].every((vo) => vo === Le.OVERLAY)) {
+    if (Ge && K(_t), !Ae && !Ge && !ze && ve.size > 0 && [...ve].every((vo) => vo === Le.OVERLAY)) {
       oe(), Oe();
       return;
     }
@@ -35064,14 +35076,14 @@ function s2({
     const Ae = ve.focus(Qe(he));
     Ae.moved && (x = k(), w = ve), E(ve, Ae, "focus"), ve === A.frameCamera && ae(), fe();
   }
-  const { outputTarget: $, drawOutputFrame: L, drawOutputErp: _, stop: R } = BK(A, { canvas: e, cameraTab: r, world: a, background: s, win: g, editorView: P, camera: v });
+  const { outputTarget: $, drawOutputFrame: L, drawOutputErp: _, stop: R } = KK(A, { canvas: e, cameraTab: r, world: a, background: s, win: g, editorView: P, camera: v });
   function J(he, ve) {
-    const Ae = U(), Ce = d.background === "loading" ? null : Cc;
-    let $e = null, Ze = null;
+    const Ae = U(), Ie = d.background === "loading" ? null : Cc;
+    let ze = null, Ze = null;
     if (ve === "frame") {
-      if (P.clear(Ce), !Ae.shot) return;
+      if (P.clear(Ie), !Ae.shot) return;
       const Ye = e.width / A.size.width, _t = e.height / A.size.height;
-      $e = { x: Ae.x * Ye, y: Ae.y * _t, w: Ae.width * Ye, h: Ae.height * _t }, Ze = Ae.lens ? Dm(Ae.shot, $e.w, $e.h, r.backgroundColor(), uS(Ae.lens, Ye), ee) : null, ee = (Ze == null ? void 0 : Ze.kind) ?? null;
+      ze = { x: Ae.x * Ye, y: Ae.y * _t, w: Ae.width * Ye, h: Ae.height * _t }, Ze = Ae.lens ? Dm(Ae.shot, ze.w, ze.h, r.backgroundColor(), uS(Ae.lens, Ye), ee) : null, ee = (Ze == null ? void 0 : Ze.kind) ?? null;
     }
     P.render(vg({
       camera: Ae.drawCamera ?? Ae.camera,
@@ -35080,9 +35092,9 @@ function s2({
       background: s(),
       ground: a.ground,
       gridHidden: d.gridHidden,
-      clearColor: Ce,
+      clearColor: Ie,
       content: he,
-      rect: $e,
+      rect: ze,
       lens: Ze
     }));
   }
@@ -35090,13 +35102,13 @@ function s2({
     P.clear(Cc);
     const ve = r.frame(), Ae = r.erpCanvas();
     if (!((ve == null ? void 0 : ve.width) > 0 && (ve == null ? void 0 : ve.height) > 0) || !Ae) return;
-    const Ce = r.erpRange(), $e = m_(ve.width, ve.height, g.devicePixelRatio || 1, Ce), Ze = P.renderLiveErp(kg({
+    const Ie = r.erpRange(), ze = m_(ve.width, ve.height, g.devicePixelRatio || 1, Ie), Ze = P.renderLiveErp(kg({
       shot: r.shot(),
-      erpRange: Ce,
+      erpRange: Ie,
       ground: a.ground,
       radius: v.bound(),
-      width: $e.width,
-      height: $e.height,
+      width: ze.width,
+      height: ze.height,
       background: s(),
       content: he,
       owner: Sv,
@@ -35109,18 +35121,18 @@ function s2({
     if (!t) return;
     const he = g.devicePixelRatio || 1, ve = Math.max(1, Math.round(A.size.width * he)), Ae = Math.max(1, Math.round(A.size.height * he));
     (t.width !== ve || t.height !== Ae) && (t.width = ve, t.height = Ae);
-    const Ce = t.getContext("2d");
-    if (!Ce) return;
-    const $e = U(), Ze = se() ? z.overlay({ altHeld: y.altHeld(), gridHidden: d.gridHidden }) : null, Ye = X() && !A.picking && A.pointer && (!A.drag || A.drag.action === "paint") ? p.ring(re(A.pointer, $e), q($e)) : null;
-    LK(Ce, {
-      camera: $e.objectCamera,
-      width: $e.width,
-      height: $e.height,
-      origin: { x: $e.x, y: $e.y },
+    const Ie = t.getContext("2d");
+    if (!Ie) return;
+    const ze = U(), Ze = se() ? z.overlay({ altHeld: y.altHeld(), gridHidden: d.gridHidden }) : null, Ye = X() && !A.picking && A.pointer && (!A.drag || A.drag.action === "paint") ? p.ring(re(A.pointer, ze), q(ze)) : null;
+    DK(Ie, {
+      camera: ze.objectCamera,
+      width: ze.width,
+      height: ze.height,
+      origin: { x: ze.x, y: ze.y },
       ratio: he,
       scene: Ze,
       ring: Ye,
-      orbit: ie($e)
+      orbit: ie(ze)
     });
     const _t = !!(Ze != null && Ze.loading);
     d.loadingGuide !== _t && (d.loadingGuide = _t);
@@ -35134,17 +35146,17 @@ function s2({
     if (ve !== "space" && ve !== "frame") return null;
     const Ae = ve === "space" ? v : A.frameCamera && r.movable() ? A.frameCamera : null;
     if (!Ae) return null;
-    const Ce = Ae === A.frameCamera, $e = {
+    const Ie = Ae === A.frameCamera, ze = {
       alt: y.altHeld(),
       orbitKnob: T === "orbit",
       // Set orbit center works in the 3D tab only.
-      centerButton: !Ce && T === "center",
-      picking: !Ce && A.picking,
+      centerButton: !Ie && T === "center",
+      picking: !Ie && A.picking,
       orbiting: ((Ci = A.drag) == null ? void 0 : Ci.action) === "orbit" && A.drag.camera === Ae,
       sinceSet: w === Ae ? ce() : null
-    }, Ze = xK($e);
+    }, Ze = MK(ze);
     if (!(Ze > 0)) return null;
-    const _t = ($e.alt || $e.orbitKnob) && !$e.orbiting && !$e.picking ? WM({ selection: Ce ? Be() : u(), frame: Ce }) : null, Ge = EK({ ...$e, target: Ae.destination().target, nextCenter: _t }), rn = Ce ? r.frame() : null, on = rn ? { x: rn.x - he.x, y: rn.y - he.y, width: rn.width, height: rn.height } : { x: 0, y: 0, width: he.width, height: he.height }, Oi = AK(Nt(he.objectCamera, Ge, he.width, he.height), on);
+    const _t = (ze.alt || ze.orbitKnob) && !ze.orbiting && !ze.picking ? WM({ selection: Ie ? Be() : u(), frame: Ie }) : null, Ge = PK({ ...ze, target: Ae.destination().target, nextCenter: _t }), rn = Ie ? r.frame() : null, on = rn ? { x: rn.x - he.x, y: rn.y - he.y, width: rn.width, height: rn.height } : { x: 0, y: 0, width: he.width, height: he.height }, Oi = EK(Nt(he.objectCamera, Ge, he.width, he.height), on);
     return Oi ? { ...Oi, alpha: Ze, box: on } : null;
   }
   function fe(he = Le.VIEW) {
@@ -35159,18 +35171,18 @@ function s2({
     he != null && he.notice && me("notice", he.notice);
   }
   function Se(he, ve) {
-    var Ce;
-    const Ae = m ? C3(ve, { content: ((Ce = l()) == null ? void 0 : Ce.sphere) ?? null, frame: he === A.frameCamera }) : null;
+    var Ie;
+    const Ae = m ? C3(ve, { content: ((Ie = l()) == null ? void 0 : Ie.sphere) ?? null, frame: he === A.frameCamera }) : null;
     Ae && me("skyOnly", Ae);
   }
   function Oe() {
-    var $e, Ze, Ye, _t;
+    var ze, Ze, Ye, _t;
     d.fov = jr(I().hFOV_deg), d.atStart = P3(v.destination());
     const ve = !!A.drag && A.drag.action !== "object" && A.drag.action !== "paint" || A.keysMoving;
     d.fovNumberLit = kj({ altHeld: y.altHeld(), operating: ve, space: B() === "space" }), d.fovLit = vj({ altHeld: y.altHeld(), operating: ve, frame: B() === "frame", movable: !!(r != null && r.movable()) });
     const Ae = y.gesture();
-    d.lit = bj({ gesture: Ae, keysMoving: A.keysMoving, altHeld: y.altHeld() }), d.knobDrag = (($e = A.drag) == null ? void 0 : $e.knob) ?? null;
-    const Ce = ((Ze = A.drag) == null ? void 0 : Ze.action) === "object" ? A.objectCursor : null;
+    d.lit = bj({ gesture: Ae, keysMoving: A.keysMoving, altHeld: y.altHeld() }), d.knobDrag = ((ze = A.drag) == null ? void 0 : ze.knob) ?? null;
+    const Ie = ((Ze = A.drag) == null ? void 0 : Ze.action) === "object" ? A.objectCursor : null;
     if (A.picking && !A.drag) {
       d.cursor = "crosshair";
       return;
@@ -35180,9 +35192,9 @@ function s2({
       d.cursor = A.pointer && p.ring(re(A.pointer, Ge), q(Ge)) ? "none" : "crosshair";
       return;
     }
-    d.cursor = (_t = A.drag) != null && _t.knob ? Sj.drag : Ce ?? _j({ gesture: Ae, altHeld: y.altHeld(), objectCursor: A.drag ? null : A.objectCursor });
+    d.cursor = (_t = A.drag) != null && _t.knob ? Sj.drag : Ie ?? _j({ gesture: Ae, altHeld: y.altHeld(), objectCursor: A.drag ? null : A.objectCursor });
   }
-  const { pointOf: Re, hitAt: Qe, hoverAt: ge, begin: _e, end: Ve, endKeys: Ke, objectSelection: Be, listen: ot, unlisten: Fe } = GK(A, {
+  const { pointOf: Re, hitAt: Qe, hoverAt: ge, begin: _e, end: Ve, endKeys: Ke, objectSelection: Be, listen: ot, unlisten: Fe } = HK(A, {
     canvas: e,
     root: i,
     world: a,
@@ -35224,9 +35236,9 @@ function s2({
     // A knob's drag starts (StudioNavWidget.vue: "orbit", "pan" or "move"); the pan grabs the surface hit at the
     // screen center. Its moves come through the window's pointer events.
     knobDown(he, ve) {
-      var Ce, $e;
+      var Ie, ze;
       const Ae = yj(he);
-      !Ae || A.drag || ve.button !== 0 || !W() || (ve.preventDefault(), ($e = (Ce = ve.currentTarget) == null ? void 0 : Ce.setPointerCapture) == null || $e.call(Ce, ve.pointerId), y.modifiers(ve), _e(Ae, { x: ve.clientX, y: ve.clientY }, ve.pointerId, he));
+      !Ae || A.drag || ve.button !== 0 || !W() || (ve.preventDefault(), (ze = (Ie = ve.currentTarget) == null ? void 0 : Ie.setPointerCapture) == null || ze.call(Ie, ve.pointerId), y.modifiers(ve), _e(Ae, { x: ve.clientX, y: ve.clientY }, ve.pointerId, he));
     },
     // The pointer is over a button of the view toolbar (StudioNavWidget.vue: "orbit", "center") or left it (null): the
     // orbit center's mark shows while it is there.
@@ -35259,13 +35271,13 @@ function s2({
     // the whole World content; with nothing to frame it says so. In the Frame view it moves the Camera at once, as one
     // Undo step (a selected Camera does not count there); in Panorama mode nothing moves.
     frameSelected(he = u()) {
-      var $e;
+      var ze;
       const ve = W();
       if (!ve) return;
       const Ae = ve === A.frameCamera;
       Ae && ae();
-      const Ce = Ae ? (he == null ? void 0 : he.kind) === "object" ? he : null : he;
-      E(ve, ve.frameSelected(x3({ selection: Ce, content: (($e = l()) == null ? void 0 : $e.sphere) ?? null, ground: a.ground })), "drag"), Ae && ae(), fe();
+      const Ie = Ae ? (he == null ? void 0 : he.kind) === "object" ? he : null : he;
+      E(ve, ve.frameSelected(x3({ selection: Ie, content: ((ze = l()) == null ? void 0 : ze.sphere) ?? null, ground: a.ground })), "drag"), Ae && ae(), fe();
     },
     // The shell changed something the stage draws (the grid switch, a background that loaded).
     redraw(he = Le.STATE) {
@@ -35300,15 +35312,15 @@ function s2({
     mode: () => B(),
     // The Frame view's viewport in the stage's CSS px ({ camera, x, y, width, height }), for the tests.
     viewport: () => {
-      const { camera: he, x: ve, y: Ae, width: Ce, height: $e } = U();
-      return { camera: he, x: ve, y: Ae, width: Ce, height: $e };
+      const { camera: he, x: ve, y: Ae, width: Ie, height: ze } = U();
+      return { camera: he, x: ve, y: Ae, width: Ie, height: ze };
     },
     dispose() {
       A.disposed || (A.disposed = !0, ae(), R(), v.stop(), Object.values(F).forEach(clearTimeout), j.stop(), Fe(), P.dispose());
     }
   };
 }
-function WK(e) {
+function BK(e) {
   const t = /* @__PURE__ */ fw({
     state: e.session.state,
     selection: e.session.selection,
@@ -35358,7 +35370,7 @@ function WK(e) {
   }), n = () => ({ state: e.session.state, upstream: t.upstream, media: t.media });
   function r() {
     const l = e.session.state, u = e.sceneFiles(), d = q1(l, { sceneFiles: u, editorFile: e.stageMedia.editorFile });
-    t.media = { bg: e.backgroundMedia(), sceneItems: (u == null ? void 0 : u.urls.length) ?? 0, animations: d, port: e.portMedia.meta(), upstream: e.upstream.output() }, t.portSize = e.portMedia.size(), t.upstream = e.upstream.timelineLayers(), t.upstreamWorking = e.upstream.working(), e.ui.upstreamPending = e.upstream.pending(), t.background = e.backgroundLinked ? { end: VE(l.background.clip, l.timeline.fps, t.media.bg), video: bl(e.node, Ma) } : null, t.fpsLocked = aN(gk(e.node, e.media), e.node, LG), t.animations = d.stickers ?? {}, t.imageSizes = { ...e.addFiles.sizes(l), ...e.stageMedia.imageSizes(l) }, i();
+    t.media = { bg: e.backgroundMedia(), sceneItems: (u == null ? void 0 : u.urls.length) ?? 0, animations: d, port: e.portMedia.meta(), upstream: e.upstream.output() }, t.portSize = e.portMedia.size(), t.upstream = e.upstream.timelineLayers(), t.upstreamWorking = e.upstream.working(), e.ui.upstreamPending = e.upstream.pending(), t.background = e.backgroundLinked ? { end: VE(l.background.clip, l.timeline.fps, t.media.bg), video: bl(e.node, Ma) } : null, t.fpsLocked = aN(gk(e.node, e.media), e.node, DG), t.animations = d.stickers ?? {}, t.imageSizes = { ...e.addFiles.sizes(l), ...e.stageMedia.imageSizes(l) }, i();
   }
   function i() {
     var u;
@@ -35372,7 +35384,7 @@ function WK(e) {
   }
   return { view: t, timelineCtx: n, syncMedia: r, groundNow: o, world: a, sync: s };
 }
-function UK(e) {
+function WK(e) {
   const t = /* @__PURE__ */ qn({
     ...a2(),
     // What the top-center line says while nothing else does (docs/studio-ui.md "読み込み中と空の画面").
@@ -35418,7 +35430,7 @@ function UK(e) {
   }
   return { ui: t, stageEmpty: n, notice: r, doneNotice: i };
 }
-function YK(e) {
+function UK(e) {
   const t = Yn(document, "studio.background");
   t.playsInline = !0, t.preload = "auto", t.crossOrigin = "anonymous", t.style.cssText = "position:fixed;left:0;top:0;width:1px;height:1px;opacity:0;pointer-events:none";
   const n = wt({ label: "studio.still" });
@@ -35483,8 +35495,8 @@ function YK(e) {
   }
   return { backgroundVideoElement: t, backgroundStill: n, backgroundVideo: o, playback: a, refreshVideo: s, backgroundMedia: l, seekMovedBackground: d, stageBackground: c, togglePlayback: f, seek: p };
 }
-function XK(e) {
-  const t = $G(e.node, e.media, () => {
+function YK(e) {
+  const t = RG(e.node, e.media, () => {
     n(), e.redraw(Le.MEDIA);
   }, e.backgroundNow());
   function n() {
@@ -35493,11 +35505,11 @@ function XK(e) {
   }
   return { background: t, syncBackground: n };
 }
-function qK(e) {
+function XK(e) {
   const t = (u) => {
     var d;
     return ((d = e.stage) == null ? void 0 : d.sceneBox(u)) ?? null;
-  }, n = (u) => u.source.kind === "port" ? e.portMedia.picture(u, e.view.playhead) : e.stageMedia.media(u) ?? e.addFiles.media(u), r = typeof window < "u" && window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)") : null, i = fK({ now: () => performance.now(), reducedMotion: () => !!(r != null && r.matches) });
+  }, n = (u) => u.source.kind === "port" ? e.portMedia.picture(u, e.view.playhead) : e.stageMedia.media(u) ?? e.addFiles.media(u), r = typeof window < "u" && window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)") : null, i = dK({ now: () => performance.now(), reducedMotion: () => !!(r != null && r.matches) });
   function o(u) {
     const d = u.space.fileStickers.map((c) => {
       i.observe(c.id, !!t(c.url));
@@ -35527,7 +35539,7 @@ function qK(e) {
   }
   return { sceneBox: t, reveal: i, content: s, selectionOf: l };
 }
-function JK(e) {
+function qK(e) {
   var d;
   const t = uj({
     session: e.session,
@@ -35549,7 +35561,7 @@ function JK(e) {
     late: () => e.save(),
     pending: e.nodeSession.placements,
     reveal: e.reveal
-  }), n = pK(), r = MK({
+  }), n = fK(), r = _K({
     state: () => e.session.state,
     tools: () => n,
     edit: (c) => {
@@ -35563,22 +35575,22 @@ function JK(e) {
   const i = {
     active: () => Ui(n),
     press: (c, f, p) => e.readOnly ? null : r.press(c, f, p),
-    ring: (c, f) => _K(n, c, f)
+    ring: (c, f) => SK(n, c, f)
   };
   function o() {
     var c;
-    e.view.tool = n.tool, e.view.paint = kK(n, { readOnly: e.readOnly }), (c = e.stage) == null || c.toolChanged();
+    e.view.tool = n.tool, e.view.paint = vK(n, { readOnly: e.readOnly }), (c = e.stage) == null || c.toolChanged();
   }
   function a(c) {
-    c !== "cursor" && e.readOnly || c !== n.tool && (r.cancel(), mK(n, c), Ui(n) && e.session.selectObject(null) && e.sync(), o());
+    c !== "cursor" && e.readOnly || c !== n.tool && (r.cancel(), hK(n, c), Ui(n) && e.session.selectObject(null) && e.sync(), o());
   }
   function s(c) {
     if (Ui(n)) {
-      if (c.kind === "brush") gK(n, c.key);
-      else if (c.kind === "size") yK(n, c.value);
-      else if (c.kind === "swatch") bK(n, c.id);
+      if (c.kind === "brush") mK(n, c.key);
+      else if (c.kind === "size") gK(n, c.value);
+      else if (c.kind === "swatch") yK(n, c.id);
       else if (c.kind === "custom")
-        n.colorStart ? Yi(n, !0) : vK(n);
+        n.colorStart ? Yi(n, !0) : bK(n);
       else if (c.kind === "close-color") Yi(n, !0);
       else if (c.kind === "color") yv(n, c.color);
       else if (c.kind === "recent") {
@@ -35593,7 +35605,7 @@ function JK(e) {
   }
   function l() {
     const c = n.tool === "mask" ? "mask" : "paint";
-    e.readOnly || !e.session.paintingHas(c) || (Yi(n, !0), o(), e.view.confirm = { ...wK(c), layer: c });
+    e.readOnly || !e.session.paintingHas(c) || (Yi(n, !0), o(), e.view.confirm = { ...kK(c), layer: c });
   }
   function u(c) {
     const f = e.view.confirm;
@@ -35603,7 +35615,7 @@ function JK(e) {
   return { addFiles: t, dropInput: () => {
   }, tools: n, paint: r, paintDeps: i, syncTools: o, setTool: a, paintEdit: s, answerClear: u };
 }
-function ZK(e, t, n = El()) {
+function JK(e, t, n = El()) {
   const r = Kc(e.painting);
   return wk(e.painting_layer, {
     paintCount: r.totalPaintCount,
@@ -35613,13 +35625,13 @@ function ZK(e, t, n = El()) {
     nodeId: String(t)
   });
 }
-function QK(e, t = El()) {
+function ZK(e, t = El()) {
   const n = JSON.stringify(e ?? null);
   let r = 2166136261;
   for (let i = 0; i < n.length; i += 1) r = Math.imul(r ^ n.charCodeAt(i), 16777619);
   return `studio_${(r >>> 0).toString(16).padStart(8, "0")}:${t.width}x${t.height}`;
 }
-function eB(e, { nodeId: t, painting: n, sources: r, descriptor: i = El() }) {
+function QK(e, { nodeId: t, painting: n, sources: r, descriptor: i = El() }) {
   return TM(e, {
     nodeId: String(t),
     counts: Kc(n),
@@ -35627,10 +35639,10 @@ function eB(e, { nodeId: t, painting: n, sources: r, descriptor: i = El() }) {
     maskCanvas: r.maskCanvas,
     groupIds: r.groupIds,
     groupCanvas: r.groupCanvas,
-    revision: QK(n, i)
+    revision: ZK(n, i)
   });
 }
-function tB(e, t, n) {
+function eB(e, t, n) {
   let r;
   try {
     r = xt(e);
@@ -35639,7 +35651,7 @@ function tB(e, t, n) {
   }
   return JSON.stringify(r.painting) !== JSON.stringify(t) ? null : Ts({ ...r, painting_layer: n });
 }
-function nB(e) {
+function tB(e) {
   var C, x;
   const t = () => ({ playhead: e.view.playhead, imageSizes: e.view.imageSizes, animations: e.view.animations, portSize: e.view.portSize, upstream: e.view.upstreamWorking, handoff: e.session.portHandoff }), n = (w) => {
     if (e.closed || e.readOnly) return;
@@ -35756,11 +35768,11 @@ function nB(e) {
   function A() {
     var j;
     const w = String(e.node.id ?? "0");
-    if (e.readOnly || !e.stateWidget || !((j = e.api) != null && j.fetchApi) || !ZK(e.session.state, w)) return null;
+    if (e.readOnly || !e.stateWidget || !((j = e.api) != null && j.fetchApi) || !JK(e.session.state, w)) return null;
     const T = xt(String(e.stateWidget.value ?? "")).painting, P = e.paint.nodeLayer();
     return zs(e.node, `paint-layer:${w}`, async () => {
       var U, W, le, ae;
-      const z = await eB(e.api, { nodeId: w, painting: T, sources: P }), B = tB(String(e.stateWidget.value ?? ""), T, z);
+      const z = await QK(e.api, { nodeId: w, painting: T, sources: P }), B = eB(String(e.stateWidget.value ?? ""), T, z);
       B !== null && (e.stateWidget.value = B, (W = (U = e.stateWidget).callback) == null || W.call(U, B), (ae = (le = e.node).setDirtyCanvas) == null || ae.call(le, !0, !0));
     }).catch((z) => {
       console.error("[PanoramaPaintingLayerSync] close upload failed", z);
@@ -35768,7 +35780,7 @@ function nB(e) {
   }
   return { onExecuted: n, inspectorEdit: r, timelineEdit: i, historyStep: o, timeline: null, keyClipboardKey: s, deleteSelection: l, objectEdits: d, frameRect: null, erpCanvas: null, outputCanvases: null, cameraTab: g, cameraToView: k, setTab: v, selectObject: y, setGizmoMode: N, barPress: S, save: F, uploadPaintLayerOnClose: A };
 }
-function rB({ element: e, canvas: t, root: n = null, add: r, takes: i = () => !0 }) {
+function nB({ element: e, canvas: t, root: n = null, add: r, takes: i = () => !0 }) {
   if (!(e != null && e.addEventListener)) return () => {
   };
   let o = null;
@@ -35839,7 +35851,7 @@ function l2(e, t = (e == null ? void 0 : e.ownerDocument) ?? globalThis.document
       e == null || e.removeEventListener(o, r, !1), n == null || n.removeEventListener(o, i, !1);
   };
 }
-function iB(e) {
+function rB(e) {
   function t(i) {
     if (!e.rootElement || !rl(i, e.rootElement)) return;
     const o = Hg(i);
@@ -35911,7 +35923,7 @@ function iB(e) {
         onEscape: n,
         motion: e.reveal,
         paint: e.paintDeps
-      }), e.dropInput = rB({ element: i.parentElement, canvas: i, root: a, add: e.addFiles, takes: () => !e.readOnly && e.view.tab === "3d" }), e.stage;
+      }), e.dropInput = nB({ element: i.parentElement, canvas: i, root: a, add: e.addFiles, takes: () => !e.readOnly && e.view.tab === "3d" }), e.stage;
     },
     onTimeline: (i) => {
       e.timeline = i;
@@ -35963,7 +35975,7 @@ function iB(e) {
   }, onKeyDown: t, controller: r };
 }
 const us = /* @__PURE__ */ new WeakSet();
-function oB() {
+function iB() {
   return Promise.all([Md(), pS()]).then(() => !0, () => !1);
 }
 function Mv(e, { vueApp: t, mountHost: n, flushBeforeQueue: r, finished: i }) {
@@ -35973,7 +35985,7 @@ function Mv(e, { vueApp: t, mountHost: n, flushBeforeQueue: r, finished: i }) {
   const l = i ? e.uploadPaintLayerOnClose() : null;
   (b = e.stage) == null || b.dispose(), (g = e.paint) == null || g.dispose(l), (k = e.stageMedia) == null || k.dispose(), (v = e.depthColors) == null || v.dispose(), (y = e.comfyRunning) == null || y.dispose(), e.onExecuted && ((N = s == null ? void 0 : s.removeEventListener) == null || N.call(s, "executed", e.onExecuted)), (S = e.portMedia) == null || S.dispose(), (F = e.upstream) == null || F.dispose(), t == null || t.unmount(), n == null || n.remove(), us.delete(o), a.open = !1, a.flushBeforeQueue === r && (a.flushBeforeQueue = null), jk(o, !1), (x = (C = (A = $s(o)) == null ? void 0 : A.dom) == null ? void 0 : C.requestDraw) == null || x.call(C), (w = o.setDirtyCanvas) == null || w.call(o, !0, !0);
 }
-async function aB(e, { app: t = null, api: n = null, storage: r = globalThis.localStorage, readOnly: i = !1 } = {}) {
+async function oB(e, { app: t = null, api: n = null, storage: r = globalThis.localStorage, readOnly: i = !1 } = {}) {
   var f, p, h, m;
   if (!e || us.has(e)) return null;
   us.add(e);
@@ -36016,9 +36028,9 @@ async function aB(e, { app: t = null, api: n = null, storage: r = globalThis.loc
       // The timers of the notices (editor_view.js notice, doneNotice).
       noticeTimer: 0,
       doneTimer: 0
-    }, Object.assign(l, zG(l)), l.session = Dj({ state: RG(e, b), readOnly: i, upstream: l.upstream, handoff: i ? null : l.currentHandoff() }), Object.assign(l, VG(l)), Object.assign(l, WK(l)), Object.assign(l, YK(l)), Object.assign(l, qK(l)), Object.assign(l, UK(l)), Object.assign(l, XK(l)), l.syncBackground(), Object.assign(l, JK(l)), Object.assign(l, nB(l)), Object.assign(l, iB(l)), s = document.createElement("div"), document.body.appendChild(s), l.close = () => {
+    }, Object.assign(l, $G(l)), l.session = Dj({ state: LG(e, b), readOnly: i, upstream: l.upstream, handoff: i ? null : l.currentHandoff() }), Object.assign(l, zG(l)), Object.assign(l, BK(l)), Object.assign(l, UK(l)), Object.assign(l, XK(l)), Object.assign(l, WK(l)), Object.assign(l, YK(l)), l.syncBackground(), Object.assign(l, qK(l)), Object.assign(l, tB(l)), Object.assign(l, rB(l)), s = document.createElement("div"), document.body.appendChild(s), l.close = () => {
       l.closed || Mv(l, { vueApp: a, mountHost: s, flushBeforeQueue: o, finished: !0 });
-    }, l.refreshVideo(), l.sync(), a = Ia(CG, { nodeTitle: String(e.title || "Panorama Studio"), ui: l.ui, view: l.view, storage: r, controller: l.controller }), a.mount(s), s.appendChild(l.backgroundVideoElement), window.addEventListener("keydown", l.onKeyDown, !0), l.nodeSession.open = !0, i || (l.nodeSession.flushBeforeQueue = o), jk(e, !0), (m = (h = (p = $s(e)) == null ? void 0 : p.dom) == null ? void 0 : h.requestDraw) == null || m.call(h);
+    }, l.refreshVideo(), l.sync(), a = Ia(OG, { nodeTitle: String(e.title || "Panorama Studio"), ui: l.ui, view: l.view, storage: r, controller: l.controller }), a.mount(s), s.appendChild(l.backgroundVideoElement), window.addEventListener("keydown", l.onKeyDown, !0), l.nodeSession.open = !0, i || (l.nodeSession.flushBeforeQueue = o), jk(e, !0), (m = (h = (p = $s(e)) == null ? void 0 : p.dom) == null ? void 0 : h.requestDraw) == null || m.call(h);
   } catch (b) {
     try {
       l && Mv(l, { vueApp: a, mountHost: s, flushBeforeQueue: o, finished: !1 });
@@ -36032,23 +36044,23 @@ async function aB(e, { app: t = null, api: n = null, storage: r = globalThis.loc
   const { close: u, session: d, paint: c } = l;
   return { close: u, session: d, stage: () => l.stage, paint: () => c };
 }
-const sB = ["aria-label"], lB = {
+const aB = ["aria-label"], sB = {
   class: "pano-studio-stage",
   "data-region": "stage"
-}, uB = {
+}, lB = {
   key: 0,
   class: "pano-studio-at-notice"
-}, cB = { class: "pano-studio-at-close" }, dB = { class: "pano-studio-at-nav" }, fB = {
+}, uB = { class: "pano-studio-at-close" }, cB = { class: "pano-studio-at-nav" }, dB = {
   key: 1,
   class: "pano-studio-at-shortcuts"
-}, pB = {
+}, fB = {
   key: 0,
   class: "pano-studio-preview-strip",
   "data-region": "playback"
-}, hB = ["max", "value"], mB = {
+}, pB = ["max", "value"], hB = {
   class: "pano-studio-preview-time",
   "data-time": ""
-}, gB = {
+}, mB = {
   __name: "StudioPreviewWindow",
   props: {
     nodeTitle: { type: String, default: "" },
@@ -36057,7 +36069,7 @@ const sB = ["aria-label"], lB = {
     controller: { type: Object, required: !0 }
   },
   setup(e) {
-    const t = e, n = /* @__PURE__ */ Ie(null), r = /* @__PURE__ */ Ie(null), i = /* @__PURE__ */ Ie(null), o = /* @__PURE__ */ Ie(null), a = /* @__PURE__ */ Ie(!1), s = /* @__PURE__ */ Ie(!1);
+    const t = e, n = /* @__PURE__ */ Ce(null), r = /* @__PURE__ */ Ce(null), i = /* @__PURE__ */ Ce(null), o = /* @__PURE__ */ Ce(null), a = /* @__PURE__ */ Ce(!1), s = /* @__PURE__ */ Ce(!1);
     let l = null, u = null;
     const d = () => {
       s.value = !!document.fullscreenElement;
@@ -36090,14 +36102,14 @@ const sB = ["aria-label"], lB = {
       ue("div", {
         ref_key: "root",
         ref: n,
-        class: ze(["pano-studio pano-studio-preview", { "is-knob-drag": !!e.ui.knobDrag }]),
+        class: $e(["pano-studio pano-studio-preview", { "is-knob-drag": !!e.ui.knobDrag }]),
         role: "dialog",
         tabindex: "-1",
         "aria-modal": "true",
         "aria-label": e.nodeTitle,
         "data-preview-window": ""
       }, [
-        ue("div", lB, [
+        ue("div", sB, [
           ue("canvas", {
             ref_key: "canvas",
             ref: r,
@@ -36112,13 +36124,13 @@ const sB = ["aria-label"], lB = {
             "data-stage-overlay": "",
             "aria-hidden": "true"
           }, null, 512),
-          b.value.text ? (de(), pe("div", uB, [
+          b.value.text ? (de(), pe("div", lB, [
             we(Vx, {
               text: b.value.text,
               kind: b.value.kind
             }, null, 8, ["text", "kind"])
           ])) : Te("", !0),
-          ue("div", cB, [
+          ue("div", uB, [
             we(oo, {
               layout: "row",
               label: "Window"
@@ -36134,7 +36146,7 @@ const sB = ["aria-label"], lB = {
               _: 1
             })
           ]),
-          ue("div", dB, [
+          ue("div", cB, [
             we(zx, {
               ref_key: "nav",
               ref: i,
@@ -36157,7 +36169,7 @@ const sB = ["aria-label"], lB = {
               onHelp: y[4] || (y[4] = (N) => a.value = !a.value)
             }, null, 8, ["lit", "knob-drag", "help-open", "center-picking"])
           ]),
-          a.value ? (de(), pe("div", fB, [
+          a.value ? (de(), pe("div", dB, [
             we(jx, {
               groups: h.value,
               toggle: m,
@@ -36193,7 +36205,7 @@ const sB = ["aria-label"], lB = {
             _: 1
           }, 8, ["fov", "fov-lit", "grid-shown", "at-start"])
         ]),
-        e.playback.video ? (de(), pe("div", pB, [
+        e.playback.video ? (de(), pe("div", fB, [
           we(kt, {
             "data-action": "play",
             icon: e.playback.playing ? xe(ke).pause : xe(ke).play,
@@ -36219,18 +36231,18 @@ const sB = ["aria-label"], lB = {
             "aria-label": "Seek",
             "data-seek": "",
             onInput: y[13] || (y[13] = (N) => e.controller.seek(Number(N.target.value)))
-          }, null, 40, hB),
-          ue("span", mB, De(k.value), 1)
+          }, null, 40, pB),
+          ue("span", hB, De(k.value), 1)
         ])) : Te("", !0),
         we(Yx, { root: n.value }, null, 8, ["root"])
-      ], 10, sB)
+      ], 10, aB)
     ], 32));
   }
-}, xv = /* @__PURE__ */ new Set(["look", "orbit", "pan"]), yB = 100, bB = 80, vB = 1e-6, Qa = (e) => typeof e == "number" && Number.isFinite(e), Qf = (e) => Math.abs(e) * M_;
+}, xv = /* @__PURE__ */ new Set(["look", "orbit", "pan"]), gB = 100, yB = 80, bB = 1e-6, Qa = (e) => typeof e == "number" && Number.isFinite(e), Qf = (e) => Math.abs(e) * M_;
 function pu(e) {
   return { position: [...e.position], yaw_deg: e.yaw_deg, pitch_deg: e.pitch_deg, roll_deg: e.roll_deg ?? 0, hFOV_deg: e.hFOV_deg, target: [...e.target] };
 }
-function kB({ pose: e }) {
+function vB({ pose: e }) {
   let t = pu(e), n = !0, r = [], i = { x: 0, y: 0 }, o = null;
   function a(s, l, u) {
     if (u) {
@@ -36243,7 +36255,7 @@ function kB({ pose: e }) {
       Math.abs(h),
       ...c.map((b, g) => Math.abs(b - s.position[g])),
       ...f.map((b, g) => Math.abs(b - s.target[g]))
-    ) < vB) {
+    ) < bB) {
       t = pu(s), n = !0;
       return;
     }
@@ -36258,11 +36270,11 @@ function kB({ pose: e }) {
     // A drag's move of (dx, dy) px at `ms` (any clock in ms; the release uses the same).
     sample(s, l, u, d) {
       if (xv.has(s))
-        for (i = { x: i.x + l, y: i.y + u }, r.push({ ms: d, ...i }); r.length > 1 && r[0].ms < d - yB; ) r.shift();
+        for (i = { x: i.x + l, y: i.y + u }, r.push({ ms: d, ...i }); r.length > 1 && r[0].ms < d - gB; ) r.shift();
     },
     // The drag is let go at `ms`: whether it coasts (fast enough within the window before the release).
     release(s, l) {
-      const u = r.filter((m) => l - m.ms <= bB);
+      const u = r.filter((m) => l - m.ms <= yB);
       if (r = [], i = { x: 0, y: 0 }, o = null, !xv.has(s) || u.length < 2) return !1;
       const d = u[0], c = u.at(-1), f = Math.max(1e-3, (c.ms - d.ms) / 1e3), p = (c.x - d.x) / f, h = (c.y - d.y) / f;
       return Qf(Math.hypot(p, h)) <= $_ ? !1 : (o = { action: s, vx: p, vy: h }, !0);
@@ -36287,7 +36299,7 @@ function kB({ pose: e }) {
     }
   };
 }
-function wB({ scene: e = null, image: t = null } = {}) {
+function kB({ scene: e = null, image: t = null } = {}) {
   const n = { position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0, hFOV_deg: jr(null) };
   if (e) {
     const r = e.viewPosition;
@@ -36295,11 +36307,11 @@ function wB({ scene: e = null, image: t = null } = {}) {
   }
   return t ? !Qa(t.yaw) || !Qa(t.pitch) ? n : { position: [0, 0, 0], yaw_deg: t.yaw, pitch_deg: t.pitch, hFOV_deg: jr(t.fov) } : n;
 }
-function SB(e, t) {
-  const n = wB(e), r = { position: n.position, yaw_deg: ut(n.yaw_deg), pitch_deg: be(n.pitch_deg, -En, En), roll_deg: 0, hFOV_deg: n.hFOV_deg };
+function wB(e, t) {
+  const n = kB(e), r = { position: n.position, yaw_deg: ut(n.yaw_deg), pitch_deg: be(n.pitch_deg, -En, En), roll_deg: 0, hFOV_deg: n.hFOV_deg };
   return { pose: { ...r, target: Bc({ ...r }, t) } };
 }
-function _B(e, { scene: t = null, image: n = null } = {}) {
+function SB(e, { scene: t = null, image: n = null } = {}) {
   t && (t.viewPosition = [...e.position], t.viewYaw = e.yaw_deg, t.viewPitch = e.pitch_deg, t.viewFov = e.hFOV_deg, t.viewTransition = null, t.viewMoved = !0), n && (n.view = { ...n.view, yaw: ut(e.yaw_deg), pitch: e.pitch_deg, fov: e.hFOV_deg });
 }
 function Pv(e) {
@@ -36329,7 +36341,7 @@ async function u2(e, { app: t = null, api: n = null, storage: r = globalThis.loc
     var le, ae, ne, te, ee, Q;
     if (a = !0, B) {
       const Z = o == null ? void 0 : o.destination();
-      Z && _B(Z, { scene: (g == null ? void 0 : g.view) ?? null, image: k });
+      Z && SB(Z, { scene: (g == null ? void 0 : g.view) ?? null, image: k });
     }
     const U = F ? Math.max(0, Math.min(F.frames - 1, F.frame)) : 0, W = !!(F != null && F.video) && !!(F != null && F.playing);
     g && B ? (g.frame = U, g.playing = W) : g && v && (g.playing = v.playing), b && document.removeEventListener("keydown", b, !0), s(), p && (p.playback.stop(), p.close()), c == null || c.remove(), f && Vt(f), o == null || o.dispose(), l == null || l.dispose(), u == null || u.dispose(), d == null || d.dispose(), m == null || m.unmount(), h == null || h.remove(), es.delete(e), y && WN(e), B ? (le = k == null ? void 0 : k.windowClosed) == null || le.call(k, S ? { time: U / F.fps, playing: W } : {}) : N && ((ae = k == null ? void 0 : k.windowClosed) == null || ae.call(k, S ?? {})), (ne = k == null ? void 0 : k.requestDraw) == null || ne.call(k), B && document.fullscreenElement && ((Q = (te = document.exitFullscreen) == null ? void 0 : (ee = te.call(document)).catch) == null || Q.call(ee, () => {
@@ -36478,7 +36490,7 @@ async function u2(e, { app: t = null, api: n = null, storage: r = globalThis.loc
     const K = {
       onStage: ({ canvas: V, overlay: H = null, root: $ }) => {
         s = l2($);
-        const L = SB({ scene: g == null ? void 0 : g.view, image: k == null ? void 0 : k.view }, { ...Y, boxes: [], content: null }), _ = kB({ pose: L.pose });
+        const L = wB({ scene: g == null ? void 0 : g.view, image: k == null ? void 0 : k.view }, { ...Y, boxes: [], content: null }), _ = vB({ pose: L.pose });
         return o = s2({ canvas: V, overlay: H, root: $, opening: L, world: Y, background: O, content: G, ui: B, follow: _, skyOnlyNotice: uk(e, hu), onEscape: () => C() }), o;
       },
       close: () => C(),
@@ -36500,7 +36512,7 @@ async function u2(e, { app: t = null, api: n = null, storage: r = globalThis.loc
         document.fullscreenElement ? (H = document.exitFullscreen) == null || H.call(document) : ($ = V == null ? void 0 : V.requestFullscreen) == null || $.call(V);
       }
     };
-    if (m = Ia(gB, { nodeTitle: String(e.title || "Panorama Preview"), ui: B, playback: F, controller: K }), m.mount(h), c && h.appendChild(c), document.addEventListener("keydown", b, !0), U ? (v = { frame: Math.floor(Number(g == null ? void 0 : g.frame) || 0), playing: !!(g != null && g.playing) }, g && (g.playing = !1, (j = (P = (T = oc(e)) == null ? void 0 : T.surface) == null ? void 0 : P.rest) == null || j.call(P)), y = !0, BN(e, { close: C })) : (N = !0, S = ((z = k == null ? void 0 : k.windowOpened) == null ? void 0 : z.call(k)) ?? null, S && (v = { frame: SS(S.time, F.fps), playing: S.playing })), v) {
+    if (m = Ia(mB, { nodeTitle: String(e.title || "Panorama Preview"), ui: B, playback: F, controller: K }), m.mount(h), c && h.appendChild(c), document.addEventListener("keydown", b, !0), U ? (v = { frame: Math.floor(Number(g == null ? void 0 : g.frame) || 0), playing: !!(g != null && g.playing) }, g && (g.playing = !1, (j = (P = (T = oc(e)) == null ? void 0 : T.surface) == null ? void 0 : P.rest) == null || j.call(P)), y = !0, BN(e, { close: C })) : (N = !0, S = ((z = k == null ? void 0 : k.windowOpened) == null ? void 0 : z.call(k)) ?? null, S && (v = { frame: SS(S.time, F.fps), playing: S.playing })), v) {
       const V = Math.max(0, Math.min(F.frames - 1, v.frame));
       V > 0 && (p == null || p.playback.seek(V)), F.frame = (p == null ? void 0 : p.playback.frame) ?? V, v.playing && F.video && (p == null || p.playback.play());
     }
@@ -36516,9 +36528,9 @@ async function u2(e, { app: t = null, api: n = null, storage: r = globalThis.loc
   }
   return { close: C, stage: () => o, playback: F };
 }
-const MB = W2({
+const _B = W2({
   openOld: Cg.openEditor,
-  openStudio: (e) => aB(e, { app: Ln, api: mi }),
+  openStudio: (e) => oB(e, { app: Ln, api: mi }),
   openPreview: (e) => u2(e, { app: Ln, api: mi }),
   previewTakes: (e) => K2({
     type: (e == null ? void 0 : e.comfyClass) ?? (e == null ? void 0 : e.type),
@@ -36530,13 +36542,13 @@ Cg.setSceneViewerOpener((e) => u2(e, { app: Ln, api: mi }));
 const Yg = uO({
   ...Cg,
   app: Ln,
-  openEditor: MB,
+  openEditor: _B,
   requestFrame: requestAnimationFrame
-}), xB = B2({
-  preload: oB,
+}), MB = B2({
+  preload: iB,
   whenIdle: (e) => globalThis.requestIdleCallback ? requestIdleCallback(e, { timeout: 5e3 }) : setTimeout(e, 1500)
 }), ep = Yg.setup;
 Yg.setup = async function(...e) {
-  await (ep == null ? void 0 : ep.apply(this, e)), xB();
+  await (ep == null ? void 0 : ep.apply(this, e)), MB();
 };
 Ln.registerExtension(Yg);
