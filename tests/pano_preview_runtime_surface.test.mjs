@@ -320,7 +320,8 @@ test("the legacy surface parses state_json with the node's bg_color and coverage
   const cases = [
     [{ state_json: "not json", bg_color: "#abcdef", coverage: 180 }, { bg_color: "#abcdef", coverage: 180, stickers: [], shots: [] }],
     [{ state_json: "" }, { bg_color: "#1a1a1e", coverage: 360, stickers: [], shots: [] }],
-    [{ state_json: JSON.stringify({ coverage: 180, stickers: "x", shots: [{ id: "s" }], bg_color: "#010203" }), coverage: 360 }, { bg_color: "#010203", coverage: 360, stickers: [], shots: [{ id: "s" }] }],
+    // The node's bg_color widget wins over the state's (as in the editor); here there is none, so the default shows.
+    [{ state_json: JSON.stringify({ coverage: 180, stickers: "x", shots: [], bg_color: "#010203" }), coverage: 360 }, { bg_color: "#1a1a1e", coverage: 360, stickers: [], shots: [] }],
   ];
   for (const [widgets, expected] of cases) {
     const node = createFakeNode({ type: LEGACY, widgets });
@@ -331,7 +332,27 @@ test("the legacy surface parses state_json with the node's bg_color and coverage
     for (const [key, value] of Object.entries(expected)) assert.deepEqual(parsed[key], value, `${JSON.stringify(widgets)} ${key}`);
     assert.equal(parsed.version, 1);
     assert.equal(parsed.projection_model, "pinhole_rectilinear");
-    assert.deepEqual(parsed.active, { selected_sticker_id: null });
+    assert.deepEqual(parsed.active, { selected_sticker_id: null, selected_shot_id: null });
+    detach(node);
+  }
+});
+
+test("the legacy Stickers and Cutout surfaces read state_json as the editor does (parsePanoEditorState)", async () => {
+  const { parsePanoEditorState } = await import("../web_src/pano_editor_state.js");
+  const text = JSON.stringify({
+    output_preset: 1024,
+    stickers: [{ id: "a", visible: 0, locked: "yes" }, { id: "b" }],
+    shots: [{ id: "s", yaw_deg: 10, pitch_deg: 0, roll_deg: 0, hFOV_deg: 60, vFOV_deg: 40, out_w: 512, out_h: 256, locked: 1 }],
+    painting: { paint: { strokes: "x" } },
+  });
+  for (const type of [LEGACY, CUTOUT]) {
+    const node = createFakeNode({ type, widgets: { state_json: text, bg_color: "#abcdef", coverage: 180, output_preset: "2048" } });
+    attachPanoramaPreview(node, {});
+    const { parsed } = stateSync(node).parsedState;
+    const editor = parsePanoEditorState(text, { outputPreset: "2048", backgroundColor: "#abcdef", coverage: 180, sharedUiSettings: null });
+    assert.deepEqual(parsed, editor, type);
+    assert.deepEqual(parsed.stickers.map((item) => [item.visible, item.locked]), [[true, false], [true, false]]);
+    assert.equal("out_w" in parsed.shots[0], false);
     detach(node);
   }
 });
@@ -340,7 +361,7 @@ test("the legacy surface reads the live state before state_json", () => {
   const node = createFakeNode({ type: LEGACY, widgets: { state_json: JSON.stringify({ shots: [{ id: "widget" }] }) } });
   stateSync(node).liveState = JSON.stringify({ shots: [{ id: "live" }] });
   attachPanoramaPreview(node, {});
-  assert.deepEqual(stateSync(node).parsedState.parsed.shots, [{ id: "live" }]);
+  assert.deepEqual(stateSync(node).parsedState.parsed.shots.map((shot) => shot.id), ["live"]);
   detach(node);
 });
 

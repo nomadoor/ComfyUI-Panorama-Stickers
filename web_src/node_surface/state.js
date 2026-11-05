@@ -1,12 +1,13 @@
 // The node state an on-node surface shows and edits: its state_json (or the live state while an edit runs) parsed once
 // per change, the Timeline frame it shows, its loaded state v2, and its loading flag.
-import { editorActive, normalizeCoverageValue } from "../pano_editor_state.js";
+import { editorActive, normalizeCoverageValue, parsePanoEditorState } from "../pano_editor_state.js";
 import { loadSceneState } from "../pano_scene_state.js";
 import { NODE_SURFACE_FRAME, surfaceSceneEditorState } from "../pano_stickers_node_surface.js";
 import { backgroundColorWidget, isNodeOutputMediaCurrent } from "../pano_preview_video.js";
 import { portHandoffLinked } from "../pano_port_handoff.js";
 import { nodeSurface, stateSync } from "../pano_node_bridge.js";
 import { ownOutputUiValue } from "./media.js";
+import { loadSharedUiSettings as loadEditorSharedUiSettings } from "../editor/ui_settings.js";
 
 const SHARED_UI_SETTINGS_KEY = "pano_suite.ui_settings.v1";
 const PANO_LOADING_MIN_MS = 120;
@@ -23,50 +24,6 @@ export function loadSharedUiSettings() {
     return {
       invert_view_x: !!parsed?.invert_view_x,
       invert_view_y: !!parsed?.invert_view_y,
-    };
-  } catch {
-    return base;
-  }
-}
-
-function parseState(value, bg = "#00ff00") {
-  const base = {
-    version: 1,
-    projection_model: "pinhole_rectilinear",
-    alpha_mode: "straight",
-    coverage: 360,
-    bg_color: bg,
-    output_preset: 2048,
-    assets: {},
-    stickers: [],
-    shots: [],
-    active: { selected_sticker_id: null },
-  };
-  let parsed = null;
-  if (value && typeof value === "object") {
-    parsed = value;
-  } else if (typeof value === "string") {
-    const text = value.trim();
-    if (!text) return base;
-    try {
-      parsed = JSON.parse(text);
-    } catch {
-      return base;
-    }
-  } else {
-    return base;
-  }
-  try {
-    const p = parsed;
-    if (!p || typeof p !== "object" || Array.isArray(p)) return base;
-    return {
-      ...base,
-      ...p,
-      coverage: normalizeCoverageValue(p.coverage),
-      assets: p.assets && typeof p.assets === "object" ? p.assets : {},
-      stickers: Array.isArray(p.stickers) ? p.stickers : [],
-      shots: Array.isArray(p.shots) ? p.shots : [],
-      active: p.active && typeof p.active === "object" ? p.active : base.active,
     };
   } catch {
     return base;
@@ -101,10 +58,24 @@ export function getCachedState(node) {
   }
   const parsed = sceneText
     ? surfaceSceneEditorState(source, { backgroundColor: bg, coverage, active: editorActive(node) }, handoff)
-    : parseState(source, bg);
+    : legacySurfaceState(node, source, bg, coverage);
   parsed.coverage = coverage;
   sync.parsedState = { source, liveVersion, bg, coverage, handoff, parsed };
   return parsed;
+}
+
+// The legacy Stickers / Cutout nodes' state as the old editor reads it (pano_editor_state.js parsePanoEditorState, with
+// the editor's shared view settings), so a surface edit writes the same state as a save in the editor
+// (docs/editor-architecture.md). A live state the editor or the surface made is already in that shape; it is copied so
+// the coverage set on it stays out of theirs.
+function legacySurfaceState(node, source, bg, coverage) {
+  if (source && typeof source === "object") return { ...source };
+  return parsePanoEditorState(source, {
+    outputPreset: getWidget(node, "output_preset")?.value,
+    backgroundColor: bg,
+    coverage,
+    sharedUiSettings: loadEditorSharedUiSettings(),
+  });
 }
 
 export function getWidget(node, name) { return node.widgets?.find((w) => w.name === name) || null; }
