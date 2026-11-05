@@ -13,8 +13,7 @@ const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 
 // The output view of state v2 `state` at the Timeline frame `frame` (docs/space-and-view.md "開いたときの視点と
-// Reset View"): the Camera's position and yaw there, looking level (pitch 0). A state without a Camera (an older
-// one) has the default Camera, at the World's origin with yaw 0.
+// Reset View"): the Camera's position and yaw there, looking level (pitch 0).
 export function outputView(state, frame) {
   const value = cameraAt(state, frame);
   return { position: [...value.position], yaw_deg: value.yaw_deg, pitch_deg: 0 };
