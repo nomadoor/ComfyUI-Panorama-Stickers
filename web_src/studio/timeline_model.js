@@ -11,7 +11,7 @@
 //               items of its 3D content, and `animations`, its animated 3D files' clips as media.animations)
 //   media       what timelineSpan knows of the inputs (pano_timeline.js autoTimelineLength), `port` the node's own port
 //               Sticker's media meta
-//   background  null, or { end, video } while the node's own bg_media has a row (`end` where its media ends, or null;
+//   background  null, or { end, video } while the node's own background has a row (`end` where its media ends, or null;
 //               `video` whether a VIDEO is linked to it, before its length is known too)
 //   sceneRow    whether the node's own 3D content is linked (pano_upstream.js ownSceneLinked)
 //   fpsLocked   whether a VIDEO sets the Timeline fps

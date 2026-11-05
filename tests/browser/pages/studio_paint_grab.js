@@ -83,7 +83,7 @@ try {
     title: "Panorama Studio",
     __panoStudio: true,
     __panoSceneStateV2: true,
-    inputs: [{ name: "bg_media", link: 1 }],
+    inputs: [{ name: "background", link: 1 }],
     widgets: [{ name: "state_json", value: JSON.stringify(STATE) }],
     graph: { getNodeById: (id) => (id === 7 ? origin : null) },
     getInputLink: (index) => (index === 0 ? { origin_id: 7, origin_slot: 0 } : null),

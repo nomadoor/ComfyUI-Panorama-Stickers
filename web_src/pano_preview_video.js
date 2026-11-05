@@ -1,8 +1,7 @@
 import { createPanoVideo } from "./pano_diagnostics.js";
 
-// Panorama Studio's input that carries its background: `background` (docs/studio-node.md "Panorama Studio", ADR 0048),
-// `bg_media` before the rename.
-export const STUDIO_BACKGROUND_INPUT_NAMES = ["background", "bg_media"];
+// Panorama Studio's input that carries its background: `background` (docs/studio-node.md "Panorama Studio", ADR 0048).
+export const STUDIO_BACKGROUND_INPUT_NAMES = ["background"];
 // The inputs that carry the background: Cutout and Preview's erp_image, the legacy Stickers bg_erp,
 // Panorama Studio's (STUDIO_BACKGROUND_INPUT_NAMES), and the Preview's `source` (`PanoramaPreviewNode`; its Scene too).
 export const BACKGROUND_INPUT_NAMES = ["erp_image", "bg_erp", ...STUDIO_BACKGROUND_INPUT_NAMES, "source"];

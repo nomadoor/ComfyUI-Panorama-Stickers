@@ -35,7 +35,7 @@ export function upstreamBgColor(uiList) {
   return `#${color.map((value) => Math.round(Math.min(1, Math.max(0, Number(value) || 0)) * 255).toString(16).padStart(2, "0")).join("")}`;
 }
 
-// The background of the upstream Scene in a result, used in place of the node's own bg_media (ADR 0029): the
+// The background of the upstream Scene in a result, used in place of the node's own `background` (ADR 0029): the
 // `ui` keys of its image and VIDEO and its coverage, or null when the upstream Scene has none. uiList(key) reads
 // a list of the result. `color` is its bg_color (a hex RGB, null when the result has none) and `clip` the Clip
 // range of the Studio it came from with that state's fps ({ clip, fps }, pano_upstream_bg_clip), null with the

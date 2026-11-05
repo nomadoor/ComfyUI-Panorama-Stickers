@@ -31,12 +31,12 @@ function cleanup() {
   delete globalThis.HTMLVideoElement;
 }
 
-test("the old Stickers editor reads the background from `background` and `bg_media` too", () => {
+test("the old Stickers editor reads the background from `background` too, and not from the old name `bg_media`", () => {
   try {
     const { media, asked } = session({ inputs: [{ name: "scene" }, { name: "background" }, { name: "world" }] });
     media.getConnectedErpImage();
     assert.ok(asked.at(-1).includes("background"), JSON.stringify(asked));
-    assert.ok(asked.at(-1).includes("bg_media"));
+    assert.equal(asked.at(-1).includes("bg_media"), false);
   } finally {
     cleanup();
   }

@@ -197,7 +197,7 @@ function loadVideoGraph(output) {
   const app = { nodeOutputs: { 30: output } };
   const node = comfyNode({
     id: 9,
-    inputs: [{ name: "bg_media", type: "IMAGE,VIDEO" }],
+    inputs: [{ name: "background", type: "IMAGE,VIDEO" }],
     links: [{ origin_id: 30, origin_slot: 0 }],
     getInputNode: () => ({ id: 30 }),
   });
@@ -209,23 +209,23 @@ test("a background input loading a video file directly gives that file to the ed
   const media = createAdapter({ app, ImageCtor: FakeImage, imageState: createImageState() });
   FakeImage.instances = [];
 
-  const src = media.linkedVideoFile(node, ["bg_media", "bg_erp"]);
+  const src = media.linkedVideoFile(node, ["background", "bg_erp"]);
 
   assert.match(src, /^\/api\/view\?filename=pano\.mp4&type=input&pano_src=\w+$/);
-  assert.equal(media.linkedVideoFile(node, ["bg_media"]), src);
-  assert.equal(media.loadPreferredExactLinkedImage(node, ["bg_media"]), null);
+  assert.equal(media.linkedVideoFile(node, ["background"]), src);
+  assert.equal(media.loadPreferredExactLinkedImage(node, ["background"]), null);
   assert.equal(FakeImage.instances.length, 0);
 });
 
 test("re-uploading a file under the same name gives a new URL, so the browser cache cannot replay the old file", () => {
   const { app, node } = loadVideoGraph({ images: [{ filename: "pano.mp4", subfolder: "", type: "input" }] });
   const media = createAdapter({ app });
-  const before = media.linkedVideoFile(node, ["bg_media"]);
+  const before = media.linkedVideoFile(node, ["background"]);
 
   // The upload widget sets a new output object with the same file name.
   app.nodeOutputs[30] = { images: [{ filename: "pano.mp4", subfolder: "", type: "input" }] };
 
-  const after = media.linkedVideoFile(node, ["bg_media"]);
+  const after = media.linkedVideoFile(node, ["background"]);
   assert.notEqual(after, before);
   assert.equal(after.split("&pano_src=")[0], before.split("&pano_src=")[0]);
 });
@@ -234,8 +234,8 @@ test("only a directly loaded video file plays: an image source or an unlinked in
   const { app, node } = loadVideoGraph({ images: [{ filename: "pano.png", subfolder: "", type: "input" }] });
   const media = createAdapter({ app });
 
-  assert.equal(media.linkedVideoFile(node, ["bg_media"]), "");
-  assert.equal(media.linkedVideoFile(comfyNode({ id: 9, inputs: [{ name: "bg_media" }] }), ["bg_media"]), "");
+  assert.equal(media.linkedVideoFile(node, ["background"]), "");
+  assert.equal(media.linkedVideoFile(comfyNode({ id: 9, inputs: [{ name: "background" }] }), ["background"]), "");
 });
 
 test("falls back from outputs to node images and LoadImage widgets without changing inputs", () => {
@@ -398,12 +398,12 @@ test("a node that is not in a graph yet has no linked sources or values", () => 
   const media = createAdapter({ app: { nodeOutputs: { 401: { data: { result: ["linked-state"] } } } } });
   const node = comfyNode({
     graph: null,
-    inputs: [{ name: "bg_media" }, { name: "sticker_state" }],
+    inputs: [{ name: "background" }, { name: "sticker_state" }],
     links: [{ origin_id: 400, origin_slot: 0 }, { origin_id: 401, origin_slot: 0 }],
     widgets: [{ name: "sticker_state", value: "widget-state" }],
   });
 
-  assert.equal(media.resolvePreferredExactLinkedSource(node, ["bg_media"]).src, "");
+  assert.equal(media.resolvePreferredExactLinkedSource(node, ["background"]).src, "");
   assert.equal(media.linkedValue(node, "sticker_state"), "widget-state");
 });
 
@@ -422,13 +422,13 @@ test("uses the backend source-state hash and falls back to hashing the exact lin
   assert.equal(media.externalStateHash({ id: 11 }, '{"note":"🧭"}'), "199228564");
 });
 
-test("Panorama Studio shows linked bg_media before a run and its own result after, also after a reload", () => {
+test("Panorama Studio shows linked background before a run and its own result after, also after a reload", () => {
   const loadImage = { id: 3, comfyClass: "LoadImage", widgets: [{ name: "image", value: "pano.png" }] };
   const loadSticker = { id: 4, comfyClass: "LoadImage", widgets: [{ name: "image", value: "sticker.png" }] };
   const node = comfyNode({
     id: 12,
     inputs: [
-      { name: "bg_media", type: "IMAGE,VIDEO" },
+      { name: "background", type: "IMAGE,VIDEO" },
       { name: "scene", type: "SPLAT,MESH,MOGE_GEOMETRY" },
       { name: "sticker", type: "IMAGE,VIDEO,MESH,SPLAT" },
     ],
@@ -438,9 +438,9 @@ test("Panorama Studio shows linked bg_media before a run and its own result afte
   const app = { nodeOutputs: {}, getNodeImageUrls: () => [] };
   const media = createAdapter({ app });
 
-  const linked = media.resolvePreferredExactLinkedSource(node, ["bg_media", "bg_erp", "erp_image"]);
+  const linked = media.resolvePreferredExactLinkedSource(node, ["background", "bg_erp", "erp_image"]);
   assert.equal(linked.src, "/api/view?filename=pano.png&type=input&subfolder=");
-  assert.equal(linked.inputName, "bg_media");
+  assert.equal(linked.inputName, "background");
   assert.deepEqual(media.uiList(node, "pano_sticker_input_images"), []);
 
   // ComfyUI keeps the `ui` of the executed message under the node id, without a `ui` wrapper.

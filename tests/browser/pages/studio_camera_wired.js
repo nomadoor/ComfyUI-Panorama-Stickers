@@ -101,7 +101,7 @@ try {
     title: "Panorama Studio",
     __panoStudio: true,
     __panoSceneStateV2: true,
-    inputs: [{ name: "bg_media", link: 1 }],
+    inputs: [{ name: "background", link: 1 }],
     // ?mp= the megapixels widget (the Output window's line reads it when the editor opens).
     widgets: [
       { name: "state_json", value: JSON.stringify(STATE) },

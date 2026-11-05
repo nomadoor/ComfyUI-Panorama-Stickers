@@ -227,7 +227,7 @@ export function timelinePlayable(span) {
 // The Auto length: the output length `_decide_timeline` decides without `timeline.length`, by the same rule,
 // from the state and what is known of the inputs. Each input is null (or 0) while it is not known, as before a
 // run: then the rule goes on to the next step, as if the input had a single frame.
-//   bg          the node's own bg_media: { video, frames, duration } (`video` for a VIDEO, `frames` its frame
+//   bg          the node's own background: { video, frames, duration } (`video` for a VIDEO, `frames` its frame
 //               count, `duration` the seconds where its last frame ends), { frames: 1 } for a single image
 //   port        the port Sticker's media with two or more frames or items, as its meta
 //               (`pano_sticker_input_video_meta`: { kind, frames, duration }; 3D items are kind "IMAGE")

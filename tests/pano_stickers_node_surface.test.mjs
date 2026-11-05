@@ -418,7 +418,7 @@ test("the node shows the sky Stickers of state v2 at Timeline frame 0", () => {
 function stickersNode(connected = [], types = {}) {
   const linkTypes = { sticker: "IMAGE", ...types };
   const inputs = [
-    { name: "bg_media", type: "IMAGE,VIDEO" },
+    { name: "background", type: "IMAGE,VIDEO" },
     { name: "scene", type: "SPLAT,MESH,MOGE_GEOMETRY" },
     { name: "sticker", type: "IMAGE,VIDEO,MESH,SPLAT" },
     { name: "sticker_state", type: "STRING" },
@@ -642,7 +642,7 @@ test("loading a workflow keeps its port Sticker as saved with the sticker input 
     __panoSceneStateV2: true,
     graph: { links: new Map([[7, { id: 7, origin_id: 3, origin_slot: 0, type: "IMAGE" }]]) },
     properties: {},
-    inputs: ["bg_media", "scene", "sticker", "sticker_state"].map((name) => ({ name, link: null })),
+    inputs: ["background", "scene", "sticker", "sticker_state"].map((name) => ({ name, link: null })),
     widgets: ["bg_color", "coverage", "output_preset", "state_json"].map((name) => ({ name, value: name === "state_json" ? "" : null })),
     isInputConnected(slot) {
       return !!this.graph && this.inputs[slot]?.link != null;

@@ -143,8 +143,8 @@ function surfaceSetup(nodeOutputs, extra = {}) {
 }
 
 test("the node surfaces' image inputs: the preferred names the node has, then its background inputs", () => {
-  const node = comfyNode({ inputs: [{ name: "audio" }, { name: "bg_media" }, { name: "erp_image" }, { name: "source" }] });
-  assert.deepEqual(preferredImageInputsForNode(node, ["erp_image", "missing"]), ["erp_image", "bg_media", "source"]);
+  const node = comfyNode({ inputs: [{ name: "audio" }, { name: "background" }, { name: "erp_image" }, { name: "source" }] });
+  assert.deepEqual(preferredImageInputsForNode(node, ["erp_image", "missing"]), ["erp_image", "background", "source"]);
   assert.deepEqual(preferredImageInputsForNode(comfyNode({ inputs: [{ name: "audio" }] }), ["x"]), ["x"]);
   assert.ok(BACKGROUND_INPUT_NAMES.includes("erp_image"));
 });

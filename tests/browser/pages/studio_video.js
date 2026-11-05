@@ -56,7 +56,7 @@ try {
     id: 12,
     title: "Panorama Studio",
     __panoStudio: true,
-    inputs: [{ name: "bg_media", link: 1 }],
+    inputs: [{ name: "background", link: 1 }],
     widgets: [{ name: "state_json", value: "" }, { name: "bg_color", value: "#00ff00" }],
     graph: { getNodeById: (id) => (id === 7 ? origin : null) },
     isInputConnected: (index) => index === 0,

@@ -2573,7 +2573,7 @@ function BN(e = 80, { omit: t = [] } = {}) {
     }
   };
 }
-const po = ["background", "bg_media"], Jr = ["erp_image", "bg_erp", ...po, "source"], em = ["sticker_image", "sticker"], rk = ["scene", "world"], tm = ["sticker", "sticker_state"], nm = ["background_color", "bg_color"], KN = ["background_range", "coverage"];
+const po = ["background"], Jr = ["erp_image", "bg_erp", ...po, "source"], em = ["sticker_image", "sticker"], rk = ["scene", "world"], tm = ["sticker", "sticker_state"], nm = ["background_color", "bg_color"], KN = ["background_range", "coverage"];
 function rm(e) {
   const [t, n] = nm;
   return e(t) ?? e(n);

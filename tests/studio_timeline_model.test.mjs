@@ -27,7 +27,7 @@ test("the rows come in the spec's order with the row head's icon and name", () =
   assert.deepEqual(model.rows.map((item) => item.icon), [ICON.unwrap, ICON.camera, ICON.pano, ICON.box, ICON.paintbrush_vertical_tool, ICON.box]);
 });
 
-test("without bg_media, a painting or a scene input those rows are left out", () => {
+test("without a background, a painting or a scene input those rows are left out", () => {
   const model = view(ctxOf(studioState()));
   assert.deepEqual(model.rows.map((item) => item.id), ["camera", "sticker_2", "sticker_1"]);
 });

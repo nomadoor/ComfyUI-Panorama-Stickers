@@ -124,7 +124,7 @@ Timeline のフレーム（表示フレーム）の背景の VIDEO と `port` �
 - node surfaceが表示するフレーム（表示フレーム）はノードごとの一時状態で、`state_json` にも
   `node.properties` にも保存しない。最初は frame 0 で、reloadやworkflowを開き直すと frame 0 に戻る。
   再生のボタンで再生すると進み、一時停止したフレームのまま残る（下の「再生のボタン」）。
-- 自分の背景のとき：背景のVIDEOは、ノードの実行結果の `pano_input_videos`（`bg_media` が2フレーム以上のとき）か、背景の入力に
+- 自分の背景のとき：背景のVIDEOは、ノードの実行結果の `pano_input_videos`（`background` が2フレーム以上のとき）か、背景の入力に
   つないだ LoadVideoが読むファイルで、エディタと同じ候補順で選ぶ（`backgroundVideoSources`）。読めないVIDEOは次の候補へ進む。シークバーや時刻表示は出さない。
   読めなかったVIDEOのURLは、候補から一度消えたら（再実行や接続変更）もう一度試す。
   VIDEO が無いときの背景の画像は、ノード自身の実行結果の `pano_input_images`（背景のつなぎ先が実行の時と同じ間）の最初の物を先に、
@@ -208,7 +208,7 @@ Timeline のフレーム（表示フレーム）の背景の VIDEO と `port` �
 - image / video、state、paint、external inputを独立したrevisionとして扱い、draw loop内でstateを再生成しない。
 - image / video replacement、connection change、executeで古いmedia cacheを無効化する。replace、disconnect、
   re-execute後に古い画像や動画が復活しない。
-- backgroundと `port` のStickerの実行結果鮮度は独立して管理し、`bg_media` の接続変更で `port` のSticker textureを失効させない。
+- backgroundと `port` のStickerの実行結果鮮度は独立して管理し、`background` の接続変更で `port` のSticker textureを失効させない。
 - animation frameは同時に1件だけ予約する。
 - camera frameとresizeはDOM canvasだけを更新し、host graph canvas全体を継続再描画しない。
 - Panorama Studio の surface の大きさが変わったら（ノードの resize。ResizeObserver）、次の animation frame を待たずに、その callback の中で
