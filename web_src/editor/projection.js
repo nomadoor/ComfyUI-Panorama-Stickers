@@ -12,7 +12,7 @@ export function createProjection(deps) {
     backgroundCanvas, canvas, editor,
   } = deps;
   // Bound by connect() to the other modules and showEditor.
-  let getActiveCutoutShot, getFrameViewRect, poseOf, projectSceneItemDir, shortestWrappedDelta;
+  let getActiveCutoutShot, getFrameViewRect, isShotItem, poseOf, projectSceneItemDir, shortestWrappedDelta;
 
   // The panorama view's projection, rebuilt when its camera or the canvas size changes.
   let viewProjectionCache = { key: [], projection: null };
@@ -78,10 +78,12 @@ export function createProjection(deps) {
 
   function getStickerFrame(item) {
     const pose = poseOf(item);
+    // A shot's roll is its roll_deg only, as the node reads it; a Sticker's is its own rot_deg.
+    const roll = isShotItem(item) ? pose.roll_deg : (pose.rot_deg || pose.roll_deg);
     const basis = cameraBasis(
       Number(pose.yaw_deg || 0),
       Number(pose.pitch_deg || 0),
-      Number(pose.rot_deg || pose.roll_deg || 0),
+      Number(roll || 0),
     );
     // Always a pinhole: the legacy editor does not read `curve` (docs/legacy-node-surfaces.md).
     const tanX = Math.tan(clamp(Number(pose.hFOV_deg || 20), 0.1, 179) * 0.5 * DEG2RAD);
@@ -305,7 +307,7 @@ export function createProjection(deps) {
   return {
     connect(api) {
       ({
-        getActiveCutoutShot, getFrameViewRect, poseOf, projectSceneItemDir, shortestWrappedDelta,
+        getActiveCutoutShot, getFrameViewRect, isShotItem, poseOf, projectSceneItemDir, shortestWrappedDelta,
       } = api);
     },
     currentViewCamera, currentViewProjection, projectDir, screenToWorldDir, getUnwrapRect,

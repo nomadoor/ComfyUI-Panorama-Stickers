@@ -194,7 +194,7 @@ export function bindSurfacePointer(ctx) {
         const rollGesture = beginCutoutRollGesture({
           frame,
           point,
-          startRollDeg: Number(shot.roll_deg ?? shot.rot_deg ?? 0),
+          startRollDeg: Number(shot.roll_deg ?? 0),
           shiftKey: true,
         });
         if (!rollGesture) return;

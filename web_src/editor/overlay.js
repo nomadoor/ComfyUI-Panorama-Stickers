@@ -490,7 +490,7 @@ export function createOverlay(deps) {
     const rect = getFrameViewRect(visual.shot);
     if (!rect) return;
     const center = { x: rect.x + rect.w * 0.5, y: rect.y + rect.h * 0.5 };
-    const angle = Number(visual.shot.roll_deg ?? visual.shot.rot_deg ?? 0) * DEG2RAD;
+    const angle = Number(visual.shot.roll_deg ?? 0) * DEG2RAD;
     const radius = Math.hypot(rect.w, rect.h) * 0.55;
     const dx = Math.cos(angle) * radius;
     const dy = Math.sin(angle) * radius;

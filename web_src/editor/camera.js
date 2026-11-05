@@ -244,7 +244,7 @@ export function createCamera(deps) {
     const angle = frameRollAngleForEvent(event, center);
     editor.interaction = {
       kind: "roll_frame", shot, center, lastAngle: angle, accumulatedRad: 0,
-      start: { roll_deg: Number(shot.roll_deg ?? shot.rot_deg ?? 0) },
+      start: { roll_deg: Number(shot.roll_deg ?? 0) },
       changed: false, altStarted: false, source: "knob",
     };
     takeGestureSnapshot(editor.interaction);
@@ -278,7 +278,7 @@ export function createCamera(deps) {
   }
   function onFrameRollKnobDoubleClick(event) {
     const shot = editor.mode === "frame" && !readOnly ? getActiveCutoutShot() : null;
-    if (!shot || shot.locked === true || Math.abs(Number(shot.roll_deg ?? shot.rot_deg ?? 0)) <= 1e-9) return;
+    if (!shot || shot.locked === true || Math.abs(Number(shot.roll_deg ?? 0)) <= 1e-9) return;
     shot.roll_deg = 0;
     pushHistory();
     commitAndRefreshNode();

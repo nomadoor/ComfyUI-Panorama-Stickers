@@ -6,10 +6,10 @@ import test from "node:test";
 import { createProjection } from "../web_src/editor/projection.js";
 import { parsePanoEditorState } from "../web_src/pano_editor_state.js";
 
-function projection() {
+function projection(shots = []) {
   const canvas = { width: 800, height: 600 };
   const made = createProjection({ backgroundCanvas: canvas, canvas, editor: { mode: "pano", viewYaw: 0, viewPitch: 0, viewFov: 90 } });
-  made.connect({ getActiveCutoutShot: () => null, getFrameViewRect: () => null, poseOf: (item) => item, projectSceneItemDir: () => null, shortestWrappedDelta: (a, b) => b - a });
+  made.connect({ getActiveCutoutShot: () => null, getFrameViewRect: () => null, isShotItem: (item) => shots.includes(item), poseOf: (item) => item, projectSceneItemDir: () => null, shortestWrappedDelta: (a, b) => b - a });
   return made;
 }
 
@@ -43,4 +43,15 @@ test("a v1 state is read without its Stickers' and shots' curve", () => {
   }));
   assert.deepEqual(lensState.stickers, pinState.stickers);
   assert.deepEqual(lensState.shots, pinState.shots);
+});
+
+// docs/threejs-spark-integration.md "Cutout エディタ": a shot's roll is its roll_deg only; a Sticker keeps its rot_deg.
+test("the legacy editor turns a shot's frame by its roll_deg only, and a Sticker's by its rot_deg", () => {
+  const oldShot = { ...shot, rot_deg: 30 };
+  const rolled = { ...shot, roll_deg: 30 };
+  const p = projection([oldShot, rolled, shot]);
+  assert.deepEqual(p.getStickerFrame(oldShot), p.getStickerFrame(shot));
+  assert.notDeepEqual(p.getStickerFrame(rolled), p.getStickerFrame(shot));
+  const turned = { ...sticker, rot_deg: 30 };
+  assert.notDeepEqual(p.getStickerFrame(turned), p.getStickerFrame({ ...sticker, rot_deg: 0 }));
 });
