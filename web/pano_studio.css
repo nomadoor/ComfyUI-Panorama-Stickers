@@ -1126,8 +1126,25 @@
   font-size: var(--studio-text-sm);
 }
 
+/* The value's width is taken first, so more digits move nothing (docs/design.md "タイムラインの fps と Length の値の
+   幅"): Length 5 digits, fps 4, both shown and typed; a longer value grows the field. The digits are tabular
+   (.pano-studio-num) and sit at the left. */
+.pano-studio-tl-field .pano-studio-field-value,
 .pano-studio-tl-field .pano-studio-field-input {
-  width: 4ch;
+  flex: none;
+  min-width: var(--studio-tl-field-ch);
+}
+
+.pano-studio-tl-field .pano-studio-field-input {
+  field-sizing: content;
+}
+
+.pano-studio-tl-field.is-fps {
+  --studio-tl-field-ch: 4ch;
+}
+
+.pano-studio-tl-field.is-length {
+  --studio-tl-field-ch: 5ch;
 }
 
 .pano-studio-tl-body {

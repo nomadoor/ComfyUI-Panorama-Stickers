@@ -28,6 +28,10 @@ window.__scene = {
   upstream: () => JSON.parse(JSON.stringify(ctx.value.upstream.map((layer) => layer.sceneState))),
   selection: () => selection.value,
   playhead: () => playhead.value,
+  // Sets the Timeline fps as is (no rebase), for the width of the fps field.
+  setFps: (fps) => {
+    ctx.value = { ...ctx.value, state: { ...ctx.value.state, timeline: { ...ctx.value.state.timeline, fps } } };
+  },
   // Makes poster.png (sticker_2) the port Sticker with a 60-frame VIDEO, a row with its own time.
   portVideo: () => {
     const state = JSON.parse(JSON.stringify(ctx.value.state));

@@ -31674,7 +31674,7 @@ const _H = { class: "pano-studio-tl-bar" }, MH = {
       ]),
       u[14] || (u[14] = de("span", { class: "pano-studio-tl-spacer" }, null, -1)),
       de("span", {
-        class: $e(["pano-studio-tl-field", { "is-disabled": e.bar.fpsLocked }]),
+        class: $e(["pano-studio-tl-field is-fps", { "is-disabled": e.bar.fpsLocked }]),
         "data-tip": e.bar.fpsTip,
         onPointerdown: u[5] || (u[5] = (d) => {
           var c;
@@ -31699,7 +31699,7 @@ const _H = { class: "pano-studio-tl-bar" }, MH = {
         }, null, 8, ["value", "min", "max", "disabled"])
       ], 42, EH),
       de("span", {
-        class: $e(["pano-studio-tl-field", { "is-disabled": e.bar.lengthLocked }]),
+        class: $e(["pano-studio-tl-field is-length", { "is-disabled": e.bar.lengthLocked }]),
         "data-tip": "Output length in frames",
         onPointerdown: u[9] || (u[9] = (d) => {
           var c;

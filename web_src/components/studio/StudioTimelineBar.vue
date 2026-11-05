@@ -71,7 +71,7 @@ const fpsParse = (text) => {
     </span>
     <span class="pano-studio-tl-spacer" />
     <span
-      class="pano-studio-tl-field"
+      class="pano-studio-tl-field is-fps"
       :class="{ 'is-disabled': bar.fpsLocked }"
       :data-tip="bar.fpsTip"
       @pointerdown="fpsField?.startDrag($event)"
@@ -93,7 +93,7 @@ const fpsParse = (text) => {
       />
     </span>
     <span
-      class="pano-studio-tl-field"
+      class="pano-studio-tl-field is-length"
       :class="{ 'is-disabled': bar.lengthLocked }"
       data-tip="Output length in frames"
       @pointerdown="lengthField?.startDrag($event)"

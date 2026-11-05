@@ -409,3 +409,51 @@ test("▶ opens a row into its Lanes, whose Keyframes a box selects one Lane at 
   ]);
   await expect(dark(page).locator('[data-track="sticker_1:rotation"] .pano-studio-tl-key.is-selected')).toHaveCount(1);
 });
+
+// docs/timeline-ui.md "fps と Length の欄" and docs/design.md: the value's width is taken first (Length 5 digits, fps
+// 4), so more digits move nothing in the bar (the right group sits at the right end: a wider value would push its names
+// and the fields left of it), shown or typed.
+test("the fps and Length fields keep their width as digits are added, shown and typed", async ({ page }) => {
+  await open(page);
+  const length = dark(page).locator('[data-tl="length"]');
+  const fpsField = dark(page).locator('[data-tl="fps"]');
+  // The left and right edges of every part of the bar's right group: the fields, their names, the buttons.
+  const layout = () => dark(page).locator(".pano-studio-tl-bar").evaluate((bar) =>
+    [...bar.querySelectorAll(".pano-studio-tl-field, .pano-studio-tl-field-name, [data-tl]")]
+      .filter((el) => !["play", "prev", "next", "loop", "time"].includes(el.dataset.tl))
+      .map((el) => {
+        const r = el.getBoundingClientRect();
+        return `${el.dataset.tl || el.className}:${r.left}-${r.right}`;
+      })
+      .join(" "));
+  const shown = [];
+  const typed = [];
+  for (const value of ["9", "10", "100", "1000", "10000"]) {
+    await length.click();
+    await length.locator("input").fill(value);
+    typed.push(await layout());
+    await length.locator("input").press("Enter");
+    await expect(length).toHaveAttribute("aria-valuenow", value);
+    shown.push(await layout());
+  }
+  expect(new Set(shown).size).toBe(1);
+  // The open text box takes the same width as the shown value.
+  expect(new Set([...typed, ...shown]).size).toBe(1);
+  // Left aligned, digits of one width.
+  const look = await length.evaluate((el) => {
+    const value = el.querySelector(".pano-studio-field-value");
+    return { align: getComputedStyle(value).textAlign, nums: getComputedStyle(value).fontVariantNumeric };
+  });
+  expect(look).toEqual({ align: "left", nums: "tabular-nums" });
+
+  const byFps = [];
+  for (const fps of [1, 24, 120, 1000]) {
+    await page.evaluate((value) => window.__scene.setFps(value), fps);
+    await expect(fpsField).toHaveAttribute("aria-valuenow", String(fps));
+    byFps.push(await layout());
+  }
+  expect(new Set(byFps).size).toBe(1);
+  await fpsField.click();
+  expect(await layout()).toBe(byFps[0]);
+  await page.keyboard.press("Escape");
+});
