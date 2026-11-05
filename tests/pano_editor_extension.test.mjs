@@ -443,42 +443,6 @@ test("coverage changes preserve the widget callback and invalidate every preview
   assert.deepEqual(dirtied, ["runtime", "dom", "node", "graph", "app"]);
 });
 
-test("legacy stickers widget values migrate after configured values are restored", () => {
-  function NodeType() {}
-  NodeType.prototype.onConfigure = function (values) {
-    this.widgets.find((widget) => widget.name === "coverage").value = values.coverage;
-    this.widgets.find((widget) => widget.name === "bg_color").value = values.bgColor;
-    this.widgets.find((widget) => widget.name === "state_json").value = values.stateJson;
-  };
-  const extension = createPanoEditorExtension({
-    app: { canvas: { setDirty() {} } },
-    openEditor() {},
-    attachStickers() {},
-    attachCutout() {},
-    attachPreview() {},
-    requestFrame(callback) { callback(); },
-  });
-  extension.beforeRegisterNodeDef(NodeType, { name: "PanoramaStickers" });
-  const node = makeNode();
-
-  NodeType.prototype.onNodeCreated.call(node);
-  NodeType.prototype.onConfigure.call(node, {
-    coverage: "360",
-    bgColor: "#00ff00",
-    stateJson: "{}",
-  });
-  NodeType.prototype.onConfigure.call(node, {
-    coverage: "#123456",
-    bgColor: JSON.stringify({ coverage: 180 }),
-    stateJson: "old-sticker-state",
-  });
-
-  assert.equal(node.widgets.find((widget) => widget.name === "coverage").value, "180");
-  assert.equal(node.widgets.find((widget) => widget.name === "bg_color").value, "#123456");
-  assert.equal(node.widgets.find((widget) => widget.name === "state_json").value, JSON.stringify({ coverage: 180 }));
-  assert.equal(node.widgets.find((widget) => widget.name === "sticker_state").value, "old-sticker-state");
-});
-
 test("standalone preview waits for graph identity and attaches only once", () => {
   const queue = [];
   const attached = [];

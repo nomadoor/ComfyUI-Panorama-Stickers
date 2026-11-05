@@ -1,4 +1,4 @@
-import { LEGACY_BACKGROUND_COLOR, normalizeCoverageValue, parsePanoEditorState } from "./pano_editor_state.js";
+import { LEGACY_BACKGROUND_COLOR, parsePanoEditorState } from "./pano_editor_state.js";
 import { applyCutoutNodeSurfaceAction } from "./pano_cutout_node_surface.js";
 import { isPanoramaPreviewNodeName, isPanoramaPreviewSceneNodeName } from "./pano_preview_identity.js";
 import { linkedInputType } from "./pano_preview_video.js";
@@ -50,51 +50,6 @@ function syncCoverageWidgetRedraw(node, app) {
     app?.canvas?.setDirty?.(true, true);
   });
   stateSync(node).coverageSyncInstalled = true;
-}
-
-function isHexColorString(value) {
-  const text = String(value ?? "").trim();
-  return /^#?[0-9a-fA-F]{6}$/.test(text) || /^#?[0-9a-fA-F]{3}$/.test(text);
-}
-
-function looksLikeJsonObjectString(value) {
-  const text = String(value ?? "").trim();
-  return text.startsWith("{") && text.endsWith("}");
-}
-
-function migratePanoramaStickersWidgetOrder(node) {
-  if (!node) return;
-  const coverage = getWidget(node, "coverage");
-  const background = getWidget(node, "bg_color");
-  const stateWidget = getWidget(node, STATE_WIDGET);
-  const stickerState = getWidget(node, "sticker_state");
-  if (!coverage || !background || !stateWidget) return;
-  const coverageRaw = String(coverage.value ?? "").trim();
-  const backgroundRaw = String(background.value ?? "").trim();
-  const stateRaw = String(stateWidget.value ?? "").trim();
-  const needsMigration = !/^(180|360)$/.test(coverageRaw)
-    && isHexColorString(coverageRaw)
-    && (looksLikeJsonObjectString(backgroundRaw) || backgroundRaw === "");
-  if (!needsMigration) return;
-  let migratedCoverage = "360";
-  if (looksLikeJsonObjectString(backgroundRaw)) {
-    try {
-      migratedCoverage = String(normalizeCoverageValue(JSON.parse(backgroundRaw)?.coverage));
-    } catch {
-      migratedCoverage = "360";
-    }
-  }
-  coverage.value = migratedCoverage;
-  coverage.callback?.(migratedCoverage);
-  background.value = coverageRaw;
-  background.callback?.(coverageRaw);
-  stateWidget.value = backgroundRaw;
-  stateWidget.callback?.(backgroundRaw);
-  if (stickerState) {
-    stickerState.value = stateRaw;
-    stickerState.callback?.(stateRaw);
-  }
-  node.setDirtyCanvas?.(true, true);
 }
 
 function hideWidget(node, widgetName) {
@@ -264,9 +219,6 @@ function installEditorButton(nodeType, {
       const result = previous ? previous.apply(this, arguments) : undefined;
       if (hook === "onNodeCreated" && matchType === "PanoramaCutout") {
         initializeNewCutoutFrame(this);
-      }
-      if (hook === "onConfigure" && matchType === "PanoramaStickers" && !sceneStateV2 && this.widgets) {
-        migratePanoramaStickersWidgetOrder(this);
       }
       const attached = nodeSurface(this).attached;
       if (hook === "onNodeCreated" || this.widgets) installOrUpdate(this);
