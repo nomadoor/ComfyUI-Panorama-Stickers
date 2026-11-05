@@ -1483,7 +1483,8 @@ function Pi(e, t) {
   return qu({
     ...e,
     timeline: { fps: n, length: o === null ? null : Math.max(1, i(o)) },
-    camera: e.camera === null ? null : { ...e.camera, ...ds(e.camera, Na, i, 0, 0) },
+    // A loaded state always has its one Camera (ADR 0048).
+    camera: { ...e.camera, ...ds(e.camera, Na, i, 0, 0) },
     scene: { ...e.scene, clip: a.clip, ...ds(e.scene, fl, i, a.anchor, a.newAnchor) },
     stickers: e.stickers.map((s) => {
       const { clip: l, anchor: u, newAnchor: d } = fs(s.clip, i);

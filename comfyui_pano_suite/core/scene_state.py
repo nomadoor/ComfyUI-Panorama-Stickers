@@ -673,7 +673,6 @@ def rebase_scene_state(state: dict, fps: float) -> dict:
         return _frame(frame * ratio)
 
     length = state["timeline"]["length"]
-    camera = state["camera"]
     scene = _rebase_clip(state["scene"]["clip"], rebase)
     stickers = []
     for sticker in state["stickers"]:
@@ -685,7 +684,8 @@ def rebase_scene_state(state: dict, fps: float) -> dict:
     return _normalize_v2({
         **state,
         "timeline": {"fps": rate, "length": None if length is None else max(1, rebase(length))},
-        "camera": None if camera is None else {**camera, **_rebase_lanes(camera, CAMERA_LANES, rebase, 0, 0)},
+        # A loaded state always has its one Camera (ADR 0048).
+        "camera": {**state["camera"], **_rebase_lanes(state["camera"], CAMERA_LANES, rebase, 0, 0)},
         "scene": {**state["scene"], "clip": scene["clip"], **_rebase_lanes(state["scene"], SCENE_LANES, rebase, scene["anchor"], scene["new_anchor"])},
         "stickers": stickers,
         "background": {**state["background"], "clip": _rebase_clip(state["background"]["clip"], rebase)["clip"]},

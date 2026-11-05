@@ -684,7 +684,8 @@ export function rebaseSceneState(state, value) {
   return normalizeV2({
     ...state,
     timeline: { fps, length: length === null ? null : Math.max(1, rebase(length)) },
-    camera: state.camera === null ? null : { ...state.camera, ...rebaseLanes(state.camera, CAMERA_LANES, rebase, 0, 0) },
+    // A loaded state always has its one Camera (ADR 0048).
+    camera: { ...state.camera, ...rebaseLanes(state.camera, CAMERA_LANES, rebase, 0, 0) },
     scene: { ...state.scene, clip: scene.clip, ...rebaseLanes(state.scene, SCENE_LANES, rebase, scene.anchor, scene.newAnchor) },
     stickers: state.stickers.map((item) => {
       const { clip, anchor, newAnchor } = rebaseClip(item.clip, rebase);
