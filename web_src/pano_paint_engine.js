@@ -187,19 +187,13 @@ function getRawPoints(stroke) {
 
 // ─── Brush Radius ─────────────────────────────────────────────────────────────
 
+// A positive radiusValue is the radius as a share of the ERP width whatever radiusModel says, as the node reads it
+// (core/paint_strokes.py `_stroke_width_px`); the old degree_norm / world_angle models are not looked at.
 function getRadiusPx(stroke, descriptor) {
   const radiusValue = Number(stroke?.radiusValue);
-  const radiusModel = String(stroke?.radiusModel || "").trim();
   const w = descriptor?.width || 1;
-  if (radiusModel === "erp_uv_norm" && radiusValue > 0) {
-    // radiusValue = radius_px / reference_width (reference = 2048)
-    return Math.max(0.5, radiusValue * w);
-  }
-  if (radiusModel === "degree_norm" && radiusValue > 0) {
-    // radiusValue = angle_radius_degrees / 90; at equator, pixel_radius ≈ angle/360 * width
-    return Math.max(0.5, (radiusValue * 90 / 360) * w);
-  }
-  return Math.max(0.5, Number(stroke?.baseSize || stroke?.size || 10) * 0.5);
+  if (radiusValue > 0) return Math.max(0.5, radiusValue * w);
+  return Math.max(0.5, Number(stroke?.size || 10) * 0.5);
 }
 
 // Stamp spacing in pixels. Falls back to brush-type defaults if not set on the stroke.

@@ -221,3 +221,13 @@ test("a FRAME_LOCAL stroke is dropped and an ERP_GLOBAL one kept", () => {
   const painting = normalizePaintingState({ paint: { strokes: [stroke("old", { kind: "FRAME_LOCAL", frameId: "f" }), stroke("erp", { kind: "ERP_GLOBAL" })] } });
   assert.deepEqual(painting.paint.strokes.map((item) => item.id), ["erp"]);
 });
+
+// A positive radiusValue is a share of the ERP width whatever radiusModel says, as the node reads it
+// (core/paint_strokes.py `_stroke_width_px`); the old degree_norm and world_angle models are not looked at.
+test("a stroke's radius is its radiusValue share of the ERP width, whatever its old radius model", async () => {
+  const { getNativeRadiusPxForStrokePoint } = await import("../web_src/paint_strokes/raster.js");
+  for (const radiusModel of ["erp_uv_norm", "degree_norm", "world_angle", ""]) {
+    assert.equal(getNativeRadiusPxForStrokePoint({ radiusModel, radiusValue: 0.01, size: 99 }, null, 2048), 20.48, radiusModel);
+  }
+  assert.equal(getNativeRadiusPxForStrokePoint({ size: 40 }, null, 2048), 20);
+});
