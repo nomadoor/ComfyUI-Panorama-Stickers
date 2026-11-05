@@ -159,7 +159,6 @@ def node_layers(raw):
     sources = _painting_sources(loaded, stickers)
     paint = {}
     layers, mask = _sky_layers(evaluate_scene_state(loaded, 0), sources, (128, 64), "cpu", {}, paint)
-    rasters = {id(item): item["id"] for item in sources.painting["raster_objects"]}
     keys = {id(value[1][0]): key for key, value in paint.items() if key != "mask" and isinstance(value, tuple) and value[1] is not None}
     out = []
     for layer in layers:
@@ -167,7 +166,7 @@ def node_layers(raw):
             out.append(["sticker", layer[3]["sticker"]["id"]])
             continue
         key = keys[id(layer[1])]
-        out.append(["flat", None] if key[0] == "flat" else ["group", key[1]] if key[0] == "group" else ["raster", rasters[key[1]]])
+        out.append(["flat", None] if key[0] == "flat" else ["group", key[1]] if key[0] == "group" else ["raster", key[1]])
     return out, mask is not None
 
 

@@ -194,8 +194,10 @@ def _sky_layers(evaluated: dict, sources: SceneSources, size: tuple[int, int], d
         if entry["type"] == "strokeGroup":
             exists, layer = paint_layer(("group", entry["actionGroupId"]), lambda: group_layer(entry["actionGroupId"]))
         else:
-            # Raster objects keep their order among the paint entries whichever Stickers are drawn between them.
-            exists, layer = paint_layer(("raster", id(entry["item"])), lambda: render_raster_layer_from_state(entry["item"], width, height))
+            # Raster objects keep their order among the paint entries whichever Stickers are drawn between them. A
+            # raster is kept by its id, unique in the normalized painting (`normalize_painting_state`); the painting
+            # does not change while `paint` is kept (one run; docs/render-contract.md `cache`).
+            exists, layer = paint_layer(("raster", entry["item"]["id"]), lambda: render_raster_layer_from_state(entry["item"], width, height))
         used_layers = used_layers or exists
         if layer is not None:
             layers.append(("erp", *layer))
