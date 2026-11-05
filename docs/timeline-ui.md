@@ -152,7 +152,7 @@ Panorama Studio はいつも新しい UI で開き、古い UI に Panorama Stud
   - `port` の Sticker の素材：現在の実行結果の `pano_sticker_input_video_meta`、3D の素材は `pano_sticker_files` の要素の数（`pano_port_media.js` の `portMediaMeta`）。
   - `scene` 入力の要素：現在の実行結果の `pano_scene_files` の数。
   - 上流の Scene：実行結果の `pano_upstream_frames`（上流の出力のフレーム数）。
-- 実行前で入力の長さが分からないときの扱い：分からない入力は無いものとして、規則の次の段へ進む（1 フレームの入力と同じ）。例外として、背景の入力が LoadVideo のファイルを直接読むときは、そのファイルの長さ × Timeline fps を背景の VIDEO のフレーム数とする（ノードは VIDEO 自身のフレーム数を使うので、fps が違えば実行までずれる）。ほかに一致しないのは、背景の 1 フレームの VIDEO（エディタ用 MP4 を作らないのでエディタは長さを知らず、ノードはその VIDEO の 1 フレームを長さにする。`port` の 1 フレームの VIDEO はメタ情報だけを出すので一致する）と、古い版が出した、`pano_upstream_frames` を持たない実行結果（代わりに自分の出力の長さ `pano_timeline_frames` を上流の長さとする）。どれも次の実行で正しくなる。上流の Scene の下の VFR の背景 VIDEO は、実行の後もずれうる（エディタはメタ情報の `duration`（フレーム数 ÷ 平均 fps）を使い、ノードは最後のフレームの時刻 + 平均 fps の 1 フレームを使う。CFR では一致する）。
+- 実行前で入力の長さが分からないときの扱い：分からない入力は無いものとして、規則の次の段へ進む（1 フレームの入力と同じ）。例外として、背景の入力が LoadVideo のファイルを直接読むときは、そのファイルの長さ × Timeline fps を背景の VIDEO のフレーム数とする（ノードは VIDEO 自身のフレーム数を使うので、fps が違えば実行までずれる）。ほかに一致しないのは、背景の 1 フレームの VIDEO（エディタ用 MP4 を作らないのでエディタは長さを知らず、ノードはその VIDEO の 1 フレームを長さにする。`port` の 1 フレームの VIDEO はメタ情報だけを出すので一致する）。`pano_upstream_frames` を持たない古い版の実行結果では、上流の長さを 0 と数える（ADR 0063）。どれも次の実行で正しくなる。上流の Scene の下の VFR の背景 VIDEO は、実行の後もずれうる（エディタはメタ情報の `duration`（フレーム数 ÷ 平均 fps）を使い、ノードは最後のフレームの時刻 + 平均 fps の 1 フレームを使う。CFR では一致する）。
 - 再生はこの長さの中でループする（新しい UI では、タイムラインのバーのループのボタンがオンのとき。既定はオン。オフのときは最後の
   フレームで止まり、もう一度再生すると先頭から始める。スイッチはエディタだけの設定で、状態に入らず、ブラウザごとに覚える。ADR 0048）。
   再生ヘッドは最後のフレーム（長さ − 1）より先に行かない（`pano_video_playback.js` の `seek`。長さが縮んだときは最後のフレームへ戻す。新しい UI でそれを見るのは `web_src/studio/editor_view.js` の `keepPlayheadInSpan`、`tests/browser/studio_session.spec.js`）。そのため出力より先に Keyframe は打てない。

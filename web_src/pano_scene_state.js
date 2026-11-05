@@ -752,6 +752,8 @@ function v1StickerStateCamera(pose) {
 
 // Reads `sticker_state` v1 or v2 as a normalized v2 sticker_state.
 // Returns null when the text is not a sticker_state, which callers ignore as before.
+// No runtime caller today: kept as the JS twin of core/scene_state.py load_sticker_state, which the parity tests
+// (tests/test_scene_state_parity.py, tests/pano_scene_state.test.mjs) hold to the same fixtures.
 export function loadStickerState(text) {
   if (typeof text !== "string" || !text.trim()) return null;
   let raw;

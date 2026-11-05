@@ -28,7 +28,7 @@ Issue #135 の整理の中で、今のエディタとノードがもう書かな
 - 埋め込み画像の Sticker（v1 の `type: "dataurl"` の資産、状態 v2 の `{"kind": "file", "data_url": ...}` の Source）：Sticker を捨てる。
 - v1 の `type: "path"` の資産（相対パスで ComfyUI の外のファイルを読みうるもの）：Sticker を捨てる。旧ノードも描かない。
 - `sticker_state`：`version` の文字列（`"1"`）、`pose`・`source_aspect` の数値の文字列、v2 の読めない `fps`（欠け・0 以下・数値でない）は
-  読めない値とする。
+  読めない値とする。Panorama Studio では未対応の版として実行のエラーにし、旧ノードでは無視する（`docs/scene-state-v2.md`）。
 - 実行結果の `pano_sticker_handoff`：`placement` が `sky` でない値（ADR 0059 の前の実行）、`fps` の無い値は当てない。
 - ノードへ送るペイントの層（`painting_layer`）：今のエディタが書くキー（group の `actionGroupId`、資産の `storage`、`revision`）だけを読む。
 
