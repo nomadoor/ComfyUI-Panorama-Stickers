@@ -63,9 +63,9 @@ function release(ctx, { vueApp, mountHost, flushBeforeQueue, finished }) {
   ctx.backgroundVideoElement?.remove();
   if (ctx.backgroundStill) releasePanoCanvas(ctx.backgroundStill);
   ctx.paint?.cancel();
-  if (finished) ctx.uploadPaintLayerOnClose();
+  const uploading = finished ? ctx.uploadPaintLayerOnClose() : null;
   ctx.stage?.dispose();
-  ctx.paint?.dispose();
+  ctx.paint?.dispose(uploading);
   ctx.stageMedia?.dispose();
   ctx.depthColors?.dispose();
   ctx.comfyRunning?.dispose();

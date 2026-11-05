@@ -46,13 +46,13 @@ export function createCommit(deps) {
     node.setDirtyCanvas?.(true, true);
   }
 
+  // Returns the paint layer upload (settled when it is done or failed), or null without one.
   function triggerBackgroundPersistenceOnClose() {
-    if (readOnly) return;
-    if (needsPaintingLayerSync()) {
-      void syncPaintingLayerAsync().catch((error) => {
-        console.error("[PanoramaPaintingLayerSync] background close sync failed", error);
-      });
-    }
+    if (readOnly) return null;
+    if (!needsPaintingLayerSync()) return null;
+    return syncPaintingLayerAsync().catch((error) => {
+      console.error("[PanoramaPaintingLayerSync] background close sync failed", error);
+    });
   }
 
   function syncCoverageChangeToNodePreviews(options = {}) {

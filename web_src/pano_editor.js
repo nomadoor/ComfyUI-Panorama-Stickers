@@ -710,7 +710,10 @@ async function showEditor(node, type, options = {}) {
       }
       vueApp.unmount();
       mountHost.remove();
-      triggerBackgroundPersistenceOnClose();
+      // The paint engine lets go of its canvases once the paint layer upload, which reads them, is done.
+      const uploading = triggerBackgroundPersistenceOnClose();
+      const engine = editor.paintEngine;
+      Promise.resolve(uploading).finally(() => engine?.dispose());
       closeEditorPromise = null;
       return true;
     })().catch((error) => {

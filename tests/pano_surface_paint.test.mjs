@@ -42,6 +42,10 @@ function engines() {
     const engine = {
       descriptor,
       rebuilds: 0,
+      disposed: 0,
+      dispose() {
+        engine.disposed += 1;
+      },
       groups: new Set(),
       rebuildCommitted(state) {
         engine.rebuilds += 1;
@@ -126,4 +130,15 @@ test("node preview raster surfaces are capped independently from output resoluti
   assert.deepEqual(resolveRasterPreviewSize(512), { width: 512, height: 256 });
   assert.deepEqual(resolveRasterPreviewSize(2048), { width: 1024, height: 512 });
   assert.deepEqual(resolveRasterPreviewSize(4096), { width: 1024, height: 512 });
+});
+
+test("a surface engine made again at a new output size lets the old one go, and the display's dispose lets go of its own", () => {
+  const { made, create } = engines();
+  const surface = {};
+  const painting = { paint: { strokes: [stroke("a", "g0")] } };
+  surfacePaintLayers(surface, legacyState({ painting }), create);
+  surfacePaintLayers(surface, legacyState({ painting, output_preset: 4096 }), create);
+  assert.deepEqual(made.map((engine) => [engine.descriptor.width, engine.disposed]), [[2048, 1], [4096, 0]]);
+  surface.paintDisplay.dispose();
+  assert.deepEqual(made.map((engine) => engine.disposed), [1, 1]);
 });

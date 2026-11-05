@@ -398,6 +398,7 @@ export function createPaintDisplay(options) {
     const descriptor = size();
     const key = `${descriptor.width}x${descriptor.height}`;
     if (!engine || engineKey !== key) {
+      engine?.dispose();
       engine = createEngine(descriptor);
       engineKey = key;
       builtFrom = null;
@@ -456,6 +457,7 @@ export function createPaintDisplay(options) {
       seen.forEach(letGo);
       seen.clear();
       recent?.dispose();
+      engine?.dispose();
       engine = null;
       builtFrom = null;
     },

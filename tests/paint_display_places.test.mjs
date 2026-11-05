@@ -305,6 +305,7 @@ function surfaceTrace({ mask = false } = {}) {
         },
         getGroupDisplayCanvas: (id) => (engine.groups.has(id) ? `${engine.serial}:${id}` : null),
         getMaskDisplay: () => ({ media: `${engine.serial}:mask`, revision: "m" }),
+        dispose() {},
       };
       engines.push(engine);
       return engine;

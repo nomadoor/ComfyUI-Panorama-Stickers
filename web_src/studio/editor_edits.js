@@ -226,12 +226,13 @@ export function createEditorEdits(ctx) {
   // ComfyUI's input as the old editor sends them, and `painting_layer` to state_json while its painting is still the one
   // closed with. A prompt queued meanwhile waits for it (pano_editor_extension.js queuePendingStickerOperation). Not
   // while a stroke is under way (closing gives it up first).
+  // Returns the upload (settled when it is done or failed), or null without one.
   function uploadPaintLayerOnClose() {
     const nodeId = String(ctx.node.id ?? "0");
-    if (ctx.readOnly || !ctx.stateWidget || !ctx.api?.fetchApi || !needsPaintLayer(ctx.session.state, nodeId)) return;
+    if (ctx.readOnly || !ctx.stateWidget || !ctx.api?.fetchApi || !needsPaintLayer(ctx.session.state, nodeId)) return null;
     const painting = loadSceneState(String(ctx.stateWidget.value ?? "")).painting;
     const sources = ctx.paint.nodeLayer();
-    queuePendingStickerOperation(ctx.node, `paint-layer:${nodeId}`, async () => {
+    return queuePendingStickerOperation(ctx.node, `paint-layer:${nodeId}`, async () => {
       const layer = await uploadPaintLayer(ctx.api, { nodeId, painting, sources });
       const text = textWithPaintLayer(String(ctx.stateWidget.value ?? ""), painting, layer);
       if (text === null) return;
