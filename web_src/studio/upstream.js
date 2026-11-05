@@ -119,7 +119,7 @@ export function createStudioUpstream({
     output() {
       const current = entries();
       if (!current) return null;
-      const [frames] = uiList("pano_upstream_frames").length ? uiList("pano_upstream_frames") : uiList("pano_timeline_frames");
+      const [frames] = uiList("pano_upstream_frames");
       const working = current.map((entry) => entry.working);
       const portMeta = (index) => portMediaMeta((key) => layerUiList(current[index].layer.ui, key));
       return {

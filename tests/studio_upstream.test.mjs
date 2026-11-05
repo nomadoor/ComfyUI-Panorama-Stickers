@@ -120,3 +120,20 @@ test("the working layers keep their names and their list across reads, until a n
   assert.equal(lookups, 2, "a new result: its names are found again");
   assert.deepEqual(upstream.working(), []);
 });
+
+// The upstream length is the result's pano_upstream_frames only (docs/studio-node.md: the node always gives it with an
+// upstream); the node's own pano_timeline_frames is not read in its place.
+test("without pano_upstream_frames the upstream counts no frames, whatever pano_timeline_frames says", () => {
+  const upstream = createStudioUpstream({
+    list: () => [{ state: layerState, ui: {} }],
+    linkType: () => "PANO_SCENE",
+    uiList: (key) => (key === "pano_timeline_frames" ? [90] : []),
+    state: () => loadSceneState({ version: 2 }),
+    setRecords: () => {},
+    mediaSource: (entry) => entry,
+    mediaAssetSource: (asset) => `/view?filename=${asset.filename}`,
+    revisionOf: () => "r",
+    playing: () => false,
+  });
+  assert.equal(upstream.output().frames, 0);
+});

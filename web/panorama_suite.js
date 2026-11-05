@@ -13827,7 +13827,7 @@ function pg({
     output() {
       const v = h();
       if (!v) return null;
-      const [g] = n("pano_upstream_frames").length ? n("pano_upstream_frames") : n("pano_timeline_frames"), N = v.map((F) => F.working), S = (F) => Is((M) => On(v[F].layer.ui, M));
+      const [g] = n("pano_upstream_frames"), N = v.map((F) => F.working), S = (F) => Is((M) => On(v[F].layer.ui, M));
       return {
         frames: Number(g) > 0 ? Number(g) : 0,
         ends: p.overriddenEnds(N, S)
