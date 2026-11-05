@@ -6,6 +6,7 @@ import {
   executionIdMatches,
   preferredImageInputsForNode,
   resolveInputOriginNode,
+  resultUiValue,
 } from "../pano_comfy_media.js";
 import {
   isRenderableMediaReady,
@@ -145,11 +146,10 @@ export const executedRefreshMonitor = {
   },
 };
 
+// The first value under `key` in the node's own result (`outputOverride` in its place when given; pano_comfy_media.js
+// resultUiValue), or null without one.
 export function ownOutputUiValue(node, key, outputOverride = null) {
-  const output = outputOverride || lookupNodeOutputEntry(node?.id);
-  const value = output?.ui && Object.prototype.hasOwnProperty.call(output.ui, key)
-    ? output.ui[key]
-    : output?.[key];
+  const value = resultUiValue(outputOverride || lookupNodeOutputEntry(node?.id), key);
   return Array.isArray(value) ? value[0] : value;
 }
 

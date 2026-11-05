@@ -153,6 +153,22 @@ function hashStringSimple(text) {
 }
 
 // read: the name of a read profile (above), "editor" by default.
+// The value under `key` in a node's result `payload` (app.nodeOutputs): its `ui`'s when the `ui` has the key, else
+// the result's own, else null. Every reading of a result's `ui` value goes by this.
+export function resultUiValue(payload, key) {
+  if (payload?.ui && Object.prototype.hasOwnProperty.call(payload.ui, key)) return payload.ui[key];
+  if (payload && Object.prototype.hasOwnProperty.call(payload, key)) return payload[key];
+  return null;
+}
+
+// The list under `key` in a node's result `payload`: its `ui`'s when that is a list, else the result's own list,
+// else []. Every reading of a result's `ui` list goes by this.
+export function resultUiList(payload, key) {
+  if (Array.isArray(payload?.ui?.[key])) return payload.ui[key];
+  if (Array.isArray(payload?.[key])) return payload[key];
+  return [];
+}
+
 export function createComfyMediaAdapter({ app, api, ImageCtor, imageState, read: profileName = "editor" } = {}) {
   const read = readProfile(profileName);
   const entryUrl = (entry) => comfyImageEntryToUrl(api, entry, read);
@@ -220,19 +236,8 @@ export function createComfyMediaAdapter({ app, api, ImageCtor, imageState, read:
     return null;
   };
 
-  const uiList = (node, key) => {
-    const payload = output(node?.id);
-    if (Array.isArray(payload?.ui?.[key])) return payload.ui[key];
-    if (Array.isArray(payload?.[key])) return payload[key];
-    return [];
-  };
-
-  const uiValue = (node, key) => {
-    const payload = output(node?.id);
-    if (payload?.ui && Object.prototype.hasOwnProperty.call(payload.ui, key)) return payload.ui[key];
-    if (payload && Object.prototype.hasOwnProperty.call(payload, key)) return payload[key];
-    return null;
-  };
+  const uiList = (node, key) => resultUiList(output(node?.id), key);
+  const uiValue = (node, key) => resultUiValue(output(node?.id), key);
 
   const externalStateHash = (node, stateRaw) => {
     const payloadValue = uiValue(node, "pano_sticker_input_state_hash");
