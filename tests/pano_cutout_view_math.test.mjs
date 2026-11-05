@@ -88,6 +88,12 @@ test("a Cutout shot's FOV of 0 is held at the least FOV, a missing one is 90 / 6
   assert.deepEqual([zero.hFovDeg, zero.vFovDeg], [1, 1]);
   const missing = getCutoutCameraParams({});
   assert.deepEqual([missing.hFovDeg, missing.vFovDeg], [90, 60]);
+  // As Python's float(): null, "" and text that is no number are missing; false is 0 and a number in text is read.
+  for (const value of [null, "", "wide", undefined]) {
+    const camera = getCutoutCameraParams({ hFOV_deg: value, vFOV_deg: value });
+    assert.deepEqual([camera.hFovDeg, camera.vFovDeg], [90, 60], String(value));
+  }
+  assert.deepEqual([getCutoutCameraParams({ hFOV_deg: false }).hFovDeg, getCutoutCameraParams({ hFOV_deg: " 45 " }).hFovDeg], [1, 45]);
   assert.equal(getCutoutCameraParams({ rot_deg: 12 }).rollDeg, 0);
   assert.equal(getCutoutCameraParams({ roll_deg: 7, rot_deg: 12 }).rollDeg, 7);
 });

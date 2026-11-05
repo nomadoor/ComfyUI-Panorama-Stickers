@@ -62,13 +62,23 @@ function fovOfTangent(tangent, curve) {
   return 2 * lensAngle(tangent, curve) * RAD2DEG;
 }
 
+// A shot's FOV field as the node reads it (core/math.py `finite_float`, Python's float()): a number, a boolean as 0 or 1,
+// or text that is a number; anything else, or a value that is not finite, is `fallback`.
+function shotFovField(value, fallback) {
+  let number = NaN;
+  if (typeof value === "number") number = value;
+  else if (typeof value === "boolean") number = Number(value);
+  else if (typeof value === "string" && /^[+-]?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?$/i.test(value.trim())) number = Number(value.trim());
+  return Number.isFinite(number) ? number : fallback;
+}
+
 export function getCutoutCameraParams(shot = {}) {
   // As the node reads a shot (docs/threejs-spark-integration.md "Cutout エディタ"): a FOV of 0 is held at the least
-  // FOV, a missing one is 90 / 60; the roll is roll_deg only.
+  // FOV, a missing one (shotFovField) is 90 / 60; the roll is roll_deg only.
   const curve = shotCurve(shot);
   const fovMax = shotFovMaxDeg(curve);
-  const hFovDeg = clamp(finiteOr(shot.hFOV_deg, 90), CUTOUT_FOV_MIN_DEG, fovMax);
-  const vFovDeg = clamp(finiteOr(shot.vFOV_deg, 60), CUTOUT_FOV_MIN_DEG, fovMax);
+  const hFovDeg = clamp(shotFovField(shot.hFOV_deg, 90), CUTOUT_FOV_MIN_DEG, fovMax);
+  const vFovDeg = clamp(shotFovField(shot.vFOV_deg, 60), CUTOUT_FOV_MIN_DEG, fovMax);
   const tanHalfX = halfTangent(hFovDeg, curve);
   const tanHalfY = halfTangent(vFovDeg, curve);
   return {

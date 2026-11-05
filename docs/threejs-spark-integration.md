@@ -76,7 +76,7 @@ Cutout のエディタも、Stickers と同じ `pano_editor_view.js` / `pano_thr
 - Unwrap 表示も three.js で描く（`renderUnwrap`）。Stickers のエディタと Preview のモーダルの Unwrap も同じ経路になる。180 の ERP は横幅いっぱいに引き伸ばす。
 - three.js を読み込めないときは、Stickers と同じく失敗を表示する。
 
-- shot の FOV と roll の読み方はノードと同じにする（`pano_cutout_view_math.js` の `getCutoutCameraParams`）：FOV が 0 のときは最小値（1°）に丸め、欠けているときだけ 90° / 60° とする。roll は `roll_deg` だけを読み、古い `rot_deg` は読まない。
+- shot の FOV と roll の読み方はノードと同じにする（`pano_cutout_view_math.js` の `getCutoutCameraParams`）：FOV が 0 のときは最小値（1°）に丸め、欠けているとき（数でない値。`null`・空の文字列を含む。Python の `float()` と同じく、真偽値は 0 / 1、数の文字列は数）だけ 90° / 60° とする。roll は `roll_deg` だけを読み、古い `rot_deg` は読まない。
 
 ## 投影と当たり判定のカメラ
 
