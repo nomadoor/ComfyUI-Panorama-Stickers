@@ -610,3 +610,18 @@ test("the port Sticker's 3D clips count in the animations", () => {
   assert.deepEqual(Object.values(animations.stickers), [clips]);
   detach(node);
 });
+
+// One rule, one owner (pano_comfy_media.js resultUiList): the node surface reads a result's `ui` lists as the editor
+// does. A `ui` whose value under the key is not a list falls back to the result's own list (it gave [] before).
+test("the node surface reads a result's ui list as the media adapter does", async () => {
+  const { ownOutputUiList } = await import("../web_src/node_surface/media.js");
+  const node = createFakeNode({ type: STUDIO, studio: true });
+  fakeApp.nodeOutputs[String(node.id)] = { ui: { pano_timeline_fps: 12, pano_timeline_frames: [5] }, pano_timeline_fps: [30], pano_timeline_frames: [9] };
+  try {
+    assert.deepEqual(ownOutputUiList(node, "pano_timeline_fps"), [30]);
+    assert.deepEqual(ownOutputUiList(node, "pano_timeline_frames"), [5]);
+    assert.deepEqual(ownOutputUiList(node, "pano_missing"), []);
+  } finally {
+    delete fakeApp.nodeOutputs[String(node.id)];
+  }
+});
