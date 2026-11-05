@@ -252,6 +252,68 @@ test("while Set orbit center waits, a view drag takes Escape first, the wait the
   expect(problems).toEqual([]);
 });
 
+// docs/space-and-view.md "オービットの中心の印" 置く点: while the view turns to a T just set, the mark stays on the chosen
+// point; then each wheel step (P and T scaled about the pointer's hit, eased) keeps it on the same screen point, on the
+// T of the view shown, not jumping ahead to the eased move's destination.
+test("the mark stays on the chosen point while the view turns to it, and wheel steps keep it on the same screen point", async ({ page }) => {
+  const { problems, stage } = await open(page);
+  const box = await stage.boundingBox();
+  const mid = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  await page.locator('[data-action="orbit-center"]').click();
+  // Per frame, after the stage drew: where the mark is (the middle of its opaque pixels, in the stage's CSS px), where the
+  // chosen point and the shown T project, and whether the view still eases.
+  await page.evaluate(async () => {
+    const { projectPoint } = await import("/web_src/pano_space.js");
+    const stage = window.__studio.stage();
+    const canvas = document.querySelector("[data-stage-overlay]");
+    const g = canvas.getContext("2d");
+    const frames = (window.__markFrames = []);
+    window.__markChosen = null;
+    const loop = () => setTimeout(() => {
+      const view = stage.viewport();
+      const ratio = canvas.width / canvas.getBoundingClientRect().width;
+      const data = g.getImageData(0, 0, canvas.width, canvas.height).data;
+      let sx = 0;
+      let sy = 0;
+      let n = 0;
+      for (let i = 3; i < data.length; i += 4) {
+        if (data[i] <= 200) continue;
+        const p = (i - 3) / 4;
+        sx += p % canvas.width;
+        sy += Math.floor(p / canvas.width);
+        n += 1;
+      }
+      const chosen = window.__markChosen && projectPoint(view.camera, window.__markChosen, view.width, view.height);
+      frames.push({ mark: n ? { x: sx / n / ratio, y: sy / n / ratio } : null, chosen, animating: stage.pose().target.join() !== stage.destination().target.join() });
+      if (frames.length < 400) requestAnimationFrame(loop);
+    }, 0);
+    requestAnimationFrame(loop);
+  });
+  await page.mouse.click(mid.x - 60, mid.y + 120);
+  await page.evaluate(() => { window.__markChosen = window.__studio.stage().destination().target; });
+  const near = (a, b, px = 2) => !!a && !!b && Math.abs(a.x - b.x) <= px && Math.abs(a.y - b.y) <= px;
+  // The turn: the mark is on the chosen point in every frame it eases.
+  await page.waitForTimeout(450);
+  const turn = await page.evaluate(() => window.__markFrames.splice(0));
+  const turning = turn.filter((frame) => frame.chosen && frame.animating && frame.mark);
+  expect(turning.length).toBeGreaterThan(3);
+  for (const frame of turning) expect(near(frame.mark, frame.chosen), JSON.stringify(frame)).toBe(true);
+  // Wheel steps toward an off-center spot on the ground, within the mark's time: it stays where it was.
+  const still = turn.at(-1).mark;
+  expect(still).not.toBeNull();
+  await page.mouse.move(mid.x + 200, mid.y + 100);
+  for (let i = 0; i < 3; i += 1) {
+    await page.mouse.wheel(0, -100);
+    await page.waitForTimeout(90);
+  }
+  await page.waitForTimeout(150);
+  const wheel = await page.evaluate(() => window.__markFrames.splice(0));
+  const moving = wheel.filter((frame) => frame.animating && frame.mark);
+  expect(moving.length).toBeGreaterThan(3);
+  for (const frame of moving) expect(near(frame.mark, still), JSON.stringify({ frame, still })).toBe(true);
+  expect(problems).toEqual([]);
+});
+
 test("with a painting tool chosen, the wait's press sets T and draws no stroke; a double click does not set T", async ({ page }) => {
   const { problems, stage } = await open(page);
   const box = await stage.boundingBox();
