@@ -49,7 +49,6 @@ export function createRenderLoop(deps) {
     syncFrameRollKnob();
     drawLassoOutlineOverlay();
     drawFrameRollOverlay();
-    uiState.fovValue = `${Math.round(editor.viewFov)}°`;
     if (Math.abs(Number(editor.outputPreviewAnim || 0) - Number(editor.outputPreviewAnimTo || 0)) < 1e-6) {
       updateSelectionMenu();
     }

@@ -129,7 +129,7 @@ export function rulerSnapStep(value, dir, snap, { min = -Infinity, max = Infinit
 // the inspector's H FOV and Lens rows; Roll's own "roll", which leaves Yaw and Pitch), atDefault (its reset is grayed) };
 // `lensStart` is the Lens row's (a κ edit keeps the image's center scale from where it began). Null without the
 // Camera card.
-export const ROLL_RULER_RANGE = Object.freeze({ min: -180, max: 180 });
+const ROLL_RULER_RANGE = Object.freeze({ min: -180, max: 180 });
 // The FOV ruler's tooltip while it works (docs/studio-ui.md "Camera タブ" 辺の目盛りの tooltip; ADR 0061).
 export const FOV_WHEEL_TIP = "FOV (Alt+Wheel)";
 

@@ -22,10 +22,6 @@ import { BOUND_NOTICE_SECONDS, frameSeconds } from "./view_scale.js";
 import { DEFAULT_VIEW_HFOV, projectPoint } from "../pano_space.js";
 import { markOnView, orbitMarkPoint, orbitMarkerAlpha, orbitMarkerFading } from "./orbit_marker.js";
 
-// The owners (pano_three_view.js) the live ERP of the Camera tab's Panorama mode, the Output window's Frame picture and
-// its live ERP draw for (stage_output.js).
-export { LIVE_ERP_OWNER, OUTPUT_ERP_OWNER, OUTPUT_OWNER };
-
 // The fields of `ui` the stage writes (the shell reads them).
 export function stageUi() {
   return {

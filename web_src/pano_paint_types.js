@@ -292,5 +292,3 @@ export function normalizePaintingState(raw) {
     raster_objects: normalizeRasterObjects(raw.raster_objects),
   };
 }
-
-export { emptyPaintingState };

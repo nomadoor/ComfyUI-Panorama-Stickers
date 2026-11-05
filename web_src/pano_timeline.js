@@ -111,11 +111,6 @@ export function keyedAt(keys, frame) {
   return keys.some((key) => key.full && key.frame === frame);
 }
 
-// The Timeline's time at frame: the frame and the seconds at fps.
-export function timelineTimeLabel(frame, fps) {
-  return `${frame}f · ${(frame / fps).toFixed(2)}s`;
-}
-
 // Removes the Keyframes at frames from the Lanes `names` of owner. A Lane left without Keyframes keeps
 // the value it had at playhead as its static value, so nothing jumps; deleting a Lane's only Keyframe
 // keeps that Keyframe's value.

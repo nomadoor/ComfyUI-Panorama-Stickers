@@ -23,12 +23,12 @@ export function paintIndex(state) {
 
 // Where the ERP point `point` lands on the screen of `projection` (pano_editor_view.js viewProjection): { x, y }, or
 // null behind the view. The Sky lies at infinity, so only the direction counts.
-export function screenOfErp(projection, point) {
+function screenOfErp(projection, point) {
   return screenOfDirection(projection, directionOfErpPoint(point));
 }
 
 // Where the direction `direction` lands on the screen of `projection`: { x, y }, or null behind the view.
-export function screenOfDirection(projection, direction) {
+function screenOfDirection(projection, direction) {
   const at = projection.project(direction);
   return at.z > 1e-4 ? { x: at.x, y: at.y } : null;
 }

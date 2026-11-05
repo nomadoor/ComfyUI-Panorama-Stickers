@@ -31,7 +31,7 @@ export function selectedKind(state, row, upstream = []) {
 
 // The gizmo modes an object of `kind` has: Move, Rotate and Scale for the World objects, Move and Rotate for the
 // Camera, none for a sky image.
-export function gizmoModes(kind) {
+function gizmoModes(kind) {
   if (kind === "world-image" || kind === "world-3d") return GIZMO_MODES;
   if (kind === "camera") return GIZMO_MODES.slice(0, 2);
   return [];

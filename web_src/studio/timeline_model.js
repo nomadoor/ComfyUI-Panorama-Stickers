@@ -47,8 +47,8 @@ export function objectLabel(sticker) {
   return sceneStickerLabel(sticker.origin ? { ...sticker, id: sticker.origin.id } : sticker);
 }
 
-export const CAMERA_ROW = "camera";
-export const SCENE_ROW = "scene";
+const CAMERA_ROW = "camera";
+const SCENE_ROW = "scene";
 
 // The Timeline's span (the output's length) for ctx, `openClip` counted as a Clip range without a duration.
 export function spanOf(ctx, openClip = null) {
@@ -61,7 +61,7 @@ const clipOffset = (owner) => (owner?.clip ? clipOrigin(owner.clip) : 0);
 // (`own`) and per upstream layer (`groups`). `kind` is background, camera, sticker, painting or scene; `owner` holds
 // the Lanes or the Clip range (null for a painting); `layer` is the upstream layer of an upstream row, else null;
 // `offset` turns the owner's frames into Timeline frames.
-export function timelineEntries(ctx) {
+function timelineEntries(ctx) {
   const { state } = ctx;
   const upstream = ctx.upstream || [];
   const stateEntries = (sceneState, layer, sceneShown) => {

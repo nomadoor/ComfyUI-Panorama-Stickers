@@ -73,7 +73,7 @@ const OLD_UI_FILES = [
   "modal_shell_presets.js",
   ...[
     "PanoModal", "PanoToolRail", "PanoFrameRail", "PanoFrameRollKnob", "PanoPaintDock", "PanoPaintOverlays",
-    "PanoSidePanel", "PanoSelectionMenu", "PanoSegments", "PanoConfirmDialog", "PanoTooltip", "PanoImageFilePicker",
+    "PanoSidePanel", "PanoSelectionMenu", "PanoConfirmDialog", "PanoTooltip", "PanoImageFilePicker",
     "PanoFloatingRight", "PanoViewToggle", "PanoCutoutAspectPicker",
   ].map((name) => `components/${name}.vue`),
 ];

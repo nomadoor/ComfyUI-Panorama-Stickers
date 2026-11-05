@@ -32,7 +32,7 @@ export function touchSceneViewer(node) {
 }
 
 // The viewer's record of the node, made the first time.
-export function sceneViewerRecordOf(node) {
+function sceneViewerRecordOf(node) {
   const owner = sceneViewer(node);
   owner.record ||= sceneViewerRecord();
   return owner.record;

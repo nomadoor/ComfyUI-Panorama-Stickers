@@ -1,8 +1,113 @@
 import { ICON } from "./icons.js";
+import { IMAGE_LOADING } from "./pano_image_state.js";
+import { colorToCss } from "./pano_paint_strokes.js";
 
 export function patchUiButton(list, matchKey, key, patch) {
   const entry = Array.isArray(list) ? list.find((item) => String(item?.[matchKey] || "") === String(key || "")) : null;
   if (entry) Object.assign(entry, patch);
+}
+
+// The first value of the old editor's uiState (pano_editor.js makes it reactive and hands it to PanoModal.vue):
+// the shell's buttons, the HUD models at rest, and the Cutout's camera preview box for its first shot.
+export function buildEditorUiState({ shellPreset, readOnly, previewMode, type, cutoutPreviewShot, cutoutPreviewSize }) {
+  return {
+    stageStatus: IMAGE_LOADING,
+    stageStatusDetail: "boot",
+    stageWarningDetail: "",
+    viewButtons: (shellPreset.viewButtons || []).map((button) => ({ ...button, visible: true, disabled: false })),
+    toolButtons: (shellPreset.toolButtons || []).map((button) => ({
+      ...button,
+      disabled: false,
+    })),
+    floatingButtons: [
+      ...(shellPreset.floatingButtons || []).map((button) => ({ ...button, disabled: false })),
+      ...(previewMode ? [{ action: "toggle-fullscreen", label: "Fullscreen", tip: "Fullscreen", pressed: null, icon: ICON.fullscreen, disabled: false }] : []),
+    ],
+    frameRail: {
+      visible: false,
+      disabled: readOnly,
+      aspectOpen: false,
+      aspectIcon: ICON.aspect,
+      rotateIcon: ICON.rotate_90,
+      aspectChoices: [],
+      rollKnob: null,
+    },
+    frameRollKnob: {
+      visible: false,
+      disabled: readOnly,
+      rollDeg: 0,
+      displayValue: "0",
+      dragging: false,
+      armed: false,
+    },
+    outputPreviewToggle: {
+      visible: false,
+      icon: ICON.fullscreen,
+      label: "Expand Preview",
+      tip: "Expand preview",
+    },
+    paintDock: {
+      visible: false,
+      activePane: "",
+      showColorRow: true,
+      colorEnabled: true,
+      activeSwatchId: "green",
+      customColorActive: false,
+      customColorCss: colorToCss({ r: 0, g: 1, b: 0, a: 1 }, 1),
+      colorPopOpen: false,
+      pickerHueColor: colorToCss({ r: 1, g: 0, b: 0, a: 1 }, 1),
+      pickerSat: "100%",
+      pickerVal: "0%",
+      pickerHue: "0%",
+      pickerSvLeft: "100%",
+      pickerSvTop: "0%",
+      pickerHueLeft: "0%",
+      alphaValue: 100,
+      alphaText: "100%",
+      historyVisible: true,
+      historyEntries: Array.from({ length: 8 }, (_, index) => ({ index, color: null })),
+      sizeValue: 10,
+      sizeText: "10",
+      sizeFill: "7.56%",
+      sizeDisabled: false,
+      showSizeRow: true,
+      clearVisible: { paint: true, mask: true },
+      activeTools: { paint: "pen", mask: "pen" },
+    },
+    videoTransport: {
+      visible: false,
+      ready: false,
+      playing: false,
+      loop: true,
+      duration: 0,
+      currentTime: 0,
+      progressPct: 0,
+      currentTimeLabel: "0:00",
+      durationLabel: "0:00",
+      frameCount: 0,
+      fps: 24,
+      hasAudio: false,
+      muted: false,
+      volume: 1,
+      volumePct: 100,
+      thumbnails: [],
+      thumbnailCount: 9,
+      shellMaxWidthPx: 640,
+    },
+    sidePanel: {},
+    selectionMenu: { visible: false, left: 0, top: 0, items: [] },
+    tooltip: { visible: false, text: "", left: 0, top: 0, variant: "" },
+    confirmDialog: { visible: false, title: "", text: "", confirmLabel: "Confirm", resolve: null },
+    cameraPreview: {
+      visible: type === "cutout",
+      ready: false,
+      settled: false,
+      expanded: false,
+      width: cutoutPreviewSize.width,
+      height: cutoutPreviewSize.height,
+      label: cutoutPreviewShot ? "Loading preview" : "Add Frame to preview",
+    },
+  };
 }
 
 export function buildUiSettingsModel(uiSettings = {}) {

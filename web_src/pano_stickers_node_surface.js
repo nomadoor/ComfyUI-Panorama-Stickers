@@ -22,7 +22,7 @@ function safeInteger(value) {
 }
 
 // The Stickers the node shows: every Sticker of the legacy v1 state, the sky Stickers of state v2.
-export function surfaceStickers(state) {
+function surfaceStickers(state) {
   const stickers = Array.isArray(state?.stickers) ? state.stickers : [];
   return state?.version === 2 ? stickers.filter((item) => item.placement === "sky") : stickers;
 }

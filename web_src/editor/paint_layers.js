@@ -350,7 +350,7 @@ export function createPaintLayers(deps) {
         rasterizeStrokeToSurface, rebuildPaintEngineIfNeeded, requestDraw, screenPosToErpPoint,
       } = api);
     },
-    getSharedLivePaintSurface, getLivePaintRevisionSuffix, isPaintCompositeInteraction, hitRasterObjectAt,
+    getSharedLivePaintSurface, isPaintCompositeInteraction, hitRasterObjectAt,
     invalidateLivePaintPreviewCaches, buildRasterObjectEditCanvas, needsPaintingLayerSync,
     syncPaintingLayerAsync, invalidatePaintingLayerState, buildEditorViewPaintLayers,
   };

@@ -25,9 +25,8 @@ import { createPanoCanvas, trackPanoCanvas, trackPanoVideo } from "./pano_diagno
 import { installPanoSuiteStylesheet } from "./pano_styles.js";
 import PanoModal from "./components/PanoModal.vue";
 import { buildModalShellPreset } from "./modal_shell_presets.js";
-import { ICON } from "./icons.js";
+import { buildEditorUiState } from "./pano_editor_ui_state.js";
 import {
-  IMAGE_LOADING,
   isImageLoadFailed,
   markImageFailed,
   markImageLoading,
@@ -178,105 +177,14 @@ async function showEditor(node, type, options = {}) {
     ? getCutoutPreviewViewportSize(initialCutoutPreviewShot, false)
     : { width: 220, height: 132 };
   const shellPreset = buildModalShellPreset(type);
-  const uiState = reactive({
-    stageStatus: IMAGE_LOADING,
-    stageStatusDetail: "boot",
-    stageWarningDetail: "",
-    viewButtons: (shellPreset.viewButtons || []).map((button) => ({ ...button, visible: true, disabled: false })),
-    toolButtons: (shellPreset.toolButtons || []).map((button) => ({
-      ...button,
-      disabled: false,
-    })),
-    floatingButtons: [
-      ...(shellPreset.floatingButtons || []).map((button) => ({ ...button, disabled: false })),
-      ...(previewMode ? [{ action: "toggle-fullscreen", label: "Fullscreen", tip: "Fullscreen", pressed: null, icon: ICON.fullscreen, disabled: false }] : []),
-    ],
-    frameRail: {
-      visible: false,
-      disabled: readOnly,
-      aspectOpen: false,
-      aspectIcon: ICON.aspect,
-      rotateIcon: ICON.rotate_90,
-      aspectChoices: [],
-      rollKnob: null,
-    },
-    frameRollKnob: {
-      visible: false,
-      disabled: readOnly,
-      rollDeg: 0,
-      displayValue: "0",
-      dragging: false,
-      armed: false,
-    },
-    fovValue: "100°",
-    outputPreviewToggle: {
-      visible: false,
-      icon: ICON.fullscreen,
-      label: "Expand Preview",
-      tip: "Expand preview",
-    },
-    paintDock: {
-      visible: false,
-      activePane: "",
-      showColorRow: true,
-      colorEnabled: true,
-      activeSwatchId: "green",
-      customColorActive: false,
-      customColorCss: colorToCss({ r: 0, g: 1, b: 0, a: 1 }, 1),
-      colorPopOpen: false,
-      pickerHueColor: colorToCss({ r: 1, g: 0, b: 0, a: 1 }, 1),
-      pickerSat: "100%",
-      pickerVal: "0%",
-      pickerHue: "0%",
-      pickerSvLeft: "100%",
-      pickerSvTop: "0%",
-      pickerHueLeft: "0%",
-      alphaValue: 100,
-      alphaText: "100%",
-      historyVisible: true,
-      historyEntries: Array.from({ length: 8 }, (_, index) => ({ index, color: null })),
-      sizeValue: 10,
-      sizeText: "10",
-      sizeFill: "7.56%",
-      sizeDisabled: false,
-      showSizeRow: true,
-      clearVisible: { paint: true, mask: true },
-      activeTools: { paint: "pen", mask: "pen" },
-    },
-    videoTransport: {
-      visible: false,
-      ready: false,
-      playing: false,
-      loop: true,
-      duration: 0,
-      currentTime: 0,
-      progressPct: 0,
-      currentTimeLabel: "0:00",
-      durationLabel: "0:00",
-      frameCount: 0,
-      fps: 24,
-      hasAudio: false,
-      muted: false,
-      volume: 1,
-      volumePct: 100,
-      thumbnails: [],
-      thumbnailCount: 9,
-      shellMaxWidthPx: 640,
-    },
-    sidePanel: {},
-    selectionMenu: { visible: false, left: 0, top: 0, items: [] },
-    tooltip: { visible: false, text: "", left: 0, top: 0, variant: "" },
-    confirmDialog: { visible: false, title: "", text: "", confirmLabel: "Confirm", resolve: null },
-    cameraPreview: {
-      visible: type === "cutout",
-      ready: false,
-      settled: false,
-      expanded: false,
-      width: initialCutoutPreviewSize.width,
-      height: initialCutoutPreviewSize.height,
-      label: initialCutoutPreviewShot ? "Loading preview" : "Add Frame to preview",
-    },
-  });
+  const uiState = reactive(buildEditorUiState({
+    shellPreset,
+    readOnly,
+    previewMode,
+    type,
+    cutoutPreviewShot: initialCutoutPreviewShot,
+    cutoutPreviewSize: initialCutoutPreviewSize,
+  }));
   const mountHost = document.createElement("div");
   document.body.appendChild(mountHost);
   const onImageFileSelected = ({ intent, file } = {}) => {
@@ -620,98 +528,132 @@ async function showEditor(node, type, options = {}) {
   const flushStateBeforeQueue = () => commitState();
   if (!readOnly) editorSession(node).flushBeforeQueue = flushStateBeforeQueue;
 
-  frameRollKnobEl?.addEventListener("pointerdown", onFrameRollKnobPointerDown);
-  frameRollKnobEl?.addEventListener("pointermove", onFrameRollKnobPointerMove);
-  frameRollKnobEl?.addEventListener("pointerup", finishKnobRoll);
-  frameRollKnobEl?.addEventListener("pointercancel", () => {
-    if (editor.interaction?.source === "knob") cancelGesture();
-  });
-  frameRollKnobEl?.addEventListener("lostpointercapture", () => {
-    if (editor.interaction?.source === "knob") cancelGesture();
-  });
-  frameRollKnobEl?.addEventListener("dblclick", onFrameRollKnobDoubleClick);
+  // The editor's DOM listeners, registered in one place. It returns what closeEditor calls to take back those on
+  // document (fullscreen) and on window, each at its own step of the close; the others go with the modal's DOM.
+  function bindEditorDom() {
+    frameRollKnobEl?.addEventListener("pointerdown", onFrameRollKnobPointerDown);
+    frameRollKnobEl?.addEventListener("pointermove", onFrameRollKnobPointerMove);
+    frameRollKnobEl?.addEventListener("pointerup", finishKnobRoll);
+    frameRollKnobEl?.addEventListener("pointercancel", () => {
+      if (editor.interaction?.source === "knob") cancelGesture();
+    });
+    frameRollKnobEl?.addEventListener("lostpointercapture", () => {
+      if (editor.interaction?.source === "knob") cancelGesture();
+    });
+    frameRollKnobEl?.addEventListener("dblclick", onFrameRollKnobDoubleClick);
 
-  canvas.onpointerdown = onCanvasPointerDown;
+    canvas.onpointerdown = onCanvasPointerDown;
 
-  canvas.onpointermove = onCanvasPointerMove;
+    canvas.onpointermove = onCanvasPointerMove;
 
-  canvas.onpointerup = onCanvasPointerUp;
+    canvas.onpointerup = onCanvasPointerUp;
 
-  canvas.onpointercancel = onCanvasPointerCancel;
-  // A gesture whose pointer lost the capture without a pointerup is cancelled; after a pointerup none is
-  // under way.
-  canvas.onlostpointercapture = onCanvasPointerCancel;
+    canvas.onpointercancel = onCanvasPointerCancel;
+    // A gesture whose pointer lost the capture without a pointerup is cancelled; after a pointerup none is
+    // under way.
+    canvas.onlostpointercapture = onCanvasPointerCancel;
 
-  canvas.onauxclick = (e) => {
-    if (e.button === 1) e.preventDefault();
-  };
-  canvas.onmousemove = onCanvasMouseMove;
+    canvas.onauxclick = (e) => {
+      if (e.button === 1) e.preventDefault();
+    };
+    canvas.onmousemove = onCanvasMouseMove;
 
-  canvas.onmouseleave = () => {
-    setPointerPos(editor.pointerPos, false);
-    updateCursor(editor.pointerPos);
-    if (editor.mode === "frame" && editor.primaryTool === "cursor") requestDraw({ localOnly: true, reason: DRAW_REASON.OVERLAY });
-  };
+    canvas.onmouseleave = () => {
+      setPointerPos(editor.pointerPos, false);
+      updateCursor(editor.pointerPos);
+      if (editor.mode === "frame" && editor.primaryTool === "cursor") requestDraw({ localOnly: true, reason: DRAW_REASON.OVERLAY });
+    };
 
-  canvas.onwheel = onCanvasWheel;
+    canvas.onwheel = onCanvasWheel;
 
-  canvas.ondragover = onCanvasDragOver;
+    canvas.ondragover = onCanvasDragOver;
 
-  canvas.ondrop = onCanvasDrop;
+    canvas.ondrop = onCanvasDrop;
 
-  window.addEventListener("dragenter", onWindowDragEnter, true);
-  window.addEventListener("dragover", onWindowDragOver, true);
-  window.addEventListener("dragleave", onWindowDragLeave, true);
-  window.addEventListener("drop", onWindowDrop, true);
+    window.addEventListener("dragenter", onWindowDragEnter, true);
+    window.addEventListener("dragover", onWindowDragOver, true);
+    window.addEventListener("dragleave", onWindowDragLeave, true);
+    window.addEventListener("drop", onWindowDrop, true);
 
-  side?.addEventListener("click", onSidePanelClick);
-  side?.addEventListener("input", onSidePanelInput);
-  side?.addEventListener("change", onSidePanelChange);
+    side?.addEventListener("click", onSidePanelClick);
+    side?.addEventListener("input", onSidePanelInput);
+    side?.addEventListener("change", onSidePanelChange);
+    root.addEventListener("click", onRootClick);
+    root.addEventListener("input", onRootInput);
+    root.addEventListener("change", onRootChange);
+    root.addEventListener("pointerup", (ev) => {
+      if (ev.target.closest("[data-video-volume]")) {
+        if (typeof ev.target?.blur === "function") ev.target.blur();
+        return;
+      }
+      if (ev.target.closest("[data-paint-size-slider]")) hidePaintSizePreview();
+    });
+    root.addEventListener("pointercancel", (ev) => {
+      if (ev.target.closest("[data-video-volume]")) {
+        if (typeof ev.target?.blur === "function") ev.target.blur();
+        return;
+      }
+      if (ev.target.closest("[data-paint-size-slider]")) hidePaintSizePreview();
+    });
+    root.addEventListener("focusout", (ev) => {
+      if (ev.target.closest("[data-paint-size-slider]")) hidePaintSizePreview();
+    });
+    root.addEventListener("pointerover", onRootPointerOver);
+    root.addEventListener("pointerout", onRootPointerOut);
+    if (paintColorSv) {
+      paintColorSv.onpointerdown = (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        bindDrag(ev, (moveEvent) => updatePaintColorFromSv(moveEvent.clientX, moveEvent.clientY));
+      };
+    }
+    if (paintHueStrip) {
+      paintHueStrip.onpointerdown = (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        bindDrag(ev, (moveEvent) => updatePaintColorFromHue(moveEvent.clientX));
+      };
+    }
+    root.addEventListener("click", (ev) => {
+      const target = ev.target.closest("[data-action='confirm-cancel'], [data-action='confirm-accept']");
+      if (!target) return;
+      settleCanvasConfirm(target.getAttribute("data-action") === "confirm-accept");
+    });
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    window.addEventListener("keydown", onEscClose, true);
+    window.addEventListener("keydown", onDeleteKey, true);
+    window.addEventListener("keydown", onMoveKeyDown, true);
+    window.addEventListener("keydown", onModifierKeyChange, true);
+    window.addEventListener("keyup", onModifierKeyChange, true);
+    window.addEventListener("blur", onWindowBlur);
+    window.addEventListener("keydown", onUndoRedoKey, true);
+    overlay.addEventListener("pointerdown", (ev) => {
+      if (ev.target === overlay) void closeEditor();
+    });
+    return {
+      unbindDocument: () => {
+        document.removeEventListener("fullscreenchange", onFullscreenChange);
+      },
+      unbindWindow: () => {
+        window.removeEventListener("keydown", onEscClose, true);
+        window.removeEventListener("keydown", onDeleteKey, true);
+        window.removeEventListener("keydown", onMoveKeyDown, true);
+        window.removeEventListener("keydown", onModifierKeyChange, true);
+        window.removeEventListener("keyup", onModifierKeyChange, true);
+        window.removeEventListener("blur", onWindowBlur);
+        window.removeEventListener("keydown", onUndoRedoKey, true);
+        window.removeEventListener("dragenter", onWindowDragEnter, true);
+        window.removeEventListener("dragover", onWindowDragOver, true);
+        window.removeEventListener("dragleave", onWindowDragLeave, true);
+        window.removeEventListener("drop", onWindowDrop, true);
+      },
+    };
+  }
+  const editorDom = bindEditorDom();
   syncGridToggleButton();
-  root.addEventListener("click", onRootClick);
-  root.addEventListener("input", onRootInput);
-  root.addEventListener("change", onRootChange);
-  root.addEventListener("pointerup", (ev) => {
-    if (ev.target.closest("[data-video-volume]")) {
-      if (typeof ev.target?.blur === "function") ev.target.blur();
-      return;
-    }
-    if (ev.target.closest("[data-paint-size-slider]")) hidePaintSizePreview();
-  });
-  root.addEventListener("pointercancel", (ev) => {
-    if (ev.target.closest("[data-video-volume]")) {
-      if (typeof ev.target?.blur === "function") ev.target.blur();
-      return;
-    }
-    if (ev.target.closest("[data-paint-size-slider]")) hidePaintSizePreview();
-  });
-  root.addEventListener("focusout", (ev) => {
-    if (ev.target.closest("[data-paint-size-slider]")) hidePaintSizePreview();
-  });
-  root.addEventListener("pointerover", onRootPointerOver);
-  root.addEventListener("pointerout", onRootPointerOut);
-  if (paintColorSv) {
-    paintColorSv.onpointerdown = (ev) => {
-      ev.preventDefault();
-      ev.stopPropagation();
-      bindDrag(ev, (moveEvent) => updatePaintColorFromSv(moveEvent.clientX, moveEvent.clientY));
-    };
-  }
-  if (paintHueStrip) {
-    paintHueStrip.onpointerdown = (ev) => {
-      ev.preventDefault();
-      ev.stopPropagation();
-      bindDrag(ev, (moveEvent) => updatePaintColorFromHue(moveEvent.clientX));
-    };
-  }
-  root.addEventListener("click", (ev) => {
-    const target = ev.target.closest("[data-action='confirm-cancel'], [data-action='confirm-accept']");
-    if (!target) return;
-    settleCanvasConfirm(target.getAttribute("data-action") === "confirm-accept");
-  });
-  document.addEventListener("fullscreenchange", onFullscreenChange);
   syncFullscreenButton();
   syncOutputPreviewToggleButton();
+
   const modalPrevOnConnectionsChange = node.onConnectionsChange;
   let modalOnConnectionsChange = null;
   let unregisterModalExternalStickerSync = () => {};
@@ -747,7 +689,7 @@ async function showEditor(node, type, options = {}) {
       if (document.fullscreenElement === overlay) {
         document.exitFullscreen?.().catch(() => { });
       }
-      document.removeEventListener("fullscreenchange", onFullscreenChange);
+      editorDom.unbindDocument();
       stateSync(node).liveState = null;
       if (session?.flushBeforeQueue === flushStateBeforeQueue) session.flushBeforeQueue = null;
       peekNodeSurface(node)?.dom?.requestDraw?.();
@@ -761,17 +703,7 @@ async function showEditor(node, type, options = {}) {
       disposeMediaSession();
       editorView.dispose();
       setDropCue(false);
-      window.removeEventListener("keydown", onEscClose, true);
-      window.removeEventListener("keydown", onDeleteKey, true);
-      window.removeEventListener("keydown", onMoveKeyDown, true);
-      window.removeEventListener("keydown", onModifierKeyChange, true);
-      window.removeEventListener("keyup", onModifierKeyChange, true);
-      window.removeEventListener("blur", onWindowBlur);
-      window.removeEventListener("keydown", onUndoRedoKey, true);
-      window.removeEventListener("dragenter", onWindowDragEnter, true);
-      window.removeEventListener("dragover", onWindowDragOver, true);
-      window.removeEventListener("dragleave", onWindowDragLeave, true);
-      window.removeEventListener("drop", onWindowDrop, true);
+      editorDom.unbindWindow();
       if (!readOnly && type === "stickers") {
         if (node.onConnectionsChange === modalOnConnectionsChange) node.onConnectionsChange = modalPrevOnConnectionsChange;
         unregisterModalExternalStickerSync();
@@ -788,16 +720,6 @@ async function showEditor(node, type, options = {}) {
     });
     return closeEditorPromise;
   }
-  window.addEventListener("keydown", onEscClose, true);
-  window.addEventListener("keydown", onDeleteKey, true);
-  window.addEventListener("keydown", onMoveKeyDown, true);
-  window.addEventListener("keydown", onModifierKeyChange, true);
-  window.addEventListener("keyup", onModifierKeyChange, true);
-  window.addEventListener("blur", onWindowBlur);
-  window.addEventListener("keydown", onUndoRedoKey, true);
-  overlay.addEventListener("pointerdown", (ev) => {
-    if (ev.target === overlay) void closeEditor();
-  });
 
   function runBootStep(label, fn, { rollbackState = false } = {}) {
     let snapshot = "";

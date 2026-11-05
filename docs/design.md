@@ -10,7 +10,7 @@
 stylesheet `web/pano_studio.css` にあり、`web_src/studio/stylesheet.js` の `installStudioStylesheet` が
 `<link id="pano-studio-style-link">` として、新しい UI のエディタを初めて開くときに一度だけ読み込む（どちらも `pano_styles.js` の `installStylesheet` を使う）。
 Vue のコンポーネント（`web_src/components/*.vue`）は `<style>` を持たず、class と、位置・大きさ・色を渡す
-inline の `style` と custom property（`--pano-segment-count`・`--pano-video-shell-max`・`--v`・`--swatch` など）だけを使う。
+inline の `style` と custom property（`--pano-video-shell-max`・`--v`・`--swatch` など）だけを使う。
 
 この文書が持たない規則：どのボタンがどこに出て何をするか・ツールチップの文言・ボタンの位置を動かさない規則
 （`docs/editor-interaction.md`）、タイムラインの行と再生の振る舞い（`docs/timeline-ui.md`）、Panorama Studio の
@@ -25,7 +25,7 @@ inline の `style` と custom property（`--pano-segment-count`・`--pano-video-
 | ノード上の表示の枠（`.pano-node-frame`） | — | `web/pano_editor.css` の `.pano-node-frame`、`web_src/node_surface/dom.js` の `createSurfaceDom` と `web_src/pano_preview_previewnode.js` の `attachDom`（class を付ける） | — |
 | stylesheet の読み込み | — | `web_src/pano_styles.js` `installStylesheet`・`installPanoSuiteStylesheet`、新しい UI は `web_src/studio/stylesheet.js` `installStudioStylesheet` | — |
 | 共有のボタン（`.pano-btn` 系）の大きさと状態の見た目 | — | `web/pano_editor.css` の `.pano-btn`・`.pano-btn-icon`・`.pano-btn-texticon`・`.pano-btn-primary`・`.pano-btn.subtle`、`web_src/components/shared/PanoIconButton.vue` | — |
-| 共有の部品（モーダル、HUD、切り替え、サイドパネル、値の行、選択肢、ツールチップ、確認のダイアログ、ペイント）の値と、部品の中だけの custom property（`.pano-segments` の `--pano-segment-pad: 3px`、`.pano-modal` の `--pano-side-w: 300px`） | — | `web/pano_editor.css` | — |
+| 共有の部品（モーダル、HUD、切り替え、サイドパネル、値の行、選択肢、ツールチップ、確認のダイアログ、ペイント）の値と、部品の中だけの custom property（`.pano-modal` の `--pano-side-w: 300px`） | — | `web/pano_editor.css` | — |
 | 状態の class に ComfyUI の Tailwind の utility 名を使わない | — | `web_src/components/*.vue` | `tests/architecture.test.mjs` |
 | Vue のコンポーネントは `<style>` を持たない。新しい UI の部品が使う `pano-studio-*` の class は `web/pano_studio.css` にある。ぼかしを使わず、新しい UI は影も使わない。`web/pano_studio.css` の括弧が閉じている | — | `web_src/components/**/*.vue`、`web/pano_studio.css`、`web/pano_editor.css` | `tests/architecture.test.mjs` |
 | アイコン（Tabler の線画、線の太さ、大きさ） | — | `web_src/icons.js` `ICON`・`ICON_PATHS`、`web_src/components/shared/SvgIcon.vue`、`web/pano_editor.css` の `.icon-tabler`・`.pano-btn-icon svg` | — |
@@ -35,7 +35,7 @@ inline の `style` と custom property（`--pano-segment-count`・`--pano-video-
 
 ### custom property（`:root` で定義）
 
-デザインの値の `--pano-*` は `web/pano_editor.css` の `:root` で一度だけ定義し、モーダルとノード上の表示の両方に届く。部品の中だけで使う custom property（`.pano-modal` の `--pano-side-w`、`.pano-segments` の `--pano-segment-pad`、コンポーネントが inline で渡す `--pano-segment-count` など）は、その部品が定義する。
+デザインの値の `--pano-*` は `web/pano_editor.css` の `:root` で一度だけ定義し、モーダルとノード上の表示の両方に届く。部品の中だけで使う custom property（`.pano-modal` の `--pano-side-w` など）は、その部品が定義する。
 
 | property | 値 | 使われ方 |
 |---|---|---|
@@ -46,7 +46,7 @@ inline の `style` と custom property（`--pano-segment-count`・`--pano-video-
 | `--pano-surface-hover` | `#222224` | `.pano-btn:hover` の地 |
 | `--pano-bg-base` | `var(--pano-surface-0)` | ステージ、読み込み中の地 |
 | `--pano-bg-panel` | `var(--pano-surface-0)` | モーダル本体 |
-| `--pano-bg-control` | `var(--pano-surface-2)` | ボタン、入力、選択肢の trigger、`.pano-segments` |
+| `--pano-bg-control` | `var(--pano-surface-2)` | ボタン、入力、選択肢の trigger |
 | `--pano-text` | `#f5f5f5` | 主な文字、選ばれている側の文字、hover の文字 |
 | `--pano-muted` | `#787878` | 二次の文字（ラベル、選ばれていない切り替え、選択肢の項目） |
 | `--pano-text-secondary` | `var(--pano-muted)` | ボタンの文字、右下の群の文字、注記 |
@@ -131,7 +131,7 @@ inline の `style` と custom property（`--pano-segment-count`・`--pano-video-
 | 11px | 継承 | ツールチップ、値の行の入力、`.pano-param-note`、タイムライン、Easing の項目と注記、設定の行のラベル |
 | 11px | 600 | `.pano-section-title`、設定の summary |
 | 11px | 650 | ノードの help の見出し、`PanoramaStickers` の drop の案内 |
-| 12px | 500 | `.pano-btn`、表示の切り替えのラベル、`.pano-segments` の項目、`.pano-btn-texticon` のラベル |
+| 12px | 500 | `.pano-btn`、表示の切り替えのラベル、`.pano-btn-texticon` のラベル |
 | 12px | 継承 | 右下の群（`.pano-floating-right`）、動画の時刻、カメラの出力のプレビューのラベル、確認のダイアログの本文 |
 | 12px | 600 | `.pano-side-title`、ドロップの案内、色のポップオーバーの見出し |
 | 13px | 600 | 確認のダイアログの見出し、`.pano-view-unavailable` |
@@ -164,7 +164,7 @@ inline の `style` と custom property（`--pano-segment-count`・`--pano-video-
 | 値 | 使われ方 |
 |---|---|
 | 4px | `.pano-aspect-choice`（`--pano-radius-xs`）、タイムラインの小さいボタンと clip |
-| 6px | HUD の中のアイコンのボタン・roll の knob・`.pano-segments`（`calc(var(--pano-float-radius) - var(--pano-float-pad))`）、ノードの小さいボタン、`.pano-segment` の印と Easing の項目（`calc(var(--pano-radius-md) - 2px)`） |
+| 6px | HUD の中のアイコンのボタン・roll の knob（`calc(var(--pano-float-radius) - var(--pano-float-pad))`）、ノードの小さいボタン、`.pano-segment` の印と Easing の項目（`calc(var(--pano-radius-md) - 2px)`） |
 | 8px | `.pano-btn`・入力・選択肢の trigger と項目・ツールチップ・設定・`.pano-segment`・タイムラインの本体（`--pano-radius-md`）、表示の切り替えの印、ステージの読み込みの失敗、ノード上の表示の枠（`--pano-radius-md`）、`PanoramaCutout` の aspect のポップオーバーとノードの help（`--pano-node-float-radius`） |
 | 10px | HUD（`--pano-float-radius`）、ステージ、サイドパネル、確認のダイアログ、ドロップの案内、aspect のポップオーバー、色の SV の面 |
 | 12px | モーダル本体、選択肢のポップオーバー（`--pano-radius-lg`）、音量のポップオーバー |
@@ -176,8 +176,8 @@ inline の `style` と custom property（`--pano-segment-count`・`--pano-video-
 
 | 高さ | 対象 |
 |---|---|
-| 40px | `.pano-btn` と `.pano-btn-icon`（40×40）の既定、左のツール群と Frame のツール群のボタン、表示の切り替えのボタン（`.pano-view-btn`、幅 124px）、`.pano-segments`、右下の群と動画の操作の最小の高さ、動画の filmstrip、roll の knob |
-| 35px | 選択メニュー（`.pano-selection-menu`）のアイコンのボタン（35×35）と `.pano-segments` |
+| 40px | `.pano-btn` と `.pano-btn-icon`（40×40）の既定、左のツール群と Frame のツール群のボタン、表示の切り替えのボタン（`.pano-view-btn`、幅 124px）、右下の群と動画の操作の最小の高さ、動画の filmstrip、roll の knob |
+| 35px | 選択メニュー（`.pano-selection-menu`）のアイコンのボタン（35×35） |
 | 32px | 選択肢の項目、`.pano-btn.subtle`、設定の summary、Frame の aspect の選択肢の最小の高さ |
 | 30px | 選択肢の trigger、`.pano-field-wide`、aspect の trigger |
 | 28px | `.pano-field` とその入力、`.pano-segment-btn`、aspect の自由入力とそのボタン、タイムラインの再生・消音・開閉のボタン |
@@ -227,11 +227,10 @@ inline の `style` と custom property（`--pano-segment-count`・`--pano-video-
 | class | 使われ方 | 高さ（外側 / 項目） | 外側 | 印 | 動き |
 |---|---|---|---|---|---|
 | `.pano-view-toggle` | Panorama / Unwrap / Frame | 48px / 40px（`.pano-view-btn`） | HUD の地、padding 4px | `--pano-surface-3`、角丸 8px | `transform` 170ms |
-| `.pano-segments`（`--pano-segment-pad: 3px`） | 選択メニューの Move / Rotate / Scale | 40px（選択メニューの中は 35px）/ 外側から padding を引いた高さ | `--pano-bg-control`、padding `--pano-segment-pad` | `--pano-surface-3` | `transform` 170ms |
 | `.pano-segment` | サイドパネルの設定（2 択） | 32px / 28px（`.pano-segment-btn`） | `--pano-surface-1`、padding 2px | `--pano-surface-3` | `transform` 170ms |
 
 文字は選ばれていない側が `--pano-muted`、選ばれている側が `--pano-text`。
-`.pano-view-toggle` と `.pano-segments` の選ばれていない側の hover は `--pano-muted-strong`、表示の切り替えの無効の項目は
+`.pano-view-toggle` の選ばれていない側の hover は `--pano-muted-strong`、表示の切り替えの無効の項目は
 `--pano-text-tertiary` と opacity 0.5。
 
 ### ボタン（`.pano-btn`）
@@ -343,7 +342,7 @@ padding `7px 10px`、地 94%、影 `0 12px 28px rgba(0,0,0,0.34)`。footer の�
 
 ## フォーカスと無効
 
-- フォーカスの輪：ボタンと `.pano-segments` の項目は `box-shadow: 0 0 0 1px var(--pano-accent)`、入力と選択肢の trigger は
+- フォーカスの輪：ボタンは `box-shadow: 0 0 0 1px var(--pano-accent)`、入力と選択肢の trigger は
   `inset 0 0 0 1px var(--pano-accent)`、タイムラインのボタンと印は `outline: 2px solid var(--pano-accent)`（offset 1px）。
   表示の切り替えのボタンとスライダーには輪を出さない（値の行のスライダーは thumb の影が `0 0 0 1.5px rgba(0,0,0,0.5)` になる）。
   ノード上の表示のボタンにも輪を出さない（toolbar のボタンは `box-shadow: none`、小さいボタンは `:focus-visible` で `box-shadow: none`）。

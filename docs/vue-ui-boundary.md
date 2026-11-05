@@ -13,7 +13,7 @@ DOM を組み立てる書き方の禁止）は `AGENTS.md` の Non-negotiables 6
 |---|---|---|---|
 | モーダルの外枠と部品は Vue のコンポーネント（ペイントのオーバーレイ、画像の選択、サイドパネル、選択メニュー、確認のダイアログ、ツールチップ） | — | `web_src/components/PanoModal.vue`・`PanoPaintOverlays.vue`・`PanoImageFilePicker.vue`・`PanoSidePanel.vue`・`PanoSelectionMenu.vue`・`PanoConfirmDialog.vue`・`PanoTooltip.vue` | `tests/architecture.test.mjs`（エディタの JS の側から：下の行） |
 | エディタはペイントのオーバーレイと画像の選択を DOM で作らず、Vue の ref と `uiState` を通して使う（古い UI の `pano_editor.js`・`web_src/editor/*.js` と、新しい UI の `web_src/studio/*.js` は、HTML を書かず、部品を on-property でつながず、DOM の要素を作るのは Vue を mount する器と、ページに置く VIDEO だけ） | — | `web_src/pano_editor.js`、`web_src/editor/*.js`、`web_src/studio/*.js`（`getPaintOverlayRefs`・`openImagePicker`・`uiState.sidePanel` など） | `tests/architecture.test.mjs`（許す要素の一覧 `DOM_ALLOWED`） |
-| Vue に渡す UI のモデルは `pano_editor_ui_state.js` の data builder に置く | — | `web_src/pano_editor_ui_state.js` `buildPaintDockModel`・`buildEditorSidePanelModel`・`buildPreviewSidePanelModel`・`buildSelectionMenuModel` | `tests/pano_editor_ui_state.test.mjs` |
+| Vue に渡す UI のモデルは `pano_editor_ui_state.js` の data builder に置く | — | `web_src/pano_editor_ui_state.js` `buildEditorUiState`（`uiState` の初期値）・`buildPaintDockModel`・`buildEditorSidePanelModel`・`buildPreviewSidePanelModel`・`buildSelectionMenuModel` | `tests/pano_editor_ui_state.test.mjs`（`buildEditorUiState` を守る test は無い） |
 
 ## Vue-only UI surface
 

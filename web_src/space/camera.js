@@ -50,7 +50,7 @@ export function projectPoint(camera, p, width, height) {
   return { x: width * 0.5 * (1 + x / z / tanX), y: height * 0.5 * (1 - y / z / tanY), z };
 }
 
-export function cameraAxes(camera) {
+function cameraAxes(camera) {
   const rotation = quaternionToRotation(camera.quaternion);
   const back = column(rotation, 2);
   return { right: column(rotation, 0), up: column(rotation, 1), forward: back.map((value) => -value) };

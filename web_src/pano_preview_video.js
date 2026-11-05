@@ -11,7 +11,7 @@ export const BACKGROUND_INPUT_NAMES = ["erp_image", "bg_erp", ...STUDIO_BACKGROU
 export const STICKER_INPUT_NAMES = ["sticker_image", "sticker"];
 // Panorama Studio's `scene` (an upstream Scene) and `world` (its own 3D, on `scene` before ADR 0048) inputs, whose
 // items the editor loads from the node's result.
-export const SCENE_INPUT_NAMES = ["scene", "world"];
+const SCENE_INPUT_NAMES = ["scene", "world"];
 // The inputs the Pose handoff of Panorama Studio's result (`pano_sticker_handoff`, ADR 0030) comes from: the port's
 // media and the `sticker_state` of the Studio that shot it.
 export const HANDOFF_INPUT_NAMES = ["sticker", "sticker_state"];
@@ -38,7 +38,7 @@ function originKey(link) {
 }
 
 // Where each linked input of a node comes from, as "<origin node id>:<origin slot>" by input name.
-export function nodeInputOrigins(node) {
+function nodeInputOrigins(node) {
   const origins = {};
   (Array.isArray(node?.inputs) ? node.inputs : []).forEach((input, slot) => {
     const origin = originKey(node.graph ? node.getInputLink(slot) : null);

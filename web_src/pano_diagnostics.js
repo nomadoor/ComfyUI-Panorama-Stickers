@@ -9,8 +9,8 @@
 // The suite makes its canvases and VIDEO elements here (createPanoCanvas, createPanoVideo) so they can be
 // counted. While the setting is off nothing is tracked or sampled: the factories only create.
 
-export const DIAGNOSTICS_SETTING_ID = "PanoramaSuite.Debug.Diagnostics";
-export const DIAGNOSTICS_EXPORT_COMMAND_ID = "PanoramaSuite.Debug.ExportDiagnostics";
+const DIAGNOSTICS_SETTING_ID = "PanoramaSuite.Debug.Diagnostics";
+const DIAGNOSTICS_EXPORT_COMMAND_ID = "PanoramaSuite.Debug.ExportDiagnostics";
 export const DIAGNOSTICS_STORAGE_KEY = "pano_suite.diagnostics.v1";
 export const DIAGNOSTICS_PREVIOUS_KEY = "pano_suite.diagnostics.previous.v1";
 // The records kept (one a second) and the most characters one session writes to localStorage.

@@ -11,9 +11,9 @@ import {
 import { lensAngle, lensAxesDirection, lensAxesFilm, lensFovLimit, lensRadius } from "./pano_lens.js";
 import { PANO_FOV_WHEEL_STEP_DEG } from "./pano_wheel.js";
 
-export const CUTOUT_FOV_MIN_DEG = 1;
-export const CUTOUT_FOV_MAX_DEG = 179;
-export const CUTOUT_OVERSCAN_MAX = 1.5;
+const CUTOUT_FOV_MIN_DEG = 1;
+const CUTOUT_FOV_MAX_DEG = 179;
+const CUTOUT_OVERSCAN_MAX = 1.5;
 export const CUTOUT_OVERSCAN_SAFE_HALF_ANGLE_DEG = 85;
 
 export function wrapRollDeg(value) {

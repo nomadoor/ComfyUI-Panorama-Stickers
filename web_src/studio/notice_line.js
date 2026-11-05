@@ -31,7 +31,7 @@ export function linkedInputNames(node) {
 }
 
 // The node's inputs whose content the stage draws: one linked brings something even before the node has run.
-export const STAGE_INPUTS = Object.freeze(["world", ...STUDIO_BACKGROUND_INPUT_NAMES, "sticker", "scene"]);
+const STAGE_INPUTS = Object.freeze(["world", ...STUDIO_BACKGROUND_INPUT_NAMES, "sticker", "scene"]);
 
 // Whether the stage is empty (docs/studio-ui.md "読み込み中と空の画面"): nothing of its own drawn and nothing from an
 // input. `background` the own background's status ("none" | "loading" | "ready" | "failed"), `stickers` the number of

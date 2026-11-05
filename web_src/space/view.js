@@ -7,7 +7,7 @@ import { DEFAULT_VIEW_HFOV, fitDistance } from "./fit.js";
 import { add, apply, column, dot, sub } from "./vec.js";
 
 // A zoom step toward a point is this part of the distance to it.
-export const ZOOM_STEP = 0.15;
+const ZOOM_STEP = 0.15;
 // A zoom step is never shorter than this part of the content's size (or of 1 without content), so it
 // keeps going as it comes close; it still stops ZOOM_STOP_RATIO of that size short of the point.
 const MIN_ZOOM_RATIO = 0.01;

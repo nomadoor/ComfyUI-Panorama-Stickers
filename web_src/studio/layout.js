@@ -15,7 +15,7 @@ export const TIMELINE_BAR_HEIGHT = 40;
 // OUTPUT_LINE_HEIGHT high (docs/design.md "Output の小窓の一行"): the folded pill, and open, laid over the picture's top.
 // The least width holds the widest line (about 248px: "Frame 8192:1640  8192 × 1640" with the glyph and the fold button),
 // so the open window never cuts its line and its width need not follow the mode (ADR 0051).
-export const OUTPUT_DEFAULT_WIDTH = 256;
+const OUTPUT_DEFAULT_WIDTH = 256;
 export const OUTPUT_MIN_WIDTH = 256;
 export const OUTPUT_MAX_WIDTH = 520;
 export const OUTPUT_LINE_HEIGHT = 32;
