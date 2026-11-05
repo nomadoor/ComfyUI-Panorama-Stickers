@@ -95,6 +95,34 @@ test("a row selected in the Timeline shows in the inspector; an edit changes the
   expect(problems).toEqual([]);
 });
 
+// docs/timeline-ui.md "タイムラインの長さ": the playhead never goes past the last frame; a shorter length brings it back
+// to the last frame, and Undo of a longer length too.
+test("a length shorter than the playhead brings the playhead to the last frame, and so does Undo of a longer one", async ({ page }, testInfo) => {
+  const problems = await open(page, testInfo);
+  const timecode = page.locator('[data-tl="time"] .pano-studio-tl-frame');
+  await expect(timecode).toHaveText("0 / 48");
+  const ruler = await page.locator('[data-tl="ruler"]').boundingBox();
+  await page.mouse.click(ruler.x + ruler.width * 0.9, ruler.y + ruler.height / 2);
+  const frame = Number((await timecode.textContent()).match(/^(\d+) \/ 48$/)[1]);
+  expect(frame).toBeGreaterThan(30);
+  const length = page.locator('[data-tl="length"]');
+  await length.click();
+  await length.locator("input").fill("20");
+  await length.locator("input").press("Enter");
+  await expect(timecode).toHaveText("19 / 20");
+
+  // A longer length, a seek past the old end, then Undo: the length goes back to 20 and the playhead with it.
+  await length.click();
+  await length.locator("input").fill("40");
+  await length.locator("input").press("Enter");
+  await expect(timecode).toHaveText("19 / 40");
+  await page.mouse.click(ruler.x + ruler.width * 0.9, ruler.y + ruler.height / 2);
+  await expect(timecode).not.toHaveText("19 / 40");
+  await page.locator('[data-tool="undo"]').click();
+  await expect(timecode).toHaveText("19 / 20");
+  expect(problems).toEqual([]);
+});
+
 test("a seek on the ruler moves the playhead; a row's dot keys it there and the Keyframe selection brings the Easing panel", async ({ page }, testInfo) => {
   const problems = await open(page, testInfo);
   const timecode = page.locator('[data-tl="time"]');
