@@ -225,7 +225,8 @@ function installEditorButton(nodeType, {
       node.__panoSceneStateV2 = sceneStateV2;
       node.__panoStudio = studio;
       const background = getWidget(node, "bg_color");
-      if (!sceneStateV2 && background && (background.value == null || String(background.value).trim() === "" || String(background.value).toLowerCase() === "#000000")) {
+      // An empty bg_color gets the default (docs/legacy-node-surfaces.md); a colour the user chose, black included, stays.
+      if (!sceneStateV2 && background && (background.value == null || String(background.value).trim() === "")) {
         background.value = "#00ff00";
         background.callback?.("#00ff00");
       }

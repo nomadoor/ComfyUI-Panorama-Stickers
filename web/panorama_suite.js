@@ -3952,7 +3952,7 @@ function rf(e, {
     })), n === "PanoramaStickers") {
       d.__panoSceneStateV2 = l, d.__panoStudio = u;
       const b = mr(d, "bg_color");
-      !l && b && (b.value == null || String(b.value).trim() === "" || String(b.value).toLowerCase() === "#000000") && (b.value = "#00ff00", (m = b.callback) == null || m.call(b, "#00ff00")), Rs(d, r, () => i(d, "stickers")), s && (o(d, {
+      !l && b && (b.value == null || String(b.value).trim() === "") && (b.value = "#00ff00", (m = b.callback) == null || m.call(b, "#00ff00")), Rs(d, r, () => i(d, "stickers")), s && (o(d, {
         enabled: !0,
         buttonText: r,
         onOpen: () => i(d, "stickers")
