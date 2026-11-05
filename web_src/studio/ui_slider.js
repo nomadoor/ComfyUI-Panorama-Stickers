@@ -1,6 +1,8 @@
 // The position math of the new UI's sliders (docs/studio-ui.md "行の格子"): a value maps to a position 0..1 on
 // the line, and a position near a tick snaps to it. Pure functions; components/studio/StudioSlider.vue uses them.
 
+// `value` held to 0..1; a value that is not a finite number (NaN, ±Infinity, not a number) is 0. Every 0..1 position
+// of the new UI (sliders, the Aspect slider, the color picker) goes by this.
 export function clamp01(value) {
   return Math.min(1, Math.max(0, Number.isFinite(value) ? value : 0));
 }
