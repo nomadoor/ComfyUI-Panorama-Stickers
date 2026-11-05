@@ -699,3 +699,34 @@ def test_a_sky_sticker_beside_the_camera_draws_nothing_along_its_planes_horizon(
 
     # Yaw 90 is past the right edge of a 120 degree view, so nothing of the Sticker is in it.
     assert float(sky[..., 3].max()) == 0.0
+
+
+def _raster(raster_id, u0):
+    import base64
+    import io
+
+    from PIL import Image
+
+    buf = io.BytesIO()
+    Image.fromarray(np.full((4, 4, 4), 255, dtype=np.uint8), "RGBA").save(buf, format="PNG")
+    return {"id": raster_id, "type": "raster_frozen", "layerKind": "paint", "z_index": 0,
+            "bbox": {"u0": u0, "v0": 0.25, "u1": u0 + 0.2, "v1": 0.5},
+            "rasterDataUrl": "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")}
+
+
+def test_a_raster_layer_is_kept_by_the_rasters_id_not_by_the_dict_holding_it(monkeypatch):
+    # The paint layers are kept per run by what they are drawn from. An equal copy of the painting (a new dict for
+    # each raster) reuses the drawn rasters; two rasters with different ids are each drawn.
+    import copy
+
+    counts = _count_calls(monkeypatch, "render_raster_layer_from_state")
+    painting = load_scene_state({"version": 2, "painting": {"raster_objects": [_raster("r1", 0.1), _raster("r2", 0.6)]}})["painting"]
+    _loaded, evaluated = _scene()
+    paint = {"size": (64, 32)}
+
+    first, _mask = render_module._sky_layers(evaluated, SceneSources({}, painting), (64, 32), torch.device("cpu"), {}, paint)
+    again, _mask = render_module._sky_layers(evaluated, SceneSources({}, copy.deepcopy(painting)), (64, 32), torch.device("cpu"), {}, paint)
+
+    assert counts["render_raster_layer_from_state"] == 2
+    assert len(first) == len(again) == 2
+    assert all(a[1] is b[1] for a, b in zip(first, again))
