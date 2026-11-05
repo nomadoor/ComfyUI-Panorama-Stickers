@@ -265,7 +265,7 @@ export function autoTimelineLength(state, { bg = null, port = null, sceneItems =
   // A single background image ends with its Clip range, as a Sticker's image does.
   const bgClip = state.background.clip;
   if (bg?.frames === 1 && !bg.video && !open(bgClip)) ends.push(bgClip.start + bgClip.duration);
-  const keys = camera && state.camera ? ownerLanes(state.camera).flatMap((lane) => lane.keyframes.map((key) => key.frame)) : [];
+  const keys = camera ? ownerLanes(state.camera).flatMap((lane) => lane.keyframes.map((key) => key.frame)) : [];
   let length = 1;
   // A background with frames sets the length by its media's own frames, whatever its Clip range. A background
   // VIDEO that does not set the Timeline (an upstream Scene does) lasts until its last frame ends.

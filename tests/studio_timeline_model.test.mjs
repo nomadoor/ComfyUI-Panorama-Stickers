@@ -12,7 +12,6 @@ import {
   xToFrame,
   xToFrameExact,
 } from "../web_src/studio/timeline_model.js";
-import { cameraOf } from "../web_src/studio/camera_state.js";
 import { ctxOf, studioState, upstreamLayer } from "./studio_timeline_fixtures.mjs";
 
 const view = (ctx, options = {}) => buildStudioTimeline(ctx, { selection: { row: null, keys: [] }, playhead: 0, ...options });
@@ -33,14 +32,14 @@ test("without bg_media, a painting or a scene input those rows are left out", ()
   assert.deepEqual(model.rows.map((item) => item.id), ["camera", "sticker_2", "sticker_1"]);
 });
 
-test("a state whose camera is null shows the Camera row as the default Camera, without Keyframes", () => {
+test("a state saved with a null camera shows the Camera row as the default Camera, without Keyframes", () => {
   const state = studioState({ camera: null });
   assert.equal(state.camera.projection, "erp");
   const camera = row(view(ctxOf(state)), "camera");
   assert.deepEqual(camera.pins, []);
   assert.equal(camera.dot.state, "none");
   assert.equal(camera.eye.icon, ICON.eye);
-  assert.equal(cameraOf(state).position.keyframes.length, 0);
+  assert.equal(state.camera.position.keyframes.length, 0);
 });
 
 test("a row's pins are at Timeline frames, half where only some of its Lanes have a Keyframe", () => {

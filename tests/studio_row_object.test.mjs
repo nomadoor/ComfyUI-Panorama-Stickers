@@ -31,10 +31,9 @@ test("an upstream element is found by its working id only when the caller looks 
   assert.equal(findSticker(state, upstream, "gone"), null);
 });
 
-test("the Keyframe owner: the Camera (a default one for a state whose Camera is null), the scene, or a Sticker", () => {
+test("the Keyframe owner: the Camera, the scene, or a Sticker", () => {
   const { state, upstream, upstreamId } = withUpstream();
   assert.equal(keyframeOwner(state, upstream, "camera"), state.camera);
-  assert.deepEqual(keyframeOwner({ ...load(), camera: null }, [], "camera"), load().camera);
   assert.equal(keyframeOwner(state, upstream, "scene"), state.scene);
   assert.equal(keyframeOwner(state, upstream, upstreamId), upstream[0].sceneState.stickers[0]);
   assert.equal(keyframeOwner(state, upstream, "own_1"), state.stickers[0]);

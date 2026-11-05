@@ -1,26 +1,14 @@
-// How the new UI reads and writes the state's Camera (docs/studio-ui.md, the owner table's Camera row): a state without
-// a Camera reads as the default Camera, and a write to such a state puts the default Camera there first. The default
-// Camera's values are docs/scene-state-v2.md's (pano_scene_state.js defaultCamera); the recording rule is
-// pano_editor_state.js setCameraShot's and pano_timeline.js setLaneValue's, called here. Pure: only the draft or the
-// Camera it is given changes.
-//
-// Not here, each kept as it reads today: the Easing panel's owner
-// (inspector_actions.js applyEasing, nothing without a Camera), the Timeline's copy-on-write Camera
-// (timeline_actions.js createDraft) and the reads of `locked`.
+// How the new UI reads and writes the state's Camera (docs/studio-ui.md, the owner table's Camera row). A state always
+// has its Camera (loadSceneState puts the default one there, ADR 0048). The recording rule is pano_editor_state.js
+// setCameraShot's and pano_timeline.js setLaneValue's, called here. Pure: only the Camera it is given changes.
 import { cameraShot, setCameraShot } from "../pano_editor_state.js";
 import { evaluateCamera } from "../pano_scene_eval.js";
-import { defaultCamera } from "../pano_scene_state.js";
 import { setLaneValue } from "../pano_timeline.js";
-
-// The Camera a state shows: its own (a loaded state always has one, ADR 0048), or a new default one.
-export function cameraOf(state) {
-  return state.camera ?? defaultCamera();
-}
 
 // The Camera of `state` at the Timeline frame `frame`: its evaluated values (pano_scene_eval.js evaluateCamera) with the
 // fields that do not change in time.
 export function cameraAt(state, frame) {
-  const camera = cameraOf(state);
+  const { camera } = state;
   return {
     ...evaluateCamera(camera, frame),
     projection: camera.projection,
@@ -28,13 +16,6 @@ export function cameraAt(state, frame) {
     visible: camera.visible !== false,
     locked: camera.locked === true,
   };
-}
-
-// The Camera of a draft to write to: a draft whose `camera` is null or undefined gets the default Camera first. Other
-// falsy values (false, 0, "") never reach here: loadSceneState gives a Camera object, and rebaseSceneState keeps null.
-export function editableCamera(draft) {
-  draft.camera ??= defaultCamera();
-  return draft.camera;
 }
 
 // A move of `camera` (changed in place) to `pose` ({ position, yaw_deg, pitch_deg }) at the Timeline frame `frame`, from

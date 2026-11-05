@@ -22,7 +22,6 @@ import { EASING_PRESETS, rowLaneNames, selectedEasing } from "../pano_timeline.j
 import { UPSTREAM_INHERITED_TIP, isUpstreamSticker, upstreamOverrideOf, upstreamStickerInherited } from "../pano_upstream.js";
 import { animationClipIndex } from "../pano_animation.js";
 import { HANDOFF_LANES } from "../pano_port_handoff.js";
-import { cameraOf } from "./camera_state.js";
 import { findSticker, keyframeOwner } from "./row_object.js";
 import { defaultCamera, groundOf } from "./defaults.js";
 import { objectLabel, upstreamFromLabel } from "./timeline_model.js";
@@ -403,7 +402,7 @@ export function stickerChangedRows(state, sticker, { playhead, upstream, animati
 }
 
 function cameraCard(state, { playhead, readOnly }) {
-  const camera = cameraOf(state);
+  const { camera } = state;
   const locked = camera.locked === true;
   return {
     kind: "camera",

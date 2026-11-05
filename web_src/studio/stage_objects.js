@@ -39,7 +39,7 @@ import { dist2, pointInPoly } from "../pano_math.js";
 import {
   paintCornerHandle, paintObjectOf, rasterAlphaHits, rasterObjectAlphaAt, strokeDotHit, strokePathsHit,
 } from "../pano_paint_objects.js";
-import { cameraAt, cameraOf, editableCamera, setCameraLanes } from "./camera_state.js";
+import { cameraAt, setCameraLanes } from "./camera_state.js";
 import { findSticker } from "./row_object.js";
 import { ROTATE_SNAP_DEG } from "./view_scale.js";
 import { shownGizmoMode, selectedKind } from "./selection_bar.js";
@@ -155,7 +155,7 @@ export function createStageObjects({
     if (kind === "camera") {
       if (tab() !== "3d") return null;
       const value = cameraValue();
-      if (!value.visible || cameraOf(state()).locked === true) return null;
+      if (!value.visible || state().camera.locked === true) return null;
       return { mode: shownGizmoMode(kind, mode()), transform: sceneTransform({ ...value, scale: 1 }) };
     }
     if (kind !== "world-image" && kind !== "world-3d") return null;
@@ -323,7 +323,7 @@ export function createStageObjects({
         }
         edits.live((draft) => {
           if (row === "camera") {
-            setCameraLanes(editableCamera(draft), frame, lanes);
+            setCameraLanes(draft.camera, frame, lanes);
             return true;
           }
           const sticker = stickerOf(draft, row);

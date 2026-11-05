@@ -47,8 +47,6 @@ test("a state without a Camera object has the default Camera, and a Camera has a
   assert.equal(loadSceneState(fixture("v1_cutout")).camera.projection, "perspective");
   assert.deepEqual(rebaseSceneState(loadSceneState(fixture("v2_no_camera")), 60).camera, defaultCamera());
   assert.equal(rebaseSceneState(loadSceneState(fixture("v2_erp_camera")), 12).camera.projection, "erp");
-  // An upstream layer's state from the run holds no Camera (nodes.py `_scene_output`).
-  assert.equal(evaluateSceneState({ ...loadSceneState(fixture("v2_no_camera")), camera: null }, 10).camera, null);
 });
 
 test("the state text leaves out the default projection and reads back the same", () => {

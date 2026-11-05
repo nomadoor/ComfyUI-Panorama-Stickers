@@ -33,7 +33,6 @@ import { ANIMATION_DEFAULT, ANIMATION_SPEED_MAX, ANIMATION_SPEED_MIN, CAMERA_LAN
 import { deleteKeyframes, keyLanes, rowLaneNames, setLaneValue, setSegmentEasing } from "../pano_timeline.js";
 import { isUpstreamSticker, upstreamStickerInherited } from "../pano_upstream.js";
 import { HANDOFF_LANES, revertHandoffLane } from "../pano_port_handoff.js";
-import { editableCamera } from "./camera_state.js";
 import { defaultCamera } from "./defaults.js";
 import { ROW_LANES, ownerFrame, skyPlacedSize } from "./inspector_model.js";
 import { findSticker, keyframeOwner } from "./row_object.js";
@@ -48,7 +47,7 @@ function resolve(state, target, { upstream, readOnly }) {
   if (readOnly || !target) return null;
   if (target.kind === "scene") return { kind: "scene", owner: state };
   if (target.kind === "camera") {
-    if (state.camera?.locked === true) return null;
+    if (state.camera.locked === true) return null;
     return { kind: "camera", owner: null };
   }
   const sticker = findSticker(state, upstream, target.id);
@@ -69,7 +68,7 @@ function applyField(state, found, edit, context) {
     return true;
   }
   if (found.kind === "camera") {
-    const camera = editableCamera(state);
+    const camera = state.camera;
     if (field === "curve") setCameraCurveKeepingCenter(camera, playhead, value, edit.start ?? { hFOV_deg: evaluateLane(camera, "fov", playhead), curve: evaluateLane(camera, "curve", playhead) });
     else setCameraField(camera, playhead, field, value);
     return true;
@@ -96,7 +95,7 @@ function applyField(state, found, edit, context) {
 
 function applyChoice(state, found, { field, value }, context) {
   if (found.kind === "camera") {
-    const camera = editableCamera(state);
+    const camera = state.camera;
     if (field === "projection" && (value === "erp" || value === "perspective")) camera.projection = value;
     else if (field === "erp_range" && (value === 360 || value === 180)) camera.erp_range = value;
     else return false;
@@ -118,7 +117,7 @@ function rowLanes(found, row) {
 function applyKey(state, found, row, playhead) {
   const lanes = rowLanes(found, row);
   if (!lanes) return false;
-  const owner = found.kind === "camera" ? editableCamera(state) : found.owner;
+  const owner = found.kind === "camera" ? state.camera : found.owner;
   const frame = ownerFrame(owner, playhead);
   const at = (name) => owner[name].keyframes.find((key) => Math.abs(key.frame - frame) <= FRAME_EPSILON);
   const keyed = lanes.filter(at);
@@ -158,7 +157,7 @@ function applyReset(state, found, row, context) {
     return { done: true };
   }
   if (found.kind === "camera") {
-    const camera = editableCamera(state);
+    const camera = state.camera;
     if (row === "aspect") {
       camera.aspect = defaultCamera().aspect;
       return { done: true };
@@ -199,9 +198,7 @@ function applyReset(state, found, row, context) {
 
 function applyEasing(state, keyframes, easing, upstream) {
   if (!keyframes?.frames?.length) return false;
-  // Without a Camera an Easing edit writes nothing (the other edits put the default Camera there first, camera_state.js
-  // editableCamera); whether to align it is an open decision of the owner.
-  const owner = keyframes.owner === "camera" ? (state.camera ?? null) : keyframeOwner(state, upstream, keyframes.owner);
+  const owner = keyframes.owner === "camera" ? state.camera : keyframeOwner(state, upstream, keyframes.owner);
   if (!owner || owner.locked) return false;
   if (upstreamStickerInherited(owner)) return false;
   const names = keyframes.lane ? [keyframes.lane] : rowLaneNames(owner);
