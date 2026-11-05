@@ -580,12 +580,12 @@ function xs(e, t) {
   return 2 * _a(e, t) * nt;
 }
 function er(e = {}) {
-  const t = xa(e), n = so(t), r = be(Je(e.hFOV_deg || 90, 90), Ln, n), i = be(Je(e.vFOV_deg || 60, 60), Ln, n), o = Gr(r, t), a = Gr(i, t);
+  const t = xa(e), n = so(t), r = be(Je(e.hFOV_deg, 90), Ln, n), i = be(Je(e.vFOV_deg, 60), Ln, n), o = Gr(r, t), a = Gr(i, t);
   return {
     curve: t,
     yawDeg: Je(e.yaw_deg, 0),
     pitchDeg: Je(e.pitch_deg, 0),
-    rollDeg: Je(e.roll_deg ?? e.rot_deg, 0),
+    rollDeg: Je(e.roll_deg, 0),
     hFovDeg: r,
     vFovDeg: i,
     tanHalfX: o,
@@ -3244,7 +3244,7 @@ function Ji(e) {
   return t.find((i) => String((i == null ? void 0 : i.id) || "") === n) || t[0] || null;
 }
 function xk(e) {
-  const t = Ji(e), n = Number((t == null ? void 0 : t.roll_deg) ?? (t == null ? void 0 : t.rot_deg) ?? 0), r = Math.abs(n) < 0.05 ? 0 : n;
+  const t = Ji(e), n = Number((t == null ? void 0 : t.roll_deg) ?? 0), r = Math.abs(n) < 0.05 ? 0 : n;
   return {
     hasShot: !!t,
     shotId: (t == null ? void 0 : t.id) == null ? null : String(t.id),
@@ -3442,10 +3442,8 @@ function Nk(e, t = {}) {
   if (t.type === "set-roll") {
     const r = Number(t.value);
     return Number.isFinite(r) ? ko(e, (i) => {
-      const o = Xc(r), a = Number(i.roll_deg ?? i.rot_deg ?? 0);
-      if (Math.abs(a - o) <= 1e-12) return i;
-      const s = { ...i, roll_deg: o };
-      return delete s.rot_deg, s;
+      const o = Xc(r), a = Number(i.roll_deg ?? 0);
+      return Math.abs(a - o) <= 1e-12 ? i : { ...i, roll_deg: o };
     }) : { state: e, changed: !1 };
   }
   return t.type === "scale-fov" ? ko(e, (r) => {
@@ -3506,7 +3504,7 @@ function Ok(e, t, n = {}) {
 }
 function Ck(e, t = {}) {
   if (!e || typeof e != "object") return e;
-  const n = Math.max(1, Number(t.focalPx || 1)), r = t.invertX === !0 ? -1 : 1, i = t.invertY === !0 ? -1 : 1, o = Number(t.dx || 0) * r, a = Number(t.dy || 0) * i, s = Number(e.roll_deg ?? e.rot_deg ?? 0) * Ue, l = Math.cos(s), c = Math.sin(s), d = o / n, u = -a / n, f = d * l - u * c, p = d * c + u * l, h = Number(e.pitch_deg || 0) * Ue, m = Math.max(0.25, Math.abs(Math.cos(h)));
+  const n = Math.max(1, Number(t.focalPx || 1)), r = t.invertX === !0 ? -1 : 1, i = t.invertY === !0 ? -1 : 1, o = Number(t.dx || 0) * r, a = Number(t.dy || 0) * i, s = Number(e.roll_deg ?? 0) * Ue, l = Math.cos(s), c = Math.sin(s), d = o / n, u = -a / n, f = d * l - u * c, p = d * c + u * l, h = Number(e.pitch_deg || 0) * Ue, m = Math.max(0.25, Math.abs(Math.cos(h)));
   return {
     ...e,
     yaw_deg: ut(Number(e.yaw_deg || 0) - Math.atan(f) / m * nt),
@@ -20240,7 +20238,7 @@ function oz(e) {
     const L = String(G || "").trim(), D = `geomv5:${String(x || "paint").trim() || "paint"}:${L}:${n.mode}:${c()}`;
     if (n.mode === "frame") {
       const se = o(), q = String((se == null ? void 0 : se.id) || ""), $ = se ? s(se) : null;
-      return `${D}:frame:${q}:${Math.round(Number((se == null ? void 0 : se.yaw_deg) || 0) * 1e3)}:${Math.round(Number((se == null ? void 0 : se.pitch_deg) || 0) * 1e3)}:${Math.round(Number((se == null ? void 0 : se.roll_deg) ?? (se == null ? void 0 : se.rot_deg) ?? 0) * 1e3)}:${Math.round(Number((se == null ? void 0 : se.hFOV_deg) || 0) * 1e3)}:${Math.round(Number((se == null ? void 0 : se.vFOV_deg) || 0) * 1e3)}:${Math.round(Number(($ == null ? void 0 : $.x) || 0))}:${Math.round(Number(($ == null ? void 0 : $.y) || 0))}:${Math.round(Number(($ == null ? void 0 : $.w) || 0))}:${Math.round(Number(($ == null ? void 0 : $.h) || 0))}`;
+      return `${D}:frame:${q}:${Math.round(Number((se == null ? void 0 : se.yaw_deg) || 0) * 1e3)}:${Math.round(Number((se == null ? void 0 : se.pitch_deg) || 0) * 1e3)}:${Math.round(Number((se == null ? void 0 : se.roll_deg) ?? 0) * 1e3)}:${Math.round(Number((se == null ? void 0 : se.hFOV_deg) || 0) * 1e3)}:${Math.round(Number((se == null ? void 0 : se.vFOV_deg) || 0) * 1e3)}:${Math.round(Number(($ == null ? void 0 : $.x) || 0))}:${Math.round(Number(($ == null ? void 0 : $.y) || 0))}:${Math.round(Number(($ == null ? void 0 : $.w) || 0))}:${Math.round(Number(($ == null ? void 0 : $.h) || 0))}`;
     }
     return `${D}:view:${Math.round(Number(n.viewYaw || 0) * 100)}:${Math.round(Number(n.viewPitch || 0) * 100)}:${Math.round(Number(n.viewFov || 0) * 100)}:${Math.round(Number((t == null ? void 0 : t.width) || 0))}:${Math.round(Number((t == null ? void 0 : t.height) || 0))}`;
   }
@@ -22789,12 +22787,12 @@ function Lz(e) {
       te.pressed = Z ? "true" : "false", te.visible = !(te.key === "frame" && !d), te.key === "frame" ? Object.assign(te, V) : te.disabled = !1;
     });
     const ae = d && t.mode === "frame" ? m() : null;
-    h.frameRail.visible = !!ae, h.frameRail.disabled = l || (ae == null ? void 0 : ae.locked) === !0, h.frameRollKnob.visible = !!ae && !l && ae.locked !== !0, h.frameRollKnob.disabled = l || (ae == null ? void 0 : ae.locked) === !0, h.frameRollKnob.rollDeg = Number((ae == null ? void 0 : ae.roll_deg) ?? (ae == null ? void 0 : ae.rot_deg) ?? 0), h.frameRollKnob.displayValue = Yo(h.frameRollKnob.rollDeg), h.frameRollKnob.dragging = ((le = t.interaction) == null ? void 0 : le.kind) === "roll_frame", h.frameRollKnob.armed = !!ae && t.altModifier === !0, h.frameRail.rollKnob = h.frameRollKnob, h.frameRail.aspectLabel = ae ? Dr(ae) : "", h.frameRail.aspectChoices = mM(ae ? String(Dr(ae)) : null), ae || (h.frameRail.aspectOpen = !1), h.outputPreviewToggle.visible = p === "cutout" && t.mode !== "frame" && !!m(), d && h.cameraPreview && (h.cameraPreview.visible = t.mode !== "frame", h.cameraPreview.expanded = !!t.outputPreviewExpanded, h.cameraPreview.settled = h.cameraPreview.settled === !0 && c.pendingStableLayoutFrames <= 0 && c.hasPresentedFrame), ce(), w() ? U(t.pointerPos) : K(t.mode === "pano" ? "grab" : "default");
+    h.frameRail.visible = !!ae, h.frameRail.disabled = l || (ae == null ? void 0 : ae.locked) === !0, h.frameRollKnob.visible = !!ae && !l && ae.locked !== !0, h.frameRollKnob.disabled = l || (ae == null ? void 0 : ae.locked) === !0, h.frameRollKnob.rollDeg = Number((ae == null ? void 0 : ae.roll_deg) ?? 0), h.frameRollKnob.displayValue = Yo(h.frameRollKnob.rollDeg), h.frameRollKnob.dragging = ((le = t.interaction) == null ? void 0 : le.kind) === "roll_frame", h.frameRollKnob.armed = !!ae && t.altModifier === !0, h.frameRail.rollKnob = h.frameRollKnob, h.frameRail.aspectLabel = ae ? Dr(ae) : "", h.frameRail.aspectChoices = mM(ae ? String(Dr(ae)) : null), ae || (h.frameRail.aspectOpen = !1), h.outputPreviewToggle.visible = p === "cutout" && t.mode !== "frame" && !!m(), d && h.cameraPreview && (h.cameraPreview.visible = t.mode !== "frame", h.cameraPreview.expanded = !!t.outputPreviewExpanded, h.cameraPreview.settled = h.cameraPreview.settled === !0 && c.pendingStableLayoutFrames <= 0 && c.hasPresentedFrame), ce(), w() ? U(t.pointerPos) : K(t.mode === "pano" ? "grab" : "default");
   }
   function J() {
     var ae;
     const V = t.mode === "frame" ? m() : null;
-    h.frameRollKnob.visible = !!V && !l && V.locked !== !0, h.frameRollKnob.rollDeg = Number((V == null ? void 0 : V.roll_deg) ?? (V == null ? void 0 : V.rot_deg) ?? 0), h.frameRollKnob.displayValue = Yo(h.frameRollKnob.rollDeg), h.frameRollKnob.dragging = ((ae = t.interaction) == null ? void 0 : ae.kind) === "roll_frame", h.frameRollKnob.armed = !!V && t.altModifier === !0;
+    h.frameRollKnob.visible = !!V && !l && V.locked !== !0, h.frameRollKnob.rollDeg = Number((V == null ? void 0 : V.roll_deg) ?? 0), h.frameRollKnob.displayValue = Yo(h.frameRollKnob.rollDeg), h.frameRollKnob.dragging = ((ae = t.interaction) == null ? void 0 : ae.kind) === "roll_frame", h.frameRollKnob.armed = !!V && t.altModifier === !0;
   }
   function ee() {
     B();
@@ -24451,7 +24449,7 @@ function Uz(e) {
     const A = Ak({
       frame: y,
       point: k,
-      startRollDeg: Number(v.roll_deg ?? v.rot_deg ?? 0),
+      startRollDeg: Number(v.roll_deg ?? 0),
       shiftKey: g.shiftKey,
       altKey: g.altKey,
       allowAlt: !0
@@ -24463,7 +24461,7 @@ function Uz(e) {
       lastAngle: A.lastAngle,
       accumulatedRad: A.accumulatedRad,
       rollGesture: A,
-      start: { roll_deg: Number(v.roll_deg ?? v.rot_deg ?? 0) },
+      start: { roll_deg: Number(v.roll_deg ?? 0) },
       changed: !1,
       altStarted: A.source === "alt",
       source: A.source

@@ -82,12 +82,14 @@ test("explicit aspect keeps vertical FOV and derives horizontal FOV in tangent s
   close(camera.aspect, 9 / 16, 1e-12);
 });
 
-test("legacy falsy Cutout FOV values retain their default framing", () => {
-  for (const value of [0, "", null, false]) {
-    const camera = getCutoutCameraParams({ hFOV_deg: value, vFOV_deg: value });
-    assert.equal(camera.hFovDeg, 90);
-    assert.equal(camera.vFovDeg, 60);
-  }
+// docs/threejs-spark-integration.md "Cutout エディタ": a shot is read as the node reads it.
+test("a Cutout shot's FOV of 0 is held at the least FOV, a missing one is 90 / 60, and its roll is roll_deg only", () => {
+  const zero = getCutoutCameraParams({ hFOV_deg: 0, vFOV_deg: 0 });
+  assert.deepEqual([zero.hFovDeg, zero.vFovDeg], [1, 1]);
+  const missing = getCutoutCameraParams({});
+  assert.deepEqual([missing.hFovDeg, missing.vFovDeg], [90, 60]);
+  assert.equal(getCutoutCameraParams({ rot_deg: 12 }).rollDeg, 0);
+  assert.equal(getCutoutCameraParams({ roll_deg: 7, rot_deg: 12 }).rollDeg, 7);
 });
 
 test("cutout shot normalization derives the canonical aspect", () => {

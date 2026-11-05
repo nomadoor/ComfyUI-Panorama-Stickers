@@ -17,7 +17,7 @@ export function createPointerFrame(deps) {
     const rollGesture = beginCutoutRollGesture({
       frame: rect,
       point: p,
-      startRollDeg: Number(shot.roll_deg ?? shot.rot_deg ?? 0),
+      startRollDeg: Number(shot.roll_deg ?? 0),
       shiftKey: e.shiftKey,
       altKey: e.altKey,
       allowAlt: true,
@@ -30,7 +30,7 @@ export function createPointerFrame(deps) {
       lastAngle: rollGesture.lastAngle,
       accumulatedRad: rollGesture.accumulatedRad,
       rollGesture,
-      start: { roll_deg: Number(shot.roll_deg ?? shot.rot_deg ?? 0) },
+      start: { roll_deg: Number(shot.roll_deg ?? 0) },
       changed: false,
       altStarted: rollGesture.source === "alt",
       source: rollGesture.source,

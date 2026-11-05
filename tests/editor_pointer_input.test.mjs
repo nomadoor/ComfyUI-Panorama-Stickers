@@ -254,8 +254,8 @@ test("Alt in the Frame view starts a roll of the shot", () => {
   assert.deepEqual(h.calls("requestDraw"), [[{ localOnly: true }]]);
 });
 
-test("Shift in the Frame view rolls from rot_deg outside the dead zone, and nothing inside it", () => {
-  const shot = { rot_deg: 4 };
+test("Shift in the Frame view rolls from roll_deg outside the dead zone, and nothing inside it", () => {
+  const shot = { roll_deg: 4 };
   const rect = { x: 0, y: 0, w: 200, h: 100 };
   let h = harness({ api: { getActiveCutoutShot: () => shot, getFrameViewRect: () => rect }, editor: { mode: "frame" } });
   h.onCanvasPointerDown(h.event({ shiftKey: true, x: 10, y: 10 }));

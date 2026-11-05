@@ -63,19 +63,19 @@ function fovOfTangent(tangent, curve) {
 }
 
 export function getCutoutCameraParams(shot = {}) {
-  // Intentional legacy compatibility: falsy serialized FOV values mean the
-  // historical 90/60-degree defaults, not the 1-degree clamp minimum.
+  // As the node reads a shot (docs/threejs-spark-integration.md "Cutout エディタ"): a FOV of 0 is held at the least
+  // FOV, a missing one is 90 / 60; the roll is roll_deg only.
   const curve = shotCurve(shot);
   const fovMax = shotFovMaxDeg(curve);
-  const hFovDeg = clamp(finiteOr(shot.hFOV_deg || 90, 90), CUTOUT_FOV_MIN_DEG, fovMax);
-  const vFovDeg = clamp(finiteOr(shot.vFOV_deg || 60, 60), CUTOUT_FOV_MIN_DEG, fovMax);
+  const hFovDeg = clamp(finiteOr(shot.hFOV_deg, 90), CUTOUT_FOV_MIN_DEG, fovMax);
+  const vFovDeg = clamp(finiteOr(shot.vFOV_deg, 60), CUTOUT_FOV_MIN_DEG, fovMax);
   const tanHalfX = halfTangent(hFovDeg, curve);
   const tanHalfY = halfTangent(vFovDeg, curve);
   return {
     curve,
     yawDeg: finiteOr(shot.yaw_deg, 0),
     pitchDeg: finiteOr(shot.pitch_deg, 0),
-    rollDeg: finiteOr(shot.roll_deg ?? shot.rot_deg, 0),
+    rollDeg: finiteOr(shot.roll_deg, 0),
     hFovDeg,
     vFovDeg,
     tanHalfX,
