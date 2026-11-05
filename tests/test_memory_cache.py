@@ -252,3 +252,15 @@ def test_sampling_a_read_only_erp_warns_nothing():
     with warnings.catch_warnings():
         warnings.simplefilter("error")
         sample_cutout_from_sampling_map(erp, sampling_map)
+
+
+def test_a_painting_layer_is_read_by_the_keys_the_editor_writes(tmp_path, monkeypatch):
+    # ADR 0063: a group is read by its `actionGroupId` only, and the revision is the one the editor sent.
+    monkeypatch.setattr(folder_paths, "get_temp_directory", lambda: str(tmp_path))
+    (tmp_path / "group.png").write_bytes(_png(_image(4, 8)))
+    asset = {"type": "comfy_image", "filename": "group.png", "subfolder": "", "storage": "temp"}
+
+    payload = resolve_painting_layer_payload({"groups": [{"id": "old", "image": asset}, {"actionGroupId": "ag", "image": asset}]})
+
+    assert list(payload["groups"]) == ["ag"]
+    assert not payload["revision"].startswith("group|old")
