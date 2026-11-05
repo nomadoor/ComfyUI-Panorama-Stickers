@@ -52,52 +52,6 @@ function createCanvasSurface(width, height) {
   return { canvas, ctx };
 }
 
-function panoPaintDebugEnabled() {
-  try {
-    if (window?.__PANO_PAINT_DEBUG__ === true) return true;
-    return String(window?.localStorage?.getItem("panoPaintDebug") || "").trim() === "1";
-  } catch {
-    return false;
-  }
-}
-
-function logPaintDebug(phase, payload) {
-  void phase;
-  void payload;
-  return;
-}
-
-function measureAlphaBounds(canvas, threshold = 8) {
-  const ctx = canvas?.getContext?.("2d");
-  const width = Number(canvas?.width || 0);
-  const height = Number(canvas?.height || 0);
-  if (!ctx || width < 1 || height < 1) return null;
-  const data = ctx.getImageData(0, 0, width, height).data;
-  let minX = width;
-  let minY = height;
-  let maxX = -1;
-  let maxY = -1;
-  for (let y = 0; y < height; y += 1) {
-    for (let x = 0; x < width; x += 1) {
-      if (data[(y * width + x) * 4 + 3] <= threshold) continue;
-      if (x < minX) minX = x;
-      if (y < minY) minY = y;
-      if (x > maxX) maxX = x;
-      if (y > maxY) maxY = y;
-    }
-  }
-  if (maxX < minX || maxY < minY) return null;
-  return {
-    minX,
-    minY,
-    maxX,
-    maxY,
-    width: maxX - minX + 1,
-    height: maxY - minY + 1,
-    aspect: Number(((maxX - minX + 1) / Math.max(1, (maxY - minY + 1))).toFixed(4)),
-  };
-}
-
 function createScratchCanvas(width, height) {
   return createPanoCanvas({
     label: "paint.scratch",
@@ -1422,19 +1376,6 @@ export function createPaintEngineManager(options = {}) {
       }
     }
 
-    if (panoPaintDebugEnabled()) {
-      logPaintDebug("commit-bounds", {
-        layerKind,
-        toolKind: String(stroke?.toolKind || ""),
-        targetKind: String(targetDesc?.kind || ""),
-        targetWidth: Number(targetDesc?.width || 0),
-        targetHeight: Number(targetDesc?.height || 0),
-        targetViewMode: String(stroke?.targetSpace?.viewMode || ""),
-        strokeAspect: Number(stroke?.aspect ?? 1),
-        activeBounds: measureAlphaBounds(target.currentStroke.canvas),
-        surfaceBounds: measureAlphaBounds(surface.canvas),
-      });
-    }
 
     clearStroke();
     target.activeStroke = null;
