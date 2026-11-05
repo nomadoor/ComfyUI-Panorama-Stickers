@@ -7,7 +7,8 @@
 // node 22, whose result has an image; ?video: the node's own result has an MP4 (what the node surface reads of them,
 // pano_comfy_media.js "previewNode").
 // ?bg (Stickers): the node's own result has an orange background ERP (pano_input_images), which its node
-// surface draws (window.__entry.surfaceColor()).
+// surface draws (window.__entry.surfaceColor()). ?sticker (Stickers): only sticker_image is linked, to a LoadImage
+// (node 23) whose picture is orange; it is the port Sticker's image, not the background.
 import { api } from "./comfy/api.js";
 import { app } from "./comfy/app.js";
 import "/web_src/main.js";
@@ -119,6 +120,20 @@ try {
     // storage differs from type: the Preview node reads /view's type from storage first, the editor reads type only
     // (aligning the two is an open owner decision; docs/editor-architecture.md "ComfyUI の実行結果を読む").
     app.nodeOutputs = { 22: { images: [{ filename: "erp.png", subfolder: "pano", type: "temp", storage: "output" }] } };
+  }
+  if (QUERY.has("sticker")) {
+    const canvas = document.createElement("canvas");
+    canvas.width = 64;
+    canvas.height = 64;
+    const g = canvas.getContext("2d");
+    g.fillStyle = "rgb(230, 140, 30)";
+    g.fillRect(0, 0, 64, 64);
+    const link = { id: 2, origin_id: 23, origin_slot: 0, target_id: 21, target_slot: 1, type: "IMAGE" };
+    const origin = { id: 23, type: "LoadImage", imgs: [{ src: canvas.toDataURL("image/png") }], outputs: [{ name: "IMAGE", type: "IMAGE", links: [2] }] };
+    graph.getNodeById = (id) => (id === 21 ? node : id === 23 ? origin : null);
+    node.getInputLink = (slot) => (slot === 1 ? link : null);
+    node.isInputConnected = (slot) => slot === 1;
+    node.getInputNode = (slot) => (slot === 1 ? origin : null);
   }
   if (QUERY.has("video")) {
     app.nodeOutputs = { 21: { pano_videos: [{ filename: "pv.mp4", subfolder: "", type: "temp", format: "video/mp4" }] } };
