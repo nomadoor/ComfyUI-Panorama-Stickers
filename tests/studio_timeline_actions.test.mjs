@@ -26,6 +26,7 @@ import {
   writeLoopSetting,
 } from "../web_src/studio/timeline_actions.js";
 import { ctxOf, EASE, studioState, upstreamLayer } from "./studio_timeline_fixtures.mjs";
+import { TIMELINE_LENGTH_MAX } from "../web_src/pano_scene_state.js";
 
 const none = { row: null, keys: [] };
 const frames = (lane) => lane.keyframes.map((key) => key.frame);
@@ -289,7 +290,11 @@ test("the Length field's seconds: length ÷ fps to two decimals, and seconds to 
   assert.equal(lengthFromSeconds(0, 24), 1);
   assert.equal(lengthFromSeconds(-3, 24), 1);
   assert.equal(lengthFromSeconds(Number.NaN, 24), null);
-  assert.equal(lengthFromSeconds(Infinity, 24), null);
+  // Huge seconds behave as huge frames: the longest length the state holds.
+  assert.equal(lengthFromSeconds(1e308, 24), TIMELINE_LENGTH_MAX);
+  assert.equal(lengthFromSeconds(Infinity, 24), TIMELINE_LENGTH_MAX);
+  assert.equal(lengthFromSeconds(-Infinity, 24), 1);
+  assert.equal(lengthFromSeconds("abc", 24), null);
   // A shown value typed back is the same length.
   for (const [length, fps] of [[48, 24], [100, 24], [7, 30], [1001, 29.97]]) {
     assert.equal(lengthFromSeconds(Number(lengthSecondsText(length, fps)), fps), length);
