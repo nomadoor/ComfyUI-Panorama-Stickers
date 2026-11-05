@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
 import time
 
 import numpy as np
@@ -109,7 +108,6 @@ def compose_display_list_to_overlay_rgba(
     height: int,
     *,
     painting_payload: dict | None = None,
-    base_dir: Path | None = None,
     quality: str = "export",
 ) -> tuple[np.ndarray, bool, dict]:
     canvas = np.zeros((height, width, 4), dtype=np.float32)
@@ -140,7 +138,6 @@ def compose_display_list_to_overlay_rgba(
                 sticker_state,
                 width,
                 height,
-                base_dir=base_dir,
                 quality=quality,
                 stickers_override=[entry.get("item")],
                 coverage_override=360,

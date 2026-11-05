@@ -6,7 +6,6 @@ them. The three legacy node classes are defined here, with their helpers in `leg
 `tests/test_nodes_preview.py` builds them from a fresh import of this module with a stand-in ComfyUI API."""
 import hashlib
 import logging
-from pathlib import Path
 
 # Also read as `nodes.comfy.model_management` by the tests that replace ComfyUI's device functions.
 import comfy.model_management
@@ -273,7 +272,6 @@ class PanoramaStickersNode(io.ComfyNode):
             erp_width=workspace_w,
             erp_height=workspace_h,
             painting_payload=painting_payload,
-            base_dir=Path.cwd(),
             quality="export",
             ui_ret=ui_ret,
             warning_key="pano_sticker_warnings",
@@ -439,7 +437,6 @@ class PanoramaCutoutNode(io.ComfyNode):
                     erp_width=ow,
                     erp_height=oh,
                     painting_payload=painting_payload,
-                    base_dir=Path.cwd(),
                     quality="export",
                     ui_ret=ui_ret,
                     warning_key="pano_cutout_warnings",
@@ -526,7 +523,6 @@ class PanoramaCutoutNode(io.ComfyNode):
                 erp_width=int(src.shape[1]),
                 erp_height=int(src.shape[0]),
                 painting_payload=painting_payload,
-                base_dir=Path.cwd(),
                 quality="export",
                 ui_ret=ui_ret,
                 warning_key="pano_cutout_warnings",

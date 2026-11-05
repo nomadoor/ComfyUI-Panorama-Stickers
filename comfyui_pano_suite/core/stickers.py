@@ -71,43 +71,16 @@ def load_source_rgba(source: dict) -> np.ndarray | None:
         return None
 
 
-def _load_asset_rgba(asset_info: dict, base_dir: Path | None = None) -> np.ndarray | None:
-    if not isinstance(asset_info, dict):
+def _load_asset_rgba(asset_info: dict) -> np.ndarray | None:
+    """A v1 asset's image as float RGBA: only a `comfy_image` (a file in ComfyUI's input, output, or temp directory) is
+    read (ADR 0063); anything else, or a file that cannot be read, is None."""
+    if not isinstance(asset_info, dict) or str(asset_info.get("type") or "").strip().lower() != "comfy_image":
         return None
-    t = str(asset_info.get("type") or "").strip().lower()
-
     try:
-        if t == "path":
-            v = str(asset_info.get("value") or asset_info.get("path") or "").strip()
-            if not v:
-                return None
-            p = Path(v)
-            if base_dir is not None:
-                p = (base_dir / p).resolve()
-                try:
-                    p.relative_to(base_dir.resolve())
-                except Exception:
-                    return None
-            elif p.is_absolute():
-                return None
-            else:
-                p = p.resolve()
-                try:
-                    p.relative_to(Path.cwd().resolve())
-                except Exception:
-                    return None
-
-            if not p.exists() or not p.is_file():
-                return None
-            img = Image.open(p).convert("RGBA")
-            return np.asarray(img, dtype=np.float32) / 255.0
-
-        if t == "comfy_image":
-            rgba = _load_comfy_file_rgba8(asset_info.get("filename"), asset_info.get("subfolder"), asset_info.get("storage"))
-            return None if rgba is None else unit_float(rgba)
+        rgba = _load_comfy_file_rgba8(asset_info.get("filename"), asset_info.get("subfolder"), asset_info.get("storage"))
     except Exception:
         return None
-    return None
+    return None if rgba is None else unit_float(rgba)
 
 
 def _sample_rgba_bilinear(img: np.ndarray, x: np.ndarray, y: np.ndarray) -> np.ndarray:
@@ -155,7 +128,7 @@ def _iter_u_ranges(center_u: float, half_u: int, w: int):
         yield (start, end)
 
 
-def _normalize_runtime_sticker_image(st: dict, assets: dict, base_dir: Path | None = None) -> np.ndarray | None:
+def _normalize_runtime_sticker_image(st: dict, assets: dict) -> np.ndarray | None:
     runtime_img = st.get("image_rgba")
     if isinstance(runtime_img, np.ndarray):
         img = np.clip(runtime_img.astype(np.float32), 0.0, 1.0)
@@ -172,7 +145,7 @@ def _normalize_runtime_sticker_image(st: dict, assets: dict, base_dir: Path | No
     asset_id = st.get("asset_id")
     if asset_id not in assets:
         return None
-    return _load_asset_rgba(assets[asset_id], base_dir=base_dir)
+    return _load_asset_rgba(assets[asset_id])
 
 
 def _compose_sticker_patch(
@@ -284,7 +257,6 @@ def render_stickers_to_rgba_erp(
     output_w: int,
     output_h: int,
     *,
-    base_dir: Path | None = None,
     quality: str = "export",
     stickers_override: list[dict] | None = None,
     assets_override: dict | None = None,
@@ -309,7 +281,7 @@ def render_stickers_to_rgba_erp(
     for st in stickers_sorted:
         if st.get("visible", True) is False:
             continue
-        img = _normalize_runtime_sticker_image(st, assets, base_dir=base_dir)
+        img = _normalize_runtime_sticker_image(st, assets)
         if img is None:
             continue
         _compose_sticker_patch(
