@@ -144,6 +144,42 @@ test("a Keyframe click selects it, Shift adds, a box selects what it covers, an 
   expect((await scene(page, "selection")).keys).toEqual([]);
 });
 
+test("the empty area below the rows starts a box and clears on a click, without moving the playhead", async ({ page }) => {
+  await open(page);
+  const body = await dark(page).locator(".pano-studio-tl-body").boundingBox();
+  const last = await dark(page).locator(".pano-studio-tl-lines").boundingBox();
+  // The fixture's rows leave room below them in the Timeline's body.
+  expect(body.y + body.height - (last.y + last.height)).toBeGreaterThan(40);
+  const below = last.y + last.height + 20;
+  // A box from below every row up past the Camera's track (above the first row), frames 45..49: the Camera's key at 48 (the upstream key at 50 stays out).
+  await page.mouse.move(await frameX(page, 45), below);
+  await page.mouse.down();
+  await page.mouse.move(await frameX(page, 49), (await trackY(page, "camera")) - 30, { steps: 5 });
+  await expect(dark(page).locator(".pano-studio-tl-marquee")).toHaveCount(1);
+  await page.mouse.up();
+  expect((await scene(page, "selection")).keys).toEqual([{ row: "camera", lane: null, frame: 48 }]);
+  // Shift adds: a box from below up over the Camera's key at 0.
+  await page.keyboard.down("Shift");
+  await page.mouse.move(await frameX(page, 4), below);
+  await page.mouse.down();
+  await page.mouse.move(await frameX(page, 0) - 4, await trackY(page, "camera"), { steps: 5 });
+  await page.mouse.up();
+  await page.keyboard.up("Shift");
+  expect((await scene(page, "selection")).keys.filter((key) => key.row === "camera")).toEqual([
+    { row: "camera", lane: null, frame: 48 },
+    { row: "camera", lane: null, frame: 0 },
+  ]);
+  await events(page);
+  // A click below the rows lets them go and does not seek; the name column below the rows does nothing.
+  const head = await dark(page).locator('[data-head="camera"]').boundingBox();
+  await page.mouse.click(head.x + head.width / 2, below);
+  expect((await scene(page, "selection")).keys.length).toBeGreaterThan(0);
+  await page.mouse.click(await frameX(page, 70), below);
+  expect((await scene(page, "selection")).keys).toEqual([]);
+  expect(await scene(page, "playhead")).toBe(24);
+  expect((await events(page)).filter((event) => event.name === "seek")).toEqual([]);
+});
+
 test("dragging selected Keyframes moves them; Escape puts them back", async ({ page }) => {
   await open(page);
   const key = dark(page).locator('[data-track="camera"] .pano-studio-tl-key').nth(1);

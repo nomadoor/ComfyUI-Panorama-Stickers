@@ -108,6 +108,8 @@ const items = computed(() => {
 const root = ref(null);
 const ruler = ref(null);
 const lines = ref(null);
+const body = ref(null);
+const fill = ref(null);
 const width = ref(0);
 let observer = null;
 
@@ -187,6 +189,7 @@ function endDrag() {
   window.removeEventListener("pointercancel", onPointerCancel, true);
   window.removeEventListener("keydown", onDragKey, true);
   window.removeEventListener("blur", cancelDrag);
+  body.value?.removeEventListener("scroll", drawMarquee);
   batch.cancel();
   pendingSeek = null;
   pendingEdit = null;
@@ -208,11 +211,27 @@ function onRulerDown(event) {
   emit("seek", frame, { phase: "start" });
 }
 
-function onTrackDown(event, line) {
+// A press on an empty spot of a track, or on the empty area of the track column below the rows (docs/timeline-ui.md
+// "Keyframe の選び方"): a box from there, or a click that lets the Keyframes go. The box keeps its start in the lines'
+// own coordinates, so it stays put while the body scrolls under it.
+function onTrackDown(event) {
   if (event.button !== 0 || drag) return;
   event.preventDefault();
   const rect = lines.value.getBoundingClientRect();
-  beginDrag(event, { type: "marquee", line, additive: event.shiftKey, left: rect.left, top: rect.top });
+  beginDrag(event, { type: "marquee", line: lineAt(event.clientY), additive: event.shiftKey, ax: event.clientX - rect.left, ay: event.clientY - rect.top, bx: event.clientX, by: event.clientY });
+  body.value?.addEventListener("scroll", drawMarquee);
+}
+
+// The box from its start to the pointer, in the lines' coordinates, held to the track column's height (the lines and
+// the empty area below them) so a pointer past the body's end does not grow its scroll.
+function drawMarquee() {
+  if (!drag || drag.type !== "marquee" || !drag.moved) return;
+  const rect = lines.value.getBoundingClientRect();
+  const bottom = fill.value ? fill.value.getBoundingClientRect().bottom - rect.top : rect.height;
+  const bx = drag.bx - rect.left;
+  const by = Math.min(bottom, drag.by - rect.top);
+  const ay = Math.min(bottom, drag.ay);
+  marquee.value = { left: Math.min(drag.ax, bx), top: Math.min(ay, by), width: Math.abs(bx - drag.ax), height: Math.abs(by - ay) };
 }
 
 function onKeyDown(event, line, key) {
@@ -254,11 +273,9 @@ function onMove(event) {
     pendingSeek = frame;
     batch.request("seek");
   } else if (drag.type === "marquee") {
-    const ax = drag.x0 - drag.left;
-    const ay = drag.y0 - drag.top;
-    const bx = event.clientX - drag.left;
-    const by = event.clientY - drag.top;
-    marquee.value = { left: Math.min(ax, bx), top: Math.min(ay, by), width: Math.abs(bx - ax), height: Math.abs(by - ay) };
+    drag.bx = event.clientX;
+    drag.by = event.clientY;
+    drawMarquee();
   } else {
     const delta = Math.round(dx / Math.max(1e-6, pxPerFrame.value));
     if (delta === drag.delta) return;
@@ -277,7 +294,8 @@ function onMove(event) {
   }
 }
 
-// The track line under a y (client), held to the first and the last.
+// The track line under a y (client), held to the first and the last: above the first row it is the first, below the
+// last (the empty area under the rows) the last.
 function lineAt(clientY) {
   const tracks = [...lines.value.querySelectorAll("[data-line]")];
   if (!tracks.length) return 0;
@@ -464,7 +482,7 @@ defineExpose({ handleDelete, copyKeys: copySelectedKeys, pasteKeys: pasteCopiedK
       @length="onLength"
       @collapse="(folded) => emit('collapse-change', folded)"
     />
-    <div v-show="!collapsed" class="pano-studio-tl-body">
+    <div v-show="!collapsed" ref="body" class="pano-studio-tl-body">
       <div class="pano-studio-tl-line is-ruler">
         <div class="pano-studio-tl-head is-ruler" />
         <div ref="ruler" class="pano-studio-tl-ruler" data-tl="ruler" @pointerdown="onRulerDown">
@@ -519,7 +537,7 @@ defineExpose({ handleDelete, copyKeys: copySelectedKeys, pasteKeys: pasteCopiedK
               class="pano-studio-tl-track"
               :data-line="item.line"
               :data-track="item.type === 'lane' ? `${item.row.id}:${item.lane.lane}` : item.row.id"
-              @pointerdown="onTrackDown($event, item.line)"
+              @pointerdown="onTrackDown"
             >
               <div
                 v-if="item.type === 'row' && item.row.clip"
@@ -550,6 +568,11 @@ defineExpose({ handleDelete, copyKeys: copySelectedKeys, pasteKeys: pasteCopiedK
           class="pano-studio-tl-marquee"
           :style="{ left: `${marquee.left}px`, top: `${marquee.top}px`, width: `${marquee.width}px`, height: `${marquee.height}px` }"
         />
+      </div>
+      <!-- The empty area below the rows: its track column acts as an empty spot of a track, its name column is nothing. -->
+      <div class="pano-studio-tl-fill">
+        <div />
+        <div ref="fill" class="pano-studio-tl-fill-track" data-tl="fill" @pointerdown="onTrackDown" />
       </div>
     </div>
   </div>

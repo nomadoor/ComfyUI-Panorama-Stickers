@@ -1132,6 +1132,8 @@
 
 .pano-studio-tl-body {
   position: relative;
+  display: flex;
+  flex-direction: column;
   flex: 1;
   min-height: 0;
   overflow-x: hidden;
@@ -1174,6 +1176,7 @@
   position: sticky;
   top: 0;
   z-index: 3;
+  flex: none;
   height: var(--studio-tl-ruler);
   background: var(--studio-panel);
 }
@@ -1349,6 +1352,19 @@
 
 .pano-studio-tl-lines {
   position: relative;
+  flex: none;
+}
+
+/* The empty area below the rows fills the rest of the body; its track column starts a box like an empty spot of a
+   track (docs/timeline-ui.md "Keyframe の選び方"). It draws nothing. */
+.pano-studio-tl-fill {
+  display: grid;
+  flex: 1 0 0;
+  grid-template-columns: var(--studio-tl-head) minmax(0, 1fr);
+}
+
+.pano-studio-tl-fill-track {
+  touch-action: none;
 }
 
 .pano-studio-tl-track {
