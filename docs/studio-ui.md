@@ -220,7 +220,7 @@ Camera の値の位置は選択で動かない）。
 
 - リセット：各行の右端。押すとその行の値だけを既定に戻す。上流から受け取った物では上流の値、ノードの入力から来た物（`port`）では入力の
   値に戻す。Pose handoff を当てて出している `port` の Sticker（Pose handoff の置き方が Sticker の置き方と同じとき）では、Pose handoff
-  が渡す行（`sky` の Rotation・FOV、`world` の Position・Rotation・Scale）は、その行の Lane のどれも `handoff_overrides` に無いときが
+  が渡す行（`sky` の Rotation・FOV）は、その行の Lane のどれも `handoff_overrides` に無いときが
   戻す先にある（値ではなく、上書きの記録にあるかで決める）。押すと、その行の Lane を `handoff_overrides` から外して Pose handoff の値に
   戻す（`pano_port_handoff.js` `revertHandoffLane`）。上書きしていない行のリセットは何もしない。Pose handoff が渡さない行（Opacity、
   Animation）は今までどおり Lane の既定で決める。今が戻す先と同じ行では、隠さずに無効にする。押すと Undo の 1 段で、Keyframe のある Lane では記録の規則に従う
