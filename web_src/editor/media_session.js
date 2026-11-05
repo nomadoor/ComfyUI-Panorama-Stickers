@@ -252,7 +252,7 @@ export function createMediaSession(deps) {
     return comfyMedia.uiValue(node, key);
   }
   function getModalVideoUiKeys() {
-    const nodeName = String(node?.comfyClass || node?.type || node?.title || "");
+    const nodeName = String(node?.comfyClass || node?.type || "");
     return backgroundVideoKeys({ nodeName, upstream: null, type });
   }
   function getVideoMetaEntry() {

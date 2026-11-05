@@ -377,7 +377,7 @@ export function createPanoEditorExtension({
     menuCommands: [{ path: ["Extensions", "Panorama Suite"], commands: [DIAGNOSTICS_EXPORT_COMMAND.id] }],
     beforeRegisterNodeDef(nodeType, nodeData) {
       const name = String(nodeData?.name || "");
-      if (name === "PanoramaStickers" || name === "Panorama Stickers") {
+      if (name === "PanoramaStickers") {
         installEditorButton(nodeType, {
           app,
           matchType: "PanoramaStickers",
@@ -401,7 +401,7 @@ export function createPanoEditorExtension({
           studio: true,
         });
       }
-      if (name === "PanoramaCutout" || name === "Panorama Cutout") {
+      if (name === "PanoramaCutout") {
         installEditorButton(nodeType, {
           app,
           matchType: "PanoramaCutout",
@@ -420,7 +420,7 @@ export function createPanoEditorExtension({
       if (nodeSurface(node).attached) void restoreOutput(node);
     },
     nodeCreated(node) {
-      const name = String(node?.comfyClass || node?.type || node?.title || "");
+      const name = String(node?.comfyClass || node?.type || "");
       syncCoverageWidgetRedraw(node, app);
       if (isPanoramaPreviewSceneNodeName(name)) {
         installScenePreviewInstance(node, { app, openEditor, attachPreview, attachSceneViewer, openSceneViewer, requestFrame });

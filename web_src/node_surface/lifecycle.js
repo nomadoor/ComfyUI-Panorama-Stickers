@@ -40,7 +40,7 @@ function getActivePreviewBackend(node) {
 }
 
 function getNodeTypeName(node) {
-  return String(node?.comfyClass || node?.type || node?.title || "");
+  return String(node?.comfyClass || node?.type || "");
 }
 
 function isStandalonePreviewNode(node) {

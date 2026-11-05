@@ -3529,8 +3529,7 @@ function $N({
   });
 }
 function Qu(e) {
-  const t = String(e || "").trim();
-  return t ? t === "PanoramaPreview" || t === "Panorama Preview" ? !0 : /^panorama[\s_]*preview(?:\s*\(node\s*2\.0\)|_legacy)?$/i.test(t) : !1;
+  return String(e || "").trim() === "PanoramaPreview";
 }
 function $y(e) {
   return String(e || "").trim() === "PanoramaPreviewNode";
@@ -4053,7 +4052,7 @@ function oO({
     menuCommands: [{ path: ["Extensions", "Panorama Suite"], commands: [_y.id] }],
     beforeRegisterNodeDef(u, f) {
       const p = String((f == null ? void 0 : f.name) || "");
-      (p === "PanoramaStickers" || p === "Panorama Stickers") && of(u, {
+      p === "PanoramaStickers" && of(u, {
         app: e,
         matchType: "PanoramaStickers",
         buttonText: "Open Stickers Editor",
@@ -4071,7 +4070,7 @@ function oO({
         enableStickersPreview: d,
         sceneStateV2: !0,
         studio: !0
-      }), (p === "PanoramaCutout" || p === "Panorama Cutout") && of(u, {
+      }), p === "PanoramaCutout" && of(u, {
         app: e,
         matchType: "PanoramaCutout",
         buttonText: "Open Cutout Editor",
@@ -4086,7 +4085,7 @@ function oO({
       rt(u).attached && l(u);
     },
     nodeCreated(u) {
-      const f = String((u == null ? void 0 : u.comfyClass) || (u == null ? void 0 : u.type) || (u == null ? void 0 : u.title) || "");
+      const f = String((u == null ? void 0 : u.comfyClass) || (u == null ? void 0 : u.type) || "");
       if (td(u, e), $y(f)) {
         iO(u, { app: e, openEditor: t, attachPreview: i, attachSceneViewer: o, openSceneViewer: a, requestFrame: c });
         return;
@@ -15888,7 +15887,7 @@ function pb(e) {
   return (n = (t = rt(e)) == null ? void 0 : t.dom) != null && n.widget ? "dom" : "none";
 }
 function yR(e) {
-  return String((e == null ? void 0 : e.comfyClass) || (e == null ? void 0 : e.type) || (e == null ? void 0 : e.title) || "");
+  return String((e == null ? void 0 : e.comfyClass) || (e == null ? void 0 : e.type) || "");
 }
 function B_(e) {
   return Qu(yR(e));
@@ -19353,13 +19352,10 @@ function Zl(e, t) {
   return null;
 }
 function V4(e, t) {
-  const n = String((e == null ? void 0 : e.comfyClass) || (e == null ? void 0 : e.type) || (e == null ? void 0 : e.title) || "").trim(), r = {
+  const n = String((e == null ? void 0 : e.comfyClass) || (e == null ? void 0 : e.type) || "").trim(), r = {
     PanoramaStickers: "Panorama Stickers",
-    "Panorama Stickers": "Panorama Stickers",
     PanoramaCutout: "Panorama Cutout",
-    "Panorama Cutout": "Panorama Cutout",
-    PanoramaPreview: "Panorama Preview",
-    "Panorama Preview": "Panorama Preview"
+    PanoramaPreview: "Panorama Preview"
   };
   return r[n] ? r[n] : n || (t === "cutout" ? "Panorama Cutout" : "Panorama Stickers");
 }
@@ -19584,7 +19580,7 @@ function U4(e) {
     return t.uiValue(d, D);
   }
   function J() {
-    const D = String((d == null ? void 0 : d.comfyClass) || (d == null ? void 0 : d.type) || (d == null ? void 0 : d.title) || "");
+    const D = String((d == null ? void 0 : d.comfyClass) || (d == null ? void 0 : d.type) || "");
     return dT({ nodeName: D, upstream: null, type: g });
   }
   function ee() {

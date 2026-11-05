@@ -72,14 +72,11 @@ export function getWidget(node, name) {
   return null;
 }
 export function getEditorNodeTitle(node, type) {
-  const rawType = String(node?.comfyClass || node?.type || node?.title || "").trim();
+  const rawType = String(node?.comfyClass || node?.type || "").trim();
   const titleMap = {
     PanoramaStickers: "Panorama Stickers",
-    "Panorama Stickers": "Panorama Stickers",
     PanoramaCutout: "Panorama Cutout",
-    "Panorama Cutout": "Panorama Cutout",
     PanoramaPreview: "Panorama Preview",
-    "Panorama Preview": "Panorama Preview",
   };
   if (titleMap[rawType]) return titleMap[rawType];
   if (rawType) return rawType;

@@ -58,7 +58,7 @@ test("stickers lifecycle preserves prior hooks and installs one editor button wi
     requestFrame(callback) { callback(); },
     enableStickersPreview: false,
   });
-  extension.beforeRegisterNodeDef(NodeType, { name: "Panorama Stickers" });
+  extension.beforeRegisterNodeDef(NodeType, { name: "PanoramaStickers" });
   const node = makeNode([247, 133]);
 
   assert.equal(NodeType.prototype.onNodeCreated.call(node, "create"), "created-result");
@@ -427,7 +427,7 @@ test("standalone preview waits for graph identity and attaches only once", () =>
     requestFrame(callback) { queue.push(callback); },
   });
   const node = makeNode();
-  node.comfyClass = "Panorama Preview";
+  node.comfyClass = "PanoramaPreview";
   node.id = -1;
   node.graph = null;
 
@@ -793,4 +793,17 @@ test("the Preview's IMAGE or VIDEO view is told whether the chooser's new window
   assert.equal(given[0].opensWindow(), true);
   takes = false;
   assert.equal(given[0].opensWindow(), false);
+});
+
+// Nodes are matched by their node id only: display names and titles are not node ids.
+test("the extension matches the Panorama nodes by node id, not by display name or title", async () => {
+  const { isPanoramaPreviewNodeName } = await import("../web_src/pano_preview_identity.js");
+  assert.equal(isPanoramaPreviewNodeName("PanoramaPreview"), true);
+  for (const name of ["Panorama Preview", "panorama_preview_legacy", "Panorama Preview (node 2.0)"]) assert.equal(isPanoramaPreviewNodeName(name), false, name);
+  const extension = createPanoEditorExtension({ app: { canvas: { setDirty() {} } }, openEditor() {}, attachStickers() {}, attachCutout() {}, attachPreview() {}, requestFrame(callback) { callback(); } });
+  for (const name of ["Panorama Stickers", "Panorama Cutout"]) {
+    function NodeType() {}
+    extension.beforeRegisterNodeDef(NodeType, { name });
+    assert.equal(NodeType.prototype.onNodeCreated, undefined, name);
+  }
 });
