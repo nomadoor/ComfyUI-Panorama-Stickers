@@ -607,6 +607,10 @@ Set orbit center の待ちの輪は明滅させずに出す）。
   Camera の印は `camera-plus`（見本 `specimen-11.html`）。Set orbit center は、オービットの中心の印と同じ点と輪（左上寄り。輪は右下を開ける）に、
   右下からクリックの矢印を添えた形を Tabler の線の形にならって描く（`web_src/icons.js` `orbit_center`。Frame Selected の `focus-2` と
   見分けるため、目盛りの線は付けない）。
+- 視点の操作のつまみ（`docs/space-and-view.md` の「視点の操作の部品」）：オービットは Tabler の `sphere`、パンは Tabler の `arrows-move`
+  （四方向の矢印。上下左右に平らに動かす）。前後は、奥で狭まる二本の線（道）の間に上下の矢印を置いた形を Tabler の線の形にならって描く
+  （床の上を奥へ・手前へ進む。四方向の矢印と見分けるため。持ち主、2026-11-05。`web_src/icons.js` `depth_move`）。手の形（`hand-stop`）は
+  「止まれ」にも読めるので使わない。歩く人（`walk`）は、Preview に歩くモードを足したときに重なるので使わない。
 - Reset View（ステージの右下と Preview のウィンドウ）は Tabler の `home`（ADR 0061。行き先が World の原点なので「原点へ帰る」を家で示す）。
   回る矢印（`refresh`）は「この値を既定に戻す」（インスペクタの行のリセット、辺の目盛りのリセット、右下の画角のリセット）にだけ使う。
   Preview のノードの上の Scene のビューアの Reset view も `home` にする（`docs/preview-node.md`）。`web_src/icons.js` の `home`。
