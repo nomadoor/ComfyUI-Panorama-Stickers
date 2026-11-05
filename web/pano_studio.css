@@ -910,7 +910,7 @@
 .pano-studio-select {
   width: 100%;
   height: var(--studio-field-h);
-  padding: 0 6px 0 10px;
+  padding: 0 6px;
   border: 0;
   border-radius: var(--studio-r-field);
   background: var(--studio-fill);
