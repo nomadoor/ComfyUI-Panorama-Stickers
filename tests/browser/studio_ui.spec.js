@@ -257,6 +257,35 @@ test("a field unmounted right after the browser ended its lock lets the page's n
   expect(await page.evaluate(() => window.__escapes)).toBe(1);
 });
 
+test("a press whose pointer cannot be captured starts no drag and breaks nothing; the next drag works", async ({ page }) => {
+  const { problems } = await open(page);
+  await fakeLock(page, "refuse");
+  await page.evaluate(() => {
+    const capture = Element.prototype.setPointerCapture;
+    let once = false;
+    Element.prototype.setPointerCapture = function (...args) {
+      if (!once) {
+        once = true;
+        throw new DOMException("not active", "NotFoundError");
+      }
+      return capture.apply(this, args);
+    };
+  });
+  const slider = col(page, "dark").locator(".pano-studio-slider").first();
+  const box = await slider.boundingBox();
+  await page.mouse.move(box.x + box.width * 0.2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width * 0.4, box.y + box.height / 2, { steps: 3 });
+  await page.mouse.up();
+  await events(page);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width * 0.6, box.y + box.height / 2, { steps: 3 });
+  await page.mouse.up();
+  const log = await events(page);
+  expect(log.filter((e) => e.name === "scale:change").length).toBe(1);
+  expect(problems).toEqual([]);
+});
+
 test("a value box's drag is cancelled by the window's blur as by Escape", async ({ page }) => {
   const { problems } = await open(page);
   await fakeLock(page, "refuse");

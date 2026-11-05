@@ -69,7 +69,13 @@ function onHandleDown(event, index) {
   if (off.value || event.button !== 0 || !curve.value || drag) return;
   event.preventDefault();
   drag = { pointerId: event.pointerId, index, start: [...curve.value], moved: false };
-  event.currentTarget.setPointerCapture?.(event.pointerId);
+  try {
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  } catch {
+    // The pointer is not one to capture (it went up already): no drag starts.
+    drag = null;
+    return;
+  }
   window.addEventListener("keydown", onDragKeydown, true);
   // Its pointercancel, the window's blur and a lost capture give it up as Escape does (ui_drag.js watchDragCancel).
   drag.stopCancel = watchDragCancel({ element: event.currentTarget, pointerId: event.pointerId, cancel: cancelDrag });
@@ -108,7 +114,7 @@ function cancelDrag() {
 }
 
 function endDrag() {
-  drag?.stopCancel();
+  drag?.stopCancel?.();
   drag = null;
   live.value = null;
   window.removeEventListener("keydown", onDragKeydown, true);

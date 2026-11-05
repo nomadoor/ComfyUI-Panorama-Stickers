@@ -60,7 +60,13 @@ function onPointerDown(event) {
     locked: false,
     ending: false,
   };
-  root.value?.setPointerCapture?.(event.pointerId);
+  try {
+    root.value?.setPointerCapture?.(event.pointerId);
+  } catch {
+    // The pointer is not one to capture (it went up already): no drag starts.
+    drag = null;
+    return;
+  }
   window.addEventListener("pointermove", onPointerMove, true);
   window.addEventListener("pointerup", onPointerUp, true);
   window.addEventListener("keydown", onDragKeydown, true);
@@ -171,7 +177,7 @@ function cancelDrag() {
 function endDrag() {
   if (!drag) return;
   drag.ending = true;
-  drag.stopCancel();
+  drag.stopCancel?.();
   if (document.pointerLockElement === root.value) document.exitPointerLock?.();
   try {
     root.value?.releasePointerCapture?.(drag.pointerId);

@@ -57,7 +57,13 @@ function onPointerDown(event) {
   event.preventDefault();
   root.value.focus();
   drag = { pointerId: event.pointerId, start: props.value, sent: props.value };
-  root.value.setPointerCapture?.(event.pointerId);
+  try {
+    root.value.setPointerCapture?.(event.pointerId);
+  } catch {
+    // The pointer is not one to capture (it went up already): no drag starts.
+    drag = null;
+    return;
+  }
   window.addEventListener("keydown", onDragKeydown, true);
   drag.stopCancel = watchDragCancel({ element: root.value, pointerId: event.pointerId, cancel: cancelDrag });
   moveTo(event.clientX);
@@ -95,7 +101,7 @@ function cancelDrag() {
 
 function endDrag() {
   if (!drag) return;
-  drag.stopCancel();
+  drag.stopCancel?.();
   try {
     root.value?.releasePointerCapture?.(drag.pointerId);
   } catch {

@@ -89,7 +89,13 @@ function onPointerDown(event) {
   event.stopPropagation();
   track.value.focus({ preventScroll: true });
   drag = { pointerId: event.pointerId, start: props.value, sent: props.value, raw: props.value, at: coord(event) };
-  track.value.setPointerCapture?.(event.pointerId);
+  try {
+    track.value.setPointerCapture?.(event.pointerId);
+  } catch {
+    // The pointer is not one to capture (it went up already): no drag starts.
+    drag = null;
+    return;
+  }
   window.addEventListener("keydown", onDragKeydown, true);
   // Its pointercancel, the window's blur and a lost capture cancel it as Escape does (docs/editor-interaction.md
   // "ポインタの取り消しとフォーカスの喪失", ui_drag.js watchDragCancel).
@@ -136,7 +142,7 @@ function cancelDrag() {
 
 function endDrag() {
   if (!drag) return;
-  drag.stopCancel();
+  drag.stopCancel?.();
   try {
     track.value?.releasePointerCapture?.(drag.pointerId);
   } catch {
