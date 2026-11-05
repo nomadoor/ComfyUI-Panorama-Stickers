@@ -186,42 +186,6 @@ export function createStickerImport(deps) {
     vueModal?.openImagePicker?.("replace");
   }
 
-  async function migrateLegacyEmbeddedAssets() {
-    if (readOnly || type !== "stickers") return;
-    const assets = state.assets && typeof state.assets === "object" ? state.assets : {};
-    const entries = Object.entries(assets).filter(([, asset]) => {
-      const t = String(asset?.type || "").toLowerCase();
-      const v = String(asset?.value || "");
-      return t === "dataurl" && v.startsWith("data:image");
-    });
-    if (!entries.length) return;
-    let changed = false;
-    for (const [assetId, asset] of entries) {
-      try {
-        const dataUrl = String(asset?.value || "");
-        if (!dataUrl) continue;
-        const blob = await fetch(dataUrl).then((r) => r.blob());
-        const ext = String(blob.type || "image/png").split("/")[1] || "png";
-        const name = String(asset?.name || `${assetId}.${ext}`);
-        const file = new File([blob], name, { type: blob.type || "image/png" });
-        const uploaded = await uploadStickerAssetFile(file, {
-          fetchApi: (path, options) => api.fetchApi(path, options),
-        });
-        state.assets[assetId] = {
-          ...uploaded,
-          w: Number(asset?.w || 0),
-          h: Number(asset?.h || 0),
-        };
-        changed = true;
-      } catch {
-      }
-    }
-    if (changed) {
-      commitAndRefreshNode();
-      requestDraw();
-    }
-  }
-
   function onCanvasDragOver(e) {
     if ((type !== "stickers" && type !== "cutout") || readOnly) return;
     e.preventDefault();
@@ -274,7 +238,7 @@ export function createStickerImport(deps) {
         updateSidePanel,
       } = api);
     },
-    addImageStickerFromFile, addImageSticker, replaceSelectedImageFromFile, replaceSelectedImage, migrateLegacyEmbeddedAssets, pruneUnusedAssets,
+    addImageStickerFromFile, addImageSticker, replaceSelectedImageFromFile, replaceSelectedImage, pruneUnusedAssets,
     setDropCue, onCanvasDragOver, onCanvasDrop, onWindowDragEnter, onWindowDragOver, onWindowDragLeave,
     onWindowDrop,
   };
