@@ -191,15 +191,32 @@ test("a left drag turns the view, the wheel moves it toward the pointer, and the
 
 test("the knobs light for their operation, W moves until released or the window blurs, and Reset View goes home", async ({ page }, testInfo) => {
   const { problems, stage } = await open(page, testInfo);
-  const lit = () => page.evaluate(() => [...document.querySelectorAll("[data-knob].is-lit")].map((el) => el.dataset.knob));
+  // The knobs lit, quietly (the hover's fill) or strongly (the lit fill, only while a knob itself is dragged;
+  // docs/space-and-view.md "視点の操作の部品").
+  const lit = () => page.evaluate(() => [...document.querySelectorAll("[data-knob].is-lit, [data-knob].is-hint")].map((el) => el.dataset.knob));
+  const strong = () => page.evaluate(() => [...document.querySelectorAll("[data-knob].is-lit")].map((el) => el.dataset.knob));
   expect(await lit()).toEqual([]);
   // Alt lights the knobs of Alt's drags.
   await page.keyboard.down("Alt");
   await expect.poll(lit).toEqual(["orbit", "move"]);
+  // Once an Alt drag starts only its knob lights: Alt + left drag orbits, Alt + right drag moves forward/back
+  // (docs/space-and-view.md "視点の操作の部品").
+  const at = await stageCenter(stage);
+  await page.mouse.move(at.x, at.y);
+  await page.mouse.down();
+  await page.mouse.move(at.x + 30, at.y);
+  await expect.poll(lit).toEqual(["orbit"]);
+  expect(await strong()).toEqual([]);
+  await page.mouse.up();
+  await expect.poll(lit).toEqual(["orbit", "move"]);
+  await page.mouse.down({ button: "right" });
+  await page.mouse.move(at.x + 30, at.y + 30);
+  await expect.poll(lit).toEqual(["move"]);
+  await page.mouse.up({ button: "right" });
+  await expect.poll(lit).toEqual(["orbit", "move"]);
   await page.keyboard.up("Alt");
   await expect.poll(lit).toEqual([]);
-  // A right drag on the stage pans: the hand lights (ADR 0060).
-  const at = await stageCenter(stage);
+  // A right drag on the stage pans: the four arrows light (ADR 0060).
   await page.mouse.move(at.x, at.y);
   await page.mouse.down({ button: "right" });
   await page.mouse.move(at.x + 30, at.y + 10);
@@ -212,6 +229,12 @@ test("the knobs light for their operation, W moves until released or the window 
   await page.mouse.down();
   await page.mouse.move(sphere.x - 40, sphere.y + 10);
   await expect.poll(lit).toEqual(["orbit"]);
+  expect(await strong()).toEqual(["orbit"]);
+  // W during the sphere's drag lights the road's arrows quietly: only the dragged knob is strong.
+  await page.keyboard.down("KeyW");
+  await expect.poll(lit).toEqual(["orbit", "move"]);
+  expect(await strong()).toEqual(["orbit"]);
+  await page.keyboard.up("KeyW");
   await expect(page.locator(".pano-studio-editor")).toHaveClass(/is-knob-drag/);
   await page.mouse.up();
   await expect.poll(lit).toEqual([]);
@@ -268,6 +291,24 @@ test("Frame Selected with nothing to frame says so on the top-center line; Escap
   expect(problems).toEqual([]);
 });
 
+test("an opening that throws leaves nothing behind, and the editor opens again", async ({ page }, testInfo) => {
+  await open(page, testInfo);
+  await page.evaluate(() => window.__studio.close());
+  await expect(page.locator(".pano-studio-editor")).toHaveCount(0);
+  const before = await page.evaluate(() => document.body.childElementCount);
+  for (const where of ["early", "late"]) {
+    expect(await page.evaluate((at) => window.__studio.openBroken(at), where)).toBe(where === "early" ? "broken title" : "broken redraw");
+    await expect(page.locator(".pano-studio-editor")).toHaveCount(0);
+    expect(await page.evaluate(() => document.body.childElementCount)).toBe(before);
+    expect(await page.evaluate(() => window.__studio.session())).toEqual({ open: false, flush: false });
+    // The next opening works.
+    await page.evaluate(() => window.__studio.open());
+    await expect(page.locator(".pano-studio-editor")).toHaveCount(1);
+    await page.evaluate(() => window.__studio.close());
+    await expect(page.locator(".pano-studio-editor")).toHaveCount(0);
+  }
+});
+
 test("the tabs are 108px each; a click on the backdrop closes like ✕, a drag from inside the frame does not", async ({ page }, testInfo) => {
   const { problems, stage } = await open(page, testInfo);
   const widths = await page.locator(".pano-studio-tabs .pano-studio-seg-item").evaluateAll((items) => items.map((el) => el.getBoundingClientRect().width));
@@ -303,5 +344,189 @@ test("the Output window opens and folds with a short size and opacity move, its 
   expect(await body.evaluate((el) => el.isConnected)).toBe(true);
   // Folded, the pill takes the clicks and the window none.
   expect(await win.evaluate((el) => getComputedStyle(el).pointerEvents)).toBe("none");
+  expect(problems).toEqual([]);
+});
+
+// docs/space-and-view.md "寄る", "マウスとキー" (ADR 0061): Alt + wheel and a pinch (Ctrl + wheel) change the view's FOV
+// at the screen's center, P staying; Meta + wheel is the browser's; Reset View is off at the start view, on once the
+// view zoomed, and brings the FOV back to 100°; the memory keeps the FOV.
+test("Alt + wheel and a pinch zoom the view's FOV; Reset View is off at the start and brings the FOV back", async ({ page }, testInfo) => {
+  const { problems, stage } = await open(page, testInfo);
+  const reset = page.locator('[data-action="reset-view"]');
+  const fov = async () => (await page.evaluate(() => window.__studio.pose())).hFOV_deg;
+  await expect(reset).toHaveAttribute("aria-disabled", "true");
+  await expect(reset).toHaveAttribute("data-tip", "Reset view · Already at the start");
+  const at = await stageCenter(stage);
+  await page.mouse.move(at.x, at.y);
+  const before = await settled(page);
+  const start = await page.evaluate(() => window.__studio.pose());
+  await page.keyboard.down("Alt");
+  for (let i = 0; i < 3; i += 1) await page.mouse.wheel(0, -100);
+  await page.keyboard.up("Alt");
+  expect(await fov()).toBe(94);
+  const zoomed = await page.evaluate(() => window.__studio.pose());
+  expect(zoomed.position).toEqual(start.position);
+  expect(zoomed.yaw_deg).toBeCloseTo(start.yaw_deg, 9);
+  // The picture is drawn nearer.
+  expect(diff(await settled(page), before)).toBeGreaterThan(1);
+  await expect(reset).not.toHaveAttribute("aria-disabled", "true");
+  // A pinch comes as Ctrl + wheel, a trackpad's fine events added up to steps; its default (the page's zoom) is stopped.
+  const prevented = await page.evaluate(({ x, y }) => {
+    const canvas = document.querySelector("[data-stage-canvas]");
+    const pinch = (deltaY, mods) => {
+      const event = new WheelEvent("wheel", { deltaY, deltaMode: 0, clientX: x, clientY: y, bubbles: true, cancelable: true, ...mods });
+      canvas.dispatchEvent(event);
+      return event.defaultPrevented;
+    };
+    const results = [];
+    for (let i = 0; i < 4; i += 1) results.push(pinch(25, { ctrlKey: true }));
+    // Meta + wheel is left to the browser and changes nothing.
+    results.push(pinch(-100, { metaKey: true }));
+    return results;
+  }, at);
+  expect(prevented).toEqual([true, true, true, true, false]);
+  expect(await fov()).toBe(96);
+  // The memory keeps the FOV and opens with it.
+  await page.evaluate(() => window.__studio.close());
+  expect((await memory(page)).hFOV_deg).toBe(96);
+  await page.evaluate(() => window.__studio.open());
+  await expect.poll(fov).toBe(96);
+  // Reset View eases back to the start view, the FOV with the rest; then it is off again.
+  await page.locator('[data-action="reset-view"]').click();
+  await expect.poll(fov).toBe(100);
+  await expect(page.locator('[data-action="reset-view"]')).toHaveAttribute("aria-disabled", "true");
+  expect(problems).toEqual([]);
+});
+
+// docs/studio-ui.md "右下の View の群" and docs/space-and-view.md "寄る" (ADR 0061, mock B2): the FOV number shows the view's
+// FOV in a fixed width, a drag right makes it larger (4 px a degree, Shift finer), its arrow keys step it by 2°, and its
+// reset (off at 100°) brings it back; the buttons right of it never move.
+test("the FOV number drags and steps the view's FOV in a fixed width; its reset is off at 100°", async ({ page }, testInfo) => {
+  const { problems } = await open(page, testInfo);
+  const number = page.locator('[data-action="fov"]');
+  const reset = page.locator('[data-action="fov-reset"]');
+  const fov = async () => (await page.evaluate(() => window.__studio.pose())).hFOV_deg;
+  await expect(number).toHaveText("100°");
+  await expect(number).toHaveAttribute("data-tip", "Field of view (Alt+Wheel)");
+  await expect(reset).toHaveAttribute("aria-disabled", "true");
+  const places = async () => page.evaluate(() => {
+    const box = (selector) => document.querySelector(selector).getBoundingClientRect().toJSON();
+    return { number: box('[data-action="fov"]'), frame: box('[data-action="frame-selected"]'), grid: box('[data-action="grid"]') };
+  });
+  const start = await places();
+  expect(start.number.height).toBe(34);
+  // A drag right of 20 px: 5° larger; Shift keeps a tenth of the movement.
+  const box = await number.boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + 10, box.y + box.height / 2);
+  await page.mouse.move(box.x + box.width / 2 + 20, box.y + box.height / 2);
+  await expect.poll(fov).toBe(105);
+  // Shift keeps a tenth: a slow fine drag (small moves, each well under a degree) still adds up to whole degrees.
+  await page.keyboard.down("Shift");
+  for (let x = 24; x <= 60; x += 4) await page.mouse.move(box.x + box.width / 2 + x, box.y + box.height / 2);
+  await page.keyboard.up("Shift");
+  await expect.poll(fov).toBe(106);
+  await page.mouse.move(box.x + box.width / 2 - 140, box.y + box.height / 2);
+  await page.mouse.up();
+  await expect.poll(fov).toBe(56);
+  await expect(number).toHaveText("56°");
+  await expect(reset).not.toHaveAttribute("aria-disabled", "true");
+  // A press that does not move changes nothing.
+  await number.click();
+  expect(await fov()).toBe(56);
+  // The focused number steps with the arrow keys.
+  await number.focus();
+  await page.keyboard.press("ArrowUp");
+  await page.keyboard.press("ArrowRight");
+  expect(await fov()).toBe(60);
+  await page.keyboard.press("ArrowDown");
+  expect(await fov()).toBe(58);
+  // Shift: one degree (the view holds whole degrees).
+  await page.keyboard.press("Shift+ArrowUp");
+  expect(await fov()).toBe(59);
+  await page.keyboard.press("Shift+ArrowLeft");
+  await page.keyboard.press("Shift+ArrowLeft");
+  expect(await fov()).toBe(57);
+  // The width holds "140°": the buttons stay where they were at 35°, 100° and 140°.
+  for (const value of [35, 140]) {
+    await page.evaluate((v) => window.__studio.stage().setFov(v), value);
+    await expect(number).toHaveText(`${value}°`);
+    const now = await places();
+    expect(now.number.width).toBe(start.number.width);
+    expect(now.frame.x).toBe(start.frame.x);
+    expect(now.grid.x).toBe(start.grid.x);
+  }
+  // Its reset: the FOV only, back to 100°.
+  await reset.click();
+  await expect(number).toHaveText("100°");
+  await expect(reset).toHaveAttribute("aria-disabled", "true");
+  expect((await places()).frame.x).toBe(start.frame.x);
+  // Alt held lights it (Alt + wheel changes it), not during an Alt drag (docs/space-and-view.md "寄る").
+  const { x, y } = await stageCenter(page.locator("[data-stage-canvas]"));
+  await page.mouse.move(x, y);
+  await expect(number).not.toHaveClass(/is-lit/);
+  await page.keyboard.down("Alt");
+  await expect(number).toHaveClass(/is-lit/);
+  await page.mouse.down();
+  await page.mouse.move(x + 20, y);
+  await expect(number).not.toHaveClass(/is-lit/);
+  await page.mouse.up();
+  await expect(number).toHaveClass(/is-lit/);
+  await page.keyboard.up("Alt");
+  await expect(number).not.toHaveClass(/is-lit/);
+  expect(problems).toEqual([]);
+});
+
+// docs/studio-ui.md "閉じ方" (the Escape order's row 1) and docs/editor-interaction.md "ポインタの取り消しとフォーカスの喪失":
+// Escape during the drag of the FOV number, the timeline's border or the Output window's corner cancels that drag, puts
+// back the value at the press and leaves the editor open; a window blur cancels them the same way.
+test("Escape or a blur during the drag of the FOV number, the timeline's border or the Output corner puts it back; the editor stays", async ({ page }, testInfo) => {
+  const { problems } = await open(page, testInfo);
+  const editor = page.locator(".pano-studio-editor");
+  const fov = async () => (await page.evaluate(() => window.__studio.pose())).hFOV_deg;
+  const timelineHeight = () => page.locator('[data-region="timeline"]').evaluate((el) => el.getBoundingClientRect().height);
+  const outputWidth = () => page.locator(".pano-studio-output").evaluate((el) => el.getBoundingClientRect().width);
+  await page.locator('[data-action="output-fold"]').click();
+  await expect(page.locator(".pano-studio-output")).not.toHaveClass(/is-collapsed/);
+  await page.waitForTimeout(300);
+  // Presses `selector`, moves by (dx, dy), checks the move took, then ends with `end` (Escape or a blur).
+  const dragThenCancel = async (selector, dx, dy, read, end) => {
+    const box = await page.locator(selector).boundingBox();
+    const x = box.x + box.width / 2;
+    const y = box.y + box.height / 2;
+    const before = await read();
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.mouse.move(x + dx / 2, y + dy / 2);
+    await page.mouse.move(x + dx, y + dy);
+    await expect.poll(read).not.toBe(before);
+    if (end === "Escape") await page.keyboard.press("Escape");
+    else await page.evaluate(() => window.dispatchEvent(new Event("blur")));
+    await expect.poll(read).toBe(before);
+    await expect(editor).toHaveCount(1);
+    // Moving on after the cancel changes nothing; the release does not either.
+    await page.mouse.move(x + dx * 2, y + dy * 2);
+    await page.mouse.up();
+    expect(await read()).toBe(before);
+  };
+  for (const end of ["Escape", "blur"]) {
+    await dragThenCancel('[data-action="fov"]', 40, 0, fov, end);
+    await expect(page.locator('[data-action="fov"]')).toHaveText("100°");
+    await dragThenCancel('[data-region="splitter"]', 0, -60, timelineHeight, end);
+    await dragThenCancel('[data-action="output-resize"]', -60, 0, outputWidth, end);
+  }
+  expect(problems).toEqual([]);
+});
+
+// docs/space-and-view.md "Sky だけのときのホイール" (ADR 0061): no World content: the wheel moves and says Sky only.
+test("a wheel step with only the background says Sky only and Alt+wheel zooms", async ({ page }, testInfo) => {
+  const { problems, stage } = await open(page, testInfo);
+  const at = await stageCenter(stage);
+  await page.mouse.move(at.x, at.y);
+  await page.mouse.wheel(0, -100);
+  const notice = page.locator(".pano-studio-notice");
+  await expect(notice).toHaveText("Sky only · Alt+wheel zooms");
+  await expect(notice).toHaveAttribute("data-notice", "info");
   expect(problems).toEqual([]);
 });

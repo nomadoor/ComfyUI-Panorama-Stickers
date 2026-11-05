@@ -12,6 +12,7 @@ from comfy_api.latest import Input, InputImpl, Types
 
 from .core.temp_files import TEMP_FILES, removed_on_failure
 from .core.video import _BT709, _prepare_audio_layout, _set_srgb, _temp_mp4_path
+from .core.video_source import cut_audio
 from .core_adapters import pin_memory
 
 # The size of a whole video (the color of every frame) from which `get_components` copies the frames from the
@@ -225,7 +226,4 @@ class RenderedVideo:
         return self._current
 
     def audio(self, seconds: float) -> dict | None:
-        if self._audio is None:
-            return None
-        sample_rate = int(self._audio["sample_rate"])
-        return {"waveform": self._audio["waveform"][..., :int(seconds * sample_rate)], "sample_rate": sample_rate}
+        return cut_audio(self._audio, seconds)

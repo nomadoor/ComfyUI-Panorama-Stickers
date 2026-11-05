@@ -35,6 +35,17 @@ test("the view shown follows the moved view by PREVIEW_DAMPING ^ (1000 dt) of th
   assert.equal(motion.animating(), false);
 });
 
+// docs/space-and-view.md "寄る" (ADR 0061): a zoom is not damped in the Preview window either.
+test("the view shown takes the moved view's FOV at once, while the rest follows", () => {
+  const view = camera();
+  const motion = createPreviewMotion({ pose: view.pose() });
+  view.look(-100, 0);
+  view.zoom(1);
+  motion.step(0.016, view);
+  assert.equal(motion.pose().hFOV_deg, 98);
+  assert.ok(motion.pose().yaw_deg < view.pose().yaw_deg);
+});
+
 test("a frame after a pause counts FRAME_FALLBACK_SECONDS, and a frame without time counts it too", () => {
   const view = camera();
   const a = createPreviewMotion({ pose: view.pose() });
@@ -163,25 +174,31 @@ test("a coasting pan stops at the world bound with the bound's notice", () => {
   assert.ok(Math.hypot(...view.pose().position) <= 48 + 1e-6);
 });
 
-test("the opening pose: the node's P, yaw and pitch (a Scene), the node's yaw and pitch from the origin (an IMAGE or a VIDEO), else the origin", () => {
-  assert.deepEqual(previewOpeningPose({ scene: { viewPosition: [1, 2, 3], viewYaw: 30, viewPitch: -10 } }), { position: [1, 2, 3], yaw_deg: 30, pitch_deg: -10 });
-  assert.deepEqual(previewOpeningPose({ image: { yaw: 45, pitch: 5, fov: 70 } }), { position: [0, 0, 0], yaw_deg: 45, pitch_deg: 5 });
-  assert.deepEqual(previewOpeningPose({}), { position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0 });
-  assert.deepEqual(previewOpeningPose({ scene: { viewPosition: [NaN, 0, 0], viewYaw: "x", viewPitch: 0 } }), { position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0 });
+// ADR 0061: the FOV goes to the window and back too, an IMAGE's and a VIDEO's included.
+test("the opening pose: the node's P, yaw, pitch and FOV (a Scene), the node's yaw, pitch and FOV from the origin (an IMAGE or a VIDEO), else the origin at 100°", () => {
+  assert.deepEqual(previewOpeningPose({ scene: { viewPosition: [1, 2, 3], viewYaw: 30, viewPitch: -10, viewFov: 60 } }), { position: [1, 2, 3], yaw_deg: 30, pitch_deg: -10, hFOV_deg: 60 });
+  assert.deepEqual(previewOpeningPose({ image: { yaw: 45, pitch: 5, fov: 70 } }), { position: [0, 0, 0], yaw_deg: 45, pitch_deg: 5, hFOV_deg: 70 });
+  assert.deepEqual(previewOpeningPose({}), { position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0, hFOV_deg: 100 });
+  assert.deepEqual(previewOpeningPose({ scene: { viewPosition: [NaN, 0, 0], viewYaw: "x", viewPitch: 0 } }), { position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0, hFOV_deg: 100 });
+  // A FOV that is no number opens at 100°; one out of the range at its end.
+  assert.equal(previewOpeningPose({ image: { yaw: 0, pitch: 0 } }).hFOV_deg, 100);
+  assert.equal(previewOpeningPose({ image: { yaw: 0, pitch: 0, fov: 170 } }).hFOV_deg, 140);
+  assert.equal(previewOpening({ image: { yaw: 0, pitch: 0, fov: 70 } }, WORLD).pose.hFOV_deg, 70);
 });
 
-test("the hand-back: a Scene's record takes P, yaw and pitch; an IMAGE or VIDEO view takes yaw and pitch and keeps its FOV", () => {
-  const pose = { position: [1, 0, -2], yaw_deg: 20, pitch_deg: 12, roll_deg: 0, target: [0, 0, 0] };
+test("the hand-back: a Scene's record takes P, yaw, pitch and the FOV; an IMAGE or VIDEO view takes yaw, pitch and the FOV", () => {
+  const pose = { position: [1, 0, -2], yaw_deg: 20, pitch_deg: 12, roll_deg: 0, hFOV_deg: 64, target: [0, 0, 0] };
   const sceneView = { spaceMode: "6dof", viewPosition: [0, 0, 0], viewYaw: 0, viewPitch: 0, viewFov: 100, viewDistance: 8, viewMoved: false, viewTransition: { x: 1 } };
   previewHandBack(pose, { scene: sceneView });
   assert.deepEqual(sceneView.viewPosition, [1, 0, -2]);
   assert.equal(sceneView.viewYaw, 20);
   assert.equal(sceneView.viewPitch, 12);
+  assert.equal(sceneView.viewFov, 64);
   assert.equal(sceneView.viewTransition, null);
   assert.equal(sceneView.viewMoved, true);
   const image = { view: { yaw: 0, pitch: 0, fov: 70 } };
   previewHandBack(pose, { image });
-  assert.deepEqual(image.view, { yaw: 20, pitch: 12, fov: 70 });
+  assert.deepEqual(image.view, { yaw: 20, pitch: 12, fov: 64 });
 });
 
 test("the ground: a Scene's most downstream layer with a ground, else GROUND_DEFAULT; an IMAGE or VIDEO stands on GROUND_DEFAULT", () => {

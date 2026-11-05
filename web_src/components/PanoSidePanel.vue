@@ -1,16 +1,12 @@
 <script setup>
 import { computed } from "vue";
 import { ICON } from "../icons.js";
-import PanoEasingGraph from "./PanoEasingGraph.vue";
-import PanoUpstreamOrigin from "./PanoUpstreamOrigin.vue";
 import SvgIcon from "./shared/SvgIcon.vue";
 
 const props = defineProps({
   nodeTitle: { type: String, default: "Panorama Stickers" },
   model: { type: Object, default: () => ({}) },
-  easing: { type: Object, default: null },
 });
-const emit = defineEmits(["timeline"]);
 
 const hasModel = computed(() => {
   const model = props.model;
@@ -108,7 +104,6 @@ function onScrubDown(event, field) {
 
         <div v-if="model.transformTitle !== false" class="pano-section-title">
           <span>Transform</span>
-          <span class="meta">{{ model.upstream?.origin || "" }}</span>
         </div>
 
         <div v-if="model.selectionPicker" class="pano-field-wide pano-target-row">
@@ -245,10 +240,6 @@ function onScrubDown(event, field) {
             </template>
           </template>
         </div>
-
-        <PanoUpstreamOrigin :model="model.upstream" />
-
-        <PanoEasingGraph :model="easing" @timeline="emit('timeline', $event)" />
 
         <details v-if="model.uiSettings" class="pano-ui-settings" :open="model.uiSettings.open === true">
           <summary>

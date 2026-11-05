@@ -1,37 +1,19 @@
-// The Sticker that comes in through the node's `sticker` input (the port Sticker, or the legacy external
-// Sticker): its pose from the linked inputs, and keeping it in the state as the inputs change.
+// The legacy external Sticker that comes in through the node's sticker inputs: its pose from the linked inputs, and
+// keeping it in the state as the inputs change.
 import { deriveCutoutAspectFromFov } from "../pano_cutout_view_math.js";
 import { stickerVfovFromAspect } from "../pano_editor_state.js";
 import { runExternalStickerSync } from "../pano_external_sticker_sync.js";
 import { clamp, wrapYaw } from "../pano_math.js";
-import {
-  handoffRowLanes,
-  NO_PORT_HANDOFF_PAIR,
-  revertPortHandoffPairLane,
-  storedPortState,
-  syncPortHandoffPair,
-} from "../pano_port_handoff.js";
-import { isNodeOutputMediaCurrent } from "../pano_preview_video.js";
-import {
-  nodePortHandoff,
-  portStickerSyncValue,
-  reconcileExternalStickerState,
-  reconcilePortStickerState,
-} from "../pano_stickers_node_surface.js";
-import { DEG2RAD, RAD2DEG } from "./constants.js";
+import { reconcileExternalStickerState } from "../pano_stickers_node_surface.js";
+import { DEG2RAD } from "./constants.js";
 
 export function createExternalStickers(deps) {
   const {
     comfyMedia, editor, node, readOnly, state, type,
   } = deps;
   // Bound by connect() to the other modules and showEditor.
-  let commitAndRefreshNode, getExternalStickerPreviewImage, getNodeUiValue, isExternalSticker, markObjectVisualsDirty,
-    pushHistory, requestDraw, updateSelectionMenu, updateSidePanel;
-  // Panorama Studio's port Sticker shown with the Pose handoff of the node's result (ADR 0030): `stored` is
-  // the port Sticker the state keeps (written to state_json and to the Undo history), `shown` the one shown
-  // when it was last written back, which tells the Lanes an edit changed, and `handoff` the handoff shown,
-  // all at the Timeline fps `fps`. The working state holds the shown Sticker.
-  let portSession = NO_PORT_HANDOFF_PAIR;
+  let commitAndRefreshNode, getExternalStickerPreviewImage, getNodeUiValue, isExternalSticker, requestDraw,
+    updateSelectionMenu, updateSidePanel;
 
   function normalizeInputPoseValue(value, debugValue = null) {
     if (value && typeof value === "object" && !Array.isArray(value)) return value;
@@ -178,69 +160,6 @@ export function createExternalStickers(deps) {
       rot_deg: 0,
     };
   }
-  function reconcilePortStickerFromInputs() {
-    const pose = isNodeOutputMediaCurrent(node, "external-sticker")
-      ? normalizeInputPoseValue(getNodeUiValue("pano_sticker_input_pose"), null)
-      : null;
-    return reconcilePortStickerState(state, portStickerSyncValue(node, { pose, handoff: currentPortHandoff() }));
-  }
-
-  // The Pose handoff of the node's current result, or null.
-  function currentPortHandoff() {
-    return isNodeOutputMediaCurrent(node, "sticker-handoff") ? nodePortHandoff(node, getNodeUiValue("pano_sticker_handoff")) : null;
-  }
-
-  function portHandoffShown() {
-    return type === "stickers" && !readOnly && node.__panoSceneStateV2 === true;
-  }
-
-  // Keeps the port Sticker of the working state shown with the current Pose handoff (pano_port_handoff.js
-  // syncPortHandoffPair, written into the state in place). With `record`, the Lanes an edit changed since the last
-  // write-back become overrides first. `restored` says the working state's port Sticker is a stored one (opening,
-  // Undo), not a shown one. The commit and the Undo history run it before they read the state (storedEditorState).
-  function syncPortHandoff({ record = true, restored = false } = {}) {
-    if (!portHandoffShown()) return false;
-    const port = state.stickers.find((item) => item.source?.kind === "port");
-    const { shown, pair, changed } = syncPortHandoffPair(state, portSession, currentPortHandoff(), { record, restored });
-    portSession = pair;
-    if (!shown) return false;
-    if (JSON.stringify(shown) !== JSON.stringify(port)) {
-      // The object stays the one the editor holds (a selection, a drag).
-      for (const key of Object.keys(port)) delete port[key];
-      Object.assign(port, shown);
-    }
-    return changed;
-  }
-
-  // The working state as the node keeps it: the port Sticker shown with the Pose handoff is its stored one.
-  function storedEditorState() {
-    return storedPortState(state, portSession);
-  }
-
-  // The inspector's "Revert to upstream" of Panorama Studio's port Sticker, or null for another item: a button
-  // per Lane a handoff of its placement gives, which reverts only an override of the Pose handoff shown. The
-  // row is there with or without a handoff, so the inspector does not shift when one arrives.
-  function portHandoffLanes(sticker) {
-    if (!portHandoffShown() || sticker?.source?.kind !== "port") return null;
-    return handoffRowLanes(portSession, sticker);
-  }
-
-  // "Revert to upstream": the port Sticker's Lane `name` follows the Pose handoff again (ADR 0030).
-  function revertPortHandoffLane(name) {
-    syncPortHandoff();
-    const port = state.stickers.find((item) => item.source?.kind === "port");
-    const reverted = port && revertPortHandoffPairLane(state, portSession, name);
-    if (!reverted) return;
-    // Not an edit of the Lane: it is not made an override again, and the state keeps the upstream value.
-    for (const key of Object.keys(port)) delete port[key];
-    Object.assign(port, reverted.shown);
-    portSession = reverted.pair;
-    pushHistory();
-    commitAndRefreshNode();
-    markObjectVisualsDirty();
-    updateSidePanel();
-    requestDraw();
-  }
   function reconcileLegacyExternalStickerFromInputs() {
     const slot = Array.isArray(node?.inputs)
       ? node.inputs.findIndex((entry) => String(entry?.name || "") === "sticker_image")
@@ -264,7 +183,7 @@ export function createExternalStickers(deps) {
   }
   function reconcileExternalStickerFromInputs(reason = "sync") {
     if (type !== "stickers" || readOnly) return;
-    const result = node.__panoSceneStateV2 ? reconcilePortStickerFromInputs() : reconcileLegacyExternalStickerFromInputs();
+    const result = reconcileLegacyExternalStickerFromInputs();
     if (result.changed) {
       const removed = state.stickers.find(isExternalSticker);
       state.stickers = result.state.stickers;
@@ -276,13 +195,8 @@ export function createExternalStickers(deps) {
       commitAndRefreshNode();
       updateSidePanel();
       updateSelectionMenu();
-    } else if (syncPortHandoff({ restored: reason === "open" })) {
-      // Opening, the working state has the stored port Sticker; a result may bring another handoff. Showing it
-      // writes nothing.
-      markObjectVisualsDirty();
-      updateSidePanel();
     } else if (reason === "image-loaded") {
-      // The port Sticker's vFOV follows the image that just loaded (skyStickerVfov), which the inspector shows.
+      // The Sticker's vFOV follows the image that just loaded, which the inspector shows.
       updateSidePanel();
     }
     requestDraw();
@@ -302,12 +216,11 @@ export function createExternalStickers(deps) {
   return {
     connect(api) {
       ({
-        commitAndRefreshNode, getExternalStickerPreviewImage, getNodeUiValue, isExternalSticker, markObjectVisualsDirty,
-        pushHistory, requestDraw, updateSelectionMenu, updateSidePanel,
+        commitAndRefreshNode, getExternalStickerPreviewImage, getNodeUiValue, isExternalSticker, requestDraw,
+        updateSelectionMenu, updateSidePanel,
       } = api);
     },
     computeStickerVFov, buildCanonicalCutoutStickerState, buildCanonicalSelectedStickerState,
-    reconcileExternalStickerFromInputs, collectExternalStickersForClearAll, syncPortHandoff, storedEditorState,
-    portHandoffLanes, revertPortHandoffLane,
+    reconcileExternalStickerFromInputs, collectExternalStickersForClearAll,
   };
 }

@@ -11,7 +11,7 @@ import {
 } from "../pano_paint_strokes.js";
 
 // The brushes of each tool, in the bar's order (the old editor's tools).
-export const PAINT_BRUSHES = Object.freeze([
+const PAINT_BRUSHES = Object.freeze([
   Object.freeze({ key: "pen", label: "Pen", icon: ICON.pencil_tool }),
   Object.freeze({ key: "brush", label: "Soft Brush", icon: ICON.spray_can_tool }),
   Object.freeze({ key: "marker", label: "Marker", icon: ICON.highlighter_tool }),
@@ -19,16 +19,16 @@ export const PAINT_BRUSHES = Object.freeze([
   Object.freeze({ key: "eraser", label: "Eraser", icon: ICON.eraser_tool }),
   Object.freeze({ key: "lasso_fill", label: "Lasso", icon: ICON.lasso_tool }),
 ]);
-export const MASK_BRUSHES = Object.freeze([
+const MASK_BRUSHES = Object.freeze([
   Object.freeze({ key: "pen", label: "Mask pen", icon: ICON.pencil_tool }),
   Object.freeze({ key: "eraser", label: "Mask eraser", icon: ICON.eraser_tool }),
   Object.freeze({ key: "lasso_fill", label: "Mask lasso", icon: ICON.lasso_tool }),
 ]);
 
 // The size slider's range, and how many recent Custom colors are kept.
-export const BRUSH_SIZE_MIN = 1;
-export const BRUSH_SIZE_MAX = 120;
-export const RECENT_COLORS = 8;
+const BRUSH_SIZE_MIN = 1;
+const BRUSH_SIZE_MAX = 120;
+const RECENT_COLORS = 8;
 
 // The tools as the editor opens: Cursor; Pen for Paint and for Mask; size 20 for every preset; Green.
 export function createPaintTools() {
@@ -59,7 +59,7 @@ export function brushOf(tools) {
 }
 
 // The preset whose size the slider shows and sets for the chosen brush.
-export const sizePreset = (tools) => brushPresetIdForTool(toolBrush(tools), tools.activePresetId);
+const sizePreset = (tools) => brushPresetIdForTool(toolBrush(tools), tools.activePresetId);
 
 // --- Changes (each returns the tools changed in place; the caller syncs its view).
 

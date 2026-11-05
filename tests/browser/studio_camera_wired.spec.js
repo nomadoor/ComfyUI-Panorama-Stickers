@@ -519,3 +519,197 @@ for (const query of ["aspect=16:9&mode=frame", "aspect=1:1&mode=frame", "aspect=
     expect(problems).toEqual([]);
   });
 }
+
+// docs/studio-ui.md "Camera タブ" 右下の画角の数字 (ADR 0061): the number shows the Camera's H FOV in the FOV ruler's text,
+// grayed with its reason; the reset too; the view's FOV is kept for the 3D tab.
+test("the Camera tab's FOV number shows the Camera's H FOV in the ruler's text, grayed", async ({ page }, testInfo) => {
+  const problems = await open(page, testInfo);
+  const number = page.locator('[data-action="fov"]');
+  const ruler = await page.locator('[data-ruler="FOV"] [data-ruler-value]').textContent();
+  await expect(number).toHaveText(ruler);
+  await expect(number).toHaveAttribute("aria-disabled", "true");
+  await expect(number).toHaveAttribute("tabindex", "-1");
+  await expect(number).toHaveAttribute("data-tip", "Camera FOV · Change it with the FOV ruler");
+  await expect(page.locator('[data-action="fov-reset"]')).toHaveAttribute("aria-disabled", "true");
+  await expect(page.locator('[data-action="fov-reset"]')).toHaveAttribute("data-tip", "Camera FOV · Change it with the FOV ruler");
+  await expect(page.locator('[data-action="reset-view"]')).toHaveAttribute("data-tip", "Not available in the Camera view");
+  // Its drag does nothing.
+  const box = await number.boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + 40, box.y + box.height / 2);
+  await page.mouse.up();
+  await expect(number).toHaveText(ruler);
+  // Back in the 3D tab the number is the view's FOV again.
+  await page.locator('[role="tablist"] button', { hasText: "3D" }).click();
+  await expect(number).toHaveText("100°");
+  await expect(number).not.toHaveAttribute("aria-disabled", "true");
+  expect(problems).toEqual([]);
+});
+
+test("in Panorama mode the FOV number's tooltip says it is not available", async ({ page }, testInfo) => {
+  const problems = await open(page, testInfo, "aspect=16:9&mode=panorama");
+  await expect(page.locator('[data-action="fov"]')).toHaveAttribute("data-tip", "Not available in Panorama mode");
+  expect(problems).toEqual([]);
+});
+
+// docs/space-and-view.md "Frame 表示" (ADR 0061): Alt + wheel changes the Camera's H FOV by the FOV ruler's arrow-key
+// step, the position stays, a run is one Undo step apart from a plain wheel run; Alt (with no view operation) lights the FOV
+// ruler (docs/studio-ui.md "Camera タブ").
+test("Frame mode: Alt + wheel changes the Camera's FOV, not its position, as one Undo step; Alt lights the FOV ruler", async ({ page }, testInfo) => {
+  const problems = await open(page, testInfo);
+  const stage = await stageBox(page);
+  const frame = await frameBox(page);
+  const fovRuler = page.locator('[data-ruler="FOV"]');
+  await expect(fovRuler).toHaveAttribute("data-tip", "FOV (Alt+Wheel)");
+  const before = await camera(page);
+  const x = stage.x + frame.x + frame.width / 2;
+  const y = stage.y + frame.y + frame.height / 2;
+  await page.mouse.move(x, y);
+  await expect(fovRuler).not.toHaveClass(/is-lit/);
+  await page.keyboard.down("Alt");
+  await expect(fovRuler).toHaveClass(/is-lit/);
+  await expect(page.locator('[data-ruler="Lens"]')).not.toHaveClass(/is-lit/);
+  // The View group's number is off in the Camera tab: the ruler lights instead (docs/space-and-view.md "寄る").
+  await expect(page.locator('[data-action="fov"]')).not.toHaveClass(/is-lit/);
+  // Rolled away three steps: three small ticks smaller.
+  for (let i = 0; i < 3; i += 1) await page.mouse.wheel(0, -100);
+  let cam = await camera(page);
+  expect(cam.hFOV_deg).toBeCloseTo(before.hFOV_deg - 6, 5);
+  expect(cam.position).toEqual(before.position);
+  await expect(fovRuler.locator("[data-ruler-value]")).toHaveText(`${before.hFOV_deg - 6}°`);
+  await expect(page.locator('[data-action="fov"]')).toHaveText(`${before.hFOV_deg - 6}°`);
+  // Rolled back one: one tick larger.
+  await page.mouse.wheel(0, 100);
+  expect((await camera(page)).hFOV_deg).toBeCloseTo(before.hFOV_deg - 4, 5);
+  // An Alt drag (an orbit) does not light it.
+  await page.mouse.down();
+  await page.mouse.move(x + 20, y);
+  await expect(fovRuler).not.toHaveClass(/is-lit/);
+  await page.mouse.up();
+  await page.keyboard.up("Alt");
+  await expect(fovRuler).not.toHaveClass(/is-lit/);
+  await page.waitForTimeout(400);
+  // The Alt + wheel run and the orbit: two steps; the first Undo takes the orbit back, the second the FOV.
+  await page.keyboard.press("Control+z");
+  await page.waitForTimeout(100);
+  cam = await camera(page);
+  expect(cam.position).toEqual(before.position);
+  expect(cam.hFOV_deg).toBeCloseTo(before.hFOV_deg - 4, 5);
+  await page.keyboard.press("Control+z");
+  await page.waitForTimeout(100);
+  expect((await camera(page)).hFOV_deg).toBeCloseTo(before.hFOV_deg, 5);
+  expect(await history(page)).toEqual({ undo: false, redo: true });
+  // A plain wheel step right after an Alt + wheel step is a step of its own.
+  await page.keyboard.down("Alt");
+  await page.mouse.wheel(0, -100);
+  await page.keyboard.up("Alt");
+  await page.mouse.wheel(0, -100);
+  await page.waitForTimeout(400);
+  await page.keyboard.press("Control+z");
+  await page.waitForTimeout(100);
+  cam = await camera(page);
+  expect(cam.position).toEqual(before.position);
+  expect(cam.hFOV_deg).toBeCloseTo(before.hFOV_deg - 2, 5);
+  expect(problems).toEqual([]);
+});
+
+// docs/space-and-view.md "黙って何もしない操作": Alt + wheel in Panorama mode changes nothing and says it is not available.
+test("Panorama mode: Alt + wheel changes nothing and says it is not available", async ({ page }, testInfo) => {
+  const problems = await open(page, testInfo, "aspect=16:9&mode=panorama");
+  const stage = await stageBox(page);
+  const frame = await frameBox(page);
+  const before = await camera(page);
+  await page.mouse.move(stage.x + frame.x + frame.width / 2, stage.y + frame.y + frame.height / 2);
+  await page.keyboard.down("Alt");
+  await expect(page.locator('[data-ruler="FOV"]')).not.toHaveClass(/is-lit/);
+  await page.mouse.wheel(0, -100);
+  await page.keyboard.up("Alt");
+  const notice = page.locator(".pano-studio-notice");
+  await expect(notice).toHaveText("Not available in Panorama mode");
+  await expect(notice).toHaveAttribute("data-notice", "stopped");
+  expect(await camera(page)).toEqual(before);
+  expect(await history(page)).toEqual({ undo: false, redo: false });
+  expect(problems).toEqual([]);
+});
+
+// docs/space-and-view.md "Frame 表示": an Alt + wheel run writes its Keyframe where it began; a seek before the run rests
+// (FRAME_WHEEL_REST_MS) does not write it again at the new playhead.
+test("Frame mode: an Alt + wheel run keeps its Keyframe where it began when the playhead moves before it rests", async ({ page }, testInfo) => {
+  const problems = await open(page, testInfo, "aspect=16:9&mode=frame&fovkeys=1");
+  const stage = await stageBox(page);
+  const frame = await frameBox(page);
+  const x = stage.x + frame.x + frame.width / 2;
+  const y = stage.y + frame.y + frame.height / 2;
+  await page.evaluate(({ x, y }) => {
+    const canvas = document.querySelector("[data-stage-canvas]");
+    canvas.dispatchEvent(new WheelEvent("wheel", { deltaY: -100, deltaMode: 0, altKey: true, clientX: x, clientY: y, bubbles: true, cancelable: true }));
+    document.querySelector('[data-tl="next"]').click();
+  }, { x, y });
+  await page.waitForTimeout(400);
+  const keys = await page.evaluate(() => window.__studio.session.state.camera.fov.keyframes.map((key) => [key.frame, key.value]));
+  expect(keys).toEqual([[0, 58], [40, 60]]);
+  expect(await history(page)).toEqual({ undo: true, redo: false });
+  expect(problems).toEqual([]);
+});
+
+// docs/space-and-view.md "Frame 表示": nothing for a locked Camera or a read-only editor; the ruler does not light.
+test("Frame mode: Alt + wheel does nothing to a locked Camera", async ({ page }, testInfo) => {
+  const problems = await open(page, testInfo, "aspect=16:9&mode=frame&locked=1");
+  const stage = await stageBox(page);
+  const frame = await frameBox(page);
+  const before = await camera(page);
+  await page.mouse.move(stage.x + frame.x + frame.width / 2, stage.y + frame.y + frame.height / 2);
+  await page.keyboard.down("Alt");
+  await expect(page.locator('[data-ruler="FOV"]')).not.toHaveClass(/is-lit/);
+  await page.mouse.wheel(0, -100);
+  await page.keyboard.up("Alt");
+  expect(await camera(page)).toEqual(before);
+  expect(await history(page)).toEqual({ undo: false, redo: false });
+  expect(problems).toEqual([]);
+});
+
+// docs/space-and-view.md "Sky だけのときのホイール": with no World content the wheel still moves the Camera, and the top
+// line says Sky only (the info kind) until BOUND_NOTICE_SECONDS after the last step; with World content nothing is said.
+test("Frame mode, sky only: the wheel moves the Camera and the line says Sky only", async ({ page }, testInfo) => {
+  const problems = await open(page, testInfo, "aspect=16:9&mode=frame&sky=1");
+  const stage = await stageBox(page);
+  const frame = await frameBox(page);
+  const before = await camera(page);
+  await page.mouse.move(stage.x + frame.x + frame.width / 2, stage.y + frame.y + frame.height / 2);
+  await page.mouse.wheel(0, -100);
+  const notice = page.locator(".pano-studio-notice");
+  await expect(notice).toHaveText("Sky only · Alt+wheel changes the FOV");
+  await expect(notice).toHaveAttribute("data-notice", "info");
+  expect((await camera(page)).position).not.toEqual(before.position);
+  await expect(notice).toHaveCount(0, { timeout: 4000 });
+  expect(problems).toEqual([]);
+});
+
+test("Frame mode with World content: the wheel says nothing", async ({ page }, testInfo) => {
+  const problems = await open(page, testInfo);
+  const stage = await stageBox(page);
+  const frame = await frameBox(page);
+  await page.mouse.move(stage.x + frame.x + frame.width / 2, stage.y + frame.y + frame.height / 2);
+  await page.mouse.wheel(0, -100);
+  await page.waitForTimeout(300);
+  await expect(page.locator(".pano-studio-notice")).toHaveCount(0);
+  expect(problems).toEqual([]);
+});
+
+// docs/studio-ui.md "一行の知らせの種類": the editor's notice of an operation that did not work comes before the Sky-only one.
+test("Frame mode, sky only: Delete on the Camera after the Sky-only notice is a stopped notice", async ({ page }, testInfo) => {
+  const problems = await open(page, testInfo, "aspect=16:9&mode=frame&sky=1");
+  const stage = await stageBox(page);
+  const frame = await frameBox(page);
+  await page.mouse.move(stage.x + frame.x + frame.width / 2, stage.y + frame.y + frame.height / 2);
+  await page.mouse.wheel(0, -100);
+  const notice = page.locator(".pano-studio-notice");
+  await expect(notice).toHaveAttribute("data-notice", "info");
+  await page.locator('.pano-studio-tl-head[data-head="camera"] [data-part="name"]').click();
+  await page.locator(".pano-studio-editor").focus();
+  await page.keyboard.press("Delete");
+  await expect(notice).toHaveText(/The camera can't be deleted/);
+  await expect(notice).toHaveAttribute("data-notice", "stopped");
+  expect(problems).toEqual([]);
+});

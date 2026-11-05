@@ -39,6 +39,9 @@ test("a VIDEO background and a 3DGS sticker draw while the camera turns", async 
   expect(check.videoFrames).toBeGreaterThan(0);
   expect(check.videoGap).toBeLessThan(1000);
   expect(check.nonEmpty).toBe(true);
+  // The SPLAT is picked on its box, and a box hit is not a surface.
+  expect(check.splatPick.sticker).toBe("port");
+  expect(check.splatPick.surface).toBeNull();
 });
 
 // docs/threejs-spark-integration.md "DA3_GEOMETRY mono の深度のグリッド": the grid draws from its depth and video, the

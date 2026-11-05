@@ -66,7 +66,7 @@ test("Set orbit center: hover shows the mark, a press waits (lit, crosshair), a 
   const box = await stage.boundingBox();
   const mid = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
   const button = page.locator('[data-action="orbit-center"]');
-  await expect(button).toHaveAttribute("data-tip", "Set orbit center · or double-click a spot");
+  await expect(button).toHaveAttribute("data-tip", "Set orbit center (Double-click)");
   await button.hover();
   await expect.poll(async () => (await overlayAt(page)).alpha).toBeGreaterThan(150);
   await button.click();
@@ -86,9 +86,9 @@ test("Set orbit center: hover shows the mark, a press waits (lit, crosshair), a 
   await expect.poll(async () => (await overlayAt(page)).drawn).toBe(0);
   expect(await page.evaluate(() => !!document.querySelector(".pano-studio-editor"))).toBe(true);
 
-  // Press, then click the ground below the middle: T goes there and the view turns to it; the mark fades.
+  // Press, then click the ground below the middle, left of the View group (ADR 0061 made it wider): T goes there and the view turns to it; the mark fades.
   await button.click();
-  await page.mouse.click(mid.x + 120, mid.y + 200);
+  await page.mouse.click(mid.x - 120, mid.y + 200);
   await expect(button).not.toHaveClass(/is-waiting/);
   await expect.poll(async () => (await overlayAt(page)).drawn, { timeout: 500 }).toBeGreaterThan(0);
   await expect.poll(async () => (await overlayAt(page)).alpha, { timeout: 1500, intervals: [30] }).toBeGreaterThan(100);
@@ -113,7 +113,7 @@ test("an Alt drag shows the mark while it orbits; a double click shows it at the
   await expect.poll(async () => (await overlayAt(page)).alpha).toBe(0);
 
   // A double click on the ground below the middle: T goes there and the view turns to it; the mark shows, then fades.
-  await page.mouse.dblclick(mid.x + 120, mid.y + 200);
+  await page.mouse.dblclick(mid.x - 120, mid.y + 200);
   // Right after the click the mark is on the clicked world point, carried toward the middle with the view: it shows,
   // but not at the old T in the middle (it does not slide from there).
   let first = await overlayAt(page, null, 14);
@@ -252,6 +252,68 @@ test("while Set orbit center waits, a view drag takes Escape first, the wait the
   expect(problems).toEqual([]);
 });
 
+// docs/space-and-view.md "オービットの中心の印" 置く点: while the view turns to a T just set, the mark stays on the chosen
+// point; then each wheel step (P and T scaled about the pointer's hit, eased) keeps it on the same screen point, on the
+// T of the view shown, not jumping ahead to the eased move's destination.
+test("the mark stays on the chosen point while the view turns to it, and wheel steps keep it on the same screen point", async ({ page }) => {
+  const { problems, stage } = await open(page);
+  const box = await stage.boundingBox();
+  const mid = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  await page.locator('[data-action="orbit-center"]').click();
+  // Per frame, after the stage drew: where the mark is (the middle of its opaque pixels, in the stage's CSS px), where the
+  // chosen point and the shown T project, and whether the view still eases.
+  await page.evaluate(async () => {
+    const { projectPoint } = await import("/web_src/pano_space.js");
+    const stage = window.__studio.stage();
+    const canvas = document.querySelector("[data-stage-overlay]");
+    const g = canvas.getContext("2d");
+    const frames = (window.__markFrames = []);
+    window.__markChosen = null;
+    const loop = () => setTimeout(() => {
+      const view = stage.viewport();
+      const ratio = canvas.width / canvas.getBoundingClientRect().width;
+      const data = g.getImageData(0, 0, canvas.width, canvas.height).data;
+      let sx = 0;
+      let sy = 0;
+      let n = 0;
+      for (let i = 3; i < data.length; i += 4) {
+        if (data[i] <= 200) continue;
+        const p = (i - 3) / 4;
+        sx += p % canvas.width;
+        sy += Math.floor(p / canvas.width);
+        n += 1;
+      }
+      const chosen = window.__markChosen && projectPoint(view.camera, window.__markChosen, view.width, view.height);
+      frames.push({ mark: n ? { x: sx / n / ratio, y: sy / n / ratio } : null, chosen, animating: stage.pose().target.join() !== stage.destination().target.join() });
+      if (frames.length < 400) requestAnimationFrame(loop);
+    }, 0);
+    requestAnimationFrame(loop);
+  });
+  await page.mouse.click(mid.x - 60, mid.y + 120);
+  await page.evaluate(() => { window.__markChosen = window.__studio.stage().destination().target; });
+  const near = (a, b, px = 2) => !!a && !!b && Math.abs(a.x - b.x) <= px && Math.abs(a.y - b.y) <= px;
+  // The turn: the mark is on the chosen point in every frame it eases.
+  await page.waitForTimeout(450);
+  const turn = await page.evaluate(() => window.__markFrames.splice(0));
+  const turning = turn.filter((frame) => frame.chosen && frame.animating && frame.mark);
+  expect(turning.length).toBeGreaterThan(3);
+  for (const frame of turning) expect(near(frame.mark, frame.chosen), JSON.stringify(frame)).toBe(true);
+  // Wheel steps toward an off-center spot on the ground, within the mark's time: it stays where it was.
+  const still = turn.at(-1).mark;
+  expect(still).not.toBeNull();
+  await page.mouse.move(mid.x + 200, mid.y + 100);
+  for (let i = 0; i < 3; i += 1) {
+    await page.mouse.wheel(0, -100);
+    await page.waitForTimeout(90);
+  }
+  await page.waitForTimeout(150);
+  const wheel = await page.evaluate(() => window.__markFrames.splice(0));
+  const moving = wheel.filter((frame) => frame.animating && frame.mark);
+  expect(moving.length).toBeGreaterThan(3);
+  for (const frame of moving) expect(near(frame.mark, still), JSON.stringify({ frame, still })).toBe(true);
+  expect(problems).toEqual([]);
+});
+
 test("with a painting tool chosen, the wait's press sets T and draws no stroke; a double click does not set T", async ({ page }) => {
   const { problems, stage } = await open(page);
   const box = await stage.boundingBox();
@@ -317,6 +379,9 @@ test("the Preview window has Set orbit center: its wait line at the top center, 
 test("Reset View and Frame Selected keep Set orbit center's wait", async ({ page }) => {
   const { problems } = await open(page);
   const button = page.locator('[data-action="orbit-center"]');
+  // Away from the start view (a zoom step), so Reset View can be pressed (ADR 0061).
+  await page.evaluate(() => document.querySelector("[data-stage-canvas]").dispatchEvent(new WheelEvent("wheel", { deltaY: -100, altKey: true, bubbles: true, cancelable: true })));
+  await expect(page.locator('[data-action="reset-view"]')).not.toHaveAttribute("aria-disabled", "true");
   await button.click();
   await page.locator('[data-action="reset-view"]').click();
   await expect(button).toHaveClass(/is-waiting/);

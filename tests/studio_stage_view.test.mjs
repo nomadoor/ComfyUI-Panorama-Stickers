@@ -48,6 +48,12 @@ test("the stage's camera looks with the view's 100° across, and its far holds t
   assert.ok(camera.near > 0 && camera.near < 0.1, `near ${camera.near}`);
 });
 
+// docs/space-and-view.md "寄る" (ADR 0061): the stage draws with the view's own FOV.
+test("the stage's camera looks with the pose's FOV when it has one", () => {
+  const camera = stageCamera(level({ hFOV_deg: 50 }), 1000, 500, 48);
+  close(Math.tan(camera.fovY_deg * Math.PI / 360) * 2, Math.tan(25 * Math.PI / 180), 1e-9);
+});
+
 test("the surface hit is the nearer of the GPU pick and the ground; over the sky with no pick, nothing", () => {
   const camera = stageCamera(level(), 1000, 500, 48);
   // The bottom middle of the screen looks down onto the ground at y = -1.6.
@@ -269,11 +275,6 @@ test("the Frame view's hits go by the lens picture only for a κ not shown as 1.
   assert.equal(bent.hitLens.curve, 0.8);
   assert.equal(bent.objectCamera.lensImage, bent.view.lens);
   assert.equal(cameraFrameHit(shotAt(1), fit).objectCamera.lensImage, undefined);
-});
-
-test("a state whose Camera is null has the output view of the default Camera: the origin, yaw 0, level", () => {
-  assert.deepEqual(outputView({ ...loadSceneState(null), camera: null }, 0), { position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0 });
-  assert.deepEqual(outputView({ ...loadSceneState(null), camera: null }, 12.5), { position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0 });
 });
 
 // docs/space-and-view.md "空のグリッド" (ADR 0058): the sky grid goes with the ground grid's switch, its half follows the

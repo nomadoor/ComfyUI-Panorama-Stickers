@@ -3,6 +3,8 @@
 // browser. The sizes' values are provisional (docs/design.md "大きさ": the timeline's and the stage's least heights
 // and the Output window's least and largest sizes are not decided yet); they live here and nowhere else.
 
+import { clamp } from "../pano_math.js";
+
 // The timeline's height when nothing is remembered, and the least heights of the timeline and the stage.
 export const TIMELINE_DEFAULT_HEIGHT = 176;
 export const TIMELINE_MIN_HEIGHT = 120;
@@ -15,7 +17,7 @@ export const TIMELINE_BAR_HEIGHT = 40;
 // OUTPUT_LINE_HEIGHT high (docs/design.md "Output の小窓の一行"): the folded pill, and open, laid over the picture's top.
 // The least width holds the widest line (about 248px: "Frame 8192:1640  8192 × 1640" with the glyph and the fold button),
 // so the open window never cuts its line and its width need not follow the mode (ADR 0051).
-export const OUTPUT_DEFAULT_WIDTH = 256;
+const OUTPUT_DEFAULT_WIDTH = 256;
 export const OUTPUT_MIN_WIDTH = 256;
 export const OUTPUT_MAX_WIDTH = 520;
 export const OUTPUT_LINE_HEIGHT = 32;
@@ -24,8 +26,6 @@ const KEYS = Object.freeze({
   timeline: "PanoramaSuite.Studio.timelineHeight",
   output: "PanoramaSuite.Studio.outputWindow",
 });
-
-const clamp = (value, low, high) => Math.min(high, Math.max(low, value));
 
 // The timeline's height for a wish of `wanted` px in an editor column of `total` px: at least TIMELINE_MIN_HEIGHT,
 // and leaving the stage at least STAGE_MIN_HEIGHT (when both cannot be met, the timeline keeps its least

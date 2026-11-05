@@ -51,20 +51,17 @@ const GROUPS = {
     view: null,
     playback: null,
     // What Panorama Studio's picture draws of its inputs as the editor does: the depth grids' colors and the upstream
-    // Scene's layers (pano_preview_runtime.js attachPanoramaPreviewImpl), null without a Studio surface.
+    // Scene's layers (node_surface/playback.js createSurfacePlayback), null without a Studio surface.
     studioInputs: null,
     scene: null,
     renderCache: null,
-    // The paint the surface draws (pano_surface_paint.js): its display, what the last draw gave it, its normalized painting.
+    // The paint the surface draws (pano_surface_paint.js): its display and what the last draw gave it.
     paintDisplay: null,
     paintInput: null,
-    paintState: null,
     bootMinHeightActive: false,
     bootMinHeightTimer: null,
     resizeSettleTimer: null,
     userResized: false,
-    standaloneBootSized: false,
-    debugLastTs: 0,
   }),
   previewNode: () => ({
     runtime: null,
@@ -136,7 +133,7 @@ export const peekSceneViewer = (node) => existing(node, "sceneViewer");
 // Whether the node's modal editor is open.
 export const editorOpen = (node) => existing(node, "editorSession")?.open === true;
 
-// The window on the node's Scene (pano_scene_viewer_window.js, { close() }) opened: the node does not draw while it
+// The window on the node's Scene (studio/preview_window.js, { close() }) opened: the node does not draw while it
 // is open.
 export function sceneViewerWindowOpened(node, window) {
   const owner = group(node, "sceneViewer");
@@ -203,12 +200,8 @@ function clearGroup(node, name) {
   }
 }
 
-export const clearEditorSession = (node) => clearGroup(node, "editorSession");
 export const clearNodeSurface = (node) => clearGroup(node, "nodeSurface");
-export const clearPreviewNode = (node) => clearGroup(node, "previewNode");
-export const clearSceneViewer = (node) => clearGroup(node, "sceneViewer");
 export const clearMediaCache = (node) => clearGroup(node, "mediaCache");
-export const clearStateSync = (node) => clearGroup(node, "stateSync");
 
 // Everything the frontend keeps for the node: the surfaces are detached (their Vue apps unmounted), timers
 // and animation frames cancelled, loading images and VIDEOs let go. A group a teardown fails in does not

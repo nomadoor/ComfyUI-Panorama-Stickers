@@ -11,9 +11,9 @@ import {
 import { lensAngle, lensAxesDirection, lensAxesFilm, lensFovLimit, lensRadius } from "./pano_lens.js";
 import { PANO_FOV_WHEEL_STEP_DEG } from "./pano_wheel.js";
 
-export const CUTOUT_FOV_MIN_DEG = 1;
-export const CUTOUT_FOV_MAX_DEG = 179;
-export const CUTOUT_OVERSCAN_MAX = 1.5;
+const CUTOUT_FOV_MIN_DEG = 1;
+const CUTOUT_FOV_MAX_DEG = 179;
+const CUTOUT_OVERSCAN_MAX = 1.5;
 export const CUTOUT_OVERSCAN_SAFE_HALF_ANGLE_DEG = 85;
 
 export function wrapRollDeg(value) {
@@ -62,20 +62,30 @@ function fovOfTangent(tangent, curve) {
   return 2 * lensAngle(tangent, curve) * RAD2DEG;
 }
 
+// A shot's FOV field as the node reads it (core/math.py `finite_float`, Python's float()): a number, a boolean as 0 or 1,
+// or text that is a number; anything else, or a value that is not finite, is `fallback`.
+function shotFovField(value, fallback) {
+  let number = NaN;
+  if (typeof value === "number") number = value;
+  else if (typeof value === "boolean") number = Number(value);
+  else if (typeof value === "string" && /^[+-]?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?$/i.test(value.trim())) number = Number(value.trim());
+  return Number.isFinite(number) ? number : fallback;
+}
+
 export function getCutoutCameraParams(shot = {}) {
-  // Intentional legacy compatibility: falsy serialized FOV values mean the
-  // historical 90/60-degree defaults, not the 1-degree clamp minimum.
+  // As the node reads a shot (docs/threejs-spark-integration.md "Cutout エディタ"): a FOV of 0 is held at the least
+  // FOV, a missing one (shotFovField) is 90 / 60; the roll is roll_deg only.
   const curve = shotCurve(shot);
   const fovMax = shotFovMaxDeg(curve);
-  const hFovDeg = clamp(finiteOr(shot.hFOV_deg || 90, 90), CUTOUT_FOV_MIN_DEG, fovMax);
-  const vFovDeg = clamp(finiteOr(shot.vFOV_deg || 60, 60), CUTOUT_FOV_MIN_DEG, fovMax);
+  const hFovDeg = clamp(shotFovField(shot.hFOV_deg, 90), CUTOUT_FOV_MIN_DEG, fovMax);
+  const vFovDeg = clamp(shotFovField(shot.vFOV_deg, 60), CUTOUT_FOV_MIN_DEG, fovMax);
   const tanHalfX = halfTangent(hFovDeg, curve);
   const tanHalfY = halfTangent(vFovDeg, curve);
   return {
     curve,
     yawDeg: finiteOr(shot.yaw_deg, 0),
     pitchDeg: finiteOr(shot.pitch_deg, 0),
-    rollDeg: finiteOr(shot.roll_deg ?? shot.rot_deg, 0),
+    rollDeg: finiteOr(shot.roll_deg, 0),
     hFovDeg,
     vFovDeg,
     tanHalfX,
@@ -264,8 +274,6 @@ export function deriveCutoutAspectLabelFromFov(item) {
 export function normalizeCutoutShotItem(raw) {
   if (!raw || typeof raw !== "object") return raw;
   const next = { ...raw, locked: raw.locked === true };
-  delete next.out_w;
-  delete next.out_h;
   next.aspect_id = deriveCutoutAspectLabelFromFov(next);
   return next;
 }

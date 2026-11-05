@@ -5,6 +5,7 @@
 import { BoxGeometry, Mesh, MeshStandardMaterial, Scene } from "three";
 import { GLTFExporter } from "three/examples/jsm/exporters/GLTFExporter.js";
 import { openStudioEditor } from "/web_src/studio/editor.js";
+import { servedImage, viewApiURL } from "./view_files.js";
 
 const getContext = HTMLCanvasElement.prototype.getContext;
 HTMLCanvasElement.prototype.getContext = function (type, options = {}) {
@@ -38,6 +39,7 @@ async function boxUrl() {
   return URL.createObjectURL(new Blob([glb], { type: "model/gltf-binary" }));
 }
 
+const AUTO = new URLSearchParams(location.search).has("auto");
 const studio = (window.__studio = { ready: false, error: null, writes: 0, routeAsks: 0 });
 const storage = new Map();
 const memoryStorage = { getItem: (key) => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, String(value)) };
@@ -51,9 +53,11 @@ try {
   }).toDataURL("image/png");
   const state = {
     version: 2,
-    timeline: { fps: 24, length: 48 },
+    // ?auto: no length; the background image's Clip range (48 frames) sets the Auto length.
+    timeline: AUTO ? { fps: 24 } : { fps: 24, length: 48 },
+    ...(AUTO ? { background: { clip: { start: 0, in: 0, duration: 48 } } } : {}),
     stickers: [
-      { id: "sticker_1", placement: "sky", source: { kind: "file", data_url: red }, direction: { value: { yaw_deg: 0, pitch_deg: 0 } }, size: { value: { hFOV_deg: 40, vFOV_deg: 20 } }, z_index: 1 },
+      { id: "sticker_1", placement: "sky", source: servedImage("red.png", red), direction: { value: { yaw_deg: 0, pitch_deg: 0 } }, size: { value: { hFOV_deg: 40, vFOV_deg: 20 } }, z_index: 1 },
       { id: "sticker_2", placement: "world", source: { kind: "file", filename: "box.glb", subfolder: "", storage: "input" }, position: { value: [2.5, -1, -4] }, scale: { value: 1 } },
     ],
   };
@@ -64,7 +68,7 @@ try {
     title: "Panorama Studio",
     __panoStudio: true,
     __panoSceneStateV2: true,
-    inputs: [{ name: "bg_media", link: 1 }],
+    inputs: [{ name: "background", link: 1 }],
     widgets: [widget],
     graph: { getNodeById: (id) => (id === 7 ? origin : null) },
     isInputConnected: (index) => index === 0,
@@ -75,6 +79,7 @@ try {
   const app = { getNodeImageUrls: (target) => (target === origin ? [erp] : []), nodeOutputs: {} };
   // The 3D file route answers with the box (its editor file) and its box.
   const api = {
+    apiURL: viewApiURL,
     fetchApi: async () => {
       studio.routeAsks += 1;
       return { status: 200, json: async () => ({ kind: "mesh", unlit: false, file: { url: box }, box: { min: [-0.5, -0.5, -0.5], max: [0.5, 0.5, 0.5] } }) };
@@ -85,6 +90,8 @@ try {
     editor = await openStudioEditor(node, { app, api, storage: memoryStorage });
   };
   studio.close = () => editor?.close();
+  // The browser's storage the editor keeps its settings in (the loop switch, the Length unit).
+  studio.stored = (key) => storage.get(key) ?? null;
   studio.text = () => widget.value;
   studio.state = () => JSON.parse(JSON.stringify(editor.session.state));
   studio.selection = () => JSON.parse(JSON.stringify(editor.session.selection));

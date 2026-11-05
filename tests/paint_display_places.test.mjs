@@ -305,6 +305,7 @@ function surfaceTrace({ mask = false } = {}) {
         },
         getGroupDisplayCanvas: (id) => (engine.groups.has(id) ? `${engine.serial}:${id}` : null),
         getMaskDisplay: () => ({ media: `${engine.serial}:mask`, revision: "m" }),
+        dispose() {},
       };
       engines.push(engine);
       return engine;
@@ -313,7 +314,7 @@ function surfaceTrace({ mask = false } = {}) {
     let index = 0;
     for (const [name, value, visible, width] of steps()) {
       if (name === "loaded") env.flush();
-      // The legacy node surfaces read the widget's JSON as it is (pano_preview_runtime.js parseState).
+      // The node surfaces get the painting normalized (node_surface/state.js parses it as the editor does).
       const withStrokes = index++ < 5 ? { ...value, ...normalizePaintingState({ ...value, paint: { strokes: strokes.strokes ?? [] }, mask: { strokes: strokes.mask ?? [] }, groups: strokes.groups ?? [] }) } : value;
       const state = { output_preset: width, painting: structuredClone(withStrokes), painting_visible: visible, stickers: [] };
       rec.record(name, surfacePaintLayers(surface, state, createEngine), { engines: engines.map((engine) => [engine.descriptor.width, engine.rebuilds]) });

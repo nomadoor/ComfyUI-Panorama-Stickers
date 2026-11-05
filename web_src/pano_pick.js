@@ -81,6 +81,7 @@ export function pickWindow(x, y, width, height) {
   return { fullWidth: width, fullHeight: height, x: x - 0.5, y: y - 0.5, width: 1, height: 1 };
 }
 
+// The chunk's copy of pano_lens.js rotateByQuaternion, held equal by tests/chunk_copies.test.mjs.
 function rotate(q, v) {
   // v + 2 w (q x v) + 2 q x (q x v)
   const tx = 2 * (q.y * v[2] - q.z * v[1]);

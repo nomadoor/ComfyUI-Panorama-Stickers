@@ -1,6 +1,6 @@
 <script setup>
 import { nextTick, onBeforeUnmount, reactive, ref, watch } from "vue";
-import { TIP_DELAY, TIP_SKIP, placeTip, splitTipKeys, tipSide } from "../../studio/tooltip.js";
+import { TIP_DELAY, TIP_SKIP, placeTip, splitTipKeys, tipGroup, tipSide } from "../../studio/tooltip.js";
 
 // The editor's one tooltip layer (docs/studio-ui.md "ツールチップ"). Controls write their explanation in `data-tip`
 // (never `title`, which the browser shows at the cursor); this layer listens on `root` (the editor's frame), shows the
@@ -52,7 +52,8 @@ function place() {
   if (box) {
     const bounds = root.getBoundingClientRect();
     const anchor = target.getBoundingClientRect();
-    const at = placeTip({ anchor, size: { width: box.offsetWidth, height: box.offsetHeight }, bounds, side: tipSide(target) });
+    const group = tipGroup(target)?.getBoundingClientRect() ?? null;
+    const at = placeTip({ anchor, group, size: { width: box.offsetWidth, height: box.offsetHeight }, bounds, side: tipSide(target) });
     tip.left = at.left - bounds.left;
     tip.top = at.top - bounds.top;
     tip.side = at.side;

@@ -321,11 +321,6 @@ test("working Stickers with a numeric, missing or repeated id are left out inste
   assert.ok(seen.every((item) => item === editorState.stickers[1] || item === editorState.stickers[4]));
 });
 
-test("a background VIDEO uploads through a VideoTexture, which sizes its storage from the video", () => {
-  const view = readFileSync(new URL("../web_src/pano_three_view.js", import.meta.url), "utf8");
-  assert.match(view, /media instanceof HTMLVideoElement \? new VideoTexture\(media\) : new Texture\(media\)/);
-});
-
 function withVideoElement(run) {
   const previous = globalThis.HTMLVideoElement;
   globalThis.HTMLVideoElement = class { static HAVE_CURRENT_DATA = 2; };
@@ -544,12 +539,6 @@ test("one media drawn with two wraps has a texture for each", () => withVideoEle
   assert.deepEqual([repeat.version, clamp.version], versions);
 }));
 
-// A draw that throws still marks what it used, so nothing is left without an owner.
-test("a draw that throws ends with its marks", () => {
-  const view = readFileSync(new URL("../web_src/pano_three_view.js", import.meta.url), "utf8");
-  assert.match(view, /const owned = layerTextures\.draw\(input\.owner\);\s*try \{[\s\S]*?\} finally \{\s*owned\.end\(\);\s*\}/);
-});
-
 test("the port Sticker's source is its media, so a swap on the port changes it", () => {
   const first = { naturalWidth: 32, naturalHeight: 32 };
   assert.equal(portMediaSource({ src: "a.mp4", meta: {} }, first), "a.mp4");
@@ -629,32 +618,6 @@ test("a Sticker whose Source is a 3D file is neither a plane nor a Sky layer, an
   assert.deepEqual(asked, ["w2", "s2"]);
 });
 
-test("the three.js view picks the World content it last drew, not its guides", () => {
-  const view = readFileSync(new URL("../web_src/pano_three_view.js", import.meta.url), "utf8");
-  // What is seen is picked: meshes on the GPU, a SPLAT on its box (Spark's own raycast is off).
-  assert.match(view, /if \(content\.splat && !Spark\) continue;\s*if \(content\.splat\) sparkViews\.splat\(owner, content\.object\);\s*children\.push\(content\.group\);/);
-  assert.match(view, /if \(!\(opacity > 0\)\) continue;\s*if \(content\.splat\) pickBoxes\.push\(\{ object: content\.object, box: content\.box, stickerId: content\.stickerId \}\);\s*else pickable\.push\(\{ object: content\.group, stickerId: content\.stickerId, plane: false \}\);/);
-  assert.match(view, /if \(!\(layer\.opacity > 0\)\) continue;\s*pickable\.push\(\{ object: mesh, stickerId: layer\.id, plane: true \}\);/);
-  assert.match(view, /return pickAt\(camera, x, y, width, height\)\?\.point \?\? null;/);
-  // A SPLAT's box is marked, and the navigation pick leaves it out (pickSurface).
-  assert.match(view, /if \(depth !== null\) hits\.push\(\{ depth, stickerId, box: true \}\);/);
-  assert.match(view, /box: nearest\.box === true,/);
-  assert.match(view, /return hit && !hit\.box \? hit\.point : null;/);
-  assert.match(view, /return pickPass\(world, pickable, pickMaterial, /);
-  // A failed draw switches from the float target to RGBA8, then gives up, and is not kept as a pick.
-  assert.match(view, /if \(float\) pickFloat = false;\s*else pickFailed = true;\s*return false;/);
-  assert.match(view, /renderer\.setRenderTarget\(target\);\s*try \{\s*renderer\.render\(world, pickCamera\);\s*\} finally \{\s*renderer\.setRenderTarget\(null\);/);
-  assert.match(view, /if \(drawn !== false\) lastPick = \{ key, hit \};/);
-  const loaders = readFileSync(new URL("../web_src/pano_scene_loaders.js", import.meta.url), "utf8");
-  assert.match(loaders, /new SplatMesh\(\{ fileBytes: bytes, fileType: "ply", raycastable: false \}\)/);
-  // Its content revision changes with the items drawn, their transforms and poses (tests/browser/gltf_animation.spec.js
-  // picks a posed item at two times), and with the Sticker planes; a pick is reused while it, the view and the pixel stay.
-  assert.match(view, /if \(!sameValue\(parts, contentParts\)\) \{\s*contentParts = parts;\s*contentRevision \+= 1;\s*\}/);
-  assert.match(view, /const key = pickCacheKey\(camera, x, y, width, height, contentRevision\);\s*if \(lastPick\.key === key\) return lastPick\.hit;/);
-  // Spark's LoD worker is not started.
-  assert.match(view, /new Spark\.SparkRenderer\(\{ renderer, onDirty, enableLod: false \}\)/);
-});
-
 test("a 3D world port Sticker without media has no plane (the space view draws its item instead)", async () => {
   const { worldStickerLayers } = await import("../web_src/pano_editor_view.js");
   const state = loadSceneState({ version: 2, stickers: [{ id: "sticker_image_1", placement: "world", source: { kind: "port" }, position: { value: [0, 0, -2], keyframes: [] } }] });
@@ -664,14 +627,6 @@ test("a 3D world port Sticker without media has no plane (the space view draws i
 
 test("the old editor's shell has no gizmo buttons (the mode is a segmented control in the selection menu)", () => {
   assert.equal("gizmoButtons" in buildModalShellPreset("stickers"), false);
-});
-
-test("every three view draw leaves the unpack flags off, so Spark's raw integer upload never runs premultiplied", () => {
-  // Chrome crashes the tab on texSubImage2D(RGBA_INTEGER, UNSIGNED_INT) with UNPACK_PREMULTIPLY_ALPHA set,
-  // which Spark issues for its sort order after three uploaded a premultiplied Sky layer.
-  const source = readFileSync(new URL("../web_src/pano_three_view.js", import.meta.url), "utf8");
-  assert.match(source, /function settleUnpack\(\) \{[\s\S]*?UNPACK_PREMULTIPLY_ALPHA_WEBGL, false\)[\s\S]*?UNPACK_FLIP_Y_WEBGL, false\)/);
-  assert.match(source, /settleUnpack\(\);\s*return \{ canvas, x: at\.x/);
 });
 
 // ADR 0042: the Frame view draws a lens Camera's image over the whole canvas, centered on the gate with the gate's f,

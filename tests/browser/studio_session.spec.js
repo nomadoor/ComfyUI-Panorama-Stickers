@@ -17,10 +17,10 @@ function watch(page) {
 
 const studio = (page, name, ...args) => page.evaluate(([key, rest]) => window.__studio[key](...rest), [name, args]);
 
-async function open(page, testInfo) {
+async function open(page, testInfo, query = "") {
   const problems = watch(page);
   await page.setViewportSize({ width: 1280, height: 800 });
-  await page.goto("/tests/browser/pages/studio_session.html");
+  await page.goto(`/tests/browser/pages/studio_session.html${query}`);
   await page.waitForFunction(() => window.__studio?.ready, null, { timeout: 30_000 });
   expect(await page.evaluate(() => window.__studio.error)).toBeNull();
   await expect(page.locator(".pano-studio-notice")).toHaveCount(0, { timeout: 30_000 });
@@ -63,7 +63,7 @@ test("a row selected in the Timeline shows in the inspector; an edit changes the
   const problems = await open(page, testInfo);
   await sceneShown(page);
   await rowName(page, "sticker_1").click();
-  await expect(cardTitle(page)).toHaveText("sticker_1");
+  await expect(cardTitle(page)).toHaveText("red.png");
   await expect(page.locator('.pano-studio-tl-head[data-head="sticker_1"]')).toHaveClass(/is-selected/);
   await expect(page.locator('[data-tool="undo"]')).toHaveAttribute("aria-disabled", "true");
 
@@ -92,6 +92,187 @@ test("a row selected in the Timeline shows in the inspector; an edit changes the
   await page.locator(".pano-studio-editor").focus();
   await page.keyboard.press("Delete");
   await expect(page.locator(".pano-studio-notice")).toHaveText(/The camera can't be deleted/);
+  expect(problems).toEqual([]);
+});
+
+// docs/timeline-ui.md "タイムラインの長さ": the playhead never goes past the last frame; a shorter length brings it back
+// to the last frame, and Undo of a longer length too.
+test("a length shorter than the playhead brings the playhead to the last frame, and so does Undo of a longer one", async ({ page }, testInfo) => {
+  const problems = await open(page, testInfo);
+  const timecode = page.locator('[data-tl="time"] .pano-studio-tl-frame');
+  await expect(timecode).toHaveText("0 / 48");
+  const ruler = await page.locator('[data-tl="ruler"]').boundingBox();
+  await page.mouse.click(ruler.x + ruler.width * 0.9, ruler.y + ruler.height / 2);
+  const frame = Number((await timecode.textContent()).match(/^(\d+) \/ 48$/)[1]);
+  expect(frame).toBeGreaterThan(30);
+  const length = page.locator('[data-tl="length"]');
+  await length.click();
+  await length.locator("input").fill("20");
+  await length.locator("input").press("Enter");
+  await expect(timecode).toHaveText("19 / 20");
+
+  // A longer length, a seek past the old end, then Undo: the length goes back to 20 and the playhead with it.
+  await length.click();
+  await length.locator("input").fill("40");
+  await length.locator("input").press("Enter");
+  await expect(timecode).toHaveText("19 / 40");
+  await page.mouse.click(ruler.x + ruler.width * 0.9, ruler.y + ruler.height / 2);
+  await expect(timecode).not.toHaveText("19 / 40");
+  await page.locator('[data-tool="undo"]').click();
+  await expect(timecode).toHaveText("19 / 20");
+  expect(problems).toEqual([]);
+});
+
+// docs/studio-ui.md "欄": the area filled on hover is the area that drags. The fps and Length fields fill their name
+// with the value, so a press on the name drags the value and a click on it without moving opens the box for typing,
+// and the name shows the field's arrows cursor.
+test("the fps and Length names drag their value and open it for typing, with the field's cursor", async ({ page }, testInfo) => {
+  const problems = await open(page, testInfo);
+  // A refused pointer lock: the field drags with the cursor shown (headless Chromium's lock stalls the mouse).
+  await page.evaluate(() => {
+    Element.prototype.requestPointerLock = () => Promise.reject(new DOMException("refused", "NotAllowedError"));
+  });
+  const name = (text) => page.locator(".pano-studio-tl-field-name", { hasText: text });
+  const length = page.locator('[data-tl="length"]');
+  const fps = page.locator('[data-tl="fps"]');
+  const dragFrom = async (locator, dx) => {
+    const box = await locator.boundingBox();
+    const at = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+    await page.mouse.move(at.x, at.y);
+    await page.mouse.down();
+    for (let i = 1; i <= 10; i += 1) await page.mouse.move(at.x + (dx * i) / 10, at.y);
+    await page.mouse.up();
+  };
+  await expect(length).toHaveAttribute("aria-valuenow", "48");
+  // A press on the name, as one on the value, leaves the keyboard where it was (the Timeline does not take it, so a
+  // later Delete does not delete Keyframes).
+  await page.evaluate(() => document.activeElement?.blur?.());
+  const focusBefore = await page.evaluate(() => document.activeElement === document.body);
+  expect(focusBefore).toBe(true);
+  await dragFrom(name("Length"), 50);
+  expect(await page.evaluate(() => document.activeElement === document.body)).toBe(true);
+  await expect(length).not.toHaveAttribute("aria-valuenow", "48");
+  expect(Number(await length.getAttribute("aria-valuenow"))).toBeGreaterThan(48);
+  expect((await studio(page, "state")).timeline.length).toBe(Number(await length.getAttribute("aria-valuenow")));
+
+  // Escape during a drag from the name puts the value back, as from the value.
+  const dragged = await length.getAttribute("aria-valuenow");
+  const box = await name("Length").boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  for (let i = 1; i <= 10; i += 1) await page.mouse.move(box.x + box.width / 2 + i * 5, box.y + box.height / 2);
+  await expect(length).toHaveClass(/is-dragging/);
+  await expect(length).not.toHaveAttribute("aria-valuenow", dragged);
+  await page.keyboard.press("Escape");
+  await page.mouse.up();
+  await expect(length).toHaveAttribute("aria-valuenow", dragged);
+  await expect(page.locator('[data-region="stage"]')).toBeVisible();
+
+  const fpsBefore = (await studio(page, "state")).timeline.fps;
+  await dragFrom(name("fps"), 50);
+  await expect.poll(async () => (await studio(page, "state")).timeline.fps).toBeGreaterThan(fpsBefore);
+
+  // A click on the name without moving: the box opens for typing, as a click on the value does.
+  await name("Length").click();
+  await expect(length.locator("input")).toBeFocused();
+  await length.locator("input").fill("30");
+  await length.locator("input").press("Enter");
+  await expect(length).toHaveAttribute("aria-valuenow", "30");
+  for (const [text, fieldOf] of [["Length", length], ["fps", fps]]) {
+    expect(await name(text).evaluate((el) => getComputedStyle(el).cursor)).toBe("ew-resize");
+    expect(await fieldOf.evaluate((el) => getComputedStyle(el).cursor)).toBe("ew-resize");
+  }
+  expect(problems).toEqual([]);
+});
+
+// docs/timeline-ui.md "タイムラインの長さ": while the Length field is dragged the Timeline's range follows it; the Undo
+// step is made on release, Escape goes back to the length before the press (an Auto length to Auto, no step, nothing
+// written), and the playhead is brought in to the last frame only after release. Typing still makes one step.
+test("dragging the Length field moves the Timeline's range live; Escape restores Auto, release makes one Undo step", async ({ page }, testInfo) => {
+  const problems = await open(page, testInfo, "?auto");
+  await page.evaluate(() => {
+    Element.prototype.requestPointerLock = () => Promise.reject(new DOMException("refused", "NotAllowedError"));
+  });
+  const frameText = page.locator('[data-tl="time"] .pano-studio-tl-frame');
+  const length = page.locator('[data-tl="length"]');
+  const undo = page.locator('[data-tool="undo"]');
+  const lastTick = () => page.locator('[data-tl="ruler"] .pano-studio-tl-tick').last().textContent().then(Number);
+  await expect(frameText).toHaveText("0 / 48");
+  await expect(undo).toHaveAttribute("aria-disabled", "true");
+  const ticksBefore = await lastTick();
+  const box = await length.boundingBox();
+  const at = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  const press = async (dx) => {
+    await page.mouse.move(at.x, at.y);
+    await page.mouse.down();
+    for (let i = 1; i <= 10; i += 1) await page.mouse.move(at.x + (dx * i) / 10, at.y);
+    await expect(length).toHaveClass(/is-dragging/);
+  };
+
+  // During the drag: the range is the length shown in the field.
+  await press(120);
+  const live = Number(await length.getAttribute("aria-valuenow"));
+  expect(live).toBeGreaterThan(100);
+  await expect(frameText).toHaveText(`0 / ${live}`);
+  expect(await lastTick()).toBeGreaterThan(ticksBefore);
+  expect((await studio(page, "state")).timeline.length).toBe(live);
+  // Escape: back to Auto (null), not to the number 48; no Undo step, nothing written.
+  await page.keyboard.press("Escape");
+  await page.mouse.up();
+  await expect(frameText).toHaveText("0 / 48");
+  expect((await studio(page, "state")).timeline.length).toBeNull();
+  await expect(undo).toHaveAttribute("aria-disabled", "true");
+  expect(await page.evaluate(() => window.__studio.writes)).toBe(0);
+
+  // A shorter length with the playhead past it: the playhead stays during the drag and comes in after release.
+  const ruler = await page.locator('[data-tl="ruler"]').boundingBox();
+  await page.mouse.click(ruler.x + ruler.width * 0.95, ruler.y + ruler.height / 2);
+  const frame = Number((await frameText.textContent()).split(" / ")[0]);
+  expect(frame).toBeGreaterThan(40);
+  await press(-25);
+  const shorter = Number(await length.getAttribute("aria-valuenow"));
+  expect(shorter).toBeLessThan(frame);
+  await expect(frameText).toHaveText(`${frame} / ${shorter}`);
+  await page.mouse.up();
+  await expect(frameText).toHaveText(`${shorter - 1} / ${shorter}`);
+  // One Undo step: Undo goes back to Auto, and there is no step before it.
+  await expect(undo).not.toHaveAttribute("aria-disabled", "true");
+  await undo.click();
+  expect((await studio(page, "state")).timeline.length).toBeNull();
+  await expect(undo).toHaveAttribute("aria-disabled", "true");
+
+  // Typing a length is one Undo step too.
+  await length.click();
+  await length.locator("input").fill("30");
+  await length.locator("input").press("Enter");
+  await expect(frameText).toHaveText(/ \/ 30$/);
+  await undo.click();
+  expect((await studio(page, "state")).timeline.length).toBeNull();
+  await expect(undo).toHaveAttribute("aria-disabled", "true");
+  expect(problems).toEqual([]);
+});
+
+// A Clip range drag keeps the Timeline's range as at its start (docs/timeline-ui.md "タイムラインの長さ"): the playhead
+// stays while the end is trimmed in, and goes to the last frame once it is let go past the new end.
+test("trimming the Clip range that sets the Auto length keeps the playhead during the drag and brings it in after", async ({ page }, testInfo) => {
+  const problems = await open(page, testInfo, "?auto");
+  const frameText = page.locator('[data-tl="time"] .pano-studio-tl-frame');
+  await expect(frameText).toHaveText("0 / 48");
+  const ruler = await page.locator('[data-tl="ruler"]').boundingBox();
+  await page.mouse.click(ruler.x + ruler.width * 0.95, ruler.y + ruler.height / 2);
+  const before = await frameText.textContent();
+  expect(Number(before.split(" / ")[0])).toBeGreaterThan(40);
+  const end = await page.locator('[data-track="background"] [data-part="clip-end"]').boundingBox();
+  await page.mouse.move(end.x + end.width / 2, end.y + end.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(ruler.x + ruler.width * 0.5, end.y + end.height / 2, { steps: 8 });
+  // The playhead stays (the length shown follows the trim).
+  await page.waitForTimeout(200);
+  expect((await frameText.textContent()).split(" / ")[0]).toBe(before.split(" / ")[0]);
+  await page.mouse.up();
+  const length = (await studio(page, "state")).background.clip.duration;
+  expect(length).toBeLessThan(35);
+  await expect(frameText).toHaveText(`${length - 1} / ${length}`);
   expect(problems).toEqual([]);
 });
 
@@ -206,5 +387,78 @@ test("the list of shortcuts opens and closes with ?, Escape closes it before the
   await page.mouse.click(box.x + box.width / 2, box.y + box.height - 12);
   await expect(list).toHaveCount(0);
   await expect(page.locator(".pano-studio-editor")).toHaveCount(1);
+  expect(problems).toEqual([]);
+});
+
+// docs/timeline-ui.md "タイムラインの長さ": the unit mark switches the Length field between frames and seconds in place;
+// in seconds a drag still moves one frame a step (live, Escape back to Auto, one Undo step on release) and typed seconds
+// go in as the nearest frame. The unit is kept per browser, not in the state.
+test("the Length field shows seconds by its unit mark; drags and typing still give whole frames; the unit is remembered", async ({ page }, testInfo) => {
+  const problems = await open(page, testInfo, "?auto");
+  await page.evaluate(() => {
+    Element.prototype.requestPointerLock = () => Promise.reject(new DOMException("refused", "NotAllowedError"));
+  });
+  const length = page.locator('[data-tl="length"]');
+  const unit = page.locator('.pano-studio-tl-bar [data-part="length-unit"]');
+  const undo = page.locator('[data-tool="undo"]');
+  await expect(unit).toHaveText("f");
+  await expect(unit).toHaveAttribute("data-tip", "Show seconds");
+  await expect(length).toHaveAttribute("aria-valuetext", "48");
+  await unit.click();
+  await expect(unit).toHaveText("s");
+  await expect(unit).toHaveAttribute("data-tip", "Show frames");
+  await expect(length.locator(".pano-studio-field-value")).toHaveText("2.00");
+  // Switching the unit changes nothing in the state: no Undo step, nothing written.
+  expect((await studio(page, "state")).timeline.length).toBeNull();
+  await expect(undo).toHaveAttribute("aria-disabled", "true");
+  expect(await page.evaluate(() => window.__studio.writes)).toBe(0);
+
+  // A drag: whole frames, shown in seconds; the range follows; Escape goes back to Auto.
+  const box = await length.boundingBox();
+  const at = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  await page.mouse.move(at.x, at.y);
+  await page.mouse.down();
+  for (let i = 1; i <= 10; i += 1) await page.mouse.move(at.x + i * 3, at.y);
+  await expect(length).toHaveClass(/is-dragging/);
+  const live = Number(await length.getAttribute("aria-valuenow"));
+  expect(Number.isInteger(live)).toBe(true);
+  expect(live).toBeGreaterThan(48);
+  expect(live).toBeLessThan(48 + 40);
+  await expect(length.locator(".pano-studio-field-value")).toHaveText((live / 24).toFixed(2));
+  expect((await studio(page, "state")).timeline.length).toBe(live);
+  await page.keyboard.press("Escape");
+  await page.mouse.up();
+  expect((await studio(page, "state")).timeline.length).toBeNull();
+  await expect(undo).toHaveAttribute("aria-disabled", "true");
+
+  // Released: one Undo step, a whole frame.
+  await page.mouse.move(at.x, at.y);
+  await page.mouse.down();
+  for (let i = 1; i <= 10; i += 1) await page.mouse.move(at.x + i * 2, at.y);
+  await page.mouse.up();
+  const released = (await studio(page, "state")).timeline.length;
+  expect(Number.isInteger(released)).toBe(true);
+  expect(released).toBeGreaterThan(48);
+  await undo.click();
+  expect((await studio(page, "state")).timeline.length).toBeNull();
+
+  // Typed seconds: the nearest frame (2.51 s × 24 = 60.24 → 60), shown back in seconds.
+  await length.click();
+  await expect(length.locator("input")).toHaveValue("2.00");
+  await length.locator("input").fill("2.51");
+  await length.locator("input").press("Enter");
+  expect((await studio(page, "state")).timeline.length).toBe(60);
+  await expect(length.locator(".pano-studio-field-value")).toHaveText("2.50");
+
+  // Kept per browser, not in the state: open again and it still shows seconds.
+  expect(await studio(page, "stored", "PanoramaSuite.Studio.TimelineLengthUnit")).toBe("seconds");
+  expect(JSON.parse(await studio(page, "text"))).not.toHaveProperty("timeline.length_unit");
+  await studio(page, "close");
+  await studio(page, "open");
+  await expect(page.locator('.pano-studio-tl-bar [data-part="length-unit"]')).toHaveText("s");
+  await expect(page.locator('[data-tl="length"] .pano-studio-field-value')).toHaveText("2.50");
+  await page.locator('.pano-studio-tl-bar [data-part="length-unit"]').click();
+  await expect(page.locator('[data-tl="length"] .pano-studio-field-value')).toHaveText("60");
+  expect(await studio(page, "stored", "PanoramaSuite.Studio.TimelineLengthUnit")).toBe("frames");
   expect(problems).toEqual([]);
 });

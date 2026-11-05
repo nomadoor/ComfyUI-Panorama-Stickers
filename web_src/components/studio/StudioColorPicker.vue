@@ -1,5 +1,6 @@
 <script setup>
 import { computed } from "vue";
+import { clamp01 } from "../../studio/ui_slider.js";
 import { hsv01ToRgb, rgb01ToHsv } from "../../pano_paint_strokes.js";
 import StudioSlider from "./StudioSlider.vue";
 
@@ -19,8 +20,7 @@ const hueCss = computed(() => {
   const { r, g, b } = hsv01ToRgb(hsv.value.h, 1, 1);
   return `rgb(${Math.round(r * 255)} ${Math.round(g * 255)} ${Math.round(b * 255)})`;
 });
-const percent = (value) => `${(Math.max(0, Math.min(1, value)) * 100).toFixed(2)}%`;
-const clamp01 = (value) => Math.max(0, Math.min(1, value));
+const percent = (value) => `${(clamp01(value) * 100).toFixed(2)}%`;
 
 // A drag on the field or the strip: each move sets the color from where the pointer is in the element.
 function drag(event, apply) {

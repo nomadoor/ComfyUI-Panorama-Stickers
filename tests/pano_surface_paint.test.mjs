@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { normalizePaintingState } from "../web_src/pano_paint_types.js";
 import { resolveRasterPreviewSize, surfacePaintLayers } from "../web_src/pano_surface_paint.js";
 
 const stroke = (id, actionGroupId, u = 0.5) => ({
@@ -15,10 +16,10 @@ const stroke = (id, actionGroupId, u = 0.5) => ({
   geometry: { geometryKind: "freehand_open", points: [{ u, v: 0.5 }, { u: u + 0.01, v: 0.5 }] },
 });
 
-// The state a legacy Stickers / Cutout node surface reads (pano_preview_runtime.js parseState): the widget's JSON
-// as it is, with no painting or a partial one.
+// The state a legacy Stickers / Cutout node surface reads (node_surface/state.js, with the editor's
+// parsePanoEditorState): its painting normalized, also when the widget's JSON has none or a partial one.
 function legacyState(extra = {}) {
-  return {
+  const state = {
     version: 1,
     projection_model: "pinhole_rectilinear",
     alpha_mode: "straight",
@@ -31,6 +32,7 @@ function legacyState(extra = {}) {
     active: { selected_sticker_id: null },
     ...extra,
   };
+  return { ...state, painting: normalizePaintingState(state.painting) };
 }
 
 // A paint engine (pano_paint_engine.js) that has a canvas for each group with a stroke, counting its rebuilds.
@@ -40,6 +42,10 @@ function engines() {
     const engine = {
       descriptor,
       rebuilds: 0,
+      disposed: 0,
+      dispose() {
+        engine.disposed += 1;
+      },
       groups: new Set(),
       rebuildCommitted(state) {
         engine.rebuilds += 1;
@@ -53,7 +59,7 @@ function engines() {
   return { made, create };
 }
 
-test("a legacy node surface's state without a whole painting draws its paint without throwing", () => {
+test("a legacy node surface's state whose JSON had no whole painting draws its paint without throwing", () => {
   const { made, create } = engines();
   const surface = {};
   assert.deepEqual(surfacePaintLayers(surface, legacyState(), create), []);
@@ -124,4 +130,15 @@ test("node preview raster surfaces are capped independently from output resoluti
   assert.deepEqual(resolveRasterPreviewSize(512), { width: 512, height: 256 });
   assert.deepEqual(resolveRasterPreviewSize(2048), { width: 1024, height: 512 });
   assert.deepEqual(resolveRasterPreviewSize(4096), { width: 1024, height: 512 });
+});
+
+test("a surface engine made again at a new output size lets the old one go, and the display's dispose lets go of its own", () => {
+  const { made, create } = engines();
+  const surface = {};
+  const painting = { paint: { strokes: [stroke("a", "g0")] } };
+  surfacePaintLayers(surface, legacyState({ painting }), create);
+  surfacePaintLayers(surface, legacyState({ painting, output_preset: 4096 }), create);
+  assert.deepEqual(made.map((engine) => [engine.descriptor.width, engine.disposed]), [[2048, 1], [4096, 0]]);
+  surface.paintDisplay.dispose();
+  assert.deepEqual(made.map((engine) => engine.disposed), [1, 1]);
 });

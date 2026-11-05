@@ -26,6 +26,9 @@ from comfyui_pano_suite.core.math import ray_directions
 from comfyui_pano_suite.core.render import Projection
 from comfyui_pano_suite.core.world_render import SceneContent
 from scene_test_helpers import glb_accessor as _glb_accessor, glb_positions as _glb_positions, temp_entry_path as _path
+from comfyui_pano_suite.file_3d import _read_scene_file
+from comfyui_pano_suite.media_ui import _scene_ui
+from comfyui_pano_suite.scene_files import write_editor_files
 
 
 
@@ -74,7 +77,7 @@ def _panorama_points(height, width, distance=2.0):
 def test_splat_items_are_written_as_ply_in_their_own_coordinates():
     positions = [[[1.0, 2.0, -3.0], [0.5, 0.0, 0.0], [0.0, 0.0, 0.0]], [[-1.0, 0.0, 4.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]]
 
-    ui = nodes._scene_ui(_splat(positions, counts=torch.tensor([2, 1])))
+    ui = _scene_ui(_splat(positions, counts=torch.tensor([2, 1])))
 
     assert ui["pano_scene_meta"] == [{"kind": "splat"}]
     files = ui["pano_scene_files"]
@@ -89,19 +92,19 @@ def test_splat_files_are_written_as_the_ply_of_their_splat():
     positions = [[[1.0, 2.0, -3.0], [0.5, 0.0, 0.0]]]
     model = SplatToFile3D.execute(_splat(positions), "spz").result[0]
 
-    ui = nodes._scene_ui(nodes._read_scene_file(model, "scene"))
+    ui = _scene_ui(_read_scene_file(model, "scene"))
 
     assert ui["pano_scene_meta"] == [{"kind": "splat"}]
     assert np.allclose(_ply_positions(_path(ui["pano_scene_files"][0])), positions[0], atol=1e-3)
     # The same file is read once and keeps its PLY.
-    assert nodes._read_scene_file(model, "scene") is nodes._read_scene_file(model, "scene")
-    assert nodes._scene_ui(nodes._read_scene_file(model, "scene")) == ui
+    assert _read_scene_file(model, "scene") is _read_scene_file(model, "scene")
+    assert _scene_ui(_read_scene_file(model, "scene")) == ui
 
 
 def test_mesh_items_are_written_as_glb_in_their_own_coordinates():
     vertices = [[[0.0, 0.0, -1.0], [1.0, 0.0, -1.0], [0.0, 1.0, -1.0]], [[0.0, 0.0, -2.0], [2.0, 0.0, -2.0], [0.0, 2.0, -2.0]]]
 
-    ui = nodes._scene_ui(_mesh(vertices))
+    ui = _scene_ui(_mesh(vertices))
 
     assert ui["pano_scene_meta"] == [{"kind": "mesh", "unlit": False}]
     assert [np.allclose(_glb_positions(_path(entry)), item) for entry, item in zip(ui["pano_scene_files"], vertices)] == [True, True]
@@ -113,14 +116,14 @@ def test_the_editor_meta_carries_the_mesh_unlit_mark_even_where_the_glb_does_not
     uvs = torch.tensor([[[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]]])
     textured = Types.MESH(vertices, torch.tensor([[[0, 1, 2]]]), uvs=uvs, texture=torch.rand((1, 2, 2, 3)), unlit=True)
 
-    ui = nodes._scene_ui(textured)
+    ui = _scene_ui(textured)
 
     assert ui["pano_scene_meta"] == [{"kind": "mesh", "unlit": True}]
     assert b"KHR_materials_unlit" not in _path(ui["pano_scene_files"][0]).read_bytes()
 
 
 def test_empty_items_keep_their_place_in_the_batch():
-    ui = nodes._scene_ui(_splat([[[1.0, 0.0, 0.0]], [[2.0, 0.0, 0.0]]], counts=torch.tensor([0, 1])))
+    ui = _scene_ui(_splat([[[1.0, 0.0, 0.0]], [[2.0, 0.0, 0.0]]], counts=torch.tensor([0, 1])))
 
     files = ui["pano_scene_files"]
     assert files[0] is None and np.allclose(_ply_positions(_path(files[1])), [[2.0, 0.0, 0.0]])
@@ -130,7 +133,7 @@ def test_moge_panorama_frames_are_grid_meshes_in_world_directions_of_the_erp():
     height, width = 8, 16
     points = _panorama_points(height, width).repeat(3, 1, 1, 1)
 
-    ui = nodes._scene_ui(_moge(points))
+    ui = _scene_ui(_moge(points))
 
     # MoGe's frames are photos: never lit (docs/render-contract.md, "光が効く要素").
     assert ui["pano_scene_meta"] == [{"kind": "mesh", "unlit": True}]
@@ -156,7 +159,7 @@ def test_moge_frames_match_the_core_mesh_conversion():
             geometry["depth"] = points.norm(dim=-1)
         core = MoGePointMapToMesh.execute(geometry, 0, 1, 0.04, False).result[0]
 
-        path = _path(nodes._scene_ui(geometry)["pano_scene_files"][0])
+        path = _path(_scene_ui(geometry)["pano_scene_files"][0])
 
         assert np.allclose(_glb_positions(path), core.vertices[0].numpy(), atol=1e-6)
         # The same winding: a perspective frame is flipped with its Y and Z, a panorama faces out as in the core.
@@ -169,7 +172,7 @@ def test_moge_mask_drops_the_pixels_it_excludes():
     mask = torch.ones((1, 8, 16), dtype=torch.bool)
     mask[:, :4] = False
 
-    vertices = _glb_positions(_path(nodes._scene_ui(_moge(_panorama_points(8, 16), mask=mask))["pano_scene_files"][0]))
+    vertices = _glb_positions(_path(_scene_ui(_moge(_panorama_points(8, 16), mask=mask))["pano_scene_files"][0]))
 
     # Only the lower half (below the horizon) is left.
     assert vertices.shape == (4 * 16, 3) and (vertices[:, 1] < 0.0).all()
@@ -179,7 +182,7 @@ def test_moge_frames_keep_every_pixel_and_the_whole_image():
     height, width = 24, 48
     geometry = _moge(_panorama_points(height, width))
 
-    path = _path(nodes._scene_ui(geometry)["pano_scene_files"][0])
+    path = _path(_scene_ui(geometry)["pano_scene_files"][0])
 
     assert _glb_positions(path).shape[0] == height * width
     data = path.read_bytes()
@@ -192,37 +195,37 @@ def test_moge_frames_without_faces_are_empty_items():
     mask = torch.zeros((2, 4, 8), dtype=torch.bool)
     mask[1] = True
 
-    files = nodes._scene_ui(_moge(_panorama_points(4, 8).repeat(2, 1, 1, 1), mask=mask))["pano_scene_files"]
+    files = _scene_ui(_moge(_panorama_points(4, 8).repeat(2, 1, 1, 1), mask=mask))["pano_scene_files"]
 
     assert files[0] is None and _path(files[1]).exists()
 
 
 def test_same_input_reuses_its_files(monkeypatch):
     splat = _splat([[[1.0, 0.0, 0.0]]])
-    first = nodes._scene_ui(splat)
+    first = _scene_ui(splat)
     path = _path(first["pano_scene_files"][0])
     written = path.stat().st_mtime_ns
     calls = []
-    original = nodes.write_editor_files
-    monkeypatch.setattr(nodes, "write_editor_files", lambda value, progress=None: calls.append(value) or original(value, progress))
+    original = write_editor_files
+    monkeypatch.setattr("comfyui_pano_suite.media_ui.write_editor_files", lambda value, progress=None: calls.append(value) or original(value, progress))
 
-    assert nodes._scene_ui(splat) == first
+    assert _scene_ui(splat) == first
     assert calls == [] and path.stat().st_mtime_ns == written
 
     # Another input, or a file gone from temp, writes them again.
-    other = nodes._scene_ui(_splat([[[1.0, 0.0, 0.0]]]))
+    other = _scene_ui(_splat([[[1.0, 0.0, 0.0]]]))
     assert other["pano_scene_files"] != first["pano_scene_files"] and len(calls) == 1
     path.unlink()
-    assert _path(nodes._scene_ui(splat)["pano_scene_files"][0]).exists() and len(calls) == 2
+    assert _path(_scene_ui(splat)["pano_scene_files"][0]).exists() and len(calls) == 2
 
 
 def test_moge_reuse_follows_its_tensors(monkeypatch):
     geometry = _moge(_panorama_points(4, 8))
-    first = nodes._scene_ui(geometry)
+    first = _scene_ui(geometry)
 
-    assert nodes._scene_ui(dict(geometry)) == first
+    assert _scene_ui(dict(geometry)) == first
     geometry["points"].mul_(2.0)
-    assert nodes._scene_ui(geometry) != first
+    assert _scene_ui(geometry) != first
 
 
 def test_studio_shows_the_scene_files_after_running(monkeypatch):
@@ -230,7 +233,7 @@ def test_studio_shows_the_scene_files_after_running(monkeypatch):
         height, width = view.projection.height, view.projection.width
         return torch.zeros((height, width, 4), device=device), torch.full((height, width), math.inf, device=device)
 
-    monkeypatch.setattr(nodes, "_scene_content", lambda scene: None if scene is None else SceneContent(2, render))
+    monkeypatch.setattr("comfyui_pano_suite.file_3d._scene_content", lambda scene: None if scene is None else SceneContent(2, render))
     mesh = _mesh([[[0.0, 0.0, -1.0], [1.0, 0.0, -1.0], [0.0, 1.0, -1.0]]] * 2)
 
     output = nodes.PanoramaStudioNode.execute(background_color="#00ff00", background_range="360", megapixels=0.5, multiple=8, state_json="", world=mesh)
@@ -264,8 +267,8 @@ def test_moge_grid_meshes_are_written_like_their_moge_geometry():
         mesh = MoGePointMapToMesh.execute(geometry, 0, 1, 0.04, True).result[0]
         assert mesh.vertices.shape[1] < points.shape[1] * points.shape[2]
 
-        grid = _path(nodes._scene_ui(mesh)["pano_scene_files"][0])
-        moge = _path(nodes._scene_ui(geometry)["pano_scene_files"][0])
+        grid = _path(_scene_ui(mesh)["pano_scene_files"][0])
+        moge = _path(_scene_ui(geometry)["pano_scene_files"][0])
 
         # The same vertices, faces, uvs and texture as the MOGE_GEOMETRY's file, each at full resolution.
         assert grid.read_bytes() == moge.read_bytes() == mesh_item_to_glb_bytes(mesh, 0)
@@ -285,7 +288,7 @@ def test_meshes_are_written_as_the_core_writes_them():
         normals=vertices[None],
     )
 
-    path = _path(nodes._scene_ui(mesh)["pano_scene_files"][0])
+    path = _path(_scene_ui(mesh)["pano_scene_files"][0])
 
     assert path.read_bytes() == mesh_item_to_glb_bytes(mesh, 0)
     assert _glb_faces(path).shape[0] == faces.shape[0]
@@ -294,7 +297,7 @@ def test_meshes_are_written_as_the_core_writes_them():
 def test_meshes_without_faces_are_empty_items():
     mesh = Types.MESH(torch.zeros((2, 3, 3)), torch.tensor([[[0, 1, 2]], [[0, 1, 2]]]), vertex_counts=torch.tensor([3, 3]), face_counts=torch.tensor([0, 1]))
 
-    files = nodes._scene_ui(mesh)["pano_scene_files"]
+    files = _scene_ui(mesh)["pano_scene_files"]
 
     assert files[0] is None and _path(files[1]).exists()
 
@@ -308,7 +311,7 @@ def test_da3_mono_editor_files_are_depth_with_keep_as_positive():
     geometry = _keep_case(False)
     height, width = geometry["depth"].shape[1:]
 
-    ui = nodes._scene_ui(geometry, fps=12.5)
+    ui = _scene_ui(geometry, fps=12.5)
 
     [meta] = ui["pano_scene_meta"]
     files = ui["pano_scene_files"]
@@ -368,7 +371,7 @@ def test_moge_sequences_are_depth_grids_with_the_pixel_k(caplog):
     geometry["mask"][1] = False
     count, height, width = geometry["points"].shape[:3]
 
-    ui = nodes._scene_ui(geometry, fps=10.0)
+    ui = _scene_ui(geometry, fps=10.0)
 
     [meta] = ui["pano_scene_meta"]
     files = ui["pano_scene_files"]
@@ -399,7 +402,7 @@ def test_moge_sequences_are_depth_grids_with_the_pixel_k(caplog):
         "mixed dicts": (mixed, "frame 1"),
     }
     for name, (value, reason) in cases.items():
-        assert nodes._scene_ui(value, fps=10.0)["pano_scene_meta"] == [{"kind": "mesh", "unlit": True}], name
+        assert _scene_ui(value, fps=10.0)["pano_scene_meta"] == [{"kind": "mesh", "unlit": True}], name
         caplog.clear()
         with caplog.at_level(logging.WARNING):
             nodes.PanoramaStudioNode.execute(background_color="#000000", background_range="360", megapixels=0.5, multiple=8, state_json="", world=value, sticker=value)

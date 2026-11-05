@@ -1,4 +1,4 @@
-import { normalizeCoverageValue, parsePanoEditorState } from "./pano_editor_state.js";
+import { LEGACY_BACKGROUND_COLOR, parsePanoEditorState } from "./pano_editor_state.js";
 import { applyCutoutNodeSurfaceAction } from "./pano_cutout_node_surface.js";
 import { isPanoramaPreviewNodeName, isPanoramaPreviewSceneNodeName } from "./pano_preview_identity.js";
 import { linkedInputType } from "./pano_preview_video.js";
@@ -7,6 +7,7 @@ import { chainWidgetCallback } from "./pano_widget_callback.js";
 import { VIEW_CONTROLS_SETTING } from "./pano_view_controls.js";
 import { DIAGNOSTICS_EXPORT_COMMAND, DIAGNOSTICS_SETTING } from "./pano_diagnostics.js";
 import { disposeNodeRuntime, editorSession, nodeSurface, peekSceneViewer, previewNode, stateSync } from "./pano_node_bridge.js";
+import { waitForPendingStickerUploads } from "./pano_sticker_operations.js";
 
 const STATE_WIDGET = "state_json";
 
@@ -46,51 +47,6 @@ function syncCoverageWidgetRedraw(node, app) {
     app?.canvas?.setDirty?.(true, true);
   });
   stateSync(node).coverageSyncInstalled = true;
-}
-
-function isHexColorString(value) {
-  const text = String(value ?? "").trim();
-  return /^#?[0-9a-fA-F]{6}$/.test(text) || /^#?[0-9a-fA-F]{3}$/.test(text);
-}
-
-function looksLikeJsonObjectString(value) {
-  const text = String(value ?? "").trim();
-  return text.startsWith("{") && text.endsWith("}");
-}
-
-function migratePanoramaStickersWidgetOrder(node) {
-  if (!node) return;
-  const coverage = getWidget(node, "coverage");
-  const background = getWidget(node, "bg_color");
-  const stateWidget = getWidget(node, STATE_WIDGET);
-  const stickerState = getWidget(node, "sticker_state");
-  if (!coverage || !background || !stateWidget) return;
-  const coverageRaw = String(coverage.value ?? "").trim();
-  const backgroundRaw = String(background.value ?? "").trim();
-  const stateRaw = String(stateWidget.value ?? "").trim();
-  const needsMigration = !/^(180|360)$/.test(coverageRaw)
-    && isHexColorString(coverageRaw)
-    && (looksLikeJsonObjectString(backgroundRaw) || backgroundRaw === "");
-  if (!needsMigration) return;
-  let migratedCoverage = "360";
-  if (looksLikeJsonObjectString(backgroundRaw)) {
-    try {
-      migratedCoverage = String(normalizeCoverageValue(JSON.parse(backgroundRaw)?.coverage));
-    } catch {
-      migratedCoverage = "360";
-    }
-  }
-  coverage.value = migratedCoverage;
-  coverage.callback?.(migratedCoverage);
-  background.value = coverageRaw;
-  background.callback?.(coverageRaw);
-  stateWidget.value = backgroundRaw;
-  stateWidget.callback?.(backgroundRaw);
-  if (stickerState) {
-    stickerState.value = stateRaw;
-    stickerState.callback?.(stateRaw);
-  }
-  node.setDirtyCanvas?.(true, true);
 }
 
 function hideWidget(node, widgetName) {
@@ -139,47 +95,6 @@ function ensureActionButtonWidget(node, buttonText, callback) {
   return widget;
 }
 
-async function waitForPendingStickerUploads(node, { tolerateOperationFailure = false } = {}) {
-  const pending = stateSync(node)?.pendingStickerUploads;
-  if (!pending) return;
-  while (pending.size > 0) {
-    const entries = Array.from(pending.entries());
-    if (tolerateOperationFailure) {
-      await Promise.allSettled(entries.map(([, promise]) => promise));
-    } else {
-      await Promise.all(entries.map(([, promise]) => promise));
-    }
-    entries.forEach(([assetId, promise]) => {
-      if (pending.get(assetId) === promise) pending.delete(assetId);
-    });
-  }
-}
-
-export function queuePendingStickerOperation(node, operationId, operation) {
-  if (!node || typeof operation !== "function") {
-    return Promise.reject(new TypeError("A node and sticker operation are required."));
-  }
-  const sync = stateSync(node);
-  const previous = sync.stickerOperationTail;
-  const ready = previous && typeof previous.then === "function"
-    ? previous.catch(() => undefined)
-    : Promise.resolve();
-  const pending = ready.then(() => operation());
-  const tail = pending.catch(() => undefined);
-  sync.stickerOperationTail = tail;
-  sync.pendingStickerUploads.set(operationId, pending);
-  const cleanup = () => {
-    if (sync.pendingStickerUploads.get(operationId) === pending) {
-      sync.pendingStickerUploads.delete(operationId);
-    }
-  };
-  pending.then(cleanup, cleanup);
-  tail.then(() => {
-    if (sync.stickerOperationTail === tail) sync.stickerOperationTail = null;
-  });
-  return pending;
-}
-
 export async function flushPanoStateProducers(node, options = {}) {
   await waitForPendingStickerUploads(node, options);
   const flushers = Array.from(stateSync(node)?.flushers ?? []);
@@ -219,14 +134,6 @@ function disposeRuntimeOnRemoved(nodeType) {
   };
 }
 
-function ensurePanoramaPreviewImageOutput(node) {
-  const outputs = Array.isArray(node?.outputs) ? node.outputs : [];
-  const hasImageOutput = outputs.some((output) => (
-    String(output?.name || "") === "image" && String(output?.type || "") === "IMAGE"
-  ));
-  if (!hasImageOutput) node?.addOutput?.("image", "IMAGE");
-}
-
 function installEditorButton(nodeType, {
   app,
   matchType,
@@ -262,9 +169,10 @@ function installEditorButton(nodeType, {
       node.__panoSceneStateV2 = sceneStateV2;
       node.__panoStudio = studio;
       const background = getWidget(node, "bg_color");
-      if (!sceneStateV2 && background && (background.value == null || String(background.value).trim() === "" || String(background.value).toLowerCase() === "#000000")) {
-        background.value = "#00ff00";
-        background.callback?.("#00ff00");
+      // An empty bg_color gets the default (docs/legacy-node-surfaces.md); a colour the user chose, black included, stays.
+      if (!sceneStateV2 && background && (background.value == null || String(background.value).trim() === "")) {
+        background.value = LEGACY_BACKGROUND_COLOR;
+        background.callback?.(LEGACY_BACKGROUND_COLOR);
       }
       ensureActionButtonWidget(node, buttonText, () => openEditor(node, "stickers"));
       if (enableStickersPreview) {
@@ -301,9 +209,6 @@ function installEditorButton(nodeType, {
       if (hook === "onNodeCreated" && matchType === "PanoramaCutout") {
         initializeNewCutoutFrame(this);
       }
-      if (hook === "onConfigure" && matchType === "PanoramaStickers" && !sceneStateV2 && this.widgets) {
-        migratePanoramaStickersWidgetOrder(this);
-      }
       const attached = nodeSurface(this).attached;
       if (hook === "onNodeCreated" || this.widgets) installOrUpdate(this);
       // LiteGraph.createNode runs onNodeCreated before graph.add, so a node attached then syncs its
@@ -321,12 +226,6 @@ function installStandalonePreviewNode(nodeType) {
   nodeType.prototype.onNodeCreated = function () {
     const result = previous ? previous.apply(this, arguments) : undefined;
     if (!Array.isArray(this.size) || this.size[0] < 10 || this.size[1] < 10) this.size = [360, 260];
-    return result;
-  };
-  const previousConfigure = nodeType.prototype.onConfigure;
-  nodeType.prototype.onConfigure = function () {
-    const result = previousConfigure ? previousConfigure.apply(this, arguments) : undefined;
-    ensurePanoramaPreviewImageOutput(this);
     return result;
   };
   disposeRuntimeOnRemoved(nodeType);
@@ -426,6 +325,9 @@ function installScenePreviewInstance(node, { app, openEditor, attachPreview, att
         imageInputName: "source",
         onOpen: openMedia,
         opensWindow: () => openEditor.previewWindowTakes?.(node) === true,
+        // The wheel as the editor's: the plain wheel moves forward (nothing to move in a look-around), Alt + wheel and a
+        // pinch zoom (docs/preview-node.md "ノード上", ADR 0061).
+        wheel: "modifier",
       });
     }
     if (install.surface || peekSceneViewer(node)?.surface) hideWidget(node, "Open Preview");
@@ -472,7 +374,7 @@ export function createPanoEditorExtension({
     menuCommands: [{ path: ["Extensions", "Panorama Suite"], commands: [DIAGNOSTICS_EXPORT_COMMAND.id] }],
     beforeRegisterNodeDef(nodeType, nodeData) {
       const name = String(nodeData?.name || "");
-      if (name === "PanoramaStickers" || name === "Panorama Stickers") {
+      if (name === "PanoramaStickers") {
         installEditorButton(nodeType, {
           app,
           matchType: "PanoramaStickers",
@@ -496,7 +398,7 @@ export function createPanoEditorExtension({
           studio: true,
         });
       }
-      if (name === "PanoramaCutout" || name === "Panorama Cutout") {
+      if (name === "PanoramaCutout") {
         installEditorButton(nodeType, {
           app,
           matchType: "PanoramaCutout",
@@ -515,7 +417,7 @@ export function createPanoEditorExtension({
       if (nodeSurface(node).attached) void restoreOutput(node);
     },
     nodeCreated(node) {
-      const name = String(node?.comfyClass || node?.type || node?.title || "");
+      const name = String(node?.comfyClass || node?.type || "");
       syncCoverageWidgetRedraw(node, app);
       if (isPanoramaPreviewSceneNodeName(name)) {
         installScenePreviewInstance(node, { app, openEditor, attachPreview, attachSceneViewer, openSceneViewer, requestFrame });

@@ -36,6 +36,10 @@ from test_studio_camera import _upstream as _studio
 from test_scene_editor_files import _glb_positions, _path
 from test_stickers_scene_video import _frames
 from test_stickers_timed_sticker import _batch_index_at_center
+from comfyui_pano_suite.file_3d import _read_scene_file, _scene_content
+from comfyui_pano_suite.media_ui import _scene_ui
+from comfyui_pano_suite.scene_files import write_editor_files
+from comfyui_pano_suite.scene_mesh import read_mesh_file
 
 
 # A quad 2 ahead of a Camera at the origin, 2 wide, its uv (0, 0) at the top left.
@@ -117,7 +121,7 @@ def test_core_moge_nodes_output_the_shape_the_renderer_reads(monkeypatch):
     }
     for geometry in (perspective, panorama):
         recording = _Recording(geometry)
-        content = nodes._scene_content(recording)
+        content = _scene_content(recording)
         content.render(_origin(Projection.erp(32, 16)), content.count - 1, torch.device("cpu"))
         # Only the points, the mask, and the image are read; the intrinsics only tell a perspective frame apart, and
         # `points` (against DA3_GEOMETRY's `mode`) tells the dict apart.
@@ -128,7 +132,7 @@ def test_moge_panorama_seen_from_its_center_is_its_own_erp(monkeypatch):
     image = _gradient(16, 32)
     geometry = _moge_panorama(image, monkeypatch)
 
-    rgba, depth = nodes._scene_content(geometry).render(_origin(Projection.erp(32, 16)), 0, torch.device("cpu"))
+    rgba, depth = _scene_content(geometry).render(_origin(Projection.erp(32, 16)), 0, torch.device("cpu"))
 
     # Each pixel center of the ERP is a vertex of the grid; the texture is sampled at texel centers as glTF does,
     # up to half a texel off at the image edges (interpolated in linear light).
@@ -141,7 +145,7 @@ def test_moge_mask_drops_its_pixels():
     geometry = _moge(torch.rand((1, 8, 8, 3)))
     geometry["mask"][:, :, :4] = False
 
-    rgba, _depth = nodes._scene_content(geometry).render(_origin(Projection.perspective(8, 8, 90.0)), 0, torch.device("cpu"))
+    rgba, _depth = _scene_content(geometry).render(_origin(Projection.perspective(8, 8, 90.0)), 0, torch.device("cpu"))
 
     # The left half of the 90 degree MoGe camera is gone; the right half is drawn from the edge column on.
     assert not bool(rgba[:, :4, 3].any()) and bool(rgba[:, 5:, 3].all())
@@ -209,7 +213,7 @@ def test_mesh_files_are_drawn_and_written_for_the_editor(tmp_path):
     # material is rough (1.0), the bare OBJ's is save_glb's gray at roughness 0.5.
     for name, color in (("quad.glb", _lit_center([1.0, 0.0, 0.0], 0.0, 1.0)), (_write_obj(tmp_path / "quad.obj").name, _lit_center([0.22] * 3, 0.0, 0.5))):
         result = _studio(world=Types.File3D(str(tmp_path / name)))
-        ui = nodes._scene_ui(result[0].layers[-1].scene)
+        ui = _scene_ui(result[0].layers[-1].scene)
 
         assert torch.allclose(result[1][0, 256, 512], color, atol=2e-3)
         assert ui["pano_scene_meta"] == [{"kind": "mesh", "unlit": False}]
@@ -224,15 +228,15 @@ def test_a_glb_marked_unlit_shows_its_vertex_colors(tmp_path):
 
     assert result[0].layers[-1].scene.unlit is True
     assert torch.allclose(result[1][0, 256, 512], linear_to_srgb(colors[0]), atol=1e-5)
-    assert nodes._scene_ui(result[0].layers[-1].scene)["pano_scene_meta"] == [{"kind": "mesh", "unlit": True}]
+    assert _scene_ui(result[0].layers[-1].scene)["pano_scene_meta"] == [{"kind": "mesh", "unlit": True}]
 
 
 def test_same_mesh_file_is_read_once_and_keeps_its_editor_files(tmp_path, monkeypatch):
     path = _write_obj(tmp_path / "quad.obj")
     reads, writes = [], []
-    read, write = nodes.read_mesh_file, nodes.write_editor_files
-    monkeypatch.setattr(nodes, "read_mesh_file", lambda file: reads.append(file) or read(file))
-    monkeypatch.setattr(nodes, "write_editor_files", lambda value, progress=None: writes.append(value) or write(value, progress))
+    read, write = read_mesh_file, write_editor_files
+    monkeypatch.setattr("comfyui_pano_suite.file_3d.read_mesh_file", lambda file: reads.append(file) or read(file))
+    monkeypatch.setattr("comfyui_pano_suite.media_ui.write_editor_files", lambda value, progress=None: writes.append(value) or write(value, progress))
 
     first = nodes.PanoramaStudioNode.execute(background_color="#00ff00", background_range="360", megapixels=0.5, multiple=8, state_json="", world=Types.File3D(str(path)))
     again = nodes.PanoramaStudioNode.execute(background_color="#00ff00", background_range="360", megapixels=0.5, multiple=8, state_json="", world=Types.File3D(str(path)))
@@ -376,7 +380,7 @@ def test_a_glb_read_back_keeps_its_material(tmp_path):
     mesh = _material_cases()["overrides"]
     (tmp_path / "model.glb").write_bytes(mesh_item_to_glb_bytes(mesh, 0))
 
-    read = nodes._read_scene_file(Types.File3D(str(tmp_path / "model.glb")), "scene")
+    read = _read_scene_file(Types.File3D(str(tmp_path / "model.glb")), "scene")
 
     assert scene_mesh.mesh_material(read, 0) == scene_mesh.mesh_material(mesh, 0)
     assert _glb_json(mesh_item_to_glb_bytes(read, 0))["materials"][0]["pbrMetallicRoughness"] == _glb_json(mesh_item_to_glb_bytes(mesh, 0))["materials"][0]["pbrMetallicRoughness"]
@@ -389,8 +393,8 @@ def test_moge_frames_and_marked_meshes_are_not_lit_and_others_are():
     view = _origin(Projection.perspective(16, 16, 90.0))
 
     assert scene_mesh.is_unlit(geometry) is True and scene_mesh.mesh_item(lit, 0).unlit is False and scene_mesh.mesh_item(marked, 0).unlit is True
-    shown_lit = nodes._scene_content(lit).render(view, 0, torch.device("cpu"))[0][8, 8, :3]
-    shown_marked = nodes._scene_content(marked).render(view, 0, torch.device("cpu"))[0][8, 8, :3]
+    shown_lit = _scene_content(lit).render(view, 0, torch.device("cpu"))[0][8, 8, :3]
+    shown_marked = _scene_content(marked).render(view, 0, torch.device("cpu"))[0][8, 8, :3]
     # The marked one is save_glb's unlit material: white; the lit one is gray under the lights.
     assert torch.allclose(shown_marked, torch.ones(3), atol=1e-6)
     assert float(shown_lit[0]) < 0.95
@@ -483,12 +487,12 @@ def test_empty_frames_are_drawn_empty_and_have_no_editor_file(monkeypatch):
     sky = torch.zeros((2, H, W))
     sky[1] = 1.0
     geometry = _mono(sky=sky)
-    content = nodes._scene_content(geometry)
+    content = _scene_content(geometry)
 
     rgba, depth = content.render(_da3_view(Projection.perspective(16, 16, 60.0)), 1, torch.device("cpu"))
 
     assert float(rgba[..., 3].max()) == 0.0 and bool(torch.isinf(depth).all())
-    files = nodes._scene_ui(geometry, fps=24.0)["pano_scene_files"]
+    files = _scene_ui(geometry, fps=24.0)["pano_scene_files"]
     assert files[0] is not None and files[1] is None
     # A MESH the core returns without faces is empty too; other errors stop the run.
     from comfy_api.latest import Types
@@ -507,7 +511,7 @@ def test_empty_frames_are_drawn_empty_and_have_no_editor_file(monkeypatch):
 
 def test_multiview_is_one_still_item_of_every_view_folded_by_depth():
     geometry = _multiview()
-    content = nodes._scene_content(geometry)
+    content = _scene_content(geometry)
 
     # From between the two cameras: both planes, each about 2.9 wide around x 0 and 3, show side by side.
     rgba, depth = content.render(_da3_view(Projection.perspective(64, 32, 120.0), position=(1.5, 0.0, 0.0)), 0, torch.device("cpu"))
@@ -516,7 +520,7 @@ def test_multiview_is_one_still_item_of_every_view_folded_by_depth():
     row = rgba[16, :, 3]
     assert bool(row[7:20].all()) and bool(row[-20:-7].all()) and not bool(row[:3].any())
     # Straight alpha: the folded layer's colors are not darkened where it is opaque.
-    alone, _depth = nodes._scene_content({**geometry, "depth": geometry["depth"][:1], "image": geometry["image"][:1], "extrinsics": geometry["extrinsics"][:, :1], "intrinsics": geometry["intrinsics"][:, :1]}).render(
+    alone, _depth = _scene_content({**geometry, "depth": geometry["depth"][:1], "image": geometry["image"][:1], "extrinsics": geometry["extrinsics"][:, :1], "intrinsics": geometry["intrinsics"][:, :1]}).render(
         _da3_view(Projection.perspective(64, 32, 120.0), position=(1.5, 0.0, 0.0)), 0, torch.device("cpu"))
     both = alone[..., 3] > 0
     assert torch.allclose(rgba[both], alone[both], atol=1e-6)
@@ -527,9 +531,9 @@ def test_multiview_editor_files_are_one_item_of_the_views_glbs_and_empty_views_a
     sky = torch.zeros((2, H, W))
     sky[1] = 1.0
 
-    both = nodes._scene_ui(_multiview())
-    one = nodes._scene_ui(_multiview(sky=sky))
-    none = nodes._scene_ui(_multiview(sky=torch.ones((2, H, W))))
+    both = _scene_ui(_multiview())
+    one = _scene_ui(_multiview(sky=sky))
+    none = _scene_ui(_multiview(sky=torch.ones((2, H, W))))
 
     assert both["pano_scene_meta"] == [{"kind": "mesh", "unlit": True}]
     [views] = both["pano_scene_files"]
@@ -549,8 +553,8 @@ def test_multiview_without_poses_stops_at_the_entry():
 def test_editor_files_are_written_once_per_input_dict(monkeypatch):
     geometry = _mono()
     writes = []
-    write = nodes.write_editor_files
-    monkeypatch.setattr(nodes, "write_editor_files", lambda value, progress=None: writes.append(value) or write(value, progress))
+    write = write_editor_files
+    monkeypatch.setattr("comfyui_pano_suite.media_ui.write_editor_files", lambda value, progress=None: writes.append(value) or write(value, progress))
 
     first = _da3_execute(world=geometry)
     again = _da3_execute(world=geometry, state={"version": 2, "timeline": {"fps": 12}})
@@ -610,13 +614,13 @@ def test_each_da3_frame_is_converted_once_for_the_render_the_editor_files_and_th
 
     monkeypatch.setattr(scene_mesh, "DA3GeometryToMesh", Counting)
     geometry = _mono(count=3)
-    content = nodes._scene_content
-    monkeypatch.setattr(nodes, "_scene_content", lambda scene: (stage.__setitem__(0, "render"), content(scene))[1])
+    content = _scene_content
+    monkeypatch.setattr("comfyui_pano_suite.file_3d._scene_content", lambda scene: (stage.__setitem__(0, "render"), content(scene))[1])
 
     output = _da3_execute(sticker=geometry)
     output.result[3].get_components()
     sticker_media.content_box(geometry)
-    nodes._scene_ui(geometry, fps=24.0)
+    _scene_ui(geometry, fps=24.0)
 
     assert all(where == "render" for where, _index in converted)
     assert sorted(index for _where, index in converted) == [0, 1, 2]
@@ -696,7 +700,7 @@ def test_the_content_box_of_mono_is_the_keep_points_without_converting(monkeypat
 
 def test_the_depth_grid_needs_the_timeline_fps():
     with pytest.raises(ValueError, match="Timeline fps"):
-        nodes._scene_ui(_mono(count=1))
+        _scene_ui(_mono(count=1))
 
 
 def test_a_mono_dict_on_the_sticker_input_gets_the_depth_grid_meta():
@@ -772,7 +776,7 @@ def test_moge_keep_is_the_pixels_the_grid_mesh_keeps(make):
         assert (faces.shape[0] == 0) == scene_mesh.keep_is_empty(keep)
     # An all-masked frame is empty.
     empty = {**geometry, "mask": torch.zeros_like(geometry["points"][..., 0], dtype=torch.bool)}
-    assert scene_mesh.keep_is_empty(scene_mesh.moge_keep(empty, 0)) and nodes.write_editor_files(empty)[1][0] is None
+    assert scene_mesh.keep_is_empty(scene_mesh.moge_keep(empty, 0)) and write_editor_files(empty)[1][0] is None
 
 
 @pytest.mark.parametrize("height, width", [(6, 8), (5, 7), (9, 4)])

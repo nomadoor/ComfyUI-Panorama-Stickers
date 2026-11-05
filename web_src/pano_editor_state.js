@@ -1,11 +1,11 @@
 import { normalizePaintingState } from "./pano_paint_types.js";
 import { wrapYaw } from "./pano_math.js";
-import { DEG2RAD, RAD2DEG, clamp } from "./pano_camera_math.js";
+import { DEG2RAD, clamp, vFovFromHfov } from "./pano_camera_math.js";
 import { deriveVerticalFovDeg, normalizeCutoutShotItem } from "./pano_cutout_view_math.js";
 import { lensAngle, lensFovKeepingCenter, lensFovLimit, lensRadius } from "./pano_lens.js";
 import { clipFrame, evaluateCamera, evaluateLane, evaluateSticker } from "./pano_scene_eval.js";
 import { SKY_STICKER_LANES, cameraAspect, freeStickerNumber, loadSceneState, rebaseSceneState, sceneStateText, stickerCounter } from "./pano_scene_state.js";
-import { laneNames, setLaneValue } from "./pano_timeline.js";
+import { setLaneValue } from "./pano_timeline.js";
 import { NEW_STICKER_HFOV } from "./pano_space.js";
 import { createSharedStringHistory } from "./pano_paint_history.js";
 import { sceneAtVideoFps } from "./pano_video_fps.js";
@@ -24,9 +24,13 @@ function normalizeUiSettings(raw) {
   };
 }
 
+// The legacy nodes' background colour when the node has none (the legacy Cutout has no bg_color widget) or it is empty:
+// the old editor, a new Cutout frame and the legacy node surfaces use it (as comfyui_pano_suite/core/state.py _normalize_hex_color draws).
+export const LEGACY_BACKGROUND_COLOR = "#00ff00";
+
 function makeDefaultState({
   outputPreset = 2048,
-  backgroundColor = "#00ff00",
+  backgroundColor = LEGACY_BACKGROUND_COLOR,
   coverage = 360,
   sharedUiSettings = null,
 } = {}) {
@@ -47,7 +51,8 @@ function makeDefaultState({
   };
 }
 
-function parseOutputPresetValue(value, fallback = 2048) {
+// The output width an output_preset widget value names ("4096x2048" → 4096, a number rounded), or `fallback` without one.
+export function parseOutputPresetValue(value, fallback = 2048) {
   if (typeof value === "number" && Number.isFinite(value)) return Math.round(value);
   const text = String(value ?? "").trim();
   if (!text) return fallback;
@@ -92,10 +97,30 @@ export function retainActiveCutoutShot(shots, selectedShotId) {
   return { shots: [selected], selectedShotId: retainedId };
 }
 
+// The legacy nodes never use a lens `curve`: their editor and node surfaces draw every v1 shot and Sticker as a pinhole,
+// as Python's legacy nodes do (docs/legacy-node-surfaces.md). This drops it (and an initial pose's) from a parsed v1
+// state `state` (its items are the parse's own copies), so saving leaves it out too. A shot's aspect_id is derived
+// again without it. Returns `state`.
+function pinholeV1Items(state) {
+  for (const item of Array.isArray(state.stickers) ? state.stickers : []) {
+    if (!item || typeof item !== "object") continue;
+    delete item.curve;
+    if (item.initial_pose && typeof item.initial_pose === "object") delete item.initial_pose.curve;
+  }
+  if (Array.isArray(state.shots)) {
+    state.shots = state.shots.map((shot) => {
+      if (!shot || typeof shot !== "object" || !("curve" in shot)) return shot;
+      const { curve: _curve, ...pinhole } = shot;
+      return normalizeCutoutShotItem(pinhole);
+    });
+  }
+  return state;
+}
+
 export function parsePanoEditorState(text, options = {}) {
   const resolvedOptions = {
     outputPreset: 2048,
-    backgroundColor: "#00ff00",
+    backgroundColor: LEGACY_BACKGROUND_COLOR,
     coverage: 360,
     sharedUiSettings: null,
     ...options,
@@ -140,8 +165,7 @@ export function parsePanoEditorState(text, options = {}) {
     );
     merged.bg_color = String(resolvedOptions.backgroundColor || merged.bg_color || base.bg_color);
     merged.coverage = normalizeCoverageValue(resolvedOptions.coverage);
-    delete merged.editor_history;
-    return merged;
+    return pinholeV1Items(merged);
   } catch {
     parseStateJsonCache = { text: trimmed, parsed: null };
     return base;
@@ -149,7 +173,7 @@ export function parsePanoEditorState(text, options = {}) {
 }
 
 // The fields of the state an Undo step leaves out.
-export const HISTORY_SNAPSHOT_OMITS = Object.freeze(["editor_history", "painting_layer"]);
+const HISTORY_SNAPSHOT_OMITS = Object.freeze(["painting_layer"]);
 
 export function makePanoEditorHistorySnapshot(state) {
   if (!state || typeof state !== "object") return state;
@@ -226,22 +250,6 @@ export function parseSceneEditorState(text, options = {}) {
   };
 }
 
-// Sets the Timeline fps of a working state v2, rebasing its times (rebaseSceneState) so they keep their
-// seconds. The objects stay the ones the editor holds; a Sticker still uploading is left as it is.
-export function setTimelineFps(state, fps) {
-  const rebased = rebaseSceneState(state, fps);
-  const stickers = new Map(rebased.stickers.map((item) => [item.id, item]));
-  state.timeline = rebased.timeline;
-  const owners = [[state.camera, rebased.camera], [state.background, rebased.background], [state.scene, rebased.scene], ...state.stickers.map((item) => [item, stickers.get(item.id)])];
-  for (const [owner, next] of owners) {
-    // A state without a Camera has none to rebase. Only a Sticker still uploading has no match; it was
-    // just added with a default Clip range and no Keyframes.
-    if (!next) continue;
-    if (owner.clip) owner.clip = next.clip;
-    for (const name of laneNames(owner)) owner[name].keyframes = next[name].keyframes;
-  }
-}
-
 // The vFOV a sky Sticker with the evaluated `value` is drawn and hit tested at. A port Sticker's follows
 // its hFOV and the aspect of the media on the port (`size`, { width, height }), as the run derives it
 // (core/render.py `derive_vfov`, core/math.py `vfov_from_hfov`): the media changes outside the state, so
@@ -256,8 +264,7 @@ export function skyStickerVfov(sticker, value, size) {
     const vfov = 2 * lensAngle(lensRadius(hfov * 0.5, curve) * (size.height / size.width), curve) / DEG2RAD;
     return Math.min(limit, Math.max(0.1, vfov));
   }
-  const hfov = Math.min(179, Math.max(0.1, value.hFOV_deg)) * DEG2RAD;
-  const vfov = 2 * Math.atan(Math.tan(hfov * 0.5) * (size.height / size.width)) / DEG2RAD;
+  const vfov = vFovFromHfov(Math.min(179, Math.max(0.1, value.hFOV_deg)), size.height / size.width);
   return Math.min(179, Math.max(0.1, vfov));
 }
 
@@ -266,9 +273,7 @@ export function skyStickerVfov(sticker, value, size) {
 export function stickerVfovFromAspect(hFovDeg, width, height) {
   const w = Math.max(1, Number(width || 1));
   const h = Math.max(1, Number(height || 1));
-  const hf = clamp(Number(hFovDeg || NEW_STICKER_HFOV), 0.1, 179) * DEG2RAD;
-  const vf = 2 * Math.atan(Math.tan(hf * 0.5) * (h / w));
-  return clamp(vf * RAD2DEG, 0.1, 179);
+  return clamp(vFovFromHfov(clamp(Number(hFovDeg || NEW_STICKER_HFOV), 0.1, 179), h / w), 0.1, 179);
 }
 
 // The editor moves, scales and turns Stickers in the v1 pose fields. These map them to the Lanes
@@ -328,20 +333,6 @@ export function cameraShot(camera, frame) {
   });
 }
 
-// Panorama Studio's Camera as Add Camera places it: where the Viewport camera `view` stands and
-// looks (pano_space.js), level, with a 90 degree hFOV and a 16:9 frame, and without Keyframes.
-export function newStudioCamera(view) {
-  return loadSceneState({
-    version: 2,
-    camera: {
-      aspect: 16 / 9,
-      position: { value: [...view.position] },
-      rotation: { value: { yaw_deg: wrapYaw(view.yaw_deg), pitch_deg: view.pitch_deg, roll_deg: 0 } },
-      fov: { value: 90 },
-    },
-  }).camera;
-}
-
 function nearestTurn(delta) {
   return delta - 360 * Math.round(delta / 360);
 }
@@ -360,28 +351,8 @@ export function setCameraShot(camera, frame, shot, base) {
   if (shot.position.some((value, axis) => value !== base.position[axis])) setLaneValue(camera, "position", frame, [...shot.position]);
 }
 
-// The Camera of state v2 at a Timeline frame, in the inspector's fields.
-export function cameraFields(camera, frame) {
-  const position = evaluateLane(camera, "position", frame);
-  const rotation = evaluateLane(camera, "rotation", frame);
-  return {
-    ...Object.fromEntries(POSITION_FIELDS.map((field, axis) => [field, position[axis]])),
-    yaw_deg: rotation.yaw_deg,
-    pitch_deg: rotation.pitch_deg,
-    roll_deg: rotation.roll_deg,
-    hFOV_deg: evaluateLane(camera, "fov", frame),
-  };
-}
-
-// The Camera's angle of view in the inspector's fields: its evaluated hFOV (under the limit of its κ), its aspect
-// (width ÷ height) and its lens curve κ (ADR 0042).
-export function cameraLensFields(camera, frame) {
-  const value = evaluateCamera(camera, frame);
-  return { hFOV_deg: value.hFOV_deg, aspect: camera.aspect, curve: value.curve };
-}
-
 // An inspector edit of the Camera's lens curve κ at a Timeline frame (docs/editor-interaction.md "レンズの行"): it
-// keeps the image's center scale of `start` (the cameraLensFields() where the edit began), so the hFOV follows, and
+// keeps the image's center scale of `start` ({ hFOV_deg, curve } where the edit began), so the hFOV follows, and
 // writes both the `curve` and the `fov` Lanes at the frame, each by its recording rule.
 export function setCameraCurveKeepingCenter(camera, frame, curve, start) {
   setLaneValue(camera, "curve", frame, curve);
@@ -417,19 +388,6 @@ export function setStickerOpacity(sticker, frame, opacity) {
 // The smallest scale the inspector sets on a world Sticker (its scale has no upper limit).
 export const WORLD_MIN_SCALE = 0.01;
 
-// A world Sticker at a Timeline frame, in the inspector's fields (opacity in percent).
-export function worldStickerFields(sticker, frame) {
-  const value = evaluateSticker(sticker, frame);
-  return {
-    ...Object.fromEntries(POSITION_FIELDS.map((field, axis) => [field, value.position[axis]])),
-    yaw_deg: value.yaw_deg,
-    pitch_deg: value.pitch_deg,
-    roll_deg: value.roll_deg,
-    scale: value.scale,
-    opacity: value.opacity * 100,
-  };
-}
-
 // An inspector edit of one world Sticker field at a Timeline frame, by the recording rule of its Lane.
 export function setWorldStickerField(sticker, frame, field, value) {
   const stickerFrame = clipFrame(sticker.clip, frame);
@@ -456,17 +414,7 @@ export function setWorldStickerTransform(sticker, frame, transform) {
   }
 }
 
-// Delete on the world Sticker `id` of a working state v2 removes it. The port Sticker follows the
-// `sticker` input, so it is hidden instead, as a sky one is.
-export function deleteWorldSticker(state, id) {
-  const sticker = state.stickers.find((item) => item.id === id && item.placement === "world");
-  if (!sticker) return;
-  if (sticker.source.kind === "port") sticker.visible = false;
-  else state.stickers = state.stickers.filter((item) => item !== sticker);
-}
-
-// A world Sticker over the whole Timeline at a World transform ({ position, rotation, scale }, as
-// pano_space.js newWorldStickerTransform gives it).
+// A world Sticker over the whole Timeline at a World transform ({ position, rotation, scale }).
 export function newWorldSceneSticker(id, source, transform) {
   return {
     id,
@@ -490,7 +438,6 @@ export function fileSource(asset) {
 
 // The v1 asset of a file Source, which the editor's image loading (mediaAssetSource) reads.
 export function sourceAsset(source) {
-  if (source.data_url) return { type: "dataurl", value: source.data_url };
   return { type: "comfy_image", filename: source.filename, subfolder: source.subfolder, storage: source.storage };
 }
 

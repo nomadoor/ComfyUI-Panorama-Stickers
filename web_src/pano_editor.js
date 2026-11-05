@@ -1,6 +1,6 @@
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
-import { createApp, reactive, shallowRef } from "vue";
+import { createApp, reactive } from "vue";
 import {
   attachCutoutPreview,
   attachPreviewNode,
@@ -9,30 +9,25 @@ import {
 } from "./pano_node_preview.js";
 import { createPanoInteractionController } from "./pano_interaction_controller.js";
 import { clamp, wrapYaw } from "./pano_math.js";
+import { VIEW_HFOV_MAX_DEG, VIEW_HFOV_MIN_DEG, VIEW_PITCH_LIMIT_DEG } from "./pano_camera_math.js";
 import { DEFAULT_BRUSH_PRESET_ID } from "./pano_brush_presets.js";
-import { createFrameBatch } from "./pano_frame_batch.js";
 import { DRAW_REASON, createFrameScheduler } from "./pano_frame_scheduler.js";
 import { createPaintEngineManager } from "./pano_paint_engine.js";
 import {
-  cameraShot,
   createEditorHistory,
-  editorActive,
+  LEGACY_BACKGROUND_COLOR,
   normalizeCoverageValue,
   parsePanoEditorState,
-  parseSceneEditorState,
 } from "./pano_editor_state.js";
-import { videoTimelineFps as resultVideoTimelineFps } from "./pano_video_fps.js";
 import { createEditorView } from "./pano_editor_view.js";
 import { DEFAULT_DISTANCE, DEFAULT_VIEW_HFOV } from "./pano_space.js";
 import { createTimers } from "./pano_timers.js";
-import { presetUsesButton } from "./pano_view_controls.js";
 import { createPanoCanvas, trackPanoCanvas, trackPanoVideo } from "./pano_diagnostics.js";
 import { installPanoSuiteStylesheet } from "./pano_styles.js";
 import PanoModal from "./components/PanoModal.vue";
 import { buildModalShellPreset } from "./modal_shell_presets.js";
-import { ICON } from "./icons.js";
+import { buildEditorUiState } from "./pano_editor_ui_state.js";
 import {
-  IMAGE_LOADING,
   isImageLoadFailed,
   markImageFailed,
   markImageLoading,
@@ -73,13 +68,10 @@ import { createPaintStrokes } from "./editor/paint_strokes.js";
 import { createExternalStickers } from "./editor/external_stickers.js";
 import { createSpace } from "./editor/space.js";
 import { createViewInput } from "./editor/view_input.js";
-import { createUpstream } from "./editor/upstream.js";
 import { createCameraPreview, getCutoutPreviewViewportSize, splatDrawReason } from "./editor/camera_preview.js";
 import { createOverlay } from "./editor/overlay.js";
 import { createRenderLoop } from "./editor/render_loop.js";
 import { createPanels } from "./editor/panels.js";
-import { createTimeline } from "./editor/timeline.js";
-import { createTimelineActions } from "./editor/timeline_actions.js";
 import { createCommit } from "./editor/commit.js";
 import { createCommands } from "./editor/commands.js";
 import { createStickerImport } from "./editor/sticker_import.js";
@@ -92,20 +84,16 @@ import { createPointerInput } from "./editor/pointer_input.js";
 import { createPointerView } from "./editor/pointer_view.js";
 import { createPointerFrame } from "./editor/pointer_frame.js";
 import { createPointerPaint } from "./editor/pointer_paint.js";
-import { createPointerWorld } from "./editor/pointer_world.js";
 import { createPointerMarquee } from "./editor/pointer_marquee.js";
 import { createPointerTransform } from "./editor/pointer_transform.js";
 import { createPointerMultiMove } from "./editor/pointer_multi_move.js";
 import { createSidePanelEvents } from "./editor/side_panel_events.js";
 import { createModalEvents } from "./editor/modal_events.js";
 import { createKeyboard } from "./editor/keyboard.js";
-import { editorSession, noteStudioEditorOpen, peekEditorSession, peekNodeSurface, stateSync } from "./pano_node_bridge.js";
+import { editorSession, peekEditorSession, peekNodeSurface, stateSync } from "./pano_node_bridge.js";
 import { createFile3dEditorFiles, file3dEditorFileOf } from "./pano_file_3d.js";
 import { mediaPlayheadRevisionToken } from "./pano_media_session.js";
 import { attachSceneViewerNode, redrawSceneViewers, touchSceneViewer } from "./pano_scene_viewer_node.js";
-import { openSceneViewerWindow } from "./pano_scene_viewer_window.js";
-
-const _paintLayerSyncRegistry = new Map();
 
 const comfyMedia = createComfyMediaAdapter({
   app,
@@ -118,9 +106,6 @@ const comfyMedia = createComfyMediaAdapter({
     markImageReady,
   },
 });
-
-// The Timeline fps a VIDEO input set in the node's current result (pano_video_fps.js), or null.
-const videoTimelineFps = (node) => resultVideoTimelineFps(node, comfyMedia);
 
 const mediaAssetSource = comfyMedia.assetSource;
 const mediaSource = comfyMedia.source;
@@ -164,37 +149,19 @@ async function showEditor(node, type, options = {}) {
     return parseOutputPresetValue(raw, fallback);
   };
 
-  // Panorama Studio edits state v2 itself (pano_editor_state.js); the legacy nodes edit v1. sceneV2 is
-  // the Stickers editor of state v2.
-  const stateV2 = node.__panoSceneStateV2 === true;
-  const sceneV2 = type === "stickers" && stateV2;
-  // Panorama Studio is the Stickers editor of state v2 with the Cutout's Camera, which the user adds
-  // and deletes. cameraV2 edits state v2's Camera through the Cutout's shot (cameraShot / setCameraShot);
-  // shotEditor has the shot and the Frame view, which have nothing to show while Studio has no Camera.
-  const studio = sceneV2 && node.__panoStudio === true;
-  const cameraV2 = studio;
-  const shotEditor = type === "cutout" || studio;
-  const state = (stateV2 ? parseSceneEditorState : parsePanoEditorState)(String(stateWidget?.value || ""), {
+  // The old editor opens the legacy nodes (state v1) and the Preview's read-only opening; Panorama Studio opens in the
+  // new UI (ADR 0062). shotEditor has the Cutout's shot and the Frame view.
+  const shotEditor = type === "cutout";
+  const state = parsePanoEditorState(String(stateWidget?.value || ""), {
     outputPreset: resolveEditorOutputPresetWidth(2048),
-    backgroundColor: String(bgWidget?.value || "#00ff00"),
+    backgroundColor: String(bgWidget?.value || LEGACY_BACKGROUND_COLOR),
     coverage: normalizeCoverageValue(coverageWidget?.value),
     sharedUiSettings: loadSharedUiSettings(),
-    active: editorActive(node),
-    fps: stateV2 ? videoTimelineFps(node) : null,
   });
   stateSync(node).liveState = state;
   stateSync(node).liveStateVersion = 0;
 
-  // Panorama Studio's Camera is the one shot of the editor, at the playhead (cameraShot), while it has one.
-  // initialShotBase is the shot the editor opens with (null without a Camera); cutoutShotBase then follows it.
-  let initialShotBase = null;
-  if (cameraV2) {
-    // A hidden camera does not shoot, so the editor opens without a shot.
-    initialShotBase = state.camera && state.camera.visible !== false ? cameraShot(state.camera, 0) : null;
-    state.shots = initialShotBase ? [{ ...initialShotBase, position: [...initialShotBase.position] }] : [];
-    // Panorama Studio opens with nothing selected, as the Stickers editor.
-    state.active.selected_shot_id = null;
-  } else if (type === "cutout") {
+  if (type === "cutout") {
     state.shots = Array.isArray(state.shots) ? state.shots.slice(0, 1) : [];
     if (!state.shots.length) {
       state.active.selected_shot_id = null;
@@ -210,127 +177,18 @@ async function showEditor(node, type, options = {}) {
   const initialCutoutPreviewSize = initialCutoutPreviewShot
     ? getCutoutPreviewViewportSize(initialCutoutPreviewShot, false)
     : { width: 220, height: 132 };
-  const shellPreset = buildModalShellPreset(studio ? "studio" : type);
-  const uiState = reactive({
-    stageStatus: IMAGE_LOADING,
-    stageStatusDetail: "boot",
-    stageWarningDetail: "",
-    // A note on the stage that is not a failure (its text), as Panorama Studio's upstream Scene gives it.
-    stageNotice: "",
-    viewButtons: (shellPreset.viewButtons || []).map((button) => ({ ...button, visible: true, disabled: false })),
-    // The space group of the bottom-right buttons (floatingRightState); none in the Cutout editor.
-    space: shellPreset.spaceButtons?.length
-      ? { visible: false, mode: "3dof", frameDisabled: true, modes: shellPreset.spaceButtons, frame: shellPreset.spaceFrameButton }
-      : null,
-    // Only the Stickers editor of state v2 places images in space.
-    toolButtons: (shellPreset.toolButtons || []).map((button) => ({
-      ...button,
-      disabled: false,
-      ...(button.key === "add-world" ? { visible: sceneV2 } : {}),
-    })),
-    floatingButtons: [
-      ...(shellPreset.floatingButtons || []).map((button) => ({ ...button, disabled: false })),
-      ...(previewMode ? [{ action: "toggle-fullscreen", label: "Fullscreen", tip: "Fullscreen", pressed: null, icon: ICON.fullscreen, disabled: false }] : []),
-    ],
-    frameRail: {
-      visible: false,
-      disabled: readOnly,
-      aspectOpen: false,
-      aspectIcon: ICON.aspect,
-      rotateIcon: ICON.rotate_90,
-      aspectChoices: [],
-      rollKnob: null,
-    },
-    frameRollKnob: {
-      visible: false,
-      disabled: readOnly,
-      rollDeg: 0,
-      displayValue: "0",
-      dragging: false,
-      armed: false,
-    },
-    fovValue: "100°",
-    outputPreviewToggle: {
-      visible: false,
-      icon: ICON.fullscreen,
-      label: "Expand Preview",
-      tip: "Expand preview",
-    },
-    paintDock: {
-      visible: false,
-      activePane: "",
-      showColorRow: true,
-      colorEnabled: true,
-      activeSwatchId: "green",
-      customColorActive: false,
-      customColorCss: colorToCss({ r: 0, g: 1, b: 0, a: 1 }, 1),
-      colorPopOpen: false,
-      pickerHueColor: colorToCss({ r: 1, g: 0, b: 0, a: 1 }, 1),
-      pickerSat: "100%",
-      pickerVal: "0%",
-      pickerHue: "0%",
-      pickerSvLeft: "100%",
-      pickerSvTop: "0%",
-      pickerHueLeft: "0%",
-      alphaValue: 100,
-      alphaText: "100%",
-      historyVisible: true,
-      historyEntries: Array.from({ length: 8 }, (_, index) => ({ index, color: null })),
-      sizeValue: 10,
-      sizeText: "10",
-      sizeFill: "7.56%",
-      sizeDisabled: false,
-      showSizeRow: true,
-      clearVisible: { paint: true, mask: true },
-      activeTools: { paint: "pen", mask: "pen" },
-    },
-    videoTransport: {
-      visible: false,
-      ready: false,
-      playing: false,
-      loop: true,
-      duration: 0,
-      currentTime: 0,
-      progressPct: 0,
-      currentTimeLabel: "0:00",
-      durationLabel: "0:00",
-      frameCount: 0,
-      fps: 24,
-      hasAudio: false,
-      muted: false,
-      volume: 1,
-      volumePct: 100,
-      thumbnails: [],
-      thumbnailCount: 9,
-      shellMaxWidthPx: 640,
-    },
-    sidePanel: {},
-    timeline: { visible: false },
-    easing: null,
-    selectionMenu: { visible: false, left: 0, top: 0, items: [] },
-    tooltip: { visible: false, text: "", left: 0, top: 0, variant: "" },
-    confirmDialog: { visible: false, title: "", text: "", confirmLabel: "Confirm", resolve: null },
-    cameraPreview: {
-      visible: type === "cutout",
-      ready: false,
-      settled: false,
-      expanded: false,
-      width: initialCutoutPreviewSize.width,
-      height: initialCutoutPreviewSize.height,
-      label: initialCutoutPreviewShot ? "Loading preview" : "Add Frame to preview",
-    },
-  });
-  // The playhead and whether it plays, apart from uiState: they change on every frame of playback, and
-  // only the Timeline's playhead, time and key buttons follow them (PanoTimeline.vue).
-  const timelinePlayhead = { frame: shallowRef(0), playing: shallowRef(false) };
+  const shellPreset = buildModalShellPreset(type);
+  const uiState = reactive(buildEditorUiState({
+    shellPreset,
+    readOnly,
+    previewMode,
+    type,
+    cutoutPreviewShot: initialCutoutPreviewShot,
+    cutoutPreviewSize: initialCutoutPreviewSize,
+  }));
   const mountHost = document.createElement("div");
   document.body.appendChild(mountHost);
   const onImageFileSelected = ({ intent, file } = {}) => {
-    // Add to World takes an image or a 3D file (addWorldStickerFromFile tells them apart).
-    if (intent === "add-world") {
-      void addWorldStickerFromFile(file);
-      return;
-    }
     if (!isStickerImageFile(file)) return;
     if (intent === "add") {
       void addImageStickerFromFile(file);
@@ -354,9 +212,7 @@ async function showEditor(node, type, options = {}) {
       cssColor: colorToCss(swatch.color, 1),
     })),
     uiState,
-    playhead: timelinePlayhead,
     onClose: () => { void closeEditor(); },
-    onTimeline: (action) => onTimelineAction(action),
     onImageFileSelected,
     onImageFileCancelled,
   });
@@ -401,12 +257,10 @@ async function showEditor(node, type, options = {}) {
   // canvas mounting, geometry measurement, low-level pointer wiring, and fullscreen integration.
   const side = root.querySelector("[data-side]");
   const videoEl = root.querySelector("[data-video-element]");
-  const portVideoEl = root.querySelector("[data-port-video-element]");
   // The stage and VIDEO elements of PanoModal.vue, counted by the diagnostics.
   trackPanoCanvas(canvas, "editor.stage-overlay");
   trackPanoCanvas(backgroundCanvas, "editor.stage-background");
   trackPanoVideo(videoEl, "editor.video");
-  trackPanoVideo(portVideoEl, "editor.port-video");
   const floatingRightEl = root.querySelector(".pano-floating-right");
   const floatingTopEl = root.querySelector(".pano-floating-top");
   const toolRailEl = root.querySelector("[data-tool-rail]");
@@ -433,8 +287,8 @@ async function showEditor(node, type, options = {}) {
     side?.remove();
     root.classList.add("pano-modal-readonly");
   }
-  // A pointer going down can start a drag (editor.interaction, timeline.drag), which editorAnimating()
-  // reads: the frames run while it lasts.
+  // A pointer going down can start a drag (editor.interaction), which editorAnimating() reads: the frames run
+  // while it lasts.
   root.addEventListener("pointerdown", () => scheduler.wake(), true);
   root.addEventListener("pointerdown", (ev) => {
     if (!ev.target.closest("[data-frame-roll-knob]")) hideTooltip();
@@ -463,15 +317,11 @@ async function showEditor(node, type, options = {}) {
     viewYaw: 0,
     viewPitch: 0,
     viewFov: DEFAULT_VIEW_HFOV,
-    // Panorama Studio with World content: where the Viewport camera stands (World glTF) and how far
-    // ahead its pivot is (pano_space.js). It starts at the World origin, where the ERP is taken from,
-    // or where the editor was last closed on this page (restoreView), and is not saved. Until it moves
-    // (viewMoved), its pivot is as far ahead as the content is large.
+    // The view's place for its transitions (pano_space_navigation.js) and the view kept for the node
+    // (pano_view_memory.js): this editor stands at the World origin in 3DoF and looks around.
     viewPosition: [0, 0, 0],
     viewDistance: DEFAULT_DISTANCE,
     viewMoved: false,
-    // "3dof" stands at the World origin and shows what the ERP shows; "6dof" moves through the World.
-    // The editor opens in 3DoF, or as it was last closed on this page (restoreView); it is not saved.
     spaceMode: "3dof",
     coverage: normalizeCoverageValue(state.coverage),
     historyController: createEditorHistory(state),
@@ -514,8 +364,6 @@ async function showEditor(node, type, options = {}) {
     frameRollOverlayTarget: 0,
     frameRollOverlayStartTs: 0,
     frameWheelCommitTimer: 0,
-    // The inspector's Lens curve edit in progress (editor/side_panel_events.js); an Undo step or a new selection ends it.
-    lensCurveEdit: null,
     frameWheelChanged: false,
     paintEngine: createPaintEngineManager(),
     paintEngineDescriptorKey: "",
@@ -529,27 +377,14 @@ async function showEditor(node, type, options = {}) {
     marqueeModifier: false,
     altModifier: false,
     panelLastValues: null,
-    // Panorama Studio: the id of the world Sticker selected in the space view or on its Timeline row.
-    // The canvas selection (selectedId) holds sky Stickers only; selecting one clears the other.
-    worldSelectedId: null,
-    // The mode of the selected world Sticker's gizmo: "translate", "rotate" or "scale".
-    gizmoMode: "translate",
-    // The gizmo handle under the pointer, or null.
-    gizmoAxis: null,
     panelWasEnabled: false,
     // The view moving to another over a short time (pano_view_transition.js), or null.
     viewTransition: null,
     fullscreen: false,
     fullscreenPrevShowGrid: null,
-    // The editor's current time, a Timeline frame. Panorama Studio shows and edits its state v2 here.
+    // The frame the state is drawn at (view_input.js): the legacy nodes have no Timeline.
     frame: 0,
   };
-  // The Timeline of Panorama Studio. expanded is null until the user toggles it, and the
-  // Timeline then opens only when something is timed. openRows holds the rows showing their Lanes.
-  // selection is { owner, lane, frames }: `lane` a Lane's name, or null for every Lane of the row,
-  // and the frames in the owner's own time base. drag holds what a Timeline drag started from, and
-  // scrubFrame where a scrub of the ruler seeks on the next frame.
-  const timeline = { expanded: null, openRows: new Set(), selection: null, drag: null, scrubFrame: 0 };
   if (type === "stickers") {
     editor.selectedId = null;
     state.active.selected_sticker_id = null;
@@ -560,9 +395,6 @@ async function showEditor(node, type, options = {}) {
   const rasterImageAlphaCache = new Map();
   const stillCanvas = createPanoCanvas({ label: "editor.still" });
   stillCanvas.__panoFrameIdx = 0;
-  // The still of the port Sticker's MP4 (Panorama Studio's `sticker` input).
-  const portStillCanvas = createPanoCanvas({ label: "editor.port-still" });
-  portStillCanvas.__panoFrameIdx = 0;
   const runtime = {
     // The next frame draws the stage (tickFrame); it waits while the layout settles, keeping the reasons
     // asked for since the last draw.
@@ -583,31 +415,12 @@ async function showEditor(node, type, options = {}) {
   };
   // Every frame of the editor goes through one scheduler (pano_frame_scheduler.js): the stage draws when
   // something asks for it, and keeps drawing only while something animates (editorAnimating). The
-  // playback and a drag's batched work take their frames from it too.
+  // playback takes its frames from it too.
   const scheduler = createFrameScheduler({
     requestAnimationFrame: (callback) => requestAnimationFrame(callback),
     cancelAnimationFrame: (id) => cancelAnimationFrame(id),
     draw: (ts, reasons) => tick(ts, reasons),
     animating: () => editorAnimating(),
-  });
-  // A drag's moves change the state at once; what follows from it (the Timeline, the view, the
-  // inspector, the playhead of a scrub) runs at most once per frame. The drag's end does the rest once.
-  const dragFrames = createFrameBatch({
-    requestFrame: (callback) => scheduler.requestFrame(callback),
-    cancelFrame: (id) => scheduler.cancelFrame(id),
-    tasks: {
-      seek: () => playback.seek(timeline.scrubFrame),
-      // A drag of the background's Clip range seeks its VIDEO to the time it puts at the playhead.
-      background: () => playback.seek(editor.frame),
-      timeline: () => syncTimeline(),
-      // The Stickers are evaluated at the playhead as the stage draws; the stroke geometry stays cached.
-      // A drag changes the state (Keyframes, Clip ranges), so what is drawn from it is made again.
-      view: () => {
-        syncCutoutShot();
-        requestDraw({ localOnly: true, reason: DRAW_REASON.STATE });
-      },
-      sidePanel: () => updateSidePanel(),
-    },
   });
   // The Stickers and Cutout editors and the read-only Preview modal draw with three.js. The Cutout
   // camera preview draws through the same view as its own owner.
@@ -653,8 +466,8 @@ async function showEditor(node, type, options = {}) {
     getView: () => ({ yaw: editor.viewYaw, pitch: editor.viewPitch, fov: editor.viewFov }),
     setView: (next) => {
       editor.viewYaw = wrapYaw(Number(next.yaw || 0));
-      editor.viewPitch = clamp(Number(next.pitch || 0), -89.9, 89.9);
-      editor.viewFov = clamp(Number(next.fov || editor.viewFov || DEFAULT_VIEW_HFOV), 35, 140);
+      editor.viewPitch = clamp(Number(next.pitch || 0), -VIEW_PITCH_LIMIT_DEG, VIEW_PITCH_LIMIT_DEG);
+      editor.viewFov = clamp(Number(next.fov || editor.viewFov || DEFAULT_VIEW_HFOV), VIEW_HFOV_MIN_DEG, VIEW_HFOV_MAX_DEG);
     },
     getViewportSize: () => {
       const rect = canvas.getBoundingClientRect();
@@ -675,48 +488,40 @@ async function showEditor(node, type, options = {}) {
   // Each module takes what it uses from here and calls the others through connect() (editor/modules.js);
   // showEditor takes back what it registers and calls below. A name missing on either side throws.
   const {
-    addImageStickerFromFile, addWorldStickerFromFile, applyInitialCutoutFocus, applyRunResult, bindDrag,
-    cancelGesture, closePaintColorPop, commitState, disposeMediaSession, disposeUpstream, editorAnimating,
-    endFrameKeyMove, finishKnobRoll, flushFrameWheelCommit, forgetCameraPreviewFrame, getUnwrapRect,
-    hidePaintSizePreview, hideTooltip, hoverWorldGizmo, isFreeFrameView, isFreeSpaceView, migrateLegacyEmbeddedAssets, onCanvasDragOver,
-    onCanvasDrop, onCanvasMouseMove, onCanvasPointerCancel, onCanvasPointerDown, onCanvasPointerMove,
-    onCanvasPointerUp, onCanvasWheel, onContextMenu, onDeleteKey, onEscClose, onFrameRollKnobDoubleClick,
-    onFrameRollKnobPointerDown, onFrameRollKnobPointerMove, onFullscreenChange, onModifierKeyChange, onMoveKeyDown,
-    onMoveKeyUp, onRootChange, onRootClick, onRootInput, onRootPointerOut, onRootPointerOver, onSidePanelChange,
-    onSidePanelClick, onSidePanelInput, onSpaceKey, onSpaceKeyUp, onTimelineAction, onUndoRedoKey,
-    onVisibilityChange, onWindowBlur, onWindowDragEnter, onWindowDragLeave, onWindowDragOver, onWindowDrop,
-    playback, pushHistory, reconcileExternalStickerFromInputs, refreshModalVideoSource,
-    replaceSelectedImageFromFile, requestDraw, restoreView, sampleEditorDiagnostics, saveView, setDropCue, settleCanvasConfirm,
-    setPointerPos, stageResizeObserver, stickerCornerOrderSanity, stopRenderLoop, syncCanvasSize, syncCutoutShot,
-    syncFullscreenButton, syncGridToggleButton, syncLookAtFrameButtonState, syncOutputPreviewToggleButton,
-    syncPaintUi, syncPaintingLayerAsync, syncTimeline, syncUndoRedoButtons, tick,
-    triggerBackgroundPersistenceOnClose, updateCursor, updatePaintColorFromHue, updatePaintColorFromSv,
-    updateSelectionMenu, updateSidePanel, viewControls, watchPixelRatio,
+    addImageStickerFromFile, applyInitialCutoutFocus, applyRunResult, bindDrag, cancelGesture, closePaintColorPop,
+    commitState, disposeMediaSession, editorAnimating, finishKnobRoll, flushFrameWheelCommit, forgetCameraPreviewFrame,
+    getUnwrapRect, hidePaintSizePreview, hideTooltip, onCanvasDragOver, onCanvasDrop,
+    onCanvasMouseMove, onCanvasPointerCancel, onCanvasPointerDown, onCanvasPointerMove, onCanvasPointerUp, onCanvasWheel,
+    onDeleteKey, onEscClose, onFrameRollKnobDoubleClick, onFrameRollKnobPointerDown, onFrameRollKnobPointerMove,
+    onFullscreenChange, onModifierKeyChange, onMoveKeyDown, onRootChange, onRootClick, onRootInput, onRootPointerOut,
+    onRootPointerOver, onSidePanelChange, onSidePanelClick, onSidePanelInput, onUndoRedoKey, onWindowBlur,
+    onWindowDragEnter, onWindowDragLeave, onWindowDragOver, onWindowDrop, pushHistory, reconcileExternalStickerFromInputs,
+    refreshModalVideoSource, replaceSelectedImageFromFile, requestDraw, restoreView, sampleEditorDiagnostics, saveView,
+    setDropCue, settleCanvasConfirm, setPointerPos, stageResizeObserver, stopRenderLoop, syncCanvasSize,
+    syncFullscreenButton, syncGridToggleButton, syncLookAtFrameButtonState, syncOutputPreviewToggleButton, syncPaintUi,
+    syncUndoRedoButtons, tick, triggerBackgroundPersistenceOnClose, updateCursor, updatePaintColorFromHue,
+    updatePaintColorFromSv, updateSelectionMenu, updateSidePanel, watchPixelRatio,
   } = createEditorModules({
-    api, app, backgroundCanvas, bgWidget, cameraV2, canvas, closeEditor, comfyMedia, coverageWidget, ctx,
-    cutoutPreviewCanvas, cutoutPreviewHost, dragCue, dragFrames, editor, editorView, floatingRightEl,
-    floatingTopEl, frameGateCssRadius, frameRailEl, frameRollKnobEl, hideSidebar, imageCache, initialShotBase,
+    api, app, backgroundCanvas, bgWidget, canvas, closeEditor, comfyMedia, coverageWidget, ctx,
+    cutoutPreviewCanvas, cutoutPreviewHost, dragCue, editor, editorView, floatingRightEl,
+    floatingTopEl, frameGateCssRadius, frameRailEl, frameRollKnobEl, hideSidebar, imageCache,
     loadPreferredExactLinkedImage, mediaAssetSource, mediaSource, mediaUiImage, node, overlay, paintColorPop,
     paintColorRow, paintColorSv, paintColorSvCursor, paintCursorEl, paintDockEl, paintHueHandle, paintHueStrip,
-    paintSizePreviewEl, paintSizePreviewSampleEl, portStillCanvas, portVideoEl, presetWidget, previewMode,
+    paintSizePreviewEl, paintSizePreviewSampleEl, presetWidget, previewMode,
     rasterImageAlphaCache, rasterImageCache, readOnly, resolveEditorOutputPresetWidth, root,
-    runtime, sceneV2, scheduler, selectionMenu, setCanvasCursor, shotEditor, stageWrap, state, stateV2,
-    stateWidget, stillCanvas, studio, timeline, timelinePlayhead, timers, toolRailEl, tooltip, tooltipEl, type, uiState,
-    videoEl, videoTimelineFps, videoTransportEl, viewController, vueModal,
+    runtime, scheduler, selectionMenu, setCanvasCursor, shotEditor, stageWrap, state,
+    stateWidget, stillCanvas, timers, toolRailEl, tooltip, tooltipEl, type, uiState,
+    videoEl, videoTransportEl, viewController, vueModal,
   }, [
     createMediaSession, createHistory, createItems, createSelection, createProjection, createObjectGeometry,
-    createPaintLayers, createPaintStrokes, createExternalStickers, createSpace, createViewInput, createUpstream,
-    createCameraPreview, createOverlay, createRenderLoop, createPanels, createTimeline, createTimelineActions,
+    createPaintLayers, createPaintStrokes, createExternalStickers, createSpace, createViewInput,
+    createCameraPreview, createOverlay, createRenderLoop, createPanels,
     createCommit, createCommands, createStickerImport, createCamera, createFrameView, createPaintInput,
     createHitTest, createSelectionMenu, createPointerInput, createPointerView, createPointerFrame,
-    createPointerPaint, createPointerWorld, createPointerMarquee, createPointerTransform, createPointerMultiMove,
+    createPointerPaint, createPointerMarquee, createPointerTransform, createPointerMultiMove,
     createSidePanelEvents, createModalEvents, createKeyboard,
   ]);
   // --- editor modules: end ---
-
-  // Coordinate sanity: front-facing sticker should have top edge above bottom edge.
-  const __sanity = stickerCornerOrderSanity();
-  void __sanity;
 
   stageResizeObserver.observe(canvas);
   watchPixelRatio();
@@ -724,112 +529,132 @@ async function showEditor(node, type, options = {}) {
   const flushStateBeforeQueue = () => commitState();
   if (!readOnly) editorSession(node).flushBeforeQueue = flushStateBeforeQueue;
 
-  frameRollKnobEl?.addEventListener("pointerdown", onFrameRollKnobPointerDown);
-  frameRollKnobEl?.addEventListener("pointermove", onFrameRollKnobPointerMove);
-  frameRollKnobEl?.addEventListener("pointerup", finishKnobRoll);
-  frameRollKnobEl?.addEventListener("pointercancel", () => {
-    if (editor.interaction?.source === "knob") cancelGesture();
-  });
-  frameRollKnobEl?.addEventListener("lostpointercapture", () => {
-    if (editor.interaction?.source === "knob") cancelGesture();
-  });
-  frameRollKnobEl?.addEventListener("dblclick", onFrameRollKnobDoubleClick);
+  // The editor's DOM listeners, registered in one place. It returns what closeEditor calls to take back those on
+  // document (fullscreen) and on window, each at its own step of the close; the others go with the modal's DOM.
+  function bindEditorDom() {
+    frameRollKnobEl?.addEventListener("pointerdown", onFrameRollKnobPointerDown);
+    frameRollKnobEl?.addEventListener("pointermove", onFrameRollKnobPointerMove);
+    frameRollKnobEl?.addEventListener("pointerup", finishKnobRoll);
+    frameRollKnobEl?.addEventListener("pointercancel", () => {
+      if (editor.interaction?.source === "knob") cancelGesture();
+    });
+    frameRollKnobEl?.addEventListener("lostpointercapture", () => {
+      if (editor.interaction?.source === "knob") cancelGesture();
+    });
+    frameRollKnobEl?.addEventListener("dblclick", onFrameRollKnobDoubleClick);
 
-  canvas.onpointerdown = onCanvasPointerDown;
+    canvas.onpointerdown = onCanvasPointerDown;
 
-  canvas.onpointermove = onCanvasPointerMove;
+    canvas.onpointermove = onCanvasPointerMove;
 
-  canvas.onpointerup = onCanvasPointerUp;
+    canvas.onpointerup = onCanvasPointerUp;
 
-  canvas.onpointercancel = onCanvasPointerCancel;
-  // A gesture whose pointer lost the capture without a pointerup is cancelled; after a pointerup none is
-  // under way.
-  canvas.onlostpointercapture = onCanvasPointerCancel;
+    canvas.onpointercancel = onCanvasPointerCancel;
+    // A gesture whose pointer lost the capture without a pointerup is cancelled; after a pointerup none is
+    // under way.
+    canvas.onlostpointercapture = onCanvasPointerCancel;
 
-  canvas.onauxclick = (e) => {
-    if (e.button === 1) e.preventDefault();
-  };
-  // A right drag of the 3D view controls opens no context menu. The canvas has no right-click action
-  // of its own.
-  canvas.oncontextmenu = (e) => {
-    if ((isFreeSpaceView() || isFreeFrameView()) && presetUsesButton(viewControls(), 2)) e.preventDefault();
-  };
+    canvas.onauxclick = (e) => {
+      if (e.button === 1) e.preventDefault();
+    };
+    canvas.onmousemove = onCanvasMouseMove;
 
-  canvas.onmousemove = onCanvasMouseMove;
+    canvas.onmouseleave = () => {
+      setPointerPos(editor.pointerPos, false);
+      updateCursor(editor.pointerPos);
+      if (editor.mode === "frame" && editor.primaryTool === "cursor") requestDraw({ localOnly: true, reason: DRAW_REASON.OVERLAY });
+    };
 
-  // Off the view no gizmo handle is under the pointer.
-  canvas.onpointerleave = () => {
-    if (!editor.interaction) hoverWorldGizmo({ x: -1e6, y: -1e6 });
-  };
+    canvas.onwheel = onCanvasWheel;
 
-  canvas.onmouseleave = () => {
-    setPointerPos(editor.pointerPos, false);
-    updateCursor(editor.pointerPos);
-    if (editor.mode === "frame" && editor.primaryTool === "cursor") requestDraw({ localOnly: true, reason: DRAW_REASON.OVERLAY });
-  };
+    canvas.ondragover = onCanvasDragOver;
 
-  canvas.onwheel = onCanvasWheel;
+    canvas.ondrop = onCanvasDrop;
 
-  canvas.ondragover = onCanvasDragOver;
+    window.addEventListener("dragenter", onWindowDragEnter, true);
+    window.addEventListener("dragover", onWindowDragOver, true);
+    window.addEventListener("dragleave", onWindowDragLeave, true);
+    window.addEventListener("drop", onWindowDrop, true);
 
-  canvas.ondrop = onCanvasDrop;
-
-  window.addEventListener("dragenter", onWindowDragEnter, true);
-  window.addEventListener("dragover", onWindowDragOver, true);
-  window.addEventListener("dragleave", onWindowDragLeave, true);
-  window.addEventListener("drop", onWindowDrop, true);
-
-  side?.addEventListener("click", onSidePanelClick);
-  side?.addEventListener("input", onSidePanelInput);
-  side?.addEventListener("change", onSidePanelChange);
+    side?.addEventListener("click", onSidePanelClick);
+    side?.addEventListener("input", onSidePanelInput);
+    side?.addEventListener("change", onSidePanelChange);
+    root.addEventListener("click", onRootClick);
+    root.addEventListener("input", onRootInput);
+    root.addEventListener("change", onRootChange);
+    root.addEventListener("pointerup", (ev) => {
+      if (ev.target.closest("[data-video-volume]")) {
+        if (typeof ev.target?.blur === "function") ev.target.blur();
+        return;
+      }
+      if (ev.target.closest("[data-paint-size-slider]")) hidePaintSizePreview();
+    });
+    root.addEventListener("pointercancel", (ev) => {
+      if (ev.target.closest("[data-video-volume]")) {
+        if (typeof ev.target?.blur === "function") ev.target.blur();
+        return;
+      }
+      if (ev.target.closest("[data-paint-size-slider]")) hidePaintSizePreview();
+    });
+    root.addEventListener("focusout", (ev) => {
+      if (ev.target.closest("[data-paint-size-slider]")) hidePaintSizePreview();
+    });
+    root.addEventListener("pointerover", onRootPointerOver);
+    root.addEventListener("pointerout", onRootPointerOut);
+    if (paintColorSv) {
+      paintColorSv.onpointerdown = (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        bindDrag(ev, (moveEvent) => updatePaintColorFromSv(moveEvent.clientX, moveEvent.clientY));
+      };
+    }
+    if (paintHueStrip) {
+      paintHueStrip.onpointerdown = (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        bindDrag(ev, (moveEvent) => updatePaintColorFromHue(moveEvent.clientX));
+      };
+    }
+    root.addEventListener("click", (ev) => {
+      const target = ev.target.closest("[data-action='confirm-cancel'], [data-action='confirm-accept']");
+      if (!target) return;
+      settleCanvasConfirm(target.getAttribute("data-action") === "confirm-accept");
+    });
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    window.addEventListener("keydown", onEscClose, true);
+    window.addEventListener("keydown", onDeleteKey, true);
+    window.addEventListener("keydown", onMoveKeyDown, true);
+    window.addEventListener("keydown", onModifierKeyChange, true);
+    window.addEventListener("keyup", onModifierKeyChange, true);
+    window.addEventListener("blur", onWindowBlur);
+    window.addEventListener("keydown", onUndoRedoKey, true);
+    overlay.addEventListener("pointerdown", (ev) => {
+      if (ev.target === overlay) void closeEditor();
+    });
+    return {
+      unbindDocument: () => {
+        document.removeEventListener("fullscreenchange", onFullscreenChange);
+      },
+      unbindWindow: () => {
+        window.removeEventListener("keydown", onEscClose, true);
+        window.removeEventListener("keydown", onDeleteKey, true);
+        window.removeEventListener("keydown", onMoveKeyDown, true);
+        window.removeEventListener("keydown", onModifierKeyChange, true);
+        window.removeEventListener("keyup", onModifierKeyChange, true);
+        window.removeEventListener("blur", onWindowBlur);
+        window.removeEventListener("keydown", onUndoRedoKey, true);
+        window.removeEventListener("dragenter", onWindowDragEnter, true);
+        window.removeEventListener("dragover", onWindowDragOver, true);
+        window.removeEventListener("dragleave", onWindowDragLeave, true);
+        window.removeEventListener("drop", onWindowDrop, true);
+      },
+    };
+  }
+  const editorDom = bindEditorDom();
   syncGridToggleButton();
-  root.addEventListener("click", onRootClick);
-  root.addEventListener("input", onRootInput);
-  root.addEventListener("change", onRootChange);
-  root.addEventListener("pointerup", (ev) => {
-    if (ev.target.closest("[data-video-volume]")) {
-      if (typeof ev.target?.blur === "function") ev.target.blur();
-      return;
-    }
-    if (ev.target.closest("[data-paint-size-slider]")) hidePaintSizePreview();
-  });
-  root.addEventListener("pointercancel", (ev) => {
-    if (ev.target.closest("[data-video-volume]")) {
-      if (typeof ev.target?.blur === "function") ev.target.blur();
-      return;
-    }
-    if (ev.target.closest("[data-paint-size-slider]")) hidePaintSizePreview();
-  });
-  root.addEventListener("focusout", (ev) => {
-    if (ev.target.closest("[data-paint-size-slider]")) hidePaintSizePreview();
-  });
-  root.addEventListener("pointerover", onRootPointerOver);
-  root.addEventListener("pointerout", onRootPointerOut);
-  root.addEventListener("pointerdown", (event) => {
-    if (!event.target.closest("[data-frame-roll-knob]")) hideTooltip();
-  });
-  if (paintColorSv) {
-    paintColorSv.onpointerdown = (ev) => {
-      ev.preventDefault();
-      ev.stopPropagation();
-      bindDrag(ev, (moveEvent) => updatePaintColorFromSv(moveEvent.clientX, moveEvent.clientY));
-    };
-  }
-  if (paintHueStrip) {
-    paintHueStrip.onpointerdown = (ev) => {
-      ev.preventDefault();
-      ev.stopPropagation();
-      bindDrag(ev, (moveEvent) => updatePaintColorFromHue(moveEvent.clientX));
-    };
-  }
-  root.addEventListener("click", (ev) => {
-    const target = ev.target.closest("[data-action='confirm-cancel'], [data-action='confirm-accept']");
-    if (!target) return;
-    settleCanvasConfirm(target.getAttribute("data-action") === "confirm-accept");
-  });
-  document.addEventListener("fullscreenchange", onFullscreenChange);
   syncFullscreenButton();
   syncOutputPreviewToggleButton();
+
   const modalPrevOnConnectionsChange = node.onConnectionsChange;
   let modalOnConnectionsChange = null;
   let unregisterModalExternalStickerSync = () => {};
@@ -852,9 +677,6 @@ async function showEditor(node, type, options = {}) {
     };
     node.onConnectionsChange = modalOnConnectionsChange;
   }
-  if (!readOnly) {
-    _paintLayerSyncRegistry.set(String(node.id ?? "0"), () => syncPaintingLayerAsync());
-  }
 
   let closeEditorPromise = null;
   async function closeEditor() {
@@ -862,55 +684,37 @@ async function showEditor(node, type, options = {}) {
     closeEditorPromise = (async () => {
       const session = peekEditorSession(node);
       if (session) session.open = false;
-      noteStudioEditorOpen(node, false);
-      redrawSceneViewers();
-      _paintLayerSyncRegistry.delete(String(node.id ?? "0"));
       flushFrameWheelCommit();
-      endFrameKeyMove();
       if (!readOnly) commitState();
       saveView();
       if (document.fullscreenElement === overlay) {
         document.exitFullscreen?.().catch(() => { });
       }
-      document.removeEventListener("fullscreenchange", onFullscreenChange);
+      editorDom.unbindDocument();
       stateSync(node).liveState = null;
       if (session?.flushBeforeQueue === flushStateBeforeQueue) session.flushBeforeQueue = null;
       peekNodeSurface(node)?.dom?.requestDraw?.();
       node.graph?.setDirtyCanvas?.(true, true);
       app?.canvas?.setDirty?.(true, true);
       hideTooltip();
-      dragFrames.cancel();
       stopRenderLoop();
       timers.clearAll();
       // A confirm dialog left open answers Cancel.
       settleCanvasConfirm(false);
       disposeMediaSession();
-      disposeUpstream();
       editorView.dispose();
       setDropCue(false);
-      window.removeEventListener("keydown", onEscClose, true);
-      window.removeEventListener("keydown", onDeleteKey, true);
-      window.removeEventListener("keydown", onSpaceKey, true);
-      window.removeEventListener("keyup", onSpaceKeyUp, true);
-      window.removeEventListener("keydown", onMoveKeyDown, true);
-      window.removeEventListener("keyup", onMoveKeyUp, true);
-      document.removeEventListener("visibilitychange", onVisibilityChange);
-      window.removeEventListener("contextmenu", onContextMenu, true);
-      window.removeEventListener("keydown", onModifierKeyChange, true);
-      window.removeEventListener("keyup", onModifierKeyChange, true);
-      window.removeEventListener("blur", onWindowBlur);
-      window.removeEventListener("keydown", onUndoRedoKey, true);
-      window.removeEventListener("dragenter", onWindowDragEnter, true);
-      window.removeEventListener("dragover", onWindowDragOver, true);
-      window.removeEventListener("dragleave", onWindowDragLeave, true);
-      window.removeEventListener("drop", onWindowDrop, true);
+      editorDom.unbindWindow();
       if (!readOnly && type === "stickers") {
         if (node.onConnectionsChange === modalOnConnectionsChange) node.onConnectionsChange = modalPrevOnConnectionsChange;
         unregisterModalExternalStickerSync();
       }
       vueApp.unmount();
       mountHost.remove();
-      triggerBackgroundPersistenceOnClose();
+      // The paint engine lets go of its canvases once the paint layer upload, which reads them, is done.
+      const uploading = triggerBackgroundPersistenceOnClose();
+      const engine = editor.paintEngine;
+      Promise.resolve(uploading).finally(() => engine?.dispose());
       closeEditorPromise = null;
       return true;
     })().catch((error) => {
@@ -920,21 +724,6 @@ async function showEditor(node, type, options = {}) {
     });
     return closeEditorPromise;
   }
-  window.addEventListener("keydown", onEscClose, true);
-  window.addEventListener("keydown", onDeleteKey, true);
-  window.addEventListener("keydown", onSpaceKey, true);
-  window.addEventListener("keyup", onSpaceKeyUp, true);
-  window.addEventListener("keydown", onMoveKeyDown, true);
-  window.addEventListener("keyup", onMoveKeyUp, true);
-  document.addEventListener("visibilitychange", onVisibilityChange);
-  window.addEventListener("contextmenu", onContextMenu, true);
-  window.addEventListener("keydown", onModifierKeyChange, true);
-  window.addEventListener("keyup", onModifierKeyChange, true);
-  window.addEventListener("blur", onWindowBlur);
-  window.addEventListener("keydown", onUndoRedoKey, true);
-  overlay.addEventListener("pointerdown", (ev) => {
-    if (ev.target === overlay) void closeEditor();
-  });
 
   function runBootStep(label, fn, { rollbackState = false } = {}) {
     let snapshot = "";
@@ -962,11 +751,7 @@ async function showEditor(node, type, options = {}) {
   if (!readOnly && type === "stickers") {
     runBootStep("external-sticker-sync", () => reconcileExternalStickerFromInputs("open"), { rollbackState: true });
   }
-  void migrateLegacyEmbeddedAssets().catch((error) => {
-    uiState.stageWarningDetail = "boot:asset-migration";
-    console.error('[PanoramaStickers] editor boot step "asset-migration" failed', error);
-  });
-  runBootStep("history", () => pushHistory({ initial: true }));
+  runBootStep("history", () => pushHistory());
   runBootStep("undo-redo", syncUndoRedoButtons);
   runBootStep("paint-ui", syncPaintUi);
   runBootStep("side-panel", updateSidePanel);
@@ -978,8 +763,6 @@ async function showEditor(node, type, options = {}) {
   editorSession(node).open = true;
   peekNodeSurface(node)?.dom?.requestDraw?.();
   requestDraw();
-  // The Preview's Scene viewers on the graph do not draw while a Studio editor is open (docs/preview-node.md).
-  if (node.__panoStudio === true) noteStudioEditorOpen(node, true);
   sampleEditorDiagnostics();
 }
 
@@ -996,10 +779,9 @@ const sceneViewerMedia = {
   editorFile: (sticker) => file3dEditorFileOf(sceneViewerFiles, sticker, mediaSource),
   refreshFile: (source) => sceneViewerFiles.refresh(source),
 };
-// The new UI's window may take the opening (web_src/main.js sets it, ADR 0044): a function that returns true when it
-// opened its own window for `node`; otherwise this old window opens.
-let sceneViewerTakeover = () => false;
-const openSceneViewer = (node) => (sceneViewerTakeover(node) ? null : openSceneViewerWindow(node, sceneViewerMedia));
+// The window is the new UI's Preview window (web_src/main.js sets the opener, ADR 0044 "新旧の境", ADR 0062).
+let sceneViewerOpener = () => null;
+const openSceneViewer = (node) => sceneViewerOpener(node);
 
 // What the old UI gives the node registration (createPanoEditorExtension). web_src/main.js registers it and
 // decides which editor opens (ADR 0044).
@@ -1010,8 +792,8 @@ export const oldEditorHooks = Object.freeze({
   attachPreview: attachPreviewNode,
   attachSceneViewer: (node) => attachSceneViewerNode(node, { ...sceneViewerMedia, openViewer: openSceneViewer }),
   openSceneViewer,
-  takeSceneViewer: (takeover) => {
-    sceneViewerTakeover = typeof takeover === "function" ? takeover : () => false;
+  setSceneViewerOpener: (open) => {
+    sceneViewerOpener = typeof open === "function" ? open : () => null;
   },
   onSceneViewerExecuted: touchSceneViewer,
   restoreOutput: restoreNodeOutput,

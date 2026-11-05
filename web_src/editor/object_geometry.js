@@ -11,15 +11,15 @@ const OUTLINE_SAMPLES = 24;
 
 export function createObjectGeometry(deps) {
   const {
-    cameraV2, canvas, editor, state,
+    canvas, editor, state,
   } = deps;
   // Bound by connect() to the other modules and showEditor.
   let currentViewProjection, cutoutStickers, ensureGroupFrame, getActiveCutoutShot, getBrushPresetIdForTool,
     getFrameCornersUv, getFrameViewRect, getRasterObjectCenterUv, getRasterObjectGeomCacheKey,
     getRasterObjectTransformedErpPoints, getSceneItemGeomCacheKey, getStickerFrame, getStrokeGeomCacheKey,
-    getStrokeGroupCenterUv, getStrokeGroupStrokes, isFreeSpaceView, isRasterObjectItem, isSceneSticker,
+    getStrokeGroupCenterUv, getStrokeGroupStrokes, isRasterObjectItem,
     isShotItem, isStickerItem, isStrokeGroupItem, paintingShown, poseOf, projectDir, projectDirUnwrap,
-    projectEditorPoints, projectErpPointToEditor, sceneStickerShown, stickerCornersDir, stickerDirFromFrame,
+    projectEditorPoints, projectErpPointToEditor, stickerCornersDir, stickerDirFromFrame,
     stickerSampleDir, worldDirToFrameLocalPoint;
 
   function buildStrokeGroupGeom(item, cacheKey) {
@@ -126,7 +126,6 @@ export function createObjectGeometry(deps) {
   }
 
   function projectSceneItemDir(dir, refX = null, frameShot = null, frameRect = null, options = {}) {
-    // A lens image's point past 180° off its axis has no direction (ADR 0042).
     if (!dir) return null;
     if (editor.mode === "frame") {
       const shot = frameShot || getActiveCutoutShot();
@@ -166,7 +165,6 @@ export function createObjectGeometry(deps) {
   }
 
   function buildSceneItemGeom(item) {
-    if (isSceneSticker(item) && !sceneStickerShown(item)) return { visible: false };
     const pose = poseOf(item);
     const centerDir = yawPitchToDir(Number(pose.yaw_deg || 0), Number(pose.pitch_deg || 0));
     const frameShot = editor.mode === "frame" ? getActiveCutoutShot() : null;
@@ -183,8 +181,8 @@ export function createObjectGeometry(deps) {
       .map((d) => projectSceneItemDir(d, center.x, frameShot, frameRect, projectOptions))
       .filter((p) => Number.isFinite(p?.x) && Number.isFinite(p?.y));
     if (corners.length < 4) return { visible: false };
-    // The outline is the image's true edge: each edge of the film sampled through the item's lens and the view's
-    // projection, so it bends wherever the two differ (a lens curve κ ≠ 1, the Unwrap view). The corners, the
+    // The outline is the image's true edge: each edge of the film sampled through the view's projection, so it bends
+    // wherever that is not the item's pinhole (the Unwrap view). The corners, the
     // edge midpoints and their marks lie on it.
     const outline = [];
     for (const [fromX, fromY, toX, toY] of [[-1, 1, 1, 1], [1, 1, 1, -1], [1, -1, -1, -1], [-1, -1, -1, 1]]) {
@@ -268,8 +266,6 @@ export function createObjectGeometry(deps) {
   }
 
   function objectGeom(item) {
-    // In 6DoF Panorama Studio's Camera is its frustum in space, picked and moved with the gizmo.
-    if (cameraV2 && isShotItem(item) && isFreeSpaceView()) return { visible: false };
     if (!paintingShown() && (isStrokeGroupItem(item) || isRasterObjectItem(item))) return { visible: false };
     if (isStrokeGroupItem(item)) {
       const actionGroupId = String(item.actionGroupId || item.id || "").trim();
@@ -333,9 +329,9 @@ export function createObjectGeometry(deps) {
         currentViewProjection, cutoutStickers, ensureGroupFrame, getActiveCutoutShot, getBrushPresetIdForTool,
         getFrameCornersUv, getFrameViewRect, getRasterObjectCenterUv, getRasterObjectGeomCacheKey,
         getRasterObjectTransformedErpPoints, getSceneItemGeomCacheKey, getStickerFrame, getStrokeGeomCacheKey,
-        getStrokeGroupCenterUv, getStrokeGroupStrokes, isFreeSpaceView, isRasterObjectItem, isSceneSticker,
+        getStrokeGroupCenterUv, getStrokeGroupStrokes, isRasterObjectItem,
         isShotItem, isStickerItem, isStrokeGroupItem, paintingShown, poseOf, projectDir, projectDirUnwrap,
-        projectEditorPoints, projectErpPointToEditor, sceneStickerShown, stickerCornersDir, stickerDirFromFrame,
+        projectEditorPoints, projectErpPointToEditor, stickerCornersDir, stickerDirFromFrame,
         stickerSampleDir, worldDirToFrameLocalPoint,
       } = api);
     },

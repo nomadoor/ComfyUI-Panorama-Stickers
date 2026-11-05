@@ -1,15 +1,14 @@
 from __future__ import annotations
 
-from pathlib import Path
 import time
 
 import numpy as np
 
 from .cutout import sample_cutout_from_sampling_map
 from .display_list import alpha_composite_over_rgba, build_display_entries
-from .math import unit_float
-from .painting import alpha_composite_over_rgb, render_painting_to_erp
-from .stickers import compose_single_sticker_to_canvas_erp, render_stickers_to_rgba_erp
+from .math import unit_float, unpremultiply
+from .painting import render_painting_to_erp
+from .stickers import render_stickers_to_rgba_erp
 
 
 def render_group_layer_from_state(
@@ -91,23 +90,6 @@ def build_remaining_flat_painting_state(painting: dict | None) -> dict | None:
     }
 
 
-def build_visual_paint_only_state(painting: dict | None) -> dict | None:
-    if not isinstance(painting, dict):
-        return None
-    paint_layer = painting.get("paint") if isinstance(painting.get("paint"), dict) else {}
-    paint_strokes = paint_layer.get("strokes") if isinstance(paint_layer.get("strokes"), list) else []
-    raster_objects = painting.get("raster_objects") if isinstance(painting.get("raster_objects"), list) else []
-    groups = painting.get("groups") if isinstance(painting.get("groups"), list) else []
-    if not paint_strokes and not raster_objects:
-        return None
-    return {
-        "paint": {"strokes": [stroke for stroke in paint_strokes if isinstance(stroke, dict)]},
-        "mask": {"strokes": []},
-        "groups": [group for group in groups if isinstance(group, dict)],
-        "raster_objects": [item for item in raster_objects if isinstance(item, dict)],
-    }
-
-
 def render_remaining_flat_paint_layer_from_state(
     painting: dict | None,
     width: int,
@@ -120,83 +102,12 @@ def render_remaining_flat_paint_layer_from_state(
     return layer
 
 
-def compose_display_list_to_erp(
-    state: dict,
-    base_rgb: np.ndarray,
-    *,
-    painting_payload: dict | None = None,
-    base_dir: Path | None = None,
-    quality: str = "export",
-) -> tuple[np.ndarray, bool, dict]:
-    canvas = np.clip(base_rgb.astype(np.float32), 0.0, 1.0)
-    payload = painting_payload if isinstance(painting_payload, dict) else None
-    group_layers = payload.get("groups", {}) if payload else {}
-    used_paint_entries = False
-    allow_backend_paint_fallback = bool(payload and (
-        payload.get("paint") is not None
-        or payload.get("mask") is not None
-        or group_layers
-    ))
-    assets = state.get("assets") if isinstance(state.get("assets"), dict) else {}
-    coverage = state.get("coverage", 360)
-    stats = {
-        "entries": 0,
-        "stickers": 0,
-        "stroke_groups": 0,
-        "rasters": 0,
-        "sticker_ms": 0.0,
-        "stroke_group_ms": 0.0,
-        "raster_ms": 0.0,
-    }
-    for entry in build_display_entries(state):
-        stats["entries"] += 1
-        entry_type = str(entry.get("type") or "")
-        if entry_type == "sticker":
-            item_start = time.perf_counter()
-            compose_single_sticker_to_canvas_erp(
-                canvas,
-                entry.get("item"),
-                assets,
-                base_dir=base_dir,
-                quality=quality,
-                coverage=coverage,
-            )
-            stats["stickers"] += 1
-            stats["sticker_ms"] += (time.perf_counter() - item_start) * 1000.0
-            continue
-        if not allow_backend_paint_fallback:
-            continue
-        layer = None
-        if entry_type == "strokeGroup":
-            item_start = time.perf_counter()
-            action_group_id = str(entry.get("actionGroupId") or "").strip()
-            layer = group_layers.get(action_group_id)
-            layer = None if layer is None else unit_float(layer)
-            stats["stroke_groups"] += 1
-            stats["stroke_group_ms"] += (time.perf_counter() - item_start) * 1000.0
-        elif entry_type == "rasterObject":
-            item_start = time.perf_counter()
-            layer = render_raster_layer_from_state(
-                entry.get("item"),
-                int(canvas.shape[1]),
-                int(canvas.shape[0]),
-            )
-            stats["rasters"] += 1
-            stats["raster_ms"] += (time.perf_counter() - item_start) * 1000.0
-        if layer is None:
-            continue
-        canvas = alpha_composite_over_rgb(canvas, layer)
-        used_paint_entries = True
-    return canvas, used_paint_entries, stats
-
-
 def compose_display_list_to_overlay_rgba(
     state: dict,
     width: int,
     height: int,
     *,
     painting_payload: dict | None = None,
-    base_dir: Path | None = None,
     quality: str = "export",
 ) -> tuple[np.ndarray, bool, dict]:
     canvas = np.zeros((height, width, 4), dtype=np.float32)
@@ -227,7 +138,6 @@ def compose_display_list_to_overlay_rgba(
                 sticker_state,
                 width,
                 height,
-                base_dir=base_dir,
                 quality=quality,
                 stickers_override=[entry.get("item")],
                 coverage_override=360,
@@ -269,28 +179,8 @@ def sample_overlay_rgba_from_sampling_map(
     premultiplied = source[..., :3] * alpha[..., None]
     warped_premultiplied = sample_cutout_from_sampling_map(premultiplied, sampling_map)
     warped_alpha = sample_cutout_from_sampling_map(alpha, sampling_map)
-    safe_alpha = np.maximum(warped_alpha[..., None], 1e-6)
-    warped_rgb = np.where(
-        warped_alpha[..., None] > 1e-6,
-        warped_premultiplied / safe_alpha,
-        0.0,
-    )
+    warped_rgb = unpremultiply(warped_premultiplied, warped_alpha[..., None])
     return np.dstack([
         np.clip(warped_rgb, 0.0, 1.0),
         np.clip(warped_alpha, 0.0, 1.0),
     ]).astype(np.float32)
-
-
-def should_use_uploaded_group_layers(state: dict, painting_payload: dict | None) -> bool:
-    if not isinstance(painting_payload, dict):
-        return False
-    groups = painting_payload.get("groups")
-    if not isinstance(groups, dict) or not groups:
-        return False
-    painting = state.get("painting") if isinstance(state.get("painting"), dict) else {}
-    raster_objects = painting.get("raster_objects")
-    if isinstance(raster_objects, list) and raster_objects:
-        return False
-    state_groups = painting.get("groups")
-    expected = len(state_groups) if isinstance(state_groups, list) else 0
-    return expected > 0 and len(groups) >= expected

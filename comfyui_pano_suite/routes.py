@@ -11,8 +11,9 @@ import logging
 from aiohttp import web
 
 from .core.scene_state import is_3d_file_source, normalize_source
+from .file_3d import FILE_NOT_FOUND, NEITHER_3D_READER, _file_3d_error, _read_file_3d
+from .media_ui import _scene_ui
 from .sticker_media import content_box
-from .nodes import FILE_NOT_FOUND, NEITHER_3D_READER, _file_3d_error, _read_file_3d, _scene_ui
 
 FILE_3D_ROUTE = "/panorama_suite/file_3d"
 

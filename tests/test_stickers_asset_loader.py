@@ -57,33 +57,18 @@ def test_comfy_image_without_value_loads(monkeypatch, tmp_path):
     assert 0.0 <= float(arr[0, 0, 1]) <= 1.0
 
 
-def test_dataurl_valid_loads():
-    arr = stickers_mod._load_asset_rgba({
-        "type": "dataurl",
-        "value": _dataurl_from_png(),
-    })
-    assert arr is not None
-    assert arr.shape == (2, 3, 4)
-    assert float(arr[..., 3].min()) > 0.99
+def test_an_embedded_image_asset_is_not_read():
+    # ADR 0063: an embedded image (`dataurl`) is no longer read.
+    assert stickers_mod._load_asset_rgba({"type": "dataurl", "value": _dataurl_from_png()}) is None
 
 
-def test_path_accepts_value_and_path_key(tmp_path):
-    file_path = tmp_path / "assets" / "a.png"
-    _write_png(file_path, color=(5, 10, 15, 255))
-    rel = str(file_path.relative_to(tmp_path))
+def test_a_path_asset_is_not_read(tmp_path, monkeypatch):
+    # ADR 0063: a relative `path` (read from the working directory, outside ComfyUI's folders) is no longer read.
+    _write_png(tmp_path / "assets" / "a.png", color=(5, 10, 15, 255))
+    monkeypatch.chdir(tmp_path)
 
-    arr_value = stickers_mod._load_asset_rgba(
-        {"type": "path", "value": rel},
-        base_dir=tmp_path,
-    )
-    arr_path = stickers_mod._load_asset_rgba(
-        {"type": "path", "path": rel},
-        base_dir=tmp_path,
-    )
-
-    assert arr_value is not None
-    assert arr_path is not None
-    assert arr_value.shape == arr_path.shape == (4, 4, 4)
+    assert stickers_mod._load_asset_rgba({"type": "path", "value": "assets/a.png"}) is None
+    assert stickers_mod._load_asset_rgba({"type": "path", "path": "assets/a.png"}) is None
 
 
 def test_comfy_image_path_traversal_rejected(monkeypatch, tmp_path):
@@ -113,11 +98,9 @@ def test_invalid_inputs_return_none(monkeypatch, tmp_path):
         None,
         {},
         {"type": "unknown", "value": "x"},
-        {"type": "dataurl"},
-        {"type": "dataurl", "value": "not-a-data-url"},
         {"type": "path"},
         {"type": "path", "value": ""},
         {"type": "comfy_image", "filename": ""},
     ]
     for asset in cases:
-        assert stickers_mod._load_asset_rgba(asset, base_dir=tmp_path) is None
+        assert stickers_mod._load_asset_rgba(asset) is None

@@ -14,14 +14,10 @@ import torch.nn.functional as F
 
 from .display_layers import render_group_layer_from_state, render_raster_layer_from_state, render_remaining_flat_paint_layer_from_state
 from .display_list import build_display_entries
-from .math import camera_basis, lens_drawn, lens_radius, ray_directions, unit_float_tensor, vfov_from_hfov
+from .math import camera_basis, lens_drawn, lens_radius, over_rgba, ray_directions, unit_float_tensor, unpremultiply, vfov_from_hfov
 from .painting import load_painting_layer_payload, render_painting_to_erp
+from .state import coverage_span
 from .world_render import SceneContent, over_by_depth, world_key, world_layer
-
-
-def _range(value) -> int:
-    """A span of longitude: 180, or else 360."""
-    return 180 if int(value) == 180 else 360
 
 
 @dataclass(frozen=True)
@@ -51,12 +47,12 @@ class Projection:
 
     @classmethod
     def erp(cls, width: int, height: int, coverage: int = 360, bg_coverage: int | None = None) -> "Projection":
-        coverage = _range(coverage)
-        return cls("erp", int(width), int(height), coverage=coverage, bg_coverage=coverage if bg_coverage is None else _range(bg_coverage))
+        coverage = coverage_span(coverage)
+        return cls("erp", int(width), int(height), coverage=coverage, bg_coverage=coverage if bg_coverage is None else coverage_span(bg_coverage))
 
     @classmethod
     def perspective(cls, width: int, height: int, hfov_deg: float, coverage: int = 360, curve: float = 1.0) -> "Projection":
-        return cls("perspective", int(width), int(height), coverage=_range(coverage), hfov_deg=float(hfov_deg), curve=float(curve))
+        return cls("perspective", int(width), int(height), coverage=coverage_span(coverage), hfov_deg=float(hfov_deg), curve=float(curve))
 
 
 @dataclass(frozen=True)
@@ -198,8 +194,10 @@ def _sky_layers(evaluated: dict, sources: SceneSources, size: tuple[int, int], d
         if entry["type"] == "strokeGroup":
             exists, layer = paint_layer(("group", entry["actionGroupId"]), lambda: group_layer(entry["actionGroupId"]))
         else:
-            # Raster objects keep their order among the paint entries whichever Stickers are drawn between them.
-            exists, layer = paint_layer(("raster", id(entry["item"])), lambda: render_raster_layer_from_state(entry["item"], width, height))
+            # Raster objects keep their order among the paint entries whichever Stickers are drawn between them. A
+            # raster is kept by its id, unique in the normalized painting (`normalize_painting_state`); the painting
+            # does not change while `paint` is kept (one run; docs/render-contract.md `cache`).
+            exists, layer = paint_layer(("raster", entry["item"]["id"]), lambda: render_raster_layer_from_state(entry["item"], width, height))
         used_layers = used_layers or exists
         if layer is not None:
             layers.append(("erp", *layer))
@@ -455,7 +453,7 @@ def _shoot_sky(layers: list, mask: tuple | None, rays: torch.Tensor, view: torch
         color = _shoot_sticker(layer, levels, item[0], rays) if kind == "sticker" else _sample_filtered(layer, view, wrap=True, levels=levels)
         total = torch.addcmul(color, total, 1.0 - color[..., 3:])
     alpha = total[..., 3:]
-    rgb = torch.where(alpha > 1e-6, total[..., :3] / alpha.clamp_min(1e-6), 0.0)
+    rgb = unpremultiply(total[..., :3], alpha)
     shot_mask = rays.new_zeros(rays.shape[:2]) if mask is None else _sample_filtered(mask[0], view, wrap=True, levels=mask[1])[..., 0]
     return torch.cat([rgb.clamp(0.0, 1.0), alpha], dim=-1), shot_mask
 
@@ -633,7 +631,5 @@ def _layer_sky(layer: RenderLayer, cache: dict, sky_key: tuple, sky_size: tuple[
 
 def _sky_over(below: torch.Tensor, above: torch.Tensor) -> torch.Tensor:
     """The straight-alpha Sky `above` (H, W, 4) composited over `below`, straight-alpha."""
-    alpha = above[..., 3:]
-    total = alpha + below[..., 3:] * (1.0 - alpha)
-    rgb = above[..., :3] * alpha + below[..., :3] * below[..., 3:] * (1.0 - alpha)
-    return torch.cat([torch.where(total > 1e-6, rgb / total.clamp_min(1e-6), 0.0), total], dim=-1)
+    rgb, total = over_rgba(below[..., :3], below[..., 3:], above[..., :3], above[..., 3:])
+    return torch.cat([rgb, total], dim=-1)

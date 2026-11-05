@@ -1,8 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { createBackdropClose } from "../../studio/backdrop.js";
-import { CAMERA_TAB_LOCKED_TIP, cameraButton } from "../../studio/camera_ui.js";
-import { cameraOf } from "../../studio/camera_state.js";
+import { CAMERA_FOV_TIP, CAMERA_TAB_LOCKED_TIP, CAMERA_TAB_TIP, PANORAMA_MODE_TIP, cameraButton } from "../../studio/camera_ui.js";
 import { liveErpRatio } from "../../studio/erp_preview.js";
 import { cameraRulers, rulerEdit } from "../../studio/frame_layout.js";
 import { ROTATE_SNAP_DEG } from "../../studio/view_scale.js";
@@ -10,8 +9,9 @@ import { buildCameraCard } from "../../studio/inspector_model.js";
 import { TIMELINE_BAR_HEIGHT, loadTimelineHeight, saveTimelineHeight, timelineHeight } from "../../studio/layout.js";
 import { topLine } from "../../studio/notice_line.js";
 import { selectionBar } from "../../studio/selection_bar.js";
-import { shortcutGroups } from "../../studio/shortcuts.js";
+import { isMacPlatform, shortcutGroups } from "../../studio/shortcuts.js";
 import { trackInputMode } from "../../studio/input_modality.js";
+import { watchDragCancel } from "../../studio/ui_drag.js";
 import { inspectorSelection } from "../../studio/session.js";
 import { WORLD_FILE_ACCEPT } from "../../pano_sticker_file_import.js";
 import { STUDIO_SIZE_DEFAULTS, studioNodeStatus } from "../../pano_studio_status.js";
@@ -85,6 +85,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   stopInputMode?.();
   window.removeEventListener("resize", fitTimeline);
+  endSplit();
 });
 
 // --- The top-center line and its kind (studio/notice_line.js).
@@ -112,8 +113,7 @@ const bar = computed(() => selectionBar({ state: props.view.state, row: props.vi
 // --- The Camera tab (docs/studio-ui.md "Camera タブ"): the frame of the output's ratio (the ERP's in Panorama mode)
 // with the edge rulers, which are the Camera card's rows and send the inspector's edits. Each tick strip has its fixed
 // length, centered on its edge (frame_layout.js rulerStrips, from the frame's slot).
-const CAMERA_TAB_TIP = "Not available in the Camera view";
-const camera = computed(() => cameraOf(props.view.state));
+const camera = computed(() => props.view.state.camera);
 const panorama = computed(() => camera.value.projection === "erp");
 const frameAspect = computed(() => (panorama.value ? liveErpRatio(camera.value.erp_range) : camera.value.aspect));
 const rulers = computed(() => (cameraTab.value
@@ -137,15 +137,18 @@ const cameraRailButton = computed(() => cameraButton({ projection: camera.value.
 // The stage's knobs: nothing moves in Panorama mode, nor a locked Camera or a read-only editor's in the Camera tab.
 const navOff = computed(() => {
   if (!cameraTab.value) return "";
-  if (panorama.value) return "Not available in Panorama mode";
+  if (panorama.value) return PANORAMA_MODE_TIP;
   if (props.view.readOnly) return "Read-only";
   if (camera.value.locked === true) return CAMERA_TAB_LOCKED_TIP;
   return "";
 });
+// The FOV number (docs/studio-ui.md "右下の View の群", "Camera タブ"): the Camera tab shows the Camera's H FOV in the FOV
+// ruler's text, grayed (the ruler, the inspector and Frame mode's Alt + wheel change it).
+const fovOffTip = computed(() => (panorama.value ? PANORAMA_MODE_TIP : CAMERA_FOV_TIP));
 // --- The list of shortcuts (docs/studio-ui.md "ショートカットの一覧"): what works on the screen now.
 const nav = ref(null);
-const isMac = /Mac|iPhone|iPad/.test(globalThis.navigator?.platform || globalThis.navigator?.userAgent || "");
-const shortcuts = computed(() => shortcutGroups({ tab: props.view.tab, panorama: panorama.value, readOnly: props.view.readOnly, mac: isMac }));
+const isMac = isMacPlatform();
+const shortcuts = computed(() => shortcutGroups({ tab: props.view.tab, panorama: panorama.value, readOnly: props.view.readOnly, locked: camera.value.locked === true, mac: isMac }));
 const helpButton = () => nav.value?.helpButton() ?? null;
 const erpCanvas = ref(null);
 watch(erpCanvas, (element) => props.controller.erpCanvas?.(element ?? null));
@@ -214,23 +217,49 @@ function fitTimeline() {
   shownHeight.value = timelineHeight(wantedHeight.value, total);
 }
 
+// Escape, its pointercancel, the window's blur and a lost capture put back the height at the press, kept as it was
+// (ui_drag.js watchDragCancel; the editor does not take that Escape).
 let split = null;
 function onSplitDown(event) {
-  if (event.button !== 0 || collapsed.value) return;
+  if (event.button !== 0 || collapsed.value || split) return;
   event.preventDefault();
-  event.currentTarget.setPointerCapture?.(event.pointerId);
-  split = { y: event.clientY, height: shownHeight.value };
+  const element = event.currentTarget;
+  try {
+    element.setPointerCapture?.(event.pointerId);
+  } catch {
+    return;
+  }
+  split = { pointerId: event.pointerId, element, y: event.clientY, height: shownHeight.value, wanted: wantedHeight.value };
+  split.stopCancel = watchDragCancel({ element, pointerId: event.pointerId, cancel: cancelSplit });
 }
 function onSplitMove(event) {
-  if (!split) return;
+  if (!split || event.pointerId !== split.pointerId) return;
   wantedHeight.value = split.height + (split.y - event.clientY);
   fitTimeline();
   wantedHeight.value = shownHeight.value;
 }
-function onSplitUp() {
-  if (!split) return;
-  split = null;
+function onSplitUp(event) {
+  if (!split || event.pointerId !== split.pointerId) return;
+  endSplit();
   saveTimelineHeight(props.storage, shownHeight.value);
+}
+function cancelSplit() {
+  if (!split) return;
+  const { wanted } = split;
+  endSplit();
+  wantedHeight.value = wanted;
+  fitTimeline();
+}
+function endSplit() {
+  if (!split) return;
+  const { pointerId, element, stopCancel } = split;
+  split = null;
+  stopCancel?.();
+  try {
+    element.releasePointerCapture?.(pointerId);
+  } catch {
+    // The capture was already gone.
+  }
 }
 function setCollapsed(value) {
   collapsed.value = !!value;
@@ -242,7 +271,7 @@ function setCollapsed(value) {
     <div
       ref="root"
       class="pano-studio pano-studio-editor"
-      :class="{ 'is-knob-drag': ui.knobDrag }"
+      :class="{ 'is-knob-drag': !!ui.knobDrag }"
       role="dialog"
       tabindex="-1"
       aria-modal="true"
@@ -285,6 +314,7 @@ function setCollapsed(value) {
                 :tip="rulers.fov.tip"
                 :value-chars="rulers.fov.scale.valueChars"
                 :at-default="rulers.fov.atDefault"
+                :lit="ui.fovLit"
                 :style="stripStyle(place.vertical, true)"
                 @reset="onRuler('fov', 'reset')"
                 @input="(value) => onRuler('fov', 'input', value)"
@@ -383,6 +413,7 @@ function setCollapsed(value) {
             <StudioNavWidget
               ref="nav"
               :lit="ui.lit"
+              :knob-drag="ui.knobDrag"
               :disabled="!!navOff"
               :disabled-tip="navOff"
               :help-open="!!view.shortcuts"
@@ -403,12 +434,20 @@ function setCollapsed(value) {
           </div>
           <StudioViewButtons
             class="pano-studio-at-buttons"
+            :fov="ui.fov"
+            :fov-lit="ui.fovNumberLit"
+            :fov-text="cameraTab && rulers ? rulers.fov.valueText : ''"
+            :fov-disabled="cameraTab"
+            :fov-tip="fovOffTip"
             :grid-shown="!ui.gridHidden"
             :reset-disabled="cameraTab"
             :reset-tip="CAMERA_TAB_TIP"
+            :at-start="ui.atStart"
             :frame-tip="cameraTab ? 'Frame selected · Moves the camera' : ''"
             :frame-disabled="!!navOff"
             :frame-disabled-tip="navOff"
+            @fov="(value) => stage?.setFov(value)"
+            @fov-reset="stage?.resetFov()"
             @frame-selected="stage?.frameSelected()"
             @reset-view="stage?.resetView()"
             @grid="setGrid"
@@ -424,7 +463,6 @@ function setCollapsed(value) {
           @pointerdown="onSplitDown"
           @pointermove="onSplitMove"
           @pointerup="onSplitUp"
-          @pointercancel="onSplitUp"
         />
         <div class="pano-studio-timeline" data-region="timeline" :style="timelineStyle">
           <StudioTimeline
@@ -434,6 +472,7 @@ function setCollapsed(value) {
             :playhead="view.playhead"
             :playing="view.playing"
             :loop="view.loop"
+            :length-unit="view.lengthUnit"
             :read-only="view.readOnly"
             :media="view.media"
             :background="view.background"
@@ -447,6 +486,7 @@ function setCollapsed(value) {
             @edit="(payload) => controller.timelineEdit(payload)"
             @frame-selected="(row) => controller.frameSelected(row)"
             @loop-change="(on) => controller.loop(on)"
+            @length-unit-change="(unit) => controller.lengthUnit(unit)"
             @collapse-change="setCollapsed"
           />
         </div>

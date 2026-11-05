@@ -13,7 +13,7 @@ import {
   rulerLabel,
   rulerMarks,
 } from "../web_src/studio/frame_layout.js";
-import { cameraRulers, rulerEdit } from "../web_src/studio/frame_layout.js";
+import { FOV_WHEEL_TIP, cameraRulers, rulerEdit } from "../web_src/studio/frame_layout.js";
 import { buildCameraCard, buildInspectorModel } from "../web_src/studio/inspector_model.js";
 import { loadSceneState } from "../web_src/pano_scene_state.js";
 import { FINE_FACTOR } from "../web_src/studio/ui_drag.js";
@@ -178,4 +178,41 @@ test("Roll with Shift stops at multiples of ROTATE_SNAP_DEG, by drag and by arro
   assert.equal(rulerSnapStep(0, 1, 15), 15);
   assert.equal(rulerSnapStep(15, -1, 15), 0);
   assert.equal(rulerSnapStep(175, 1, 15, { min: -180, max: 180 }), 180);
+});
+
+// docs/design.md "Camera タブの辺の目盛りの縮尺" (ADR 0061): the FOV ruler's small tick and scale are the FOV step and
+// drag scale the view's zoom shares (pano_camera_math.js).
+test("the FOV ruler reads the shared FOV step and drag scale", async () => {
+  const { VIEW_FOV_DRAG_PX_PER_DEG, VIEW_FOV_STEP_DEG } = await import("../web_src/pano_camera_math.js");
+  assert.equal(CAMERA_RULERS.fov.minor, VIEW_FOV_STEP_DEG);
+  assert.equal(CAMERA_RULERS.fov.unitPx, VIEW_FOV_DRAG_PX_PER_DEG);
+});
+
+// docs/studio-ui.md "Camera タブ" 辺の目盛りの tooltip (ADR 0061): the FOV ruler tells about Alt + wheel while it works;
+// grayed, it gives the reason; Lens and Roll have a tooltip only when grayed.
+test("the FOV ruler's tooltip names Alt + wheel while it works", () => {
+  const frame = rulersOf(cameraState({ projection: "perspective" }));
+  assert.equal(FOV_WHEEL_TIP, "FOV (Alt+Wheel)");
+  assert.equal(frame.fov.tip, FOV_WHEEL_TIP);
+  assert.equal(frame.lens.tip, "");
+  assert.equal(frame.roll.tip, "");
+  assert.equal(rulersOf(cameraState({ projection: "erp" })).fov.tip, "Used in Frame mode");
+  assert.equal(rulersOf(cameraState({ projection: "perspective" }), { readOnly: true }).fov.tip, "Read-only");
+  assert.equal(rulersOf(cameraState({ projection: "perspective", locked: true })).fov.tip, "Locked · Unlock in the 3D tab");
+});
+
+// docs/studio-ui.md "Camera タブ" 辺の目盛りの「一段の値」: every ruler's arrow key is one small tick (stepWithin); the FOV
+// ruler's small tick is the FOV step, so its key gives what fovStepValue gives.
+test("the FOV ruler's arrow key, one small tick, is fovStepValue", async () => {
+  const { fovStepValue, stepWithin } = await import("../web_src/pano_camera_math.js");
+  const fov = { step: CAMERA_RULERS.fov.minor, min: 1, max: 120, precision: 1 };
+  for (const value of [1, 1.5, 59.96, 60, 119.5, 120]) {
+    for (const dir of [1, -1]) {
+      for (const fine of [1, FINE_FACTOR]) {
+        assert.equal(stepWithin(value, dir, { ...fov, fine }), fovStepValue(value, dir, { min: 1, max: 120, precision: 1, fine }), `${value} ${dir} ${fine}`);
+      }
+    }
+  }
+  // Lens: its own small tick and digits.
+  assert.equal(stepWithin(0.333, 1, { step: CAMERA_RULERS.lens.minor, min: 0, max: 2, precision: 2 }), 0.35);
 });

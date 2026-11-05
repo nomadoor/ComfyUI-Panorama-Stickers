@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  backgroundLengthMedia,
   backgroundVideoKeys,
   backgroundVideoMedia,
   createBackgroundVideo,
@@ -247,15 +246,11 @@ test("the result keys of the background VIDEO and its meta entry", () => {
   assert.equal(videoMetaEntry(null), null);
 });
 
-test("the background counts for the Auto length by what the editor learned of its VIDEO, else as a linked IMAGE", () => {
+test("the background counts for the Auto length by what the editor learned of its VIDEO", () => {
   assert.equal(backgroundVideoMedia({ ready: false, frameCount: 10, duration: 1 }, true), null);
   assert.equal(backgroundVideoMedia({ ready: true, frameCount: 0, duration: 1 }, true), null);
   const loaded = backgroundVideoMedia({ ready: true, frameCount: 48, duration: 2 }, true);
   assert.deepEqual(loaded, { video: true, frames: 48, duration: 2 });
-  assert.equal(backgroundLengthMedia(loaded, { linked: true, videoLinked: true }), loaded);
-  assert.deepEqual(backgroundLengthMedia(null, { linked: true, videoLinked: false }), { frames: 1 });
-  assert.equal(backgroundLengthMedia(null, { linked: true, videoLinked: true }), null);
-  assert.equal(backgroundLengthMedia(null, { linked: false, videoLinked: false }), null);
 });
 
 test("a still's revision counts its frames; a VIDEO's is its source and size", () => withElements(() => {

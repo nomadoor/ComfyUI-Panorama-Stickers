@@ -1,3 +1,5 @@
+import { clamp } from "./pano_math.js";
+
 // A finite JSON number (not a boolean, not text, not an array), else `fallback`: every number of `painting` is read
 // so (docs/scene-state-v2.md, 共通の規則), as Python's _finite_float does.
 function finiteNumber(value, fallback = null) {
@@ -48,12 +50,8 @@ function normalizeGroups(raw) {
 function normalizeTargetSpace(raw) {
   if (!raw || typeof raw !== "object") return null;
   const kind = String(raw.kind || "").trim();
+  // Only ERP_GLOBAL: a stroke of another space (the old FRAME_LOCAL, ADR 0008) is dropped.
   if (kind === "ERP_GLOBAL") return { kind: "ERP_GLOBAL" };
-  if (kind === "FRAME_LOCAL") {
-    const frameId = String(raw.frameId ?? "").trim();
-    if (!frameId) return null;
-    return { kind: "FRAME_LOCAL", frameId };
-  }
   return null;
 }
 
@@ -70,21 +68,6 @@ function normalizePoint(raw, targetSpace) {
       targetKind: "ERP_GLOBAL",
       u: ((u % 1) + 1) % 1,
       v: Math.max(0, Math.min(1, v)),
-      t,
-    };
-    if (widthScale != null) out.widthScale = Math.max(0, widthScale);
-    if (pressureLike != null) out.pressureLike = Math.max(0, pressureLike);
-    return out;
-  }
-  if (targetSpace.kind === "FRAME_LOCAL") {
-    const u = finiteNumber(raw.u, null);
-    const v = finiteNumber(raw.v, null);
-    if (u == null || v == null) return null;
-    const out = {
-      targetKind: "FRAME_LOCAL",
-      frameId: targetSpace.frameId,
-      u,
-      v,
       t,
     };
     if (widthScale != null) out.widthScale = Math.max(0, widthScale);
@@ -126,8 +109,6 @@ function normalizeGeometry(raw, targetSpace, toolKind, allowLasso) {
     processedPoints: processedPoints || points.map((pt) => ({ ...pt })),
   };
 }
-
-const clamp = (value, lo, hi) => Math.max(lo, Math.min(hi, value));
 
 const STAMP_KINDS = new Set(["round", "chisel", "crayon"]);
 
@@ -292,5 +273,3 @@ export function normalizePaintingState(raw) {
     raster_objects: normalizeRasterObjects(raw.raster_objects),
   };
 }
-
-export { emptyPaintingState };

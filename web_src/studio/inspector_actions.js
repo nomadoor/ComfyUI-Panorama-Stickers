@@ -8,7 +8,6 @@
 //   { type: "choice", target, field, value }       the Camera's Mode (projection) and Range (erp_range), a 3D's Clip
 //   { type: "key", target, row }                   a row's Keyframe dot
 //   { type: "reset", target, row }                 a row's reset (the Camera's "roll": its Roll alone)
-//   { type: "set-ground" }                         Set ground: the shell starts picking the ground (no state change)
 //   { type: "easing", keyframes, easing, phase }   a preset, the curve or the bezier text of the Easing panel
 //   { type: "easing-reset", keyframes }            the Easing panel's reset
 // `target` is a card's target ({ kind: "sticker" | "camera" | "scene", id }), `keyframes` the selection's
@@ -28,12 +27,12 @@ import {
   setStickerPose,
   setWorldStickerField,
 } from "../pano_editor_state.js";
+import { clamp } from "../pano_math.js";
 import { FRAME_EPSILON, evaluateLane } from "../pano_scene_eval.js";
 import { ANIMATION_DEFAULT, ANIMATION_SPEED_MAX, ANIMATION_SPEED_MIN, CAMERA_LANES, DEFAULT_EASING, SKY_STICKER_LANES, WORLD_STICKER_LANES } from "../pano_scene_state.js";
 import { deleteKeyframes, keyLanes, rowLaneNames, setLaneValue, setSegmentEasing } from "../pano_timeline.js";
 import { isUpstreamSticker, upstreamStickerInherited } from "../pano_upstream.js";
 import { HANDOFF_LANES, revertHandoffLane } from "../pano_port_handoff.js";
-import { editableCamera } from "./camera_state.js";
 import { defaultCamera } from "./defaults.js";
 import { ROW_LANES, ownerFrame, skyPlacedSize } from "./inspector_model.js";
 import { findSticker, keyframeOwner } from "./row_object.js";
@@ -42,17 +41,13 @@ const SKY_POSE_FIELDS = new Set(["yaw_deg", "pitch_deg", "rot_deg", "hFOV_deg", 
 
 const result = (changed, extra = {}) => ({ changed, history: false, stopPlayback: false, upstreamRevert: null, ...extra });
 
-function clamp(value, min, max) {
-  return Math.min(max, Math.max(min, value));
-}
-
 // What an edit acts on: { kind, owner }, or null when it is not there or not editable (locked, read-only, an
 // element of an upstream layer whose overrides are not kept).
 function resolve(state, target, { upstream, readOnly }) {
   if (readOnly || !target) return null;
   if (target.kind === "scene") return { kind: "scene", owner: state };
   if (target.kind === "camera") {
-    if (state.camera?.locked === true) return null;
+    if (state.camera.locked === true) return null;
     return { kind: "camera", owner: null };
   }
   const sticker = findSticker(state, upstream, target.id);
@@ -73,7 +68,7 @@ function applyField(state, found, edit, context) {
     return true;
   }
   if (found.kind === "camera") {
-    const camera = editableCamera(state);
+    const camera = state.camera;
     if (field === "curve") setCameraCurveKeepingCenter(camera, playhead, value, edit.start ?? { hFOV_deg: evaluateLane(camera, "fov", playhead), curve: evaluateLane(camera, "curve", playhead) });
     else setCameraField(camera, playhead, field, value);
     return true;
@@ -100,7 +95,7 @@ function applyField(state, found, edit, context) {
 
 function applyChoice(state, found, { field, value }, context) {
   if (found.kind === "camera") {
-    const camera = editableCamera(state);
+    const camera = state.camera;
     if (field === "projection" && (value === "erp" || value === "perspective")) camera.projection = value;
     else if (field === "erp_range" && (value === 360 || value === 180)) camera.erp_range = value;
     else return false;
@@ -122,7 +117,7 @@ function rowLanes(found, row) {
 function applyKey(state, found, row, playhead) {
   const lanes = rowLanes(found, row);
   if (!lanes) return false;
-  const owner = found.kind === "camera" ? editableCamera(state) : found.owner;
+  const owner = found.kind === "camera" ? state.camera : found.owner;
   const frame = ownerFrame(owner, playhead);
   const at = (name) => owner[name].keyframes.find((key) => Math.abs(key.frame - frame) <= FRAME_EPSILON);
   const keyed = lanes.filter(at);
@@ -162,7 +157,7 @@ function applyReset(state, found, row, context) {
     return { done: true };
   }
   if (found.kind === "camera") {
-    const camera = editableCamera(state);
+    const camera = state.camera;
     if (row === "aspect") {
       camera.aspect = defaultCamera().aspect;
       return { done: true };
@@ -203,9 +198,7 @@ function applyReset(state, found, row, context) {
 
 function applyEasing(state, keyframes, easing, upstream) {
   if (!keyframes?.frames?.length) return false;
-  // Without a Camera an Easing edit writes nothing (the other edits put the default Camera there first, camera_state.js
-  // editableCamera); whether to align it is an open decision of the owner.
-  const owner = keyframes.owner === "camera" ? (state.camera ?? null) : keyframeOwner(state, upstream, keyframes.owner);
+  const owner = keyframes.owner === "camera" ? state.camera : keyframeOwner(state, upstream, keyframes.owner);
   if (!owner || owner.locked) return false;
   if (upstreamStickerInherited(owner)) return false;
   const names = keyframes.lane ? [keyframes.lane] : rowLaneNames(owner);
@@ -220,7 +213,6 @@ export function applyInspectorEdit(state, edit, context = {}) {
   const ctx = { playhead: 0, readOnly: false, upstream: [], animations: {}, handoff: null, ...context };
   if (edit.phase === "cancel") return result(false, { cancel: true });
   if (ctx.readOnly) return result(false);
-  if (edit.type === "set-ground") return result(false);
   if (edit.type === "easing" || edit.type === "easing-reset") {
     const easing = edit.type === "easing-reset" ? [...DEFAULT_EASING] : edit.easing;
     const changed = applyEasing(state, edit.keyframes, easing, ctx.upstream);

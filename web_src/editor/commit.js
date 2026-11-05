@@ -2,19 +2,18 @@
 // left to upload on close, and the node's previews.
 import {
   editorStateWrite,
+  LEGACY_BACKGROUND_COLOR,
   normalizeCoverageValue,
-  setEditorActive,
 } from "../pano_editor_state.js";
 import { peekNodeSurface, peekPreviewNode } from "../pano_node_bridge.js";
 import { saveSharedUiSettings } from "./ui_settings.js";
 
 export function createCommit(deps) {
   const {
-    app, bgWidget, cameraV2, coverageWidget, node, presetWidget, readOnly, state, stateWidget,
+    app, bgWidget, coverageWidget, node, presetWidget, readOnly, state, stateWidget,
   } = deps;
   // Bound by connect() to the other modules and showEditor.
-  let needsPaintingLayerSync, resolveEditorOutputPresetWidth, storedEditorState, syncCutoutShot, syncPaintingLayerAsync,
-    syncPortHandoff, syncUpstreamEdits;
+  let needsPaintingLayerSync, resolveEditorOutputPresetWidth, syncPaintingLayerAsync;
 
   function apply() {
     if (readOnly) return;
@@ -22,25 +21,17 @@ export function createCommit(deps) {
     state.alpha_mode = "straight";
     if (presetWidget) state.output_preset = resolveEditorOutputPresetWidth(Number(state.output_preset || 2048));
     if (coverageWidget) state.coverage = normalizeCoverageValue(coverageWidget.value);
-    if (bgWidget) state.bg_color = String(bgWidget.value || state.bg_color || "#00ff00");
+    if (bgWidget) state.bg_color = String(bgWidget.value || state.bg_color || LEGACY_BACKGROUND_COLOR);
     commitState();
     node.setDirtyCanvas(true, true);
   }
 
   function commitState() {
     if (readOnly) return;
-    syncCutoutShot();
-    syncPortHandoff();
-    syncUpstreamEdits();
     state.coverage = normalizeCoverageValue(state.coverage);
-    setEditorActive(node, state.active);
     if (!stateWidget) return;
-    // The port Sticker shown with the Pose handoff is written as the state keeps it (ADR 0030).
-    const stored = storedEditorState();
-    const text = editorStateWrite(node, stored, String(stateWidget.value ?? ""), { rebased: cameraV2 });
+    const text = editorStateWrite(node, state, String(stateWidget.value ?? ""));
     if (text === null) return;
-    // A Scene id given on writing (editorStateWrite) stays with the working state.
-    if (stored !== state) state.id = stored.id;
     stateWidget.value = text;
     stateWidget.callback?.(text);
   }
@@ -56,13 +47,13 @@ export function createCommit(deps) {
     node.setDirtyCanvas?.(true, true);
   }
 
+  // Returns the paint layer upload (settled when it is done or failed), or null without one.
   function triggerBackgroundPersistenceOnClose() {
-    if (readOnly) return;
-    if (needsPaintingLayerSync()) {
-      void syncPaintingLayerAsync().catch((error) => {
-        console.error("[PanoramaPaintingLayerSync] background close sync failed", error);
-      });
-    }
+    if (readOnly) return null;
+    if (!needsPaintingLayerSync()) return null;
+    return syncPaintingLayerAsync().catch((error) => {
+      console.error("[PanoramaPaintingLayerSync] background close sync failed", error);
+    });
   }
 
   function syncCoverageChangeToNodePreviews(options = {}) {
@@ -82,8 +73,7 @@ export function createCommit(deps) {
   return {
     connect(api) {
       ({
-        needsPaintingLayerSync, resolveEditorOutputPresetWidth, storedEditorState, syncCutoutShot, syncPaintingLayerAsync,
-        syncPortHandoff, syncUpstreamEdits,
+        needsPaintingLayerSync, resolveEditorOutputPresetWidth, syncPaintingLayerAsync,
       } = api);
     },
     apply, commitState, persistUiSettings, commitAndRefreshNode, triggerBackgroundPersistenceOnClose,

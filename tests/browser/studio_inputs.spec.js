@@ -17,9 +17,9 @@ function watch(page) {
   return problems;
 }
 
-async function open(page, testInfo, which) {
+async function open(page, testInfo, which, viewport = { width: 1440, height: 860 }) {
   const problems = watch(page);
-  await page.setViewportSize({ width: 1440, height: 860 });
+  await page.setViewportSize(viewport);
   await page.goto(`/tests/browser/pages/studio_inputs.html?case=${which}`);
   await page.waitForFunction(() => window.__studio?.ready, null, { timeout: 30_000 });
   expect(await page.evaluate(() => window.__studio.error)).toBeNull();
@@ -153,7 +153,8 @@ const inspectorRow = (page, name) => page.locator(`.pano-studio-inspector [data-
 // docs/studio-ui.md "上流の物の編集": the upstream objects are selected on the stage and edited with the stage's drags,
 // the gizmo, the inspector and the bar, each edit written to the state's `upstream` records as an override.
 test("another Studio's Scene on scene: its objects are selected on the stage and edited as overrides, written to state_json", async ({ page }, testInfo) => {
-  const problems = await open(page, testInfo, "upstream");
+  // Judged at 1920×1080: the bar's buttons stay clear of the wider View group there (ADR 0061).
+  const problems = await open(page, testInfo, "upstream", { width: 1920, height: 1080 });
   const colors = await page.evaluate(() => window.__studio.colors);
   const { sky: [front], world: [board] } = await places(page, { sky: [[0, 0]], world: [[1.6, 0, -3]] });
   await expect.poll(() => stageAt(page, front).then((rgb) => near(rgb, colors.upstreamSky)), { timeout: 10_000 }).toBe(true);
@@ -175,7 +176,8 @@ test("another Studio's Scene on scene: its objects are selected on the stage and
   await expect(page.locator('[data-bar="delete"]')).not.toHaveAttribute("aria-disabled", "true");
   await expect(page.locator('[data-bar="duplicate"]')).toHaveAttribute("aria-disabled", "true");
   // Its body's drag turns it (to the left, away from the board): one override of its direction, nothing else.
-  await drag(page, front, { x: front.x - 120, y: front.y });
+  // 200 px at 1920×1080 (120 at 1440×860): the image is larger on the larger stage and must clear its first place.
+  await drag(page, front, { x: front.x - 200, y: front.y });
   await expect.poll(async () => Object.keys((await overrideOf(page, "sticker_1")) ?? {}).sort()).toEqual(["direction", "id", "placement"]);
   // Overridden: Back to source on in the override colour, the Timeline row's dot in the same colour.
   await expect(page.locator('[data-bar="revert"]')).not.toHaveAttribute("aria-disabled", "true");
@@ -236,6 +238,39 @@ test("another Studio's Scene on scene: its objects are selected on the stage and
   expect(record.stickers.map((item) => item.id)).toEqual(["sticker_1"]);
   expect(Object.keys(record.stickers[0]).sort()).toEqual(["direction", "id", "locked", "opacity", "placement"]);
   expect(written.stickers).toEqual([]);
+  expect(problems).toEqual([]);
+});
+
+// docs/design.md "動き" (only the hover eases a button's colours) and "色" 桃: the drag that first overrides an upstream
+// object turns Back to source on in the override colour at once on release, not by way of the plain icon colour at
+// full strength (a white flash); a further drag does not toggle it.
+test("Back to source turns to the override colour at once when a drag first overrides an upstream object, and stays during the next drag", async ({ page }, testInfo) => {
+  const problems = await open(page, testInfo, "upstream", { width: 1920, height: 1080 });
+  const { sky: [front] } = await places(page, { sky: [[0, 0]] });
+  const colors = await page.evaluate(() => window.__studio.colors);
+  await expect.poll(() => stageAt(page, front).then((rgb) => near(rgb, colors.upstreamSky)), { timeout: 10_000 }).toBe(true);
+  await page.mouse.click(front.x, front.y);
+  await expect.poll(() => selectedRow(page)).toBe("upstream:scene_up:sticker_1");
+  const revert = page.locator('[data-bar="revert"]');
+  await expect(revert).not.toHaveClass(/is-override/);
+  // Each change of its class or aria-disabled, with the colour and opacity it has at that moment.
+  await revert.evaluate((button) => {
+    const seen = (window.__revertSeen = []);
+    const read = () => seen.push({ override: button.classList.contains("is-override"), disabled: button.getAttribute("aria-disabled") === "true", color: getComputedStyle(button).color, opacity: getComputedStyle(button).opacity });
+    new MutationObserver(read).observe(button, { attributes: true, attributeFilter: ["class", "aria-disabled"] });
+  });
+  await drag(page, front, { x: front.x - 200, y: front.y });
+  await expect(revert).toHaveClass(/is-override/);
+  const first = await page.evaluate(() => window.__revertSeen.splice(0));
+  const on = first.find((entry) => entry.override && !entry.disabled);
+  expect(on, JSON.stringify(first)).toBeTruthy();
+  expect(on.color, JSON.stringify(first)).toBe(OVERRIDE_RGB);
+  expect(on.opacity).toBe("1");
+  // A further drag of the overridden object: the button does not change at all.
+  await drag(page, { x: front.x - 200, y: front.y }, { x: front.x - 260, y: front.y });
+  await page.waitForTimeout(300);
+  expect(await page.evaluate(() => window.__revertSeen)).toEqual([]);
+  await expect(revert).toHaveCSS("color", OVERRIDE_RGB);
   expect(problems).toEqual([]);
 });
 

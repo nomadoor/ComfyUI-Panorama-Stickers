@@ -10,13 +10,9 @@ import assert from "node:assert/strict";
 import { readdirSync } from "node:fs";
 import test from "node:test";
 
-import { CAMERA_SHOT_ID, newStudioCamera, newWorldSceneSticker, setWorldStickerTransform } from "../web_src/pano_editor_state.js";
 import { DRAW_REASON } from "../web_src/pano_frame_scheduler.js";
-import { evaluateSticker } from "../web_src/pano_scene_eval.js";
-import { gizmoDragLanes, initialSpaceView } from "../web_src/pano_space.js";
 import { panCutoutShotByScreenDelta } from "../web_src/pano_cutout_node_surface.js";
 import { deriveCutoutAspectLabelFromFov } from "../web_src/pano_cutout_view_math.js";
-import { VIEW_CONTROL_PRESETS } from "../web_src/pano_view_controls.js";
 import { dirToYawPitch } from "../web_src/editor/helpers.js";
 
 const EDITOR_DIR = new URL("../web_src/editor/", import.meta.url);
@@ -33,12 +29,11 @@ const isNum = (value) => typeof value === "number" && Number.isFinite(value);
 // The connect() names that only read (positions, geometry, flags, lists). effects() leaves them out, so a
 // test pins what a handler does, not how often it asks.
 const QUERIES = new Set([
-  "screenPos", "screenPosCss", "currentSpaceCamera", "objectGeom", "getList", "isFreeFrameView", "isFreeSpaceView",
-  "isSpaceView", "getActiveCutoutShot", "getFrameViewRect", "getSelectedItems", "getSelected", "isStickerItem",
-  "isStrokeGroupItem", "isRasterObjectItem", "isItemLocked", "isShotItem", "isSceneSticker", "poseOf",
+  "screenPos", "screenPosCss", "objectGeom", "getList", "getActiveCutoutShot", "getFrameViewRect", "getSelectedItems",
+  "getSelected", "isStickerItem", "isStrokeGroupItem", "isRasterObjectItem", "isItemLocked", "isShotItem", "poseOf",
   "getPaintingGroupList", "getActivePaintTargetDescriptor", "rectFromPoints", "rectIntersectsGeom",
   "getSelectableStrokeGroupItems", "getSelectableRasterObjectItems", "getCutoutSelectableItemsForHit",
-  "getCutoutSelectableItems", "editorViewInput", "viewControls", "isCameraSelected",
+  "getCutoutSelectableItems",
 ]);
 
 // The pointer input with fake deps. `api` overrides the connect() names (a function is the stub's
@@ -65,17 +60,14 @@ function harness({ api = {}, deps = {}, editor: editorFields = {}, wheelApplies 
     maskTool: "brush",
     interaction: null,
     selectedId: null,
-    worldSelectedId: null,
     pointerPos: { x: 1, y: 2 },
     frame: 0,
-    gizmoAxis: null,
     cutoutAspectOpen: true,
     paintEngine,
     ...editorFields,
   };
   const values = {
     canvas: { width: 800, height: 400, setPointerCapture: record("canvas.setPointerCapture") },
-    dragFrames: { request: record("dragFrames.request"), cancel: record("dragFrames.cancel") },
     editor,
     editorView: {
       gizmoPointer: record("editorView.gizmoPointer", api.gizmoPointer),
@@ -85,11 +77,8 @@ function harness({ api = {}, deps = {}, editor: editorFields = {}, wheelApplies 
     paintColorPop: null,
     readOnly: false,
     runtime: { backgroundDirty: false },
-    sceneV2: false,
     shotEditor: false,
     state: { ui_settings: {} },
-    stateV2: false,
-    timeline: { selection: null },
     type: "stickers",
     viewController: {
       state: { inertia: { active: true, vx: 3, vy: 4 } },
@@ -105,11 +94,6 @@ function harness({ api = {}, deps = {}, editor: editorFields = {}, wheelApplies 
     screenPos: (e) => ({ x: e.x, y: e.y }),
     screenPosCss: (e) => ({ x: e.x / 2, y: e.y / 2 }),
     setPointerPos: () => true,
-    viewControls: () => VIEW_CONTROL_PRESETS.default,
-    isFreeSpaceView: () => false,
-    isFreeFrameView: () => false,
-    isSpaceView: () => false,
-    cameraShoots: () => false,
     getSelectedItems: () => [],
     getSelected: () => null,
     objectGeom: (item) => item?.geom ?? null,
@@ -120,7 +104,6 @@ function harness({ api = {}, deps = {}, editor: editorFields = {}, wheelApplies 
     isStrokeGroupItem: (item) => item?.kind === "stroke",
     isRasterObjectItem: (item) => item?.kind === "raster",
     isShotItem: (item) => item?.kind === "shot",
-    isSceneSticker: () => false,
     poseOf: (item) => item?.pose ?? {},
     parseRasterObjectSelectionId: (id) => String(id).replace(/^raster:/, ""),
     getRasterObjectList: () => [],
@@ -139,9 +122,6 @@ function harness({ api = {}, deps = {}, editor: editorFields = {}, wheelApplies 
     buildFreehandStrokeRecord: (...args) => ({ built: "freehand", args, actionGroupId: "g1", toolKind: args[1] }),
     buildLassoFillStrokeRecord: (...args) => ({ built: "lasso", args, actionGroupId: "g1", toolKind: args[1] }),
     getActivePaintTargetDescriptor: () => "target-descriptor",
-    editorViewInput: () => ({}),
-    startCameraPress: () => false,
-    stickerById: () => null,
     getList: () => [],
     getPaintingGroupList: () => [],
     getCutoutSelectableItems: () => [],
@@ -151,10 +131,7 @@ function harness({ api = {}, deps = {}, editor: editorFields = {}, wheelApplies 
     rectFromPoints: (a, b) => ({ a, b }),
     rectIntersectsGeom: () => false,
     startAnimation: (fn) => fn(),
-    cancelTimelineDrag: () => false,
     shortestWrappedDelta: (a, b) => a - b,
-    currentSpaceCamera: () => "space-camera",
-    playback: { playing: false, stop: record("playback.stop") },
   };
   const impls = { ...defaults, ...api };
   const real = {};
@@ -215,79 +192,13 @@ const rasterList = (id) => [{ id: "other" }, { id, w: 3 }];
 
 // ---------------------------------------------------------------- pointerdown: before the tools
 
-test("a press clears the Timeline selection, records the pointer and stops the view's inertia and transition", () => {
-  const h = harness({ deps: { timeline: { selection: { id: "k" } } } });
+test("a press records the pointer and stops the view's inertia and transition", () => {
+  const h = harness();
   h.onCanvasPointerDown(h.event({ button: 2 }));
-  assert.equal(h.values.timeline.selection, null);
-  assert.equal(h.calls("syncTimeline").length, 1);
   assert.deepEqual(h.calls("setPointerPos"), [[{ x: 100, y: 50 }, true]]);
   assert.equal(h.calls("cancelViewTransition").length, 1);
   assert.deepEqual(h.values.viewController.state.inertia, { active: false, vx: 0, vy: 0 });
-  assert.deepEqual(h.sequence("syncTimeline", "setPointerPos", "cancelViewTransition"), ["syncTimeline", "setPointerPos", "cancelViewTransition"]);
-});
-
-test("a press without a Timeline selection does not sync the Timeline", () => {
-  const h = harness();
-  h.onCanvasPointerDown(h.event({ button: 2 }));
-  assert.equal(h.called("syncTimeline"), false);
-});
-
-test("in 6DoF a binding of the 3D view controls moves the view: pan and orbit go to startSpaceDrag", () => {
-  for (const [button, shiftKey, action] of [[1, false, "pan"], [2, false, "orbit"], [2, true, "pan"]]) {
-    const h = harness({ api: { isFreeSpaceView: () => true } });
-    h.onCanvasPointerDown(h.event({ button, shiftKey, pointerId: 3 }));
-    assert.deepEqual(h.calls("startSpaceDrag"), [[action, { x: 100, y: 50 }, 3]]);
-    assert.equal(h.calls("e.preventDefault").length, 1);
-    assert.equal(h.editor.interaction, null);
-  }
-});
-
-test("in 6DoF a look binding looks around from the CSS position", () => {
-  const h = harness({ api: { isFreeSpaceView: () => true, viewControls: () => VIEW_CONTROL_PRESETS.unity } });
-  h.onCanvasPointerDown(h.event({ button: 2, pointerId: 4 }));
-  const it = h.editor.interaction;
-  assert.equal(it.kind, "view");
-  assert.deepEqual(it.last, { x: 50, y: 25 });
-  assert.ok(isNum(it.lastTs));
-  const [start] = h.calls("viewController.startDrag");
-  assert.deepEqual(start.slice(0, 3), [50, 25, 4]);
-  assert.deepEqual(h.calls("updateCursor"), [[{ x: 100, y: 50 }]]);
-  assert.deepEqual(h.calls("canvas.setPointerCapture"), [[4]]);
-  assert.equal(h.calls("e.preventDefault").length, 1);
-  assert.equal(h.called("startSpaceDrag"), false);
-});
-
-test("in the Frame view with World content a look binding turns the Camera, the others drag the Frame view", () => {
-  let h = harness({ api: { isFreeFrameView: () => true, viewControls: () => VIEW_CONTROL_PRESETS.unity } });
-  h.onCanvasPointerDown(h.event({ button: 2, pointerId: 5 }));
-  assert.deepEqual(h.calls("startPanFrame"), [[{ x: 100, y: 50 }, 5]]);
-  assert.equal(h.called("startFrameDrag"), false);
-  assert.equal(h.calls("e.preventDefault").length, 1);
-
-  h = harness({ api: { isFreeFrameView: () => true } });
-  h.onCanvasPointerDown(h.event({ button: 2, pointerId: 5 }));
-  assert.deepEqual(h.calls("startFrameDrag"), [["orbit", { x: 100, y: 50 }, 5]]);
-  h = harness({ api: { isFreeFrameView: () => true, isFreeSpaceView: () => true } });
-  h.onCanvasPointerDown(h.event({ button: 1, pointerId: 5 }));
-  assert.deepEqual(h.calls("startFrameDrag"), [["pan", { x: 100, y: 50 }, 5]]);
-  assert.equal(h.called("startSpaceDrag"), false);
-});
-
-test("in 6DoF a non-left button without a binding does nothing but prevent the default", () => {
-  for (const flags of [{ isFreeSpaceView: () => true }, { isFreeFrameView: () => true }]) {
-    const h = harness({ api: { ...flags, viewControls: () => VIEW_CONTROL_PRESETS.blender }, editor: { mode: "frame" } });
-    h.onCanvasPointerDown(h.event({ button: 2 }));
-    assert.equal(h.calls("e.preventDefault").length, 1);
-    assert.equal(h.editor.interaction, null);
-    assert.equal(h.called("viewController.startDrag"), false);
-    assert.equal(h.called("hitObjectAt"), false);
-  }
-});
-
-test("in 6DoF Ctrl leaves a press to the tools", () => {
-  const h = harness({ api: { isFreeSpaceView: () => true } });
-  h.onCanvasPointerDown(h.event({ button: 0, ctrlKey: true }));
-  assert.equal(h.editor.interaction.kind, "marquee_select");
+  assert.deepEqual(h.sequence("setPointerPos", "cancelViewTransition"), ["setPointerPos", "cancelViewTransition"]);
 });
 
 test("the middle button pans the active Camera's shot in the Frame view, as the left drag does", () => {
@@ -343,8 +254,8 @@ test("Alt in the Frame view starts a roll of the shot", () => {
   assert.deepEqual(h.calls("requestDraw"), [[{ localOnly: true }]]);
 });
 
-test("Shift in the Frame view rolls from rot_deg outside the dead zone, and nothing inside it", () => {
-  const shot = { rot_deg: 4 };
+test("Shift in the Frame view rolls from roll_deg outside the dead zone, and nothing inside it", () => {
+  const shot = { roll_deg: 4 };
   const rect = { x: 0, y: 0, w: 200, h: 100 };
   let h = harness({ api: { getActiveCutoutShot: () => shot, getFrameViewRect: () => rect }, editor: { mode: "frame" } });
   h.onCanvasPointerDown(h.event({ shiftKey: true, x: 10, y: 10 }));
@@ -393,7 +304,6 @@ test("read-only, a left press looks around in the panorama and does nothing else
   assert.deepEqual(h.editor.interaction.last, { x: 50, y: 25 });
   assert.deepEqual(h.calls("viewController.startDrag")[0].slice(0, 3), [50, 25, 3]);
   assert.deepEqual(h.calls("canvas.setPointerCapture"), [[3]]);
-  assert.equal(h.called("stopTimelinePlayback"), false);
   assert.equal(h.called("clearSelection"), false);
 
   h = harness({ deps: { readOnly: true }, editor: { mode: "unwrap" } });
@@ -402,23 +312,10 @@ test("read-only, a left press looks around in the panorama and does nothing else
   assert.equal(h.called("viewController.startDrag"), false);
 });
 
-test("read-only in 6DoF, a left press does what the preset's emptyLeft does, or nothing", () => {
-  let h = harness({ deps: { readOnly: true }, api: { isFreeSpaceView: () => true } });
-  h.onCanvasPointerDown(h.event({ pointerId: 3 }));
-  assert.deepEqual(h.calls("startSpaceDrag"), [["orbit", { x: 100, y: 50 }, 3]]);
-  assert.equal(h.editor.interaction, null);
-
-  h = harness({ deps: { readOnly: true }, api: { isFreeSpaceView: () => true, viewControls: () => VIEW_CONTROL_PRESETS.blender } });
-  h.onCanvasPointerDown(h.event());
-  assert.equal(h.called("startSpaceDrag"), false);
-  assert.equal(h.called("viewController.startDrag"), false);
-});
-
 test("an open paint color popover takes the press", () => {
   const h = harness({ deps: { paintColorPop: { hidden: false } }, editor: { primaryTool: "paint" } });
   h.onCanvasPointerDown(h.event());
   assert.equal(h.editor.interaction, null);
-  assert.equal(h.called("stopTimelinePlayback"), false);
   assert.equal(h.called("hitObjectAt"), false);
   assert.equal(h.called("clearSelection"), false);
 });
@@ -431,7 +328,7 @@ test("a hidden paint color popover leaves the press to the tool", () => {
 
 // ---------------------------------------------------------------- pointerdown: paint
 
-test("a paint press stops playback and starts a freehand stroke seeded into the engine", () => {
+test("a paint press starts a freehand stroke seeded into the engine", () => {
   const h = harness({ editor: { primaryTool: "paint", paintTool: "brush" } });
   h.onCanvasPointerDown(h.event({ x: 200, y: 100, pointerId: 11 }));
   const it = h.editor.interaction;
@@ -445,8 +342,8 @@ test("a paint press stops playback and starts a freehand stroke seeded into the 
   assert.deepEqual(h.calls("paintEngine.ensureTarget"), [["target-descriptor"]]);
   assert.deepEqual(h.calls("paintEngine.appendStrokePoint"), [["engine-target", 0.2, 0.1, it.stroke]]);
   assert.equal(h.called("paintEngine.updateActiveStroke"), false);
-  assert.deepEqual(h.sequence("stopTimelinePlayback", "invalidateLivePaintPreviewCaches", "paintEngine.beginStroke", "updateCursor", "canvas.setPointerCapture", "requestDraw"),
-    ["stopTimelinePlayback", "invalidateLivePaintPreviewCaches", "paintEngine.beginStroke", "updateCursor", "canvas.setPointerCapture", "requestDraw"]);
+  assert.deepEqual(h.sequence("invalidateLivePaintPreviewCaches", "paintEngine.beginStroke", "updateCursor", "canvas.setPointerCapture", "requestDraw"),
+    ["invalidateLivePaintPreviewCaches", "paintEngine.beginStroke", "updateCursor", "canvas.setPointerCapture", "requestDraw"]);
   assert.deepEqual(h.calls("canvas.setPointerCapture"), [[11]]);
   assert.deepEqual(h.calls("requestDraw"), [[]]);
   assert.equal(h.called("hitObjectAt"), false);
@@ -506,16 +403,14 @@ test("a hidden painting takes no strokes", () => {
   const h = harness({ editor: { primaryTool: "paint" }, api: { paintingShown: () => false } });
   h.onCanvasPointerDown(h.event());
   assert.equal(h.editor.interaction, null);
-  assert.equal(h.called("stopTimelinePlayback"), false);
   assert.equal(h.called("hitObjectAt"), false);
   assert.equal(h.called("updateCursor"), false);
 });
 
-test("a paint press off the panorama stops playback and only updates the cursor", () => {
+test("a paint press off the panorama only updates the cursor", () => {
   const h = harness({ editor: { primaryTool: "paint" }, api: { screenPosToErpPoint: () => null } });
   h.onCanvasPointerDown(h.event());
   assert.equal(h.editor.interaction, null);
-  assert.equal(h.calls("stopTimelinePlayback").length, 1);
   assert.deepEqual(h.calls("updateCursor"), [[{ x: 100, y: 50 }]]);
   assert.equal(h.called("buildFreehandStrokeRecord"), false);
   assert.equal(h.called("canvas.setPointerCapture"), false);
@@ -524,7 +419,6 @@ test("a paint press off the panorama stops playback and only updates the cursor"
 test("the paint tool where painting is not supported falls through to selection", () => {
   const h = harness({ editor: { primaryTool: "paint" }, api: { supportsErpPainting: () => false } });
   h.onCanvasPointerDown(h.event());
-  assert.equal(h.called("stopTimelinePlayback"), false);
   assert.equal(h.calls("hitObjectAt").length, 1);
   assert.equal(h.calls("clearSelection").length, 1);
 });
@@ -549,133 +443,12 @@ test("Ctrl with another tool is not a marquee", () => {
   assert.equal(h.editor.interaction?.kind, "view");
 });
 
-test("in 6DoF a press the Camera takes ends there; one it does not take goes on", () => {
-  let h = harness({ api: { cameraShoots: () => true, isFreeSpaceView: () => true, startCameraPress: () => true } });
-  const e = h.event();
-  h.onCanvasPointerDown(e);
-  assert.deepEqual(h.calls("startCameraPress"), [[e, { x: 100, y: 50 }]]);
-  assert.equal(h.called("hitObjectAt"), false);
-
-  h = harness({ api: { cameraShoots: () => true, isFreeSpaceView: () => true, startCameraPress: () => false } });
-  h.onCanvasPointerDown(h.event());
-  assert.equal(h.calls("hitObjectAt").length, 1);
-
-  h = harness({ api: { cameraShoots: () => false, isFreeSpaceView: () => true, startCameraPress: () => true } });
-  h.onCanvasPointerDown(h.event());
-  assert.equal(h.called("startCameraPress"), false);
-
-  h = harness({ api: { cameraShoots: () => true, startCameraPress: () => true } });
-  h.onCanvasPointerDown(h.event());
-  assert.equal(h.called("startCameraPress"), false);
-});
-
-function worldHarness(extra = {}) {
-  const world = newWorldSceneSticker("w1", { kind: "file" }, { position: [1, 2, 3], rotation: { yaw_deg: 0, pitch_deg: 0, roll_deg: 0 }, scale: 1 });
-  const gizmo = { mode: "translate", transform: { position: [1, 2, 3] } };
-  const h = harness({
-    deps: { sceneV2: true, ...(extra.deps || {}) },
-    editor: { worldSelectedId: "w1", frame: 0, ...(extra.editor || {}) },
-    api: {
-      isSpaceView: () => true,
-      editorViewInput: () => ({ space: { gizmo: extra.noGizmo ? null : gizmo } }),
-      selectedWorldSticker: () => world,
-      stickerById: (id) => (id === "w1" ? world : (id === "sky" ? { placement: "sky" } : null)),
-      ...(extra.api || {}),
-    },
-  });
-  return { h, world, gizmo };
-}
-
-test("a press on a handle of the selected world Sticker's gizmo grabs it", () => {
-  const { h, world, gizmo } = worldHarness({ api: { gizmoPointer: (phase) => (phase === "hover" ? "x" : true) } });
-  h.onCanvasPointerDown(h.event({ pointerId: 13 }));
-  assert.deepEqual(h.editor.interaction, {
-    kind: "world_gizmo", id: "w1", mode: "translate", start: gizmo.transform, base: evaluateSticker(world, 0), changed: false,
-  });
-  assert.deepEqual(h.calls("editorView.gizmoPointer").map((args) => args[0]), ["hover", "down"]);
-  assert.deepEqual(h.calls("editorView.gizmoPointer")[0], ["hover", "space-camera", 100, 50, 800, 400]);
-  assert.deepEqual(h.sequence("canvas.setPointerCapture", "updateCursor"), ["canvas.setPointerCapture", "updateCursor"]);
-  assert.equal(h.called("hitObjectAt"), false);
-});
-
-test("a gizmo the pointer is over but does not grab leaves the press to picking", () => {
-  const { h } = worldHarness({ api: { gizmoPointer: (phase) => (phase === "hover" ? "x" : false), pickSticker: () => "w1" } });
-  h.onCanvasPointerDown(h.event());
-  assert.deepEqual(h.editor.interaction, { kind: "world_select" });
-});
-
-test("a press on another world Sticker commits the canvas selection without pruning, and selects it", () => {
-  const { h } = worldHarness({ editor: { worldSelectedId: null, selectedId: "s1" }, noGizmo: true, api: { pickSticker: () => "w1" } });
-  h.onCanvasPointerDown(h.event({ pointerId: 14 }));
-  assert.deepEqual(h.editor.interaction, { kind: "world_select" });
-  assert.deepEqual(h.calls("editorView.pickSticker"), [["space-camera", 100, 50, 800, 400]]);
-  assert.deepEqual(h.calls("selectWorldSticker"), [["w1"]]);
-  assert.deepEqual(h.sequence("pushHistory", "commitState", "selectWorldSticker", "updateSidePanel", "updateSelectionMenu", "syncFloatingViewButtonState", "requestDraw", "canvas.setPointerCapture"),
-    ["pushHistory", "commitState", "selectWorldSticker", "updateSidePanel", "updateSelectionMenu", "syncFloatingViewButtonState", "requestDraw", "canvas.setPointerCapture"]);
-  assert.deepEqual(h.calls("pushHistory"), [[{ prune: false }]], "selecting is not an edit");
-  assert.equal(h.called("updateCursor"), false);
-  assert.equal(h.called("hitObjectAt"), false);
-});
-
-test("a press on another world Sticker without a canvas selection selects it without a history step", () => {
-  const { h } = worldHarness({ editor: { worldSelectedId: null }, noGizmo: true, api: { pickSticker: () => "w1" } });
-  h.onCanvasPointerDown(h.event());
-  assert.equal(h.called("pushHistory"), false);
-  assert.deepEqual(h.calls("selectWorldSticker"), [["w1"]]);
-});
-
-test("a press on the selected world Sticker keeps it selected", () => {
-  const { h } = worldHarness({ noGizmo: true, api: { pickSticker: () => "w1" } });
-  h.onCanvasPointerDown(h.event());
-  assert.deepEqual(h.editor.interaction, { kind: "world_select" });
-  assert.equal(h.called("selectWorldSticker"), false);
-  assert.equal(h.called("requestDraw"), false);
-});
-
-test("a press that picks no world Sticker goes on to the canvas items", () => {
-  for (const picked of ["sky", null]) {
-    const { h } = worldHarness({ noGizmo: true, api: { pickSticker: () => picked } });
-    h.onCanvasPointerDown(h.event());
-    assert.equal(h.calls("hitObjectAt").length, 1);
-  }
-});
-
-test("a scale or rotate handle of the canvas selection comes before a world Sticker", () => {
+test("a rotate handle of the canvas selection starts a rotate", () => {
   const sel = sticker("s1");
-  const { h } = worldHarness({
-    noGizmo: true,
-    api: { pickSticker: () => "w1", getSelected: () => sel, getSelectedItems: () => [sel], handleHit: () => ({ kind: "rotate" }) },
-  });
+  const h = harness({ api: { getSelected: () => sel, getSelectedItems: () => [sel], handleHit: () => ({ kind: "rotate" }) } });
   h.onCanvasPointerDown(h.event());
-  assert.equal(h.called("editorView.pickSticker"), false);
   assert.equal(h.editor.interaction.kind, "rotate");
-});
-
-test("the move handle of the canvas selection and a locked selection leave the press to the world Sticker", () => {
-  const sel = sticker("s1");
-  let r = worldHarness({ noGizmo: true, api: { pickSticker: () => "w1", getSelected: () => sel, getSelectedItems: () => [sel], handleHit: () => ({ kind: "move" }) } });
-  r.h.onCanvasPointerDown(r.h.event());
-  assert.deepEqual(r.h.editor.interaction, { kind: "world_select" });
-
-  const items = [sticker("a"), sticker("b", { locked: true })];
-  r = worldHarness({ noGizmo: true, api: { pickSticker: () => "w1", getSelectedItems: () => items, getMultiSelectionGeom: () => ({ visible: true, center: { x: 0, y: 0 } }) } });
-  r.h.onCanvasPointerDown(r.h.event());
-  assert.deepEqual(r.h.editor.interaction, { kind: "world_select" });
-  assert.equal(r.h.called("handleHit"), false);
-
-  const locked = sticker("s1", { locked: true });
-  r = worldHarness({ noGizmo: true, api: { pickSticker: () => "w1", getSelected: () => locked, getSelectedItems: () => [locked] } });
-  r.h.onCanvasPointerDown(r.h.event());
-  assert.deepEqual(r.h.editor.interaction, { kind: "world_select" });
-  assert.equal(r.h.called("handleHit"), false);
-});
-
-test("world Stickers are pressed only in the space view of a state v2 with the cursor tool", () => {
-  for (const extra of [{ deps: { sceneV2: false } }, { api: { isSpaceView: () => false } }]) {
-    const { h } = worldHarness({ noGizmo: true, ...extra, api: { pickSticker: () => "w1", ...(extra.api || {}) } });
-    h.onCanvasPointerDown(h.event());
-    assert.equal(h.called("editorView.pickSticker"), false);
-  }
+  assert.equal(h.called("hitObjectAt"), false);
 });
 
 // ---------------------------------------------------------------- pointerdown: the canvas selection
@@ -880,7 +653,7 @@ test("a locked or hidden single selection, or a press off its handles, goes on t
 
 // ---------------------------------------------------------------- pointerdown: hit, empty
 
-test("a press on an unselected item commits the old selection without pruning, selects it and moves it", () => {
+test("a press on an unselected item commits the old selection, selects it and moves it", () => {
   const item = sticker("b");
   const h = harness({ deps: { shotEditor: true }, editor: { selectedId: "a" }, api: { hitObjectAt: () => ({ item, geom: { center: { x: 90, y: 45 } } }) } });
   h.onCanvasPointerDown(h.event({ pointerId: 18 }));
@@ -889,7 +662,7 @@ test("a press on an unselected item commits the old selection without pruning, s
   assert.equal(h.editor.cutoutAspectOpen, false);
   assert.deepEqual(h.sequence("pushHistory", "commitState", "setSelectedItem", "updateSidePanel", "updateSelectionMenu", "requestDraw", "updateCursor", "canvas.setPointerCapture"),
     ["pushHistory", "commitState", "setSelectedItem", "updateSidePanel", "updateSelectionMenu", "requestDraw", "updateCursor", "canvas.setPointerCapture"]);
-  assert.deepEqual(h.calls("pushHistory"), [[{ prune: false }]], "selecting is not an edit");
+  assert.deepEqual(h.calls("pushHistory"), [[]]);
   assert.deepEqual(h.calls("hitObjectAt"), [[{ x: 100, y: 50 }]]);
 });
 
@@ -945,12 +718,12 @@ test("a press on an unselected stroke group or raster object moves it from its s
   assert.equal(h.editor.interaction.snapshot, undefined);
 });
 
-test("an empty press commits the selection without pruning, clears it and looks around in the panorama", () => {
+test("an empty press commits the selection, clears it and looks around in the panorama", () => {
   const h = harness({ editor: { selectedId: "a" } });
   h.onCanvasPointerDown(h.event({ pointerId: 19 }));
   assert.deepEqual(h.sequence("pushHistory", "commitState", "clearSelection", "updateSidePanel", "updateSelectionMenu", "requestDraw", "viewController.startDrag", "updateCursor", "canvas.setPointerCapture"),
     ["pushHistory", "commitState", "clearSelection", "updateSidePanel", "updateSelectionMenu", "requestDraw", "viewController.startDrag", "updateCursor", "canvas.setPointerCapture"]);
-  assert.deepEqual(h.calls("pushHistory"), [[{ prune: false }]], "selecting is not an edit");
+  assert.deepEqual(h.calls("pushHistory"), [[]]);
   assert.equal(h.editor.interaction.kind, "view");
   assert.deepEqual(h.editor.interaction.last, { x: 50, y: 25 });
 });
@@ -974,242 +747,13 @@ test("an empty press outside the panorama only clears the selection", () => {
   }
 });
 
-test("an empty press in 6DoF does the preset's emptyLeft", () => {
-  const h = harness({ api: { isFreeSpaceView: () => true } });
-  h.onCanvasPointerDown(h.event({ pointerId: 2 }));
-  assert.deepEqual(h.calls("startSpaceDrag"), [["orbit", { x: 100, y: 50 }, 2]]);
-  assert.equal(h.editor.interaction, null);
-});
-
 // ---------------------------------------------------------------- pointermove
-
-test("a move without a gesture hovers the gizmo and updates the cursor", () => {
-  const { h } = worldHarness({ api: { gizmoPointer: () => "y" } });
-  h.onCanvasPointerMove(h.event({ x: 5, y: 6 }));
-  assert.equal(h.editor.gizmoAxis, "y");
-  assert.equal(h.values.runtime.backgroundDirty, true);
-  assert.deepEqual(h.calls("requestDraw"), [[{ localOnly: true, reason: DRAW_REASON.VIEW }]]);
-  assert.deepEqual(h.calls("updateCursor"), [[{ x: 5, y: 6 }]]);
-  h.clear();
-  h.onCanvasPointerMove(h.event({ x: 5, y: 6 }));
-  assert.equal(h.called("requestDraw"), false);
-});
-
-test("the gizmo hover shows for a selected Camera, and not without a gizmo or outside the cursor tool", () => {
-  let h = harness({ api: { isSpaceView: () => true, isCameraSelected: () => true, editorViewInput: () => ({ space: { gizmo: {} } }), gizmoPointer: () => "z" } });
-  h.onCanvasPointerMove(h.event());
-  assert.equal(h.editor.gizmoAxis, "z");
-  for (const extra of [{ editor: { primaryTool: "paint" } }, { noGizmo: true }]) {
-    ({ h } = worldHarness({ ...extra, api: { gizmoPointer: () => "z" } }));
-    h.editor.gizmoAxis = "x";
-    h.onCanvasPointerMove(h.event());
-    assert.equal(h.editor.gizmoAxis, null);
-    assert.equal(h.called("editorView.gizmoPointer"), false);
-  }
-});
-
-test("hoverWorldGizmo and worldGizmoPointer are given to the other modules", () => {
-  const { h } = worldHarness({ api: { gizmoPointer: () => "q" } });
-  assert.equal(h.worldGizmoPointer("down", { x: 3, y: 4 }), "q");
-  assert.deepEqual(h.calls("editorView.gizmoPointer"), [["down", "space-camera", 3, 4, 800, 400]]);
-  h.hoverWorldGizmo({ x: 3, y: 4 });
-  assert.equal(h.editor.gizmoAxis, "q");
-});
 
 // A press that starts nothing (the right button), so a test can set the gesture the move continues.
 function pressAt(h, x = 100, y = 50) {
   h.onCanvasPointerDown(h.event({ x, y, button: 2 }));
   h.clear();
 }
-
-test("the first move of an edit stops playback and starts a move over from the frame shown", () => {
-  const item = sticker("s", { geom: { visible: true, center: { x: 70, y: 40 } } });
-  const playback = { playing: true, stop: null };
-  const h = harness({ deps: { stateV2: true }, api: { playback } });
-  playback.stop = () => h.log.push({ name: "playback.stop", args: [] });
-  pressAt(h);
-  h.editor.interaction = { kind: "move", item, offset: { x: 0, y: 0 } };
-  h.onCanvasPointerMove(h.event({ x: 101, y: 50 }));
-  assert.equal(h.calls("playback.stop").length, 1);
-  assert.deepEqual(h.editor.interaction.offset, { x: 30, y: 10 });
-  assert.equal(h.calls("writePose").length, 1);
-  assert.deepEqual(h.sequence("playback.stop", "writePose"), ["playback.stop", "writePose"]);
-  h.clear();
-  h.onCanvasPointerMove(h.event({ x: 102, y: 50 }));
-  assert.equal(h.called("playback.stop"), false);
-});
-
-function restartHarness(interaction, extra = {}) {
-  const playback = { playing: true, stop: null };
-  const h = harness({ deps: { stateV2: true, ...(extra.deps || {}) }, editor: extra.editor, api: { playback, ...(extra.api || {}) } });
-  playback.stop = () => h.log.push({ name: "playback.stop", args: [] });
-  pressAt(h);
-  h.editor.interaction = interaction;
-  return h;
-}
-
-test("the first move that does not leave the press point does not restart", () => {
-  const h = restartHarness({ kind: "move", item: sticker("s"), offset: { x: 0, y: 0 } });
-  h.onCanvasPointerMove(h.event({ x: 100, y: 50 }));
-  assert.equal(h.called("playback.stop"), false);
-  h.onCanvasPointerMove(h.event({ x: 101, y: 50 }));
-  assert.equal(h.calls("playback.stop").length, 1);
-});
-
-test("looking around, the marquee, the space drags and a world selection keep playing", () => {
-  for (const kind of ["view", "marquee_select", "space_pan", "space_orbit", "world_select"]) {
-    const h = restartHarness({ kind, last: { x: 0, y: 0 }, start: { x: 0, y: 0 }, current: { x: 0, y: 0 } }, { api: { spaceViewState: () => initialSpaceView(0, 0, 90) } });
-    h.onCanvasPointerMove(h.event({ x: 120, y: 50 }));
-    assert.equal(h.called("playback.stop"), false, kind);
-  }
-});
-
-test("an edit's first move does not stop a stopped playback or a state that is not v2", () => {
-  for (const [stateV2, playing] of [[false, true], [true, false]]) {
-    const playback = { playing, stop: null };
-    const h = harness({ deps: { stateV2 }, api: { playback } });
-    playback.stop = () => h.log.push({ name: "playback.stop", args: [] });
-    pressAt(h);
-    const item = sticker("s");
-    h.editor.interaction = { kind: "move", item, offset: { x: 1, y: 1 } };
-    h.onCanvasPointerMove(h.event({ x: 120, y: 50 }));
-    assert.equal(h.called("playback.stop"), false);
-    assert.deepEqual(h.editor.interaction.offset, { x: 1, y: 1 });
-  }
-});
-
-test("restart: a Frame pan only stops; a Frame orbit picks its pivot again from where the press was", () => {
-  let h = restartHarness({ kind: "frame_pan", last: { x: 0, y: 0 } });
-  h.onCanvasPointerMove(h.event({ x: 120, y: 50 }));
-  assert.equal(h.calls("playback.stop").length, 1);
-  assert.equal(h.called("frameContext"), false);
-  assert.equal(h.calls("dragFrame").length, 1);
-
-  h = restartHarness({ kind: "frame_orbit", last: { x: 0, y: 0 }, pivot: "old" }, {
-    api: { frameContext: () => "ctx", frameSpaceView: (c) => `view-of-${c}`, frameTarget: (c, v, d) => ({ c, v, d }) },
-  });
-  h.onCanvasPointerMove(h.event({ x: 120, y: 50 }));
-  assert.deepEqual(h.editor.interaction.pivot, { c: "ctx", v: "view-of-ctx", d: { x: 100, y: 50 } });
-  h = restartHarness({ kind: "frame_orbit", last: { x: 0, y: 0 }, pivot: "old" }, { api: { frameContext: () => null } });
-  h.onCanvasPointerMove(h.event({ x: 120, y: 50 }));
-  assert.equal(h.editor.interaction.pivot, "old");
-  assert.equal(h.called("frameTarget"), false);
-});
-
-test("restart: a gizmo drag takes its base again from the Camera or the Sticker at the frame shown", () => {
-  let h = restartHarness({ kind: "world_gizmo", camera: true, base: "old" }, { api: { cutoutCamera: () => "camera-now" } });
-  h.onCanvasPointerMove(h.event({ x: 120, y: 50 }));
-  assert.equal(h.editor.interaction.base, "camera-now");
-
-  const world = newWorldSceneSticker("w1", { kind: "file" }, { position: [0, 0, 0], rotation: { yaw_deg: 0, pitch_deg: 0, roll_deg: 0 }, scale: 2 });
-  h = restartHarness({ kind: "world_gizmo", id: "w1", base: "old" }, { editor: { frame: 3 }, api: { stickerById: (id) => (id === "w1" ? world : null) } });
-  h.onCanvasPointerMove(h.event({ x: 120, y: 50 }));
-  assert.deepEqual(h.editor.interaction.base, evaluateSticker(world, 3));
-
-  h = restartHarness({ kind: "world_gizmo", id: "gone", base: "old" });
-  h.onCanvasPointerMove(h.event({ x: 120, y: 50 }));
-  assert.equal(h.editor.interaction.base, "old");
-});
-
-test("restart: a multi-selection move takes its offset, center and sticker snapshots again", () => {
-  const a = sticker("a", { pose: { yaw_deg: 33, pitch_deg: 4 }, geom: { visible: true, center: { x: 11, y: 12 } } });
-  const b = sticker("b", { geom: { visible: false } });
-  const snapA = { id: "a", yaw_deg: 0, pitch_deg: 0, center: { x: 0, y: 0 } };
-  const snapB = { id: "b", yaw_deg: 0, pitch_deg: 0, center: { x: 0, y: 0 } };
-  let h = restartHarness({ kind: "move_multi", items: [a, b], offset: {}, startCenter: {}, stickerSnapshots: [snapA, snapB], strokeSnapshots: [], rasterSnapshots: [] }, {
-    api: { getMultiSelectionGeom: () => ({ visible: true, center: { x: 90, y: 40 } }), getList: () => [] },
-  });
-  h.onCanvasPointerMove(h.event({ x: 120, y: 50 }));
-  assert.deepEqual(h.editor.interaction.offset, { x: 10, y: 10 });
-  assert.deepEqual(h.editor.interaction.startCenter, { x: 90, y: 40 });
-  assert.deepEqual(snapA, { id: "a", yaw_deg: 33, pitch_deg: 4, center: { x: 11, y: 12 } });
-  assert.deepEqual(snapB, { id: "b", yaw_deg: 0, pitch_deg: 0, center: { x: 0, y: 0 } });
-
-  h = restartHarness({ kind: "move_multi", items: [a], offset: "keep", startCenter: {}, stickerSnapshots: [], strokeSnapshots: [], rasterSnapshots: [] }, {
-    api: { getMultiSelectionGeom: () => ({ visible: false }) },
-  });
-  h.onCanvasPointerMove(h.event({ x: 120, y: 50 }));
-  assert.equal(h.editor.interaction.offset, "keep");
-});
-
-test("restart: scale and rotate take their center and start values again; a hidden item keeps them", () => {
-  const item = sticker("s", { pose: { hFOV_deg: 50, vFOV_deg: 40, roll_deg: 9 }, geom: { visible: true, center: { x: 97, y: 46 } } });
-  for (const kind of ["scale", "scale_x", "scale_y"]) {
-    const h = restartHarness({ kind, item, center: null, startDist: 0, startHFOV: 0, startVFOV: 0 });
-    h.onCanvasPointerMove(h.event({ x: 120, y: 50 }));
-    assert.deepEqual(h.editor.interaction.center, { x: 97, y: 46 });
-    assert.equal(h.editor.interaction.startDist, 5);
-    assert.equal(h.editor.interaction.startHFOV, 50);
-    assert.equal(h.editor.interaction.startVFOV, 40);
-  }
-  let h = restartHarness({ kind: "rotate", item, center: null, startRot: 0, startAng: 0 });
-  h.onCanvasPointerMove(h.event({ x: 120, y: 50 }));
-  assert.equal(h.editor.interaction.startRot, 9);
-  assert.equal(h.editor.interaction.startAng, Math.atan2(4, 3));
-  assert.deepEqual(h.editor.interaction.center, { x: 97, y: 46 });
-
-  const hidden = sticker("s", { geom: { visible: false } });
-  h = restartHarness({ kind: "scale", item: hidden, center: "keep", startDist: 7, startHFOV: 1, startVFOV: 1 });
-  h.onCanvasPointerMove(h.event({ x: 120, y: 50 }));
-  assert.equal(h.editor.interaction.center, "keep");
-  assert.equal(h.calls("playback.stop").length, 1);
-});
-
-test("restart: paint and the other edits only stop playback", () => {
-  for (const kind of ["paint_stroke", "move_stroke_group", "pan_frame", "roll_frame"]) {
-    const h = restartHarness({ kind, item: strokeGroup("g"), offset: "keep", source: "knob", stroke: {} }, { api: { appendPaintPoint: () => false } });
-    h.onCanvasPointerMove(h.event({ x: 120, y: 50 }));
-    assert.equal(h.calls("playback.stop").length, 1, kind);
-    assert.equal(h.editor.interaction.offset, "keep");
-  }
-});
-
-test("a world selection's move does nothing; a gizmo drag writes the Sticker's Lanes", () => {
-  let h = harness();
-  h.editor.interaction = { kind: "world_select" };
-  h.onCanvasPointerMove(h.event());
-  assert.deepEqual(h.effects(), ["setPointerPos", "updateCursor"]);
-
-  const world = newWorldSceneSticker("w1", { kind: "file" }, { position: [1, 2, 3], rotation: { yaw_deg: 0, pitch_deg: 0, roll_deg: 0 }, scale: 1 });
-  const expected = structuredClone(world);
-  const moved = { position: [4, 2, 3] };
-  h = harness({ editor: { frame: 2 }, api: { stickerById: (id) => (id === "w1" ? world : null), gizmoPointer: () => moved } });
-  const it = { kind: "world_gizmo", id: "w1", mode: "translate", base: evaluateSticker(world, 2), start: { position: [1, 2, 3] }, changed: false };
-  h.editor.interaction = it;
-  h.onCanvasPointerMove(h.event({ x: 7, y: 8 }));
-  setWorldStickerTransform(expected, 2, gizmoDragLanes("translate", it.base, it.start, moved));
-  assert.deepEqual(world, expected);
-  assert.equal(it.changed, true);
-  assert.deepEqual(h.calls("editorView.gizmoPointer"), [["move", "space-camera", 7, 8, 800, 400]]);
-  assert.deepEqual(h.sequence("markObjectVisualsDirty", "dragFrames.request", "requestDraw"), ["markObjectVisualsDirty", "dragFrames.request", "requestDraw"]);
-  assert.deepEqual(h.calls("dragFrames.request"), [["sidePanel"]]);
-  assert.deepEqual(h.calls("requestDraw"), [[{ localOnly: true }]]);
-});
-
-test("a gizmo drag of the Camera writes the Camera's Lanes and its shot follows", () => {
-  const camera = newStudioCamera({ position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0 });
-  const expected = structuredClone(camera);
-  const moved = { position: [0, 1, 0] };
-  const h = harness({ deps: { state: { camera, ui_settings: {} } }, editor: { frame: 0 }, api: { gizmoPointer: () => moved } });
-  const it = { kind: "world_gizmo", camera: true, mode: "translate", base: { position: [0, 0, 0] }, start: { position: [0, 0, 0] }, changed: false };
-  h.editor.interaction = it;
-  h.onCanvasPointerMove(h.event());
-  assert.deepEqual(camera.position, { ...expected.position, value: [0, 1, 0] });
-  assert.equal(it.changed, true);
-  assert.deepEqual(h.sequence("syncCutoutShot", "dragFrames.request", "requestDraw"), ["syncCutoutShot", "dragFrames.request", "requestDraw"]);
-  assert.equal(h.called("markObjectVisualsDirty"), false);
-});
-
-test("a gizmo drag the gizmo does not move, or of a Sticker that is gone, writes nothing", () => {
-  for (const [moved, found] of [[null, true], [{ position: [0, 0, 0] }, false]]) {
-    const h = harness({ api: { gizmoPointer: () => moved, stickerById: () => (found ? {} : null) } });
-    const it = { kind: "world_gizmo", id: "w1", mode: "translate", base: {}, start: {}, changed: false };
-    h.editor.interaction = it;
-    h.onCanvasPointerMove(h.event());
-    assert.equal(it.changed, false);
-    assert.equal(h.called("requestDraw"), false);
-  }
-});
 
 test("a paint stroke's move appends each coalesced point", () => {
   const h = harness({ api: { appendPaintPoint: (it, sp) => sp.x !== 2 } });
@@ -1318,27 +862,6 @@ test("looking around moves the view controller's drag", () => {
     assert.equal(it.lastTs, args[3]);
     assert.deepEqual(it.last, pos);
     assert.deepEqual(h.calls("requestDraw"), [[{ localOnly: true, reason: DRAW_REASON.VIEW }]]);
-  }
-});
-
-test("the Frame view's drags go to dragFrame", () => {
-  for (const kind of ["frame_pan", "frame_orbit"]) {
-    const h = harness();
-    const it = { kind, last: { x: 0, y: 0 } };
-    h.editor.interaction = it;
-    h.onCanvasPointerMove(h.event());
-    assert.deepEqual(h.calls("dragFrame"), [[it, { x: 100, y: 50 }]]);
-  }
-});
-
-// The way a space drag moves the view is pano_space_navigation.js's (tests/editor_space_navigation.test.mjs).
-test("the space drags' moves go to the space view", () => {
-  for (const kind of ["space_pan", "space_orbit"]) {
-    const h = harness();
-    const it = { kind, last: { x: 0, y: 0 } };
-    h.editor.interaction = it;
-    h.onCanvasPointerMove(h.event());
-    assert.deepEqual(h.calls("moveSpaceView"), [[it, { x: 100, y: 50 }]]);
   }
 });
 
@@ -1609,22 +1132,15 @@ test("scale writes both FOVs by the distance ratio, and the aspect of a sky Stic
   assert.deepEqual(h.calls("writePose"), [[item, { hFOV_deg: 179, vFOV_deg: 100 }]]);
   assert.equal(item.aspect_id, deriveCutoutAspectLabelFromFov(item));
   assert.deepEqual(h.sequence("writePose", "markObjectVisualsDirty", "requestDraw"), ["writePose", "markObjectVisualsDirty", "requestDraw"]);
-
-  const scene = sticker("t");
-  h = harness({ api: { isSceneSticker: () => true } });
-  h.editor.interaction = { kind: "scale", item: scene, center: { x: 100, y: 50 }, startDist: 4, startHFOV: 2, startVFOV: 8 };
-  h.onCanvasPointerMove(h.event());
-  assert.deepEqual(h.calls("writePose"), [[scene, { hFOV_deg: 1, vFOV_deg: 2 }]]);
-  assert.equal(scene.aspect_id, undefined);
 });
 
 test("scale_x and scale_y write one FOV each", () => {
   const item = sticker("s");
-  let h = harness({ api: { isSceneSticker: () => true } });
+  let h = harness();
   h.editor.interaction = { kind: "scale_x", item, center: { x: 97, y: 46 }, startDist: 5, startHFOV: 30, startVFOV: 20 };
   h.onCanvasPointerMove(h.event());
   assert.deepEqual(h.calls("writePose"), [[item, { hFOV_deg: 30 }]]);
-  h = harness({ api: { isSceneSticker: () => true } });
+  h = harness();
   const group = strokeGroup("g");
   h.editor.interaction = { kind: "scale_y", item: group, center: { x: 97, y: 46 }, startDist: 2.5, startHFOV: 30, startVFOV: 20 };
   h.onCanvasPointerMove(h.event());
@@ -1633,30 +1149,9 @@ test("scale_x and scale_y write one FOV each", () => {
   assert.deepEqual(h.calls("requestDraw"), [[{ localOnly: true }]]);
 });
 
-// docs/editor-interaction.md (the owner, 2026-10-11): Panorama Studio's Camera keeps its frame's aspect under every
-// size handle; only the aspect presets change it.
-test("the size handles of Panorama Studio's Camera write only its angle of view", () => {
-  for (const [kind, startDist, hFov] of [["scale", 2.5, 120], ["scale_x", 2.5, 120]]) {
-    const camera = { id: "camera", hFOV_deg: 60, vFOV_deg: 40, aspect_id: "3:2" };
-    const h = harness();
-    h.editor.interaction = { kind, item: camera, center: { x: 97, y: 46 }, startDist, startHFOV: 60, startVFOV: 40 };
-    h.onCanvasPointerMove(h.event());
-    assert.deepEqual(h.calls("writePose"), [[camera, { hFOV_deg: hFov }]], kind);
-  }
-  // The edge across the frame scales its height: the H FOV that height makes at the frame's aspect.
-  const camera = { id: "camera", hFOV_deg: 60, vFOV_deg: 40 };
-  const h = harness();
-  h.editor.interaction = { kind: "scale_y", item: camera, center: { x: 97, y: 46 }, startDist: 10, startHFOV: 60, startVFOV: 40 };
-  h.onCanvasPointerMove(h.event());
-  const [[, pose]] = h.calls("writePose");
-  assert.deepEqual(Object.keys(pose), ["hFOV_deg"]);
-  const aspect = Math.tan(30 * Math.PI / 180) / Math.tan(20 * Math.PI / 180);
-  assert.ok(Math.abs(Math.tan(pose.hFOV_deg * Math.PI / 360) - aspect * Math.tan(10 * Math.PI / 180)) < 1e-9);
-});
-
 test("rotate writes rot_deg of a sticker and roll_deg of another item; Shift snaps it", () => {
   const item = sticker("s");
-  let h = harness({ api: { isSceneSticker: () => true } });
+  let h = harness();
   h.editor.interaction = { kind: "rotate", item, center: { x: 90, y: 50 }, startRot: 10, startAng: 0 };
   h.onCanvasPointerMove(h.event({ x: 90, y: 60 }));
   assert.deepEqual(h.calls("writePose"), [[item, { rot_deg: 10 - 90 }]]);
@@ -1692,39 +1187,6 @@ test("a release of the roll knob's gesture is left to the knob", () => {
   h.onCanvasPointerUp();
   assert.equal(h.editor.interaction, it);
   assert.deepEqual(h.log, []);
-});
-
-test("a release of a space drag ends it without a draw", () => {
-  for (const kind of ["space_pan", "space_orbit"]) {
-    const h = harness();
-    h.editor.interaction = { kind };
-    h.onCanvasPointerUp();
-    assert.equal(h.editor.interaction, null);
-    assert.deepEqual(h.log.map((entry) => [entry.name, entry.args]), [["updateCursor", [{ x: 1, y: 2 }]], ["updateSelectionMenu", []]]);
-  }
-});
-
-test("a release of a world selection ends it; a gizmo drag that changed the Sticker is one Undo step", () => {
-  let h = harness();
-  h.editor.gizmoAxis = "x";
-  h.editor.interaction = { kind: "world_select" };
-  h.onCanvasPointerUp();
-  assert.equal(h.editor.interaction, null);
-  assert.equal(h.editor.gizmoAxis, null);
-  assert.deepEqual(h.effects(), ["updateCursor", "requestDraw"]);
-  assert.deepEqual(h.calls("requestDraw"), [[]]);
-
-  h = harness();
-  h.editor.interaction = { kind: "world_gizmo", changed: false };
-  h.onCanvasPointerUp();
-  assert.deepEqual(h.calls("editorView.gizmoPointer"), [["up", "space-camera", 1, 2, 800, 400]]);
-  assert.equal(h.values.runtime.backgroundDirty, true);
-  assert.equal(h.called("pushHistory"), false);
-
-  h = harness();
-  h.editor.interaction = { kind: "world_gizmo", changed: true };
-  h.onCanvasPointerUp();
-  assert.deepEqual(h.effects(), ["editorView.gizmoPointer", "pushHistory", "commitAndRefreshNode", "updateSidePanel", "updateCursor", "requestDraw"]);
 });
 
 test("a release of a paint stroke commits it to the engine and the history", () => {
@@ -1828,7 +1290,7 @@ test("a released marquee in Cutout picks from the selectable items without the s
 });
 
 test("a release of a Frame view gesture that changed the Camera is one Undo step", () => {
-  for (const kind of ["pan_frame", "roll_frame", "frame_pan", "frame_orbit"]) {
+  for (const kind of ["pan_frame", "roll_frame"]) {
     let h = harness();
     h.editor.interaction = { kind, changed: true, source: "alt" };
     h.onCanvasPointerUp();
@@ -1940,19 +1402,10 @@ test("a pointercancel puts every edit gesture back to its start values, with no 
     kind: "move_multi", it: { kind: "move_multi", items: [multi, strokeGroup("g"), raster("r")] }, api: paintApi,
     records: [multi, strokes, groups, rasters], write: () => { multi.pose.pitch_deg = -40; writePaint(); }, painting: true,
   });
-  const world = newWorldSceneSticker("w1", { kind: "file" }, { position: [1, 2, 3], rotation: { yaw_deg: 0, pitch_deg: 0, roll_deg: 0 }, scale: 1 });
-  cases.push({
-    kind: "world_gizmo", it: { kind: "world_gizmo", id: "w1" }, api: { stickerById: () => world }, records: [world],
-    write: () => setWorldStickerTransform(world, 12, { position: [5, 5, 5] }), gizmo: true,
-  });
-  // Panorama Studio's Camera: its shot and `state.camera`, whose Lanes take Keyframes.
-  for (const kind of ["pan_frame", "roll_frame", "frame_pan", "frame_orbit"]) {
-    const shot = { id: CAMERA_SHOT_ID, yaw_deg: 1, pitch_deg: 2, roll_deg: 3, position: [0, 0, 0] };
-    const camera = { yaw: { keyframes: [{ frame: 0, value: 1 }] } };
-    cases.push({
-      kind, it: { kind, shot }, deps: { cameraV2: true, state: { ui_settings: {}, camera } }, api: { getActiveCutoutShot: () => shot },
-      records: [shot, camera], write: () => { shot.yaw_deg = 50; shot.position = [1, 1, 1]; camera.yaw.keyframes.push({ frame: 9, value: 50 }); }, camera: true,
-    });
+  // The Cutout's shot.
+  for (const kind of ["pan_frame", "roll_frame"]) {
+    const shot = { id: "shot_1", yaw_deg: 1, pitch_deg: 2, roll_deg: 3 };
+    cases.push({ kind, it: { kind, shot }, records: [shot], write: () => { shot.yaw_deg = 50; shot.roll_deg = 9; } });
   }
   for (const c of cases) {
     const h = harness({
@@ -1967,11 +1420,8 @@ test("a pointercancel puts every edit gesture back to its start values, with no 
     assert.deepEqual(c.records, before, c.kind);
     assert.equal(h.editor.interaction, null, c.kind);
     for (const name of ["pushHistory", "commitState", "commitAndRefreshNode", "node.setDirtyCanvas"]) assert.equal(h.called(name), false, `${c.kind}: ${name}`);
-    assert.equal(h.called("dragFrames.cancel"), true, c.kind);
     if (c.painting) assert.deepEqual(h.calls("markPaintStrokeVisualsDirty"), [[{ rebuildPaintEngine: true }]], c.kind);
     else assert.equal(h.calls("markObjectVisualsDirty").length, 1, c.kind);
-    if (c.camera) assert.deepEqual(h.calls("syncCutoutShot"), [[false]], c.kind);
-    if (c.gizmo) assert.equal(h.calls("editorView.gizmoPointer")[0][0], "up", "the gizmo lets go of its handle");
     // Afterwards the pointer only hovers.
     h.clear();
     h.onCanvasPointerMove(h.event({ x: 300 }));
@@ -2032,10 +1482,6 @@ test("a second pointer is ignored while a gesture runs; only the gesture's own p
   // The gesture's pointer losing its capture without a pointerup cancels it.
   h.onCanvasPointerCancel(h.event({ pointerId: 7 }));
   assert.equal(h.editor.interaction, null);
-  // A Timeline drag under way ignores a press on the canvas too.
-  const t = harness({ deps: { timeline: { selection: null, drag: {} } } });
-  t.onCanvasPointerDown(t.event());
-  assert.deepEqual(t.log, []);
 });
 
 test("a mouse move updates the cursor without a gesture, and draws the Frame view's overlay for the cursor tool", () => {
@@ -2070,18 +1516,8 @@ test("the wheel in the Frame view is the Frame view's step at the pointer", () =
   assert.equal(h.called("cancelViewTransition"), false);
 });
 
-test("the wheel in the panorama zooms toward the pointer in 6DoF and through the view controller otherwise", () => {
-  let h = harness({ api: { isFreeSpaceView: () => true } });
-  h.onCanvasWheel(h.event({ deltaY: -2 }));
-  assert.deepEqual(h.calls("zoomSpaceAt"), [[{ x: 100, y: 50 }, 1]]);
-  assert.deepEqual(h.sequence("cancelViewTransition", "zoomSpaceAt", "e.preventDefault"), ["cancelViewTransition", "zoomSpaceAt", "e.preventDefault"]);
-  assert.equal(h.called("viewController.applyWheelEvent"), false);
-
-  h = harness({ api: { isFreeSpaceView: () => true } });
-  h.onCanvasWheel(h.event({ deltaY: 0 }));
-  assert.equal(h.called("zoomSpaceAt"), false);
-
-  h = harness({ wheelApplies: true });
+test("the wheel in the panorama zooms through the view controller", () => {
+  let h = harness({ wheelApplies: true });
   const e = h.event({ deltaY: 1 });
   h.onCanvasWheel(e);
   assert.deepEqual(h.calls("viewController.applyWheelEvent"), [[e]]);

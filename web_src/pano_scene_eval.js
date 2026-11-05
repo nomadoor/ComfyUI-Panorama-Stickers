@@ -371,7 +371,7 @@ export function evaluateSceneState(state, frame) {
   const sceneClipFrame = clipFrame(scene.clip, time);
   return {
     frame: time,
-    camera: camera == null ? null : evaluateCamera(camera, time),
+    camera: evaluateCamera(camera, time),
     scene: {
       active: scene.visible && clipActive(scene.clip, time),
       clip_frame: sceneClipFrame,

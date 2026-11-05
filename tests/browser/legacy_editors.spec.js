@@ -119,3 +119,32 @@ test("the legacy Stickers node surface without a background draws no orange ther
   expect(Math.abs(rgb[0] - 230) <= 40 && Math.abs(rgb[1] - 140) <= 40 && Math.abs(rgb[2] - 30) <= 40).toBe(false);
   expect(problems).toEqual([]);
 });
+
+// docs/studio-node-surface.md and docs/legacy-node-surfaces.md: only the background input is the background; with only
+// sticker_image linked, its picture is not drawn as the background.
+test("the legacy Stickers node surface does not draw the sticker_image as its background", async ({ page }) => {
+  const problems = await load(page, "stickers", "&sticker");
+  await page.waitForTimeout(1500);
+  for (const [u, v] of [[0.5, 0.5], [0.25, 0.5], [0.75, 0.5]]) {
+    const rgb = await page.evaluate(([u, v]) => window.__entry.surfaceColor(u, v), [u, v]);
+    expect(Math.abs(rgb[0] - 230) <= 40 && Math.abs(rgb[1] - 140) <= 40 && Math.abs(rgb[2] - 30) <= 40, JSON.stringify(rgb)).toBe(false);
+  }
+  expect(problems).toEqual([]);
+});
+
+// docs/legacy-node-surfaces.md "PanoramaPreview" (ADR 0061 leaves it): the legacy Preview's plain wheel still zooms, 3° an event.
+test("the legacy Panorama Preview's plain wheel still changes its FOV", async ({ page }) => {
+  const problems = await load(page, "preview");
+  await expect(page.locator('#graph [aria-label="Fullscreen"]')).toBeVisible({ timeout: 20_000 });
+  const fov = () => page.evaluate(async () => {
+    const { peekPreviewNode } = await import("/web_src/pano_node_bridge.js");
+    return peekPreviewNode(window.__entry.node).runtime.view.fov;
+  });
+  expect(await fov()).toBe(100);
+  await page.evaluate(() => {
+    const root = document.querySelector('#graph [data-capture-wheel="true"]');
+    (root.querySelector("canvas") ?? root).dispatchEvent(new WheelEvent("wheel", { deltaY: -100, bubbles: true, cancelable: true }));
+  });
+  expect(await fov()).toBe(97);
+  expect(problems).toEqual([]);
+});

@@ -6,7 +6,7 @@
 import { clamp01, snapPos } from "./ui_slider.js";
 
 // The ratio at the left end of the slider; the right end is its inverse.
-export const ASPECT_SLIDER_WIDE = 16 / 9;
+const ASPECT_SLIDER_WIDE = 16 / 9;
 // The ticks drawn on the slider.
 export const ASPECT_TICKS = Object.freeze([3 / 2, 4 / 3, 1, 3 / 4, 2 / 3]);
 // The ratios the slider lands on, left to right: the two ends and the ticks.

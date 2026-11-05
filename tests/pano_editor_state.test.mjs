@@ -5,14 +5,12 @@ import { readdirSync, readFileSync } from "node:fs";
 
 import {
   CAMERA_SHOT_ID,
-  cameraLensFields,
   cameraShot,
   duplicateSceneSticker,
   editorActive,
   editorStateText,
   editorStateWrite,
   makePanoEditorHistorySnapshot,
-  newStudioCamera,
   newSceneId,
   newWorldSceneSticker,
   normalizeCoverageValue,
@@ -23,25 +21,38 @@ import {
   restoredHistoryState,
   retainActiveCutoutShot,
   sameEditorStateText,
-  cameraFields,
-  deleteWorldSticker,
   sceneStickerLabel,
   setCameraField,
   setCameraShot,
   setEditorActive,
   setStickerOpacity,
   setStickerPose,
-  setTimelineFps,
   setWorldStickerField,
   setWorldStickerTransform,
   stickerPose,
   takeStickerId,
-  worldStickerFields,
 } from "../web_src/pano_editor_state.js";
 import { applyStickersNodeSurfaceAction } from "../web_src/pano_stickers_node_surface.js";
 import { cutoutFilmPointToWorldDir, worldDirToCutoutFilmPoint } from "../web_src/pano_cutout_view_math.js";
-import { evaluateCamera, evaluateSceneState } from "../web_src/pano_scene_eval.js";
-import { defaultCamera, loadSceneState, rebaseSceneState } from "../web_src/pano_scene_state.js";
+import { evaluateCamera, evaluateSceneState, evaluateSticker } from "../web_src/pano_scene_eval.js";
+import { defaultCamera, loadSceneState, rebaseSceneState, sceneStateText } from "../web_src/pano_scene_state.js";
+import { laneNames } from "../web_src/pano_timeline.js";
+
+// A test helper: sets the Timeline fps of a working state v2, rebasing its times (rebaseSceneState) so they keep their
+// seconds, in place.
+function setTimelineFps(state, fps) {
+  const rebased = rebaseSceneState(state, fps);
+  const stickers = new Map(rebased.stickers.map((item) => [item.id, item]));
+  state.timeline = rebased.timeline;
+  const owners = [[state.camera, rebased.camera], [state.background, rebased.background], [state.scene, rebased.scene], ...state.stickers.map((item) => [item, stickers.get(item.id)])];
+  for (const [owner, next] of owners) {
+    // A state without a Camera has none to rebase. Only a Sticker still uploading has no match; it was
+    // just added with a default Clip range and no Keyframes.
+    if (!next) continue;
+    if (owner.clip) owner.clip = next.clip;
+    for (const name of laneNames(owner)) owner[name].keyframes = next[name].keyframes;
+  }
+}
 
 const readFixture = (name) => readFileSync(new URL(`./fixtures/scene_state/${name}.json`, import.meta.url), "utf8");
 const sceneNode = () => ({ __panoSceneStateV2: true });
@@ -113,7 +124,7 @@ test("loaded state is normalized while widget and shared settings remain authori
       },
       { id: "hidden", visible: false, locked: true },
     ],
-    shots: [{ id: "shot_1", hFOV_deg: 90, vFOV_deg: 90, out_w: 1920, out_h: 1080, locked: 1 }],
+    shots: [{ id: "shot_1", hFOV_deg: 90, vFOV_deg: 90, locked: 1 }],
     painting: null,
     painting_layer: { token: "temporary" },
     ui_settings: {
@@ -122,7 +133,6 @@ test("loaded state is normalized while widget and shared settings remain authori
       preview_quality: "draft",
     },
     active: { selected_sticker_id: "visible_default", selected_shot_id: "shot_1" },
-    editor_history: { entries: ["runtime-only"] },
   });
 
   const state = parsePanoEditorState(text, {
@@ -147,7 +157,6 @@ test("loaded state is normalized while widget and shared settings remain authori
     invert_view_x: true,
     invert_view_y: false,
   });
-  assert.equal("editor_history" in state, false);
   assert.deepEqual(state.stickers, [
     {
       id: "visible_default",
@@ -186,7 +195,6 @@ test("history snapshots are detached and exclude runtime-only state", () => {
     version: 1,
     assets: { asset_1: { name: "source.png" } },
     stickers: [{ id: "sticker_1", crop: { x: 0.25 } }],
-    editor_history: { entries: ["previous"] },
     painting_layer: { token: "uploaded-preview" },
   };
 
@@ -402,7 +410,6 @@ test("a sky Sticker with Keyframes can be locked and edited on the node", () => 
 test("the inspector edits the Camera's Lanes by the recording rule", () => {
   const state = parseSceneEditorState(readFixture("v2_canonical"));
   const { camera } = state;
-  assert.deepEqual(cameraFields(camera, 24), { position_x: 2, position_y: 1.6, position_z: -3, yaw_deg: -120, pitch_deg: -20, roll_deg: 15, hFOV_deg: 60 });
 
   // A keyed Lane updates the Keyframe at the playhead or adds one; other Lanes are not touched.
   setCameraField(camera, 24, "position_y", 2);
@@ -652,9 +659,8 @@ test("the inspector edits a world Sticker's Lanes by the recording rule, in its 
     rotation: { value: { yaw_deg: 10, pitch_deg: 5, roll_deg: 0 }, keyframes: [{ frame: 0, value: { yaw_deg: 10, pitch_deg: 5, roll_deg: 0 } }, { frame: 20, value: { yaw_deg: 50, pitch_deg: 5, roll_deg: 0 } }] },
   });
   // Timeline frame 16 is clip frame 10 (start 10, in 4), halfway between the rotation Keyframes.
-  const fields = worldStickerFields(sticker, 16);
-  assert.deepEqual([fields.position_x, fields.position_y, fields.position_z, fields.scale, fields.opacity], [1, 2, -3, 2, 100]);
-  assert.ok(fields.yaw_deg > 10 && fields.yaw_deg < 50);
+  const before = evaluateSticker(sticker, 16);
+  assert.ok(before.yaw_deg > 10 && before.yaw_deg < 50);
 
   // A Lane without Keyframes changes its static value; one with Keyframes gets a Keyframe at the playhead.
   setWorldStickerField(sticker, 16, "position_y", 4);
@@ -666,7 +672,7 @@ test("the inspector edits a world Sticker's Lanes by the recording rule, in its 
   assert.equal(sticker.opacity.value, 0.4);
   assert.deepEqual(sticker.rotation.keyframes.map((key) => key.frame), [0, 10, 20]);
   assert.equal(sticker.rotation.keyframes[1].value.roll_deg, 15);
-  assert.equal(sticker.rotation.keyframes[1].value.yaw_deg, fields.yaw_deg);
+  assert.equal(sticker.rotation.keyframes[1].value.yaw_deg, before.yaw_deg);
   assert.deepEqual(sticker.rotation.value, { yaw_deg: 10, pitch_deg: 5, roll_deg: 0 });
 });
 
@@ -735,15 +741,7 @@ test("the editor has no way to switch a Sticker's Placement between sky and worl
   }
   assert.deepEqual(saved(), { s: ["sky", true], w: ["world", true], p: ["world", true] });
   assert.deepEqual(state.stickers.find((item) => item.id === "w").position.value, [0, 0, -1]);
-  const edited = JSON.stringify(makePanoEditorHistorySnapshot(state));
-  // Delete takes the world Sticker away and hides the port one; a sky Sticker is not its to delete.
-  deleteWorldSticker(state, "w");
-  deleteWorldSticker(state, "p");
-  deleteWorldSticker(state, "s");
-  assert.deepEqual(saved(), { s: ["sky", true], p: ["world", false] });
   // Undo and Redo bring back the snapshots with their Placements.
-  Object.assign(state, restoredHistoryState(state, edited).state);
-  assert.deepEqual(saved(), { s: ["sky", true], w: ["world", true], p: ["world", true] });
   Object.assign(state, restoredHistoryState(state, before).state);
   assert.deepEqual(saved(), { s: ["sky", true], w: ["world", true], p: ["world", true] });
   assert.deepEqual(state.stickers.find((item) => item.id === "w").position.value, [0, 0, 0]);
@@ -849,36 +847,6 @@ test("opening and closing Panorama Studio without an edit leaves its state_json 
   }
 });
 
-// Add Camera puts the one Camera where the Viewport camera stands and looks; deleting it saves `camera: null`.
-test("Panorama Studio adds its Camera at the view and saves none once it is deleted", () => {
-  const node = { __panoSceneStateV2: true, __panoStudio: true };
-  const state = parseSceneEditorState(readFixture("v2_no_camera"));
-  const view = { position: [1, 2, 3], yaw_deg: 200, pitch_deg: -10, hFOV_deg: 100, distance: 2 };
-
-  state.camera = newStudioCamera(view);
-
-  assert.deepEqual(state.camera, loadSceneState({ version: 2, camera: state.camera }).camera, "a normalized Camera");
-  assert.deepEqual(evaluateCamera(state.camera, 0), { position: [1, 2, 3], yaw_deg: -160, pitch_deg: -10, roll_deg: 0, hFOV_deg: 90, curve: 1, aspect: 16 / 9 });
-  assert.equal(state.camera.projection, "perspective");
-  assert.deepEqual(["position", "rotation", "fov"].map((name) => state.camera[name].keyframes), [[], [], []]);
-  const added = loadSceneState(editorStateText(node, state));
-  assert.deepEqual(added.camera, state.camera);
-  assert.equal(sameEditorStateText(node, editorStateText(node, state), readFixture("v2_no_camera"), { rebased: true }), false);
-  // The shot frames 16:9 at 90 degrees.
-  assert.ok(Math.abs(cameraShot(state.camera, 0).vFOV_deg - 58.7155) < 1e-3);
-
-  state.camera = null;
-  const text = editorStateText(node, state);
-  assert.equal(JSON.parse(text).camera, null);
-  assert.equal(sameEditorStateText(node, text, readFixture("v2_no_camera"), { rebased: true }), true);
-  // Deleting a Camera the state had is an edit too.
-  const had = parseSceneEditorState(readFixture("v2_canonical"));
-  had.camera = null;
-  const deleted = editorStateText(node, had);
-  assert.equal(JSON.parse(deleted).camera, null);
-  assert.equal(sameEditorStateText(node, deleted, readFixture("v2_canonical"), { rebased: true }), false);
-});
-
 // A VIDEO faster than the fastest fps a state keeps (TIMELINE_FPS_MAX) rebases the state once: the fps
 // compared on each result is brought into range first, so a later result changes nothing.
 test("a VIDEO above the fps limit rebases the state once and never again", () => {
@@ -956,7 +924,7 @@ test("the Camera's shot is computed from the state and writes back only its pose
     setCameraField(camera, 0, "hFOV_deg", 70);
     setCameraField(camera, 0, "aspect", 1.25);
     assert.deepEqual([camera.fov.value, camera.aspect], [70, 1.25]);
-    assert.deepEqual([cameraShot(camera, 0).hFOV_deg, cameraLensFields(camera, 0).aspect], [70, 1.25]);
+    assert.deepEqual([cameraShot(camera, 0).hFOV_deg, camera.aspect], [70, 1.25]);
   }
 });
 
@@ -966,4 +934,20 @@ test("an aspect written to the Camera is held to the range the state keeps, as t
     setCameraField(camera, 0, "aspect", value);
     assert.equal(camera.aspect, expected);
   }
+});
+
+test("opening and closing writes nothing, with or without a background Clip range, also rebased to the VIDEO's fps", () => {
+  const node = { __panoSceneStateV2: true };
+  for (const saved of [
+    { version: 2, timeline: { fps: 24 } },
+    { version: 2, timeline: { fps: 24 }, background: { clip: { start: 12, in: 5, duration: 30 } } },
+  ]) {
+    const text = sceneStateText(loadSceneState(saved));
+    assert.equal(editorStateWrite(node, parseSceneEditorState(text), text), null);
+    // Opened at a VIDEO's 30 fps, the state is rebased; closing without an edit writes nothing either.
+    assert.equal(editorStateWrite(node, parseSceneEditorState(text, { fps: 30 }), text, { rebased: true }), null);
+  }
+  // The rebased Clip range keeps its seconds.
+  assert.deepEqual(parseSceneEditorState(sceneStateText(loadSceneState({ version: 2, timeline: { fps: 24 }, background: { clip: { start: 12, in: 6 } } })), { fps: 48 }).background.clip,
+    { start: 24, in: 12, duration: null });
 });

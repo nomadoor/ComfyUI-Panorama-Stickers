@@ -1,7 +1,8 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
-import { rulerDragValue, rulerMarks, rulerSnapStep, rulerSnapValue } from "../../studio/frame_layout.js";
-import { FINE_FACTOR, roundValue } from "../../studio/ui_drag.js";
+import { CAMERA_RULERS, rulerDragValue, rulerMarks, rulerSnapStep, rulerSnapValue } from "../../studio/frame_layout.js";
+import { FINE_FACTOR, roundValue, watchDragCancel } from "../../studio/ui_drag.js";
+import { stepWithin } from "../../pano_camera_math.js";
 import StudioKeyDot from "./StudioKeyDot.vue";
 import StudioResetButton from "./StudioResetButton.vue";
 
@@ -25,13 +26,12 @@ const props = defineProps({
   min: { type: Number, default: -Infinity },
   max: { type: Number, default: Infinity },
   // The scale (frame_layout.js CAMERA_RULERS): px per unit, units per small tick and per number, the numbers' decimals.
-  unitPx: { type: Number, default: 8 },
-  minor: { type: Number, default: 1 },
-  major: { type: Number, default: 10 },
-  labelPrecision: { type: Number, default: 0 },
-  // The decimals of the values sent, and the value an arrow key moves (default: a small tick).
+  unitPx: { type: Number, default: CAMERA_RULERS.roll.unitPx },
+  minor: { type: Number, default: CAMERA_RULERS.roll.minor },
+  major: { type: Number, default: CAMERA_RULERS.roll.major },
+  labelPrecision: { type: Number, default: CAMERA_RULERS.roll.precision },
+  // The decimals of the values sent (an arrow key moves the value by a small tick).
   precision: { type: Number, default: 2 },
-  step: { type: Number, default: 0 },
   name: { type: String, default: "" },
   valueText: { type: String, default: "" },
   // The value text's width in digits (frame_layout.js CAMERA_RULERS valueChars), enough for the widest value.
@@ -44,6 +44,9 @@ const props = defineProps({
   tip: { type: String, default: "" },
   // With Shift, stop at multiples of this (0: Shift makes the movement finer instead).
   snap: { type: Number, default: 0 },
+  // Looks as the keyboard's focus does (Alt held in the Frame view: Alt + wheel changes this ruler; docs/studio-ui.md
+  // "Camera タブ").
+  lit: { type: Boolean, default: false },
 });
 const emit = defineEmits(["input", "change", "cancel", "key", "reset"]);
 
@@ -86,8 +89,16 @@ function onPointerDown(event) {
   event.stopPropagation();
   track.value.focus({ preventScroll: true });
   drag = { pointerId: event.pointerId, start: props.value, sent: props.value, raw: props.value, at: coord(event) };
-  track.value.setPointerCapture?.(event.pointerId);
-  window.addEventListener("keydown", onDragKeydown, true);
+  try {
+    track.value.setPointerCapture?.(event.pointerId);
+  } catch {
+    // The pointer is not one to capture (it went up already): no drag starts.
+    drag = null;
+    return;
+  }
+  // Escape, its pointercancel, the window's blur and a lost capture cancel it (docs/editor-interaction.md
+  // "ポインタの取り消しとフォーカスの喪失", ui_drag.js watchDragCancel).
+  drag.stopCancel = watchDragCancel({ element: track.value, pointerId: event.pointerId, cancel: cancelDrag });
 }
 
 function onPointerMove(event) {
@@ -112,22 +123,10 @@ function onPointerUp(event) {
   else emit("cancel");
 }
 
-function onDragKeydown(event) {
-  if (!drag || event.key !== "Escape") return;
-  event.preventDefault();
-  event.stopPropagation();
-  cancelDrag();
-}
-
-// The browser took the pointer away: the drag is cancelled as with Escape (docs/editor-interaction.md "ポインタの取り消しと
-// フォーカスの喪失").
-function onPointerCancel(event) {
-  if (!drag || event.pointerId !== drag.pointerId) return;
-  cancelDrag();
-}
 
 // The value goes back to where the drag started, and the drag ends with cancel.
 function cancelDrag() {
+  if (!drag) return;
   const { start, sent } = drag;
   endDrag();
   if (sent !== start) emit("input", start);
@@ -136,12 +135,12 @@ function cancelDrag() {
 
 function endDrag() {
   if (!drag) return;
+  drag.stopCancel?.();
   try {
     track.value?.releasePointerCapture?.(drag.pointerId);
   } catch {
     // The capture was already gone.
   }
-  window.removeEventListener("keydown", onDragKeydown, true);
   drag = null;
   live.value = null;
 }
@@ -155,8 +154,8 @@ function onKeydown(event) {
   if (event.shiftKey && props.snap > 0) {
     next = roundValue(rulerSnapStep(props.value, dir, props.snap, { min: props.min, max: props.max }), props.precision);
   } else {
-    const step = (props.step || props.minor) * (event.shiftKey ? FINE_FACTOR : 1);
-    next = roundValue(Math.min(props.max, Math.max(props.min, props.value + dir * step)), props.precision);
+    // One small tick (the FOV ruler's is VIEW_FOV_STEP_DEG: pano_camera_math.js fovStepValue gives the same).
+    next = stepWithin(props.value, dir, { step: props.minor, min: props.min, max: props.max, precision: props.precision, fine: event.shiftKey ? FINE_FACTOR : 1 });
   }
   if (next === props.value) return;
   emit("input", next);
@@ -172,7 +171,7 @@ onBeforeUnmount(() => {
 <template>
   <div
     class="pano-studio-edge-ruler"
-    :class="[vertical ? 'is-vertical' : 'is-horizontal', vertical ? `is-${side}` : '', { 'is-disabled': disabled }]"
+    :class="[vertical ? 'is-vertical' : 'is-horizontal', vertical ? `is-${side}` : '', { 'is-disabled': disabled, 'is-lit': lit && !disabled }]"
     :data-tip="tip || null"
     :data-ruler="name"
   >
@@ -192,7 +191,6 @@ onBeforeUnmount(() => {
       @pointerdown="onPointerDown"
       @pointermove="onPointerMove"
       @pointerup="onPointerUp"
-      @pointercancel="onPointerCancel"
       @keydown="onKeydown"
     >
       <div class="pano-studio-edge-ruler-scale" data-ruler-ticks>

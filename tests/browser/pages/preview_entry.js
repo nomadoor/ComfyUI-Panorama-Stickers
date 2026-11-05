@@ -7,15 +7,13 @@
 // template and the allowed types) while the link takes the concrete type of the output it comes from.
 //
 // ?video / ?scene: the source is a VIDEO or a PANO_SCENE (an IMAGE without either). ?none: nothing is linked to the
-// source. ?off: the setting
-// PanoramaSuite.Editor.NewUI is off. ?result: the IMAGE's origin has a result with an image, which the node surface
-// reads (pano_comfy_media.js "previewNode").
+// source. ?result: the IMAGE's origin has a result with an image, which the node surface reads (pano_comfy_media.js
+// "previewNode").
 import { app } from "./comfy/app.js";
 import "/web_src/main.js";
 
 const query = new URLSearchParams(location.search);
 const SOURCE = query.has("scene") ? "PANO_SCENE" : query.has("video") ? "VIDEO" : "IMAGE";
-if (query.has("off")) window.__comfySettings = { "PanoramaSuite.Editor.NewUI": false };
 
 const entry = (window.__entry = { ready: false, error: null, fullscreenAsked: 0 });
 // Headless Chromium grants element fullscreen; counting the asks tells the browser's fullscreen apart from a window.

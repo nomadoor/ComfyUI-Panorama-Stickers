@@ -22,6 +22,7 @@ from comfyui_pano_suite.core.video_source import MaterializedVideo, StreamedVide
 from comfyui_pano_suite.sticker_media import open_video, stream_video
 from comfyui_pano_suite.nodes import PanoramaStudioNode
 from scene_test_helpers import output_size
+from comfyui_pano_suite.core.scene_eval import evaluate_scene_state
 
 
 def _execute(state=None, **inputs):
@@ -78,13 +79,13 @@ def _record_evaluated_frames(monkeypatch):
     """The frames evaluate_scene_state is called at. `execute` calls it once before the `video` output is read, for the
     first frame, so the `video` frames start at [1:]."""
     frames = []
-    original = nodes.evaluate_scene_state
+    original = evaluate_scene_state
 
     def recording(state, frame):
         frames.append(frame)
         return original(state, frame)
 
-    monkeypatch.setattr(nodes, "evaluate_scene_state", recording)
+    monkeypatch.setattr("comfyui_pano_suite.scene_render.evaluate_scene_state", recording)
     return frames
 
 

@@ -6,6 +6,7 @@ import numpy as np
 
 from .cache import CACHE
 from .math import DEG2RAD, camera_basis, dir_to_lon_lat, lon_lat_to_erp, sample_erp_bilinear
+from .state import coverage_span
 
 
 def _cutout_sampling_cache_key(
@@ -28,7 +29,7 @@ def _cutout_sampling_cache_key(
         "roll_deg": float(roll_deg),
         "out_w": int(out_w),
         "out_h": int(out_h),
-        "coverage_deg": 180 if int(coverage_deg) == 180 else 360,
+        "coverage_deg": coverage_span(coverage_deg),
     }
     raw = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
     return hashlib.sha1(raw.encode("utf-8")).hexdigest()
@@ -51,7 +52,7 @@ def build_cutout_sampling_map(
         raise ValueError(f"erp_shape must have at least 2 dimensions, got {len(erp_shape)}")
     erp_h = max(1, int(erp_shape[0]))
     erp_w = max(1, int(erp_shape[1]))
-    coverage = 180 if int(coverage_deg) == 180 else 360
+    coverage = coverage_span(coverage_deg)
     cache_key = _cutout_sampling_cache_key(
         (erp_h, erp_w),
         yaw_deg,
@@ -122,28 +123,3 @@ def sample_cutout_from_sampling_map(erp_layer: np.ndarray, sampling_map: dict) -
     if valid is not None:
         sampled[~valid] = 0.0
     return sampled
-
-
-def cutout_from_erp(
-    erp_rgb: np.ndarray,
-    yaw_deg: float,
-    pitch_deg: float,
-    h_fov_deg: float,
-    v_fov_deg: float,
-    roll_deg: float,
-    out_w: int,
-    out_h: int,
-    coverage_deg: int = 360,
-) -> np.ndarray:
-    sampling_map = build_cutout_sampling_map(
-        erp_rgb.shape,
-        yaw_deg,
-        pitch_deg,
-        h_fov_deg,
-        v_fov_deg,
-        roll_deg,
-        out_w,
-        out_h,
-        coverage_deg,
-    )
-    return sample_cutout_from_sampling_map(erp_rgb, sampling_map)

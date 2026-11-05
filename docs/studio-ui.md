@@ -8,8 +8,9 @@ ADR 0048（撮る Camera・入口の役割・画面の組み直し）にある�
 
 見た目の下書き（`design-drafts/*.html`。リポジトリには入れない）とこの文書が食い違うときは、この文書が正である。
 
-新しい UI に切り替えるまで、Panorama Studio と Preview は古い UI で開き、その画面の規則は `docs/editor-interaction.md`・
-`docs/preview-node.md`・`docs/vue-ui-boundary.md` が持つ（ADR 0044 の「置き換えの進め方」）。
+Panorama Studio のエディタはいつも新しい UI で開く。新しい Preview の読み取り専用の開き方も、`source` の link の型が分からないとき
+（下の「Preview のウィンドウ」）を除いて、新しい Preview のウィンドウで開く（ADR 0062）。古い UI は旧ノードのエディタと、その残りの
+道にだけ残る。
 
 この文書が持たない規則：視点の動かし方・注視点・カーソル・視点の操作のつまみの働き・地面のグリッド・World の物のガイド・
 Add とドロップの着く所（`docs/space-and-view.md`）、Keyframe の記録・範囲選択・再生・タイムラインの行（`docs/timeline-ui.md`）、
@@ -23,35 +24,35 @@ Python はこの文書の規則を持たない（列は `—`）。「（新し�
 `web_src/components/studio/`）に作る予定のもの、「（未作成）」は作る予定の test である。印の無いものは今ある。作ってあるが規則の
 一部がまだ動かないものは、その部分を「未実装」と書く。
 
-入口：新しい UI は、ComfyUI の設定 `PanoramaSuite.Editor.NewUI`（既定はオン。持ち主の決定、2026-10-30、マイナーアップデートで既定にする）がオンのとき Panorama Studio を開く。
-オフにすると古い UI で開く（`web_src/editor_choice.js` `NEW_UI_SETTING`。組み立ては `web_src/main.js`、新しい UI のエディタは
-`web_src/studio/editor.js`）。古い UI を消す change でこの設定を消す（ADR 0044 の「置き換えの進め方」。それまでは古い UI へ戻る道として残す）。
+入口：Panorama Studio のノードは、読み取り専用の求めでも、いつも新しい UI のエディタで開く（`web_src/editor_choice.js` `createEditorChooser`。古い UI に Panorama Studio のノードは届かない。組み立ては
+`web_src/main.js`、新しい UI のエディタは `web_src/studio/editor.js`）。古い UI へ戻す設定は無い（ADR 0062）。ComfyUI に
+`PanoramaSuite.Editor.NewUI` の値が保存されていても読まず、消しもしない。
 
 | 規則 | Python | JS | test |
 |---|---|---|---|
 | 画面の区画（ステージ、タブ、左の列、右の中央の列、右下、右上、上端の中央、インスペクタ、タイムラインの領域と境界） | — | `web_src/components/studio/StudioEditor.vue`、大きさの規則は `web_src/studio/layout.js`（タイムラインの高さ、Output の小窓の大きさとその記憶）、開くのは `web_src/studio/editor.js` | `tests/studio_stage_view.test.mjs`（`layout.js`）、`tests/browser/studio_editor.spec.js` |
 | 左の列の中身と並び、タブごとの無効 | — | `web_src/components/studio/StudioToolRail.vue`（今は Cursor・Paint・Mask・Add・Camera・Undo・Redo が働き、ほかは席に置いて無効。Paint・Mask は下の「ペイントの道具」。Undo・Redo は `web_src/studio/session.js` の履歴、Add は `web_src/studio/add_files.js`、Camera は下の「エディタの中の Camera」の行）。Camera タブでの無効は `StudioToolRail.vue` の `cameraTab` | `tests/browser/studio_editor.spec.js`、`tests/browser/studio_camera_button.spec.js`、`tests/browser/studio_paint.spec.js` |
-| ペイントの道具（左の列の Paint・Mask、下の中央のバーのペイントの道具、ステージで描くこと、ブラシのカーソル、Clear paint・Clear mask） | — | 道具の選び方・太さ・色とバーの中身は `web_src/studio/paint_bar.js`（`createPaintTools`・`paintBar`）、画面は `web_src/components/studio/StudioPaintBar.vue`（色のポップオーバーは `StudioColorPicker.vue`、Clear の確かめは `StudioConfirm.vue`）。ステージで描くことと描く層は `web_src/studio/paint.js` `createStudioPaint`（下の部品：ストロークの記録・点・確定・消しゴムは `web_src/pano_paint_strokes.js`、画素は `pano_paint_engine.js`、ラスタのキャンバスと層は `pano_paint_display.js` `createPaintDisplay`、層の並びは `pano_paint_layers.js` `skyPaintLayers`。古い UI も同じ下の部品を使う）。状態に書いて Undo の 1 段にするのは `web_src/studio/session.js` `editPainting`、組み立ては `web_src/studio/editor.js`、押したときの振り分けは `web_src/studio/stage.js`。閉じるときのペイントの層のアップロードは `web_src/studio/paint_upload.js`（下の部品 `web_src/pano_paint_upload.js`、古い UI と同じ）で、呼ぶのは `web_src/studio/editor.js` の閉じる処理 | `tests/pano_paint_strokes.test.mjs`、`tests/studio_paint.test.mjs`、`tests/studio_session.test.mjs`、`tests/studio_paint_upload.test.mjs`、`tests/pano_paint_upload.test.mjs`、`tests/browser/studio_paint.spec.js` |
-| インスペクタの組み立て（選択で何を出すか）、行の格子、欄、スライダー、リセット、Keyframe のポチの置き場所、Easing のパネル、種類ごとの中身 | — | データは `web_src/studio/inspector_model.js` `buildInspectorModel`、編集を状態に当てるのは `web_src/studio/inspector_actions.js` `applyInspectorEdit`、画面は `web_src/components/studio/StudioInspector.vue`・`StudioInspectorCard.vue`・`StudioInspectorRow.vue`・`StudioEasingPanel.vue`（欄とスライダーの部品は `StudioNumberField.vue`・`StudioSlider.vue`・`StudioAspectSlider.vue`・`StudioResetButton.vue`・`StudioKeyDot.vue`、Camera のカードの撮り方の札は `StudioModeTiles.vue`）。Aspect のスライダーが止まる既定の比は `web_src/studio/ui_aspect.js` `ASPECT_PRESETS`・`snapAspectPos`、矢印キーの移り先は `stepAspect`。Sky の画像の FOV の行のリセット先は `inspector_model.js` `skyPlacedSize`。エディタの中でインスペクタとタイムラインが共有する選択は `web_src/studio/session.js` `inspectorSelection` | `tests/studio_inspector_model.test.mjs`、`tests/studio_inspector_actions.test.mjs`、`tests/studio_ui_helpers.test.mjs`（Aspect のスライダーの止まる所）、`tests/browser/studio_inspector.spec.js`、`tests/browser/studio_ui.spec.js`、`tests/studio_session.test.mjs`、`tests/browser/studio_session.spec.js`、`tests/browser/studio_camera_select.spec.js`（タブを切り替えても同じカード） |
-| 右の中央の列（視点の操作のつまみ、Set orbit center、「?」）と右下のボタン群（Frame Selected、Reset View、グリッドのボタン）の並び | — | `web_src/components/studio/StudioNavWidget.vue`、`StudioViewButtons.vue`（つまみと Set orbit center の働きは `docs/space-and-view.md`） | `tests/browser/studio_editor.spec.js`、`tests/browser/studio_orbit_center.spec.js` |
-| 下の中央のバーの中身（名前の欄の幅を種類で決めること、Camera タブで Camera のバーを出さないこと） | — | `web_src/studio/selection_bar.js` `selectionBar`（`fixedName`、タブを受け取る `tab`）・`gizmoModeOfKey`、`web_src/components/studio/StudioSelectionBar.vue`、ボタンの働きは `web_src/studio/session.js`（`toggleLock`・`duplicateSelected`・`orderSelected`・`revertSelected`・`deleteSelectedObject`）、ステージの選択とギズモと Sky の画像のハンドルは `web_src/studio/stage_objects.js`（ギズモの形・当たり・ドラッグの動きは `web_src/studio/gizmo_overlay.js`、ギズモの中心はガイドの中心 `web_src/studio/world_guides.js` `worldGuideItems`、描くのは `web_src/studio/stage_overlay.js`）。Camera の Lock は `camera.locked`（`docs/scene-state-v2.md`）を `session.js` `toggleLock` で切り替える。前面へ・背面へが Sky の層の全体を並べ替えるのは `session.js` `orderSelected`（全体の並びは `web_src/pano_paint_objects.js` `skyDisplayList`、振り直しは `restackSkyOrder`・`numberSkyOrder`。古い UI と同じ関数）。ペイントのまとまりのバーは次の行。未実装：Replace（古い UI の下にファイルを選ぶ部品が無い）、複数選択のバー | `tests/studio_selection_bar.test.mjs`、`tests/studio_session.test.mjs`、`tests/studio_stage_objects.test.mjs`、`tests/studio_gizmo_overlay.test.mjs`、`tests/browser/studio_select.spec.js`、`tests/browser/studio_camera_button.spec.js`、`tests/browser/studio_camera_select.spec.js` |
-| ペイントのまとまりをつかむこと（つかむ単位、押したときの順と当たり、選んだ枠とハンドル、回転のハンドルの席、動かす・大きさを変える・回す式、前面へ・背面へ・Lock・Delete、Undo） | — | 押したときの順（Sky の物を描く順の逆に並べる `skyObjects`）・当たり・ハンドル（回転のハンドルの席 `rotateSeat` と当たり `paintHandleAt`、回すドラッグ `paintTurn` を含む）・選んだ枠とカーソルは `web_src/studio/stage_objects.js`（描くのは `stage_overlay.js`、ラスタの画素の不透明度は `web_src/studio/paint.js` `rasterAlpha`）、ドラッグは `stage_objects.js` `paintDrag` の `edits` から `web_src/studio/session.js` `gesture`・`commitGesture`・`cancelGesture`、一回の操作は `session.js`（`orderSelected`・`toggleLock`・`deleteSelectedObject`）、選択の形（`paint_group:`・`raster:`）の読み方は `web_src/pano_paint_objects.js` `paintObjectRow`・`paintObjectOf`（まとまりの数え方 `countedPaintGroups`、状態ごとの索引 `paintIndexOf`）で、読む所は `session.js` `keepSelection`・`selectObject`・`inspectorSelection`、`selection_bar.js` `selectedKind`・`selectionBar`、`editor.js` `selectionOf`、`timeline_actions.js` `toggleVisible`、タイムラインのペイントの行の選んだ形は `timeline_model.js` `buildStudioTimeline`。当たり・動かす式・大きさを変える式・回す式・重なり順の振り直し・消し方は二つの UI が共有する下の部品 `web_src/pano_paint_objects.js`（`strokePathsHit`・`strokeHitLineWidth`・`paintCornerHandle`・`strokeDotHit`・`rasterObjectAlphaAt`・`rasterAlphaHits`・ストロークのまとまりを球面の上で動かす `moveStrokeGroupTo`・`transformStrokeGroup`・`offsetRasterObject`・`scaleRasterObject`・ラスタを回す `rotateRasterObject`・`pointerDistance`・`pointerScaleRatio`・`restackSkyOrder`・`numberSkyOrder`・`deletePaintObjects`。古い UI は `web_src/editor/hit_test.js`・`paint_layers.js`・`object_geometry.js`・`items.js`・`pointer_transform.js`・`selection.js`・`commands.js` から呼ぶ）。ストロークのまとまりの球面の上の枠（中心の向き、軸、接平面の箱）は共有の `web_src/pano_paint_strokes.js` `strokeGroupFrame`（軸は `strokeGroupAxes`、接平面との行き来は `frameTangentOf`・`frameDirectionAt`）、四隅は `pano_paint_objects.js` `frameCornersUv`（軸は `pano_camera_math.js` `cameraBasis`、接平面の点を向きにする式は `pano_camera_math.js` `tangentDirection`。空の画像の枠と共有）、消しゴムの先に絞るまとまりの範囲は点の ERP の箱から（`pano_paint_strokes.js` `erasePaint`）、まとまりを球面の上で回して `rot_deg` を書くのは `pano_paint_objects.js` `turnStrokeGroup`（点を回すのは `turnErpPointOnSphere`、接平面の上で大きさを変えるのは `transformStrokeGroup`）、group の `rot_deg` の読み込みは `web_src/pano_paint_types.js` `normalizePaintingState`、ERP の点と向きは `erpPointOfDirection`・`directionOfErpPoint`。ラスタを回す平面と向き（ラスタの四隅と当たりの `rasterObjectCornersUv`・`rasterObjectAlphaAt`・`inverseTransformErpPointAround`）は `docs/render-contract.md` の「ペイントのラスタの置き方」が持つ（ストロークのまとまりの球面の上の枠と回し方はこの節）。ドラッグの間の描き直しは `paint.js` の `layers`（ドラッグは動かす物だけを写し（`stage_objects.js` `paintDraft`、`session.js` `gesture` の `copy`）、ほかのストロークは同じ物のまま。ペイントのエンジンの `rebuildCommitted` は `immutableStrokes` で、読んだことのあるストロークを読み直さず、ストロークの変わったまとまりだけを描き直す。ラスタは変形が変わった一つだけを重ね直す）。選択の行の id を作るのは `web_src/pano_paint_layers.js` `paintObjectRowOf`（層の id と同じ） | `tests/studio_stage_objects.test.mjs`、`tests/pano_paint_objects.test.mjs`、`tests/pano_paint_strokes.test.mjs`（消しゴム）、`tests/editor_items_paint.test.mjs`（古い UI の枠）、`tests/studio_session.test.mjs`、`tests/studio_selection_bar.test.mjs`、`tests/studio_timeline_model.test.mjs`、`tests/studio_timeline_actions.test.mjs`、`tests/pano_paint_engine.test.mjs`（`immutableStrokes`）、`tests/browser/studio_paint_grab.spec.js`（回転のハンドルを含む。古い UI の同じ関数は `tests/editor_pointer_input.test.mjs`、`tests/browser/paint_regions.spec.js`） |
-| エディタの中の Camera の見せ方（Camera のボタン、Camera のカード、3D の見た目） | — | 3D の見た目は `web_src/studio/camera_marker.js`（形・塗り・見え方）、描くのは `web_src/studio/stage_overlay.js`。Camera のボタンの押せる・押せないと tooltip、Camera を視点へ持ってくる書き方は `web_src/studio/camera_ui.js`（`cameraButton`・`cameraToView`。Lane への書き込みは `web_src/studio/camera_state.js` `moveCameraPose`）、Undo の 1 段にするのは `web_src/studio/session.js` `cameraToView`、今の視点を渡すのは `web_src/studio/editor.js`（`stage.pose()`）、ボタンは `StudioToolRail.vue`。Camera を動かした後に Output の小窓を開くのは `StudioOutputPreview.vue` の `reveal`（`StudioEditor.vue` が Camera の合図の数を渡す）。ファインダーの合図は `web_src/components/studio/StudioCameraCue.vue`。打った瞬間の知らせは（未実装） | `tests/studio_camera_marker.test.mjs`、`tests/browser/studio_select.spec.js`、`tests/studio_camera_ui.test.mjs`、`tests/studio_session.test.mjs`、`tests/browser/studio_camera_button.spec.js` |
-| 新しい UI が状態の Camera を読む所と書く所（Camera の無い状態を既定の Camera として読むこと、Timeline frame での値、書くときに既定の Camera を置くこと、Frame 表示・Camera のボタン・ギズモからの書き込み） | — | `web_src/studio/camera_state.js` `cameraOf`・`cameraAt`・`editableCamera`・`moveCameraPose`・`setCameraLanes`（既定の Camera の値は `docs/scene-state-v2.md` が持ち、記録の規則は `pano_editor_state.js` `setCameraShot`・`pano_timeline.js` `setLaneValue` が持つ） | `tests/studio_camera_state.test.mjs`、`tests/studio_camera_ui.test.mjs`、`tests/studio_stage_objects.test.mjs`、`tests/studio_inspector_actions.test.mjs`、`tests/browser/studio_camera_tab.spec.js` |
+| ペイントの道具（左の列の Paint・Mask、下の中央のバーのペイントの道具、ステージで描くこと、ブラシのカーソル、Clear paint・Clear mask） | — | 道具の選び方・太さ・色とバーの中身は `web_src/studio/paint_bar.js`（`createPaintTools`・`paintBar`）、画面は `web_src/components/studio/StudioPaintBar.vue`（色のポップオーバーは `StudioColorPicker.vue`、Clear の確かめは `StudioConfirm.vue`）。ステージで描くことと描く層は `web_src/studio/paint.js` `createStudioPaint`（下の部品：ストロークの記録・点・確定・消しゴムは `web_src/paint_strokes/*.js`（入口は `pano_paint_strokes.js`）、画素は `pano_paint_engine.js`、ラスタのキャンバスと層は `pano_paint_display.js` `createPaintDisplay`、層の並びは `pano_paint_layers.js` `skyPaintLayers`。古い UI も同じ下の部品を使う）。状態に書いて Undo の 1 段にするのは `web_src/studio/session.js` `editPainting`、組み立ては `web_src/studio/editor_tools.js`、押したときの振り分けは `web_src/studio/stage_input.js`。閉じるときのペイントの層のアップロードは `web_src/studio/paint_upload.js`（下の部品 `web_src/pano_paint_upload.js`、古い UI と同じ）で、呼ぶのは `web_src/studio/editor.js` の閉じる処理（`editor_edits.js` `uploadPaintLayerOnClose`） | `tests/pano_paint_strokes.test.mjs`、`tests/studio_paint.test.mjs`、`tests/studio_session.test.mjs`、`tests/studio_paint_upload.test.mjs`、`tests/pano_paint_upload.test.mjs`、`tests/browser/studio_paint.spec.js` |
+| インスペクタの組み立て（選択で何を出すか）、行の格子、欄、スライダー、リセット、Keyframe のポチの置き場所、Easing のパネル、種類ごとの中身 | — | データは `web_src/studio/inspector_model.js` `buildInspectorModel`、編集を状態に当てるのは `web_src/studio/inspector_actions.js` `applyInspectorEdit`、画面は `web_src/components/studio/StudioInspector.vue`・`StudioInspectorCard.vue`・`StudioInspectorRow.vue`・`StudioEasingPanel.vue`（欄とスライダーの部品は `StudioNumberField.vue`・`StudioSlider.vue`・`StudioAspectSlider.vue`・`StudioResetButton.vue`・`StudioKeyDot.vue`、Camera のカードの撮り方の札は `StudioModeTiles.vue`）。Easing のパネルのコピーのボタンは `StudioEasingPanel.vue` の `copyText`（API が無いときのブラウザのコピーは `copyWithCommand`、チェックか × に変えておく時間は `COPIED_MS`、アイコンは `web_src/icons.js` の `copy`・`check`・`close`）。タイムラインの fps と Length の欄で名前の上から始めるドラッグは、`StudioTimelineBar.vue` が `StudioNumberField.vue` の `startDrag` に渡す。Aspect のスライダーが止まる既定の比は `web_src/studio/ui_aspect.js` `ASPECT_PRESETS`・`snapAspectPos`、矢印キーの移り先は `stepAspect`。Sky の画像の FOV の行のリセット先は `inspector_model.js` `skyPlacedSize`。エディタの中でインスペクタとタイムラインが共有する選択は `web_src/studio/session.js` `inspectorSelection` | `tests/studio_inspector_model.test.mjs`、`tests/studio_inspector_actions.test.mjs`、`tests/studio_ui_helpers.test.mjs`（Aspect のスライダーの止まる所）、`tests/browser/studio_inspector.spec.js`、`tests/browser/studio_ui.spec.js`、`tests/studio_session.test.mjs`、`tests/browser/studio_session.spec.js`（fps と Length の名前からのドラッグ）、`tests/browser/studio_video.spec.js`（VIDEO が fps を決めているときの名前）、`tests/browser/studio_camera_select.spec.js`（タブを切り替えても同じカード） |
+| 右の中央の列（視点の操作のつまみ、Set orbit center、「?」）と右下のボタン群（画角の数字と画角のリセット、Frame Selected、Reset View、グリッドのボタン）の並び | — | `web_src/components/studio/StudioNavWidget.vue`、`StudioViewButtons.vue`（つまみと Set orbit center の働き、寄る操作は `docs/space-and-view.md`）。Reset View の家のアイコンと始めの視点での無効と tooltip は `StudioViewButtons.vue`（始めの視点かは `stage.js` の `ui.atStart`、tooltip の文字は Preview のノードと共有する `web_src/space/view.js` `START_VIEW_TIP`）。画角の数字（ドラッグと矢印キー）は `StudioFovNumber.vue`、画角のリセットは `StudioResetButton.vue` で、並べるのは `StudioViewButtons.vue`（数字は `stage.js` の `ui.fov`、当てるのは `stage.js` `setFov`・`resetFov`）。Camera タブで数字に Camera の H FOV を渡すのは `StudioEditor.vue`（tooltip の文字は `web_src/studio/camera_ui.js` `CAMERA_FOV_TIP`・`PANORAMA_MODE_TIP`） | `tests/browser/studio_editor.spec.js`、`tests/browser/studio_orbit_center.spec.js`、`tests/browser/studio_editor.spec.js`（始めの視点で Reset View が無効、数字のドラッグと矢印キー、数字の幅が 35°・100°・140° で変わらないこと）、`tests/browser/studio_camera_wired.spec.js`（Camera タブの数字） |
+| 下の中央のバーの中身（名前の欄の幅を種類で決めること、Camera タブで Camera のバーを出さないこと） | — | `web_src/studio/selection_bar.js` `selectionBar`（`fixedName`、タブを受け取る `tab`）・`gizmoModeOfKey`、`web_src/components/studio/StudioSelectionBar.vue`、ボタンの働きは `web_src/studio/session.js`（`toggleLock`・`duplicateSelected`・`orderSelected`・`revertSelected`・`deleteSelectedObject`）、ステージの選択とギズモと Sky の画像のハンドルは `web_src/studio/stage_objects.js`・`stage_sky_objects.js`（ギズモの形・当たり・ドラッグの動きは `web_src/studio/gizmo_overlay.js`、ギズモの中心はガイドの中心 `web_src/studio/world_guides.js` `worldGuideItems`、描くのは `web_src/studio/stage_overlay.js`）。Camera の Lock は `camera.locked`（`docs/scene-state-v2.md`）を `session.js` `toggleLock` で切り替える。前面へ・背面へが Sky の層の全体を並べ替えるのは `session.js` `orderSelected`（全体の並びは `web_src/pano_paint_objects.js` `skyDisplayList`、振り直しは `restackSkyOrder`・`numberSkyOrder`。古い UI と同じ関数）。ペイントのまとまりのバーは次の行。未実装：Replace（古い UI の下にファイルを選ぶ部品が無い）、複数選択のバー | `tests/studio_selection_bar.test.mjs`、`tests/studio_session.test.mjs`、`tests/studio_stage_objects.test.mjs`、`tests/studio_gizmo_overlay.test.mjs`、`tests/browser/studio_select.spec.js`、`tests/browser/studio_camera_button.spec.js`、`tests/browser/studio_camera_select.spec.js` |
+| ペイントのまとまりをつかむこと（つかむ単位、押したときの順と当たり、選んだ枠とハンドル、回転のハンドルの席、動かす・大きさを変える・回す式、前面へ・背面へ・Lock・Delete、Undo） | — | 押したときの順（Sky の物を描く順の逆に並べる `skyObjects`）・当たり・ハンドル（回転のハンドルの席 `rotateSeat` と当たり `paintHandleAt`、回すドラッグ `paintTurn` を含む）・選んだ枠とカーソルは `web_src/studio/stage_objects.js`（`skyObjects` は `stage_sky_objects.js`、`rotateSeat`・`paintTurn` は `stage_paint_objects.js`。描くのは `stage_overlay.js`、ラスタの画素の不透明度は `web_src/studio/paint.js` `rasterAlpha`）、ドラッグは `stage_paint_objects.js` `paintDrag` の `edits` から `web_src/studio/session.js` `gesture`・`commitGesture`・`cancelGesture`、一回の操作は `session.js`（`orderSelected`・`toggleLock`・`deleteSelectedObject`）、選択の形（`paint_group:`・`raster:`）の読み方は `web_src/pano_paint_objects.js` `paintObjectRow`・`paintObjectOf`（まとまりの数え方 `countedPaintGroups`、状態ごとの索引 `paintIndexOf`）で、読む所は `session.js` `keepSelection`・`selectObject`・`inspectorSelection`、`selection_bar.js` `selectedKind`・`selectionBar`、`editor_content.js` `selectionOf`、`timeline_actions.js` `toggleVisible`、タイムラインのペイントの行の選んだ形は `timeline_model.js` `buildStudioTimeline`。当たり・動かす式・大きさを変える式・回す式・重なり順の振り直し・消し方は二つの UI が共有する下の部品 `web_src/pano_paint_objects.js`（`strokePathsHit`・`strokeHitLineWidth`・`paintCornerHandle`・`strokeDotHit`・`rasterObjectAlphaAt`・`rasterAlphaHits`・ストロークのまとまりを球面の上で動かす `moveStrokeGroupTo`・`transformStrokeGroup`・`offsetRasterObject`・`scaleRasterObject`・ラスタを回す `rotateRasterObject`・`pointerDistance`・`pointerScaleRatio`・`restackSkyOrder`・`numberSkyOrder`・`deletePaintObjects`。古い UI は `web_src/editor/hit_test.js`・`paint_layers.js`・`object_geometry.js`・`items.js`・`pointer_transform.js`・`selection.js`・`commands.js` から呼ぶ）。ストロークのまとまりの球面の上の枠（中心の向き、軸、接平面の箱）は共有の `web_src/paint_strokes/groups.js` `strokeGroupFrame`（軸は `strokeGroupAxes`、接平面との行き来は `frameTangentOf`・`frameDirectionAt`）、四隅は `pano_paint_objects.js` `frameCornersUv`（軸は `pano_camera_math.js` `cameraBasis`、接平面の点を向きにする式は `pano_camera_math.js` `tangentDirection`。空の画像の枠と共有）、消しゴムの先に絞るまとまりの範囲は点の ERP の箱から（`paint_strokes/eraser.js` `erasePaint`）、まとまりを球面の上で回して `rot_deg` を書くのは `pano_paint_objects.js` `turnStrokeGroup`（点を回すのは `turnErpPointOnSphere`、接平面の上で大きさを変えるのは `transformStrokeGroup`）、group の `rot_deg` の読み込みは `web_src/pano_paint_types.js` `normalizePaintingState`、ERP の点と向きは `erpPointOfDirection`・`directionOfErpPoint`。ラスタを回す平面と向き（ラスタの四隅と当たりの `rasterObjectCornersUv`・`rasterObjectAlphaAt`・`inverseTransformErpPointAround`）は `docs/render-contract.md` の「ペイントのラスタの置き方」が持つ（ストロークのまとまりの球面の上の枠と回し方はこの節）。ドラッグの間の描き直しは `paint.js` の `layers`（ドラッグは動かす物だけを写し（`stage_paint_objects.js` `paintDraft`、`session.js` `gesture` の `copy`）、ほかのストロークは同じ物のまま。ペイントのエンジンの `rebuildCommitted` は `immutableStrokes` で、読んだことのあるストロークを読み直さず、ストロークの変わったまとまりだけを描き直す。ラスタは変形が変わった一つだけを重ね直す）。選択の行の id を作るのは `web_src/pano_paint_layers.js` `paintObjectRowOf`（層の id と同じ） | `tests/studio_stage_objects.test.mjs`、`tests/pano_paint_objects.test.mjs`、`tests/pano_paint_strokes.test.mjs`（消しゴム）、`tests/editor_items_paint.test.mjs`（古い UI の枠）、`tests/studio_session.test.mjs`、`tests/studio_selection_bar.test.mjs`、`tests/studio_timeline_model.test.mjs`、`tests/studio_timeline_actions.test.mjs`、`tests/pano_paint_engine.test.mjs`（`immutableStrokes`）、`tests/browser/studio_paint_grab.spec.js`（回転のハンドルを含む。古い UI の同じ関数は `tests/editor_pointer_input.test.mjs`、`tests/browser/paint_regions.spec.js`） |
+| エディタの中の Camera の見せ方（Camera のボタン、Camera のカード、3D の見た目） | — | 3D の見た目は `web_src/studio/camera_marker.js`（形・塗り・見え方）、描くのは `web_src/studio/stage_overlay.js`。Camera のボタンの押せる・押せないと tooltip、Camera を視点へ持ってくる書き方は `web_src/studio/camera_ui.js`（`cameraButton`・`cameraToView`。Lane への書き込みは `web_src/studio/camera_state.js` `moveCameraPose`）、Undo の 1 段にするのは `web_src/studio/session.js` `cameraToView`、今の視点を渡すのは `web_src/studio/editor_edits.js`（`stage.pose()`）、ボタンは `StudioToolRail.vue`。Camera を動かした後に Output の小窓を開くのは `StudioOutputPreview.vue` の `reveal`（`StudioEditor.vue` が Camera の合図の数を渡す）。ファインダーの合図は `web_src/components/studio/StudioCameraCue.vue`。打った瞬間の知らせは（未実装） | `tests/studio_camera_marker.test.mjs`、`tests/browser/studio_select.spec.js`、`tests/studio_camera_ui.test.mjs`、`tests/studio_session.test.mjs`、`tests/browser/studio_camera_button.spec.js` |
+| 新しい UI が状態の Camera を読む所と書く所（Timeline frame での値、Frame 表示・Camera のボタン・ギズモからの書き込み。状態はいつも Camera を持つ：`docs/scene-state-v2.md` の「既定の Camera」） | — | `web_src/studio/camera_state.js` `cameraAt`・`moveCameraPose`・`setCameraLanes`（記録の規則は `pano_editor_state.js` `setCameraShot`・`pano_timeline.js` `setLaneValue` が持つ） | `tests/studio_camera_state.test.mjs`、`tests/studio_camera_ui.test.mjs`、`tests/studio_stage_objects.test.mjs`、`tests/studio_inspector_actions.test.mjs`、`tests/browser/studio_camera_tab.spec.js` |
 | 選んだ行が何の物か（`"camera"`・`"scene"`・自分の Sticker の id・上流の作業コピーの id から、その物を探すこと） | — | `web_src/studio/row_object.js` `findSticker`・`keyframeOwner`。下の中央のバー（`selection_bar.js`）・ステージ（`stage_objects.js`）・インスペクタ・選択を保つ所（`session.js` `keepSelection`・`selectObject`）は、どれも上流の作業コピーも探す（「上流の物の編集」）。 | `tests/studio_row_object.test.mjs`、`tests/studio_selection_bar.test.mjs`、`tests/studio_inspector_model.test.mjs`、`tests/studio_session.test.mjs` |
-| Camera タブの画面（フレームの収め方、枠の外、辺の目盛り、無効にする部品） | — | 収め方と目盛りの計算は `web_src/studio/frame_layout.js`（`frameRect`・`rulerStrips`（目盛りの長さと置き場所）・`rulerMarks`・`rulerDragValue`、目盛りの縮尺と長さと値の幅 `CAMERA_RULERS`）、画面の部品は `web_src/components/studio/StudioCameraFrame.vue`（枠と枠の外）・`StudioEdgeRuler.vue`（辺の目盛り）、無効にする部品は `StudioToolRail.vue` の `cameraTab`・`StudioViewButtons.vue` の `resetDisabled`・`frameTip`・`frameDisabled`（Panorama モードの Frame Selected）・`StudioNavWidget.vue` の `disabled`。辺の目盛りは Camera のカードの行（`frame_layout.js` `cameraRulers`）で、編集とリセットはインスペクタと同じ `inspector_actions.js` `applyInspectorEdit`（`rulerEdit`、Roll だけのリセットは行 `roll`）。ステージへの組み込み（タブ、フレームの中の絵、目盛り、Camera タブで Output の小窓を畳むこと）は `StudioEditor.vue`、タブと Camera の動きを状態に書くのは `web_src/studio/editor.js`（書き方は `web_src/studio/camera_state.js` `moveCameraPose`）、描くのと操作は `web_src/studio/stage.js`（Frame 表示は `stage_view.js` `cameraFrameView`、Panorama モードの ERP は `pano_three_view.js` `renderLiveErp`） | `tests/studio_frame_layout.test.mjs`、`tests/studio_stage_view.test.mjs`、`tests/studio_inspector_actions.test.mjs`（Roll だけのリセット）、`tests/browser/studio_camera_tab.spec.js`、`tests/browser/studio_camera_wired.spec.js`、`tests/browser/studio_camera_fixes.spec.js`、`tests/browser/studio_camera_select.spec.js`（選んだ物のギズモ、バーとフレームの下の余白）、`tests/studio_stage_objects.test.mjs`（Camera タブで押したときの順） |
-| Add のアイコンと、Add とドロップの流れ（選ぶファイル、画像の Sky / World の二択とその取り消し、置く間、失敗の知らせ）、ドラッグ中の印の見た目とラベル | — | 流れは `web_src/studio/add_files.js` `createAddFiles`（下の部品 `pano_sticker_file_import.js` のアップロード、`pano_file_3d.js` の経路）、ファイルを選ぶ画面は `web_src/components/studio/StudioEditor.vue`、二択は `web_src/components/studio/StudioPlaceChoice.vue`、ドラッグの事象は `web_src/studio/drop_input.js` `createDropInput`、印とラベルを描くのは `web_src/components/studio/StudioDropMarker.vue`（印の形と色、ラベルの置き場所 `dropLabelPlace`、着く所は `web_src/studio/landing.js`、`docs/space-and-view.md`）。読み込み中のガイドと現れる動きの時間は `web_src/studio/load_reveal.js` `createLoadReveal`（置いた 3D ファイルを知らせるのは `add_files.js`、中身の不透明度に掛けるのは `web_src/studio/editor.js`、光の帯を描くのは `stage_overlay.js`） | `tests/studio_add_files.test.mjs`、`tests/studio_landing.test.mjs`、`tests/studio_load_reveal.test.mjs`、`tests/browser/studio_add.spec.js` |
-| ノードの入力から来た物（`port` の Sticker、上流の Scene の層、上流の背景）をステージとタイムラインに出すこと | — | `port` の Sticker の絵と 3D の素材は `web_src/studio/port_media.js` `createPortMedia`（下の部品 `pano_port_picture.js` `createPortPicture`、`pano_space.js` `stickerContentRequest`）、上流の層は `web_src/studio/upstream.js` `createStudioUpstream`（下の部品 `pano_upstream_layers.js` `createUpstreamLayers`）、上流の背景は `web_src/pano_background_choice.js` `chooseBackground`（規則は `docs/timeline-ui.md` の「どの背景を出すか」の行）、ステージに描く物にまとめるのは `web_src/studio/stage_content.js` `stageContent`（深度のグリッドの色は `depthColor` で受け、知らせは `stageDepthNotice`。色の動画は `pano_depth_color.js` `createDepthColors`）、つなぐのは `web_src/studio/editor.js`。`port` の Sticker の Pose handoff は、規則と共有の部品が `docs/editor-interaction.md` の「Pose handoff の表示と記録」の行、新しい UI で当て直す時と書き方は `web_src/studio/editor.js`（`executed` の事象、`inspectorContext` の `handoff`）と `web_src/studio/session.js`（`record`・`step`・`stateText`）、リセットとバーの光り方は `web_src/studio/inspector_model.js` `stickerCard`・`stickerChangedRows`。上流の物の編集は次の行 | `tests/studio_port_media.test.mjs`、`tests/studio_session.test.mjs`・`tests/studio_selection_bar.test.mjs`・`tests/studio_inspector_model.test.mjs`・`tests/studio_inspector_actions.test.mjs`（Pose handoff の case）、`tests/browser/studio_pose_handoff.spec.js`、`tests/studio_upstream.test.mjs`、`tests/pano_background_choice.test.mjs`、`tests/studio_stage_content.test.mjs`、`tests/browser/studio_inputs.spec.js` |
-| 上流の物の編集（選ぶ・押したときの順、ステージ・ギズモ・インスペクタ・タイムラインでの編集、バーのボタン、Lock、Delete、元に戻す、層の Revert と Restore deleted、上書きを持てない層、書き戻しと掃除、ドラッグの取り消し、Undo・Redo での作り直し） | — | 何をどの記録に書くかは二つの UI が共有する `web_src/pano_upstream.js`（`upstreamEditedRecords`・`upstreamDeletedRecords`・`upstreamRevertedRecords`・`upstreamLayerRevertedRecords`・`upstreamRestoredRecords`・`upstreamPrunedRecords`・`upstreamStickerEditable`、fps の違う記録は `pano_scene_state.js` `rebaseUpstreamRecord`。規則は `docs/studio-node.md` の「上流の Scene」）。書き戻す時と比べる基準（`upstreamBaseline`）を持ち、消す・戻す・掃除を呼ぶのは`web_src/pano_upstream_edits.js` `createUpstreamEdits`（古い UI の `editor/upstream.js` と新しい UI の `web_src/studio/upstream.js` が同じものを使う）。受け取るのは `records()`・`setRecords(records)`・層（`createUpstreamLayers` の `entries`・`current`・`rebuild`）・`fps()` で、タイムラインの作業コピーを入れる `setWorking(key, sceneState)` を持つ。基準は `editor/upstream.js` と `studio/upstream.js` がそれぞれ持っていたものをこの部品に一つにし、`studio/upstream.js` `output` もそれを読む。新しい UI で、上流の行を探すこと（`rowInState`・`keepSelection`・`selectObject`）、Undo の 1 段を積む前（`record`）の書き戻しと掃除、取り消しと Undo・Redo の後の作り直しは `web_src/studio/session.js`（`applyInspector`・`applyTimeline`・`commitGesture`・`cancelGesture`・`toggleLock`・`deleteSelectedObject`・`revertSelected`・`undo`・`redo`）、インスペクタの編集に作業コピー（`view.upstreamWorking`）を渡すのと Undo・Redo の後の描き直しは `web_src/studio/editor.js`（`inspectorEdit`・`historyStep`）、行のリセットは記録を変える道（`inspector_actions.js` `applyInspectorEdit` が `upstreamRevert` を返し、`session.js` `applyInspector` がその Lane の上書きを記録から外す）、押したときの順とハンドルとギズモは `web_src/studio/stage_objects.js`、上流の World の物のガイドとギズモの中心は `web_src/studio/world_guides.js` `worldGuideItems`、回る中心と Frame Selected の球は `web_src/studio/editor.js` `selectionOf`（`stage_content.js` `stickerFrameSphere`）、バーのボタンは `web_src/studio/selection_bar.js`（「元に戻す」が押せるかと上書きの色の印 `overridden`。上流の物は `pano_upstream.js` `upstreamStickerOverridden`、入力の物は `inspector_model.js` `stickerChangedRows`（行の `atDefault`）を読み、押したときに戻す行も `session.js` `revertSelected` が同じ関数で決める）、タイムラインの点は `timeline_model.js` の `overridden`（同じ `upstreamStickerOverridden` を読む）、上書きの色の値 `--studio-override` は `web/pano_studio.css`（行の点 `.pano-studio-row-mark`・`.pano-studio-tl-override` とバーのボタンが読む）、選んだ枠の破線は `web_src/studio/world_guides.js` `UPSTREAM_SELECTED_DASH` を `stage_objects.js` の `overlay`（`dashed`）と `stage_overlay.js` が使う、見出しの横の名前は `web_src/studio/inspector_model.js`（言葉は `timeline_model.js` `upstreamFromLabel`）。タイムラインの操作が作業コピーの写しを返すこと（`timeline_actions.js` `applyEdit` の `upstream`）は今ある | `tests/test_upstream_editor_parity.py`（新しい UI の道で書いた記録を `_override_layers` が当てた層と作業コピーを比べる case を含む）、`tests/pano_upstream_edits.test.mjs`（行のリセットの後に確定しても何も書かないこと、を含む）、`tests/studio_session.test.mjs`、`tests/studio_selection_bar.test.mjs`、`tests/studio_stage_objects.test.mjs`、`tests/studio_world_guides.test.mjs`、`tests/studio_inspector_model.test.mjs`、`tests/studio_inspector_actions.test.mjs`、`tests/studio_timeline_actions.test.mjs`、`tests/browser/studio_inputs.spec.js`（読み取り専用を確かめる場面を、編集して閉じた後の `state_json` を確かめる場面に変える） |
-| 読み込み中と空の画面、一行の知らせとその種類 | — | どれを出すかと種類は `web_src/studio/notice_line.js` `topLine`（シェルの `StudioEditor.vue` が呼ぶ）、画面は `web_src/components/studio/StudioNotice.vue`。開く前に three.js のチャンクと stylesheet を読んでおくのは `web_src/pano_editor_view.js` `preloadEditorView`・`web_src/studio/editor.js` `preloadStudioEditor`、いつ始めるかは `web_src/editor_choice.js` `createStudioPreloader`（組み立ては `web_src/main.js`）。Add とドロップの失敗と 3D ファイルの読み込み中は `web_src/studio/add_files.js` が `ui` に書く。上流の警告と、経路が答えた後に three.js が 3D ファイルを読めないときの知らせは、出す元がまだ無い（未実装） | `tests/studio_notice_line.test.mjs`、`tests/editor_choice.test.mjs`、`tests/browser/studio_editor.spec.js` |
-| Preview のウィンドウ（IMAGE・VIDEO・PANO_SCENE の source と何もつないでいないとき、Space、背景の範囲と `bg_color`、Scene とノード上の VIDEO の再生の位置の引き継ぎとノード上の表示・再生を止めること。視点の規則は `docs/space-and-view.md`） | — | 開くのと閉じるのは `web_src/studio/preview_window.js` `openPreviewWindow`（Scene の背景と `bg_color`、IMAGE・VIDEO の背景の範囲は `pano_background_choice.js` `chooseBackground`（規則は `docs/timeline-ui.md` の「どの背景を出すか」の行）、ノード上の Scene のビューアを止めるのは `pano_node_bridge.js` `sceneViewerWindowOpened`・`sceneViewerWindowClosed` と `pano_scene_viewer_node.js` の `rest`、ノード上の VIDEO を止めて引き継ぐのは `pano_preview_previewnode.js` の runtime の `windowOpened`・`windowClosed`。Scene の層は `upstream.js` `createStudioUpstream` と `stage_content.js` `stageContent` で読み取り専用に描く（Preview に編集は無い）。VIDEO と Scene の背景の再生は `pano_media_session.js` `createBackgroundVideo`、ループのスイッチの記憶は `timeline_actions.js` `readLoopSetting`・`writeLoopSetting`）、画面と下端の再生の帯は `web_src/components/studio/StudioPreviewWindow.vue`、どちらで開くかは `web_src/editor_choice.js` `previewUsesNewWindow`（`source` に link が無いかを `sourceLinked` で受け、`web_src/main.js` の `previewTakes` が渡す）・`createEditorChooser` の `openPreview`、Scene は `web_src/pano_editor.js` `oldEditorHooks.takeSceneViewer`（組み立ては `web_src/main.js`）。IMAGE・VIDEO のノード上の右上の `Open viewer` は `createEditorChooser` の `previewWindowTakes` を `web_src/pano_editor_extension.js` が `pano_preview_previewnode.js` の `opensWindow` に渡す | `tests/editor_choice.test.mjs`、`tests/pano_editor_extension.test.mjs`、`tests/browser/preview_window.spec.js`、`tests/browser/preview_entry.spec.js`（`web_src/main.js` を本物の frontend と同じ形の MatchType の `source` を持つノードで動かす） |
+| Camera タブの画面（フレームの収め方、枠の外、辺の目盛り、無効にする部品） | — | 収め方と目盛りの計算は `web_src/studio/frame_layout.js`（`frameRect`・`rulerStrips`（目盛りの長さと置き場所）・`rulerMarks`・`rulerDragValue`、目盛りの縮尺と長さと値の幅 `CAMERA_RULERS`）、画面の部品は `web_src/components/studio/StudioCameraFrame.vue`（枠と枠の外）・`StudioEdgeRuler.vue`（辺の目盛り）、無効にする部品は `StudioToolRail.vue` の `cameraTab`・`StudioViewButtons.vue` の `resetDisabled`・`frameTip`・`frameDisabled`（Panorama モードの Frame Selected）・`StudioNavWidget.vue` の `disabled`。辺の目盛りは Camera のカードの行（`frame_layout.js` `cameraRulers`）で、編集とリセットはインスペクタと同じ `inspector_actions.js` `applyInspectorEdit`（`rulerEdit`、Roll だけのリセットは行 `roll`）。目盛りの矢印キーは `pano_camera_math.js` `stepWithin` で小さい目盛り一つ動き（FOV の目盛りでは `fovStepValue` と同じ値）、`CAMERA_RULERS.fov` の `minor`・`unitPx` は `pano_camera_math.js` の定数を読む（持ち主の行は `docs/space-and-view.md` の「寄る操作」）、Alt を押している間の FOV の目盛りの見た目は `StudioEdgeRuler.vue` の `lit`（光る規則は `view_input.js` `fovRulerLit`、`stage.js` が `ui.fovLit` に書き、`StudioEditor.vue` が渡す）、使えるときの tooltip は `frame_layout.js` `FOV_WHEEL_TIP`。ステージへの組み込み（タブ、フレームの中の絵、目盛り、Camera タブで Output の小窓を畳むこと）は `StudioEditor.vue`、タブと Camera の動きを状態に書くのは `web_src/studio/editor_edits.js`（書き方は `web_src/studio/camera_state.js` `moveCameraPose`）、描くのと操作は `web_src/studio/stage.js`・`stage_frame_view.js`・`stage_input.js`（Frame 表示は `stage_view.js` `cameraFrameView`、Panorama モードの ERP は `pano_three_view.js` `renderLiveErp`） | `tests/studio_frame_layout.test.mjs`、`tests/studio_stage_view.test.mjs`、`tests/studio_inspector_actions.test.mjs`（Roll だけのリセット）、`tests/browser/studio_camera_tab.spec.js`、`tests/browser/studio_camera_wired.spec.js`（無効の画角の数字、Alt を押している間の目盛り）、`tests/browser/studio_camera_wired.spec.js`、`tests/browser/studio_camera_fixes.spec.js`、`tests/browser/studio_camera_select.spec.js`（選んだ物のギズモ、バーとフレームの下の余白）、`tests/studio_stage_objects.test.mjs`（Camera タブで押したときの順） |
+| Add のアイコンと、Add とドロップの流れ（選ぶファイル、画像の Sky / World の二択とその取り消し、置く間、失敗の知らせ）、ドラッグ中の印の見た目とラベル | — | 流れは `web_src/studio/add_files.js` `createAddFiles`（下の部品 `pano_sticker_file_import.js` のアップロード、`pano_file_3d.js` の経路）、ファイルを選ぶ画面は `web_src/components/studio/StudioEditor.vue`、二択は `web_src/components/studio/StudioPlaceChoice.vue`、ドラッグの事象は `web_src/studio/drop_input.js` `createDropInput`、印とラベルを描くのは `web_src/components/studio/StudioDropMarker.vue`（印の形と色、ラベルの置き場所 `dropLabelPlace`、着く所は `web_src/studio/landing.js`、`docs/space-and-view.md`）。読み込み中のガイドと現れる動きの時間は `web_src/studio/load_reveal.js` `createLoadReveal`（置いた 3D ファイルを知らせるのは `add_files.js`、中身の不透明度に掛けるのは `web_src/studio/editor_content.js`、光の帯を描くのは `stage_overlay.js`） | `tests/studio_add_files.test.mjs`、`tests/studio_landing.test.mjs`、`tests/studio_load_reveal.test.mjs`、`tests/browser/studio_add.spec.js` |
+| ノードの入力から来た物（`port` の Sticker、上流の Scene の層、上流の背景）をステージとタイムラインに出すこと | — | `port` の Sticker の絵と 3D の素材は `web_src/studio/port_media.js` `createPortMedia`（下の部品 `pano_port_picture.js` `createPortPicture`、`space/content_requests.js` `stickerContentRequest`）、上流の層は `web_src/studio/upstream.js` `createStudioUpstream`（下の部品 `pano_upstream_layers.js` `createUpstreamLayers`）、上流の背景は `web_src/pano_background_choice.js` `chooseBackground`（規則は `docs/timeline-ui.md` の「どの背景を出すか」の行）、ステージに描く物にまとめるのは `web_src/studio/stage_content.js` `stageContent`（深度のグリッドの色は `depthColor` で受け、知らせは `stageDepthNotice`。色の動画は `pano_depth_color.js` `createDepthColors`）、つなぐのは `web_src/studio/editor_inputs.js`。`port` の Sticker の Pose handoff は、規則と共有の部品が `docs/editor-interaction.md` の「Pose handoff の表示と記録」の行、新しい UI で当て直す時と書き方は `web_src/studio/editor_edits.js`（`executed` の事象、`inspectorContext` の `handoff`）と `web_src/studio/session.js`（`record`・`step`・`stateText`）、リセットとバーの光り方は `web_src/studio/inspector_model.js` `stickerCard`・`stickerChangedRows`。上流の物の編集は次の行 | `tests/studio_port_media.test.mjs`、`tests/studio_session.test.mjs`・`tests/studio_selection_bar.test.mjs`・`tests/studio_inspector_model.test.mjs`・`tests/studio_inspector_actions.test.mjs`（Pose handoff の case）、`tests/browser/studio_pose_handoff.spec.js`、`tests/studio_upstream.test.mjs`、`tests/pano_background_choice.test.mjs`、`tests/studio_stage_content.test.mjs`、`tests/browser/studio_inputs.spec.js` |
+| 上流の物の編集（選ぶ・押したときの順、ステージ・ギズモ・インスペクタ・タイムラインでの編集、バーのボタン、Lock、Delete、元に戻す、層の Revert と Restore deleted、上書きを持てない層、書き戻しと掃除、ドラッグの取り消し、Undo・Redo での作り直し） | — | 何をどの記録に書くかは二つの UI が共有する `web_src/pano_upstream.js`（`upstreamEditedRecords`・`upstreamDeletedRecords`・`upstreamRevertedRecords`・`upstreamLayerRevertedRecords`・`upstreamRestoredRecords`・`upstreamPrunedRecords`・`upstreamStickerEditable`、fps の違う記録は `pano_scene_state.js` `rebaseUpstreamRecord`。規則は `docs/studio-node.md` の「上流の Scene」）。書き戻す時と比べる基準（`upstreamBaseline`）を持ち、消す・戻す・掃除を呼ぶのは`web_src/pano_upstream_edits.js` `createUpstreamEdits`（`web_src/studio/upstream.js` が使う）。受け取るのは `records()`・`setRecords(records)`・層（`createUpstreamLayers` の `entries`・`current`・`rebuild`）・`fps()` で、タイムラインの作業コピーを入れる `setWorking(key, sceneState)` を持つ。`studio/upstream.js` `output` もこの部品の基準を読む。新しい UI で、上流の行を探すこと（`rowInState`・`keepSelection`・`selectObject`）、Undo の 1 段を積む前（`record`）の書き戻しと掃除、取り消しと Undo・Redo の後の作り直しは `web_src/studio/session.js`（`applyInspector`・`applyTimeline`・`commitGesture`・`cancelGesture`・`toggleLock`・`deleteSelectedObject`・`revertSelected`・`undo`・`redo`）、インスペクタの編集に作業コピー（`view.upstreamWorking`）を渡すのと Undo・Redo の後の描き直しは `web_src/studio/editor_edits.js`（`inspectorEdit`・`historyStep`）、行のリセットは記録を変える道（`inspector_actions.js` `applyInspectorEdit` が `upstreamRevert` を返し、`session.js` `applyInspector` がその Lane の上書きを記録から外す）、押したときの順とハンドルとギズモは `web_src/studio/stage_objects.js`、上流の World の物のガイドとギズモの中心は `web_src/studio/world_guides.js` `worldGuideItems`、回る中心と Frame Selected の球は `web_src/studio/editor_content.js` `selectionOf`（`stage_content.js` `stickerFrameSphere`）、バーのボタンは `web_src/studio/selection_bar.js`（「元に戻す」が押せるかと上書きの色の印 `overridden`。上流の物は `pano_upstream.js` `upstreamStickerOverridden`、入力の物は `inspector_model.js` `stickerChangedRows`（行の `atDefault`）を読み、押したときに戻す行も `session.js` `revertSelected` が同じ関数で決める）、タイムラインの点は `timeline_model.js` の `overridden`（同じ `upstreamStickerOverridden` を読む）、上書きの色の値 `--studio-override` は `web/pano_studio.css`（行の点 `.pano-studio-row-mark`・`.pano-studio-tl-override` とバーのボタンが読む）、選んだ枠の破線は `web_src/studio/world_guides.js` `UPSTREAM_SELECTED_DASH` を `stage_objects.js` の `overlay`（`dashed`）と `stage_overlay.js` が使う、見出しの横の名前は `web_src/studio/inspector_model.js`（言葉は `timeline_model.js` `upstreamFromLabel`）。タイムラインの操作が作業コピーの写しを返すこと（`timeline_actions.js` `applyEdit` の `upstream`）は今ある | `tests/test_upstream_editor_parity.py`（新しい UI の道で書いた記録を `_override_layers` が当てた層と作業コピーを比べる case を含む）、`tests/pano_upstream_edits.test.mjs`（行のリセットの後に確定しても何も書かないこと、を含む）、`tests/studio_session.test.mjs`、`tests/studio_selection_bar.test.mjs`、`tests/studio_stage_objects.test.mjs`、`tests/studio_world_guides.test.mjs`、`tests/studio_inspector_model.test.mjs`、`tests/studio_inspector_actions.test.mjs`、`tests/studio_timeline_actions.test.mjs`、`tests/browser/studio_inputs.spec.js`（読み取り専用を確かめる場面を、編集して閉じた後の `state_json` を確かめる場面に変える） |
+| 読み込み中と空の画面、一行の知らせとその種類 | — | どれを出すかと種類は `web_src/studio/notice_line.js` `topLine`（シェルの `StudioEditor.vue` が呼ぶ）、画面は `web_src/components/studio/StudioNotice.vue`。開く前に three.js のチャンクと stylesheet を読んでおくのは `web_src/pano_editor_view.js` `preloadEditorView`・`web_src/studio/editor.js` `preloadStudioEditor`、いつ始めるかは `web_src/editor_choice.js` `createStudioPreloader`（組み立ては `web_src/main.js`）。Add とドロップの失敗と 3D ファイルの読み込み中は `web_src/studio/add_files.js` が `ui` に書く。上流の警告と、経路が答えた後に three.js が 3D ファイルを読めないときの知らせは、出す元がまだ無い（未実装）。Panorama モードの Alt + ホイールの知らせは、ほかの止まったときの知らせと同じ `ui.notice`（`view_camera.js` `VIEW_NOTICES`）。Sky だけのときのホイールの知らせは `topLine` の `skyOnly`（`stage.js` の `ui.skyOnly`） | `tests/studio_notice_line.test.mjs`、`tests/editor_choice.test.mjs`、`tests/browser/studio_editor.spec.js` |
+| Preview のウィンドウ（IMAGE・VIDEO・PANO_SCENE の source と何もつないでいないとき、Space、背景の範囲と `bg_color`、Scene とノード上の VIDEO の再生の位置の引き継ぎとノード上の表示・再生を止めること。視点の規則は `docs/space-and-view.md`） | — | 開くのと閉じるのは `web_src/studio/preview_window.js` `openPreviewWindow`（Scene の背景と `bg_color`、IMAGE・VIDEO の背景の範囲は `pano_background_choice.js` `chooseBackground`（規則は `docs/timeline-ui.md` の「どの背景を出すか」の行）、ノード上の Scene のビューアを止めるのは `pano_node_bridge.js` `sceneViewerWindowOpened`・`sceneViewerWindowClosed` と `pano_scene_viewer_node.js` の `rest`、ノード上の VIDEO を止めて引き継ぐのは `pano_preview_previewnode.js` の runtime の `windowOpened`・`windowClosed`。Scene の層は `upstream.js` `createStudioUpstream` と `stage_content.js` `stageContent` で読み取り専用に描く（Preview に編集は無い）。VIDEO と Scene の背景の再生は `pano_media_session.js` `createBackgroundVideo`、ループのスイッチの記憶は `timeline_actions.js` `readLoopSetting`・`writeLoopSetting`）、画面と下端の再生の帯は `web_src/components/studio/StudioPreviewWindow.vue`、どちらで開くかは `web_src/editor_choice.js` `previewUsesNewWindow`（`source` に link が無いかを `sourceLinked` で受け、`web_src/main.js` の `previewTakes` が渡す）・`createEditorChooser` の `openPreview`、Scene のビューアの `Open viewer` は `web_src/main.js` がこのウィンドウに向ける。IMAGE・VIDEO のノード上の右上の `Open viewer` は `createEditorChooser` の `previewWindowTakes` を `web_src/pano_editor_extension.js` が `pano_preview_previewnode.js` の `opensWindow` に渡す | `tests/editor_choice.test.mjs`、`tests/pano_editor_extension.test.mjs`、`tests/browser/preview_window.spec.js`、`tests/browser/preview_entry.spec.js`（`web_src/main.js` を本物の frontend と同じ形の MatchType の `source` を持つノードで動かす） |
 | タイムラインのバーの並びと、行の頭の並び | — | `web_src/components/studio/StudioTimelineBar.vue`・`StudioTimelineHead.vue`（組み立ては `StudioTimeline.vue`、データは `web_src/studio/timeline_model.js`） | `tests/browser/studio_timeline.spec.js` |
-| キーとクリップボードの事象をエディタの外へ出さない | — | `web_src/studio/key_guard.js` `guardEditorKeys`（組み込みは `web_src/studio/editor.js`） | `tests/studio_key_guard.test.mjs`、`tests/browser/studio_keys.spec.js` |
-| ショートカットの一覧（中身、エディタのキーの表、出し方と閉じ方） | — | キーの表と一覧の中身は `web_src/studio/shortcuts.js`（`EDITOR_KEYS`・`editorKeyAction`・`shortcutGroups`）、画面は `web_src/components/studio/StudioShortcuts.vue`、「?」のボタンは `StudioNavWidget.vue`、開く・閉じるの状態（`view.shortcuts`）と「?」のキーは `web_src/studio/editor.js`、置き場所は `StudioEditor.vue` | `tests/studio_shortcuts.test.mjs`、`tests/browser/studio_session.spec.js` |
-| ツールチップ（出す部品、出るまでの時間と消え方、置く側と反転、ショートカットの印、ドラッグ中とキーボードのフォーカス） | — | 置き場所の計算・置く側の表・ショートカットの切り出し・時間の値は `web_src/studio/tooltip.js`（`placeTip`・`tipSide`・`splitTipKeys`・`TIP_SIDES`・`TIP_DELAY`・`TIP_SKIP`・`TIP_GAP`・`TIP_EDGE`）、出し入れと描くのは `web_src/components/studio/StudioTooltip.vue`（`StudioEditor.vue` が一つ置く）。部品は説明を `data-tip` に書く | `tests/studio_tooltip.test.mjs`、`tests/browser/studio_tooltip.spec.js` |
-| 閉じ方 | — | `web_src/components/studio/StudioEditor.vue`、Escape を受けるのは `web_src/studio/stage.js`（ドキュメントの捕捉で受け、欄のドラッグの Escape は先に欄が取る）、枠の外のクリックは `web_src/studio/backdrop.js` `createBackdropClose`、閉じるのと保存は `web_src/studio/editor.js`（書く文字は `web_src/studio/session.js` `stateText`、下の部品 `pano_editor_state.js` `editorStateWrite`）、Escape の順の 3 段（Set orbit center の待ち）は `web_src/studio/stage.js`、4 段は `web_src/studio/add_files.js` `escape`、5 段と 6 段は `web_src/studio/editor.js` `onEscape`（`view.shortcuts`、`view.paint`）、7・8 段は `session.js` `escape`、下の部品 `pano_node_bridge.js`。Escape の順の表の 2 段（地面を拾う待ち）は、その部品がまだ無い（未実装） | `tests/studio_backdrop.test.mjs`、`tests/browser/studio_editor.spec.js`、`tests/browser/studio_ui.spec.js`（欄のドラッグの Escape）、`tests/studio_session.test.mjs`、`tests/browser/studio_session.spec.js` |
-| Preview のウィンドウの画面 | — | `web_src/components/studio/StudioPreviewWindow.vue` | `tests/browser/preview_window.spec.js` |
-| Output の小窓（折りたたみとその動き、大きさ、記憶、出力の形の一行。一行は `studioOutputSize` と `studioNodeStatus` の書き方を呼び、`megapixels`・`multiple` は `web_src/studio/editor.js` がノードから渡す） | — | `web_src/components/studio/StudioOutputPreview.vue`、大きさと記憶は `web_src/studio/layout.js` `outputWindowSize`・`loadOutputWindow`・`saveOutputWindow`、Camera タブで畳んで触れなくするのは `outputWindowView`。中の絵の canvas は `StudioEditor.vue` が小窓の slot に置き、描くのは `web_src/studio/stage.js`（Frame モードはステージの canvas の隅に描いて `createImageBitmap`、Panorama モードは `pano_three_view.js` `renderLiveErp`。描き方は `docs/threejs-spark-integration.md`）。描く入力の作り方は `web_src/studio/output_picture.js` `outputFrameInput`・`outputErpInput` で、Panorama Studio のノード上の表示と共有する（`docs/studio-node-surface.md`） | `tests/studio_stage_view.test.mjs`、`tests/browser/studio_editor.spec.js`、`tests/browser/studio_camera_wired.spec.js`、`tests/browser/studio_camera_fixes.spec.js`、`tests/browser/studio_output_line.spec.js`（出力の形の一行） |
+| キーとクリップボードの事象をエディタの外へ出さない | — | `web_src/studio/key_guard.js` `guardEditorKeys`（組み込みは `web_src/studio/editor_controller.js`） | `tests/studio_key_guard.test.mjs`、`tests/browser/studio_keys.spec.js` |
+| ショートカットの一覧（中身、エディタのキーの表、出し方と閉じ方） | — | キーの表と一覧の中身は `web_src/studio/shortcuts.js`（`EDITOR_KEYS`・`editorKeyAction`・`shortcutGroups`。Change Camera FOV の行を出すかに Camera のロックを渡すのは `StudioEditor.vue`）、画面は `web_src/components/studio/StudioShortcuts.vue`、「?」のボタンは `StudioNavWidget.vue`、開く・閉じるの状態（`view.shortcuts`）と「?」のキーは `web_src/studio/editor_view.js`・`editor_controller.js`、置き場所は `StudioEditor.vue` | `tests/studio_shortcuts.test.mjs`、`tests/browser/studio_session.spec.js` |
+| ツールチップ（出す部品、出るまでの時間と消え方、置く側と反転、ショートカットの印、ドラッグ中とキーボードのフォーカス） | — | 置き場所の計算・置く側の表・ショートカットの切り出し・時間の値は `web_src/studio/tooltip.js`（`placeTip`・`tipSide`・`tipGroup`（離れを測る群の地）・`splitTipKeys`・`TIP_SIDES`・`TIP_DELAY`・`TIP_SKIP`・`TIP_GAP`・`TIP_EDGE`）、マウスの操作の名前はショートカットの一覧と共有する `web_src/studio/input_names.js` `GESTURE_NAMES`、出し入れと描くのは `web_src/components/studio/StudioTooltip.vue`（`StudioEditor.vue` が一つ置く）。部品は説明を `data-tip` に書く | `tests/studio_tooltip.test.mjs`、`tests/browser/studio_tooltip.spec.js` |
+| 閉じ方 | — | `web_src/components/studio/StudioEditor.vue`、Escape を受けるのは `web_src/studio/stage_input.js`（ドキュメントの捕捉で受け、欄のドラッグの Escape は先に欄が取る）、枠の外のクリックは `web_src/studio/backdrop.js` `createBackdropClose`、閉じるのと保存は `web_src/studio/editor.js`・`editor_edits.js`（書く文字は `web_src/studio/session.js` `stateText`、下の部品 `pano_editor_state.js` `editorStateWrite`）、Escape の順の 3 段（Set orbit center の待ち）は `web_src/studio/stage_input.js`、4 段は `web_src/studio/add_files.js` `escape`、5 段と 6 段は `web_src/studio/editor_controller.js` `onEscape`（`view.shortcuts`、`view.paint`）、7・8 段は `session.js` `escape`、下の部品 `pano_node_bridge.js`。Escape の順の表の 2 段（地面を拾う待ち）は、その部品がまだ無い（未実装） | `tests/studio_backdrop.test.mjs`、`tests/browser/studio_editor.spec.js`、`tests/browser/studio_ui.spec.js`（欄のドラッグの Escape）、`tests/studio_session.test.mjs`、`tests/browser/studio_session.spec.js` |
+| Preview のウィンドウの画面 | — | `web_src/components/studio/StudioPreviewWindow.vue`（右下の群はエディタと同じ `StudioViewButtons.vue` で、Frame Selected を除き、グリッドの後に Fullscreen を置く。上端の中央の一行は Sky だけの知らせと Set orbit center の待ちだけを `topLine` に渡す） | `tests/browser/preview_window.spec.js`（右下の群と寄る操作も） |
+| Output の小窓（折りたたみとその動き、大きさ、記憶、出力の形の一行。一行は `studioOutputSize` と `studioNodeStatus` の書き方を呼び、`megapixels`・`multiple` は `web_src/studio/editor_view.js` がノードから渡す） | — | `web_src/components/studio/StudioOutputPreview.vue`、大きさと記憶は `web_src/studio/layout.js` `outputWindowSize`・`loadOutputWindow`・`saveOutputWindow`、Camera タブで畳んで触れなくするのは `outputWindowView`。中の絵の canvas は `StudioEditor.vue` が小窓の slot に置き、描くのは `web_src/studio/stage_output.js`（Frame モードはステージの canvas の隅に描いて `createImageBitmap`、Panorama モードは `pano_three_view.js` `renderLiveErp`。描き方は `docs/threejs-spark-integration.md`）。描く入力の作り方は `web_src/studio/output_picture.js` `outputFrameInput`・`outputErpInput` で、Panorama Studio のノード上の表示と共有する（`docs/studio-node-surface.md`） | `tests/studio_stage_view.test.mjs`、`tests/browser/studio_editor.spec.js`、`tests/browser/studio_camera_wired.spec.js`、`tests/browser/studio_camera_fixes.spec.js`、`tests/browser/studio_output_line.spec.js`（出力の形の一行） |
 
 ## 目指すもの
 
@@ -87,7 +88,7 @@ Python はこの文書の規則を持たない（列は `—`）。「（新し�
 | ステージの左上 | タブ `3D` / `Camera`（アイコンと文字、二つは同じ幅の segmented control） |
 | ステージの左（上下の中央） | 左の列（下の「左の列」） |
 | ステージの右（上下の中央） | 視点の操作のつまみ（球・パン・前後）と、その下の Set orbit center と「?」（ショートカットの一覧）を、一つの縦長の浮かせた群にまとめる。つまみと、その下の押すボタン（Set orbit center・「?」）の間に区切りの線を入れる（持ち主の決定、2026-10-30。Set orbit center は ADR 0058） |
-| ステージの右下 | ボタンの群（3D タブ：Frame Selected・Reset View・グリッドのボタン。Camera タブ：同じ席に Frame Selected・Reset View（無効）・グリッドのボタン）。グリッドのボタンは状態をアイコンの形で示す（`docs/agents/ux-principles.md` の例外） |
+| ステージの右下 | View の群（3D タブ：画角の数字・画角のリセット・区切りの線・Frame Selected・Reset View・グリッドのボタン。Camera タブ：同じ席に Camera の H FOV の数字（無効）・画角のリセット（無効）・区切りの線・Frame Selected・Reset View（無効）・グリッドのボタン）。グリッドのボタンは状態をアイコンの形で示す（`docs/agents/ux-principles.md` の例外）。下の「右下の View の群」 |
 | ステージの右上 | Output の小窓（下の「Output の小窓」）。3D タブで出す。Camera タブでは畳んだ形の一行を出し、開閉だけを無効にする |
 | ステージの上端の中央 | 一行の知らせ（左に種類の印。下の「一行の知らせの種類」）と、読み込み中の一行。一度に一つだけ出す。タイムコードは置かない（時刻はいつも出ているタイムラインのバーにある） |
 | ステージの下の中央 | 下の中央のバー（下の「下の中央のバー」） |
@@ -99,9 +100,22 @@ Python はこの文書の規則を持たない（列は `—`）。「（新し�
   タブを切り替えても、部品の席は変わらない。Camera タブで使えない部品は、同じ席に出したまま無効にし、tooltip で理由を示す。
 - 視点の操作のつまみの働きと、操作の最中に光る規則は `docs/space-and-view.md` の「視点の操作の部品」が持つ（光り方の見た目は
   `docs/design.md`）。この文書は置き場所だけを持つ。
+- 右下の View の群（ADR 0061。持ち主の決定、2026-11-05。見本の案 B2）：
+  - 画角の数字：視点の画角（`docs/space-and-view.md` の「寄る」）を整数の度で「100°」の形にいつも出す。一番幅を取る「140°」が入る
+    決まった幅を持ち、数字が変わっても群の幅とほかのボタンの席は変わらない。左右にドラッグして変える（働きは `docs/space-and-view.md` の
+    「寄る」）。tooltip は「Field of view (Alt+Wheel)」（ドラッグ中は出さない。下の「ツールチップ」）。読み取り専用のエディタでも
+    使える（視点だけを変えるため）。キーボードのフォーカスを受け、矢印キーで一段ずつ変える（Shift で 1°。働きは同じ節、見た目は
+    `docs/design.md` の「フォーカス」）。Camera タブで無効のときはフォーカスを受けない。
+  - 画角のリセット：数字のすぐ右に、インスペクタの行と同じ小さなリセット（回る矢印）を置く。画角だけを 100° に戻す。100° のときは隠さずに
+    無効にする。tooltip は「Reset FOV」。
+  - 区切りの線：画角の二つと、残りのボタン（Frame Selected・Reset View・グリッドのボタン）を分ける。
+  - Reset View：アイコンは家（`docs/design.md` の「アイコン」）。行き先と、始めの視点にいる間に無効にする規則は `docs/space-and-view.md` の
+    「開いたときの視点と Reset View」。始めの視点で無効のときの tooltip は「Reset view · Already at the start」、押せるときは「Reset view」。
+  - 位置と向きの数字は出さない。
+  - Camera タブの形は下の「Camera タブ」、Preview のウィンドウの形は下の「Preview のウィンドウ」。値は `docs/design.md` の「大きさ」。
 - タイムラインは既定で開き、高さの決まった領域を取る。ステージとの境界をドラッグして高さを変え、ブラウザごとに覚える。ステージと
   タイムラインの両方に最小の高さを持たせる。畳む操作もあり、畳んでもタイムラインのバー（再生・時刻など）は出す。行が収まらないときは
-  タイムラインの中だけでスクロールする。
+  タイムラインの中だけでスクロールする。境界のドラッグ中の Escape は、高さを押したときに戻す（下の「閉じ方」の Escape の順の 1 段）。
 
 ### 左の列
 
@@ -116,6 +130,8 @@ Clear All は無い。ペイントとマスクを消すのはペイントの道�
 Camera タブでは、Undo・Redo のほかは同じ席に出したまま無効にする（tooltip「Not available in the Camera view」のように理由を示す）。
 
 - 道具の群（Cursor・Paint・Mask）は、いつも一つだけを選んでいる（選んだものを強い塗りで示す）。エディタを開くたびに Cursor。
+- Paint・Mask の tooltip は、どこに描くかまで書く：「Paint on Sky」「Mask on Sky」（どちらも Sky の層に描く。下の「ペイントの道具」。
+  持ち主、2026-11-05）。読み取り専用のときは「Paint on Sky · Read-only」「Mask on Sky · Read-only」。
 - Paint か Mask を押すと、その道具になり、物の選択を外す（古い UI と同じ）。下の中央のバーはペイントの道具になる（下の「ペイントの道具」）。
 - Camera タブに切り替えると、道具は Cursor に戻る（Camera タブでは描かない）。
 
@@ -141,7 +157,7 @@ Camera タブでは、Undo・Redo のほかは同じ席に出したまま無効�
   今の絵をそのまま縮めたり広げたりして見せる。
 - 大きさは左下の角をドラッグして変え、ブラウザごとに覚える。最小と最大を持ち、縦横比は出力の比に合わせる。覚えるのは幅で、撮り方や比が
   変わっても幅は変えず、高さだけが変わる（見出しの一行の位置が動かないように）。開いた形の高さは 幅 ÷ 出力の比（一行は絵に重ねるので高さを足さない）。ポインタを載せたときだけ
-  角のつまみをはっきり見せる。
+  角のつまみをはっきり見せる。角のドラッグ中の Escape は、大きさを押したときに戻す（下の「閉じ方」の Escape の順の 1 段）。
 - Frame モード：撮る Camera から描いた絵を、その場で出す。描き直すのは Panorama モードと同じく何かが変わったときだけで、小窓の
   大きさの解像度で描く（`docs/threejs-spark-integration.md` の「Panorama モードの ERP の表示」の描き直しの条件と同じ）。
 - Panorama モード：撮る Camera の位置から描いた ERP を、開いた絵としてその場で出す。描き方（何かが変わったときだけ、小窓の大きさの低い
@@ -189,7 +205,9 @@ Camera の値の位置は選択で動かない）。
 
 - 値の箱はふだん地の色を持たず、ポインタを載せた欄にだけ地の色を出す。そのときカーソルは左右の矢印にする。
 - 欄そのものを左右にドラッグすると値が変わる。ドラッグの間はカーソルを消し（ポインタロック）、画面の端でも止まらない。Shift で
-  1/10 の細かさ。動かさずに放すと、その欄に文字で入力できる。名前の部分はドラッグしない。
+  1/10 の細かさ。動かさずに放すと、その欄に文字で入力できる。ポインタを載せて地の色が付く範囲が、そのままドラッグで値が変わる範囲になる。
+  タイムラインの fps と Length の欄は名前と値を一緒に囲むので、名前の上からもドラッグでき、動かさずに放すと文字で入力できる（値の上と
+  同じ）。地の色の外にある名前（インスペクタの行の名前など）はドラッグしない。
   - ポインタロックが取れない（ブラウザが断った、ページがフォーカスを持っていない）ときは、カーソルを出したまま同じドラッグで値を変える
     （画面の端で止まる）。
   - ドラッグ中の Escape は、ドラッグを取り消して値を押す前に戻す（エディタは閉じない）。ブラウザが Escape でポインタロックを解いたときも
@@ -202,7 +220,7 @@ Camera の値の位置は選択で動かない）。
 
 - リセット：各行の右端。押すとその行の値だけを既定に戻す。上流から受け取った物では上流の値、ノードの入力から来た物（`port`）では入力の
   値に戻す。Pose handoff を当てて出している `port` の Sticker（Pose handoff の置き方が Sticker の置き方と同じとき）では、Pose handoff
-  が渡す行（`sky` の Rotation・FOV、`world` の Position・Rotation・Scale）は、その行の Lane のどれも `handoff_overrides` に無いときが
+  が渡す行（`sky` の Rotation・FOV）は、その行の Lane のどれも `handoff_overrides` に無いときが
   戻す先にある（値ではなく、上書きの記録にあるかで決める）。押すと、その行の Lane を `handoff_overrides` から外して Pose handoff の値に
   戻す（`pano_port_handoff.js` `revertHandoffLane`）。上書きしていない行のリセットは何もしない。Pose handoff が渡さない行（Opacity、
   Animation）は今までどおり Lane の既定で決める。今が戻す先と同じ行では、隠さずに無効にする。押すと Undo の 1 段で、Keyframe のある Lane では記録の規則に従う
@@ -224,15 +242,15 @@ Camera の値の位置は選択で動かない）。
 | Camera | Camera のカード（下の「Camera のカード」） |
 | 複数選択 | 見出しに数とアイコン（例：`3 stickers`）だけ。操作は下の中央のバー |
 | ペイントのまとまり | 見出し `Paint` だけ。操作は下の中央のバー。Paint・Mask の道具を選んでいて物を選んでいないときも、このカードを出す |
-| 何も選んでいない | Scene のカード：上に Camera のカード（下の「Camera のカード」）と同じ中身、その下に Ground（地面の高さの値、`Set ground` のボタン、リセット）。`Set ground` は値の 2 列目と 3 列目を使う（1 列では名前が収まらない）。地面の自動推定のボタンは、置くときに席を決め直す |
+| 何も選んでいない | Scene のカード：上に Camera のカード（下の「Camera のカード」）と同じ中身、その下に Ground（地面の高さの値とリセット）。値の 2 列目と 3 列目は `Set ground` のボタン（未実装。作るまで出さない、ADR 0062）の席として空けておく（1 列では名前が収まらない）。地面の自動推定のボタンは、置くときに席を決め直す |
 
 - 空に貼った画像（Sky）の FOV の行のリセットは、置いたときの大きさに戻す：H は `NEW_STICKER_HFOV`（30°、`pano_space.js`）、V は画像の
   縦横比から求めた値（縦横比を崩さない）。上流から受け取った物とノードの入力から来た物（`port`）は、上の「リセットと Keyframe のポチ」のとおり。
 - 土台の 3D（`world` の入力、`docs/studio-node.md`）は選べないので、カードは無い。土台を合わせるのは地面の高さだけ。
 - 画像の側のレンズの値（Sky の画像の `curve`、World の物の `lens`）はインスペクタに出さない。往復（Pose handoff）が撮った Camera の値を
   入れ、描くときに逆に戻して貼る（ADR 0042、`docs/scene-state-v2.md`）。
-- `Set ground` を押すと、次の一回のクリックだけ地面にしたい面を拾う状態になり、カーソルを地面を拾う形に変える。Escape で取り消す。
-  拾った点の高さの規則は `docs/space-and-view.md`（ADR 0046）。
+- （未実装。作るまでボタンを出さない、ADR 0062）`Set ground` を押すと、次の一回のクリックだけ地面にしたい面を拾う状態になり、
+  カーソルを地面を拾う形に変える。Escape で取り消す。拾った点の高さの規則は `docs/space-and-view.md`（ADR 0046）。
 
 ### Camera のカード
 
@@ -261,7 +279,10 @@ Camera の値の位置は選択で動かない）。
 - タイムラインで Keyframe を選んでいる間だけ、インスペクタの下端に置く。選んでいないときは消す。
 - 中身：見出し `Easing` と既定に戻すボタン、プリセット 5 つ（Hold・Linear・Ease in-out・Ease in・Ease out）の segmented control
   （アイコンだけを出し、名前は tooltip に出す。名前の文字はパネルの幅に収まらないため）、
-  縦横 1:1 の曲線のグラフ、ベジェの 4 つの値の入力欄（例 `0.42, 0, 0.58, 1`。選んでコピーでき、貼り付けもできる）。
+  縦横 1:1 の曲線のグラフ、ベジェの 4 つの値の入力欄（例 `0.42, 0, 0.58, 1`。選んでコピーでき、貼り付けもできる）と、その右のコピーのボタン
+  （押すと 4 つの値を入力欄と同じ書き方でクリップボードに写し、ボタンが少しの間チェックの印に変わる。http で開いたページなどで
+  クリップボードの API が使えないときは入力欄の文字を選んでブラウザのコピーで写し、どちらでも写せないときはチェックの代わりに
+  × と「Copy failed」を出す。選んだ Keyframe の Easing が混ざっているとき、パネルが無効のとき、写す値が無い（入力欄が空の）ときは押せない。ほかの Keyframe に当てるときは、その Keyframe を選んで入力欄に貼り付ける）。
 - グラフはいつも 1:1。上の領域が 5 行分（約 180 px、値は `docs/design.md`）より狭くなるときは、グラフの一辺を縮めて 1:1 のまま小さくする。
 - 出し方：パネルの高さを伸ばして出さず、下端に重ねて透明から出す（値は `docs/design.md`）。上の領域の下の余白は動かさずに一度で取る。
 - 選んだ Keyframe の Easing が混ざっているときの表示と、変えたときの規則は `docs/timeline-ui.md` の「Easing」。
@@ -520,7 +541,7 @@ Cursor の道具で、自分のペイントを古い UI と同じ単位でつか
   `web_src/editor/commands.js` `deleteSelected`）。Undo の 1 段で、選択を外す。Delete キーは、Keyframe を選んでいればそれを先に消す
   （`docs/timeline-ui.md` の「記録の規則」。`editor.js` の Delete が `StudioTimeline.vue` `handleDelete` を先に呼ぶ、今のとおり）。
 - 選択が外れるとき：Paint・Mask の道具を選んだとき（上の「左の列」）、ペイントを隠したとき（`docs/timeline-ui.md`。目を切り替える
-  `timeline_actions.js` `toggleVisible` が、ペイントの行を隠すときに `paint_group:`・`raster:` の選択も外す）、Undo・Redo などで選んだまとまりが
+  `studio/timeline_actions.js` `toggleVisible` が、ペイントの行を隠すときに `paint_group:`・`raster:` の選択も外す）、Undo・Redo などで選んだまとまりが
   状態から無くなったとき（`session.js` `keepSelection`）。
 - Paint・Mask の道具の間は、まとまりをつかまない（左ボタンはいつも描く。下の「ペイントの道具」）。描いたストロークは、今のとおり新しい
   まとまりとして一番前に足す（`pano_paint_strokes.js` `ensurePaintGroup`）。
@@ -670,11 +691,11 @@ Paint・Mask の道具を選んでいる間、下の中央のバーはペイン�
 
 ### 上流の物の編集
 
-上流の Studio から受け取った物（上流の Scene の層の Sticker、ペイント、`scene`）を、古い UI と同じ範囲で編集する（ADR 0030。
+上流の Studio から受け取った物（上流の Scene の層の Sticker、ペイント、`scene`）を、ADR 0030 の範囲で編集する（
 持ち主の決定、2026-11-02）。編集は自分の状態の `upstream` に上書きとして残り、ノードがそれを当てて描く（`docs/studio-node.md` の
 「上流の Scene」、`_override_layers`）。上流の Studio の状態と、自分の `stickers` は変えない。上書きの形は今のまま
 （`docs/scene-state-v2.md` の「上流の上書き」）。何をどの記録に書くかの規則は `docs/studio-node.md` の「エディタでの編集」
-「エディタでの消す・戻す」が持ち、新しい UI はその規則を古い UI と同じ部品で使う（下の「書き戻し」）。
+「エディタでの消す・戻す」が持ち、新しい UI はその規則を共有の部品で使う（下の「書き戻し」）。
 
 できることを、上流の物の種類ごとにまとめる。「自分の物と同じ」は、同じ種類の自分の物と同じ操作・同じ見た目・同じ Undo の段であること。
 
@@ -687,8 +708,7 @@ Paint・Mask の道具を選んでいる間、下の中央のバーはペイン�
 
 - 選ぶ（押したときの順）：上流の World の物は、自分の World の物と同じ順で当たる（「ペイントのまとまり」の押したときの順の 3。奥行きで
   前後が決まる）。上流の空に貼った画像は自分の Sky の層の下にあるので、自分の Sky の層の物（順の 5）の後、何も無い（順の 6）の前に当たる。
-  層は下流のものから、層の中では手前（`z_index` の大きいもの）から当たる（古い UI と同じ。`docs/editor-interaction.md` の
-  「上流の Scene の表示と編集」の「2D の当たり判定」）。隠した物と消した物は当たらない。上流の物の選択の行は作業コピーの id
+  層は下流のものから、層の中では手前（`z_index` の大きいもの）から当たる。隠した物と消した物は当たらない。上流の物の選択の行は作業コピーの id
   `upstream:<層のキー>:<要素の id>` で、その作業コピーがある間は保ち、隠したとき・消したとき・Undo・Redo や新しい実行結果で
   無くなったときに外す。
 - 見せる：インスペクタのカードの見出しの横には、タイムラインの層の見出しと同じ「From ＜ノードの名前＞」を出す（`CONTEXT.md` の
@@ -696,9 +716,8 @@ Paint・Mask の道具を選んでいる間、下の中央のバーはペイン�
   ステージで選んだ上流の物の枠は破線にし、上流から来た物だと分かるようにする（上の「下の中央のバー」の空の画像の枠の項）。下の中央の
   バーの「元に戻す」は、戻すものが無い間は無効、あるときは上書きの色（上の「下の中央のバー」）。
 - 各行のリセットは、その行の Lane の上書きを記録から外し、上流の値に戻す。一つの行が二つ以上の Lane を持つとき（空の画像の Rotation は
-  `direction` と `roll`。行と Lane の対応は `inspector_model.js` `ROW_LANES`）は、その全部を一回で外し、Undo の 1 段にする（古い UI の
-  Lane ごとのボタンを、その行の Lane の数だけ押したのと同じ記録）。外すのは下の「書き戻し」の記録を変える操作の道で行う。
-- 下の中央のバーの「元に戻す」は、その物の上書きを全部外す（古い UI の「Revert to upstream」の All と同じ記録の変え方）。Lane 一つを
+  `direction` と `roll`。行と Lane の対応は `inspector_model.js` `ROW_LANES`）は、その全部を一回で外し、Undo の 1 段にする（`upstreamRevertedRecords` を Lane ごとに当てたのと同じ記録）。外すのは下の「書き戻し」の記録を変える操作の道で行う。
+- 下の中央のバーの「元に戻す」は、その物の上書きを全部外す（`upstreamRevertedRecords` で全部の Lane を外す）。Lane 一つを
   外すのは、インスペクタのその行のリセット（上の項）。押せるときと tooltip は上の「下の中央のバー」の「元に戻す」の項。無効のボタンの
   tooltip には理由（「Duplicate · not for an upstream object」のように）を出す。
 - Lock：バーの Lock で、その物の `locked` の上書きを書く。ロックした上流の物は、自分のロックした物と同じく選べるが動かず、
@@ -710,7 +729,7 @@ Paint・Mask の道具を選んでいる間、下の中央のバーはペイン�
   ロックと同じく何も変えられない（ロックも外せない）。インスペクタの行とバーのボタンは隠さずに無効にし、tooltip は
   「Inherited only: edit it in its own Panorama Studio」。タイムラインの見出しには「 · inherited only」を添える（`docs/timeline-ui.md`）。
 - 隠す・出す：上流の物の目はタイムラインの行にだけある（自分の物と同じ。バーに表示の切り替えは無い）。
-- 次の操作も自分の物と同じに働く（古い UI でもできる）：Frame Selected と回る中心（選んだ上流の World の物の球。`docs/space-and-view.md`）、
+- 次の操作も自分の物と同じに働く：Frame Selected と回る中心（選んだ上流の World の物の球。`docs/space-and-view.md`）、
   行の名前のダブルクリックで寄ること（`docs/timeline-ui.md` の「行とポチ」）、Keyframe のコピーと貼り付け（上流の行から写し、上流の行へ
   貼る。貼った Keyframe は上書きになる。上書きを持てない層の行には貼らない。`docs/timeline-ui.md` の「Keyframe のコピーと貼り付け」）、
   Camera タブの Frame 表示で選んだ上流の空の画像のハンドルと本体のドラッグ（上の「Camera タブ」の物を動かすドラッグ）。
@@ -720,16 +739,15 @@ Paint・Mask の道具を選んでいる間、下の中央のバーはペイン�
   - 作業コピーを変える編集（ステージのドラッグとギズモ、インスペクタの欄、タイムラインの Keyframe・行のポチ・Easing・Clip range・目・
     貼り付け、Lock）：作業コピーを変えて描き、確定して Undo の 1 段を作るとき（ドラッグを離した、欄を確定した、ボタンを押した）に、
     前の書き戻しから変わったフィールドだけを、その層の記録に書く（`pano_upstream.js` `upstreamEditedRecords`。fps の違う記録は先に
-    `pano_scene_state.js` `rebaseUpstreamRecord` で自分の fps に直す）。タイムラインが返す層の新しい作業コピー（`timeline_actions.js` の
+    `pano_scene_state.js` `rebaseUpstreamRecord` で自分の fps に直す）。タイムラインが返す層の新しい作業コピー（`studio/timeline_actions.js` の
     編集の `upstream`）は、共有の部品の `setWorking(key, sceneState)` で入れてから書き戻す。
   - 記録を変える操作（各行のリセット、元に戻す、Delete、層の Revert、Restore deleted）：先に書き戻し、記録を変え
     （`upstreamRevertedRecords`・`upstreamDeletedRecords`・`upstreamLayerRevertedRecords`・`upstreamRestoredRecords`）、その記録から作業コピーと
     比べる基準を作り直す。作業コピーへ上流の値を直接書かない（書くと、次の書き戻しがその値を上書きとして書いてしまう）。
   - Undo の 1 段を作るたびに、書き戻しの後、今の実行結果にある層の記録から、層に無い id の上書きと消した記録を捨てる
     （`upstreamPrunedRecords`）。エディタを開いただけでは捨てない。
-  - 書き戻す時と比べる基準（`upstreamBaseline`）を持つ部品は、古い UI と新しい UI が同じものを使う（`web_src/pano_upstream_edits.js`
-    `createUpstreamEdits`。上の owner の表）。部品が受け取るのは、記録を読む `records()` と書く `setRecords(records)`（古い UI は
-    `state.upstream` に入れ、新しい UI は状態を置き換える）、層（`pano_upstream_layers.js` `createUpstreamLayers` の `entries`・`current`・
+  - 書き戻す時と比べる基準（`upstreamBaseline`）を持つ部品は `web_src/pano_upstream_edits.js`
+    `createUpstreamEdits`（上の owner の表）。部品が受け取るのは、記録を読む `records()` と書く `setRecords(records)`（新しい UI は状態を置き換える）、層（`pano_upstream_layers.js` `createUpstreamLayers` の `entries`・`current`・
     `rebuild`）、自分の Timeline fps の `fps()`。書き戻し・掃除・記録を変える操作は、記録が変わったかを返す。基準はこの部品だけが持ち、
     Auto の長さが数える上書きした Clip range の終わり（`studio/upstream.js` `output`、`upstreamOverriddenEnds`）も同じ基準を読む。
   - 新しい UI の `session.js` は、この部品を受け取り、上流の行を探すこと（選択を保つ・ステージで選ぶ）に使い、Undo の 1 段を履歴に
@@ -741,7 +759,7 @@ Paint・Mask の道具を選んでいる間、下の中央のバーはペイン�
     `setWorking` で戻す。
   - 確定のたびに書き戻すので、閉じるときと実行の前に書く状態には、確定した編集がいつも入っている。開いて閉じただけ、選んだだけ、
     行を開いただけでは何も書かない。
-- 作らないもの（古い UI と同じ範囲にとどめる。どれも古い UI にも無い）：上流の物の Duplicate・Replace・前面へ・背面へ（上流の物は
+- 作らないもの：上流の物の Duplicate・Replace・前面へ・背面へ（上流の物は
   自分の Sky の層の並べ替えにも入らない）、上流のペイントをつかむ・動かす・消すこと（ペイントの上書きは `painting_visible` だけ）、
   上流の `scene` の Keyframe（上書きに Lane が無い）、上流の 3D の Animation の Clip と Speed の上書き（上書きに `animation` が無い）、
   上流の物を自分の物として取り込むこと、上流の Studio の状態を書き換えること、複数選択での上流の物の操作（新しい UI に複数選択の
@@ -802,9 +820,9 @@ Camera を動かす。選んだ物は回る中心と Frame Selected にも使う
 3D タブで Camera を選んだまま Camera タブに入ったときは、Camera のカードを出し、Camera のバーとギズモは出さない（ADR 0055。Camera の中から
 見ているため。Camera はステージのドラッグと辺の目盛りで動かす）。選択は保ち、3D タブへ戻るとバーとギズモがまた出る。Camera の Lock は 3D タブの
 バーで切り替える。
-選び方（Shift で足す複数選択、ペイントのまとまり）とガイドの描き方も 3D タブと同じ。Scene のカードの `Set ground` は Frame モードの Camera タブでも
-3D タブと同じに働き（次の一回のクリックで、Camera から見た面を拾う）、Panorama モードの Camera タブでは同じ席で無効にする（tooltip は
-「Not available in Panorama mode」。ステージで何も拾えないため）。何も無い所をクリックすると選択が外れ、Scene のカード（Camera と Ground）に戻る。Panorama モードの Camera タブは物を選べないので、選択を外すのは Escape（下の「閉じ方」の Escape の順）。タブを切り替えても選択は保つ。
+選び方（Shift で足す複数選択、ペイントのまとまり）とガイドの描き方も 3D タブと同じ。（未実装。`Set ground` のボタンを作るとき）Scene のカードの
+`Set ground` は Frame モードの Camera タブでも 3D タブと同じに働き（次の一回のクリックで、Camera から見た面を拾う）、Panorama モードの
+Camera タブでは同じ席で無効にする（tooltip は「Not available in Panorama mode」。ステージで何も拾えないため）。何も無い所をクリックすると選択が外れ、Scene のカード（Camera と Ground）に戻る。Panorama モードの Camera タブは物を選べないので、選択を外すのは Escape（下の「閉じ方」の Escape の順）。タブを切り替えても選択は保つ。
 選んだ物には、3D タブと同じ選んだ物のガイド（落ち着いた黄の輪郭。規則は `docs/space-and-view.md` の「World の物のガイド」）を描き、
 選んだことが見て分かるようにする。
 
@@ -837,11 +855,21 @@ Camera を動かす。選んだ物は回る中心と Frame Selected にも使う
     見た目は変えない。フレームの中（枠の内側）には広げない。
   - フォーカス：ポインタで押したときは何も出さない。キーボードで移ったときだけ、帯の地を薄く明るくして示す（縁の線は使わない。規則は
     `docs/design.md` の「フォーカス」）。
+  - Alt：Frame モードで Alt を押している間は、FOV の目盛りをキーボードのフォーカスと同じ見た目にし、Alt + ホイールで動くのがそこだと
+    示す（操作は `docs/space-and-view.md` の「Frame 表示」。ADR 0061）。見せるのは Alt を押していて視点の操作（ドラッグ、移動のキー）が無い間だけ
+    （Alt + ドラッグのオービットの間も見せない。つまみの Alt の分と同じ。`docs/space-and-view.md` の「視点の操作の部品」）。
+    Lens と Roll は変えない。Camera が動かせないとき（ロックした Camera、読み取り専用のエディタ）と Panorama モードでは変えない。値は
+    `docs/design.md`。
+  - 一段の値：矢印キーの一回（Shift なし）は小さい目盛り一つ動かし、範囲（インスペクタの同じ行の値の箱の範囲）の端で止め、上の「値の桁」に
+    丸める。FOV の目盛りの一段（`VIEW_FOV_STEP_DEG`）とドラッグの縮尺（`VIEW_FOV_DRAG_PX_PER_DEG`）の値は `docs/design.md` の
+    「Camera タブの辺の目盛りの縮尺」が持つ。
+  - tooltip：Frame モードで FOV の目盛りが使えるときは、hover で「FOV (Alt+Wheel)」を出す（ドラッグ中は出さない。
+    下の「ツールチップ」の規則のまま）。無効のときは無効の理由のまま。Lens と Roll は今までどおり無効のときだけ出す。
 - Camera タブ（Frame モードと Panorama モード）でも地面のグリッドと空のグリッドを描き、右下のグリッドのボタンで出し入れする。何も無い空間でも、
   自分がどこにいてどちらを向いているかが分かるようにするためである。Camera に張り付いた目安（三分割・水平の目安など）は置かない
   （持ち主の決定、2026-10-30）。グリッドは出力にも Output の小窓にも写さない。何をどこに描くか、3D タブとスイッチを共有することは
   `docs/space-and-view.md` の「地面のグリッド」と「空のグリッド」。
-- 無効にするもの（同じ席に出したまま灰色にし、tooltip で理由を示す）：左の列（Undo・Redo を除く）、Reset View。Output の小窓は畳んだ形にし、一行は 3D タブと同じ見た目のまま開閉のボタンだけを薄く無効にする（上の「Output の小窓」）。タイムコードは出さない（タイムラインのバーにある）。シャッターのボタンは無い（カメラの値は各値のポチか、タイムラインの行のポチで打つ）。
+- 無効にするもの（同じ席に出したまま灰色にし、tooltip で理由を示す）：左の列（Undo・Redo を除く）、Reset View、右下の画角の数字と画角のリセット。Output の小窓は畳んだ形にし、一行は 3D タブと同じ見た目のまま開閉のボタンだけを薄く無効にする（上の「Output の小窓」）。タイムコードは出さない（タイムラインのバーにある）。シャッターのボタンは無い（カメラの値は各値のポチか、タイムラインの行のポチで打つ）。
 - Panorama モードのときは、撮る Camera の位置から描いた ERP を開いた絵として見せる（描き方は Output の小窓と同じ）。ステージの操作では
   何も動かない（見るだけ）。Frame に切り替える入口は、インスペクタの Camera のカードの Mode だけで（Camera タブでは Camera のカードがいつも一番上にある）、Camera タブに別のボタンや案内の
   一行は足さない（ADR 0048。使い方は README で見せる）。辺の目盛りは同じ席に出したまま、FOV と Lens は灰色で触れない（Panorama では効かない）。Roll は効く
@@ -852,6 +880,11 @@ Camera を動かす。選んだ物は回る中心と Frame Selected にも使う
   無効にする。ロックした Camera と読み取り専用のエディタでは、Frame Selected とつまみを無効にし、tooltip は「Locked · Unlock in the 3D tab」「Read-only」。
   ロックした Camera の辺の目盛り（ポチとリセットを含む）の tooltip も「Locked · Unlock in the 3D tab」にする（Camera タブには Camera の Lock が無いため。
   ADR 0055。文字は `web_src/studio/camera_ui.js` `CAMERA_TAB_LOCKED_TIP` が持つ）。インスペクタの Camera のカードの行は、3D タブと同じ「Locked」のまま。
+- 右下の画角の数字（ADR 0061）：Camera タブでは、視点の画角ではなく撮る Camera の H FOV を、左の FOV の目盛りの値の文字と同じ文字で出し
+  （`frame_layout.js` `cameraRulers` の FOV の `valueText`。目盛りの頭と同じ丸め。Camera が持つ H FOV の桁は変えない）、数字と画角のリセットを無効にする（Camera の H FOV を変えるのは左の FOV の目盛り、インスペクタ、Frame モードの Alt + ホイール）。
+  tooltip は、Frame モードでは「Camera FOV · Change it with the FOV ruler」、Panorama モードでは「Not available in Panorama mode」
+  （Frame Selected と同じ）。視点の画角は Camera タブの間も変えず、3D タブに戻るとそのまま使う。Reset View は今までどおり無効で、
+  tooltip は「Not available in the Camera view」。
 
 ## Add とドロップの見せ方
 
@@ -906,8 +939,8 @@ Camera を動かす。選んだ物は回る中心と Frame Selected にも使う
   置いた 3D ファイルの読み込み中のガイドと現れる動きだけ。上の「Add とドロップの見せ方」の「置く間」）。まだ来ていない
   中身（背景、3D の内容）の所はステージの地のままにし、来たものから描く。何を待っているかを、上端の中央に一行で出す（下の「一行の知らせの種類」の
   読み込み中）。
-- すぐに描けるように、新しいエディタの設定がオンのとき、ComfyUI を開いた後の手の空いた時に、ステージの three.js のチャンクと新しい UI の
-  stylesheet を読んでおく（設定をオンに切り替えたときも同じ）。Spark は SPLAT を描くときに読む（今のまま）。
+- すぐに描けるように、ComfyUI を開いた後の手の空いた時に一度だけ、ステージの three.js のチャンクと新しい UI の stylesheet を
+  読んでおく（`web_src/editor_choice.js` `createStudioPreloader`）。Spark は SPLAT を描くときに読む（今のまま）。
 - 空の画面：上端の中央の場所に「画像か 3D ファイルをドロップするか、Add を押す」の一行を出す。空の画面とは、ステージに描くものが何も無く、
   入力からも来ないときだけである。次のどれか一つでもあれば空ではない：自分の背景（読み込み中・読めないときも含む）、自分の Sticker（`port`
   の Sticker を含む）、自分のペイント、`world`・`background`・`sticker`・`scene` のどれかの入力がつながっている（中身はノードの実行結果で
@@ -922,14 +955,14 @@ Camera を動かす。選んだ物は回る中心と Frame Selected にも使う
 
 | 種類 | 印 | 出すとき |
 |---|---|---|
-| できなかった・止まった | 珊瑚の丸 | 効かなかった操作（境界で止まった、何もない所へのダブルクリック、Frame Selected で囲むものが無い、Camera を消そうとした） |
+| できなかった・止まった | 珊瑚の丸 | 効かなかった操作（境界で止まった、何もない所へのダブルクリック、Frame Selected で囲むものが無い、Panorama モードの Alt + ホイール、Camera を消そうとした） |
 | 気をつけてほしい | 落ち着いた黄の丸 | ノードの `state_json` を読めない（下の「閉じ方」）、背景を読めない、3D の表示を作れない（three.js のチャンクか WebGL が使えない）、深度のグリッドの要素が GPU のテクスチャの上限より大きい（`depthGridTooLarge` の文。「ノードの入力から来た物」）、上流の警告、Add とドロップの失敗（3D ファイルの読み込みの失敗を含む。上の「Add とドロップの見せ方」） |
 | 済んだ | ライムの丸 | 済んだ操作の短い知らせ（左の列の Camera のボタンで Camera を動かした「Camera moved to this view」。ほかの短い知らせと同じ間で消える） |
-| 知らせるだけ | 中立の丸（主の文字の色を不透明度 55%） | Set orbit center の待ち（「Click a spot to orbit around · Esc to cancel」。待っている間だけ。`docs/space-and-view.md` の「Set orbit center」）、上流の Scene を待っている（「ノードの入力から来た物」）、空の画面の案内 |
+| 知らせるだけ | 中立の丸（主の文字の色を不透明度 55%） | Sky だけのときのホイール（「Sky only · Alt+wheel zooms」、Camera タブの Frame モードは「Sky only · Alt+wheel changes the FOV」。`docs/space-and-view.md` の「Sky だけのときのホイール」）、Set orbit center の待ち（「Click a spot to orbit around · Esc to cancel」。待っている間だけ。`docs/space-and-view.md` の「Set orbit center」）、上流の Scene を待っている（「ノードの入力から来た物」）、空の画面の案内 |
 | 読み込み中 | 小さく回る輪 | 3D の表示や背景、置いた 3D ファイル、深度のグリッドの色の動画（「Loading depth video…」）を読み込んでいる |
 
 - 3D の表示を作れないときは、ステージの真ん中ではなく、この一行に出す。
-- 出すものが重なったときは、できなかった・止まった ＞ 済んだ操作の短い知らせ ＞ Set orbit center の待ち ＞ 読み込み中（3D の表示 ＞ 背景 ＞ 置いた 3D ファイル ＞ 深度のグリッドの色）＞ 気をつけてほしい
+- 出すものが重なったときは、できなかった・止まった ＞ Sky だけのときのホイールの知らせ ＞ 済んだ操作の短い知らせ ＞ Set orbit center の待ち ＞ 読み込み中（3D の表示 ＞ 背景 ＞ 置いた 3D ファイル ＞ 深度のグリッドの色）＞ 気をつけてほしい
   （読めない `state_json` ＞ 3D の表示 ＞ 大きすぎる深度のグリッド ＞ 背景 ＞ Add とドロップの失敗）＞ 上流の Scene を待っている ＞ 空の画面の案内 の順で、前のものだけを出す（`web_src/studio/notice_line.js` `topLine`）。
 
 ## タイムラインのバー
@@ -983,7 +1016,11 @@ Camera を動かす。選んだ物は回る中心と Frame Selected にも使う
   一度出て入り直すまで出さない。
 - キーボードのフォーカス：キーボードの操作中（`docs/design.md` の「フォーカス」の `input_modality.js`）に部品へフォーカスが移ったら、
   待たずに出し、フォーカスが離れたら消す。ポインタで押してフォーカスが移ったときは出さない。
-- 置く側：部品の矩形から `TIP_GAP`（8px）離して、上下左右のどれか一つの側に置く（カーソルの位置には置かない）。どの側が先かは部品の
+- 置く側：部品の矩形から `TIP_GAP`（8px）離して、上下左右のどれか一つの側に置く（カーソルの位置には置かない）。下の表の群の中で、
+  角丸の背景を持つ浮かせる群（`.pano-studio-float`）の中の部品では、置く向きの離れはその背景の縁から測る（縦に並ぶ左の列なら列の右の
+  縁から 8px、横に並ぶ右下の群なら群の上の縁から 8px。下の中央のバーに色の列と道具の列が重なるときは、部品のある方の背景）。背景を
+  持たない群（辺の目盛り、Output の小窓）では、今までどおり部品の矩形から測る。群の中で部品の大きさが違っても、ツールチップは群の縁にそろう（持ち主、2026-11-05）。置く向きに沿った位置（上下に
+  置くなら左右）は、今までどおり部品の真ん中にそろえる。どの側が先かは部品の
   群で決める：
 
   | 群 | 先の側 |
@@ -998,10 +1035,13 @@ Camera を動かす。選んだ物は回る中心と Frame Selected にも使う
 - 反転と寄せ：先の側に置くとエディタの枠（の内側 `TIP_EDGE` = 8px）からはみ出すときは、反対の側に置く。反対の側でもはみ出すときは、
   はみ出しの少ない側に置く。置いた側に沿う向き（上下に置くなら左右、左右に置くなら上下）は、部品の真ん中にそろえ、枠からはみ出すときは
   枠の内側に寄せる。部品に重ならない。
-- ショートカット：説明の文の終わりの「（キー）」の形（例「Move (1)」「Undo (Ctrl+Z)」「Play (Space)」）は、括弧を外し、キーを文の後ろに
-  薄い印として出す（「Move　1」）。キーと読むのは、`+` でつないだ一つ一つが一文字か、決まったキーの名前（Ctrl・Shift・Alt・Cmd・Space・
-  Del・Esc・Enter・Tab など）のものだけで、それ以外の括弧は文のまま出す。説明の文の書き方（「名前 (キー)」）は今のままで、ツールチップが
-  印に変える（`tooltip.js` `splitTipKeys`）。
+- ショートカット：キーやマウスの操作で同じことができる部品は、説明の文を「名前 (操作)」の形で書く（例「Move (1)」「Undo (Ctrl+Z)」
+  「Field of view (Alt+Wheel)」「Orbit (Alt+Drag)」）。「名前 · 操作の文」の形は使わない（持ち主、2026-11-05）。文の終わりの
+  「（操作）」は、括弧を外し、操作を文の後ろに薄い印として出す（「Move　1」）。操作と読むのは、`+` でつないだ一つ一つが一文字か、
+  決まったキーの名前（Ctrl・Shift・Alt・Cmd・Space・Del・Esc・Enter・Tab など）か、マウスの操作の名前（Drag・Right-drag・Middle-drag・
+  Wheel・Click・Double-click・Pinch。ショートカットの一覧と同じ言い方）のものだけで、それ以外の括弧は文のまま出す。無効の理由
+  （「Delete · Locked」）と、待っている間の案内（「Click a spot to orbit around · Esc to cancel」）は操作の印ではなく文なので、
+  この形にしない。ツールチップが印に変える（`tooltip.js` `splitTipKeys`）。
 - ツールチップを出している間に部品が動いたり説明が変わったりしたら、それに合わせて置き直し、書き直す。
 
 ## ショートカットの一覧
@@ -1028,7 +1068,7 @@ Camera を動かす。選んだ物は回る中心と Frame Selected にも使う
 
 | 群 | 行（出す条件） |
 |---|---|
-| View（`docs/space-and-view.md` の「マウスとキー」） | Look around：左ドラッグ・中ボタンのドラッグ。Orbit：Alt＋左ドラッグ・Alt＋中ボタンのドラッグ。Pan：右ドラッグ。Move forward / back：Alt＋右ドラッグ。Zoom to the pointer：ホイール。Move：W / S・A / D・Q / E。Move faster (hold)：Shift（移動のキーと一緒に押す）。Orbit around a point：ダブルクリック（そこを回る中心にして向く。Camera タブでは Camera が向く）。Camera タブの Frame モードでは群の頭に「These move the Camera.」の一行を添える。Camera タブの Panorama モードでは行を出さず、「Nothing moves the view in Panorama mode.」の一行だけを出す |
+| View（`docs/space-and-view.md` の「マウスとキー」） | Look around：左ドラッグ・中ボタンのドラッグ。Orbit：Alt＋左ドラッグ・Alt＋中ボタンのドラッグ。Pan：右ドラッグ。Move forward/back：Alt＋右ドラッグ。Move toward the pointer：ホイール。Zoom (change FOV)：Alt＋ホイール・ピンチ（3D タブ・Preview のウィンドウではいつも出す。Camera タブの Frame モードでは、読み取り専用でなく Camera をロックしていないときだけ、名前を Change Camera FOV にして出す。Panorama モードでは出さない（View の群の今の規則のまま）。Ctrl＋ホイールは出さない）。Move：W / S・A / D・Q / E。Move faster (hold)：Shift（移動のキーと一緒に押す）。Orbit around a point：ダブルクリック（そこを回る中心にして向く。Camera タブでは Camera が向く）。Camera タブの Frame モードでは群の頭に「These move the Camera.」の一行を添える。Camera タブの Panorama モードでは行を出さず、「Nothing moves the view in Panorama mode.」の一行だけを出す |
 | Objects（この文書の「下の中央のバー」、`docs/space-and-view.md`） | Select：クリック。Move / Rotate / Scale：1 / 2 / 3（3D タブで、読み取り専用でないとき）。Rotate in 15° steps：Shift＋ギズモの Rotate と Sky の画像とペイントのまとまりの回転のハンドルのドラッグ（同じ条件。数は `ROTATE_SNAP_DEG`）。Delete：Delete・Backspace（Keyframe を選んでいればそれ、そうでなければ物。読み取り専用でないとき） |
 | Timeline（`docs/timeline-ui.md`） | Play / pause：Space。Add to selection：Shift＋クリック・Shift＋ドラッグ（Keyframe）。Copy keyframes：Ctrl＋C。Cut keyframes：Ctrl＋X。Paste at the playhead：Ctrl＋V（この三つは読み取り専用でないとき。`docs/timeline-ui.md` の「Keyframe のコピーと貼り付け」） |
 | Editor | Undo：Ctrl＋Z。Redo：Shift＋Ctrl＋Z（どちらも読み取り専用でないとき）。Fine steps (×0.1)：Shift＋値のドラッグ（欄と FOV・Lens の辺の目盛り。読み取り専用でないとき）。Roll in 15° steps：Shift＋Roll の目盛りのドラッグ（Camera タブで、読み取り専用でないとき）。Shortcuts：?。Step back / close：Escape（下の「閉じ方」） |
@@ -1040,8 +1080,8 @@ Camera を動かす。選んだ物は回る中心と Frame Selected にも使う
 
 ## 消すもの（新しい UI に作らないもの）
 
-古い UI にあり、新しい UI に作らないもの。ADR 0044 の切り替えで、古い UI の Panorama Studio・Preview の分岐からも消す手引きになる。
-決めた理由は ADR 0045・0047・0048。
+古い UI にあり、新しい UI に作らないもの。Panorama Studio はいつも新しい UI で開くので（ADR 0062）、どれも Panorama Studio では
+使えない。決めた理由は ADR 0045・0047・0048。
 
 - Unwrap の表示、3DoF / 6DoF の切り替え、3D view controls のプリセット（Default・Blender-like・Unity-like）、ERP origin の文字。
 - Save・Cancel のボタン（閉じるのは ✕ だけ）、インスペクタの物を選ぶプルダウン、Copy State、UI Settings の Drag X / Y（ComfyUI の設定へ移す）。
@@ -1063,15 +1103,16 @@ Camera を動かす。選んだ物は回る中心と Frame Selected にも使う
 
   | 順 | そのときの状態 | Escape でしたこと |
   |---|---|---|
-  | 1 | 欄のドラッグの最中 | ドラッグを取り消し、値を押したときに戻す（上の「欄」） |
-  | 2 | 「Set ground」の後、地面を拾う待ち | 待ちを取り消す |
+  | 1 | 欄のドラッグの最中（右下の画角の数字・タイムラインの境界・Output の小窓の角のドラッグも） | ドラッグを取り消し、値（高さ・大きさ）を押したときに戻す（上の「欄」） |
+  | 2 | （未実装。`Set ground` のボタンが無いので、この待ちは起きない）「Set ground」の後、地面を拾う待ち | 待ちを取り消す |
   | 3 | 「Set orbit center」の後、点を拾う待ち | 待ちを取り消す（何も動かさない） |
-  | 4 | Add の画像の二択（Sky / World）を出している | 二択を閉じ、何も置かない |
-  | 5 | ショートカットの一覧を開いている | 一覧を閉じる |
-  | 6 | Paint・Mask の道具を選んでいる | Cursor の道具に戻す（色のポップオーバーを開いていれば、先にそれだけを閉じる） |
-  | 7 | Keyframe を選んでいる | Keyframe の選択を外す（Easing のパネルが消える） |
-  | 8 | 物を選んでいる | 物の選択を外す |
-  | 9 | 上のどれでもない | エディタを閉じる |
+  | 4 | Clear paint・Clear mask の確かめのダイアログを出している | Cancel と同じ（何も消さない） |
+  | 5 | Add の画像の二択（Sky / World）を出している | 二択を閉じ、何も置かない |
+  | 6 | ショートカットの一覧を開いている | 一覧を閉じる |
+  | 7 | Paint・Mask の道具を選んでいる | Cursor の道具に戻す（色のポップオーバーを開いていれば、先にそれだけを閉じる） |
+  | 8 | Keyframe を選んでいる | Keyframe の選択を外す（Easing のパネルが消える） |
+  | 9 | 物を選んでいる | 物の選択を外す |
+  | 10 | 上のどれでもない | エディタを閉じる |
 
   視点のドラッグ、ギズモのドラッグ、ペイントのまとまりのドラッグ、ペイントのストロークの最中の Escape（取り消し）は、今の規則（`docs/editor-interaction.md` の「ポインタの取り消しとフォーカスの
   喪失」）のまま、表より先に当たる。
@@ -1081,17 +1122,21 @@ Camera を動かす。選んだ物は回る中心と Frame Selected にも使う
   「This node's saved state can't be read, so changes won't be saved」を、エディタを閉じるまで出す。編集を受けてから捨てると気づかずに
   作業を失うので、編集そのものを受けない（読み取り専用のエディタと同じく、Add は無効、ドロップは受けない）。元のテキストはそのまま残り、
   ノードの実行が理由を出す。
+- 開く途中で失敗したときは、それまでに作ったものを放し、ノードはもう一度開ける。`state_json` は書かず、ペイントの層もアップロードしない
+  （`web_src/studio/editor.js` の `release`。Preview のウィンドウも同じく放す：`web_src/studio/preview_window.js`）。
 
 ## Preview のウィンドウ
 
 新しい Preview ノードの大きなウィンドウ（読み取り専用）。視点の規則は `docs/space-and-view.md` の「Preview のウィンドウ」。
 
 - ステージをウィンドウいっぱいに置く。インスペクタ・タイムライン・左の列・下の中央のバーは無い。
-- 右上に閉じる ✕、右の中央に視点の操作のつまみと Set orbit center と「?」、右下に Reset View・グリッドのスイッチ・Fullscreen（状態はアイコンの形で示す。
-  `docs/agents/ux-principles.md` の例外）。
+- 右上に閉じる ✕、右の中央に視点の操作のつまみと Set orbit center と「?」、右下に画角の数字・画角のリセット・区切りの線・Reset View（家のアイコン）・
+  グリッドのスイッチ・Fullscreen（状態はアイコンの形で示す。`docs/agents/ux-principles.md` の例外）。画角の数字と画角のリセット、Reset View の
+  無効と tooltip はエディタの 3D タブと同じ（上の「画面の区画」の「右下の View の群」）。Frame Selected は無い。
 - 下端に再生の帯：再生と一時停止、ループのスイッチ、シークの帯、時刻（並びはノード上の表示と同じ。`docs/preview-node.md`）。
-- 一行の知らせは無い。ただし Set orbit center の待ちの間だけ、エディタと同じ上端の中央の席に、同じ形の一行
-  「Click a spot to orbit around · Esc to cancel」を出す（`docs/space-and-view.md` の「Preview のウィンドウ」）。Escape はまず待ちを取り消し、
+- 一行の知らせは無い。ただし Set orbit center の待ちの間の「Click a spot to orbit around · Esc to cancel」と、Sky だけのときのホイールの
+  「Sky only · Alt+wheel zooms」（`docs/space-and-view.md` の「Sky だけのときのホイール」）だけは、エディタと同じ上端の中央の席に同じ形の
+  一行で出す（`docs/space-and-view.md` の「Preview のウィンドウ」。重なったときの順はエディタと同じ）。Escape はまず待ちを取り消し、
   待っていないときはウィンドウを閉じる（待ちの取り消しが先なのはエディタの上の「閉じ方」の表と同じ。待ちの規則は `docs/space-and-view.md` の「Set orbit center」）。
 - Space は再生と一時停止を切り替える。受け方はエディタの Space と同じ（`web_src/studio/shortcuts.js` の `play`：Ctrl・Meta との組と
   キーのリピートは受けない。入力欄など、ステージがキーを持たない所では受けない。`pano_key_focus.js` の `stageOwnsKey`）。
@@ -1115,7 +1160,7 @@ Camera を動かす。選んだ物は回る中心と Frame Selected にも使う
 - `source` に何もつないでいないとき（`source` の差し口に link が無いとき）：同じウィンドウを開き、背景も物も無い黒いステージを出す。
   右の中央のつまみと右下のボタンは同じ席に出し、グリッドはふだんどおり（開いたときは出し、グリッドのボタンで隠せる。`docs/space-and-view.md`
   の「Preview のウィンドウ」）。時間が無いので再生の帯は出さず、一行の知らせも出さない（Preview のウィンドウには一行が無い。Set orbit center の
-  待ちの一行だけは出す）。`openPreviewWindow` は
+  待ちの一行だけは出す。Sky だけのときのホイールの知らせは、寄って見る物が無いので出さない）。`openPreviewWindow` は
   IMAGE の読み方を通り、読む絵が無いので何も貼らない。ノード上の右上のボタンがこのウィンドウを開き、ブラウザの全画面にはしない（`docs/preview-node.md`
   の「ノード上」。持ち主、2026-10-31）。
 - 見た目はエディタと同じ（`docs/design.md` の「新しい UI の見た目」）。

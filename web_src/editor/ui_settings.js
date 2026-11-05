@@ -12,17 +12,30 @@ function normalizeUiSettings(raw) {
   };
 }
 
-export function loadSharedUiSettings() {
+// The shared view settings as localStorage keeps them, normalized, or null when it keeps none or cannot be read.
+function readStoredUiSettings() {
   try {
     const text = String(window?.localStorage?.getItem(SHARED_UI_SETTINGS_KEY) || "").trim();
-    if (!text) return sharedUiSettingsMemory ? normalizeUiSettings(sharedUiSettingsMemory) : null;
-    const parsed = JSON.parse(text);
-    const normalized = normalizeUiSettings(parsed);
-    sharedUiSettingsMemory = normalized;
-    return normalized;
+    return text ? normalizeUiSettings(JSON.parse(text)) : null;
   } catch {
-    return sharedUiSettingsMemory ? normalizeUiSettings(sharedUiSettingsMemory) : null;
+    return null;
   }
+}
+
+// The old editor's shared view settings: the stored ones (remembered), else the ones remembered in this page (the last
+// read or saved, for when localStorage cannot keep them), else null.
+export function loadSharedUiSettings() {
+  const stored = readStoredUiSettings();
+  if (stored) {
+    sharedUiSettingsMemory = stored;
+    return stored;
+  }
+  return sharedUiSettingsMemory ? normalizeUiSettings(sharedUiSettingsMemory) : null;
+}
+
+// The shared view settings a node surface turns its view by: the stored ones, else none inverted.
+export function loadSurfaceUiSettings() {
+  return readStoredUiSettings() ?? normalizeUiSettings(null);
 }
 
 export function saveSharedUiSettings(settings) {

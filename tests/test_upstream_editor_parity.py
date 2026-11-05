@@ -20,8 +20,9 @@ pytest.importorskip(
 from comfyui_pano_suite.core.paint_state import empty_painting_state
 from comfyui_pano_suite.core.render import SceneSources, StickerSource
 from comfyui_pano_suite.core.scene_state import load_scene_state, rebase_scene_state
-from comfyui_pano_suite.nodes import PanoSceneValue, SceneLayer, _override_layers
 from test_scene_state_parity import assert_parity
+from comfyui_pano_suite.pano_scene import PanoSceneValue, SceneLayer
+from comfyui_pano_suite.scene_build import _override_layers
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 FIXTURE = REPO_ROOT / "tests" / "fixtures" / "scene_inherit" / "editor_working.json"
@@ -252,41 +253,46 @@ def test_the_timeline_edits_of_upstream_rows_draw_in_the_node_as_the_editor_show
 RECORDS_SCRIPT = textwrap.dedent(
     """
     import { readFileSync } from "node:fs";
-    import { createUpstream } from "./web_src/editor/upstream.js";
     import { loadSceneState } from "./web_src/pano_scene_state.js";
+    import { createStudioUpstream } from "./web_src/studio/upstream.js";
 
     globalThis.Image = class {};
     const fixture = JSON.parse(readFileSync("tests/fixtures/scene_inherit/editor_working.json", "utf8"));
+    const list = fixture.layers.map((layer) => ({ state: layer, ui: {} }));
     const state = loadSceneState(fixture.own);
-    const ui = { pano_upstream_layers: fixture.layers.map((layer) => ({ state: layer, ui: {} })) };
-    const upstream = createUpstream({
-      comfyMedia: { uiValue: (node, key) => ui[key] ?? null, uiList: (node, key) => ui[key] ?? [] },
-      editor: { frame: 0 },
-      mediaAssetSource: () => "",
+    // The editor's upstream Scene (studio/upstream.js) with its write-back (pano_upstream_edits.js) into `state`.
+    const upstream = createStudioUpstream({
+      list: () => list,
+      linkType: () => "PANO_SCENE",
+      uiList: () => [],
+      state: () => state,
+      setRecords: (records) => {
+        state.upstream = records;
+      },
       mediaSource: () => "",
-      node: { id: 1, inputs: [{ name: "scene" }], graph: null },
-      state,
-      studio: true,
+      mediaAssetSource: () => "",
+      revisionOf: () => "",
+      playing: () => false,
     });
-    upstream.connect({ getDesiredPaintTargetDescriptor: () => ({}), getMediaRevisionToken: () => "", playback: {}, requestDraw() {} });
-    const sticker = (id) => upstream.upstreamStickers().find((item) => item.id === id);
+    const sticker = (id) => upstream.working().flatMap((layer) => layer.sceneState.stickers).find((item) => item.id === id);
     // An element with overrides, the port Sticker of a layer at another fps whose record is at the editor's, and an
     // element edited but not yet written back, deleted as Delete does, then written back as an Undo step is.
     sticker("upstream:scene_b:sticker_1").visible = false;
     if (process.argv[1] === "revert-layer") {
       // scene_a's `scene` and painting follow upstream again, as its Timeline header's Revert does.
-      upstream.revertUpstreamLayer("scene_a");
+      upstream.edits.revertLayer("scene_a");
     } else {
-      upstream.deleteUpstreamStickers(["upstream:scene_a:sticker_1", "upstream:scene_b:sticker_2", "upstream:scene_b:sticker_1"].map(sticker));
+      upstream.edits.deleteStickers(["upstream:scene_a:sticker_1", "upstream:scene_b:sticker_2", "upstream:scene_b:sticker_1"].map(sticker));
     }
-    upstream.syncUpstreamEdits();
-    upstream.pruneUpstreamRecords();
-    const states = upstream.upstreamEntries().map(({ working }) => {
-      working.sceneState.stickers.forEach((item) => {
+    upstream.edits.sync();
+    upstream.edits.prune();
+    const states = upstream.working().map(({ sceneState }) => {
+      const copy = structuredClone(sceneState);
+      copy.stickers.forEach((item) => {
         item.id = item.origin.id;
         delete item.origin;
       });
-      return working.sceneState;
+      return copy;
     });
     console.log(JSON.stringify({ records: state.upstream, states }));
     """

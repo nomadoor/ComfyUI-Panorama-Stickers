@@ -1,13 +1,11 @@
 // The pointer gestures that move the view: looking around (the "view" drag of the panorama view and
-// Unwrap), the 6DoF space drags that space.js startSpaceDrag starts ("space_pan", "space_orbit"), and a
-// left drag on empty space. pointer_input.js decides when they start.
+// Unwrap), and a left drag on empty space. pointer_input.js decides when they start.
 import { DRAW_REASON } from "../pano_frame_scheduler.js";
 
 export function createPointerView(deps) {
   const { canvas, editor, viewController } = deps;
   // Bound by connect() to the other modules and showEditor.
-  let isFreeSpaceView, moveSpaceView, requestDraw, screenPosCss, startAnimation, startSpaceDrag, updateCursor,
-    updateSelectionMenu, viewControls;
+  let requestDraw, screenPosCss, startAnimation, updateCursor;
 
   // Looks around from dragPos: CSS pixels in the panorama view, canvas pixels in Unwrap.
   function startLookDrag(e, p, dragPos) {
@@ -17,14 +15,8 @@ export function createPointerView(deps) {
     canvas.setPointerCapture(e.pointerId);
   }
 
-  // A left drag on empty space of the panorama view looks around; in 6DoF it does what the 3D view
-  // controls preset does there (pano_view_controls.js emptyLeft), or nothing.
+  // A left drag on empty space of the panorama view looks around.
   function startEmptyDrag(e, p) {
-    if (isFreeSpaceView()) {
-      const action = viewControls().emptyLeft;
-      if (action) startSpaceDrag(action, p, e.pointerId);
-      return;
-    }
     startLookDrag(e, p, screenPosCss(e));
   }
 
@@ -42,23 +34,12 @@ export function createPointerView(deps) {
     startAnimation(() => viewController.endDrag(performance.now()));
   }
 
-  function moveSpaceDrag(it, p) {
-    moveSpaceView(it, p);
-  }
-
-  function endSpaceDrag() {
-    editor.interaction = null;
-    updateCursor(editor.pointerPos);
-    updateSelectionMenu();
-  }
-
   return {
     connect(api) {
       ({
-        isFreeSpaceView, moveSpaceView, requestDraw, screenPosCss, startAnimation, startSpaceDrag, updateCursor,
-        updateSelectionMenu, viewControls,
+        requestDraw, screenPosCss, startAnimation, updateCursor,
       } = api);
     },
-    startLookDrag, startEmptyDrag, moveLookDrag, endLookDrag, moveSpaceDrag, endSpaceDrag,
+    startLookDrag, startEmptyDrag, moveLookDrag, endLookDrag,
   };
 }

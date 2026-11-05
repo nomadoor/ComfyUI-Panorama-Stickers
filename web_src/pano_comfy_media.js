@@ -69,6 +69,11 @@ function comfyImageEntryToUrl(api, entry, read = READ_PROFILES.editor) {
   return typeof api?.apiURL === "function" ? api.apiURL(route) : route;
 }
 
+// The /view route of a file of ComfyUI's input folder by its name, as LoadImage's `image` widget names it.
+function loadImageViewRoute(filename) {
+  return `/view?filename=${encodeURIComponent(filename)}&type=input&subfolder=`;
+}
+
 function getGraphNodeById(graph, id) {
   if (!graph || id == null) return null;
   if (typeof graph.getNodeById === "function") return graph.getNodeById(id);
@@ -117,6 +122,16 @@ export function preferredImageInputsForNode(node, preferredInputNames = []) {
   return out.length ? out : preferredInputNames;
 }
 
+// The indices in `node.inputs` of the image inputs the node surfaces read (preferredImageInputsForNode), in that order.
+// Only these: another IMAGE input (the legacy Stickers node's sticker_image) is not the background
+// (docs/studio-node-surface.md, docs/legacy-node-surfaces.md).
+export function surfaceImageInputIndices(node, preferredInputNames = []) {
+  const inputs = Array.isArray(node?.inputs) ? node.inputs : [];
+  return preferredImageInputsForNode(node, preferredInputNames)
+    .map((name) => inputs.findIndex((input) => String(input?.name || "") === String(name)))
+    .filter((index) => index >= 0);
+}
+
 function isDirectMediaUrl(src) {
   const value = String(src || "").trim();
   return !!value && (
@@ -148,6 +163,22 @@ function hashStringSimple(text) {
 }
 
 // read: the name of a read profile (above), "editor" by default.
+// The value under `key` in a node's result `payload` (app.nodeOutputs): its `ui`'s when the `ui` has the key, else
+// the result's own, else null. Every reading of a result's `ui` value goes by this.
+export function resultUiValue(payload, key) {
+  if (payload?.ui && Object.prototype.hasOwnProperty.call(payload.ui, key)) return payload.ui[key];
+  if (payload && Object.prototype.hasOwnProperty.call(payload, key)) return payload[key];
+  return null;
+}
+
+// The list under `key` in a node's result `payload`: its `ui`'s when that is a list, else the result's own list,
+// else []. Every reading of a result's `ui` list goes by this.
+export function resultUiList(payload, key) {
+  if (Array.isArray(payload?.ui?.[key])) return payload.ui[key];
+  if (Array.isArray(payload?.[key])) return payload[key];
+  return [];
+}
+
 export function createComfyMediaAdapter({ app, api, ImageCtor, imageState, read: profileName = "editor" } = {}) {
   const read = readProfile(profileName);
   const entryUrl = (entry) => comfyImageEntryToUrl(api, entry, read);
@@ -181,7 +212,6 @@ export function createComfyMediaAdapter({ app, api, ImageCtor, imageState, read:
   const assetSource = (asset) => {
     if (!asset || typeof asset !== "object") return "";
     const type = String(asset.type || "").trim().toLowerCase();
-    if (type === "dataurl") return String(asset.value || "");
     if (type !== "comfy_image") return "";
     const filename = String(asset.filename || "").trim();
     if (!filename) return "";
@@ -215,19 +245,8 @@ export function createComfyMediaAdapter({ app, api, ImageCtor, imageState, read:
     return null;
   };
 
-  const uiList = (node, key) => {
-    const payload = output(node?.id);
-    if (Array.isArray(payload?.ui?.[key])) return payload.ui[key];
-    if (Array.isArray(payload?.[key])) return payload[key];
-    return [];
-  };
-
-  const uiValue = (node, key) => {
-    const payload = output(node?.id);
-    if (payload?.ui && Object.prototype.hasOwnProperty.call(payload.ui, key)) return payload.ui[key];
-    if (payload && Object.prototype.hasOwnProperty.call(payload, key)) return payload[key];
-    return null;
-  };
+  const uiList = (node, key) => resultUiList(output(node?.id), key);
+  const uiValue = (node, key) => resultUiValue(output(node?.id), key);
 
   const externalStateHash = (node, stateRaw) => {
     const payloadValue = uiValue(node, "pano_sticker_input_state_hash");
@@ -312,9 +331,7 @@ export function createComfyMediaAdapter({ app, api, ImageCtor, imageState, read:
     if (imageWidget) {
       let src = source(imageWidget.value);
       if (src && !src.includes("/") && !src.includes(":") && (originNode.comfyClass === "LoadImage" || originNode.type === "LoadImage")) {
-        src = typeof api?.apiURL === "function"
-          ? api.apiURL(`/view?filename=${encodeURIComponent(src)}&type=input&subfolder=`)
-          : `/view?filename=${encodeURIComponent(src)}&type=input&subfolder=`;
+        src = typeof api?.apiURL === "function" ? api.apiURL(loadImageViewRoute(src)) : loadImageViewRoute(src);
       }
       if (src) return { src, sourceType: "widget", inputName: wanted };
     }
@@ -358,17 +375,9 @@ export function createComfyMediaAdapter({ app, api, ImageCtor, imageState, read:
       }
     }
 
-    const preferredResolved = preferredImageInputsForNode(node, preferredInputNames);
-    const preferred = preferredResolved
-      .map((name) => inputs.findIndex((i) => String(i?.name || "") === String(name)))
-      .filter((idx) => idx >= 0);
-    const imageTyped = inputs
-      .map((input, idx) => ({ input, idx }))
-      .filter(({ input }) => String(input?.type || "").toUpperCase() === "IMAGE")
-      .map(({ idx }) => idx);
-    const indices = [...new Set([...preferred, ...imageTyped])];
+    const indices = surfaceImageInputIndices(node, preferredInputNames);
     log("image-resolve", {
-      inputCandidates: preferredResolved,
+      inputCandidates: preferredImageInputsForNode(node, preferredInputNames),
       resolvedIndices: indices,
       stage: "start",
     });
@@ -447,7 +456,7 @@ export function createComfyMediaAdapter({ app, api, ImageCtor, imageState, read:
       if (imageWidget) {
         let src = source(imageWidget.value);
         if (src && !src.includes("/") && !src.includes(":") && (originNode.comfyClass === "LoadImage" || originNode.type === "LoadImage")) {
-          src = api.apiURL(`/view?filename=${encodeURIComponent(src)}&type=input&subfolder=`);
+          src = api.apiURL(loadImageViewRoute(src));
         }
         if (src) {
           log("image-resolve", {
@@ -521,7 +530,7 @@ export function createComfyMediaAdapter({ app, api, ImageCtor, imageState, read:
     const imageWidget = originNode?.widgets?.find((widget) => String(widget?.name || "").toLowerCase() === "image");
     const imageName = String(imageWidget?.value || "").trim();
     if (!imageName) return "";
-    return api.apiURL(`/view?filename=${encodeURIComponent(imageName)}&type=input&subfolder=`);
+    return api.apiURL(loadImageViewRoute(imageName));
   };
 
   // The MP4 of the Preview node's own result (pano_videos, then images).

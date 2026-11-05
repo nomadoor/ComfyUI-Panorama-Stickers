@@ -7,6 +7,7 @@
 //   multiplies them by d).
 // - absolute: pixels, degrees, seconds, World units.
 // None of them changes with the size of the World content (ADR 0047).
+import { VIEW_PITCH_LIMIT_DEG } from "../pano_camera_math.js";
 
 // --- E: the eye height, from the state's ground height.
 
@@ -62,7 +63,7 @@ export const WHEEL_FACTOR = 1.2;
 // --- Absolute.
 
 // The view's pitch stops at ± this many degrees.
-export const PITCH_LIMIT = 89.9;
+export const PITCH_LIMIT = VIEW_PITCH_LIMIT_DEG;
 // The orbit's degrees per CSS px, for yaw and pitch alike.
 export const ORBIT_DEG_PER_PIXEL = 0.3;
 // How long one wheel step's eased move takes.
@@ -89,8 +90,6 @@ export const FRAME_FALLBACK_SECONDS = 1 / 60;
 // How long the stage's one-line notices (the bound stopped the view, an action that does nothing) stay after the
 // last time they were shown.
 export const BOUND_NOTICE_SECONDS = 2;
-// Fine pixel wheel events (a trackpad) add up to one wheel step every this many px (provisional; ADR 0048).
-export const WHEEL_STEP_PIXELS = 100;
 // A run of wheel steps in the Frame view is one Undo step, taken once the wheel has rested this long (the old Frame
 // view's 180 ms, editor/frame_view.js).
 export const FRAME_WHEEL_REST_MS = 180;

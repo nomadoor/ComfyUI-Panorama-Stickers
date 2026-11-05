@@ -111,11 +111,6 @@ export function keyedAt(keys, frame) {
   return keys.some((key) => key.full && key.frame === frame);
 }
 
-// The Timeline's time at frame: the frame and the seconds at fps.
-export function timelineTimeLabel(frame, fps) {
-  return `${frame}f · ${(frame / fps).toFixed(2)}s`;
-}
-
 // Removes the Keyframes at frames from the Lanes `names` of owner. A Lane left without Keyframes keeps
 // the value it had at playhead as its static value, so nothing jumps; deleting a Lane's only Keyframe
 // keeps that Keyframe's value.
@@ -209,12 +204,6 @@ export function ownerTimed(owner) {
   return ownerLanes(owner).some((lane) => lane.keyframes.length > 0) || (!!owner.clip && !defaultClip(owner.clip));
 }
 
-// Whether anything in the state changes over time; the editor's Timeline opens by itself when it does.
-// The Camera's Keyframes count only with `camera` (Panorama Studio); the background's Clip range always.
-export function isTimed(state, { camera = false } = {}) {
-  return [...(camera && state.camera ? [state.camera] : []), state.background, state.scene, ...state.stickers].some(ownerTimed);
-}
-
 // The span timelineSpan gives a broken input (a length or frame that is not a finite number).
 export const BROKEN_SPAN = 100000;
 
@@ -238,7 +227,7 @@ export function timelinePlayable(span) {
 // The Auto length: the output length `_decide_timeline` decides without `timeline.length`, by the same rule,
 // from the state and what is known of the inputs. Each input is null (or 0) while it is not known, as before a
 // run: then the rule goes on to the next step, as if the input had a single frame.
-//   bg          the node's own bg_media: { video, frames, duration } (`video` for a VIDEO, `frames` its frame
+//   bg          the node's own background: { video, frames, duration } (`video` for a VIDEO, `frames` its frame
 //               count, `duration` the seconds where its last frame ends), { frames: 1 } for a single image
 //   port        the port Sticker's media with two or more frames or items, as its meta
 //               (`pano_sticker_input_video_meta`: { kind, frames, duration }; 3D items are kind "IMAGE")
@@ -276,7 +265,7 @@ export function autoTimelineLength(state, { bg = null, port = null, sceneItems =
   // A single background image ends with its Clip range, as a Sticker's image does.
   const bgClip = state.background.clip;
   if (bg?.frames === 1 && !bg.video && !open(bgClip)) ends.push(bgClip.start + bgClip.duration);
-  const keys = camera && state.camera ? ownerLanes(state.camera).flatMap((lane) => lane.keyframes.map((key) => key.frame)) : [];
+  const keys = camera ? ownerLanes(state.camera).flatMap((lane) => lane.keyframes.map((key) => key.frame)) : [];
   let length = 1;
   // A background with frames sets the length by its media's own frames, whatever its Clip range. A background
   // VIDEO that does not set the Timeline (an upstream Scene does) lasts until its last frame ends.

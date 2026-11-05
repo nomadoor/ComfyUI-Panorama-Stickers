@@ -1,29 +1,17 @@
-import base64
-import hashlib
-import io
 import math
 from pathlib import Path
 
 import numpy as np
 from PIL import Image
 
-from .cache import CACHE
-from .math import DEG2RAD, camera_basis, unit_float
+from .cache import CACHE, file_key
+from .math import DEG2RAD, camera_basis, over_rgb, over_rgba, unit_float
+from .state import normalize_coverage
 
 try:
     import folder_paths
 except Exception:  # pragma: no cover - optional in non-Comfy test environments
     folder_paths = None
-
-
-def _hex_to_rgb01(hex_color: str) -> np.ndarray:
-    s = (hex_color or "#00ff00").strip().lstrip("#")
-    if len(s) != 6:
-        s = "00ff00"
-    r = int(s[0:2], 16)
-    g = int(s[2:4], 16)
-    b = int(s[4:6], 16)
-    return np.array([r, g, b], dtype=np.float32) / 255.0
 
 
 def _decode_rgba8(source) -> np.ndarray:
@@ -39,18 +27,7 @@ def _decode_rgba8(source) -> np.ndarray:
 def read_image_file_rgba8(path: Path) -> np.ndarray:
     """An image file as straight-alpha RGBA uint8 (h, w, 4), decoded once per version of the file (its path,
     modification time, and size) and kept read-only in the shared cache (`cache.py`)."""
-    stat = path.stat()
-    return CACHE.get_or_put("image_file", (str(path), stat.st_mtime_ns, stat.st_size), lambda: _decode_rgba8(path))
-
-
-def _load_dataurl_rgba8(v: str) -> np.ndarray:
-    """A data URL image as `read_image_file_rgba8` reads a file, keyed by the hash of the URL. A URL without data
-    raises ValueError, as one whose base64 or image cannot be decoded does."""
-    _header, comma, data = v.partition(",")
-    if not comma:
-        raise ValueError("The data URL has no data.")
-    key = hashlib.sha1(v.encode("utf-8")).hexdigest()
-    return CACHE.get_or_put("image_data_url", key, lambda: _decode_rgba8(io.BytesIO(base64.b64decode(data))))
+    return CACHE.get_or_put("image_file", file_key(path), lambda: _decode_rgba8(path))
 
 
 def comfy_file_path(filename: str, subfolder: str, storage: str) -> Path | None:
@@ -89,56 +66,21 @@ def load_source_rgba(source: dict) -> np.ndarray | None:
     """Read a state v2 `file` Source as straight-alpha RGBA uint8 (h, w, 4), read-only, or None when it cannot be
     read."""
     try:
-        if "data_url" in source:
-            return _load_dataurl_rgba8(source["data_url"])
         return _load_comfy_file_rgba8(source["filename"], source["subfolder"], source["storage"])
     except (OSError, ValueError):
         return None
 
 
-def _load_asset_rgba(asset_info: dict, base_dir: Path | None = None) -> np.ndarray | None:
-    if not isinstance(asset_info, dict):
+def _load_asset_rgba(asset_info: dict) -> np.ndarray | None:
+    """A v1 asset's image as float RGBA: only a `comfy_image` (a file in ComfyUI's input, output, or temp directory) is
+    read (ADR 0063); anything else, or a file that cannot be read, is None."""
+    if not isinstance(asset_info, dict) or str(asset_info.get("type") or "").strip().lower() != "comfy_image":
         return None
-    t = str(asset_info.get("type") or "").strip().lower()
-
     try:
-        if t == "dataurl":
-            v = str(asset_info.get("value") or "")
-            if not v.startswith("data:image"):
-                return None
-            return unit_float(_load_dataurl_rgba8(v))
-
-        if t == "path":
-            v = str(asset_info.get("value") or asset_info.get("path") or "").strip()
-            if not v:
-                return None
-            p = Path(v)
-            if base_dir is not None:
-                p = (base_dir / p).resolve()
-                try:
-                    p.relative_to(base_dir.resolve())
-                except Exception:
-                    return None
-            elif p.is_absolute():
-                return None
-            else:
-                p = p.resolve()
-                try:
-                    p.relative_to(Path.cwd().resolve())
-                except Exception:
-                    return None
-
-            if not p.exists() or not p.is_file():
-                return None
-            img = Image.open(p).convert("RGBA")
-            return np.asarray(img, dtype=np.float32) / 255.0
-
-        if t == "comfy_image":
-            rgba = _load_comfy_file_rgba8(asset_info.get("filename"), asset_info.get("subfolder"), asset_info.get("storage"))
-            return None if rgba is None else unit_float(rgba)
+        rgba = _load_comfy_file_rgba8(asset_info.get("filename"), asset_info.get("subfolder"), asset_info.get("storage"))
     except Exception:
         return None
-    return None
+    return None if rgba is None else unit_float(rgba)
 
 
 def _sample_rgba_bilinear(img: np.ndarray, x: np.ndarray, y: np.ndarray) -> np.ndarray:
@@ -165,18 +107,11 @@ def _sample_rgba_bilinear(img: np.ndarray, x: np.ndarray, y: np.ndarray) -> np.n
 
 
 def _alpha_over_straight(dst_rgb: np.ndarray, src_rgba: np.ndarray) -> np.ndarray:
-    src_a = src_rgba[..., 3:4]
-    src_rgb = src_rgba[..., :3]
-    return src_rgb * src_a + dst_rgb * (1.0 - src_a)
+    return over_rgb(dst_rgb, src_rgba[..., :3], src_rgba[..., 3:4])
 
 
 def _alpha_over_rgba(dst_rgba: np.ndarray, src_rgba: np.ndarray) -> np.ndarray:
-    src_a = np.clip(src_rgba[..., 3:4], 0.0, 1.0)
-    dst_a = np.clip(dst_rgba[..., 3:4], 0.0, 1.0)
-    out_a = src_a + dst_a * (1.0 - src_a)
-    numer_rgb = src_rgba[..., :3] * src_a + dst_rgba[..., :3] * dst_a * (1.0 - src_a)
-    safe_out_a = np.maximum(out_a, 1e-6)
-    out_rgb = np.where(out_a > 1e-6, numer_rgb / safe_out_a, 0.0)
+    out_rgb, out_a = over_rgba(dst_rgba[..., :3], np.clip(dst_rgba[..., 3:4], 0.0, 1.0), src_rgba[..., :3], np.clip(src_rgba[..., 3:4], 0.0, 1.0))
     return np.concatenate([out_rgb, out_a], axis=-1)
 
 
@@ -193,26 +128,7 @@ def _iter_u_ranges(center_u: float, half_u: int, w: int):
         yield (start, end)
 
 
-def _normalize_coverage(value) -> int:
-    try:
-        return 180 if int(value) == 180 else 360
-    except Exception:
-        return 360
-
-
-def _prepare_background_for_coverage(bg_erp: np.ndarray | None, output_w: int, output_h: int, coverage: int) -> np.ndarray | None:
-    if bg_erp is None:
-        return None
-    canvas = np.clip(bg_erp.astype(np.float32), 0.0, 1.0)
-    if canvas.shape[0] != output_h or canvas.shape[1] != output_w:
-        canvas = np.asarray(
-            Image.fromarray((canvas * 255.0).astype(np.uint8)).resize((output_w, output_h), Image.BILINEAR),
-            dtype=np.float32,
-        ) / 255.0
-    return canvas
-
-
-def _normalize_runtime_sticker_image(st: dict, assets: dict, base_dir: Path | None = None) -> np.ndarray | None:
+def _normalize_runtime_sticker_image(st: dict, assets: dict) -> np.ndarray | None:
     runtime_img = st.get("image_rgba")
     if isinstance(runtime_img, np.ndarray):
         img = np.clip(runtime_img.astype(np.float32), 0.0, 1.0)
@@ -229,7 +145,7 @@ def _normalize_runtime_sticker_image(st: dict, assets: dict, base_dir: Path | No
     asset_id = st.get("asset_id")
     if asset_id not in assets:
         return None
-    return _load_asset_rgba(assets[asset_id], base_dir=base_dir)
+    return _load_asset_rgba(assets[asset_id])
 
 
 def _compose_sticker_patch(
@@ -341,13 +257,12 @@ def render_stickers_to_rgba_erp(
     output_w: int,
     output_h: int,
     *,
-    base_dir: Path | None = None,
     quality: str = "export",
     stickers_override: list[dict] | None = None,
     assets_override: dict | None = None,
     coverage_override: int | None = None,
 ) -> np.ndarray:
-    coverage = _normalize_coverage(coverage_override if coverage_override is not None else state.get("coverage"))
+    coverage = normalize_coverage(coverage_override if coverage_override is not None else state.get("coverage"))
     canvas = np.zeros((output_h, output_w, 4), dtype=np.float32)
     stickers = stickers_override if isinstance(stickers_override, list) else state.get("stickers", [])
     assets = assets_override if isinstance(assets_override, dict) else state.get("assets", {})
@@ -366,7 +281,7 @@ def render_stickers_to_rgba_erp(
     for st in stickers_sorted:
         if st.get("visible", True) is False:
             continue
-        img = _normalize_runtime_sticker_image(st, assets, base_dir=base_dir)
+        img = _normalize_runtime_sticker_image(st, assets)
         if img is None:
             continue
         _compose_sticker_patch(
@@ -380,80 +295,3 @@ def render_stickers_to_rgba_erp(
         )
 
     return np.clip(canvas, 0.0, 1.0).astype(np.float32)
-
-
-def compose_stickers_to_erp(
-    state: dict,
-    output_w: int,
-    output_h: int,
-    bg_erp: np.ndarray | None = None,
-    base_dir: Path | None = None,
-    quality: str = "export",
-    stickers_override: list[dict] | None = None,
-    assets_override: dict | None = None,
-) -> np.ndarray:
-    coverage = _normalize_coverage(state.get("coverage"))
-    if bg_erp is not None:
-        canvas = _prepare_background_for_coverage(bg_erp, output_w, output_h, coverage)
-    else:
-        bg = _hex_to_rgb01(state.get("bg_color", "#00ff00"))
-        canvas = np.ones((output_h, output_w, 3), dtype=np.float32) * bg[None, None, :]
-
-    stickers = stickers_override if isinstance(stickers_override, list) else state.get("stickers", [])
-    assets = assets_override if isinstance(assets_override, dict) else state.get("assets", {})
-    def _safe_sticker_z_index(item) -> float:
-        try:
-            return float(item.get("z_index", 0))
-        except Exception:
-            return 0.0
-
-    stickers_sorted = sorted(
-        [item for item in stickers if isinstance(item, dict)],
-        key=_safe_sticker_z_index,
-    )
-
-    for st in stickers_sorted:
-        if st.get("visible", True) is False:
-            continue
-        img = _normalize_runtime_sticker_image(st, assets, base_dir=base_dir)
-        if img is None:
-            continue
-        _compose_sticker_patch(
-            canvas,
-            img,
-            st,
-            output_w,
-            output_h,
-            quality=quality,
-            coverage=coverage,
-        )
-
-    return np.clip(canvas, 0.0, 1.0).astype(np.float32)
-
-
-def compose_single_sticker_to_canvas_erp(
-    canvas: np.ndarray | None,
-    sticker: dict,
-    assets: dict,
-    *,
-    base_dir: Path | None = None,
-    quality: str = "export",
-    coverage: int = 360,
-) -> np.ndarray | None:
-    if canvas is None or not isinstance(sticker, dict):
-        return canvas
-    if sticker.get("visible", True) is False:
-        return canvas
-    img = _normalize_runtime_sticker_image(sticker, assets if isinstance(assets, dict) else {}, base_dir=base_dir)
-    if img is None:
-        return canvas
-    _compose_sticker_patch(
-        canvas,
-        img,
-        sticker,
-        int(canvas.shape[1]),
-        int(canvas.shape[0]),
-        quality=quality,
-        coverage=_normalize_coverage(coverage),
-    )
-    return canvas

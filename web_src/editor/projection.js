@@ -1,7 +1,6 @@
 // Where things are on the screen: the panorama view's projection, the Unwrap rect, and the conversions
 // between canvas points, view directions, ERP points and the Frame view.
 import { cameraBasis } from "../pano_camera_math.js";
-import { lensAxesDirection, lensAxesFilm, lensFovLimit, lensRadius } from "../pano_lens.js";
 import { viewProjection, viewportCamera } from "../pano_editor_view.js";
 import { clamp } from "../pano_math.js";
 import { erpPointOfDirection } from "../pano_paint_strokes.js";
@@ -10,29 +9,13 @@ import { add, dot, mul, norm, vec3 } from "./helpers.js";
 
 export function createProjection(deps) {
   const {
-    backgroundCanvas, canvas, editor, state, studio,
+    backgroundCanvas, canvas, editor,
   } = deps;
   // Bound by connect() to the other modules and showEditor.
-  let cameraShoots, getActiveCutoutShot, getFrameViewRect, poseOf, projectSceneItemDir, shortestWrappedDelta;
+  let getActiveCutoutShot, getFrameViewRect, isShotItem, poseOf, projectSceneItemDir, shortestWrappedDelta;
 
   // The panorama view's projection, rebuilt when its camera or the canvas size changes.
   let viewProjectionCache = { key: [], projection: null };
-
-  // Whether Panorama Studio's Camera shoots a 360-degree ERP (ADR 0029); the Cutout shoots every Camera
-  // through its frame.
-  function isErpCamera() {
-    return studio && cameraShoots() && state.camera.projection === "erp";
-  }
-
-  function stickerCornerOrderSanity() {
-    const test = {
-      yaw_deg: 0, pitch_deg: 0, hFOV_deg: 20, vFOV_deg: 20, rot_deg: 0,
-    };
-    const dirs = stickerCornersDir(test);
-    if (!dirs || dirs.length !== 4) return false;
-    // top-left y should be >= bottom-left y in world-up axis
-    return dirs[0].y >= dirs[3].y;
-  }
 
   // The panorama view's three.js camera. The overlays and hit testing use its projection, so they
   // match the drawn frame.
@@ -95,25 +78,14 @@ export function createProjection(deps) {
 
   function getStickerFrame(item) {
     const pose = poseOf(item);
+    // A shot's roll is its roll_deg only, as the node reads it; a Sticker's is its own rot_deg.
+    const roll = isShotItem(item) ? pose.roll_deg : (pose.rot_deg || pose.roll_deg);
     const basis = cameraBasis(
       Number(pose.yaw_deg || 0),
       Number(pose.pitch_deg || 0),
-      Number(pose.rot_deg || pose.roll_deg || 0),
+      Number(roll || 0),
     );
-
-    // A lens curve other than 1 (a Camera's shot, a sky Sticker, ADR 0042): its tangents are its lens's image radii.
-    const curve = Number.isFinite(pose.curve) ? pose.curve : 1;
-    if (curve !== 1) {
-      const limit = lensFovLimit(curve);
-      return {
-        centerDir: basis.fwd,
-        right: basis.right,
-        up: basis.up,
-        curve,
-        tanX: lensRadius(clamp(Number(pose.hFOV_deg || 20), 0.1, limit) * 0.5 * DEG2RAD, curve),
-        tanY: lensRadius(clamp(Number(pose.vFOV_deg || 20), 0.1, limit) * 0.5 * DEG2RAD, curve),
-      };
-    }
+    // Always a pinhole: the legacy editor does not read `curve` (docs/legacy-node-surfaces.md).
     const tanX = Math.tan(clamp(Number(pose.hFOV_deg || 20), 0.1, 179) * 0.5 * DEG2RAD);
     const tanY = Math.tan(clamp(Number(pose.vFOV_deg || 20), 0.1, 179) * 0.5 * DEG2RAD);
     return {
@@ -126,7 +98,6 @@ export function createProjection(deps) {
   }
 
   function stickerDirFromFrame(frame, x, y) {
-    if (frame.curve !== undefined) return lensAxesDirection({ fwd: frame.centerDir, right: frame.right, up: frame.up }, x, y, frame.curve);
     return norm(add(add(frame.centerDir, mul(frame.right, x)), mul(frame.up, y)));
   }
 
@@ -199,10 +170,6 @@ export function createProjection(deps) {
   function worldDirToFrameLocalPoint(shot, dir) {
     if (!shot || !dir) return null;
     const frame = getStickerFrame(shot);
-    if (frame.curve !== undefined) {
-      const film = lensAxesFilm({ fwd: frame.centerDir, right: frame.right, up: frame.up }, dir, frame.curve);
-      return film && { x: (film.x / Math.max(1e-6, frame.tanX) + 1) * 0.5, y: (1 - (film.y / Math.max(1e-6, frame.tanY))) * 0.5 };
-    }
     const cz = dot(dir, frame.centerDir);
     if (!Number.isFinite(cz) || cz <= 1e-6) return null;
     const x = dot(dir, frame.right) / cz;
@@ -340,12 +307,12 @@ export function createProjection(deps) {
   return {
     connect(api) {
       ({
-        cameraShoots, getActiveCutoutShot, getFrameViewRect, poseOf, projectSceneItemDir, shortestWrappedDelta,
+        getActiveCutoutShot, getFrameViewRect, isShotItem, poseOf, projectSceneItemDir, shortestWrappedDelta,
       } = api);
     },
-    isErpCamera, currentViewCamera, currentViewProjection, projectDir, screenToWorldDir, getUnwrapRect,
+    currentViewCamera, currentViewProjection, projectDir, screenToWorldDir, getUnwrapRect,
     projectDirUnwrap, getStickerFrame, stickerDirFromFrame, stickerCornersDir, stickerSampleDir,
-    stickerCornerOrderSanity, projectEditorPoints, projectErpPointToEditor, frameLocalPointToWorldDir,
+    projectEditorPoints, projectErpPointToEditor, frameLocalPointToWorldDir,
     erpPointToWorldDir, worldDirToFrameLocalPoint, projectLassoPointsToCurrentView,
     projectErpLassoPointsToFrameRect, screenPos, screenPosCss, screenPosToErpPoint, screenPosToFrameAsErpPoint,
     deviceRect,

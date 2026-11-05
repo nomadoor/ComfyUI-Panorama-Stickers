@@ -8,6 +8,10 @@ Accepted（2026-10-14。ノードは一つのまま組み直す）
 
 一部（「旧ノードの UI」の節の「それまでは古い UI を守る test も残す」と、「test」の節の「旧ノードの UI を守るものは旧ノードと一緒に残る」）を ADR 0050 が置き換えた（2026-10-31。旧ノードの UI の source-text test も消し、振る舞いの test と browser の場面に置き換える）。
 
+一部（「置き換えの進め方」の、古い UI の Panorama Studio の道を消す時と開発用の入口を残す期間、「新旧の境」の古い UI のファイルの一覧の
+`PanoUpstreamOrigin`・`PanoEasingGraph`・`PanoTimeline`・`PanoTimelineGroup`）を ADR 0062 が置き換えた（2026-11-04。設定
+`PanoramaSuite.Editor.NewUI` を消し、Panorama Studio をいつも新しいエディタで開く）。
+
 ## Date
 
 2026-10-14

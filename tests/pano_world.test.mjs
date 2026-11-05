@@ -4,8 +4,6 @@ import test from "node:test";
 import { Matrix4, Vector3 } from "three";
 
 import {
-  cameraFromCameraInfo,
-  cameraInfoFromCamera,
   panoToWorld,
   panoramaAngles,
   quaternionToRotation,
@@ -69,64 +67,7 @@ test("rotations round trip through quaternions and angles", () => {
   }
 });
 
-test("camera_info round trips through the state Camera", () => {
-  const camera = { position: [1.5, -0.25, 3], yaw_deg: 37, pitch_deg: -28, roll_deg: 19, hFOV_deg: 90 };
-  const cameraInfo = cameraInfoFromCamera(camera, 16 / 9);
-
-  assert.equal(cameraInfo.cameraType, "perspective");
-  assert.equal(cameraInfo.zoom, 1);
-  close(cameraInfo.fov, 2 * Math.atan(Math.tan(Math.PI / 4) * 9 / 16) * 180 / Math.PI);
-
-  const restored = cameraFromCameraInfo(cameraInfo, 16 / 9);
-  assert.deepEqual(restored.position, camera.position);
-  for (const key of ["yaw_deg", "pitch_deg", "roll_deg", "hFOV_deg"]) {
-    close(restored[key], camera[key], 1e-9);
-  }
-});
-
-test("camera_info without a quaternion looks at its target", () => {
-  const camera = cameraFromCameraInfo({
-    position: { x: 1, y: 2, z: 3 },
-    target: { x: 2, y: 2, z: 3 },
-    zoom: 2,
-    cameraType: "perspective",
-    fov: 60,
-  }, 2);
-
-  close(camera.yaw_deg, 90);
-  close(camera.pitch_deg, 0);
-  assert.equal(camera.roll_deg, 0);
-  const tanHalfV = Math.tan(Math.PI / 6) / 2;
-  close(camera.hFOV_deg, 2 * Math.atan(tanHalfV * 2) * 180 / Math.PI);
-});
-
-test("orthographic camera_info is rejected", () => {
-  assert.throws(() => cameraFromCameraInfo({
-    position: { x: 0, y: 0, z: 5 },
-    target: { x: 0, y: 0, z: 0 },
-    zoom: 1,
-    cameraType: "orthographic",
-  }, 1));
-});
-
-test("optional camera_info keys take core defaults", () => {
-  const origin = { x: 0, y: 0, z: 0 };
-  const cases = [
-    [{ position: origin, target: { x: 0, y: 0, z: -1 }, cameraType: "perspective" }, [0, 0, 0, 35]],
-    [{ position: origin, target: { x: 1, y: 0, z: 0 }, fov: 0, zoom: 0, cameraType: "perspective" }, [90, 0, 0, 35]],
-    [{ position: origin, target: { x: -1, y: 0, z: 0 }, quaternion: {}, fov: 50, zoom: 1 }, [-90, 0, 0, 50]],
-    [{ position: origin, target: { x: 0, y: 1, z: -1 }, quaternion: null, zoom: 1, cameraType: "perspective", fov: 40 }, [0, 45, 0, 40]],
-  ];
-  for (const [cameraInfo, expected] of cases) {
-    const camera = cameraFromCameraInfo(cameraInfo, 1);
-    [camera.yaw_deg, camera.pitch_deg, camera.roll_deg, camera.hFOV_deg].forEach((value, i) => close(value, expected[i], 1e-9));
-  }
-});
-
 test("a camera looking straight down keeps yaw 0", () => {
-  const lookAt = cameraFromCameraInfo({ position: { x: 0, y: 2, z: 0 }, target: { x: 0, y: 0, z: 0 }, cameraType: "perspective" }, 1);
-  assert.deepEqual([lookAt.yaw_deg, lookAt.pitch_deg, lookAt.roll_deg], [0, -90, 0]);
-
   const angles = panoramaAngles([[1, 0, 0], [0, 0, 1], [0, -1, 0]]);
   assert.deepEqual([angles.yawDeg, angles.pitchDeg, angles.rollDeg], [0, -90, 0]);
 });

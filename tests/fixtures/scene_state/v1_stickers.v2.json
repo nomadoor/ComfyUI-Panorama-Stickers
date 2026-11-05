@@ -116,54 +116,6 @@
       "z_index": 1
     },
     {
-      "id": "st_b",
-      "placement": "sky",
-      "source": {
-        "kind": "file",
-        "data_url": "data:image/png;base64,iVBORw0KGgo="
-      },
-      "clip": {
-        "start": 0,
-        "in": 0,
-        "duration": null
-      },
-      "visible": true,
-      "locked": false,
-      "crop": {
-        "x0": 0.0,
-        "y0": 0.0,
-        "x1": 1.0,
-        "y1": 1.0
-      },
-      "direction": {
-        "value": {
-          "yaw_deg": -30.0,
-          "pitch_deg": 0.0
-        },
-        "keyframes": []
-      },
-      "roll": {
-        "value": 0.0,
-        "keyframes": []
-      },
-      "size": {
-        "value": {
-          "hFOV_deg": 25.0,
-          "vFOV_deg": 25.0
-        },
-        "keyframes": []
-      },
-      "opacity": {
-        "value": 1.0,
-        "keyframes": []
-      },
-      "curve": {
-        "value": 1.0,
-        "keyframes": []
-      },
-      "z_index": 2
-    },
-    {
       "id": "sticker_image_1",
       "placement": "sky",
       "source": {

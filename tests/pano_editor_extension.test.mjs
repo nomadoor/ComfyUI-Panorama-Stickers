@@ -1,11 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import {
-  createPanoEditorExtension,
-  flushPanoStateProducers,
-  queuePendingStickerOperation,
-} from "../web_src/pano_editor_extension.js";
+import { createPanoEditorExtension, flushPanoStateProducers } from "../web_src/pano_editor_extension.js";
+import { queuePendingStickerOperation } from "../web_src/pano_sticker_operations.js";
 import { registerExternalStickerSync } from "../web_src/pano_external_sticker_sync.js";
 import { disposeNodeRuntime, editorSession, nodeSurface, previewNode, sceneViewer, stateSync } from "../web_src/pano_node_bridge.js";
 
@@ -58,7 +55,7 @@ test("stickers lifecycle preserves prior hooks and installs one editor button wi
     requestFrame(callback) { callback(); },
     enableStickersPreview: false,
   });
-  extension.beforeRegisterNodeDef(NodeType, { name: "Panorama Stickers" });
+  extension.beforeRegisterNodeDef(NodeType, { name: "PanoramaStickers" });
   const node = makeNode([247, 133]);
 
   assert.equal(NodeType.prototype.onNodeCreated.call(node, "create"), "created-result");
@@ -127,8 +124,41 @@ test("Panorama Studio opens the Stickers editor and node surface on state v2 wit
   assert.deepEqual([node.__panoSceneStateV2, node.__panoStudio], [true, true]);
   assert.deepEqual([legacy.__panoSceneStateV2, legacy.__panoStudio], [false, false]);
   assert.equal(node.widgets.find((widget) => widget.name === "state_json").hidden, true);
-  // A black bg_color is the user's choice on Panorama Studio; only the legacy node replaces it.
+  // A black bg_color is the user's choice; no node replaces it.
   assert.equal(node.widgets.find((widget) => widget.name === "bg_color").value, "#000000");
+});
+
+test("the legacy Stickers bg_color is filled with #00ff00 only when empty; a chosen #000000 stays", () => {
+  const extension = createPanoEditorExtension({
+    app: { canvas: { setDirty() {} } },
+    openEditor() {},
+    attachStickers() {},
+    attachCutout() {},
+    attachPreview() {},
+    requestFrame(callback) { callback(); },
+    enableStickersPreview: false,
+  });
+  function LegacyNodeType() {}
+  extension.beforeRegisterNodeDef(LegacyNodeType, { name: "PanoramaStickers" });
+  const backgroundOf = (node) => node.widgets.find((widget) => widget.name === "bg_color");
+  const black = makeNode();
+  backgroundOf(black).value = "#000000";
+  const empty = makeNode();
+  const filled = [];
+  backgroundOf(empty).value = "";
+  backgroundOf(empty).callback = (value) => filled.push(value);
+  const missing = makeNode();
+  backgroundOf(missing).value = null;
+
+  LegacyNodeType.prototype.onNodeCreated.call(black);
+  LegacyNodeType.prototype.onConfigure.call(black);
+  LegacyNodeType.prototype.onNodeCreated.call(empty);
+  LegacyNodeType.prototype.onNodeCreated.call(missing);
+
+  assert.equal(backgroundOf(black).value, "#000000");
+  assert.equal(backgroundOf(empty).value, "#00ff00");
+  assert.deepEqual(filled, ["#00ff00"]);
+  assert.equal(backgroundOf(missing).value, "#00ff00");
 });
 
 test("the removed state v2 Stickers and Cutout node ids get no editor", () => {
@@ -355,34 +385,6 @@ test("Preview hides its modal fallback button only after the fullscreen surface 
   assert.notEqual(fallbackButton.hidden, true);
 });
 
-test("legacy Preview workflows regain the pass-through image output after configure", () => {
-  function NodeType() {}
-  NodeType.prototype.onConfigure = function (serialized) {
-    this.outputs = Array.isArray(serialized?.outputs) ? [...serialized.outputs] : this.outputs;
-  };
-  const extension = createPanoEditorExtension({
-    app: { canvas: { setDirty() {} } },
-    openEditor() {},
-    attachStickers() {},
-    attachCutout() {},
-    attachPreview() {},
-    requestFrame(callback) { callback(); },
-  });
-  extension.beforeRegisterNodeDef(NodeType, { name: "PanoramaPreview" });
-  const node = makeNode([360, 260]);
-  node.outputs = [{ name: "image", type: "IMAGE", links: null }];
-  node.addOutput = function (name, type) {
-    const output = { name, type, links: null };
-    this.outputs.push(output);
-    return output;
-  };
-
-  NodeType.prototype.onConfigure.call(node, { outputs: [] });
-  NodeType.prototype.onConfigure.call(node, { outputs: node.outputs });
-
-  assert.deepEqual(node.outputs, [{ name: "image", type: "IMAGE", links: null }]);
-});
-
 test("coverage changes preserve the widget callback and invalidate every preview cache", () => {
   const dirtied = [];
   const node = makeNode();
@@ -410,42 +412,6 @@ test("coverage changes preserve the widget callback and invalidate every preview
   assert.deepEqual(dirtied, ["runtime", "dom", "node", "graph", "app"]);
 });
 
-test("legacy stickers widget values migrate after configured values are restored", () => {
-  function NodeType() {}
-  NodeType.prototype.onConfigure = function (values) {
-    this.widgets.find((widget) => widget.name === "coverage").value = values.coverage;
-    this.widgets.find((widget) => widget.name === "bg_color").value = values.bgColor;
-    this.widgets.find((widget) => widget.name === "state_json").value = values.stateJson;
-  };
-  const extension = createPanoEditorExtension({
-    app: { canvas: { setDirty() {} } },
-    openEditor() {},
-    attachStickers() {},
-    attachCutout() {},
-    attachPreview() {},
-    requestFrame(callback) { callback(); },
-  });
-  extension.beforeRegisterNodeDef(NodeType, { name: "PanoramaStickers" });
-  const node = makeNode();
-
-  NodeType.prototype.onNodeCreated.call(node);
-  NodeType.prototype.onConfigure.call(node, {
-    coverage: "360",
-    bgColor: "#00ff00",
-    stateJson: "{}",
-  });
-  NodeType.prototype.onConfigure.call(node, {
-    coverage: "#123456",
-    bgColor: JSON.stringify({ coverage: 180 }),
-    stateJson: "old-sticker-state",
-  });
-
-  assert.equal(node.widgets.find((widget) => widget.name === "coverage").value, "180");
-  assert.equal(node.widgets.find((widget) => widget.name === "bg_color").value, "#123456");
-  assert.equal(node.widgets.find((widget) => widget.name === "state_json").value, JSON.stringify({ coverage: 180 }));
-  assert.equal(node.widgets.find((widget) => widget.name === "sticker_state").value, "old-sticker-state");
-});
-
 test("standalone preview waits for graph identity and attaches only once", () => {
   const queue = [];
   const attached = [];
@@ -458,7 +424,7 @@ test("standalone preview waits for graph identity and attaches only once", () =>
     requestFrame(callback) { queue.push(callback); },
   });
   const node = makeNode();
-  node.comfyClass = "Panorama Preview";
+  node.comfyClass = "PanoramaPreview";
   node.id = -1;
   node.graph = null;
 
@@ -824,4 +790,17 @@ test("the Preview's IMAGE or VIDEO view is told whether the chooser's new window
   assert.equal(given[0].opensWindow(), true);
   takes = false;
   assert.equal(given[0].opensWindow(), false);
+});
+
+// Nodes are matched by their node id only: display names and titles are not node ids.
+test("the extension matches the Panorama nodes by node id, not by display name or title", async () => {
+  const { isPanoramaPreviewNodeName } = await import("../web_src/pano_preview_identity.js");
+  assert.equal(isPanoramaPreviewNodeName("PanoramaPreview"), true);
+  for (const name of ["Panorama Preview", "panorama_preview_legacy", "Panorama Preview (node 2.0)"]) assert.equal(isPanoramaPreviewNodeName(name), false, name);
+  const extension = createPanoEditorExtension({ app: { canvas: { setDirty() {} } }, openEditor() {}, attachStickers() {}, attachCutout() {}, attachPreview() {}, requestFrame(callback) { callback(); } });
+  for (const name of ["Panorama Stickers", "Panorama Cutout"]) {
+    function NodeType() {}
+    extension.beforeRegisterNodeDef(NodeType, { name });
+    assert.equal(NodeType.prototype.onNodeCreated, undefined, name);
+  }
 });

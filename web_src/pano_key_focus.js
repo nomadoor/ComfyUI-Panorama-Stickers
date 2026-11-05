@@ -4,7 +4,7 @@
 // (editor/keyboard.js) and the new UI's (studio/) both ask here.
 
 // Inputs that are typed into: Space types a space there, and the stage does not take their keys.
-export const TEXT_INPUT_TYPES = new Set(["text", "search", "number", "email", "url", "tel", "password", "date", "time", "datetime-local", "month", "week"]);
+const TEXT_INPUT_TYPES = new Set(["text", "search", "number", "email", "url", "tel", "password", "date", "time", "datetime-local", "month", "week"]);
 
 // A field being typed in: a text-like input, a textarea, a select or editable text (not a slider, a checkbox or a
 // button).

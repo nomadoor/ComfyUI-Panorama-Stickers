@@ -1,12 +1,11 @@
 // The Timeline fps a VIDEO input sets (ADR 0024, docs/timeline-ui.md "タイムラインの表示"): the fps the node's current
 // result brings (`pano_timeline_fps`), whether the editor's fps field is locked by it, and the state an editor opens
-// on, rebased to it. Both editors (the old one, pano_editor.js and editor/timeline.js, and the new one,
-// studio/editor.js) use these.
+// on, rebased to it. The new editor (studio/editor.js) uses these.
 import { STUDIO_BACKGROUND_INPUT_NAMES, isNodeOutputMediaCurrent, videoLinked } from "./pano_preview_video.js";
 import { rebaseSceneState, timelineFps } from "./pano_scene_state.js";
 
 // The inputs whose VIDEO sets the Timeline fps: Panorama Studio's background and `sticker`.
-export const VIDEO_FPS_INPUTS = [...STUDIO_BACKGROUND_INPUT_NAMES, "sticker"];
+const VIDEO_FPS_INPUTS = [...STUDIO_BACKGROUND_INPUT_NAMES, "sticker"];
 
 // The Timeline fps a VIDEO input set in the node's current result (ADR 0024), or null. It is brought into the range a
 // state keeps, so a faster VIDEO compares equal to the state rebased to it. `media` reads the node's result

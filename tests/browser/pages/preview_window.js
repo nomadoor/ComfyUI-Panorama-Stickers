@@ -5,6 +5,7 @@ import { openPreviewWindow } from "/web_src/studio/preview_window.js";
 import { peekSceneViewer, previewNode, sceneViewer } from "/web_src/pano_node_bridge.js";
 import { makeVideo } from "./media.js";
 import { pauseNodeVideoForWindow, resumeNodeVideoFromWindow } from "/web_src/pano_preview_node_surface.js";
+import { servedImage, viewApiURL } from "./view_files.js";
 
 // ?video: the source is a VIDEO (its gray goes from dark to light over its length), in the node's result.
 const VIDEO = new URLSearchParams(location.search).has("video");
@@ -21,6 +22,8 @@ const HANDOFF = new URLSearchParams(location.search).has("handoff");
 // ?processed: the IMAGE comes from a node that makes it (no file, no images of its own, as ImageInvert in ComfyUI),
 // so the picture is only in the Preview node's own run result (pano_input_images, a temp file, docs/preview-node.md).
 const PROCESSED = new URLSearchParams(location.search).has("processed");
+// ?unlinked: nothing is linked to `source` (the black stage).
+const UNLINKED = new URLSearchParams(location.search).has("unlinked");
 const solid = (width, height, color) => {
   const canvas = document.createElement("canvas");
   canvas.width = width;
@@ -85,11 +88,11 @@ try {
     id: 21,
     title: "Panorama Preview",
     comfyClass: "PanoramaPreviewNode",
-    inputs: [{ name: "source", link: 1 }],
+    inputs: [{ name: "source", link: UNLINKED ? null : 1 }],
     widgets: [{ name: "background_range", value: RANGE_180 ? "180" : "360" }],
     graph: { getNodeById: (id) => (id === 7 ? origin : null) },
-    isInputConnected: (index) => index === 0,
-    getInputLink: (index) => (index === 0 ? { origin_id: 7, origin_slot: 0, type: SCENE ? "PANO_SCENE" : VIDEO ? "VIDEO" : "IMAGE" } : null),
+    isInputConnected: (index) => !UNLINKED && index === 0,
+    getInputLink: (index) => (index === 0 && !UNLINKED ? { origin_id: 7, origin_slot: 0, type: SCENE ? "PANO_SCENE" : VIDEO ? "VIDEO" : "IMAGE" } : null),
     getInputNode: (index) => (index === 0 ? origin : null),
   };
   const layer = {
@@ -97,7 +100,7 @@ try {
     id: "scene_up",
     timeline: { fps: 24 },
     camera: null,
-    stickers: [{ id: "sticker_1", placement: "world", source: { kind: "file", data_url: solid(128, 128, "#e02020") }, position: { value: [0, 0, -3] }, scale: { value: 1.2 } }],
+    stickers: [{ id: "sticker_1", placement: "world", source: servedImage("red.png", solid(128, 128, "#e02020")), position: { value: [0, 0, -3] }, scale: { value: 1.2 } }],
   };
   const nodeOutputs = SCENE
     ? {
@@ -154,10 +157,27 @@ try {
   const app = { getNodeImageUrls: (target) => (target === origin && url && !PROCESSED ? [url] : []), nodeOutputs };
   let win = null;
   preview.open = async () => {
-    win = await openPreviewWindow(node, { app, api: null, storage: { getItem: () => null, setItem: () => {} } });
+    win = await openPreviewWindow(node, { app, api: { apiURL: viewApiURL }, storage: { getItem: () => null, setItem: () => {} } });
     return !!win;
   };
   preview.close = () => win?.close();
+  // Opens with one throw on the way: "early" before the shell mounts (the node's title), "late" after it mounted (the
+  // node's display taking the hand-over). Returns the error's message, or "opened".
+  preview.openBroken = async (where) => {
+    const runtime = previewNode(node).runtime;
+    const restore = where === "early"
+      ? (Object.defineProperty(node, "title", { configurable: true, get() { throw new Error("broken title"); } }), () => Object.defineProperty(node, "title", { configurable: true, writable: true, value: "Panorama Preview" }))
+      : (previewNode(node).runtime = { view: null, windowOpened() { throw new Error("broken hand-over"); }, windowClosed: (handBack) => told.push(["closed", handBack]), requestDraw() {}, teardown() {} }, () => (previewNode(node).runtime = runtime));
+    try {
+      const opened = await openPreviewWindow(node, { app, api: { apiURL: viewApiURL }, storage: { getItem: () => null, setItem: () => {} } });
+      opened?.close();
+      return "opened";
+    } catch (error) {
+      return error.message;
+    } finally {
+      restore();
+    }
+  };
   // Sets the node's background_range while the window is open (as ComfyUI's widget would).
   preview.setRange = (value) => {
     node.widgets.find((widget) => widget.name === "background_range").value = value;

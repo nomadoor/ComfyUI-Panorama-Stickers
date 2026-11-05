@@ -82,21 +82,27 @@ test("explicit aspect keeps vertical FOV and derives horizontal FOV in tangent s
   close(camera.aspect, 9 / 16, 1e-12);
 });
 
-test("legacy falsy Cutout FOV values retain their default framing", () => {
-  for (const value of [0, "", null, false]) {
+// docs/threejs-spark-integration.md "Cutout エディタ": a shot is read as the node reads it.
+test("a Cutout shot's FOV of 0 is held at the least FOV, a missing one is 90 / 60, and its roll is roll_deg only", () => {
+  const zero = getCutoutCameraParams({ hFOV_deg: 0, vFOV_deg: 0 });
+  assert.deepEqual([zero.hFovDeg, zero.vFovDeg], [1, 1]);
+  const missing = getCutoutCameraParams({});
+  assert.deepEqual([missing.hFovDeg, missing.vFovDeg], [90, 60]);
+  // As Python's float(): null, "" and text that is no number are missing; false is 0 and a number in text is read.
+  for (const value of [null, "", "wide", undefined]) {
     const camera = getCutoutCameraParams({ hFOV_deg: value, vFOV_deg: value });
-    assert.equal(camera.hFovDeg, 90);
-    assert.equal(camera.vFovDeg, 60);
+    assert.deepEqual([camera.hFovDeg, camera.vFovDeg], [90, 60], String(value));
   }
+  assert.deepEqual([getCutoutCameraParams({ hFOV_deg: false }).hFovDeg, getCutoutCameraParams({ hFOV_deg: " 45 " }).hFovDeg], [1, 45]);
+  assert.equal(getCutoutCameraParams({ rot_deg: 12 }).rollDeg, 0);
+  assert.equal(getCutoutCameraParams({ roll_deg: 7, rot_deg: 12 }).rollDeg, 7);
 });
 
-test("cutout shot normalization derives the canonical aspect and removes legacy output dimensions", () => {
+test("cutout shot normalization derives the canonical aspect", () => {
   const normalized = normalizeCutoutShotItem({
     id: "shot_1",
     hFOV_deg: 90,
     vFOV_deg: 90,
-    out_w: 1920,
-    out_h: 1080,
     locked: 1,
   });
 
@@ -352,4 +358,9 @@ test("roll never changes frame fit or gate geometry", () => {
     assert.equal(fitFocalPx(safeRect, shot), focal);
     assert.deepEqual(gateRectFromFocal(safeRect, shot, focal), gate);
   }
+});
+
+// The old out_w / out_h of a shot are no longer looked for: normalization leaves the fields it does not know as they are.
+test("cutout shot normalization does not look for the old output dimensions", () => {
+  assert.equal(normalizeCutoutShotItem({ id: "s", hFOV_deg: 90, vFOV_deg: 90, out_w: 1920 }).out_w, 1920);
 });

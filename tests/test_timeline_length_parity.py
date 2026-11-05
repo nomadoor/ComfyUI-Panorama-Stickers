@@ -18,13 +18,16 @@ pytest.importorskip(
     reason="ComfyUI's real V3 API is required to run the Panorama Studio node",
 )
 
-from comfyui_pano_suite import nodes
 from comfyui_pano_suite.core.scene_state import load_scene_state
 from comfyui_pano_suite.core.world_render import SceneContent
 from comfyui_pano_suite.scene_mesh import read_mesh_file
 from comfyui_pano_suite.sticker_media import content_of, open_video
 from comfy_api.latest import Types
 from test_stickers_timed_sticker import _write_red_video
+from comfyui_pano_suite.media_ui import _bg_media_ui, _port_media_ui
+from comfyui_pano_suite.pano_scene import PanoSceneValue
+from comfyui_pano_suite.port_sticker import _port_media
+from comfyui_pano_suite.scene_timeline import _decide_timeline
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 # A glTF with clips: walk 1.2 s, wave 0.7 s, animation_2 0.9 s (tests/fixtures/gltf_anim, ADR 0043).
@@ -64,13 +67,13 @@ def _state(fps=24, length=None, **extra):
 def _upstream(frames, fps=24):
     """An upstream Scene of `frames` output frames at `fps`, without layers or a background."""
     times = tuple(Fraction(index) / fps for index in range(frames))
-    return nodes.PanoSceneValue((), None, 360, (0.0, 0.0, 0.0), Fraction(fps), times, Fraction(0), tuple((None, ()) for _ in range(frames)), {}, {})
+    return PanoSceneValue((), None, 360, (0.0, 0.0, 0.0), Fraction(fps), times, Fraction(0), tuple((None, ()) for _ in range(frames)), {}, {})
 
 
 def _bg_media(bg_media, fps):
     """The opened bg_media and what the editor knows of it: the meta of its editor MP4 in the node's `ui`."""
     bg = open_video(bg_media, "bg_media") if not isinstance(bg_media, torch.Tensor) else bg_media
-    meta = nodes._bg_media_ui(bg_media, bg, fps)["pano_input_video_meta"][0]
+    meta = _bg_media_ui(bg_media, bg, fps)["pano_input_video_meta"][0]
     return bg, {"video": not isinstance(bg_media, torch.Tensor), "frames": meta["frames"], "duration": meta["duration"]}
 
 
@@ -126,9 +129,9 @@ def _cases(tmp_path):
         ("a one-frame VIDEO on the port", port_still, {"start": 5, "in": 0}),
     ]:
         state = load_scene_state(json.dumps(_state(stickers=[_port(clip)])))
-        port, _handoff = nodes._port_media(state, sticker, "", [])
-        rate, _times, time_base, _frames = nodes._decide_timeline(state, None, port)
-        meta = nodes._port_media_ui(port, float(rate), time_base)["pano_sticker_input_video_meta"][0]
+        port, _handoff = _port_media(state, sticker, "", [])
+        rate, _times, time_base, _frames = _decide_timeline(state, None, port)
+        meta = _port_media_ui(port, float(rate), time_base)["pano_sticker_input_video_meta"][0]
         cases.append((name, _state(stickers=[_port(clip)]), {"port_input": sticker}, {"port": meta}))
     # An animated 3D file without a duration ends one cycle of its clip after its material starts (ADR 0043); the
     # editor knows the clips from the meta's `animation.clips`.
@@ -166,8 +169,8 @@ def _python(state_json, inputs):
     state = load_scene_state(json.dumps(state_json))
     port = None
     if "port_input" in inputs:
-        port, _handoff = nodes._port_media(state, inputs["port_input"], "", [])
-    _rate, _times, _time_base, frames = nodes._decide_timeline(
+        port, _handoff = _port_media(state, inputs["port_input"], "", [])
+    _rate, _times, _time_base, frames = _decide_timeline(
         state, inputs.get("bg"), port, inputs.get("scene"), upstream=inputs.get("upstream"), overridden_ends=inputs.get("overridden_ends", ()),
         contents=inputs.get("contents"),
     )

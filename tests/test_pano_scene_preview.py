@@ -17,8 +17,11 @@ from comfy_api.latest import InputImpl
 
 from comfyui_pano_suite import nodes, sticker_media
 from comfyui_pano_suite.core.scene_state import load_scene_state
-from comfyui_pano_suite.nodes import PanoramaPreviewSceneNode, PanoramaStudioNode, PanoSceneValue
+from comfyui_pano_suite.nodes import PanoramaPreviewSceneNode, PanoramaStudioNode
 from scene_test_helpers import output_size
+from comfyui_pano_suite.core.video import encode_editor_mp4
+from comfyui_pano_suite.pano_scene import PanoSceneValue
+from comfyui_pano_suite.scene_timeline import _decide_timeline
 
 
 STATE = {"version": 2, "timeline": {"fps": 30.0}}
@@ -186,9 +189,9 @@ def test_a_pano_scene_preview_gives_the_upstream_keys(monkeypatch, background):
     pano_scene = _studio(**inputs)[0]
     downstream = PanoramaStudioNode.execute(background_color="#00ff00", background_range="360", **output_size(64), state_json="", scene=pano_scene).ui
     rendered = []
-    monkeypatch.setattr(nodes, "render_frame", lambda *args, **kwargs: rendered.append(1))
-    monkeypatch.setattr(nodes, "_render_frames", lambda *args, **kwargs: rendered.append(1))
-    monkeypatch.setattr(nodes, "write_editor_files", lambda *args, **kwargs: rendered.append(1))
+    monkeypatch.setattr("comfyui_pano_suite.scene_render.render_frame", lambda *args, **kwargs: rendered.append(1))
+    monkeypatch.setattr("comfyui_pano_suite.scene_render._render_frames", lambda *args, **kwargs: rendered.append(1))
+    monkeypatch.setattr("comfyui_pano_suite.media_ui.write_editor_files", lambda *args, **kwargs: rendered.append(1))
 
     output = _preview(pano_scene)
 
@@ -212,14 +215,14 @@ def test_preview_image_ui_is_the_keys_the_legacy_runtime_reads():
 
 def test_preview_decides_its_timeline_with_the_stickers_rules(monkeypatch, tmp_path):
     decided = []
-    original = nodes._decide_timeline
+    original = _decide_timeline
 
     def recording(state, bg, port):
         result = original(state, bg, port)
         decided.append(result[0])
         return result
 
-    monkeypatch.setattr(nodes, "_decide_timeline", recording)
+    monkeypatch.setattr("comfyui_pano_suite.preview_node._decide_timeline", recording)
     _preview(_solid([0.2, 0.4, 0.6], batch=2))
     _preview(_video(tmp_path))
 
@@ -290,8 +293,7 @@ def test_studio_ui_saves_video_media_without_reading_it_whole(tmp_path, monkeypa
 
 def test_studio_ui_makes_the_background_mp4_once_per_input(tmp_path, monkeypatch):
     encoded = []
-    encode_editor_mp4 = nodes.encode_editor_mp4
-    monkeypatch.setattr(nodes, "encode_editor_mp4", lambda opened, progress=None: encoded.append(opened) or encode_editor_mp4(opened, progress))
+    monkeypatch.setattr("comfyui_pano_suite.media_ui.encode_editor_mp4", lambda opened, progress=None: encoded.append(opened) or encode_editor_mp4(opened, progress))
     video = _video(tmp_path, count=6)
     images = _solid([0.5, 0.5, 0.5], batch=3)
 

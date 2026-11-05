@@ -22,7 +22,6 @@ import { EASING_PRESETS, rowLaneNames, selectedEasing } from "../pano_timeline.j
 import { UPSTREAM_INHERITED_TIP, isUpstreamSticker, upstreamOverrideOf, upstreamStickerInherited } from "../pano_upstream.js";
 import { animationClipIndex } from "../pano_animation.js";
 import { HANDOFF_LANES } from "../pano_port_handoff.js";
-import { cameraOf } from "./camera_state.js";
 import { findSticker, keyframeOwner } from "./row_object.js";
 import { defaultCamera, groundOf } from "./defaults.js";
 import { objectLabel, upstreamFromLabel } from "./timeline_model.js";
@@ -90,7 +89,7 @@ export function ownerFrame(owner, playhead) {
 }
 
 // The Keyframe dot of a row over the Lanes `names` at the owner's frame: "none", "has" or "now".
-export function keyState(owner, names, frame) {
+function keyState(owner, names, frame) {
   let has = false;
   for (const name of names) {
     const keys = owner[name].keyframes;
@@ -101,7 +100,7 @@ export function keyState(owner, names, frame) {
 }
 
 // The Sticker an upstream element `sticker` (a working copy) is without this node's overrides, at the editor's fps.
-export function inheritedSticker(upstream, sticker, fps) {
+function inheritedSticker(upstream, sticker, fps) {
   const layer = upstream.find((item) => item.key === sticker.origin.layer);
   if (!layer) return null;
   const received = layer.received.timeline.fps === fps ? layer.received : rebaseSceneState(layer.received, fps);
@@ -139,7 +138,7 @@ function rotationFields(value, rollField = "roll_deg") {
 
 // The slider of a value without an upper limit (a world Sticker's scale) reaches this far, or past the value it
 // holds. docs/design.md leaves the value open ("スライダーを付ける値の上限"); this is a provisional one.
-export const SCALE_SLIDER_MAX = 4;
+const SCALE_SLIDER_MAX = 4;
 function scaleSliderMax(value) {
   return Math.max(SCALE_SLIDER_MAX, 2 ** Math.ceil(Math.log2(Math.max(value, 1))));
 }
@@ -403,7 +402,7 @@ export function stickerChangedRows(state, sticker, { playhead, upstream, animati
 }
 
 function cameraCard(state, { playhead, readOnly }) {
-  const camera = cameraOf(state);
+  const { camera } = state;
   const locked = camera.locked === true;
   return {
     kind: "camera",
@@ -419,16 +418,11 @@ function cameraCard(state, { playhead, readOnly }) {
   };
 }
 
-const SET_GROUND_TIP = "Click a surface to make it the ground";
-
-// The Scene card's Ground (docs/studio-ui.md "種類ごとの中身"). Set ground picks on the stage, which picks nothing in the
-// Panorama mode Camera tab: off there, in its place (docs/studio-ui.md "Camera タブ").
-function sceneCard(state, { readOnly, upstream, tab }) {
+// The Scene card's Ground (docs/studio-ui.md "種類ごとの中身"): its value, with its second and third columns kept for the
+// Set ground button, which is not made yet (ADR 0062).
+function sceneCard(state, { readOnly, upstream }) {
   const ground = groundOf(state, upstream);
   const off = readOnly;
-  let setGround = { disabled: false, tip: SET_GROUND_TIP };
-  if (readOnly) setGround = { disabled: true, tip: "Read-only" };
-  else if (tab === "camera" && cameraOf(state).projection === "erp") setGround = { disabled: true, tip: "Not available in Panorama mode" };
   return {
     kind: "scene",
     title: "Scene",
@@ -444,7 +438,6 @@ function sceneCard(state, { readOnly, upstream, tab }) {
       fields: [{ field: "ground", value: ground, unit: "", step: 0.01, precision: 2, min: -Infinity, max: Infinity, disabled: off }],
       // The seat for the ground's estimate button (docs/studio-ui.md "種類ごとの中身"); nothing is placed in it yet.
       seat: true,
-      setGround,
       keyState: null,
       keyDisabled: true,
       resettable: true,
@@ -494,8 +487,7 @@ export function buildCameraCard({ state, playhead = 0, readOnly = false }) {
 // keyframes?: { owner, lane, frames } }; ids are "camera" or Sticker ids, an upstream element's working id
 // `upstream:<key>:<id>`) and the Timeline frame `playhead`. What it shows follows the selection (docs/studio-ui.md
 // "インスペクタ", ADR 0051): nothing selected shows the Scene card, the Camera's card over the Ground's. In the Camera
-// tab (`tab` "camera") the Camera's card is always on top, the selected object's under it, and Set ground is off in
-// Panorama mode. `upstream` is the
+// tab (`tab` "camera") the Camera's card is always on top, the selected object's under it. `upstream` is the
 // working layers (pano_upstream.js upstreamWorkingLayers; each with the `name` of the Studio it came from, or none,
 // studio/upstream.js working()), `animations` the clips of the 3D files by Sticker id
 // ([{ name }]), `portSize` the size of the port Sticker's media ({ width, height }), `imageSizes` the sizes of the

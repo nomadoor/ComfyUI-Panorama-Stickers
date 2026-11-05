@@ -1,13 +1,12 @@
 // The new UI's input of the view (docs/space-and-view.md "マウスとキー", "カーソル", "視点の操作の部品", "ウィンドウが
-// フォーカスを失ったとき"): which button and modifier does which operation, the wheel's steps (a trackpad's fine
-// events added up), the movement keys, the stage's cursor, the knob that lights for the operation under way, and what
+// フォーカスを失ったとき"): which button and modifier does which operation (the wheel's meaning and steps are
+// pano_wheel.js's), the movement keys, the stage's cursor, the knob that lights for the operation under way, and what
 // is cleared when the window loses focus. view_camera.js does the moves; this only decides which.
 //
 // The operations: "look" (look around in place), "orbit" (about T), "pan", "joystick" (forward / back), and "object"
 // (the left button on an object: selecting and editing, the selection spec's).
 import { createMoveKeys, isMoveKey } from "../pano_view_keys.js";
-import { readWheelDirection } from "../pano_wheel.js";
-import { WHEEL_STEP_PIXELS, frameSeconds } from "./view_scale.js";
+import { frameSeconds } from "./view_scale.js";
 
 // --- Buttons and modifiers: the same table in the Panorama view and the Frame view (where the moves move the Camera).
 
@@ -32,27 +31,43 @@ export function navigationAction({ button, altKey, shiftKey, ctrlKey, metaKey, o
   return actions[0];
 }
 
-// --- The knobs on the stage's right: the sphere ("orbit"), the hand ("pan") and the arrows ("move").
+// --- The knobs on the stage's right: the sphere ("orbit"), the four arrows ("pan") and the road's
+// arrows ("move").
 
 const KNOB_ACTIONS = Object.freeze({ orbit: "orbit", pan: "pan", move: "joystick" });
 
-// The operation a knob's drag does (the hand's grab is the surface hit at the screen center), or null.
+// The operation a knob's drag does (the pan's grab is the surface hit at the screen center), or null.
 export function knobAction(knob) {
   return KNOB_ACTIONS[knob] ?? null;
 }
 
 // The knobs that light (shown only; nothing is kept): the one of the operation under way however it is driven
-// (`gesture`; the movement keys, `keysMoving`, are the arrows'), and while Alt is held the knobs of Alt's drags (the
-// sphere and the arrows). Looking around has no knob. In the knobs' order.
+// (`gesture`; the movement keys, `keysMoving`, are the road's arrows'), and while Alt is held with no operation under way
+// the knobs of Alt's drags (the sphere and the road's arrows; once one starts only its knob lights). Looking around has
+// no knob. In the knobs' order.
 export function litKnobs({ gesture = null, keysMoving = false, altHeld = false }) {
   const lit = new Set();
   for (const [knob, action] of Object.entries(KNOB_ACTIONS)) if (action === gesture) lit.add(knob);
   if (keysMoving) lit.add("move");
-  if (altHeld) {
+  if (altHeld && !gesture && !keysMoving) {
     lit.add("orbit");
     lit.add("move");
   }
   return Object.keys(KNOB_ACTIONS).filter((knob) => lit.has(knob));
+}
+
+// Whether the Camera tab's FOV ruler shows that Alt + wheel changes it (docs/studio-ui.md "Camera タブ"): Alt held
+// with no view operation under way (`operating`: a drag or the movement keys, as the knobs' Alt lighting), in the Frame
+// view (`frame`) with a Camera that moves (`movable`: not locked, not read-only).
+export function fovRulerLit({ altHeld = false, operating = false, frame = false, movable = false }) {
+  return altHeld && !operating && frame && movable;
+}
+
+// Whether the View group's FOV number shows that Alt + wheel changes it (docs/space-and-view.md "寄る"): Alt held with no
+// view operation under way (`operating`, as fovRulerLit), where the wheel zooms the view (`space`: the 3D tab and the Preview window; in the Camera tab the number is off
+// and the FOV ruler lights, fovRulerLit).
+export function fovNumberLit({ altHeld = false, operating = false, space = false }) {
+  return altHeld && !operating && space;
 }
 
 // --- The cursor.
@@ -82,34 +97,6 @@ export function stageCursor({ gesture = null, altHeld = false, objectCursor = nu
   if (gesture && DRAG_CURSORS[gesture]) return DRAG_CURSORS[gesture];
   if (altHeld) return ORBIT_CURSOR;
   return objectCursor ?? LOOK_CURSOR;
-}
-
-// --- The wheel.
-
-// The wheel's steps: push(event) gives 1 (nearer: rolled away, deltaY < 0), -1 (farther) or 0. A line or page event
-// (deltaMode != 0) and a pixel event of WHEEL_STEP_PIXELS or more are one step each. Finer pixel events (a trackpad)
-// add up in one direction to a step every WHEEL_STEP_PIXELS; a change of direction drops what was added up.
-export function createWheelSteps() {
-  let added = 0;
-  return {
-    push(event) {
-      const fine = (event.deltaMode ?? 0) === 0 && Math.abs(event.deltaY) < WHEEL_STEP_PIXELS;
-      if (!fine) {
-        added = 0;
-        return -readWheelDirection(event) || 0;
-      }
-      if (!event.deltaY) return 0;
-      if (Math.sign(event.deltaY) !== Math.sign(added)) added = 0;
-      added += event.deltaY;
-      if (Math.abs(added) < WHEEL_STEP_PIXELS) return 0;
-      const direction = Math.sign(added);
-      added -= direction * WHEEL_STEP_PIXELS;
-      return -direction;
-    },
-    reset() {
-      added = 0;
-    },
-  };
 }
 
 // --- The input state: Alt, the movement keys, the hover, the gesture under way.

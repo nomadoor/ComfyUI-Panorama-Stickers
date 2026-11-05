@@ -1,12 +1,17 @@
 <script setup>
 import { computed, onBeforeUnmount, ref, watch } from "vue";
+import { clamp } from "../../pano_math.js";
+import { ICON } from "../../icons.js";
 import { formatBezier, parseBezier } from "../../studio/inspector_model.js";
+import { watchDragCancel } from "../../studio/ui_drag.js";
+import StudioIconButton from "./StudioIconButton.vue";
 import StudioResetButton from "./StudioResetButton.vue";
 import StudioSegmented from "./StudioSegmented.vue";
 
 // The Easing panel at the inspector's bottom while Keyframes are selected (docs/studio-ui.md "Easing のパネル";
 // what it changes: docs/timeline-ui.md "Easing"): the heading and its reset, the five presets, the square curve
-// graph whose two control points drag, and the four bezier values as text to copy and paste. Presentational: the
+// graph whose two control points drag, and the four bezier values as text to copy and paste, with a copy button right
+// of it. Presentational: the
 // panel of web_src/studio/inspector_model.js comes in, `edit` goes out ("easing" / "easing-reset" of
 // web_src/studio/inspector_actions.js).
 const props = defineProps({
@@ -58,9 +63,8 @@ let drag = null;
 function pointAt(event) {
   const rect = svg.value.getBoundingClientRect();
   const scale = rect.width / props.graphSide;
-  const clamp01 = (v) => Math.min(1, Math.max(0, v));
-  const x = clamp01(((event.clientX - rect.left) / scale - PAD) / inner.value);
-  const y = clamp01(1 - ((event.clientY - rect.top) / scale - PAD) / inner.value);
+  const x = clamp(((event.clientX - rect.left) / scale - PAD) / inner.value, 0, 1);
+  const y = clamp(1 - ((event.clientY - rect.top) / scale - PAD) / inner.value, 0, 1);
   return [Math.round(x * 100) / 100, Math.round(y * 100) / 100];
 }
 
@@ -68,8 +72,16 @@ function onHandleDown(event, index) {
   if (off.value || event.button !== 0 || !curve.value || drag) return;
   event.preventDefault();
   drag = { pointerId: event.pointerId, index, start: [...curve.value], moved: false };
-  event.currentTarget.setPointerCapture?.(event.pointerId);
-  window.addEventListener("keydown", onDragKeydown, true);
+  try {
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  } catch {
+    // The pointer is not one to capture (it went up already): no drag starts.
+    drag = null;
+    return;
+  }
+  // Escape gives the drag up (and does not reach the editor, which would clear the Keyframe selection), as do its
+  // pointercancel, the window's blur and a lost capture (ui_drag.js watchDragCancel).
+  drag.stopCancel = watchDragCancel({ element: event.currentTarget, pointerId: event.pointerId, cancel: cancelDrag });
 }
 
 function onHandleMove(event) {
@@ -89,20 +101,18 @@ function onHandleUp(event) {
   if (moved && next) send(next, "commit");
 }
 
-function onDragKeydown(event) {
-  if (!drag || event.key !== "Escape") return;
-  // Escape here gives the drag up only; it must not reach the editor (which would clear the Keyframe selection).
-  event.preventDefault();
-  event.stopPropagation();
+
+function cancelDrag() {
+  if (!drag) return;
   const { moved } = drag;
   endDrag();
   if (moved) emit("edit", { type: "easing", keyframes: props.model.keyframes, phase: "cancel" });
 }
 
 function endDrag() {
+  drag?.stopCancel?.();
   drag = null;
   live.value = null;
-  window.removeEventListener("keydown", onDragKeydown, true);
 }
 
 onBeforeUnmount(endDrag);
@@ -135,6 +145,65 @@ function onTextKeydown(event) {
     event.target.blur();
   }
 }
+
+// --- The copy button: the text as the box shows it to the clipboard, then a check for COPIED_MS. Nothing to copy while
+// the Easing is mixed or the panel is off (or the Easing has no four values: Auto, Hold). Where navigator.clipboard is
+// missing (a page not served over https, such as ComfyUI opened from another PC) or refuses, the box's text is selected
+// and copied with the browser's copy command; when neither copies, a cross and "Copy failed" show for COPIED_MS
+// instead (never a silent no-op). Turning off drops what shows.
+const COPIED_MS = 1200;
+// null, "copied" or "failed".
+const copyResult = ref(null);
+const copyOff = computed(() => off.value || props.model.mixed || !props.model.text);
+const textBox = ref(null);
+let copyTimer = null;
+
+const copyIcon = computed(() => (copyResult.value === "copied" ? ICON.check : copyResult.value === "failed" ? ICON.close : ICON.copy));
+const copyTip = computed(() => (copyResult.value === "copied" ? "Copied" : copyResult.value === "failed" ? "Copy failed" : "Copy"));
+
+function showCopyResult(result) {
+  clearTimeout(copyTimer);
+  copyResult.value = result;
+  copyTimer = result ? setTimeout(() => (copyResult.value = null), COPIED_MS) : null;
+}
+
+watch(copyOff, (isOff) => {
+  if (isOff) showCopyResult(null);
+});
+
+// The box's text selected and copied with the browser's copy command; whether it copied.
+function copyWithCommand(button) {
+  const box = textBox.value;
+  if (!box) return false;
+  try {
+    box.focus({ preventScroll: true });
+    box.select();
+    return document.execCommand("copy") === true;
+  } catch {
+    return false;
+  } finally {
+    box.setSelectionRange?.(0, 0);
+    button?.focus?.({ preventScroll: true });
+  }
+}
+
+async function copyText(event) {
+  if (copyOff.value) return;
+  const button = event?.currentTarget ?? null;
+  let copied = false;
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(props.model.text);
+      copied = true;
+    } catch {
+      copied = false;
+    }
+  }
+  if (!copied) copied = copyWithCommand(button);
+  showCopyResult(copied ? "copied" : "failed");
+}
+
+onBeforeUnmount(() => clearTimeout(copyTimer));
 
 function onPaste(event) {
   const pasted = event.clipboardData?.getData("text") ?? "";
@@ -187,20 +256,31 @@ function onPaste(event) {
           @pointerdown="onHandleDown($event, index)"
           @pointermove="onHandleMove"
           @pointerup="onHandleUp"
-          @pointercancel="endDrag"
         />
       </template>
     </svg>
-    <input
-      v-model="text"
-      class="pano-studio-easing-text pano-studio-num"
-      spellcheck="false"
-      aria-label="Cubic bezier"
-      :placeholder="placeholder"
-      :disabled="off"
-      @keydown="onTextKeydown"
-      @blur="applyText(text)"
-      @paste="onPaste"
-    >
+    <div class="pano-studio-easing-text-row">
+      <input
+        ref="textBox"
+        v-model="text"
+        class="pano-studio-easing-text pano-studio-num"
+        spellcheck="false"
+        aria-label="Cubic bezier"
+        :placeholder="placeholder"
+        :disabled="off"
+        @keydown="onTextKeydown"
+        @blur="applyText(text)"
+        @paste="onPaste"
+      >
+      <StudioIconButton
+        :icon="copyIcon"
+        label="Copy cubic bezier"
+        :tip="copyTip"
+        size="sm"
+        :disabled="copyOff"
+        data-part="easing-copy"
+        @press="copyText"
+      />
+    </div>
   </section>
 </template>

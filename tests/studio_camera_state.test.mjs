@@ -1,22 +1,14 @@
 // How the new UI reads and writes the state's Camera (web_src/studio/camera_state.js; docs/studio-ui.md, the owner
-// table's Camera row): the default Camera for a state without one, the Camera at a frame, and the two ways to write it.
+// table's Camera row): the Camera at a frame, and the two ways to write it.
 import assert from "node:assert/strict";
 import test from "node:test";
 
 import { cameraShot } from "../web_src/pano_editor_state.js";
 import { evaluateCamera, evaluateLane } from "../web_src/pano_scene_eval.js";
-import { defaultCamera, loadSceneState } from "../web_src/pano_scene_state.js";
-import { cameraAt, cameraOf, editableCamera, moveCameraPose, setCameraLanes } from "../web_src/studio/camera_state.js";
+import { loadSceneState } from "../web_src/pano_scene_state.js";
+import { cameraAt, moveCameraPose, setCameraLanes } from "../web_src/studio/camera_state.js";
 
 const load = (camera) => loadSceneState({ version: 2, camera });
-
-test("a state without a Camera reads as the default Camera; a state with one reads its own", () => {
-  const state = load({ projection: "perspective" });
-  assert.equal(cameraOf(state), state.camera);
-  assert.deepEqual(cameraOf({ ...state, camera: null }), defaultCamera());
-  assert.deepEqual(cameraOf({ ...state, camera: undefined }), defaultCamera());
-  assert.notEqual(cameraOf({ camera: null }), cameraOf({ camera: null }), "a new default each time");
-});
 
 test("the Camera at a frame is its evaluated values with the fields that do not change in time, and only those", () => {
   const state = load({
@@ -32,20 +24,6 @@ test("the Camera at a frame is its evaluated values with the fields that do not 
   const value = cameraAt(state, 5);
   assert.deepEqual(value, { ...evaluateCamera(state.camera, 5), projection: "erp", erp_range: 180, visible: false, locked: true });
   assert.deepEqual(Object.keys(value).sort(), ["aspect", "curve", "erp_range", "hFOV_deg", "locked", "pitch_deg", "position", "projection", "roll_deg", "visible", "yaw_deg"]);
-  assert.deepEqual(cameraAt({ ...state, camera: null }, 3), { ...evaluateCamera(defaultCamera(), 3), projection: "erp", erp_range: 360, visible: true, locked: false });
-});
-
-test("a write to a draft without a Camera puts the default Camera there first; one that has one keeps it", () => {
-  const draft = { ...load({}), camera: null };
-  const camera = editableCamera(draft);
-  assert.equal(draft.camera, camera);
-  assert.deepEqual(camera, defaultCamera());
-  assert.equal(editableCamera(draft), camera);
-  const missing = load({});
-  delete missing.camera;
-  assert.deepEqual(editableCamera(missing), defaultCamera(), "undefined is filled as null is");
-  // Only null and undefined are filled (??=). Other falsy values cannot come from loadSceneState, so they are not
-  // a case: a draft's `camera` is a Camera object, null or missing.
 });
 
 test("a move to a pose writes only the Lanes that change by the recording rule, keeping the nearest turn, and says whether it changed", () => {

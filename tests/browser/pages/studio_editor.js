@@ -1,7 +1,7 @@
 // The new editor (web_src/studio/editor.js) opened on a stand-in Panorama Studio node whose background input is
 // linked to an ERP made in the page, for tests/browser/studio_editor.spec.js. ComfyUI is not used: the node, its
 // graph and app.getNodeImageUrls are the least the editor reads. The page reports through window.__studio.
-import { editorSession } from "/web_src/pano_node_bridge.js";
+import { editorSession, nodeSurface } from "/web_src/pano_node_bridge.js";
 import { openStudioEditor } from "/web_src/studio/editor.js";
 
 // The drawing buffer is kept, so the test can sample the stage between frames (the editor draws with
@@ -47,7 +47,7 @@ try {
     id: 12,
     title: "Panorama Studio",
     __panoStudio: true,
-    inputs: [{ name: "bg_media", link: 1 }],
+    inputs: [{ name: "background", link: 1 }],
     widgets: [{ name: "state_json", value: "" }],
     graph: { getNodeById: (id) => (id === 7 ? origin : null) },
     isInputConnected: (index) => index === 0,
@@ -72,7 +72,27 @@ try {
     canvas?.removeEventListener("webglcontextlost", onLost);
     editor?.close();
   };
+  // Opens with one throw on the way: "early" before the shell mounts (the node's title),
+  // "late" after it mounted (the node surface's redraw). Returns the error's message, or "opened".
+  studio.openBroken = async (where) => {
+    const restore = where === "early"
+      ? (Object.defineProperty(node, "title", { configurable: true, get() { throw new Error("broken title"); } }), () => Object.defineProperty(node, "title", { configurable: true, writable: true, value: "Panorama Studio" }))
+      : (nodeSurface(node).dom = { requestDraw() { throw new Error("broken redraw"); } }, () => (nodeSurface(node).dom = null));
+    try {
+      const opened = await openStudioEditor(node, { app, api: null, storage: memoryStorage });
+      opened?.close();
+      return "opened";
+    } catch (error) {
+      return error.message;
+    } finally {
+      restore();
+    }
+  };
+  studio.session = () => ({ open: !!editorSession(node).open, flush: !!editorSession(node).flushBeforeQueue });
   studio.memory = () => editorSession(node).view;
+  // The 3D tab's view as it shows (its FOV: docs/space-and-view.md "寄る").
+  studio.pose = () => editor?.stage()?.pose() ?? null;
+  studio.stage = () => editor?.stage() ?? null;
   // The stage's pixels, a 64 x 36 sampling of its canvas: [r, g, b] rows.
   studio.sample = () => {
     const canvas = document.querySelector("[data-stage-canvas]");

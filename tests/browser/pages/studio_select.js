@@ -5,6 +5,7 @@
 import { editorSession } from "/web_src/pano_node_bridge.js";
 import { openStudioEditor } from "/web_src/studio/editor.js";
 import { rememberView } from "/web_src/studio/view_camera.js";
+import { servedImage, viewApiURL } from "./view_files.js";
 
 const getContext = HTMLCanvasElement.prototype.getContext;
 HTMLCanvasElement.prototype.getContext = function (type, options = {}) {
@@ -69,7 +70,7 @@ export const STATE = {
     {
       id: "sticker_1",
       placement: "sky",
-      source: { kind: "file", data_url: poster },
+      source: servedImage("poster.png", poster),
       // ?sky=yaw,pitch places it elsewhere (studio_camera_select.spec.js: in front of the Camera).
       direction: { value: skyAt ? { yaw_deg: skyAt[0], pitch_deg: skyAt[1] } : { yaw_deg: -38, pitch_deg: 6 } },
       size: { value: { hFOV_deg: 24, vFOV_deg: 18 } },
@@ -78,7 +79,7 @@ export const STATE = {
     {
       id: "sticker_2",
       placement: "world",
-      source: { kind: "file", data_url: board },
+      source: servedImage("board.png", board),
       position: { value: [0.9, -0.4, -2.6] },
       rotation: { value: { yaw_deg: -20, pitch_deg: 0, roll_deg: 0 } },
       scale: { value: 1.1 },
@@ -102,7 +103,7 @@ try {
     title: "Panorama Studio",
     __panoStudio: true,
     __panoSceneStateV2: true,
-    inputs: [{ name: "bg_media", link: 1 }],
+    inputs: [{ name: "background", link: 1 }],
     widgets: [{ name: "state_json", value: JSON.stringify(STATE) }],
     graph: { getNodeById: (id) => (id === 7 ? origin : null) },
     isInputConnected: (index) => index === 0,
@@ -114,7 +115,7 @@ try {
   // ?view=above opens it from higher up, looking down 30 degrees, so the gizmo's XZ square shows.
   const above = new URLSearchParams(location.search).get("view") === "above";
   editorSession(node).view = rememberView(above ? ABOVE_VIEW : OPEN_VIEW, "panorama");
-  const editor = await openStudioEditor(node, { app, api: null, storage: memoryStorage });
+  const editor = await openStudioEditor(node, { app, api: { apiURL: viewApiURL }, storage: memoryStorage });
   studio.session = editor.session;
   studio.node = node;
   studio.close = () => editor.close();

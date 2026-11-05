@@ -1,7 +1,8 @@
 import { fileSource, newSceneSticker, parseSceneEditorState, setStickerPose, stickerPose, takeStickerId, unkeyedPose } from "./pano_editor_state.js";
+import { vFovFromHfov } from "./pano_camera_math.js";
 import { createNodeSurfaceSession } from "./pano_node_surface_session.js";
 import { evaluateSticker } from "./pano_scene_eval.js";
-import { portHandoff, showPortHandoff } from "./pano_port_handoff.js";
+import { isInputConnected, portHandoff, showPortHandoff } from "./pano_port_handoff.js";
 import { loadSceneState } from "./pano_scene_state.js";
 
 const EXTERNAL_STICKER_ID = "sticker_image_1";
@@ -12,7 +13,7 @@ export const NODE_SURFACE_FRAME = 0;
 function computeVerticalFov(hFovDeg, width, height) {
   const hFov = Math.min(179, Math.max(0.1, Number(hFovDeg || 30)));
   const aspectScale = Math.max(1, Number(height || 1)) / Math.max(1, Number(width || 1));
-  const vertical = 2 * Math.atan(Math.tan((hFov * Math.PI / 180) * 0.5) * aspectScale) * 180 / Math.PI;
+  const vertical = vFovFromHfov(hFov, aspectScale);
   return Math.min(179, Math.max(0.1, vertical));
 }
 
@@ -22,7 +23,7 @@ function safeInteger(value) {
 }
 
 // The Stickers the node shows: every Sticker of the legacy v1 state, the sky Stickers of state v2.
-export function surfaceStickers(state) {
+function surfaceStickers(state) {
   const stickers = Array.isArray(state?.stickers) ? state.stickers : [];
   return state?.version === 2 ? stickers.filter((item) => item.placement === "sky") : stickers;
 }
@@ -161,11 +162,6 @@ export function reconcileExternalStickerState(state, descriptor = {}) {
   return { state: { ...state, stickers: nextStickers }, changed: true };
 }
 
-function isInputConnected(node, name) {
-  const slot = (Array.isArray(node?.inputs) ? node.inputs : []).findIndex((input) => input?.name === name);
-  return slot >= 0 && node.isInputConnected(slot);
-}
-
 const MEDIA_KINDS_2D = ["IMAGE", "VIDEO"];
 
 // The 3D media of the `sticker` input: drawn as a world port Sticker that the node places.
@@ -215,16 +211,6 @@ export function portStickerSyncValue(node, { pose = null, handoff = null } = {})
     pose,
     handoff: !!handoff,
   };
-}
-
-// Whether the Pose handoff of a node's result can apply: `sticker` and `sticker_state` are connected.
-export function portHandoffLinked(node) {
-  return isInputConnected(node, "sticker") && isInputConnected(node, "sticker_state");
-}
-
-// The Pose handoff of a node's current result (`value`, its `pano_sticker_handoff`) while it can apply, or null.
-export function nodePortHandoff(node, value) {
-  return portHandoffLinked(node) ? portHandoff(value) : null;
 }
 
 // Panorama Studio's state_json `text` as its node surface shows it (parseSceneEditorState `options`): the port

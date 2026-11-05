@@ -9,6 +9,7 @@ import { openStudioEditor } from "/web_src/studio/editor.js";
 import { rememberView } from "/web_src/studio/view_camera.js";
 import { panoPoint } from "./live_erp_scene.js";
 import { CAMERA, MARKERS, MARKER_DISTANCE, SKY_MARKER } from "./studio_camera_wired_scene.js";
+import { servedImage, viewApiURL } from "./view_files.js";
 
 const getContext = HTMLCanvasElement.prototype.getContext;
 HTMLCanvasElement.prototype.getContext = function (type, options = {}) {
@@ -57,17 +58,21 @@ const STATE = {
   timeline: { fps: 24, length: 240 },
   camera: {
     projection: mode === "panorama" ? "erp" : "perspective",
+    // ?locked=1: a locked Camera.
+    ...(params.has("locked") ? { locked: true } : {}),
     aspect: aw / ah,
     position: { value: [...CAMERA.position] },
     rotation: { value: { yaw_deg: CAMERA.yaw, pitch_deg: cameraPitch, roll_deg: CAMERA.roll } },
-    fov: { value: CAMERA.fov },
+    // ?fovkeys=1: the fov Lane keyed at frames 0 and 40.
+    fov: params.has("fovkeys") ? { keyframes: [{ frame: 0, value: CAMERA.fov }, { frame: 40, value: CAMERA.fov }] } : { value: CAMERA.fov },
     ...(params.has("curve") ? { curve: { value: Number(params.get("curve")) } } : {}),
   },
   stickers: [
-    ...MARKERS.map(([name, yaw, pitch, rgb], index) => ({
+    // ?sky=1: no World content (the sky image only).
+    ...(params.has("sky") ? [] : MARKERS).map(([name, yaw, pitch, rgb], index) => ({
       id: `sticker_${index + 1}`,
       placement: "world",
-      source: { kind: "file", data_url: solid(`rgb(${rgb.join(",")})`) },
+      source: servedImage(`solid_${rgb.join("_")}.png`, solid(`rgb(${rgb.join(",")})`)),
       position: { value: at(yaw, pitch) },
       rotation: { value: facingRotation(at(yaw, pitch), CAMERA.position) },
       scale: { value: 0.6 },
@@ -75,7 +80,7 @@ const STATE = {
     {
       id: "sticker_9",
       placement: "sky",
-      source: { kind: "file", data_url: solid(`rgb(${SKY_MARKER[3].join(",")})`) },
+      source: servedImage("sky_marker.png", solid(`rgb(${SKY_MARKER[3].join(",")})`)),
       direction: { value: { yaw_deg: SKY_MARKER[1], pitch_deg: SKY_MARKER[2] } },
       size: { value: { hFOV_deg: 8, vFOV_deg: 8 } },
       z_index: 1,
@@ -97,7 +102,7 @@ try {
     title: "Panorama Studio",
     __panoStudio: true,
     __panoSceneStateV2: true,
-    inputs: [{ name: "bg_media", link: 1 }],
+    inputs: [{ name: "background", link: 1 }],
     // ?mp= the megapixels widget (the Output window's line reads it when the editor opens).
     widgets: [
       { name: "state_json", value: JSON.stringify(STATE) },
@@ -111,7 +116,7 @@ try {
   };
   const app = { getNodeImageUrls: (target) => (target === origin ? [url] : []), nodeOutputs: {} };
   editorSession(node).view = rememberView({ position: [0, 0.4, 2.6], yaw_deg: 0, pitch_deg: -6, target: [0, -0.2, -1] }, "panorama");
-  const editor = await openStudioEditor(node, { app, api: null, storage: memoryStorage });
+  const editor = await openStudioEditor(node, { app, api: { apiURL: viewApiURL }, storage: memoryStorage });
   studio.session = editor.session;
   studio.stage = () => editor.stage();
   studio.node = node;

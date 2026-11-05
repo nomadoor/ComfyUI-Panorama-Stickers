@@ -7,24 +7,21 @@ import { BufferAttribute, BufferGeometry, Color, DoubleSide, Group, Mesh, MeshBa
 import { depthItemTime } from "../web_src/pano_depth_color.js";
 import { placeDirection } from "../web_src/pano_editor_view.js";
 import { makeUnlit } from "../web_src/pano_scene_loaders.js";
-import { applyViewportCamera, createGizmo } from "../web_src/pano_three_view.js";
-import { pickRay, pointAt } from "../web_src/pano_pick.js";
+import { createGizmo } from "../web_src/pano_three_view.js";
+import { pickRay } from "../web_src/pano_pick.js";
 
 import {
   DEFAULT_DISTANCE,
   SPLAT_TO_SCENE,
   boundingSphere,
-  cameraFrustumSegments,
+  cameraFrustumShape,
   planeCorners,
   planeOutlineSegments,
-  cameraTrajectory,
   contentPoints,
   depthOf,
   facingRotation,
   fit3dPosition,
   fitDistance,
-  fitSphereOfBox,
-  FIT_3D_MIN_DISTANCE,
   FIT_FALLBACK_FOV_DEG,
   DEFAULT_VIEW_HFOV,
   fileStickerKey,
@@ -33,20 +30,14 @@ import {
   sceneContentBox,
   frameView,
   gizmoDragLanes,
-  gizmoScreenBox,
   gridSpec,
-  hasWorldContent,
   initialSpaceView,
   navigationTarget,
-  newWorld3dStickerTransform,
-  newWorldStickerTransform,
-  NEW_WORLD_STICKER_DISTANCE,
   orbitView,
   panDepth,
   panView,
   pivotOf,
   placedCamera,
-  polylineSegments,
   projectPoint,
   reuseWheelPick,
   multiviewKey,
@@ -56,10 +47,8 @@ import {
   sceneItemIndex,
   sceneRequest,
   sceneTransform,
-  segmentsHit,
   spaceCamera,
   spaceModeView,
-  spaceModeWithContent,
   stickerContentRequest,
   stickerContentUrls,
   switchSpaceMode,
@@ -500,38 +489,26 @@ test("the grid spacing follows the content size by powers of ten", () => {
 
 test("a Camera's frustum spans its hFOV and aspect, with a mark on its up side", () => {
   const camera = { position: [1, 2, 3], yaw_deg: 0, pitch_deg: 0, roll_deg: 0, hFOV_deg: 90, aspect: 2 };
-  const segments = cameraFrustumSegments(camera, 2);
-  assert.equal(segments.length, 11);
-  closeVec(segments[0][0], [1, 2, 3]);
-  closeVec(segments[0][1], [-1, 1, 1]);
-  closeVec(segments[2][1], [3, 3, 1]);
-  assert.ok(segments[9][0][1] > 3);
+  const { apex, outline, spokes, top, lens } = cameraFrustumShape(camera, 2);
+  assert.equal(lens, false);
+  closeVec(apex, [1, 2, 3]);
+  assert.equal(outline.length, 4);
+  assert.deepEqual(spokes, [0, 1, 2, 3]);
+  closeVec(outline[0], [-1, 1, 1]);
+  closeVec(outline[2], [3, 3, 1]);
+  assert.equal(top.length, 3);
+  assert.ok(top[1][1] > 3);
 });
 
 // A lens Camera's mark goes through its lens like its edge, so only the plain one is a flat triangle to measure.
 test("a Camera's up mark keeps its shape whatever the aspect", () => {
   const shape = (aspect, curve) => {
     const camera = { position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0, roll_deg: 0, hFOV_deg: 60, aspect, curve };
-    const segments = cameraFrustumSegments(camera, 1);
-    const [left, apex, right] = segments.slice(-3).map(([a]) => a);
+    const [left, apex, right] = cameraFrustumShape(camera, 1).top;
     return (apex[1] - left[1]) / (right[0] - left[0]);
   };
   const wide = shape(16 / 9);
   for (const aspect of [1, 9 / 16, 3]) assert.ok(Math.abs(shape(aspect) - wide) < 1e-9, `aspect ${aspect}`);
-});
-
-test("a Camera's trajectory samples its position Lane over the Timeline", () => {
-  const still = loadSceneState({ version: 2, camera: { position: { value: [1, 2, 3], keyframes: [] } } });
-  assert.deepEqual(cameraTrajectory(still, 100), [[1, 2, 3]]);
-  const moving = loadSceneState({
-    version: 2,
-    camera: { position: { value: [0, 0, 0], keyframes: [{ frame: 0, value: [0, 0, 0] }, { frame: 10, value: [10, 0, 0], easing: "auto" }] } },
-  });
-  const path = cameraTrajectory(moving, 11);
-  assert.equal(path.length, 11);
-  closeVec(path[0], [0, 0, 0]);
-  closeVec(path[10], [10, 0, 0]);
-  assert.equal(cameraTrajectory(moving, 5000, 100).length, 100);
 });
 
 test("a scene GLB draws unlit on both sides with its base color, texture and vertex colors", () => {
@@ -562,14 +539,6 @@ test("the scene files of a node result give the kind, whether light falls on it 
   assert.equal(sceneFilesOf([], [{ kind: "mesh" }], source), null);
   assert.equal(sceneFilesOf(files, [{ kind: "points" }], source), null);
   assert.equal(sceneFilesOf(files, [], source), null);
-});
-
-test("the space view shows when scene is linked, its files are in the result, or a world Sticker is there", () => {
-  const sky = [{ placement: "sky" }];
-  assert.equal(hasWorldContent({ sceneLinked: false, files: null, stickers: sky }), false);
-  assert.equal(hasWorldContent({ sceneLinked: true, files: null, stickers: [] }), true);
-  assert.equal(hasWorldContent({ sceneLinked: false, files: { kind: "mesh", urls: ["a"] }, stickers: [] }), true);
-  assert.equal(hasWorldContent({ sceneLinked: false, files: null, stickers: [...sky, { placement: "world" }] }), true);
 });
 
 test("the scene request names the item of the frame, the next one ahead, and the turn of a SPLAT", () => {
@@ -665,19 +634,14 @@ test("a 3D port Sticker draws the item of its batch at its clip frame with its t
   assert.equal(stickerContentRequest(files, sky, evaluateSceneState(sky, 0)), null);
 });
 
-test("switching back to 3DoF returns to the origin, as does 6DoF losing its World content", () => {
+test("switching back to 3DoF returns to the origin", () => {
   const opened = { mode: "3dof", position: [0, 0, 0], moved: false };
   const free = switchSpaceMode(opened, "6dof");
   assert.deepEqual(free, { mode: "6dof", position: [0, 0, 0], moved: false });
   const moved = { mode: "6dof", position: [3, 1, -2], moved: true };
-  assert.deepEqual(switchSpaceMode(moved, "3dof"), opened);
-  // With content the mode stays; without it 6DoF goes back to 3DoF at the origin.
-  assert.equal(spaceModeWithContent(moved, true), moved);
-  const lost = spaceModeWithContent(moved, false);
-  assert.deepEqual(lost, opened);
-  // Content that shows again starts in 3DoF, at the origin.
-  assert.equal(spaceModeWithContent(lost, true), lost);
-  assert.deepEqual(spaceModeView(lost.mode, view({ position: lost.position })).position, [0, 0, 0]);
+  const back = switchSpaceMode(moved, "3dof");
+  assert.deepEqual(back, opened);
+  assert.deepEqual(spaceModeView(back.mode, view({ position: back.position })).position, [0, 0, 0]);
 });
 
 test("the 3D Sticker's items stay loaded only while the state has a world port Sticker", () => {
@@ -700,42 +664,6 @@ function assertFaces(rotation, at, from) {
   const right = [matrix[0][0], matrix[1][0], matrix[2][0]];
   close(right[1], 0, 1e-9);
 }
-
-test("a new world Sticker goes on the surface under the pointer, facing the view", () => {
-  const width = 640;
-  const height = 360;
-  const start = { position: [0.5, 1, 2], yaw_deg: 10, pitch_deg: -5, hFOV_deg: 90, distance: 1 };
-  const camera = spaceCamera(start, width, height);
-  // The pointer over a point of a surface picks that point at its depth.
-  const onFace = [0.8, 0.4, -5.5];
-  const pointer = projectPoint(camera, onFace, width, height);
-  const hit = pointAt(pickRay(camera, pointer.x, pointer.y, width, height), pointer.z);
-  closeVec(hit, onFace, 1e-6);
-  const placed = newWorldStickerTransform(start, hit, { center: [0, 0, -6], radius: 3 });
-  closeVec(placed.position, hit);
-  assertFaces(placed.rotation, placed.position, start.position);
-  // As wide as a new sky Sticker (30 degrees) looks from the view.
-  const distance = Math.hypot(...hit.map((value, axis) => value - start.position[axis]));
-  close(placed.scale, 2 * distance * Math.tan(15 * Math.PI / 180));
-});
-
-test("without a surface under the pointer a new world Sticker goes ahead at half the content's radius", () => {
-  const start = { position: [0.5, 1, 2], yaw_deg: 40, pitch_deg: 20, hFOV_deg: 90, distance: 1 };
-  const placed = newWorldStickerTransform(start, null, { center: [9, 9, 9], radius: 6 });
-  closeVec(placed.position, start.position.map((value, axis) => value + viewAxes(40, 20).forward[axis] * 3));
-  // Straight ahead it has the view's own angles, so it faces the view.
-  close(placed.rotation.yaw_deg, 40);
-  close(placed.rotation.pitch_deg, 20);
-  close(placed.rotation.roll_deg, 0);
-  assertFaces(placed.rotation, placed.position, start.position);
-  // Without content it goes the default distance ahead; in 3DoF that is from the ERP origin.
-  const origin = { ...start, position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0 };
-  const empty = newWorldStickerTransform(origin, null, null);
-  closeVec(empty.position, [0, 0, -NEW_WORLD_STICKER_DISTANCE]);
-  assert.deepEqual(empty.rotation, { yaw_deg: 0, pitch_deg: 0, roll_deg: 0 });
-  // A sphere without size counts as no content.
-  closeVec(newWorldStickerTransform(origin, null, { center: [0, 0, -1], radius: 0 }).position, [0, 0, -NEW_WORLD_STICKER_DISTANCE]);
-});
 
 test("a plane facing a point keeps rotation 0 for a view of rotation 0 behind it", () => {
   assert.deepEqual(facingRotation([0, 0, 0], [0, 0, -3]), { yaw_deg: 0, pitch_deg: 0, roll_deg: 0 });
@@ -815,62 +743,6 @@ test("the gizmo drags its handle with the pointer and lets go when it stops show
   gizmo.dispose();
 });
 
-test("the box a gizmo covers on screen holds all its handles and their pickers", () => {
-  const width = 800;
-  const height = 450;
-  const views = [
-    { position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0, hFOV_deg: 90, distance: 1 },
-    { position: [1, 0.5, 2], yaw_deg: 30, pitch_deg: -20, hFOV_deg: 50, distance: 1 },
-  ];
-  const quaternion = new Quaternion().setFromAxisAngle(new Vector3(1, 2, 3).normalize(), 0.7);
-  for (const view of views) {
-    const setup = spaceCamera(view, width, height);
-    const camera = new PerspectiveCamera();
-    camera.position.set(...setup.position);
-    applyViewportCamera(camera, setup);
-    const gizmo = createGizmo(camera);
-    const world = new Scene();
-    const { right, forward } = viewAxes(view.yaw_deg, view.pitch_deg);
-    // At the view's center and off to its side, near and far.
-    const points = [[0, 3], [1.5, 3], [-4, 6], [0.3, 1.2]].map(([side, ahead]) => setup.position.map((value, i) => value + right[i] * side + forward[i] * ahead));
-    for (const mode of ["translate", "rotate", "scale"]) {
-      for (const position of points) {
-        world.clear();
-        world.add(...gizmo.show({ mode, transform: { position, quaternion: { x: quaternion.x, y: quaternion.y, z: quaternion.z, w: quaternion.w }, scale: 1 } }));
-        world.updateMatrixWorld(true);
-        const box = gizmoScreenBox(setup, position, mode, width, height);
-        const handles = world.children[1].children[0];
-        const seen = { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity };
-        for (const group of [handles.gizmo[mode], handles.picker[mode]]) {
-          group.traverse((object) => {
-            const vertices = object.isMesh ? object.geometry.getAttribute("position") : null;
-            for (let i = 0; vertices && i < vertices.count; i++) {
-              const p = new Vector3().fromBufferAttribute(vertices, i).applyMatrix4(object.matrixWorld).project(camera);
-              const x = (p.x + 1) * 0.5 * width;
-              const y = (1 - p.y) * 0.5 * height;
-              seen.minX = Math.min(seen.minX, x);
-              seen.maxX = Math.max(seen.maxX, x);
-              seen.minY = Math.min(seen.minY, y);
-              seen.maxY = Math.max(seen.maxY, y);
-            }
-          });
-        }
-        const where = `${mode} at ${position.map((value) => value.toFixed(2))}`;
-        assert.ok(box.minX <= seen.minX + 1e-6 && seen.maxX <= box.maxX + 1e-6, where);
-        assert.ok(box.minY <= seen.minY + 1e-6 && seen.maxY <= box.maxY + 1e-6, where);
-        // And not much more than they need.
-        assert.ok(seen.maxX - seen.minX > 0.6 * (box.maxX - box.minX), where);
-      }
-    }
-    gizmo.dispose();
-  }
-  // Behind the camera there is none on screen. In a view so wide that the gizmo's sphere takes in the
-  // camera, it covers the whole view.
-  assert.equal(gizmoScreenBox(spaceCamera(views[0], width, height), [0, 0, 3], "translate", width, height), null);
-  const wide = spaceCamera({ ...views[0], hFOV_deg: 170 }, 300, 800);
-  assert.deepEqual(gizmoScreenBox(wide, [0, 0, -3], "rotate", 300, 800), { minX: 0, maxX: 300, minY: 0, maxY: 800 });
-});
-
 test("near a pole a gizmo turn keeps the Sticker's yaw and turns its roll", () => {
   const matrix = ({ yaw_deg, pitch_deg, roll_deg }) => worldRotation(yaw_deg, pitch_deg, roll_deg).flat();
   const base = { position: [0, 0, 0], yaw_deg: 30, pitch_deg: 90, roll_deg: 10, scale: 1 };
@@ -916,24 +788,6 @@ test("the Frame view looks through the Camera from its position with the space v
   assert.deepEqual(placed.position, [0, 1, 0]);
   assert.equal(placed.fovY_deg, 40);
   assert.deepEqual([placed.near, placed.far], [space.near, space.far]);
-});
-
-test("the Camera is picked within a few pixels of its frustum's lines on screen", () => {
-  const view = spaceCamera({ position: [0, 0, 5], yaw_deg: 0, pitch_deg: 0, hFOV_deg: 90, distance: 5 }, 200, 200);
-  const frustum = cameraFrustumSegments({ position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0, roll_deg: 0, hFOV_deg: 60, aspect: 1 }, 1);
-  const center = projectPoint(view, [0, 0, 0], 200, 200);
-  const edge = projectPoint(view, frustum[1][1], 200, 200);
-
-  assert.equal(segmentsHit(view, frustum, center, 200, 200), true);
-  assert.equal(segmentsHit(view, frustum, { x: (center.x + edge.x) / 2 + 3, y: (center.y + edge.y) / 2 }, 200, 200), true);
-  assert.equal(segmentsHit(view, frustum, { x: 5, y: 5 }, 200, 200), false);
-  // Segments behind the view are not picked.
-  assert.equal(segmentsHit(view, [[[0, 0, 6], [1, 0, 7]]], { x: 100, y: 100 }, 200, 200), false);
-});
-
-test("the trajectory is drawn as the segments between its positions", () => {
-  assert.deepEqual(polylineSegments([[0, 0, 0], [1, 0, 0], [1, 1, 0]]), [[[0, 0, 0], [1, 0, 0]], [[1, 0, 0], [1, 1, 0]]]);
-  assert.deepEqual(polylineSegments([[0, 0, 0]]), []);
 });
 
 // docs/threejs-spark-integration.md "3D ファイルの `file` の Source の `world` の Sticker".
@@ -1035,21 +889,11 @@ test("Frame Selected keeps its distance to the fit distance of the fixture", () 
 test("the node's FOV is the default view hFOV made the vertical of a 16:9 view, as in the front case", () => {
   assert.equal(DEFAULT_VIEW_HFOV, 100);
   close(FIT_FALLBACK_FOV_DEG, 2 * Math.atan(Math.tan(50 * Math.PI / 180) * 9 / 16) * 180 / Math.PI, 1e-12);
-  const front = fitCases().find((item) => item.dir[0] === 0 && item.dir[1] === 0 && item.dir[2] === -1 && item.eye.every((value) => value === 0) && item.min_distance === FIT_3D_MIN_DISTANCE && item.center !== null);
+  const front = fitCases().find((item) => item.dir[0] === 0 && item.dir[1] === 0 && item.dir[2] === -1 && item.eye.every((value) => value === 0) && item.min_distance === 0.1 && item.center !== null);
   close(front.fov_deg, FIT_FALLBACK_FOV_DEG, 1e-9);
   // A FOV that is not a positive finite number fits with the node's FOV.
   close(fitDistance(1, 0), fitDistance(1, FIT_FALLBACK_FOV_DEG), 1e-12);
   close(fitDistance(1, Number.NaN), fitDistance(1, FIT_FALLBACK_FOV_DEG), 1e-12);
-  assert.equal(FIT_3D_MIN_DISTANCE, 0.1);
-});
-
-test("the route's box is the sphere the fit uses as it is, and a missing or malformed box is none", () => {
-  // The route's box is in the scene glTF frame already: no sceneItemBox turn (a SPLAT's box keeps its signs).
-  assert.deepEqual(fitSphereOfBox({ min: [-1, 2, -3], max: [3, 4, 1] }), { center: [1, 3, -1], radius: Math.hypot(4, 2, 4) / 2 });
-  assert.deepEqual(fitSphereOfBox({ min: [1, 1, 1], max: [1, 1, 1] }), { center: [1, 1, 1], radius: 0 });
-  for (const box of [null, undefined, {}, { min: [0, 0, 0] }, { min: [0, 0], max: [1, 1, 1] }, { min: [0, 0, "0"], max: [1, 1, 1] }, { min: [0, 0, 0], max: [1, Infinity, 1] }, { min: [0, 2, 0], max: [1, 1, 1] }, "box"]) {
-    assert.equal(fitSphereOfBox(box), null, JSON.stringify(box));
-  }
 });
 
 test("a 3D file is placed along the ray through the button's view center or the drop point", () => {
@@ -1062,25 +906,6 @@ test("a 3D file is placed along the ray through the button's view center or the 
   const ray = pickRay(camera, 100, 300, 800, 400).direction;
   close(Math.hypot(...dropped), 1, 1e-12);
   closeVec(dropped, ray.map((value) => value / Math.hypot(...ray)), 1e-12);
-});
-
-test("a new 3D file Sticker stands upright 2 along its direction, turned to the view, at its own size", () => {
-  const view = { position: [0.5, 1, 2], yaw_deg: 40, pitch_deg: 20, hFOV_deg: 90, distance: 1 };
-  const dir = [0.6, -0.48, -0.64];
-  const placed = newWorld3dStickerTransform(view, dir);
-  closeVec(placed.position, [0.5 + 1.2, 1 - 0.96, 2 - 1.28], 1e-12);
-  // Its front (glTF +Z) faces back along the horizontal of dir: no pitch, no roll.
-  close(placed.rotation.yaw_deg, Math.atan2(0.6, 0.64) * 180 / Math.PI, 1e-9);
-  close(placed.rotation.yaw_deg, facingRotation(view.position, placed.position).yaw_deg, 1e-9);
-  assert.equal(placed.rotation.pitch_deg, 0);
-  assert.equal(placed.rotation.roll_deg, 0);
-  assert.equal(placed.scale, 1);
-  // Straight up or down, it keeps the view's yaw.
-  assert.equal(newWorld3dStickerTransform(view, [0, 1, 0]).rotation.yaw_deg, 40);
-  // In 3DoF from the origin, ahead: NEW_WORLD_STICKER_DISTANCE down -Z.
-  const empty = newWorld3dStickerTransform({ ...view, position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0 }, [0, 0, -1]);
-  closeVec(empty.position, [0, 0, -NEW_WORLD_STICKER_DISTANCE]);
-  assert.deepEqual(empty.rotation, { yaw_deg: 0, pitch_deg: 0, roll_deg: 0 });
 });
 
 // docs/threejs-spark-integration.md: an element whose value is a list of paths (DA3_GEOMETRY multiview) is one
@@ -1184,8 +1009,10 @@ test("a depth grid loads DEPTH_GRID_PREFETCH items ahead, and its color comes fr
 // 180° no pyramid could show.
 test("a lens Camera's frustum follows the rays of its image's edges", () => {
   const camera = { position: [1, 2, 3], yaw_deg: 0, pitch_deg: 0, roll_deg: 0, hFOV_deg: 300, aspect: 1.5, curve: 0.3 };
-  const segments = cameraFrustumSegments(camera, 2);
-  const ends = segments.flat().filter((point) => point.some((value, axis) => value !== camera.position[axis]));
+  const shape = cameraFrustumShape(camera, 2);
+  assert.equal(shape.lens, true);
+  const ends = [...shape.outline.filter(Boolean), ...(shape.top ?? [])];
+  assert.ok(ends.length > 4);
   const angles = ends.map((point) => {
     const d = point.map((value, axis) => value - camera.position[axis]);
     assert.ok(Math.abs(Math.hypot(...d) - 2) < 1e-9, "every edge point is `length` out along its ray");

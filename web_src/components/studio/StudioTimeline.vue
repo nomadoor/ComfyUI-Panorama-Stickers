@@ -30,7 +30,7 @@ import StudioTimelineHead from "./StudioTimelineHead.vue";
 //
 // Props: the working state (a snapshot it never changes), the selection { row, keys }, the playhead frame, whether
 // it plays, the loop switch, read-only, the upstream layers, and what the Timeline needs of the inputs (`media`,
-// `spanOf`, `background`, `sceneRow`, `fpsLocked`); timeline_model.js describes each. `collapsed` folds it to its bar.
+// `background`, `sceneRow`, `fpsLocked`); timeline_model.js describes each. `collapsed` folds it to its bar.
 //
 // Events:
 //   seek(frame, { phase })   "start" / "move" / "end" of a ruler scrub (move at most once per frame), "jump" for prev /
@@ -46,6 +46,8 @@ import StudioTimelineHead from "./StudioTimelineHead.vue";
 //     { kind: "revert-upstream-layer" | "restore-upstream-deleted", key }
 //   frame-selected(id)       a double-click on a row's name: Frame Selected on its object
 //   loop-change(on)          the loop switch (the shell keeps it per browser: timeline_actions.js writeLoopSetting)
+//   length-unit-change(unit) the Length field's unit mark, "frames" or "seconds" (`lengthUnit`; the shell keeps it per
+//                            browser: timeline_actions.js writeLengthUnitSetting). Allowed read-only: it changes no state.
 //   collapse-change(folded)  the collapse button
 // handleDelete() (exposed): deletes the selected Keyframes and returns true, or returns false when the Delete key is
 // the selected object's (docs/timeline-ui.md "記録の規則"). The Timeline calls it itself for Delete inside it.
@@ -61,13 +63,13 @@ const props = defineProps({
   readOnly: { type: Boolean, default: false },
   upstream: { type: Array, default: () => [] },
   media: { type: Object, default: () => ({}) },
-  spanOf: { type: Function, default: null },
   background: { type: Object, default: null },
   sceneRow: { type: Boolean, default: false },
   fpsLocked: { type: Boolean, default: false },
   collapsed: { type: Boolean, default: false },
+  lengthUnit: { type: String, default: "frames" },
 });
-const emit = defineEmits(["seek", "play", "select", "edit", "frame-selected", "loop-change", "collapse-change"]);
+const emit = defineEmits(["seek", "play", "select", "edit", "frame-selected", "loop-change", "length-unit-change", "collapse-change"]);
 
 // The empty space at both ends of a track (docs/timeline-ui.md "タイムラインの長さ": only a visual margin).
 const TRACK_PAD = 8;
@@ -77,7 +79,6 @@ const ctx = computed(() => ({
   state: props.state,
   upstream: props.upstream,
   media: props.media,
-  spanOf: props.spanOf,
   background: props.background,
   sceneRow: props.sceneRow,
   fpsLocked: props.fpsLocked,
@@ -109,7 +110,10 @@ const items = computed(() => {
 
 const root = ref(null);
 const ruler = ref(null);
+const rulerLine = ref(null);
 const lines = ref(null);
+const body = ref(null);
+const fill = ref(null);
 const width = ref(0);
 let observer = null;
 
@@ -189,6 +193,7 @@ function endDrag() {
   window.removeEventListener("pointercancel", onPointerCancel, true);
   window.removeEventListener("keydown", onDragKey, true);
   window.removeEventListener("blur", cancelDrag);
+  body.value?.removeEventListener("scroll", drawMarquee);
   batch.cancel();
   pendingSeek = null;
   pendingEdit = null;
@@ -210,11 +215,53 @@ function onRulerDown(event) {
   emit("seek", frame, { phase: "start" });
 }
 
-function onTrackDown(event, line) {
+// A press on an empty spot of a track, or on the empty area of the track column below the rows (docs/timeline-ui.md
+// "Keyframe の選び方"): a box from there, or a click that lets the Keyframes go. The box keeps its start in the lines'
+// own coordinates, so it stays put while the body scrolls under it.
+function onTrackDown(event) {
   if (event.button !== 0 || drag) return;
   event.preventDefault();
   const rect = lines.value.getBoundingClientRect();
-  beginDrag(event, { type: "marquee", line, additive: event.shiftKey, left: rect.left, top: rect.top });
+  beginDrag(event, { type: "marquee", additive: event.shiftKey, ax: event.clientX - rect.left, ay: event.clientY - rect.top, bx: event.clientX, by: event.clientY });
+  body.value?.addEventListener("scroll", drawMarquee);
+}
+
+// The box from its start to the pointer, in the lines' coordinates, held between the ruler's bottom (the ruler is sticky:
+// the box's top edge and corners stay in sight above the rows scrolled under it) and the track column's bottom (the
+// lines and the empty area below them, so a pointer past the body's end does not grow its scroll). The pointer may go
+// past both; the box as drawn is what it selects (docs/timeline-ui.md "Keyframe の選び方").
+function marqueeBox() {
+  const rect = lines.value.getBoundingClientRect();
+  const top = rulerLine.value ? rulerLine.value.getBoundingClientRect().bottom - rect.top : 0;
+  const bottom = fill.value ? fill.value.getBoundingClientRect().bottom - rect.top : rect.height;
+  const hold = (y) => Math.max(top, Math.min(bottom, y));
+  const bx = drag.bx - rect.left;
+  const by = hold(drag.by - rect.top);
+  const ay = hold(drag.ay);
+  return { left: Math.min(drag.ax, bx), top: Math.min(ay, by), width: Math.abs(bx - drag.ax), height: Math.abs(by - ay) };
+}
+
+function drawMarquee() {
+  if (!drag || drag.type !== "marquee" || !drag.moved) return;
+  marquee.value = marqueeBox();
+}
+
+// The Keyframes inside a box (marqueeBox): on the track lines it overlaps, between the frames at its two sides.
+function keysInBox(box) {
+  const rect = lines.value.getBoundingClientRect();
+  const top = rect.top + box.top;
+  const bottom = top + box.height;
+  const covered = [...lines.value.querySelectorAll("[data-line]")]
+    .filter((track) => {
+      const r = track.getBoundingClientRect();
+      return r.top < bottom && r.bottom > top;
+    })
+    .map((track) => Number(track.dataset.line));
+  if (!covered.length) return [];
+  const ruled = ruler.value.getBoundingClientRect();
+  const toFrame = (clientX) => xToFrameExact(clientX - ruled.left, span.value, width.value, TRACK_PAD);
+  const left = rect.left + box.left;
+  return keysInRange(model.value.lines, Math.min(...covered), Math.max(...covered), toFrame(left), toFrame(left + box.width));
 }
 
 function onKeyDown(event, line, key) {
@@ -256,11 +303,9 @@ function onMove(event) {
     pendingSeek = frame;
     batch.request("seek");
   } else if (drag.type === "marquee") {
-    const ax = drag.x0 - drag.left;
-    const ay = drag.y0 - drag.top;
-    const bx = event.clientX - drag.left;
-    const by = event.clientY - drag.top;
-    marquee.value = { left: Math.min(ax, bx), top: Math.min(ay, by), width: Math.abs(bx - ax), height: Math.abs(by - ay) };
+    drag.bx = event.clientX;
+    drag.by = event.clientY;
+    drawMarquee();
   } else {
     const delta = Math.round(dx / Math.max(1e-6, pxPerFrame.value));
     if (delta === drag.delta) return;
@@ -279,17 +324,6 @@ function onMove(event) {
   }
 }
 
-// The track line under a y (client), held to the first and the last.
-function lineAt(clientY) {
-  const tracks = [...lines.value.querySelectorAll("[data-line]")];
-  if (!tracks.length) return 0;
-  for (const track of tracks) {
-    const rect = track.getBoundingClientRect();
-    if (clientY < rect.bottom) return Number(track.dataset.line);
-  }
-  return Number(tracks[tracks.length - 1].dataset.line);
-}
-
 function onUp(event) {
   if (!drag || event.pointerId !== drag.pointerId) return;
   const current = drag;
@@ -300,16 +334,18 @@ function onUp(event) {
     return;
   }
   if (current.type === "marquee") {
+    if (current.moved) {
+      current.bx = event.clientX;
+      current.by = event.clientY;
+      current.box = marqueeBox();
+    }
     endDrag();
     if (!current.moved) {
       // An empty click lets the Keyframes go (with Shift it keeps them).
       if (!current.additive) emit("select", selectKeys(props.selection, [], { additive: false }));
       return;
     }
-    const rect = ruler.value.getBoundingClientRect();
-    const toFrame = (clientX) => xToFrameExact(clientX - rect.left, span.value, width.value, TRACK_PAD);
-    const hits = keysInRange(model.value.lines, current.line, lineAt(event.clientY), toFrame(current.x0), toFrame(event.clientX));
-    emit("select", selectKeys(props.selection, hits, { additive: current.additive }));
+    emit("select", selectKeys(props.selection, keysInBox(current.box), { additive: current.additive }));
     return;
   }
   endDrag();
@@ -400,9 +436,32 @@ function onFps(value) {
   if (fps !== null) emit("edit", { kind: "fps", fps });
 }
 
+// The Length field (docs/timeline-ui.md "タイムラインの長さ"): while it is dragged the range follows it as a live edit
+// from the length before the press; release (or a typed value) commits once from there, a cancel puts that state back.
+// The reset button commits at once. The shell keeps the playhead in the range once the gesture is closed.
+let lengthGesture = null;
+
+function onLengthInput(value) {
+  if (props.readOnly) return;
+  lengthGesture ??= { base: ctx.value, sentLive: false };
+  const { base } = lengthGesture;
+  const edit = lengthEdit(base, value) ?? { state: base.state, upstream: {} };
+  lengthGesture.sentLive = true;
+  emit("edit", { kind: "state", ...edit, phase: "live", stopsPlayback: true });
+}
+
 function onLength(value) {
-  const edit = lengthEdit(ctx.value, value);
+  const gesture = lengthGesture;
+  lengthGesture = null;
+  const edit = lengthEdit(gesture?.base ?? ctx.value, value);
   if (edit) emit("edit", { kind: "state", ...edit, phase: "commit", stopsPlayback: true });
+  else if (gesture?.sentLive) emit("edit", { kind: "state", state: gesture.base.state, upstream: {}, phase: "cancel", stopsPlayback: true });
+}
+
+function onLengthCancel() {
+  const gesture = lengthGesture;
+  lengthGesture = null;
+  if (gesture?.sentLive) emit("edit", { kind: "state", state: gesture.base.state, upstream: {}, phase: "cancel", stopsPlayback: true });
 }
 
 function onGroupAction(group, kind) {
@@ -417,9 +476,10 @@ function handleDelete() {
   return true;
 }
 
-// A press inside the Timeline gives it the keyboard (Delete), as the drags' preventDefault keeps focus where it was.
+// A press inside the Timeline gives it the keyboard (Delete), as the drags' preventDefault keeps focus where it was. A
+// field (the fps and Length names drag their field too: docs/studio-ui.md "欄") keeps it where it was.
 function onPointerDownCapture(event) {
-  if (event.target?.closest?.("input, textarea, select, [contenteditable='true'], [role='spinbutton']")) return;
+  if (event.target?.closest?.("input, textarea, select, [contenteditable='true'], [role='spinbutton'], .pano-studio-tl-field")) return;
   root.value?.focus({ preventScroll: true });
 }
 
@@ -458,15 +518,19 @@ defineExpose({ handleDelete, copyKeys: copySelectedKeys, pasteKeys: pasteCopiedK
     <StudioTimelineBar
       :bar="model.bar"
       :collapsed="collapsed"
+      :length-unit="lengthUnit"
       @play="emit('play')"
       @jump="onJump"
       @loop-change="(on) => emit('loop-change', on)"
       @fps="onFps"
+      @length-input="onLengthInput"
       @length="onLength"
+      @length-cancel="onLengthCancel"
+      @length-unit="(unit) => emit('length-unit-change', unit)"
       @collapse="(folded) => emit('collapse-change', folded)"
     />
-    <div v-show="!collapsed" class="pano-studio-tl-body">
-      <div class="pano-studio-tl-line is-ruler">
+    <div v-show="!collapsed" ref="body" class="pano-studio-tl-body">
+      <div ref="rulerLine" class="pano-studio-tl-line is-ruler">
         <div class="pano-studio-tl-head is-ruler" />
         <div ref="ruler" class="pano-studio-tl-ruler" data-tl="ruler" @pointerdown="onRulerDown">
           <span
@@ -520,7 +584,7 @@ defineExpose({ handleDelete, copyKeys: copySelectedKeys, pasteKeys: pasteCopiedK
               class="pano-studio-tl-track"
               :data-line="item.line"
               :data-track="item.type === 'lane' ? `${item.row.id}:${item.lane.lane}` : item.row.id"
-              @pointerdown="onTrackDown($event, item.line)"
+              @pointerdown="onTrackDown"
             >
               <div
                 v-if="item.type === 'row' && item.row.clip"
@@ -551,6 +615,11 @@ defineExpose({ handleDelete, copyKeys: copySelectedKeys, pasteKeys: pasteCopiedK
           class="pano-studio-tl-marquee"
           :style="{ left: `${marquee.left}px`, top: `${marquee.top}px`, width: `${marquee.width}px`, height: `${marquee.height}px` }"
         />
+      </div>
+      <!-- The empty area below the rows: its track column acts as an empty spot of a track, its name column is nothing. -->
+      <div class="pano-studio-tl-fill">
+        <div />
+        <div ref="fill" class="pano-studio-tl-fill-track" data-tl="fill" @pointerdown="onTrackDown" />
       </div>
     </div>
   </div>

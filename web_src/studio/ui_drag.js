@@ -1,9 +1,10 @@
 // The value math of a dragged number field in the new UI (docs/studio-ui.md "欄"): the field itself is dragged
 // left and right, Shift makes the movement 1/10, a press that does not move is a click to type. Pure functions;
-// components/studio/StudioNumberField.vue applies them to pointer events.
+// components/studio/StudioNumberField.vue applies them to pointer events. Also what cancels the drag of a field,
+// a slider, an Easing handle or an edge ruler, Escape among them (watchDragCancel).
 
 // How far (px) the pointer moves before a press on a field becomes a drag instead of a click to type.
-export const DRAG_THRESHOLD_PX = 3;
+const DRAG_THRESHOLD_PX = 3;
 // The fraction of the movement that Shift keeps.
 export const FINE_FACTOR = 0.1;
 // A single pointer movement this large (px) is a jump of the browser (the first event after pointer lock), not a drag.
@@ -48,4 +49,31 @@ export function parseNumber(text) {
 // The text a field shows for its value.
 export function formatNumber(value, precision = 2) {
   return roundValue(Number(value) || 0, precision).toFixed(Math.max(0, Math.round(precision)));
+}
+
+// Calls cancel() when the drag of `pointerId` is cancelled: Escape (kept from the editor, which would take back or close
+// on it), and (docs/editor-interaction.md "ポインタの取り消しとフォーカスの喪失") its pointercancel, the window's blur, and
+// its lost capture (`element` lost it before the pointer went up). lostCapture: false for a drag that gives its capture up
+// on purpose (a value box's pointer lock). Returns stop(): call it when the drag ends, before letting the capture go.
+export function watchDragCancel({ element, pointerId, cancel, win = globalThis.window, lostCapture = true }) {
+  const onKeydown = (event) => {
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    event.stopPropagation();
+    cancel();
+  };
+  const onPointer = (event) => {
+    if (event.pointerId === pointerId) cancel();
+  };
+  const onBlur = () => cancel();
+  win?.addEventListener("keydown", onKeydown, true);
+  win?.addEventListener("pointercancel", onPointer, true);
+  win?.addEventListener("blur", onBlur);
+  if (lostCapture) element?.addEventListener("lostpointercapture", onPointer);
+  return () => {
+    win?.removeEventListener("keydown", onKeydown, true);
+    win?.removeEventListener("pointercancel", onPointer, true);
+    win?.removeEventListener("blur", onBlur);
+    if (lostCapture) element?.removeEventListener("lostpointercapture", onPointer);
+  };
 }

@@ -88,6 +88,14 @@ window.__scene = {
   history: () => history,
   closes: () => closes.value,
   state: () => JSON.parse(JSON.stringify(raw)),
+  // Gives sticker_1's Position a third Keyframe at 12, its two segments with different Easings (a mixed selection).
+  keyMixed: () => {
+    const position = raw.stickers[0].position;
+    const [first, last] = position.keyframes;
+    const keyframes = [{ ...first, easing: [0, 0, 1, 1] }, { frame: 12, value: [1.6, -1.6, -3], easing: [0.42, 0, 0.58, 1] }, last];
+    raw.stickers = [{ ...raw.stickers[0], position: { ...position, keyframes } }, ...raw.stickers.slice(1)];
+    show();
+  },
   upstream: () => JSON.parse(JSON.stringify(layers.map((layer) => layer.sceneState))),
 };
 </script>

@@ -288,12 +288,16 @@ export function createStudioPaint({ state, tools, edit, onStart = () => {}, onCh
       return !!active;
     },
     revision: () => revision,
-    dispose() {
+    // until: the close's paint layer upload (editor_edits.js uploadPaintLayerOnClose), which reads the engine's canvases
+    // (nodeLayer) after this: the engine lets them go once it has settled.
+    dispose(until = null) {
       disposed = true;
       active = null;
       display.dispose();
       rasterPixels.clear();
+      const done = engine;
       engine = null;
+      if (done) Promise.resolve(until).catch(() => {}).finally(() => done.dispose());
     },
   };
 }

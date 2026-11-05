@@ -1,16 +1,18 @@
 // State v2 (`state_json`) and `sticker_state` loading.
 // The contract is documented in docs/scene-state-v2.md. comfyui_pano_suite/core/scene_state.py
 // must produce the same result for the same input.
+import { DEG2RAD } from "./pano_camera_math.js";
 import { LENS_CURVE_DEFAULT, LENS_CURVE_MAX, LENS_CURVE_MIN } from "./pano_lens.js";
+import { clamp } from "./pano_math.js";
 import { normalizePaintingState } from "./pano_paint_types.js";
 
-export const STATE_VERSION = 2;
-export const STICKER_STATE_KIND = "pano_sticker_state";
+const STATE_VERSION = 2;
+const STICKER_STATE_KIND = "pano_sticker_state";
 const PLACEMENTS = ["sky", "world"];
 // How the Camera shoots; the first is the default of a stored Camera that does not say.
 const PROJECTIONS = ["perspective", "erp"];
 // The spans a Panorama (`erp`) Camera shoots; the first is the default.
-export const ERP_RANGES = Object.freeze([360, 180]);
+const ERP_RANGES = Object.freeze([360, 180]);
 // The Camera a state without one (`camera` missing, null or not an object) reads as (ADR 0048): Panorama at the
 // World origin, which shoots what "no Camera" shot before. core/scene_state.py holds the same values;
 // tests/fixtures/scene_state/camera_default.json holds the two together.
@@ -35,11 +37,11 @@ export const TIMELINE_FPS_MIN = 1;
 export const TIMELINE_FPS_MAX = 1000;
 // The largest Clip range edge and Keyframe frame (either sign) a state keeps: about 2.8 hours at
 // 1000 fps. A length is one of these frames, so a rebase to a higher fps does not cut it short.
-export const TIMELINE_FRAME_MAX = 10000000;
+const TIMELINE_FRAME_MAX = 10000000;
 export const TIMELINE_LENGTH_MAX = TIMELINE_FRAME_MAX;
-// A Camera's aspect is held to 1/CAMERA_ASPECT_LIMIT..CAMERA_ASPECT_LIMIT: 2 : 4096, the thinnest frame the output
-// (at most 4096 on its long side, at least 2 on its short one) can take, so a thinner one shoots the same.
-export const CAMERA_ASPECT_LIMIT = 2048;
+// A Camera's aspect is held to 1/CAMERA_ASPECT_LIMIT..CAMERA_ASPECT_LIMIT. The output is at most 8192 on its long side and
+// at least `multiple` (8 or more) on its short one, so any ratio thinner than 8192 : 8 already shoots the same frame.
+const CAMERA_ASPECT_LIMIT = 2048;
 // The largest Sticker number (`sticker_<n>`) the `next_sticker_id` counter keeps: JS integers are exact up to here.
 const STICKER_NUMBER_MAX = Number.MAX_SAFE_INTEGER;
 // At most 16 digits (past STICKER_NUMBER_MAX): a longer number is not counted, as in scene_state.py.
@@ -56,10 +58,6 @@ function number(value, fallback) {
 function positive(value, fallback) {
   const out = number(value, fallback);
   return out !== null && out > 0 ? out : fallback;
-}
-
-function clamp(value, lo, hi) {
-  return Math.max(lo, Math.min(hi, value));
 }
 
 function frameNumber(value) {
@@ -160,8 +158,9 @@ export const CAMERA_LANES = [["position", positionValue], ["rotation", rotationV
 export const SCENE_LANES = [["position", positionValue], ["rotation", rotationValue], ["scale", scaleValue]];
 export const SKY_STICKER_LANES = [["direction", directionValue], ["roll", rollValue], ["size", sizeValue], ["opacity", opacityValue], ["curve", curveValue]];
 export const WORLD_STICKER_LANES = [...SCENE_LANES, ["opacity", opacityValue]];
-// A world Sticker's `lens` Lane, which only Pose handoff adds: a Sticker without it has none (a flat plane).
-export const WORLD_LENS_LANE = ["lens", lensValue];
+// A world Sticker's `lens` Lane, which only Pose handoff before ADR 0059 added (read from saved states): a Sticker
+// without it has none (a flat plane).
+const WORLD_LENS_LANE = ["lens", lensValue];
 
 // The Lanes a Sticker has: a world Sticker's `lens` only when it has one.
 export function stickerLanes(sticker) {
@@ -252,9 +251,6 @@ function source(raw) {
       storage: FILE_STORAGES.includes(storage) ? storage : "input",
     };
   }
-  if (typeof raw.data_url === "string" && raw.data_url.startsWith("data:image")) {
-    return { kind: "file", data_url: raw.data_url };
-  }
   return null;
 }
 
@@ -282,7 +278,7 @@ export const ANIMATION_SPEED_MIN = 0.1;
 export const ANIMATION_SPEED_MAX = 10;
 export const ANIMATION_DEFAULT = Object.freeze({ clip: null, speed: 1 });
 
-export function animationValue(raw) {
+function animationValue(raw) {
   if (!isObject(raw)) return null;
   const speed = number(raw.speed, null);
   const value = {
@@ -513,7 +509,7 @@ function sceneAnimation(raw) {
   return animation ? { animation } : {};
 }
 
-// The node's own `bg_media` on the Timeline: its Clip range.
+// The node's own `background` on the Timeline: its Clip range.
 function background(raw) {
   return { clip: clip(isObject(raw) ? raw.clip : undefined) };
 }
@@ -531,7 +527,6 @@ function v1Source(item, assets) {
       storage: String(asset.storage || "input").trim().toLowerCase(),
     };
   }
-  if (assetType === "dataurl") return { kind: "file", data_url: asset.value };
   return null;
 }
 
@@ -542,9 +537,8 @@ function v1Camera(shots) {
   if (!shot) return null;
   const hFov = clamp(number(shot.hFOV_deg, 90), 1, 179);
   const vFov = clamp(number(shot.vFOV_deg, 60), 1, 179);
-  const deg2rad = Math.PI / 180;
   return {
-    aspect: Math.tan(hFov * deg2rad * 0.5) / Math.tan(vFov * deg2rad * 0.5),
+    aspect: Math.tan(hFov * DEG2RAD * 0.5) / Math.tan(vFov * DEG2RAD * 0.5),
     rotation: { value: { yaw_deg: shot.yaw_deg, pitch_deg: shot.pitch_deg, roll_deg: shot.roll_deg } },
     fov: { value: hFov },
   };
@@ -687,7 +681,7 @@ export function rebaseSceneState(state, value) {
   return normalizeV2({
     ...state,
     timeline: { fps, length: length === null ? null : Math.max(1, rebase(length)) },
-    camera: state.camera === null ? null : { ...state.camera, ...rebaseLanes(state.camera, CAMERA_LANES, rebase, 0, 0) },
+    camera: { ...state.camera, ...rebaseLanes(state.camera, CAMERA_LANES, rebase, 0, 0) },
     scene: { ...state.scene, clip: scene.clip, ...rebaseLanes(state.scene, SCENE_LANES, rebase, scene.anchor, scene.newAnchor) },
     stickers: state.stickers.map((item) => {
       const { clip, anchor, newAnchor } = rebaseClip(item.clip, rebase);
@@ -727,14 +721,9 @@ function wrapYawDeg(value) {
   return ((((value + 180) % 360) + 360) % 360) - 180;
 }
 
-// A v1 number written as text: ASCII decimal without `_`, with ASCII whitespace around it (docs/scene-state-v2.md).
-// Not Number()'s hex, octal and binary prefixes or its Infinity.
-const V1_NUMBER_TEXT = /^[ \t\n\r\f\v]*[+-]?(?:[0-9]+\.?[0-9]*|\.[0-9]+)(?:[eE][+-]?[0-9]+)?[ \t\n\r\f\v]*$/;
-
+// A v1 pose number: a JSON number only (ADR 0063), else NaN.
 function v1PoseNumber(value) {
-  if (typeof value === "number") return value;
-  if (typeof value !== "string") return NaN;
-  return V1_NUMBER_TEXT.test(value) ? Number(value) : NaN;
+  return typeof value === "number" ? value : NaN;
 }
 
 // Each Camera Lane's Keyframes; an empty or invalid Lane is one Keyframe of its default value at frame 0.
@@ -763,6 +752,8 @@ function v1StickerStateCamera(pose) {
 
 // Reads `sticker_state` v1 or v2 as a normalized v2 sticker_state.
 // Returns null when the text is not a sticker_state, which callers ignore as before.
+// No runtime caller today: kept as the JS twin of core/scene_state.py load_sticker_state, which the parity tests
+// (tests/test_scene_state_parity.py, tests/pano_scene_state.test.mjs) hold to the same fixtures.
 export function loadStickerState(text) {
   if (typeof text !== "string" || !text.trim()) return null;
   let raw;
@@ -776,16 +767,18 @@ export function loadStickerState(text) {
   let camera;
   let sourceAspect;
   let fps;
-  if (version === 1 || version === "1") {
+  if (version === 1) {
     camera = v1StickerStateCamera(raw.pose);
     if (!camera) return null;
     const aspect = v1PoseNumber(raw.source_aspect);
     sourceAspect = Number.isFinite(aspect) && aspect > 0 ? aspect : null;
     fps = 24;
   } else if (version === 2) {
+    // A sticker_state without a readable fps is not read (ADR 0063).
+    fps = timelineFps(raw.fps);
+    if (fps === null) return null;
     camera = stickerStateCamera(raw.camera);
     sourceAspect = positive(raw.source_aspect, null);
-    fps = timelineFps(raw.fps) ?? 24;
   } else {
     throw new Error(`Unsupported sticker_state version ${JSON.stringify(version)}; supported versions are 1 and 2.`);
   }

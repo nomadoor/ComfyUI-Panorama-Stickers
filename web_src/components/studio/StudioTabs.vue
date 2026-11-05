@@ -8,15 +8,12 @@ import StudioSegmented from "./StudioSegmented.vue";
 const props = defineProps({
   // "3d" or "camera".
   value: { type: String, default: "3d" },
-  // The Camera tab stays in its place but cannot be chosen (while it is not built); `cameraTip` says why.
-  cameraDisabled: { type: Boolean, default: false },
-  cameraTip: { type: String, default: "" },
 });
 const emit = defineEmits(["select"]);
 
 const tabs = computed(() => [
   { value: "3d", label: "3D", icon: ICON.box },
-  { value: "camera", label: "Camera", icon: ICON.camera, disabled: props.cameraDisabled, tip: props.cameraTip || undefined },
+  { value: "camera", label: "Camera", icon: ICON.camera },
 ]);
 </script>
 

@@ -6,13 +6,13 @@ import {
   applyStickersNodeSurfaceAction,
   buildStickersDisplayEntries,
   createStickersNodeSurfaceSession,
-  nodePortHandoff,
   portStickerSyncValue,
   reconcileExternalStickerState,
   reconcilePortStickerState,
   stickersNodeSurfaceModel,
   surfacePoseStickers,
 } from "../web_src/pano_stickers_node_surface.js";
+import { nodePortHandoff } from "../web_src/pano_port_handoff.js";
 import { readFileSync } from "node:fs";
 import { editorActive, editorStateText, parseSceneEditorState, setEditorActive } from "../web_src/pano_editor_state.js";
 import { studioRunKey } from "../web_src/pano_studio_status.js";
@@ -418,7 +418,7 @@ test("the node shows the sky Stickers of state v2 at Timeline frame 0", () => {
 function stickersNode(connected = [], types = {}) {
   const linkTypes = { sticker: "IMAGE", ...types };
   const inputs = [
-    { name: "bg_media", type: "IMAGE,VIDEO" },
+    { name: "background", type: "IMAGE,VIDEO" },
     { name: "scene", type: "SPLAT,MESH,MOGE_GEOMETRY" },
     { name: "sticker", type: "IMAGE,VIDEO,MESH,SPLAT" },
     { name: "sticker_state", type: "STRING" },
@@ -642,7 +642,7 @@ test("loading a workflow keeps its port Sticker as saved with the sticker input 
     __panoSceneStateV2: true,
     graph: { links: new Map([[7, { id: 7, origin_id: 3, origin_slot: 0, type: "IMAGE" }]]) },
     properties: {},
-    inputs: ["bg_media", "scene", "sticker", "sticker_state"].map((name) => ({ name, link: null })),
+    inputs: ["background", "scene", "sticker", "sticker_state"].map((name) => ({ name, link: null })),
     widgets: ["bg_color", "coverage", "output_preset", "state_json"].map((name) => ({ name, value: name === "state_json" ? "" : null })),
     isInputConnected(slot) {
       return !!this.graph && this.inputs[slot]?.link != null;
@@ -758,12 +758,12 @@ test("with a Pose handoff, the node's replace pose is not written: the handoff i
   const node = stickersNode(["sticker", "sticker_state"], { sticker: "IMAGE" });
   const state = v2EditorState({ stickers: [{ id: "sticker_4", source: { kind: "port" }, z_index: 2 }] });
   const pose = { placement: "world", position: [0, 0, -1], rotation: { yaw_deg: 0, pitch_deg: 0, roll_deg: 0 }, scale: 2, replace: true };
-  const handoff = [{ placement: "world", lanes: {}, fps: 24 }];
+  const handoff = [{ placement: "sky", lanes: {}, fps: 24 }];
 
   const result = reconcilePortStickerState(state, portStickerSyncValue(node, { pose, handoff }));
 
   assert.equal(result.changed, false);
-  assert.equal(nodePortHandoff(node, handoff).placement, "world");
+  assert.equal(nodePortHandoff(node, handoff).placement, "sky");
   assert.equal(nodePortHandoff(stickersNode(["sticker"]), handoff), null, "sticker_state is no longer connected");
 });
 

@@ -31,7 +31,7 @@ export function selectedKind(state, row, upstream = []) {
 
 // The gizmo modes an object of `kind` has: Move, Rotate and Scale for the World objects, Move and Rotate for the
 // Camera, none for a sky image.
-export function gizmoModes(kind) {
+function gizmoModes(kind) {
   if (kind === "world-image" || kind === "world-3d") return GIZMO_MODES;
   if (kind === "camera") return GIZMO_MODES.slice(0, 2);
   return [];
@@ -90,7 +90,7 @@ export function selectionBar({ state, row, mode = "translate", readOnly = false,
   }));
   const lockButton = (locked) => button("lock", locked ? ICON.lock_closed : ICON.lock_open, locked ? "Unlock" : "Lock", { disabled: readOnly });
   if (kind === "camera") {
-    return { kind, icon: ICON.camera, name: "Camera", fixedName: true, groups: [gizmo, [lockButton(state.camera?.locked === true)]] };
+    return { kind, icon: ICON.camera, name: "Camera", fixedName: true, groups: [gizmo, [lockButton(state.camera.locked === true)]] };
   }
   if (kind === "paint") {
     const { locked } = paintObjectOf(state, row);

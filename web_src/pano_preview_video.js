@@ -1,17 +1,16 @@
 import { createPanoVideo } from "./pano_diagnostics.js";
 
-// Panorama Studio's input that carries its background: `background` (docs/studio-node.md "Panorama Studio", ADR 0048),
-// `bg_media` before the rename.
-export const STUDIO_BACKGROUND_INPUT_NAMES = ["background", "bg_media"];
+// Panorama Studio's input that carries its background: `background` (docs/studio-node.md "Panorama Studio", ADR 0048).
+export const STUDIO_BACKGROUND_INPUT_NAMES = ["background"];
 // The inputs that carry the background: Cutout and Preview's erp_image, the legacy Stickers bg_erp,
 // Panorama Studio's (STUDIO_BACKGROUND_INPUT_NAMES), and the Preview's `source` (`PanoramaPreviewNode`; its Scene too).
 export const BACKGROUND_INPUT_NAMES = ["erp_image", "bg_erp", ...STUDIO_BACKGROUND_INPUT_NAMES, "source"];
 // The inputs that carry the media of the port Sticker: the legacy Stickers sticker_image and
 // Panorama Studio's sticker.
 export const STICKER_INPUT_NAMES = ["sticker_image", "sticker"];
-// Panorama Studio's `scene` (an upstream Scene) and `world` (its own 3D, on `scene` before ADR 0048) inputs, whose
-// items the editor loads from the node's result.
-export const SCENE_INPUT_NAMES = ["scene", "world"];
+// Panorama Studio's `scene` (an upstream Scene) and `world` (its own 3D) inputs, whose items the editor loads from
+// the node's result.
+const SCENE_INPUT_NAMES = ["scene", "world"];
 // The inputs the Pose handoff of Panorama Studio's result (`pano_sticker_handoff`, ADR 0030) comes from: the port's
 // media and the `sticker_state` of the Studio that shot it.
 export const HANDOFF_INPUT_NAMES = ["sticker", "sticker_state"];
@@ -19,6 +18,12 @@ export const HANDOFF_INPUT_NAMES = ["sticker", "sticker_state"];
 // `background_range` (ADR 0048), the legacy nodes' `bg_color` and `coverage`. A node has one of each pair.
 export const BACKGROUND_COLOR_WIDGET_NAMES = ["background_color", "bg_color"];
 export const BACKGROUND_RANGE_WIDGET_NAMES = ["background_range", "coverage"];
+// The node's background color widget through `widget(name)` (a widget, or null when the node has none by that name):
+// the one of BACKGROUND_COLOR_WIDGET_NAMES it has. Each caller keeps its own default color.
+export function backgroundColorWidget(widget) {
+  const [name, legacyName] = BACKGROUND_COLOR_WIDGET_NAMES;
+  return widget(name) ?? widget(legacyName);
+}
 
 const CHANNEL_INPUT_NAMES = {
   background: BACKGROUND_INPUT_NAMES,
@@ -32,7 +37,7 @@ function originKey(link) {
 }
 
 // Where each linked input of a node comes from, as "<origin node id>:<origin slot>" by input name.
-export function nodeInputOrigins(node) {
+function nodeInputOrigins(node) {
   const origins = {};
   (Array.isArray(node?.inputs) ? node.inputs : []).forEach((input, slot) => {
     const origin = originKey(node.graph ? node.getInputLink(slot) : null);

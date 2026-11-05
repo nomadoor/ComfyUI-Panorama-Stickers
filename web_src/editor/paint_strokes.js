@@ -74,6 +74,9 @@ export function createPaintStrokes(deps) {
     const descriptor = getDesiredPaintTargetDescriptor();
     const descriptorKey = `${descriptor.width}x${descriptor.height}`;
     if (editor.paintEngineDescriptorKey !== descriptorKey) {
+      // The engine of the size before lets go of its canvases (an upload of it under way is of a revision of that
+      // size, which the state does not take).
+      editor.paintEngine?.dispose();
       editor.paintEngine = createPaintEngineManager(descriptor);
       editor.paintEngineDescriptorKey = descriptorKey;
       editor.paintEngineRevisionKey = "";

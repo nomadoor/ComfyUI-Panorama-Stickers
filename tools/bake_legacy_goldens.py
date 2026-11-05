@@ -7,10 +7,10 @@ Run from the repository root with ComfyUI on PYTHONPATH, optionally naming the c
 """
 from __future__ import annotations
 
-import base64
 import io
 import json
 import sys
+import tempfile
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from comfyui_pano_suite import nodes
+from comfyui_pano_suite import nodes, studio_node
 from comfyui_pano_suite.core.scene_state import load_scene_state
 from comfyui_pano_suite.node_runtime import NodeRuntime
 from comfyui_pano_suite.nodes import PanoramaCutoutNode, PanoramaStickersNode, PanoramaStudioNode
@@ -43,11 +43,17 @@ def render_only_runtime():
     Those paths write into ComfyUI's temp directory and are not part of the rendered output.
     """
     host_runtime = nodes.NODE_RUNTIME
-    nodes.NODE_RUNTIME = NodeRuntime()
+    # Every node module holds the one runtime (`node_runtime.NODE_RUNTIME`); each is given the bare one.
+    holders = [module for name, module in list(sys.modules.items())
+               if name.startswith(f"{nodes.__package__}.") and getattr(module, "NODE_RUNTIME", None) is host_runtime]
+    bare = NodeRuntime()
+    for module in holders:
+        module.NODE_RUNTIME = bare
     try:
         yield
     finally:
-        nodes.NODE_RUNTIME = host_runtime
+        for module in holders:
+            module.NODE_RUNTIME = host_runtime
 
 
 def build_background_erp() -> torch.Tensor:
@@ -65,10 +71,10 @@ def build_background_erp() -> torch.Tensor:
     return torch.from_numpy(rgb8.astype(np.float32))[None]
 
 
-def _png_data_url(rgba: np.ndarray) -> str:
+def _png_bytes(rgba: np.ndarray) -> bytes:
     buf = io.BytesIO()
     Image.fromarray(np.round(rgba * 255.0).astype(np.uint8), "RGBA").save(buf, format="PNG")
-    return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
+    return buf.getvalue()
 
 
 def _quadrant_sticker() -> np.ndarray:
@@ -93,10 +99,28 @@ def _soft_disc_sticker() -> np.ndarray:
     return rgba
 
 
-ASSETS = {
-    "quadrants": {"type": "dataurl", "value": _png_data_url(_quadrant_sticker())},
-    "disc": {"type": "dataurl", "value": _png_data_url(_soft_disc_sticker())},
-}
+STICKER_IMAGES = {"quadrants": _quadrant_sticker, "disc": _soft_disc_sticker}
+STICKER_SUBFOLDER = "pano_goldens"
+
+
+def sticker_assets() -> dict:
+    """The sticker images as v1 `comfy_image` assets, written as PNG files to ComfyUI's temp directory on each call
+    (the tests point it at their own directory; `main` at a directory of its own)."""
+    import folder_paths
+
+    folder = Path(folder_paths.get_temp_directory()) / STICKER_SUBFOLDER
+    folder.mkdir(parents=True, exist_ok=True)
+    assets = {}
+    for name, image in STICKER_IMAGES.items():
+        (folder / f"{name}.png").write_bytes(_png_bytes(image()))
+        assets[name] = {"type": "comfy_image", "filename": f"{name}.png", "subfolder": STICKER_SUBFOLDER, "storage": "temp"}
+    return assets
+
+
+def sticker_source(name: str) -> dict:
+    """The state v2 `file` Source of the sticker image `name` (`sticker_assets`)."""
+    asset = sticker_assets()[name]
+    return {"kind": "file", "filename": asset["filename"], "subfolder": asset["subfolder"], "storage": asset["storage"]}
 
 
 def _sticker(sticker_id: str, asset_id: str, z_index: int, **pose) -> dict:
@@ -130,7 +154,7 @@ def _group(stroke_id: str, z_index: int) -> dict:
 
 
 def _run_stickers(coverage: str, stickers=(), painting=None):
-    state = {"assets": ASSETS, "stickers": list(stickers)}
+    state = {"assets": sticker_assets(), "stickers": list(stickers)}
     if painting is not None:
         state["painting"] = painting
     with render_only_runtime():
@@ -163,12 +187,12 @@ STUDIO_SHOT_SIZE = (224, 128)
 @contextmanager
 def studio_shot_size(size: tuple[int, int]):
     """Panorama Studio with its Camera output at `size`, whatever megapixels and multiple give."""
-    output_size = nodes._studio_output_size
-    nodes._studio_output_size = lambda *_args, **_kwargs: (*size, None)
+    output_size = studio_node._studio_output_size
+    studio_node._studio_output_size = lambda *_args, **_kwargs: (*size, None)
     try:
         yield
     finally:
-        nodes._studio_output_size = output_size
+        studio_node._studio_output_size = output_size
 
 
 def _run_studio_shot(shot: dict):
@@ -218,7 +242,7 @@ def _run_studio(coverage: str, stickers=(), painting=None):
     """A legacy Stickers case's v1 state (without a Camera: the default Camera) and background through Panorama Studio,
     at the size the legacy node's output_preset auto gave: the background's width over 360 degrees. A 180 case shoots
     a 180 background with a Panorama 180 Camera (ADR 0048: the two ranges are set apart)."""
-    state = {"assets": ASSETS, "stickers": list(stickers)}
+    state = {"assets": sticker_assets(), "stickers": list(stickers)}
     if painting is not None:
         state["painting"] = painting
     state_json = json.dumps(state)
@@ -271,13 +295,18 @@ def studio_golden(name: str) -> str:
 
 
 def main(names: list[str]) -> int:
+    import folder_paths
+
     FIXTURE_DIR.mkdir(parents=True, exist_ok=True)
     cases = {**CASES, **STUDIO_CASES}
-    for name in names or cases:
-        image, mask = cases[name]()
-        write_png16(FIXTURE_DIR / f"{name}.image.png", image)
-        write_png16(FIXTURE_DIR / f"{name}.mask.png", mask)
-        print(f"{name}: image {image.shape[1]}x{image.shape[0]}, mask max {float(mask.max()):.3f}")
+    # The sticker images go to a directory of this run, not ComfyUI's own temp directory.
+    with tempfile.TemporaryDirectory() as temp:
+        folder_paths.temp_directory = temp
+        for name in names or cases:
+            image, mask = cases[name]()
+            write_png16(FIXTURE_DIR / f"{name}.image.png", image)
+            write_png16(FIXTURE_DIR / f"{name}.mask.png", mask)
+            print(f"{name}: image {image.shape[1]}x{image.shape[0]}, mask max {float(mask.max()):.3f}")
     return 0
 
 

@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { ICON } from "../../icons.js";
 import { OUTPUT_LINE_HEIGHT, loadOutputWindow, outputWindowSize, outputWindowView, saveOutputWindow } from "../../studio/layout.js";
+import { watchDragCancel } from "../../studio/ui_drag.js";
 import SvgIcon from "../shared/SvgIcon.vue";
 
 // The Output window at the top right of the stage (docs/studio-ui.md "Output の小窓"; looks: docs/design.md "Output の
@@ -62,7 +63,10 @@ onMounted(() => {
   }
   globalThis.document?.fonts?.ready?.then(measurePill);
 });
-onBeforeUnmount(() => pillObserver?.disconnect());
+onBeforeUnmount(() => {
+  pillObserver?.disconnect();
+  endGrip();
+});
 const windowStyle = computed(() => ({
   width: `${size.value.width}px`,
   height: `${size.value.height}px`,
@@ -84,24 +88,49 @@ function fold() {
   keep();
 }
 
-// Dragging the bottom left corner: left and down make it larger (the window is anchored at the top right).
+// Dragging the bottom left corner: left and down make it larger (the window is anchored at the top right). Escape, its
+// pointercancel, the window's blur and a lost capture put back the size at the press, kept as it was (ui_drag.js
+// watchDragCancel; the editor does not take that Escape).
 let drag = null;
 function onGripDown(event) {
-  if (event.button !== 0) return;
+  if (event.button !== 0 || drag) return;
   event.preventDefault();
   event.stopPropagation();
-  event.currentTarget.setPointerCapture?.(event.pointerId);
-  drag = { x: event.clientX, y: event.clientY, width: size.value.width };
+  const element = event.currentTarget;
+  try {
+    element.setPointerCapture?.(event.pointerId);
+  } catch {
+    return;
+  }
+  drag = { pointerId: event.pointerId, element, x: event.clientX, y: event.clientY, width: size.value.width, start: width.value };
+  drag.stopCancel = watchDragCancel({ element, pointerId: event.pointerId, cancel: cancelGrip });
 }
 function onGripMove(event) {
-  if (!drag) return;
+  if (!drag || event.pointerId !== drag.pointerId) return;
   const grow = Math.max(drag.x - event.clientX, (event.clientY - drag.y) * props.ratio);
   width.value = outputWindowSize(drag.width + grow, props.ratio).width;
 }
-function onGripUp() {
-  if (!drag) return;
-  drag = null;
+function onGripUp(event) {
+  if (!drag || event.pointerId !== drag.pointerId) return;
+  endGrip();
   keep();
+}
+function cancelGrip() {
+  if (!drag) return;
+  const { start } = drag;
+  endGrip();
+  width.value = start;
+}
+function endGrip() {
+  if (!drag) return;
+  const { pointerId, element, stopCancel } = drag;
+  drag = null;
+  stopCancel?.();
+  try {
+    element.releasePointerCapture?.(pointerId);
+  } catch {
+    // The capture was already gone.
+  }
 }
 </script>
 
@@ -123,7 +152,6 @@ function onGripUp() {
         @pointerdown="onGripDown"
         @pointermove="onGripMove"
         @pointerup="onGripUp"
-        @pointercancel="onGripUp"
       />
     </div>
     <!-- The whole line is the fold button (owner, 2026-10-31); only its chevron answers the pointer. -->

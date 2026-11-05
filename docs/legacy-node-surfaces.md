@@ -4,7 +4,9 @@
 `PanoramaPreview` は Panorama Preview（`PanoramaPreviewNode`）に置き換え、表示名「Panorama Preview (legacy)」と deprecated の印で残す（`docs/preview-node.md`）。
 これらのノードは今のまま残し、表示は広げない。開発を続けるのは Panorama Studio だけで、その表示は
 `docs/studio-node-surface.md` にある。旧 `PanoramaStickers` と `PanoramaCutout` の表示は Panorama Studio と同じ
-DOM surface（`web_src/pano_preview_runtime.js` の `attachPanoramaPreviewImpl`）を使い、`PanoramaPreview` は専用の runtime を使う。
+DOM surface（`web_src/node_surface/lifecycle.js` の `attachPanoramaPreviewImpl`、絵は `node_surface/legacy_picture.js` の `drawCanvas`、ノード上の編集は `node_surface/editing.js`・`pointer.js`。外からは `web_src/pano_preview_runtime.js` を import する）を使い、`PanoramaPreview` は専用の runtime を使う。
+
+旧ノード（エディタとノード上の表示）は `curve` を見ず、いつもピンホールで描く。Python の旧ノードの出力と同じ（v1 の state を読むときに Sticker と shot の `curve` を外すので、保存した `state_json` にも残らない。`web_src/pano_editor_state.js` `parsePanoEditorState`）。
 
 この文書が持たない規則：Panorama Studio の表示と、旧 `PanoramaStickers` がそれと共有する規則（`docs/studio-node-surface.md`）、
 エディタの操作（`docs/editor-interaction.md`）。
@@ -13,19 +15,19 @@ DOM surface（`web_src/pano_preview_runtime.js` の `attachPanoramaPreviewImpl`�
 
 | 規則 | Python | JS | test |
 |---|---|---|---|
-| `PanoramaStickers` の互換と表示順 | `nodes.py` `PanoramaStickersNode` | `web_src/pano_stickers_node_surface.js` `buildStickersDisplayEntries`・`reconcileExternalStickerState`、`web_src/pano_editor_extension.js` `createPanoEditorExtension`（widget の並びの移行） | `tests/test_node_schema_contract.py`、`tests/pano_stickers_node_surface.test.mjs`、`tests/pano_editor_extension.test.mjs` |
+| `PanoramaStickers` の互換と表示順 | `nodes.py` `PanoramaStickersNode`（部品は `legacy_nodes.py`） | `web_src/pano_stickers_node_surface.js` `buildStickersDisplayEntries`・`reconcileExternalStickerState`（1.0.0〜1.2.3 で保存した古い widget の並びは移さない：組み直す） | `tests/test_node_schema_contract.py`、`tests/pano_stickers_node_surface.test.mjs` |
 | `PanoramaStickers` の toolbar と `Add Image`・画像の drop | — | `web_src/components/PanoStickersNodeSurface.vue`、`pano_stickers_node_surface.js` `stickersNodeSurfaceModel`、`web_src/pano_sticker_file_import.js` `isStickerImageFile`・`bindStickerDropTarget` | `tests/pano_stickers_node_surface.test.mjs`、`tests/pano_sticker_file_import.test.mjs`、`tests/browser/legacy_editors.spec.js`（`Full Editor`） |
 | `PanoramaStickers` の選択・変形・lock・delete・front / back・`Back to Initial` | — | `pano_stickers_node_surface.js` `applyStickersNodeSurfaceAction`・`createStickersNodeSurfaceSession`、`web_src/pano_sticker_affordance.js` `hitStickerSelectionAffordance`・`drawStickerSelectionHandles` | `tests/pano_stickers_node_surface.test.mjs`、`tests/pano_sticker_affordance.test.mjs` |
-| `PanoramaStickers` の flush と upload 待ち | — | `pano_editor_extension.js` `createPanoEditorExtension`（`state_json` の queue barrier） | `tests/pano_editor_extension.test.mjs` |
-| `PanoramaStickers` の背景の VIDEO | — | `web_src/pano_preview_video.js` `createLoopingPreviewVideo`、`web_src/pano_preview_runtime.js` `attachPanoramaPreviewImpl`（`syncLegacyVideo`）、`PanoStickersNodeSurface.vue` | `tests/pano_preview_video.test.mjs` |
-| `PanoramaPreview` の互換（ports、`image` 出力） | `nodes.py` `PanoramaPreviewNode` | `pano_editor_extension.js` `createPanoEditorExtension`（`image` 出力の復元） | `tests/test_nodes_preview.py`、`tests/test_node_schema_contract.py`、`tests/pano_editor_extension.test.mjs` |
-| `PanoramaPreview` の専用 runtime（image / video、再生切替、drag・wheel、teardown） | — | `web_src/pano_preview_previewnode.js` `attachPreviewNodeRuntime`、読む画像と VIDEO の URL は `web_src/pano_comfy_media.js` の `previewNode` の読み方（`previewNodeLinkedImageUrl`・`previewNodeOwnVideoUrl`）、`web_src/pano_preview_node_surface.js` `shouldTogglePreviewPlaybackFromKey`・`measurePreviewCanvasSize` | `tests/pano_preview_node_surface.test.mjs`、`tests/pano_preview_video.test.mjs`、`tests/pano_comfy_media_profiles.test.mjs`、`tests/browser/legacy_editors.spec.js`（表示が付き、エディタを開ける） |
+| `PanoramaStickers` の flush と upload 待ち | — | `pano_editor_extension.js` `createPanoEditorExtension`（`state_json` の queue barrier）、Sticker の操作の順番と upload 待ちは `pano_sticker_operations.js` `queuePendingStickerOperation`・`waitForPendingStickerUploads` | `tests/pano_editor_extension.test.mjs` |
+| `PanoramaStickers` の背景の VIDEO | — | `web_src/pano_preview_video.js` `createLoopingPreviewVideo`、`web_src/node_surface/playback.js` `syncLegacyVideo`、`PanoStickersNodeSurface.vue` | `tests/pano_preview_video.test.mjs` |
+| `PanoramaPreview` の互換（ports、`image` 出力。`image` 出力の無い古い保存は直さない：組み直す） | `nodes.py` `PanoramaPreviewNode` | — | `tests/test_nodes_preview.py`、`tests/test_node_schema_contract.py` |
+| `PanoramaPreview` の専用 runtime（image / video、再生切替、drag・wheel、teardown） | — | `web_src/pano_preview_previewnode.js` `attachPreviewNodeRuntime`（新しい Preview に付けたときのホイールの割り当てを選ぶ option `wheel: "modifier"`（付けるのは `web_src/pano_editor_extension.js`）。旧 Preview の画角の一段は `web_src/pano_interaction_controller.js` `applyWheel`（`PANO_FOV_WHEEL_STEP_DEG`）、新しい Preview の一段は `applyZoomStep`（`pano_camera_math.js` `fovZoomStep`）、ホイールの意味と溜め方は `web_src/pano_wheel.js` `wheelMeaning`・`createWheelSteps`）、読む画像と VIDEO の URL は `web_src/pano_comfy_media.js` の `previewNode` の読み方（`previewNodeLinkedImageUrl`・`previewNodeOwnVideoUrl`）、`web_src/pano_preview_node_surface.js` `shouldTogglePreviewPlaybackFromKey`・`measurePreviewCanvasSize` | `tests/pano_preview_previewnode.test.mjs`（coverage の widget の callback の連ね方と teardown）、`tests/pano_preview_node_surface.test.mjs`、`tests/pano_preview_video.test.mjs`、`tests/pano_comfy_media_profiles.test.mjs`、`tests/browser/legacy_editors.spec.js`（表示が付き、エディタを開ける）、`tests/pano_interaction_controller.test.mjs`、`tests/browser/preview_entry.spec.js`（新しい Preview ではふつうのホイールで画角が変わらない）、`tests/browser/legacy_editors.spec.js`（旧 Preview では変わる） |
 | `PanoramaPreview` の fullscreen と標準 button（Panorama Preview の `source` が IMAGE・VIDEO か未接続のときに新しいウィンドウが開くときは右上が `Open viewer` になる。規則は `docs/preview-node.md` の「ノード上」） | — | `pano_preview_node_surface.js` `createPreviewFullscreenController`、`web_src/components/PanoPreviewNodeSurface.vue`、`pano_editor_extension.js` `createPanoEditorExtension` | `tests/pano_preview_node_surface.test.mjs`、`tests/pano_editor_extension.test.mjs`、`tests/browser/preview_entry.spec.js`、`tests/browser/legacy_editors.spec.js`（fullscreen が無いときに読み取り専用のエディタを開く） |
 | `PanoramaCutout` の toolbar と layout | — | `web_src/components/PanoCutoutNodeSurface.vue`・`PanoCutoutAspectPicker.vue`、`web_src/pano_cutout_node_surface.js` `cutoutNodeSurfaceModel`・`fitCutoutNodeFrame`・`layoutCutoutNodeContext`・`CUTOUT_NODE_FRAME_PADDING`・`CUTOUT_NODE_SURFACE_MIN_HEIGHT` | `tests/pano_cutout_node_surface.test.mjs`、`tests/browser/legacy_editors.spec.js`（`Full Editor`） |
 | `PanoramaCutout` の aspect・roll・pan | — | `pano_cutout_node_surface.js` `parseCutoutAspectPair`・`applyCutoutNodeSurfaceAction`・`beginCutoutRollGesture`・`updateCutoutRollGesture`・`panCutoutShotByScreenDelta` | `tests/pano_cutout_node_surface.test.mjs` |
 | `PanoramaCutout` の FOV | — | `web_src/pano_cutout_view_math.js` `stepCutoutFovPairByWheel`、`pano_cutout_node_surface.js` `applyCutoutNodeSurfaceAction`（`step-fov`）、`web_src/pano_wheel.js` `bindWheelCaptureRoot` | `tests/pano_cutout_view_math.test.mjs`、`tests/pano_cutout_node_surface.test.mjs`、`tests/pano_wheel.test.mjs` |
 | `PanoramaCutout` の state（新規 node の 1:1 frame、Add Frame、削除） | — | `pano_cutout_node_surface.js` `createCutoutNodeSurfaceSession`・`buildCutoutAddFrameAction`、`pano_editor_extension.js` `createPanoEditorExtension`（新規 node の frame） | `tests/pano_cutout_node_surface.test.mjs`、`tests/pano_editor_extension.test.mjs` |
-| `PanoramaCutout` の lifecycle と performance | — | `pano_preview_runtime.js` `attachCutoutPreview`・`attachPanoramaPreviewImpl` | `tests/browser/legacy_editors.spec.js`（表示が付き、エディタを開ける。performance を守る test は無い） |
+| `PanoramaCutout` の lifecycle と performance | — | `web_src/node_surface/lifecycle.js` `attachCutoutPreview`・`attachPanoramaPreviewImpl`（`pano_preview_runtime.js` が再び export する） | `tests/browser/legacy_editors.spec.js`（表示が付き、エディタを開ける。performance を守る test は無い） |
 
 ## PanoramaStickers
 
@@ -33,6 +35,7 @@ DOM surface（`web_src/pano_preview_runtime.js` の `attachPanoramaPreviewImpl`�
 
 - node id `PanoramaStickers`、既存input / output、widget意味論を維持する。
 - `state_json` schemaとERP座標規約を変更しない。
+- `bg_color` の widget は、値が空のときだけ、ノードを作るときと読み込むときに既定の `#00ff00` で埋める。`#000000` を含め、使う人が選んだ色は書き換えない（`web_src/pano_editor_extension.js` `createPanoEditorExtension`）。Python も、空か読めない値を `#00ff00` として描く（`comfyui_pano_suite/core/state.py` `_normalize_hex_color`）。
 - background、paint / raster、internal / external stickerは、coverageを含めてbackendと同じdisplay orderで描画する。
 - external stickerを別種のUI objectとして扱わず、通常stickerと同じ選択・変形経路を使う。
 - 次の規則は Panorama Studio の表示と同じで、`docs/studio-node-surface.md` の「表示の構成」に置く：
@@ -67,6 +70,8 @@ DOM surface（`web_src/pano_preview_runtime.js` の `attachPanoramaPreviewImpl`�
 - Escapeは未確定gestureをcancelする。
 - prompt queue、Full Editor開始、teardown前に未確定gestureをflushする。
 - Full Editor開始時は進行中の画像operationもsettleまで待ち、成功した追加を含む最新stateを読む。
+
+- 背景の画像は背景の入力（`bg_erp`・`erp_image`。名前の並びは `web_src/pano_preview_video.js` `BACKGROUND_INPUT_NAMES`）につないだ先だけから読む（`web_src/pano_comfy_media.js` `surfaceImageInputIndices`。読み方は `docs/studio-node-surface.md` と同じ `nodeSurfaceLinkedSource`）。`sticker_image` など、ほかの IMAGE の入力は背景にしない（`tests/pano_comfy_media_profiles.test.mjs`、`tests/browser/legacy_editors.spec.js`）。
 
 ### 背景の VIDEO
 
@@ -107,11 +112,12 @@ surfaceに含めない操作:
 - `erp_image`、`coverage`、`fps`、`audio` のinput port semanticsを維持する。
 - `image: IMAGE` outputは、core `PreviewImage` と同様に入力 `erp_image` tensorを加工・copyせずそのまま返す。後続のTerminate系nodeへ接続できる。
 - dedicated runtime `web_src/pano_preview_previewnode.js` を維持し、Cutout shared runtimeへ統合しない。
-- 同じ runtime を新しい Preview（id `PanoramaPreviewNode`。`docs/preview-node.md`）の IMAGE と VIDEO にも付ける（`pano_editor_extension.js`。どちらの表示を付けるかは `docs/preview-node.md`）。そこでは画像の入力は `source`（`imageInputName`）で、`image` 出力の復元（`ensurePanoramaPreviewImageOutput`）はしない。`PANO_SCENE` は別の表示（`docs/preview-node.md` の「`PANO_SCENE` を見る」）で、この runtime は描かない。
-- image解決、video muted / loop、double-click / Space再生切替、coverage、drag、wheel、inertiaを維持する。
+- 同じ runtime を新しい Preview（id `PanoramaPreviewNode`。`docs/preview-node.md`）の IMAGE と VIDEO にも付ける（`pano_editor_extension.js`。どちらの表示を付けるかは `docs/preview-node.md`）。そこでは画像の入力は `source`（`imageInputName`）。`PANO_SCENE` は別の表示（`docs/preview-node.md` の「`PANO_SCENE` を見る」）で、この runtime は描かない。
+- 新しい Preview に付けたときだけ、wheel の割り当てを Panorama Studio のエディタとそろえる（ADR 0061。意図した変更）：ふつうの wheel では画角を変えず、Alt + wheel とピンチ（Ctrl + wheel）で変える。一段・範囲・溜め方は `docs/preview-node.md` の「ノード上」（ノードの上に知らせは出さない）。旧 `PanoramaPreview` の wheel は下の行のまま（ふつうの wheel で 1 イベント 3°）。
+- image解決、video muted / loop、double-click / Space再生切替、coverage、drag、wheel、inertiaを維持する（新しい Preview の wheel は上の行）。
 - videoは自動再生しない。既定は停止で先頭のframeを表示し、double-click / Spaceで再生する。画面外（collapse、別のgraph、subgraphの中）では停止する（見えないかの判定は Panorama Studio と同じ `surfaceShown`。停止するだけで、src は外さない）。
 - cameraは一時状態のままとし、workflowへ新しいparameterやstateを保存しない。
-- Legacy canvas pathは既存挙動と標準 `Open Preview` buttonを維持する。
+- `addDOMWidget` の無いフロントエンド向けのcanvas描画は持たない。DOM widgetを付けられないときはmount失敗と同じ扱いで、標準 `Open Preview` buttonとread-only modal導線だけが残る。
 
 ### Node2 Surface Contract
 

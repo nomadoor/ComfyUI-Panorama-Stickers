@@ -29,7 +29,6 @@ import { syncPaintGroups } from "../pano_paint_strokes.js";
 import { NO_PORT_HANDOFF_PAIR, storedPortState, syncPortHandoffPair } from "../pano_port_handoff.js";
 import { normalizePaintingState } from "../pano_paint_types.js";
 import { cameraToView as moveCameraToView } from "./camera_ui.js";
-import { editableCamera } from "./camera_state.js";
 import { applyInspectorEdit } from "./inspector_actions.js";
 import { stickerChangedRows } from "./inspector_model.js";
 import { findSticker } from "./row_object.js";
@@ -38,13 +37,13 @@ import { BACKGROUND_ROW, PAINTING_ROW } from "../pano_timeline.js";
 const EMPTY_SELECTION = Object.freeze({ row: null, keys: [] });
 const NO_KEY_ROWS = new Set([BACKGROUND_ROW, PAINTING_ROW]);
 
-export const CAMERA_UNDELETABLE = "The camera can't be deleted";
+const CAMERA_UNDELETABLE = "The camera can't be deleted";
 
 // The selected Keyframes per owner and Lane: [{ owner, lane, frames }] in the order they were first selected, `lane`
 // null for a closed row's pin (all the row's Lanes at its frame), `frames` sorted. An open row's Keyframes keep their
 // Lanes apart, so an Easing edit changes only their own Lanes (docs/timeline-ui.md "行とポチ"). The background and the
 // painting have no Easing and are left out.
-export function keyframeGroups(selection) {
+function keyframeGroups(selection) {
   const groups = new Map();
   for (const key of selection?.keys ?? []) {
     if (NO_KEY_ROWS.has(key.row)) continue;
@@ -420,7 +419,7 @@ export function createStudioSession({ state: opening, readOnly = false, upstream
   function editCamera(edit) {
     if (readOnly || gestureBase) return result(false);
     const draft = structuredClone(state);
-    if (!edit(editableCamera(draft))) return result(false);
+    if (!edit(draft.camera)) return result(false);
     state = draft;
     record();
     return result(true, { history: true });
@@ -464,7 +463,7 @@ export function createStudioSession({ state: opening, readOnly = false, upstream
   // Timeline frame `playhead` (camera_ui.js cameraToView, Panorama mode switching to Frame), as one Undo step. Not
   // while the Camera is locked. A move selects the Camera (the inspector shows its card); nothing moved changes nothing.
   function cameraToView(pose, playhead) {
-    if (state.camera?.locked === true) return result(false);
+    if (state.camera.locked === true) return result(false);
     const outcome = editCamera((camera) => moveCameraToView(camera, playhead, pose));
     if (outcome.changed) selection = { row: "camera", keys: [] };
     return outcome;
@@ -620,6 +619,10 @@ export function createStudioSession({ state: opening, readOnly = false, upstream
     },
     get canRedo() {
       return !readOnly && history.length > 1 && history.index >= 0 && history.index < history.length - 1;
+    },
+    // A gesture is under way (its live changes have not been committed or cancelled yet).
+    get gesturing() {
+      return !!gestureBase;
     },
     readOnly,
     // The Pose handoff the port Sticker is shown with, or null (the inspector's and the bar's `handoff`).

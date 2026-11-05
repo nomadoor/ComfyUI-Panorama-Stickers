@@ -10,7 +10,7 @@
 stylesheet `web/pano_studio.css` にあり、`web_src/studio/stylesheet.js` の `installStudioStylesheet` が
 `<link id="pano-studio-style-link">` として、新しい UI のエディタを初めて開くときに一度だけ読み込む（どちらも `pano_styles.js` の `installStylesheet` を使う）。
 Vue のコンポーネント（`web_src/components/*.vue`）は `<style>` を持たず、class と、位置・大きさ・色を渡す
-inline の `style` と custom property（`--pano-segment-count`・`--pano-timeline-rows`・`--pano-video-shell-max`・`--v`・`--swatch` など）だけを使う。
+inline の `style` と custom property（`--pano-video-shell-max`・`--v`・`--swatch` など）だけを使う。
 
 この文書が持たない規則：どのボタンがどこに出て何をするか・ツールチップの文言・ボタンの位置を動かさない規則
 （`docs/editor-interaction.md`）、タイムラインの行と再生の振る舞い（`docs/timeline-ui.md`）、Panorama Studio の
@@ -22,10 +22,10 @@ inline の `style` と custom property（`--pano-segment-count`・`--pano-timeli
 | 規則 | Python | JS / CSS | test |
 |---|---|---|---|
 | デザインの値の custom property（`--pano-*`。ノード上の表示だけの値の `--pano-node-*` を含む）とその値。一つの名前は一つの値を持ち、どこでも定義し直さない | — | `web/pano_editor.css` の `:root` | — |
-| ノード上の表示の枠（`.pano-node-frame`） | — | `web/pano_editor.css` の `.pano-node-frame`、`web_src/pano_preview_runtime.js` の `attachPanoramaPreviewImpl` と `web_src/pano_preview_previewnode.js` の `attachDom`（class を付ける） | — |
+| ノード上の表示の枠（`.pano-node-frame`） | — | `web/pano_editor.css` の `.pano-node-frame`、`web_src/node_surface/dom.js` の `createSurfaceDom` と `web_src/pano_preview_previewnode.js` の `attachDom`（class を付ける） | — |
 | stylesheet の読み込み | — | `web_src/pano_styles.js` `installStylesheet`・`installPanoSuiteStylesheet`、新しい UI は `web_src/studio/stylesheet.js` `installStudioStylesheet` | — |
 | 共有のボタン（`.pano-btn` 系）の大きさと状態の見た目 | — | `web/pano_editor.css` の `.pano-btn`・`.pano-btn-icon`・`.pano-btn-texticon`・`.pano-btn-primary`・`.pano-btn.subtle`、`web_src/components/shared/PanoIconButton.vue` | — |
-| 共有の部品（モーダル、HUD、切り替え、サイドパネル、値の行、選択肢、ツールチップ、確認のダイアログ、ペイント）の値と、部品の中だけの custom property（`.pano-segments` の `--pano-segment-pad: 3px`、`.pano-modal` の `--pano-side-w: 300px`） | — | `web/pano_editor.css` | — |
+| 共有の部品（モーダル、HUD、切り替え、サイドパネル、値の行、選択肢、ツールチップ、確認のダイアログ、ペイント）の値と、部品の中だけの custom property（`.pano-modal` の `--pano-side-w: 300px`） | — | `web/pano_editor.css` | — |
 | 状態の class に ComfyUI の Tailwind の utility 名を使わない | — | `web_src/components/*.vue` | `tests/architecture.test.mjs` |
 | Vue のコンポーネントは `<style>` を持たない。新しい UI の部品が使う `pano-studio-*` の class は `web/pano_studio.css` にある。ぼかしを使わず、新しい UI は影も使わない。`web/pano_studio.css` の括弧が閉じている | — | `web_src/components/**/*.vue`、`web/pano_studio.css`、`web/pano_editor.css` | `tests/architecture.test.mjs` |
 | アイコン（Tabler の線画、線の太さ、大きさ） | — | `web_src/icons.js` `ICON`・`ICON_PATHS`、`web_src/components/shared/SvgIcon.vue`、`web/pano_editor.css` の `.icon-tabler`・`.pano-btn-icon svg` | — |
@@ -35,7 +35,7 @@ inline の `style` と custom property（`--pano-segment-count`・`--pano-timeli
 
 ### custom property（`:root` で定義）
 
-デザインの値の `--pano-*` は `web/pano_editor.css` の `:root` で一度だけ定義し、モーダルとノード上の表示の両方に届く。部品の中だけで使う custom property（`.pano-modal` の `--pano-side-w`、`.pano-segments` の `--pano-segment-pad`、コンポーネントが inline で渡す `--pano-segment-count` など）は、その部品が定義する。
+デザインの値の `--pano-*` は `web/pano_editor.css` の `:root` で一度だけ定義し、モーダルとノード上の表示の両方に届く。部品の中だけで使う custom property（`.pano-modal` の `--pano-side-w` など）は、その部品が定義する。
 
 | property | 値 | 使われ方 |
 |---|---|---|
@@ -46,7 +46,7 @@ inline の `style` と custom property（`--pano-segment-count`・`--pano-timeli
 | `--pano-surface-hover` | `#222224` | `.pano-btn:hover` の地 |
 | `--pano-bg-base` | `var(--pano-surface-0)` | ステージ、読み込み中の地 |
 | `--pano-bg-panel` | `var(--pano-surface-0)` | モーダル本体 |
-| `--pano-bg-control` | `var(--pano-surface-2)` | ボタン、入力、選択肢の trigger、`.pano-segments` |
+| `--pano-bg-control` | `var(--pano-surface-2)` | ボタン、入力、選択肢の trigger |
 | `--pano-text` | `#f5f5f5` | 主な文字、選ばれている側の文字、hover の文字 |
 | `--pano-muted` | `#787878` | 二次の文字（ラベル、選ばれていない切り替え、選択肢の項目） |
 | `--pano-text-secondary` | `var(--pano-muted)` | ボタンの文字、右下の群の文字、注記 |
@@ -131,7 +131,7 @@ inline の `style` と custom property（`--pano-segment-count`・`--pano-timeli
 | 11px | 継承 | ツールチップ、値の行の入力、`.pano-param-note`、タイムライン、Easing の項目と注記、設定の行のラベル |
 | 11px | 600 | `.pano-section-title`、設定の summary |
 | 11px | 650 | ノードの help の見出し、`PanoramaStickers` の drop の案内 |
-| 12px | 500 | `.pano-btn`、表示の切り替えのラベル、`.pano-segments` の項目、`.pano-btn-texticon` のラベル |
+| 12px | 500 | `.pano-btn`、表示の切り替えのラベル、`.pano-btn-texticon` のラベル |
 | 12px | 継承 | 右下の群（`.pano-floating-right`）、動画の時刻、カメラの出力のプレビューのラベル、確認のダイアログの本文 |
 | 12px | 600 | `.pano-side-title`、ドロップの案内、色のポップオーバーの見出し |
 | 13px | 600 | 確認のダイアログの見出し、`.pano-view-unavailable` |
@@ -164,7 +164,7 @@ inline の `style` と custom property（`--pano-segment-count`・`--pano-timeli
 | 値 | 使われ方 |
 |---|---|
 | 4px | `.pano-aspect-choice`（`--pano-radius-xs`）、タイムラインの小さいボタンと clip |
-| 6px | HUD の中のアイコンのボタン・roll の knob・`.pano-segments`（`calc(var(--pano-float-radius) - var(--pano-float-pad))`）、ノードの小さいボタン、`.pano-segment` の印と Easing の項目（`calc(var(--pano-radius-md) - 2px)`） |
+| 6px | HUD の中のアイコンのボタン・roll の knob（`calc(var(--pano-float-radius) - var(--pano-float-pad))`）、ノードの小さいボタン、`.pano-segment` の印と Easing の項目（`calc(var(--pano-radius-md) - 2px)`） |
 | 8px | `.pano-btn`・入力・選択肢の trigger と項目・ツールチップ・設定・`.pano-segment`・タイムラインの本体（`--pano-radius-md`）、表示の切り替えの印、ステージの読み込みの失敗、ノード上の表示の枠（`--pano-radius-md`）、`PanoramaCutout` の aspect のポップオーバーとノードの help（`--pano-node-float-radius`） |
 | 10px | HUD（`--pano-float-radius`）、ステージ、サイドパネル、確認のダイアログ、ドロップの案内、aspect のポップオーバー、色の SV の面 |
 | 12px | モーダル本体、選択肢のポップオーバー（`--pano-radius-lg`）、音量のポップオーバー |
@@ -176,8 +176,8 @@ inline の `style` と custom property（`--pano-segment-count`・`--pano-timeli
 
 | 高さ | 対象 |
 |---|---|
-| 40px | `.pano-btn` と `.pano-btn-icon`（40×40）の既定、左のツール群と Frame のツール群のボタン、表示の切り替えのボタン（`.pano-view-btn`、幅 124px）、`.pano-segments`、右下の群と動画の操作の最小の高さ、動画の filmstrip、roll の knob |
-| 35px | 選択メニュー（`.pano-selection-menu`）のアイコンのボタン（35×35）と `.pano-segments` |
+| 40px | `.pano-btn` と `.pano-btn-icon`（40×40）の既定、左のツール群と Frame のツール群のボタン、表示の切り替えのボタン（`.pano-view-btn`、幅 124px）、右下の群と動画の操作の最小の高さ、動画の filmstrip、roll の knob |
+| 35px | 選択メニュー（`.pano-selection-menu`）のアイコンのボタン（35×35） |
 | 32px | 選択肢の項目、`.pano-btn.subtle`、設定の summary、Frame の aspect の選択肢の最小の高さ |
 | 30px | 選択肢の trigger、`.pano-field-wide`、aspect の trigger |
 | 28px | `.pano-field` とその入力、`.pano-segment-btn`、aspect の自由入力とそのボタン、タイムラインの再生・消音・開閉のボタン |
@@ -227,12 +227,10 @@ inline の `style` と custom property（`--pano-segment-count`・`--pano-timeli
 | class | 使われ方 | 高さ（外側 / 項目） | 外側 | 印 | 動き |
 |---|---|---|---|---|---|
 | `.pano-view-toggle` | Panorama / Unwrap / Frame | 48px / 40px（`.pano-view-btn`） | HUD の地、padding 4px | `--pano-surface-3`、角丸 8px | `transform` 170ms |
-| `.pano-segments`（`--pano-segment-pad: 3px`） | 選択メニューの Move / Rotate / Scale | 40px（選択メニューの中は 35px）/ 外側から padding を引いた高さ | `--pano-bg-control`、padding `--pano-segment-pad` | `--pano-surface-3` | `transform` 170ms |
 | `.pano-segment` | サイドパネルの設定（2 択） | 32px / 28px（`.pano-segment-btn`） | `--pano-surface-1`、padding 2px | `--pano-surface-3` | `transform` 170ms |
-| `.pano-easing-modes` | Easing の 3 択 | 30px / 26px（`.pano-easing-mode`） | `--pano-surface-1`、padding 2px | 押された項目の地が `--pano-surface-3` | なし |
 
 文字は選ばれていない側が `--pano-muted`、選ばれている側が `--pano-text`。
-`.pano-view-toggle` と `.pano-segments` の選ばれていない側の hover は `--pano-muted-strong`、表示の切り替えの無効の項目は
+`.pano-view-toggle` の選ばれていない側の hover は `--pano-muted-strong`、表示の切り替えの無効の項目は
 `--pano-text-tertiary` と opacity 0.5。
 
 ### ボタン（`.pano-btn`）
@@ -344,7 +342,7 @@ padding `7px 10px`、地 94%、影 `0 12px 28px rgba(0,0,0,0.34)`。footer の�
 
 ## フォーカスと無効
 
-- フォーカスの輪：ボタンと `.pano-segments` の項目は `box-shadow: 0 0 0 1px var(--pano-accent)`、入力と選択肢の trigger は
+- フォーカスの輪：ボタンは `box-shadow: 0 0 0 1px var(--pano-accent)`、入力と選択肢の trigger は
   `inset 0 0 0 1px var(--pano-accent)`、タイムラインのボタンと印は `outline: 2px solid var(--pano-accent)`（offset 1px）。
   表示の切り替えのボタンとスライダーには輪を出さない（値の行のスライダーは thumb の影が `0 0 0 1.5px rgba(0,0,0,0.5)` になる）。
   ノード上の表示のボタンにも輪を出さない（toolbar のボタンは `box-shadow: none`、小さいボタンは `:focus-visible` で `box-shadow: none`）。
@@ -379,7 +377,7 @@ Tailwind の utility（`.hidden { display: none }` など）を持つので、Vu
 
 ## アイコン
 
-- Tabler の outline のアイコンを `web_src/icons.js` が持つ（`ICON` の名前 68 個と、Tabler の名前と SVG の中身を持つ `ICON_PATHS`）。
+- Tabler の outline のアイコンを `web_src/icons.js` が持つ（`ICON` の名前 69 個と、Tabler の名前と SVG の中身を持つ `ICON_PATHS`）。
   `SvgIcon.vue` が `viewBox="0 0 24 24"`、`fill="none"`、`stroke="currentColor"`、`stroke-linecap` と `stroke-linejoin` は `round`、
   class `icon icon-tabler icons-tabler-outline` で描く。
 - 線の太さ：`.pano-modal` の中の Tabler のアイコンと、`.pano-btn-icon`・`.pano-btn-texticon` の中の SVG は `var(--pano-icon-stroke, 2.3)`
@@ -401,8 +399,11 @@ stylesheet の読み込みは上の「この文書が owner である規則」�
 
 - 地・文字・線の色は、`design-drafts` の見本（`specimen-11.html`・`timeline-2.html`・`frame-4.html`）の値をそのまま持つ。ComfyUI の
   フロントエンドの役割の色（`--interface-stroke` など）には乗せない（ComfyUI のダークの線は明るく、窓と浮かせる部品の縁が目立ったため。
-  持ち主の決定、2026-10-30）。ライトとダークは ComfyUI のテーマ（`<html>` の `.dark-theme`）で切り替える。値の置き場所は一か所
-  （`web/pano_studio.css` の `.pano-studio` と `.dark-theme .pano-studio`）。
+  持ち主の決定、2026-10-30）。ライトとダークは ComfyUI のテーマで切り替える。ComfyUI のフロントエンドは 1.58 から `<html>` の
+  `color-scheme`（`dark` / `light`）でテーマを示すので、新しい UI の色の値は CSS の `light-dark()` で持ち、受け継いだ
+  `color-scheme` で決まる（OS の設定は見ない。何も示されていなければライト）。1.58 より前のフロントエンドは `<html>`（または
+  `<body>`）に `.dark-theme` を付けるので、そのときは `.pano-studio` を `color-scheme: dark` にする。値の置き場所は一か所
+  （`web/pano_studio.css` の `.pano-studio`）。test は `tests/browser/studio_theme.spec.js`。
 - 灰の段は Geist の色の段の役目に倣う：部品の地 / hover / 押したとき / 線 / 線の hover / 強い塗り / 二次の文字 / 主の文字。
   選ばれている状態は、色ではなく灰の強い塗りで示す。
 
@@ -509,6 +510,7 @@ stylesheet の読み込みは上の「この文書が owner である規則」�
 | インスペクタの行の格子 | 名前 62px ／ 1・2・3 は等分 ／ Keyframe のポチ 16px ／ リセット 22px、列の間 4px |
 | 値の箱の中の間 | 軸の文字と値の間 6px（持ち主、2026-10-31：2px では近すぎる）、値と単位の間 2px |
 | 行の間 | 8px |
+| タイムラインの fps と Length の値の幅 | Length は 5 桁（`5ch`）、fps は 4 桁（`4ch`）。等幅の数字で左に寄せる。単位の印（Length の `f`・`s`）はこの幅の外 |
 | インスペクタのカードの見出し | 高さ 24px、一行。左からアイコン・名前（13px / 600）・種類の札（`Sky`・`World`・`Camera` など、11px / 500、二次の文字）を右寄せ。名前は残りの幅に縮み、入らない分は末尾を `…` で切る（折り返さない）。名前と札の間は 8px 以上空け、重ねない。切った名前の全文は名前の `data-tip`（ツールチップ）に出す。見出しとその下の行・札の間は 12px |
 | 値の箱の高さ | 26px（ふだん地なし、hover で値の箱の地） |
 | Keyframe のポチ | 6px の菱形、線 1.25px（無し：二次の灰の線、キーあり：氷の線、今のフレーム：氷の塗り） |
@@ -525,20 +527,21 @@ stylesheet の読み込みは上の「この文書が owner である規則」�
 | ブラシの輪 | ポインタの所に、白 85% の 1.5px の輪の下に黒 40% の 3px の輪。Paint の筆は中を筆の色の 25% で塗り、Eraser は塗らない。Mask の筆は中を Mask の緑 `rgb(34 197 94)` の 25% で塗り、Mask eraser は塗らない。輪の半径は 3px より小さくしない（`web_src/studio/paint.js` `BRUSH_RING`、描くのは `web_src/studio/stage_overlay.js`） |
 | 確かめのダイアログ | ステージに黒 50% の幕、真ん中に幅 300px のカード（窓の地、角丸 12px、余白 16px、縁の線と影なし）。見出し 13px・600、本文 12px・二次の文字、間 8px。ボタンは右寄せで間 8px、高さ 28px・角丸 999px・文字 12px・600：Cancel は地なし、確かめる方は強い塗り（`StudioConfirm.vue`） |
 | 左の列・視点の操作のつまみと Set orbit center と「?」・右下のボタン | 34px の正円、アイコン 18px（Add のアイコンだけ 22px）。見本 `controls-2.html` の R1 |
+| 右下の画角の数字と画角のリセット | 見本の案 B2（2026-11-05）。数字はボタンと同じ高さ 34px の丸い札（角丸 999px）、左の余白 10px・右の余白 6px、地なし、hover と Alt を押している間（`docs/space-and-view.md` の「寄る」）で hover の地（ボタンと同じ動き）、カーソルは `ew-resize`。文字は 12px・600・主の文字の色・`tabular-nums`（辺の目盛りの値と同じ形）で、「140°」（`VIEW_HFOV_MAX_DEG`）がちょうど入る幅に右へそろえる（見えない「140°」を同じ場所に重ねて幅を取る。`4ch` では「°」が数字より細い分だけ左が空きすぎ、左右 6px では左が詰まって見えた。持ち主、2026-11-05）。画角のリセットはインスペクタの行のリセットと同じ 22px のアイコンのボタン（アイコン 14px）を札のすぐ右に置く。その右に横の群の区切りの線（`.pano-studio-sep`）を置いてから、34px のボタンを並べる。無効の数字は、無効のアイコンのボタンと同じ見た目（不透明度 0.35、地なし、カーソルは既定。`.pano-studio-icon-btn[aria-disabled="true"]` と同じ値）。キーボードのフォーカスは上の「フォーカス」の規則のまま（hover と同じ地と主の文字の色）。値の置き場所は `web/pano_studio.css`（`.pano-studio-fov`、群の中の小さなリセットは `.pano-studio-at-buttons .pano-studio-icon-btn.is-sm`） |
 | Easing のグラフ | 縦横 1:1（インスペクタの幅いっぱい）。上の領域が `EASING_MIN_ABOVE` より狭くなるときは、一辺を縮めて 1:1 のまま小さくする |
 | `EASING_MIN_ABOVE` | 180px（行 5 つ分）。Easing のパネルを出している間に、上の領域に残す最小の高さ |
 | Camera タブのフレームの余白 | 左右 150px、上 88px、下 115px（ADR 0051）。下は、下の中央のバーの席（ステージの下端から 16px、高さ 44px ＝ ボタン 32px と上下の余白 6px ずつ、で上端が 60px）の上に 10px 空けて Roll の目盛りの数字（帯のすぐ下、11px）、その上に Roll の目盛りの帯（22px）を置き、帯とフレームの間 12px を足した 115px（16 ＋ 44 ＋ 10 ＋ 11 ＋ 22 ＋ 12）。バーが出ていないときも同じ余白を取る（物を選んでもフレームと目盛りを動かさない）。バーの高さを変えたら、この値を求め直す。上は、左上のタブ（ステージの窓の端から 16px、群の高さ 42px で下端が 58px）の下に 30px の空きを取る。左右は、辺の目盛りの数字が左の列と右の視点のつまみに隠れない幅から求める：浮かせる部品の端の余白 16px ＋ 左の列（右のつまみ）の幅 46px ＋ 間 12px ＋ 辺の目盛りの数字を含めた幅（Lens で 61px。FOV は 51px で、左右とも大きい方を使う）＋ 目盛りとフレームの間 14px ＝ 149px を、切りのよい 150px にする。左の列・つまみ・目盛りの幅を変えたら、この値を求め直す |
 | Camera タブの辺の目盛りの置き場所 | フレームとの間：FOV・Lens 14px、Roll 12px。目盛りの線の帯の決まった長さ：FOV・Lens 200px、Roll 320px。フレームの辺がそれより短いときは、Roll はフレームの幅、FOV・Lens はフレームの高さから頭の分 56px を上下とも除いた長さに縮める。56px は上下の頭の大きい方：上の頭 38px（名前と値 30px 以内 ＋ 間 8px）と下の頭 56px（ポチとリセット 44px ＋ 間 12px）。1440×860 の画面では、16:9 の FOV・Lens が 174px に縮み、1:1・9:16 は 200px、Roll は 16:9・1:1 で 320px、9:16 で 187px |
 | Camera タブの辺の目盛りの頭 | 名前と値を帯の一方の端に、Keyframe のポチとリセットを反対の端に置く。FOV・Lens：帯の上 8px に、名前の行と値の行を間 6px で縦に積む（名前が上。12px の文字で、二行の高さは 30px 以内）。帯の下 12px に、ポチ（幅 22px・高さ 18px の当たり）とリセット（22px 角）を間 4px で縦に積む（ポチが上。高さ 44px）。ポチの印の見える端は帯から約 16px（持ち主、2026-10-30：帯に近すぎるので間を空ける）。Roll：帯の左 10px に名前と値を間 8px で横に並べ、帯の右 16px にポチ（幅 12px・高さ 22px の当たり）とリセット（22px 角）を間 4px で横に並べる（ポチの印の見える端は帯から約 18px）。値の文字（12px・太さ 600）の幅は数字で FOV 4 字・Lens 4 字・Roll 5 字（`ch`）、FOV・Lens は真ん中、Roll は左にそろえる |
 | Camera タブの辺の目盛りの当たり | 目盛りの線の帯（22px）の両側に 12px ずつ透明な当たりを足し、太さ 46px（Roll は上下、FOV・Lens は左右）。フレームの中には入らない（フレームとの間は 12px 以上） |
-| Camera タブの辺の目盛りのキーボードのフォーカス | 上の「フォーカス」の規則で、帯（角丸 6px）の地を白 10% にする |
-| Camera タブの辺の目盛りの縮尺 | 仮：小さい目盛り 8px ごと、数値 80px ごと（FOV 2° と 20°、Lens 0.02 と 0.2、Roll 1° と 10°）。目盛りは幅 22px、数値は 11px |
+| Camera タブの辺の目盛りのキーボードのフォーカス | 上の「フォーカス」の規則で、帯（角丸 6px）の地を白 10% にする。Alt を押している間の FOV の目盛り（`docs/studio-ui.md` の「Camera タブ」）も、同じ見た目（帯の地を白 10%、文字とアイコンを白）にする |
+| Camera タブの辺の目盛りの縮尺 | 仮：小さい目盛り 8px ごと、数値 80px ごと（FOV 2° と 20°、Lens 0.02 と 0.2、Roll 1° と 10°）。目盛りは幅 22px、数値は 11px。FOV の一段 `VIEW_FOV_STEP_DEG` は小さい目盛り一つ（2°）、ドラッグの縮尺 `VIEW_FOV_DRAG_PX_PER_DEG` はこの縮尺（4 px で 1°）で、寄る操作の一段と右下の画角の数字のドラッグも同じ値を使う（ADR 0061。値の置き場所は `web_src/pano_camera_math.js`、`CAMERA_RULERS.fov` が読む） |
 | Camera タブの Output の小窓 | 畳んだ形の一行は 3D タブと同じ見た目。矢印だけを不透明度 0.4 にし、hover でも変えない |
 | Output の小窓の開いた形の一行 | 見出しの帯なし。絵の上端に一行（高さ 32px）を重ね、その下に暗いグラデーション（高さ 48px＝一行の 32px＋16px。上端の黒 45%、半ばで黒 22%、下端で透明）を敷く。開いた形の一行の文字はテーマによらず白（撮り方の名前は白、出る大きさは白 78%）。hover は矢印だけ（不透明度 0.7 から 1 へ明るく、指す向きへ 1px 動く。動きを減らす設定では動かさない）（`web/pano_studio.css` `.pano-studio-output`） |
 | Output の小窓の一行 | 高さ 32px（畳んだ形のつまみと同じ）。撮り方のアイコン 20×10px、撮り方の名前 12px・600・主の文字、出る大きさ 12px・500・二次の文字、間 8px、右端に開閉のボタン。右にそろえる。見本 `camera-output-1.html` |
 | カメラの見た目 | 見本 `camera-1.html`。面は白 10% の塗り（面ごとに重ねる）。線は白 85% の 1.5px の下に黒 30% の 3.5px。奥に隠れる辺は白 35% の 1.5px と黒 12% の 3.5px。上の向きの三角は白 35% の塗り。錐の頂点と球の中心に半径 3px の白い点。選択は線を落ち着いた黄 `#e8cf74` の 2px（下の黒は同じ）、面を同じ黄の 18%（`web_src/studio/camera_marker.js` `MARKER_LOOKS`） |
 | ドロップの印 | 見本 `drop-3.html`。行き先の色（World は落ち着いた黄 `#e8cf74`、Sky は氷 `#aecedb`）の角のかぎ括弧（2.5px、端と角は丸）と、同じ色の 25% の塗り。かぎ括弧の下に黒 28% の 4.5px の線。かぎ括弧の長さは、画像の板と Sky の枠では辺の 20%（Sky の枠は曲がった辺に沿って測る）、3D ファイルの仮の箱では辺の 25%（`docs/space-and-view.md`）。箱は見える面を塗る（`web_src/studio/landing.js` `DROP_LOOK`） |
-| ドロップのラベル | 見本 `drop-3.html`。高さ 26px の丸い札、左右の余白 8px と 10px、アイコン 15px（行き先の色）と文字 12px・600 の間 6px。地は窓の地の 92%、縁は行き先の色の 1px。印の外接の矩形から `DROP_LABEL_GAP` 12px 離し、ステージの端から `DROP_LABEL_MARGIN` 8px の内に置く（置き方は `docs/space-and-view.md` の「ドラッグ中の印」、`web_src/studio/landing.js` `DROP_LOOK`） |
+| ドロップのラベル | 見本 `drop-3.html`。高さ 26px の丸い札、左右の余白 8px と 10px、アイコン 15px（行き先の色）と文字 12px・600 の間 6px。地は窓の地の 92%、縁は行き先の色の 1px。印の外接の矩形から `DROP_LOOK.labelGap` 12px 離し、ステージの端から `DROP_LOOK.labelMargin` 8px の内に置く（置き方は `docs/space-and-view.md` の「ドラッグ中の印」、`web_src/studio/landing.js` `DROP_LOOK`） |
 | Add の二択 | ステージの窓の全体に黒 55% の幕（窓の角丸に合わせる）。その中央に札を二枚横に並べ、間 16px。札は 180×150px、角丸 12px、縁の線なし、地は窓の地（不透明。後ろの絵が透けると札の形が読みにくいため）。中は上の余白 22px・絵 96×56px・間 14px・名前 15px・600（主の文字）。絵の線は 1.75px、細い線（グリッド、球の緯線）は 1px・不透明度 0.6、色は行き先の色（Sky は氷 `--studio-ice`、World は落ち着いた黄 `--studio-yellow`）。ポインタの下とフォーカスの札は、行き先の色の 16% を地に重ねる。押したときは 24% |
 | ショートカットの一覧 | 浮かせる部品の地（窓の地の 85%）、縁の線なし、角丸 12px（入れ物）、内側の余白 上 12px・左右 14px・下 12px。群を 2 列に流す（1 列の幅 248px、列の間 24px、群の間 16px）。幅はステージの窓の幅から左右の浮かせる部品の分を除いた幅を超えず、2 列が入らなければ 1 列。高さはステージの窓から上下 16px を除いた高さまでで、超えたら一覧の中だけスクロール。群の名前は 13px・600、行は 12px・500 の名前を左、キーを右寄せ、行の高さ 24px。キーの札は高さ 18px・最小の幅 18px・左右の余白 5px・角丸 5px、地は値の箱の地（`--studio-fill`）、文字 11px・600、札の間 3px、`+` は 11px。添える一行は 12px。開くと閉じるに動きは付けない |
 | World の物のガイド | 平常は白 32% の 1px と黒 32%、ホバーは白 90% の 1.5px と黒 60%、選択は落ち着いた黄 `#e8cf74` の 1.5px と黒 70%。暗い線は明るい線より 2px 太い（`web_src/studio/world_guides.js` `GUIDE_LOOKS`） |
@@ -550,7 +553,7 @@ stylesheet の読み込みは上の「この文書が owner である規則」�
 | Set orbit center のボタン | 視点の操作のつまみと同じ 34px の正円、アイコン 18px（下の「アイコン」）。ふだんと hover はつまみと同じ |
 | Set orbit center の待ち | 地は値の箱の地（`--studio-fill`）、アイコンは氷（`--studio-ice`）。ボタンの内側いっぱいに氷の 1.5px の輪を重ね、輪の不透明度を 1 と 0.3 の間でゆっくり往復させる（下の「動き」）。選ばれた状態の強い塗りは使わない（待っていることを、選んでいることと見分けるため） |
 | Sky の画像のハンドル | 枠は選択のガイドと同じ太さで色は氷 `#aecedb`（下に黒 70%）、四隅は半径 5px・辺の中点は 3.5px・回転は 6px の氷の丸に黒 70% の 1.5px の縁（`web_src/studio/world_guides.js` `GUIDE_LOOKS.skySelected`、描くのは `web_src/studio/stage_overlay.js`） |
-| ツールチップ | 見本 `specimen-11.html` の `.tip`。地は強い塗り（`--studio-strong`）、文字は強い塗りの上の文字（`--studio-on-strong`）の 12px・500、行の高さ 16px、角丸 6px、余白 上下 4px・左右 8px、縁の線と影なし。文が 280px を超えるときだけ折り返す。ショートカットの印は 11px・600・不透明度 0.6、文との間 6px。部品との間 8px、エディタの枠の内側 8px より外に出さない（置き方の規則は `docs/studio-ui.md` の「ツールチップ」） |
+| ツールチップ | 見本 `specimen-11.html` の `.tip`。地は強い塗り（`--studio-strong`）、文字は強い塗りの上の文字（`--studio-on-strong`）の 12px・500、行の高さ 16px、角丸 6px、余白 上下 4px・左右 8px、縁の線と影なし。文が 280px を超えるときだけ折り返す。ショートカットの印は 11px・600・不透明度 0.6、文との間 6px。部品（角丸の背景を持つ群の中では、その背景の縁）との間 8px、エディタの枠の内側 8px より外に出さない（置き方の規則は `docs/studio-ui.md` の「ツールチップ」） |
 | タイムラインのスクロールバー | 縦だけ。幅 6px、溝は透明、つまみは主の文字の色の 22%（hover で 40%）、角丸 3px。Firefox は `scrollbar-width: thin` と同じ色 |
 | タイムラインの最小の高さ | 未定 |
 | ステージの最小の高さ | 未定 |
@@ -562,7 +565,7 @@ stylesheet の読み込みは上の「この文書が owner である規則」�
 | 値 | 使われ方 |
 |---|---|
 | `140ms`、opacity と 6px の translate、ease-out | Easing のパネルの出入り（高さは動かさない） |
-| `120ms ease`、地の色と文字の色 | ボタン・行・欄の hover（入るときも出るときも）。押したとき（`:active`）は動きを付けず即座に変える |
+| `120ms ease`、地の色と文字の色 | ボタン・行・欄の hover（入るときも出るときも）。押したとき（`:active`）は動きを付けず即座に変える。状態で付け外しする色（上書きの色 `.is-override`、無効 `aria-disabled`）は、文字の色を動かさず即座に変える（地の色の hover はそのまま動く） |
 | `160ms ease-out`、選んだ側の地（つまみ）の横の位置と、項目の文字の色 | 切り替え（segmented control）の選んだ側が変わるとき、つまみが左右に滑って移り、文字の色も同じ時間で変わる。すべての切り替えが共通の部品で同じ動き |
 | `160ms ease-out`、大きさと opacity | Output の小窓の開く・畳む（中の絵は描き直さず、縮めて見せる） |
 | `900ms linear` で 1 回転、繰り返し | 一行の知らせの読み込み中の輪 |
@@ -604,6 +607,13 @@ Set orbit center の待ちの輪は明滅させずに出す）。
   Camera の印は `camera-plus`（見本 `specimen-11.html`）。Set orbit center は、オービットの中心の印と同じ点と輪（左上寄り。輪は右下を開ける）に、
   右下からクリックの矢印を添えた形を Tabler の線の形にならって描く（`web_src/icons.js` `orbit_center`。Frame Selected の `focus-2` と
   見分けるため、目盛りの線は付けない）。
+- 視点の操作のつまみ（`docs/space-and-view.md` の「視点の操作の部品」）：オービットは Tabler の `sphere`、パンは Tabler の `arrows-move`
+  （四方向の矢印。上下左右に平らに動かす）。前後は、奥で狭まる二本の線（道）の間に上下の矢印を置いた形を Tabler の線の形にならって描く
+  （床の上を奥へ・手前へ進む。四方向の矢印と見分けるため。持ち主、2026-11-05。`web_src/icons.js` `depth_move`）。手の形（`hand-stop`）は
+  「止まれ」にも読めるので使わない。歩く人（`walk`）は、Preview に歩くモードを足したときに重なるので使わない。
+- Reset View（ステージの右下と Preview のウィンドウ）は Tabler の `home`（ADR 0061。行き先が World の原点なので「原点へ帰る」を家で示す）。
+  回る矢印（`refresh`）は「この値を既定に戻す」（インスペクタの行のリセット、辺の目盛りのリセット、右下の画角のリセット）にだけ使う。
+  Preview のノードの上の Scene のビューアの Reset view も `home` にする（`docs/preview-node.md`）。`web_src/icons.js` の `home`。
 - ループ（タイムラインのバー）とグリッド（ステージの右下）は、一つのアイコンのボタンで、今の状態をアイコンの形で示す（ループ
   `repeat` ／ `repeat-off`、グリッド `table` ／ `table-off`）。オンでも強い塗りにしない（`docs/agents/ux-principles.md` の例外）。
 - 下の中央のバーの前面へ・背面へ（空に貼った画像）は、Tabler の線の形にならって描いた二つの角丸の四角（`web_src/icons.js`

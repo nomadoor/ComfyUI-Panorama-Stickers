@@ -15,29 +15,30 @@
 }
 
 /* Tokens. Every element of the new UI sits inside `.pano-studio`, which holds the values below; nothing outside it
-   reads them. Light is the default and ComfyUI's `.dark-theme` (on <html>, set by the frontend from the palette)
-   switches to dark. The values are the design-drafts specimens' own (docs/design.md "新しい UI の見た目" "色"); ComfyUI's
+   reads them. Each value is `light-dark(light, dark)`, picked by the `color-scheme` the root inherits from <html>,
+   where ComfyUI's frontend (1.58 and later) writes `dark` or `light` from the palette; with none stated it is light.
+   The values are the design-drafts specimens' own (docs/design.md "新しい UI の見た目" "色"); ComfyUI's
    role colors are not read, so its bright stroke never reaches a window or a float. */
 .pano-studio {
   /* Gray steps (Geist's roles): frame / panel / fill / hover / pressed / line / strong line / strong fill / 2nd text / text. */
-  --studio-frame: #f6f6f7;
-  --studio-panel: #ffffff;
-  --studio-fill: #f1f1f2;
-  --studio-fill-hover: #e9e9eb;
-  --studio-fill-active: #e0e0e3;
-  --studio-line: #e2e2e5;
-  --studio-line-strong: #cfcfd4;
-  --studio-strong: #1b1b1d;
-  --studio-on-strong: #ffffff;
-  --studio-fg-2: #6b6b72;
-  --studio-fg: #161618;
+  --studio-frame: light-dark(#f6f6f7, #121314);
+  --studio-panel: light-dark(#ffffff, #1b1c1e);
+  --studio-fill: light-dark(#f1f1f2, #2c2c2e);
+  --studio-fill-hover: light-dark(#e9e9eb, #343436);
+  --studio-fill-active: light-dark(#e0e0e3, #3c3c3f);
+  --studio-line: light-dark(#e2e2e5, #2a2b2d);
+  --studio-line-strong: light-dark(#cfcfd4, #48484c);
+  --studio-strong: light-dark(#1b1b1d, #d6d6da);
+  --studio-on-strong: light-dark(#ffffff, #111112);
+  --studio-fg-2: light-dark(#6b6b72, #8e8f93);
+  --studio-fg: light-dark(#161618, #dcdce0);
   /* Meaning colors: one point each (docs/design.md "色"). Light holds darker values. */
-  --studio-coral: #d9573f;
-  --studio-ice: #5f8fa3;
-  --studio-lime: #7f9a3a;
-  --studio-yellow: #a8861f;
+  --studio-coral: light-dark(#d9573f, #f37159);
+  --studio-ice: light-dark(#5f8fa3, #aecedb);
+  --studio-lime: light-dark(#7f9a3a, #d6e797);
+  --studio-yellow: light-dark(#a8861f, #e8cf74);
   /* The override colour (docs/design.md "色" 桃): an upstream object's overridden-row dots, Back to source while pressable. */
-  --studio-override: #c2477d;
+  --studio-override: light-dark(#c2477d, #e879a6);
   /* Floating parts over the stage: 85% opaque, never the 2nd gray on them. */
   --studio-float-alpha: 85%;
   --studio-float: color-mix(in srgb, var(--studio-panel) var(--studio-float-alpha), transparent);
@@ -85,24 +86,10 @@
   -webkit-font-smoothing: antialiased;
 }
 
+/* Frontends before 1.58 state the dark theme as `.dark-theme` on <html> or <body>, not as `color-scheme`. */
 .dark-theme .pano-studio,
 .pano-studio.dark-theme {
-  --studio-frame: #121314;
-  --studio-panel: #1b1c1e;
-  --studio-fill: #2c2c2e;
-  --studio-fill-hover: #343436;
-  --studio-fill-active: #3c3c3f;
-  --studio-line: #2a2b2d;
-  --studio-line-strong: #48484c;
-  --studio-strong: #d6d6da;
-  --studio-on-strong: #111112;
-  --studio-fg-2: #8e8f93;
-  --studio-fg: #dcdce0;
-  --studio-coral: #f37159;
-  --studio-ice: #aecedb;
-  --studio-lime: #d6e797;
-  --studio-yellow: #e8cf74;
-  --studio-override: #e879a6;
+  color-scheme: dark;
 }
 
 .pano-studio *,
@@ -155,7 +142,7 @@
    docs/design.md "Panorama Studio のノード上の表示"). The canvas under it draws the Camera's output picture; the overlay
    places the Open Studio button, the play button and the line under the picture where pano_studio_surface.js lays them
    out (inline left / top / bottom / width), over the node's own background (the surface is not filled: STUDIO_SURFACE_FILL is transparent). Only the buttons
-   (and the output size's tooltip) take the pointer. The line reads the theme's tokens (ComfyUI's `.dark-theme` on <html>). */
+   (and the output size's tooltip) take the pointer. The line reads the theme's tokens (ComfyUI's theme, see Tokens above). */
 .pano-studio-node-surface {
   position: absolute;
   inset: 0;
@@ -263,7 +250,8 @@
   cursor: pointer;
 }
 
-.pano-studio-icon-btn:hover {
+.pano-studio-icon-btn:hover,
+.pano-studio-icon-btn.is-hint {
   background: var(--studio-fill-hover);
   color: var(--studio-fg);
 }
@@ -465,6 +453,64 @@
 .pano-studio-float.is-rail .pano-studio-icon-btn svg.icon-tabler-photo-box {
   width: 22px;
   height: 22px;
+}
+
+/* The View group's reset of the FOV keeps the row's reset size (docs/design.md "右下の画角の数字と画角のリセット"). */
+.pano-studio-at-buttons .pano-studio-icon-btn.is-sm {
+  width: var(--studio-btn-sm);
+  height: var(--studio-btn-sm);
+}
+
+.pano-studio-at-buttons .pano-studio-icon-btn.is-sm svg.icon {
+  width: 14px;
+  height: 14px;
+}
+
+/* The View group's FOV number (docs/design.md "右下の画角の数字と画角のリセット", mock B2): a pill as tall as the buttons,
+   no fill but the hover's, the number in the edge ruler's value style, right-aligned in exactly the width of "140°"
+   (a hidden "140°", data-widest, in the same cell). */
+.pano-studio-fov {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  height: var(--studio-knob);
+  padding: 0 6px 0 10px;
+  border-radius: var(--studio-r-part);
+  color: var(--studio-fg);
+  font-size: var(--studio-text-sm);
+  font-weight: var(--studio-weight-head);
+  line-height: 1;
+  cursor: ew-resize;
+  user-select: none;
+  touch-action: none;
+  transition: background-color var(--studio-motion-hover);
+}
+
+.pano-studio-fov:hover,
+.pano-studio-fov.is-lit {
+  background: var(--studio-fill-hover);
+}
+
+.pano-studio-fov-num {
+  display: inline-grid;
+  justify-items: end;
+  font-variant-numeric: tabular-nums;
+}
+
+.pano-studio-fov-num > *,
+.pano-studio-fov-num::after {
+  grid-area: 1 / 1;
+}
+
+.pano-studio-fov-num::after {
+  content: attr(data-widest);
+  visibility: hidden;
+}
+
+.pano-studio-fov[aria-disabled="true"] {
+  opacity: 0.35;
+  background: transparent;
+  cursor: default;
 }
 
 .pano-studio-sep {
@@ -862,37 +908,6 @@
   font-weight: var(--studio-weight-head);
 }
 
-/* A text button inside a row (Set ground): a part, fully round, no fill until hovered. */
-.pano-studio-text-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 0;
-  height: var(--studio-field-h);
-  padding: 0 10px;
-  border: 0;
-  border-radius: var(--studio-r-part);
-  background: var(--studio-fill);
-  color: var(--studio-fg);
-  font-size: var(--studio-text-sm);
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.pano-studio-text-btn:hover {
-  background: var(--studio-fill-hover);
-}
-
-.pano-studio-text-btn[aria-disabled="true"] {
-  opacity: 0.4;
-  cursor: default;
-}
-
-/* Set ground takes the row's second and third value columns: one column is narrower than its label. */
-.pano-studio-text-btn[data-action="set-ground"] {
-  grid-column: span 2;
-}
-
 /* A choice by name across columns 1-3 (a 3D's Clip). */
 .pano-studio-select {
   width: 100%;
@@ -972,7 +987,16 @@
   opacity: 0.4;
 }
 
+/* The bezier text and its copy button right of it (docs/studio-ui.md "Easing のパネル"). */
+.pano-studio-easing-text-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .pano-studio-easing-text {
+  flex: 1;
+  min-width: 0;
   width: 100%;
   height: var(--studio-field-h);
   padding: 0 8px;
@@ -1075,7 +1099,8 @@
   flex: 1;
 }
 
-/* fps and Length: the name and the number together, filled while hovered (timeline-2.html ".fld"). */
+/* fps and Length: the name and the number together, filled while hovered (timeline-2.html ".fld"), and dragged from
+   anywhere in that fill with the field's cursor (docs/studio-ui.md "欄"). */
 .pano-studio-tl-field {
   display: inline-flex;
   align-items: center;
@@ -1083,9 +1108,16 @@
   padding: 0 0 0 8px;
   border-radius: var(--studio-r-field);
   font-size: var(--studio-text-sm);
+  cursor: ew-resize;
+  touch-action: none;
+  user-select: none;
 }
 
-.pano-studio-tl-field:hover {
+.pano-studio-tl-field.is-disabled {
+  cursor: default;
+}
+
+.pano-studio-tl-field:not(.is-disabled):hover {
   background: var(--studio-fill);
 }
 
@@ -1103,12 +1135,63 @@
   font-size: var(--studio-text-sm);
 }
 
+/* The value's width is taken first, so more digits move nothing (docs/design.md "タイムラインの fps と Length の値の
+   幅"): Length 5 digits, fps 4, both shown and typed; a longer value grows the field. The digits are tabular
+   (.pano-studio-num) and sit at the left. */
+.pano-studio-tl-field .pano-studio-field-value,
 .pano-studio-tl-field .pano-studio-field-input {
-  width: 4ch;
+  flex: none;
+  min-width: var(--studio-tl-field-ch);
+}
+
+.pano-studio-tl-field .pano-studio-field-input {
+  field-sizing: content;
+}
+
+/* Without field-sizing (Chromium < 123, Firefox) an input takes its own ~20 characters: hold it to the reserved width
+   instead, so opening the box moves nothing (a longer typed value scrolls inside it). */
+@supports not (field-sizing: content) {
+  .pano-studio-tl-field .pano-studio-field-input {
+    width: var(--studio-tl-field-ch);
+  }
+}
+
+.pano-studio-tl-field.is-fps {
+  --studio-tl-field-ch: 4ch;
+}
+
+.pano-studio-tl-field.is-length {
+  --studio-tl-field-ch: 5ch;
+}
+
+/* Length's unit mark (f / s), a button that switches the unit the value shows (docs/timeline-ui.md "タイムラインの長さ"):
+   outside the value's width, 2px after it as a value box's unit (docs/design.md "値の箱の中の間"); its padding takes
+   the field's right padding. It works while the field is disabled (read-only). */
+.pano-studio-tl-field.is-length .pano-studio-field {
+  padding-right: 0;
+}
+
+.pano-studio-tl-unit {
+  align-self: stretch;
+  box-sizing: content-box;
+  width: 1ch; /* f and s take one width: switching moves nothing */
+  padding: 0 8px 0 2px;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  color: var(--studio-fg-2);
+  font-size: var(--studio-text-sm);
+  cursor: pointer;
+}
+
+.pano-studio-tl-unit:hover {
+  color: var(--studio-fg);
 }
 
 .pano-studio-tl-body {
   position: relative;
+  display: flex;
+  flex-direction: column;
   flex: 1;
   min-height: 0;
   overflow-x: hidden;
@@ -1151,6 +1234,7 @@
   position: sticky;
   top: 0;
   z-index: 3;
+  flex: none;
   height: var(--studio-tl-ruler);
   background: var(--studio-panel);
 }
@@ -1326,6 +1410,19 @@
 
 .pano-studio-tl-lines {
   position: relative;
+  flex: none;
+}
+
+/* The empty area below the rows fills the rest of the body; its track column starts a box like an empty spot of a
+   track (docs/timeline-ui.md "Keyframe の選び方"). It draws nothing. */
+.pano-studio-tl-fill {
+  display: grid;
+  flex: 1 0 0;
+  grid-template-columns: var(--studio-tl-head) minmax(0, 1fr);
+}
+
+.pano-studio-tl-fill-track {
+  touch-action: none;
 }
 
 .pano-studio-tl-track {
@@ -2278,6 +2375,13 @@
 .pano-studio-edge-ruler.is-right .pano-studio-edge-ruler-num { left: 24px; }
 .pano-studio-edge-ruler.is-horizontal .pano-studio-edge-ruler-num { top: 22px; transform: translateX(-50%); }
 
+/* Alt held in the Frame view (docs/studio-ui.md "Camera タブ", docs/design.md): the FOV ruler, which Alt + wheel changes,
+   looks as the keyboard's focus does (its band's fill white 10%, its text white). */
+.pano-studio-edge-ruler.is-lit .pano-studio-edge-ruler-track {
+  background-color: var(--studio-focus-fill);
+  color: var(--studio-focus-fg);
+}
+
 /* Panorama mode: FOV and Lens stay in their places, gray and untouchable. */
 .pano-studio-edge-ruler.is-disabled {
   opacity: 0.35;
@@ -2296,6 +2400,14 @@
 
 .pano-studio :where(button, .pano-studio-field, .pano-studio-tl-field):active {
   transition-duration: 0s;
+}
+
+/* Only the hover eases a colour (docs/design.md "動き"): a button turning on or off, and Back to source taking or losing
+   the override colour, change at once. Easing them showed the plain icon colour at full strength for a moment before
+   the override colour (a flash on the release of the drag that first overrides an upstream object). */
+.pano-studio .pano-studio-icon-btn.is-override,
+.pano-studio .pano-studio-icon-btn[aria-disabled="true"] {
+  transition-property: background-color;
 }
 
 /* Less motion asked by the system: nothing moves; the loading ring shows still. */

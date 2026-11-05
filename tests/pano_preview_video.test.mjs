@@ -157,7 +157,7 @@ function graphNode(links, inputLinks, { id = 9, graphId = "wf-1" } = {}) {
     id,
     comfyClass: "PanoramaStudio",
     graph,
-    inputs: ["bg_media", "scene", "sticker", "sticker_state"].map((name) => ({ name, link: inputLinks[name] ?? null })),
+    inputs: ["background", "scene", "sticker", "sticker_state"].map((name) => ({ name, link: inputLinks[name] ?? null })),
     getInputLink(slot) {
       return this.graph.links.get(this.inputs[slot].link) || null;
     },
@@ -240,11 +240,11 @@ function bgOutput(name) {
 
 test("a run's output keeps the links its job ran on, read once the run ends", async () => {
   const api = trackedApi();
-  const node = graphNode({ 1: [4, 0], 2: [5, 0] }, { bg_media: 1, sticker: 2 }, { graphId: "wf-run" });
+  const node = graphNode({ 1: [4, 0], 2: [5, 0] }, { background: 1, sticker: 2 }, { graphId: "wf-run" });
   useGraph(node);
   const run = queue(api, [node], bgOutput("queued-then-rewired"));
 
-  rewire(node, "bg_media", 7);
+  rewire(node, "background", 7);
   api.emit("executed", { node: "9", display_node: "9", output: bgOutput("queued-then-rewired"), prompt_id: "p1" });
   app.nodeOutputs["9"] = bgOutput("queued-then-rewired");
   // Until the job is read, the output has no record and counts as current.
@@ -254,7 +254,7 @@ test("a run's output keeps the links its job ran on, read once the run ends", as
   assert.deepEqual(api.calls, ["/jobs/p1"]);
   assert.equal(isNodeOutputMediaCurrent(node, "background"), false);
   assert.equal(isNodeOutputMediaCurrent(node, "external-sticker"), true);
-  rewire(node, "bg_media", 4);
+  rewire(node, "background", 4);
   assert.equal(isNodeOutputMediaCurrent(node, "background"), true);
   node.inputs[2].link = null;
   assert.equal(isNodeOutputMediaCurrent(node, "external-sticker"), false);
@@ -262,10 +262,10 @@ test("a run's output keeps the links its job ran on, read once the run ends", as
 
 test("an interrupted run records what it made, and a run without panorama media is not looked up", async () => {
   const api = trackedApi();
-  const node = graphNode({ 1: [4, 0] }, { bg_media: 1 }, { graphId: "wf-interrupted" });
+  const node = graphNode({ 1: [4, 0] }, { background: 1 }, { graphId: "wf-interrupted" });
   useGraph(node);
   await queue(api, [node], bgOutput("interrupted"), "execution_interrupted")();
-  rewire(node, "bg_media", 7);
+  rewire(node, "background", 7);
   assert.equal(isNodeOutputMediaCurrent(node, "background"), false);
 
   await queue(api, [node], { images: [{ filename: "ComfyUI_temp_00001_.png", subfolder: "", type: "temp" }] })();
@@ -274,10 +274,10 @@ test("an interrupted run records what it made, and a run without panorama media 
 
 test("an undo after rewiring leaves an output made from the old input stale, without asking the server", async () => {
   const api = trackedApi();
-  const node = graphNode({ 1: [4, 0] }, { bg_media: 1 }, { graphId: "wf-undo" });
+  const node = graphNode({ 1: [4, 0] }, { background: 1 }, { graphId: "wf-undo" });
   useGraph(node);
   await queue(api, [node], bgOutput("undo"))();
-  rewire(node, "bg_media", 7);
+  rewire(node, "background", 7);
   api.calls.length = 0;
 
   // Ctrl+Z of an unrelated change: loadGraphData(state, clean=false) keeps the outputs and calls
@@ -290,10 +290,10 @@ test("an undo after rewiring leaves an output made from the old input stale, wit
 
 test("a workflow tab's outputs come back as copies after the load, keep their links, and are not looked up", async () => {
   const api = trackedApi({ list: [{ id: "old" }], jobs: { old: job({ 9: bgOutput("tab-history") }, {}) } });
-  const node = graphNode({ 1: [4, 0] }, { bg_media: 1 }, { graphId: "wf-tab" });
+  const node = graphNode({ 1: [4, 0] }, { background: 1 }, { graphId: "wf-tab" });
   useGraph(node);
   await queue(api, [node], bgOutput("tab"))();
-  rewire(node, "bg_media", 7);
+  rewire(node, "background", 7);
   api.calls.length = 0;
 
   // Switching away stores the outputs in the tab's change tracker; switching back clears them, loads the
@@ -307,28 +307,28 @@ test("a workflow tab's outputs come back as copies after the load, keep their li
   assert.equal(restored, null);
   assert.deepEqual(api.calls, []);
   assert.equal(isNodeOutputMediaCurrent(node, "background"), false);
-  rewire(node, "bg_media", 4);
+  rewire(node, "background", 4);
   assert.equal(isNodeOutputMediaCurrent(node, "background"), true);
 });
 
 test("workflow input origins read both serialized link formats and nodes inside subgraphs", () => {
   const legacy = {
-    nodes: [{ id: 9, inputs: [{ name: "bg_media", link: 3 }, { name: "sticker", link: null }] }],
+    nodes: [{ id: 9, inputs: [{ name: "background", link: 3 }, { name: "sticker", link: null }] }],
     links: [[3, 4, 1, 9, 0, "VIDEO"]],
   };
   const current = {
-    nodes: [{ id: 9, inputs: [{ name: "bg_media", link: 3 }] }, { id: 12, type: "sub-a" }],
+    nodes: [{ id: 9, inputs: [{ name: "background", link: 3 }] }, { id: 12, type: "sub-a" }],
     links: [{ id: 3, origin_id: 4, origin_slot: 1, target_id: 9, target_slot: 0, type: "VIDEO" }],
     definitions: { subgraphs: [{
       id: "sub-a",
-      nodes: [{ id: 5, inputs: [{ name: "bg_media", link: 1 }] }],
+      nodes: [{ id: 5, inputs: [{ name: "background", link: 1 }] }],
       links: [{ id: 1, origin_id: -10, origin_slot: 0, target_id: 5, target_slot: 0, type: "IMAGE" }],
     }] },
   };
 
-  assert.deepEqual(workflowInputOrigins(legacy, "9"), { bg_media: "4:1" });
-  assert.deepEqual(workflowInputOrigins(current, 9), { bg_media: "4:1" });
-  assert.deepEqual(workflowInputOrigins(current, "12:5"), { bg_media: "-10:0" });
+  assert.deepEqual(workflowInputOrigins(legacy, "9"), { background: "4:1" });
+  assert.deepEqual(workflowInputOrigins(current, 9), { background: "4:1" });
+  assert.deepEqual(workflowInputOrigins(current, "12:5"), { background: "-10:0" });
   assert.deepEqual(workflowInputOrigins(undefined, 9), {});
 });
 
@@ -337,28 +337,28 @@ test("the output of a node inside a subgraph is recorded by its execution id", a
   const workflow = {
     nodes: [{ id: 12, type: "sub-a" }],
     links: [],
-    definitions: { subgraphs: [{ id: "sub-a", nodes: [{ id: 5, inputs: [{ name: "bg_media", link: 1 }] }], links: [[1, 3, 0, 5, 0, "IMAGE"]] }] },
+    definitions: { subgraphs: [{ id: "sub-a", nodes: [{ id: 5, inputs: [{ name: "background", link: 1 }] }], links: [[1, 3, 0, 5, 0, "IMAGE"]] }] },
   };
   const output = bgOutput("subgraph");
   api.jobs.inner = job({ "12:5": output }, workflow);
-  const node = graphNode({ 1: [3, 0] }, { bg_media: 1 }, { id: 5, graphId: "sub-a" });
+  const node = graphNode({ 1: [3, 0] }, { background: 1 }, { id: 5, graphId: "sub-a" });
 
   api.emit("executed", { node: "12:5", display_node: "12:5", output, prompt_id: "inner" });
   api.emit("execution_success", { prompt_id: "inner" });
   await settle();
   app.nodeOutputs["5"] = structuredClone(output);
 
-  rewire(node, "bg_media", 8);
+  rewire(node, "background", 8);
   assert.equal(isNodeOutputMediaCurrent(node, "background"), false);
 });
 
 test("an output first seen without a record comes from the links as they are then, and a later relink makes it stale", () => {
-  const node = graphNode({ 1: [4, 0] }, { bg_media: 1 }, { id: 31 });
+  const node = graphNode({ 1: [4, 0] }, { background: 1 }, { id: 31 });
   app.nodeOutputs["31"] = bgOutput("never-recorded");
   assert.equal(isNodeOutputMediaCurrent(node, "background"), true);
-  rewire(node, "bg_media", 7);
+  rewire(node, "background", 7);
   assert.equal(isNodeOutputMediaCurrent(node, "background"), false);
-  rewire(node, "bg_media", 4);
+  rewire(node, "background", 4);
   assert.equal(isNodeOutputMediaCurrent(node, "background"), true);
   assert.equal(isNodeOutputMediaCurrent(graphNode({}, {}, { id: 32 }), "background"), true);
 });
@@ -366,7 +366,7 @@ test("an output first seen without a record comes from the links as they are the
 // The owner's swap: a VIDEO on `sticker` ran, its output came back without a record (a workflow tab or a
 // job opened from the queue, before any job is read), and the VIDEO was swapped for an IMAGE without a run.
 test("an unrecorded output of a VIDEO on the port is stale once the port is relinked to an IMAGE", () => {
-  const node = graphNode({ 1: [4, 0], 2: [5, 0] }, { bg_media: 1, sticker: 2 }, { id: 33 });
+  const node = graphNode({ 1: [4, 0], 2: [5, 0] }, { background: 1, sticker: 2 }, { id: 33 });
   app.nodeOutputs["33"] = {
     pano_sticker_input_videos: [{ filename: "port-video.mp4", subfolder: "", type: "temp" }],
     pano_sticker_input_video_meta: [{ kind: "VIDEO", fps: 24, frames: 48, duration: 2 }],
@@ -381,7 +381,7 @@ test("an unrecorded output of a VIDEO on the port is stale once the port is reli
 
 // The editor loads the `scene` items of the node's result only while `scene` comes from where it ran.
 test("the scene files of an output are stale once the scene input is relinked, and only they are", () => {
-  const node = graphNode({ 1: [4, 0], 2: [5, 0] }, { bg_media: 1, scene: 2 }, { id: 34 });
+  const node = graphNode({ 1: [4, 0], 2: [5, 0] }, { background: 1, scene: 2 }, { id: 34 });
   app.nodeOutputs["34"] = {
     pano_scene_files: [{ filename: "pano_scene_a_0.glb", subfolder: "", type: "temp" }],
     pano_scene_meta: [{ kind: "mesh" }],
@@ -395,30 +395,30 @@ test("the scene files of an output are stale once the scene input is relinked, a
 });
 
 test("an output that newer ones dropped from the record is recorded again when next seen", () => {
-  const node = graphNode({ 1: [4, 0] }, { bg_media: 1 }, { id: 34 });
+  const node = graphNode({ 1: [4, 0] }, { background: 1 }, { id: 34 });
   app.nodeOutputs["34"] = bgOutput("evicted");
   assert.equal(isNodeOutputMediaCurrent(node, "background"), true);
-  const other = graphNode({ 1: [4, 0] }, { bg_media: 1 }, { id: 35 });
+  const other = graphNode({ 1: [4, 0] }, { background: 1 }, { id: 35 });
   for (let index = 0; index < 300; index += 1) {
     app.nodeOutputs["35"] = bgOutput(`filler-${index}`);
     isNodeOutputMediaCurrent(other, "background");
   }
   assert.equal(isNodeOutputMediaCurrent(node, "background"), true);
-  rewire(node, "bg_media", 8);
+  rewire(node, "background", 8);
   assert.equal(isNodeOutputMediaCurrent(node, "background"), false);
 });
 
 test("after a browser reload the nodes of a graph share one look at the job history and keep the inputs each job ran on", async () => {
   const first = bgOutput("reload-9");
   const second = bgOutput("reload-10");
-  const node = graphNode({ 1: [4, 0] }, { bg_media: 1 }, { graphId: "wf-reload" });
+  const node = graphNode({ 1: [4, 0] }, { background: 1 }, { graphId: "wf-reload" });
   const other = graphNode({}, {}, { id: 10 });
   other.graph = node.graph;
   const api = trackedApi({
     list: [{ id: "newer" }, { id: "older" }],
     jobs: { newer: job({ 2: { images: [] } }, {}), older: job({ 9: first, 10: second }, serialize(node, other)) },
   });
-  // The reloaded graph: bg_media still comes from node 4, nodeOutputs is empty.
+  // The reloaded graph: the background still comes from node 4, nodeOutputs is empty.
   useGraph(node);
 
   // loadedGraphNode calls both in one synchronous pass.
@@ -430,7 +430,7 @@ test("after a browser reload the nodes of a graph share one look at the job hist
   assert.equal(restoredOther, second);
   assert.equal(app.nodeOutputs["9"], first);
   assert.equal(isNodeOutputMediaCurrent(node, "background"), true);
-  rewire(node, "bg_media", 3);
+  rewire(node, "background", 3);
   assert.equal(isNodeOutputMediaCurrent(node, "background"), false);
 
   // The next load looks again.
@@ -456,7 +456,7 @@ test("a node the history has nothing for is not looked up again until a run succ
 });
 
 test("a restore that ComfyUI's own outputs overtake leaves them in place", async () => {
-  const node = graphNode({ 1: [4, 0] }, { bg_media: 1 }, { graphId: "wf-overtaken" });
+  const node = graphNode({ 1: [4, 0] }, { background: 1 }, { graphId: "wf-overtaken" });
   useGraph(node);
   const api = trackedApi({ list: [{ id: "a" }], jobs: { a: job({ 9: bgOutput("overtaken-history") }, serialize(node)) } });
 
@@ -548,7 +548,7 @@ test("the source nodes of a node's media inputs are found up the whole input cha
   const components = { id: 13, inputs: [{ name: "video" }] };
   const other = { id: 20, inputs: [] };
   const sticker = { id: 21, inputs: [] };
-  const node = { id: 2, inputs: [{ name: "bg_media" }, { name: "sticker" }] };
+  const node = { id: 2, inputs: [{ name: "background" }, { name: "sticker" }] };
   const links = new Map([[node, [components, sticker]], [components, [load]], [load, []], [sticker, []], [other, []]]);
   const originOf = (current, slot) => links.get(current)?.[slot] ?? null;
 
@@ -577,10 +577,10 @@ test("only a tracked ERP input connection change invalidates node output media",
   assert.equal(isTrackedMediaInputConnectionChange(node, "output", 0), false);
 });
 
-test("the new Stickers node's MultiType bg_media and sticker inputs are tracked by name", () => {
+test("the new Stickers node's MultiType background and sticker inputs are tracked by name", () => {
   const node = {
     inputs: [
-      { name: "bg_media", type: "IMAGE,VIDEO" },
+      { name: "background", type: "IMAGE,VIDEO" },
       { name: "scene", type: "SPLAT,MESH" },
       { name: "sticker", type: "IMAGE,VIDEO,MESH,SPLAT" },
     ],
@@ -594,17 +594,17 @@ test("the new Stickers node's MultiType bg_media and sticker inputs are tracked 
 });
 
 test("a VIDEO linked to an input is seen from the link's type", () => {
-  const node = graphNode({ 1: [3, 0], 2: [4, 0] }, { bg_media: 1, sticker: 2 });
+  const node = graphNode({ 1: [3, 0], 2: [4, 0] }, { background: 1, sticker: 2 });
   node.graph.links.get(1).type = "IMAGE";
   node.graph.links.get(2).type = "VIDEO";
 
-  assert.equal(videoLinked(node, ["bg_media"]), false);
-  assert.equal(videoLinked(node, ["bg_media", "sticker"]), true);
-  assert.equal(videoLinked(graphNode({}, {}), ["bg_media", "sticker"]), false);
+  assert.equal(videoLinked(node, ["background"]), false);
+  assert.equal(videoLinked(node, ["background", "sticker"]), true);
+  assert.equal(videoLinked(graphNode({}, {}), ["background", "sticker"]), false);
 });
 
 test("the 3D sticker files of an output are stale once the sticker input is relinked", () => {
-  const node = graphNode({ 1: [4, 0], 2: [6, 0] }, { bg_media: 1, sticker: 2 }, { id: 35 });
+  const node = graphNode({ 1: [4, 0], 2: [6, 0] }, { background: 1, sticker: 2 }, { id: 35 });
   app.nodeOutputs["35"] = {
     pano_sticker_files: [{ filename: "pano_scene_b_0.ply", subfolder: "", type: "temp" }],
     pano_sticker_meta: [{ kind: "splat" }],

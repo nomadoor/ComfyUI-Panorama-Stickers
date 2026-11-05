@@ -8,7 +8,8 @@ import {
   LOOK_CURSOR,
   ORBIT_CURSOR,
   createViewInput,
-  createWheelSteps,
+  fovNumberLit,
+  fovRulerLit,
   knobAction,
   litKnobs,
   navigationAction,
@@ -77,7 +78,11 @@ test("the knob of the operation under way lights, whatever drives it", () => {
 
 test("while Alt is held, the knobs of Alt's drags (sphere and arrows) light", () => {
   assert.deepEqual(litKnobs({ altHeld: true }), ["orbit", "move"]);
-  assert.deepEqual(litKnobs({ altHeld: true, gesture: "pan" }), ["orbit", "pan", "move"]);
+  // Once an operation starts, Alt's knobs go out and only its knob lights (docs/space-and-view.md "視点の操作の部品").
+  assert.deepEqual(litKnobs({ altHeld: true, gesture: "pan" }), ["pan"]);
+  assert.deepEqual(litKnobs({ altHeld: true, gesture: "orbit" }), ["orbit"]);
+  assert.deepEqual(litKnobs({ altHeld: true, gesture: "joystick" }), ["move"]);
+  assert.deepEqual(litKnobs({ altHeld: true, keysMoving: true }), ["move"]);
 });
 
 // --- The cursor.
@@ -96,41 +101,6 @@ test("the cursor during a drag", () => {
   assert.equal(stageCursor({ gesture: "orbit" }), ORBIT_CURSOR);
   assert.equal(stageCursor({ gesture: "pan", altHeld: true }), "move");
   assert.equal(stageCursor({ gesture: "joystick" }), "ns-resize");
-});
-
-// --- The wheel.
-
-test("a line or page wheel event is one step; rolling away comes nearer", () => {
-  const wheel = createWheelSteps();
-  assert.equal(wheel.push({ deltaY: -3, deltaMode: 1 }), 1);
-  assert.equal(wheel.push({ deltaY: 3, deltaMode: 1 }), -1);
-  assert.equal(wheel.push({ deltaY: 1, deltaMode: 2 }), -1);
-  assert.equal(wheel.push({ deltaY: 0, deltaMode: 1 }), 0);
-});
-
-test("a pixel event of WHEEL_STEP_PIXELS or more is one step", () => {
-  const wheel = createWheelSteps();
-  assert.equal(wheel.push({ deltaY: -100, deltaMode: 0 }), 1);
-  assert.equal(wheel.push({ deltaY: 240, deltaMode: 0 }), -1);
-});
-
-test("fine pixel events add up to a step every WHEEL_STEP_PIXELS in the same direction", () => {
-  const wheel = createWheelSteps();
-  assert.equal(wheel.push({ deltaY: -30, deltaMode: 0 }), 0);
-  assert.equal(wheel.push({ deltaY: -30, deltaMode: 0 }), 0);
-  assert.equal(wheel.push({ deltaY: -30, deltaMode: 0 }), 0);
-  assert.equal(wheel.push({ deltaY: -30, deltaMode: 0 }), 1);
-  // 20 px are left over.
-  assert.equal(wheel.push({ deltaY: -80, deltaMode: 0 }), 1);
-});
-
-test("a change of direction drops what was added up", () => {
-  const wheel = createWheelSteps();
-  wheel.push({ deltaY: -90, deltaMode: 0 });
-  assert.equal(wheel.push({ deltaY: 20, deltaMode: 0 }), 0);
-  assert.equal(wheel.push({ deltaY: -20, deltaMode: 0 }), 0);
-  assert.equal(wheel.push({ deltaY: -79, deltaMode: 0 }), 0);
-  assert.equal(wheel.push({ deltaY: -1, deltaMode: 0 }), 1);
 });
 
 // --- Keys.
@@ -208,4 +178,24 @@ test("a gesture begins and ends", () => {
   assert.equal(input.gesture(), "pan");
   assert.equal(input.endGesture(), "pan");
   assert.equal(input.gesture(), null);
+});
+
+// docs/studio-ui.md "Camera タブ" (ADR 0061): the FOV ruler shows Alt + wheel while Alt is held with no view operation
+// (a drag or the movement keys), in the Frame view, with a Camera that moves.
+test("the FOV ruler lights with Alt, not during a view operation, only in the Frame view with a Camera that moves", () => {
+  const on = { altHeld: true, operating: false, frame: true, movable: true };
+  assert.equal(fovRulerLit(on), true);
+  assert.equal(fovRulerLit({ ...on, altHeld: false }), false);
+  assert.equal(fovRulerLit({ ...on, operating: true }), false);
+  assert.equal(fovRulerLit({ ...on, frame: false }), false);
+  assert.equal(fovRulerLit({ ...on, movable: false }), false);
+});
+
+test("the FOV number lights with Alt, not during a view operation, only where Alt + wheel changes the view's FOV", () => {
+  const on = { altHeld: true, operating: false, space: true };
+  assert.equal(fovNumberLit(on), true);
+  assert.equal(fovNumberLit({ ...on, altHeld: false }), false);
+  assert.equal(fovNumberLit({ ...on, operating: true }), false);
+  // The Camera tab: the number is off there and the FOV ruler lights instead.
+  assert.equal(fovNumberLit({ ...on, space: false }), false);
 });

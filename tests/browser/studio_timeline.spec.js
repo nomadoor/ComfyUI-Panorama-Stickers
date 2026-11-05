@@ -74,7 +74,15 @@ test("the playhead is a coral 2px line with its ▼ on the ruler only", async ({
       width: line.borderLeftWidth,
       marks: marks.length,
       inRuler: marks.every((mark) => !!mark.closest(".pano-studio-tl-ruler")),
-      coral: getComputedStyle(col).getPropertyValue("--studio-coral").trim(),
+      coral: ((el, name) => {
+        // A token is light-dark(light, dark): resolve it where it is used (the root's color-scheme), as #rrggbb.
+        const probe = document.createElement("i");
+        probe.style.color = `var(${name})`;
+        el.append(probe);
+        const [r, g, b] = getComputedStyle(probe).color.match(/\d+/g).map(Number);
+        probe.remove();
+        return `#${[r, g, b].map((v) => v.toString(16).padStart(2, "0")).join("")}`;
+      })(col, "--studio-coral"),
     };
   });
   expect(look).toEqual({ color: "rgb(243, 113, 89)", width: "2px", marks: 1, inRuler: true, coral: "#f37159" });
@@ -133,6 +141,93 @@ test("a Keyframe click selects it, Shift adds, a box selects what it covers, an 
   expect((await scene(page, "selection")).keys).toEqual([{ row: "sticker_1", lane: null, frame: 0 }, { row: "sticker_1", lane: null, frame: 20 }]);
   expect(await scene(page, "playhead")).toBe(24);
   await page.mouse.click(await frameX(page, 90), await trackY(page, "camera"));
+  expect((await scene(page, "selection")).keys).toEqual([]);
+});
+
+test("the empty area below the rows starts a box and clears on a click, without moving the playhead", async ({ page }) => {
+  await open(page);
+  const body = await dark(page).locator(".pano-studio-tl-body").boundingBox();
+  const last = await dark(page).locator(".pano-studio-tl-lines").boundingBox();
+  // The fixture's rows leave room below them in the Timeline's body.
+  expect(body.y + body.height - (last.y + last.height)).toBeGreaterThan(40);
+  const below = last.y + last.height + 20;
+  // A box from below every row up past the Camera's track (above the first row), frames 45..49: the Camera's key at 48 (the upstream key at 50 stays out).
+  await page.mouse.move(await frameX(page, 45), below);
+  await page.mouse.down();
+  await page.mouse.move(await frameX(page, 49), (await trackY(page, "camera")) - 30, { steps: 5 });
+  await expect(dark(page).locator(".pano-studio-tl-marquee")).toHaveCount(1);
+  await page.mouse.up();
+  expect((await scene(page, "selection")).keys).toEqual([{ row: "camera", lane: null, frame: 48 }]);
+  // Shift adds: a box from below up over the Camera's key at 0.
+  await page.keyboard.down("Shift");
+  await page.mouse.move(await frameX(page, 4), below);
+  await page.mouse.down();
+  await page.mouse.move(await frameX(page, 0) - 4, await trackY(page, "camera"), { steps: 5 });
+  await page.mouse.up();
+  await page.keyboard.up("Shift");
+  expect((await scene(page, "selection")).keys.filter((key) => key.row === "camera")).toEqual([
+    { row: "camera", lane: null, frame: 48 },
+    { row: "camera", lane: null, frame: 0 },
+  ]);
+  await events(page);
+  // A click below the rows lets them go and does not seek; the name column below the rows does nothing.
+  const head = await dark(page).locator('[data-head="camera"]').boundingBox();
+  await page.mouse.click(head.x + head.width / 2, below);
+  expect((await scene(page, "selection")).keys.length).toBeGreaterThan(0);
+  await page.mouse.click(await frameX(page, 70), below);
+  expect((await scene(page, "selection")).keys).toEqual([]);
+  expect(await scene(page, "playhead")).toBe(24);
+  expect((await events(page)).filter((event) => event.name === "seek")).toEqual([]);
+});
+
+// docs/timeline-ui.md "Keyframe の選び方": the box stays between the ruler's bottom and the track column's bottom, its
+// top edge and corners always seen, and it selects the Keyframes inside the box as drawn (the cursor may go past it).
+async function marqueeBox(page) {
+  return dark(page).locator(".pano-studio-tl-marquee").evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    return { top: r.top, bottom: r.bottom };
+  });
+}
+
+test("a box dragged up past the ruler stops at the ruler's bottom and selects what it shows", async ({ page }) => {
+  await open(page);
+  const ruler = dark(page).locator(".pano-studio-tl-line.is-ruler");
+  const rulerBottom = await ruler.evaluate((el) => el.getBoundingClientRect().bottom);
+  const lines = await dark(page).locator(".pano-studio-tl-lines").boundingBox();
+  const below = lines.y + lines.height + 20;
+  // From below the rows up into the bar above the ruler, frames 45..49: the Camera's key at 48.
+  await page.mouse.move(await frameX(page, 45), below);
+  await page.mouse.down();
+  await page.mouse.move(await frameX(page, 49), rulerBottom - 40, { steps: 6 });
+  const box = await marqueeBox(page);
+  expect(Math.abs(box.top - rulerBottom)).toBeLessThan(0.5);
+  const fillBottom = await dark(page).locator('[data-tl="fill"]').evaluate((el) => el.getBoundingClientRect().bottom);
+  expect(box.bottom).toBeLessThanOrEqual(fillBottom + 0.5);
+  await page.mouse.up();
+  expect((await scene(page, "selection")).keys).toEqual([{ row: "camera", lane: null, frame: 48 }]);
+});
+
+test("in a scrolled body the box stops at the ruler's bottom and leaves the rows under the ruler out", async ({ page }) => {
+  await open(page);
+  // A short Timeline whose rows do not fit, scrolled to its end: the Camera's row is behind the ruler or above it.
+  await dark(page).locator(".area").evaluate((el) => { el.style.height = "150px"; });
+  const body = dark(page).locator(".pano-studio-tl-body");
+  await body.evaluate((el) => { el.scrollTop = el.scrollHeight; });
+  expect(await body.evaluate((el) => el.scrollTop)).toBeGreaterThan(20);
+  const ruler = dark(page).locator(".pano-studio-tl-line.is-ruler");
+  const rulerBottom = await ruler.evaluate((el) => el.getBoundingClientRect().bottom);
+  const camera = await dark(page).locator('[data-track="camera"]').evaluate((el) => el.getBoundingClientRect().bottom);
+  expect(camera).toBeLessThanOrEqual(rulerBottom);
+  const fill = await dark(page).locator('[data-tl="fill"]').boundingBox();
+  await page.mouse.move(await frameX(page, 45), fill.y + fill.height - 4);
+  await page.mouse.down();
+  await page.mouse.move(await frameX(page, 49), rulerBottom - 60, { steps: 6 });
+  const box = await marqueeBox(page);
+  expect(Math.abs(box.top - rulerBottom)).toBeLessThan(0.5);
+  const bodyBottom = await body.evaluate((el) => el.getBoundingClientRect().bottom);
+  expect(box.bottom).toBeLessThanOrEqual(bodyBottom + 0.5);
+  await page.mouse.up();
+  // The upstream key at 50 is outside 45..49; the Camera's key at 48 is under the ruler, outside the box.
   expect((await scene(page, "selection")).keys).toEqual([]);
 });
 
@@ -313,4 +408,135 @@ test("▶ opens a row into its Lanes, whose Keyframes a box selects one Lane at 
     { row: "sticker_1", lane: "rotation", frame: 20 },
   ]);
   await expect(dark(page).locator('[data-track="sticker_1:rotation"] .pano-studio-tl-key.is-selected')).toHaveCount(1);
+});
+
+// docs/timeline-ui.md "fps と Length の欄" and docs/design.md: the value's width is taken first (Length 5 digits, fps
+// 4), so more digits move nothing in the bar (the right group sits at the right end: a wider value would push its names
+// and the fields left of it), shown or typed.
+test("the fps and Length fields keep their width as digits are added, shown and typed", async ({ page }) => {
+  await open(page);
+  const length = dark(page).locator('[data-tl="length"]');
+  const fpsField = dark(page).locator('[data-tl="fps"]');
+  // The left and right edges of every part of the bar's right group: the fields, their names, the buttons.
+  const layout = () => dark(page).locator(".pano-studio-tl-bar").evaluate((bar) =>
+    [...bar.querySelectorAll(".pano-studio-tl-field, .pano-studio-tl-field-name, [data-tl]")]
+      .filter((el) => !["play", "prev", "next", "loop", "time"].includes(el.dataset.tl))
+      .map((el) => {
+        const r = el.getBoundingClientRect();
+        return `${el.dataset.tl || el.className}:${r.left}-${r.right}`;
+      })
+      .join(" "));
+  const shown = [];
+  const typed = [];
+  for (const value of ["9", "10", "100", "1000", "10000"]) {
+    await length.click();
+    await length.locator("input").fill(value);
+    typed.push(await layout());
+    await length.locator("input").press("Enter");
+    await expect(length).toHaveAttribute("aria-valuenow", value);
+    shown.push(await layout());
+  }
+  expect(new Set(shown).size).toBe(1);
+  // The open text box takes the same width as the shown value.
+  expect(new Set([...typed, ...shown]).size).toBe(1);
+  // Left aligned, digits of one width.
+  const look = await length.evaluate((el) => {
+    const value = el.querySelector(".pano-studio-field-value");
+    return { align: getComputedStyle(value).textAlign, nums: getComputedStyle(value).fontVariantNumeric };
+  });
+  expect(look).toEqual({ align: "left", nums: "tabular-nums" });
+
+  const byFps = [];
+  for (const fps of [1, 24, 120, 1000]) {
+    await page.evaluate((value) => window.__scene.setFps(value), fps);
+    await expect(fpsField).toHaveAttribute("aria-valuenow", String(fps));
+    byFps.push(await layout());
+  }
+  expect(new Set(byFps).size).toBe(1);
+  await fpsField.click();
+  expect(await layout()).toBe(byFps[0]);
+  await page.keyboard.press("Escape");
+});
+
+// docs/timeline-ui.md "タイムラインの長さ": the unit mark right of the Length number switches frames and seconds in place,
+// outside the value's width; the read-only Timeline switches it too (it changes nothing in the state).
+test("the Length unit mark switches frames and seconds, typed seconds go in as frames, and it works read-only", async ({ page }) => {
+  await open(page);
+  const length = dark(page).locator('[data-tl="length"]');
+  const unit = dark(page).locator('[data-part="length-unit"]');
+  await expect(unit).toHaveText("f");
+  await expect(unit).toHaveAttribute("data-tip", "Show seconds");
+  const fieldRight = await length.evaluate((el) => el.getBoundingClientRect().right);
+  expect(await unit.evaluate((el) => el.getBoundingClientRect().left)).toBeGreaterThanOrEqual(fieldRight - 0.5);
+  // Switching in place: nothing in the bar moves.
+  const places = () => dark(page).locator(".pano-studio-tl-bar").evaluate((bar) =>
+    [...bar.querySelectorAll(".pano-studio-tl-field, [data-tl], [data-part]")].map((el) => {
+      const r = el.getBoundingClientRect();
+      return `${r.left}-${r.right}`;
+    }).join(" "));
+  const before = await places();
+  await unit.click();
+  expect(await places()).toBe(before);
+  await expect(unit).toHaveText("s");
+  await expect(unit).toHaveAttribute("data-tip", "Show frames");
+  // 100 frames at 24 fps.
+  await expect(length.locator(".pano-studio-field-value")).toHaveText("4.17");
+  expect((await events(page)).filter((event) => event.name === "edit")).toEqual([]);
+  await length.click();
+  await length.locator("input").fill("2");
+  await length.locator("input").press("Enter");
+  expect((await scene(page, "state")).timeline.length).toBe(48);
+  await expect(length.locator(".pano-studio-field-value")).toHaveText("2.00");
+  // Less than a frame is one frame.
+  await length.click();
+  await length.locator("input").fill("0");
+  await length.locator("input").press("Enter");
+  expect((await scene(page, "state")).timeline.length).toBe(1);
+  await expect(length.locator(".pano-studio-field-value")).toHaveText("0.04");
+  await unit.click();
+  await expect(length.locator(".pano-studio-field-value")).toHaveText("1");
+
+  // Read-only: the field stays shut, the mark still switches the display.
+  const light = page.locator('[data-theme-col="light"]');
+  const lightUnit = light.locator('[data-part="length-unit"]');
+  await events(page);
+  await lightUnit.click();
+  await expect(lightUnit).toHaveText("s");
+  await expect(light.locator('[data-tl="length"] .pano-studio-field-value')).toHaveText("0.04");
+  expect((await events(page)).filter((event) => event.name === "edit")).toEqual([]);
+});
+
+// Where the browser has no `field-sizing: content` (Chromium < 123, Firefox), the opened box keeps the reserved width
+// (web/pano_studio.css `@supports not (field-sizing: content)`), so opening it moves nothing. This Chromium has it:
+// the test turns it off and applies the fallback block's rules as such a browser would.
+test("without field-sizing the opened fps and Length boxes keep the reserved width", async ({ page }) => {
+  await open(page);
+  const applied = await page.evaluate(() => {
+    const fallback = [...document.styleSheets].flatMap((sheet) => {
+      try {
+        return [...sheet.cssRules];
+      } catch {
+        return [];
+      }
+    }).filter((rule) => rule instanceof CSSSupportsRule && /not\s*\(\s*field-sizing:\s*content\s*\)/.test(rule.conditionText));
+    const style = document.createElement("style");
+    style.textContent = [
+      ".pano-studio-tl-field .pano-studio-field-input { field-sizing: fixed !important; }",
+      ...fallback.flatMap((rule) => [...rule.cssRules].map((inner) => inner.cssText)),
+    ].join("\n");
+    document.head.append(style);
+    return fallback.length;
+  });
+  expect(applied).toBeGreaterThan(0);
+  const layout = () => dark(page).locator(".pano-studio-tl-bar").evaluate((bar) =>
+    [...bar.querySelectorAll(".pano-studio-tl-field, .pano-studio-tl-field-name, [data-tl]")]
+      .map((el) => `${el.getBoundingClientRect().left}-${el.getBoundingClientRect().right}`).join(" "));
+  for (const name of ["length", "fps"]) {
+    const field = dark(page).locator(`[data-tl="${name}"]`);
+    const shown = await layout();
+    await field.click();
+    await expect(field.locator("input")).toBeFocused();
+    expect(await layout()).toBe(shown);
+    await page.keyboard.press("Escape");
+  }
 });

@@ -4,8 +4,8 @@ import { ICON } from "../../icons.js";
 import StudioFloatGroup from "./StudioFloatGroup.vue";
 import StudioIconButton from "./StudioIconButton.vue";
 
-// The view knobs at the right of the stage (docs/space-and-view.md "視点の操作の部品"): the sphere (orbit), the hand
-// (pan) and the arrows (forward / back), each dragged, never a button that flips; below them "?", the list of
+// The view knobs at the right of the stage (docs/space-and-view.md "視点の操作の部品"): the sphere (orbit), the four
+// arrows (pan) and the road's arrows (forward / back), each dragged, never a button that flips; below them "?", the list of
 // shortcuts, lit while the list is open (`helpOpen`; docs/studio-ui.md "ショートカットの一覧"). A knob lights while its
 // operation runs, however it is driven (`lit`). The wheel and the context menu over the knobs do not reach the stage.
 // Presentational: `knob` out with the pointerdown of a knob's drag, `help` out when "?" is pressed; `helpButton()`
@@ -13,6 +13,9 @@ import StudioIconButton from "./StudioIconButton.vue";
 defineProps({
   // The knobs lit now: "orbit", "pan", "move".
   lit: { type: Array, default: () => [] },
+  // The knob being dragged, or null: it alone takes the strong fill; the other lit knobs take the hover's fill
+  // (docs/space-and-view.md "視点の操作の部品").
+  knobDrag: { type: String, default: null },
   disabled: { type: Boolean, default: false },
   disabledTip: { type: String, default: "" },
   helpOpen: { type: Boolean, default: false },
@@ -28,13 +31,13 @@ const help = ref(null);
 defineExpose({ helpButton: () => help.value?.$el ?? null });
 
 const KNOBS = [
-  { key: "orbit", icon: ICON.sphere, label: "Orbit", tip: "Drag to orbit · Alt+left-drag in the view" },
-  { key: "pan", icon: ICON.hand, label: "Pan", tip: "Drag to pan · right-drag in the view" },
-  { key: "move", icon: ICON.arrows_vertical, label: "Move forward/back", tip: "Drag to move forward/back · Alt+right-drag" },
+  { key: "orbit", icon: ICON.sphere, label: "Orbit", tip: "Orbit (Alt+Drag)" },
+  { key: "pan", icon: ICON.pan_move, label: "Pan", tip: "Pan (Right-drag)" },
+  { key: "move", icon: ICON.depth_move, label: "Move forward/back", tip: "Move forward/back (Alt+Right-drag)" },
 ];
 // Set orbit center's tooltips, idle and while it waits for a click (docs/space-and-view.md "Set orbit center").
 const CENTER_TIP = Object.freeze({
-  idle: "Set orbit center · or double-click a spot",
+  idle: "Set orbit center (Double-click)",
   picking: "Click a spot to orbit around · Esc to cancel",
 });
 </script>
@@ -50,7 +53,8 @@ const CENTER_TIP = Object.freeze({
         :icon="knob.icon"
         :label="knob.label"
         :tip="disabled && disabledTip ? disabledTip : knob.tip"
-        :lit="lit.includes(knob.key)"
+        :lit="knobDrag === knob.key"
+        :hint="knobDrag !== knob.key && lit.includes(knob.key)"
         :disabled="disabled"
         @pointerdown="!disabled && emit('knob', knob.key, $event)"
         @pointerenter="knob.key === 'orbit' && !disabled && emit('hover', 'orbit')"

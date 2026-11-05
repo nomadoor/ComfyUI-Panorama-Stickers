@@ -121,18 +121,15 @@ test("the inspector follows the selection, kept across the tabs; the Camera tab 
   expect(problems).toEqual([]);
 });
 
-test("Set ground: on in the Frame mode Camera tab, off in its place in the Panorama mode Camera tab", async ({ page }) => {
+// ADR 0062: no Set ground button in either mode of the Camera tab; the Ground value keeps its place.
+test("the Camera tab's Scene card has no Set ground, and its Ground value stays in place in both modes", async ({ page }) => {
   const problems = await load(page, "aspect=16:9&mode=frame");
-  const button = page.locator('[data-card="scene"] [data-action="set-ground"]');
   await toTab(page, "Camera");
-  await expect(button).not.toHaveAttribute("aria-disabled", "true");
-  const place = await rectOf(page, '[data-card="scene"] [data-action="set-ground"]');
+  await expect(page.locator('[data-card="scene"] [data-action="set-ground"]')).toHaveCount(0);
+  const place = await rectOf(page, '[data-card="scene"] [data-field="ground"]');
   await page.locator('[data-card="camera"] .pano-studio-mode-tile[data-value="erp"]').click();
-  await expect(button).toHaveAttribute("aria-disabled", "true");
-  await expect(button).toHaveAttribute("data-tip", "Not available in Panorama mode");
-  expect(await rectOf(page, '[data-card="scene"] [data-action="set-ground"]')).toEqual(place);
-  await toTab(page, "3D");
-  await expect(button).not.toHaveAttribute("aria-disabled", "true");
+  await expect(page.locator('[data-card="scene"] [data-action="set-ground"]')).toHaveCount(0);
+  expect(await rectOf(page, '[data-card="scene"] [data-field="ground"]')).toEqual(place);
   expect(problems).toEqual([]);
 });
 

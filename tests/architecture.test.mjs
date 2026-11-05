@@ -65,16 +65,16 @@ test("the modules of web_src import each other without a cycle", () => {
   assert.equal(findCycle(graph)?.join(" -> ") ?? null, null);
 });
 
-// ADR 0044 "新旧の境": the new UI and the old UI do not import each other (web_src/main.js imports both).
+// ADR 0044 "新旧の境" (the list as ADR 0062 left it): the new UI and the old UI do not import each other
+// (web_src/main.js imports both).
 const OLD_UI_FILES = [
   "pano_editor.js",
   "pano_editor_ui_state.js",
   "modal_shell_presets.js",
   ...[
     "PanoModal", "PanoToolRail", "PanoFrameRail", "PanoFrameRollKnob", "PanoPaintDock", "PanoPaintOverlays",
-    "PanoSidePanel", "PanoSelectionMenu", "PanoSegments", "PanoConfirmDialog", "PanoTooltip", "PanoImageFilePicker",
-    "PanoFloatingRight", "PanoViewToggle", "PanoUpstreamOrigin", "PanoEasingGraph", "PanoTimeline",
-    "PanoTimelineGroup", "PanoCutoutAspectPicker",
+    "PanoSidePanel", "PanoSelectionMenu", "PanoConfirmDialog", "PanoTooltip", "PanoImageFilePicker",
+    "PanoFloatingRight", "PanoViewToggle", "PanoCutoutAspectPicker",
   ].map((name) => `components/${name}.vue`),
 ];
 test("the new UI and the old UI do not import each other", () => {
@@ -84,6 +84,25 @@ test("the new UI and the old UI do not import each other", () => {
   const crossings = [...graph].flatMap(([from, targets]) => targets
     .filter((to) => (isNew(from) && isOld(to)) || (isOld(from) && isNew(to)))
     .map((to) => `${from} -> ${to}`));
+  assert.deepEqual(crossings, []);
+});
+
+// ADR 0044 "新旧の境": the new UI does not reach the old nodes' parts either: no node surface module
+// (*_node_surface.js) and not the old editor's ComfyUI extension (pano_editor_extension.js).
+test("the new UI imports no node surface module and not pano_editor_extension.js", () => {
+  const isNew = (name) => /^(studio|components\/studio)\//.test(name);
+  const isOldPart = (name) => /(^|\/)[^/]*_node_surface\.js$/.test(name) || name === "pano_editor_extension.js";
+  const crossings = [...graph].filter(([from]) => isNew(from))
+    .flatMap(([from, targets]) => targets.filter(isOldPart).map((to) => `${from} -> ${to}`));
+  assert.deepEqual(crossings, []);
+});
+
+// docs/editor-architecture.md "Overview" (the layers) and "Dependency rules": the libraries (web_src/pano_*.js) know no editor: none
+// but the old editor's composition (pano_editor.js) imports editor/*.js or studio/*.js.
+test("the libraries pano_*.js import neither editor/*.js nor studio/*.js", () => {
+  const libraries = [...IMPORTS.keys()].filter((name) => /^pano_[^/]+\.js$/.test(name) && name !== "pano_editor.js");
+  assert.ok(libraries.length > 50);
+  const crossings = libraries.flatMap((from) => graph.get(from).filter((to) => /^(editor|studio)\//.test(to)).map((to) => `${from} -> ${to}`));
   assert.deepEqual(crossings, []);
 });
 
@@ -143,7 +162,7 @@ test("every place that lays paint on the Sky does it through createPaintDisplay,
 // docs/timeline-ui.md "どの背景を出すか": the new editor, the Preview window and Panorama Studio's node surface choose the
 // background they show with the one chooseBackground of pano_background_choice.js.
 test("every new-UI view that shows a node's background imports chooseBackground from pano_background_choice.js", () => {
-  for (const file of ["studio/editor.js", "studio/preview_window.js", "pano_preview_runtime.js"]) {
+  for (const file of ["studio/editor_inputs.js", "studio/preview_window.js", "node_surface/studio_picture.js"]) {
     const from = IMPORTS.get(file).find(({ names }) => names.includes("chooseBackground"));
     assert.equal(from?.target, "pano_background_choice.js", file);
   }
@@ -161,7 +180,7 @@ const DOM_ALLOWED = [
   "studio/preview_window.js: document.createElement(\"div\")",
   "studio/preview_window.js: document.body.appendChild(mountHost)",
   // The background VIDEO stays in the page, hidden, so it keeps presenting frames (docs/timeline-ui.md).
-  "studio/editor.js: mountHost.appendChild(backgroundVideoElement)",
+  "studio/editor.js: mountHost.appendChild(ctx.backgroundVideoElement)",
   "studio/preview_window.js: mountHost.appendChild(videoElement)",
 ];
 const DOM_BUILD = /[\w$.]*\.(?:createElement|createElementNS|appendChild|append|prepend|insertBefore|insertAdjacentElement|replaceChildren|replaceWith)\([^)]*\)/g;
@@ -197,7 +216,6 @@ const ALLOWED_PANO_PROPERTIES = {
   __panoLoadSource: "image: the source the load state is for",
   __panoSrc: "image: the source of a UI image (pano_comfy_media.js)",
   __panoFrameIdx: "canvas: frames drawn into a VIDEO still",
-  __panoLifecyclePatched_: "node type: patchNodeLifecycle ran for a key",
 };
 test("no __pano property outside the allowed list is kept on a node or other frontend object", () => {
   const found = new Map();

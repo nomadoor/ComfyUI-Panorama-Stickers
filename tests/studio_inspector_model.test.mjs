@@ -59,7 +59,7 @@ const row = (card, id) => card.rows.find((item) => item.id === id);
 const sceneOf = (m) => m.cards.find((card) => card.kind === "scene");
 const values = (r) => r.fields.map((field) => field.value);
 
-test("nothing selected shows the Scene card: the Camera's card over Ground at -1.6 by default, its Set ground and a reserved seat", () => {
+test("nothing selected shows the Scene card: the Camera's card over Ground at -1.6 by default, and a reserved seat", () => {
   const m = model(load());
   assert.deepEqual(m.cards.map((card) => card.kind), ["camera", "scene"]);
   const card = sceneOf(m);
@@ -283,17 +283,16 @@ test("a locked Camera and a read-only editor gray the Camera rows in the Scene c
   assert.equal(row(sceneOf(readOnly), "ground").disabled, true);
 });
 
-test("Set ground works in the 3D tab and the Frame mode Camera tab, and is off in the Panorama mode Camera tab", () => {
-  const setGround = (raw, tab) => row(sceneOf(model(load(raw), { tab })), "ground").setGround;
-  const frame = { camera: { projection: "perspective" } };
-  const panorama = { camera: { projection: "erp" } };
-  assert.deepEqual(setGround(frame, "3d"), { disabled: false, tip: "Click a surface to make it the ground" });
-  assert.deepEqual(setGround(panorama, "3d"), { disabled: false, tip: "Click a surface to make it the ground" });
-  assert.deepEqual(setGround(frame, "camera"), { disabled: false, tip: "Click a surface to make it the ground" });
-  assert.deepEqual(setGround(panorama, "camera"), { disabled: true, tip: "Not available in Panorama mode" });
-  // The value itself still takes edits there.
-  assert.equal(row(sceneOf(model(load(panorama), { tab: "camera" })), "ground").fields[0].disabled, false);
-  assert.deepEqual(row(sceneOf(model(load(), { readOnly: true })), "ground").setGround, { disabled: true, tip: "Read-only" });
+// ADR 0062: Set ground is not made yet, so the row has no button for it; its two columns stay empty (the seat).
+test("the Ground row has no Set ground, keeps its seat, and its value takes edits in every tab", () => {
+  for (const raw of [{ camera: { projection: "perspective" } }, { camera: { projection: "erp" } }]) {
+    for (const tab of ["3d", "camera"]) {
+      const ground = row(sceneOf(model(load(raw), { tab })), "ground");
+      assert.equal("setGround" in ground, false);
+      assert.equal(ground.seat, true);
+      assert.equal(ground.fields[0].disabled, false);
+    }
+  }
 });
 
 test("a multiple selection and a paint selection show a heading only", () => {
@@ -329,14 +328,6 @@ test("an upstream element's overridden rows carry the mark, and their reset is o
   assert.equal(row(card, "rotation").marked, false);
   assert.equal(row(card, "rotation").atDefault, true);
   assert.equal(row(card, "rotation").disabled, false);
-});
-
-test("an upstream element without a file name is titled by its own id, as its Timeline row is, not its working id", () => {
-  const layerState = load({ id: "scene_up", stickers: [{ ...sky("sticker_2"), source: { kind: "file", data_url: "data:image/png;base64,AA==" } }] });
-  const state = load();
-  const upstream = upstreamWorkingLayers([{ sceneState: layerState, ui: {} }], [], state.timeline.fps);
-  const card = model(state, { selection: { ids: ["upstream:scene_up:sticker_2"] }, upstream }).cards[0];
-  assert.equal(card.title, "sticker_2");
 });
 
 test("an element of an upstream layer whose overrides cannot be kept is shown with its rows disabled", () => {

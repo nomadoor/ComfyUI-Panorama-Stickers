@@ -33,7 +33,6 @@ export function videoMetaEntry(meta) {
 export function detectVideoHasAudio(video, fallback = false) {
   if (!(typeof HTMLVideoElement !== "undefined" && video instanceof HTMLVideoElement)) return false;
   try {
-    if (Array.isArray(video.audioTracks) && video.audioTracks.length > 0) return true;
     if (video.audioTracks && typeof video.audioTracks.length === "number" && video.audioTracks.length > 0) return true;
   } catch {
     // Ignore browser-specific audioTracks access issues.
@@ -135,12 +134,6 @@ export function isDecodedImageReady(img) {
 export function backgroundVideoMedia(source, video) {
   if (!(source?.ready && source.frameCount > 0)) return null;
   return { video: !!video, frames: source.frameCount, duration: Number(source.duration || 0) };
-}
-
-// The node's own background as the Auto length reads it: its VIDEO or IMAGE batch (`loaded`, backgroundVideoMedia),
-// else a linked IMAGE as a single image (an IMAGE batch before a run too); null without a link.
-export function backgroundLengthMedia(loaded, { linked, videoLinked }) {
-  return loaded ?? (linked && !videoLinked ? { frames: 1 } : null);
 }
 
 // The background VIDEO of an editor. `video` is its HTMLVideoElement (or null: an editor without one), `still` the

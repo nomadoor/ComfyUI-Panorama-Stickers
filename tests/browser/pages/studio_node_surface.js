@@ -18,6 +18,7 @@ import { app } from "./comfy/app.js";
 import { makeSplatPly, makeVideo } from "./media.js";
 import { editorSession, nodeSurface } from "/web_src/pano_node_bridge.js";
 import { attachPanoramaPreview } from "/web_src/pano_preview_runtime.js";
+import { servedImage } from "./view_files.js";
 
 const getContext = HTMLCanvasElement.prototype.getContext;
 HTMLCanvasElement.prototype.getContext = function (type, options = {}) {
@@ -104,7 +105,7 @@ function state(yaw = 0) {
     stickers: which === "moge" || which === "splat" || upstreamCase || ownBackground ? [] : [{
       id: "sticker_1",
       placement: "sky",
-      source: { kind: "file", data_url: solid(`rgb(${RED.join(",")})`) },
+      source: servedImage("red.png", solid(`rgb(${RED.join(",")})`)),
       direction: { value: { yaw_deg: 0, pitch_deg: 0 } },
       size: { value: { hFOV_deg: 40, vFOV_deg: 40 } },
     }],
@@ -162,7 +163,7 @@ async function upstreamResult() {
     stickers: [{
       id: "sticker_1",
       placement: "sky",
-      source: { kind: "file", data_url: upstreamImageUrl },
+      source: servedImage("upstream_blue.png", upstreamImageUrl),
       direction: { value: { yaw_deg: 0, pitch_deg: 0 } },
       size: { value: { hFOV_deg: 40, vFOV_deg: 40 } },
     }],

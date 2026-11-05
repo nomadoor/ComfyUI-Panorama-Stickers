@@ -1,7 +1,7 @@
-import json
 import math
-import uuid
 from copy import deepcopy
+
+import numpy as np
 
 from .paint_state import empty_painting_state, normalize_painting_state
 from .scene_state import parse_json
@@ -26,15 +26,45 @@ DEFAULT_STATE = {
 }
 
 
+def coverage_span(value) -> int:
+    """A span of longitude (coverage): 180, or else 360. A value that `int` cannot read raises its error."""
+    return 180 if int(value) == 180 else 360
+
+
 def normalize_coverage(value) -> int:
+    """`coverage_span` of `value`, or 360 when `int` cannot read it."""
     try:
-        return 180 if int(value) == 180 else 360
+        return coverage_span(value)
     except Exception:
         return 360
 
 
-def make_id(prefix: str) -> str:
-    return f"{prefix}_{uuid.uuid4().hex[:8]}"
+def _normalize_hex_color(value) -> str:
+    """A color widget value as `#` and six characters in lower case: `#abc` is `#aabbcc`, the `#` is optional, and
+    anything that is not six characters (or three) that `int(text, 16)` reads is `#00ff00`."""
+    s = str(value or "").strip()
+    if s.startswith("#"):
+        s = s[1:]
+    if len(s) == 3:
+        s = "".join(ch * 2 for ch in s)
+    if len(s) != 6:
+        return "#00ff00"
+    try:
+        int(s, 16)
+    except ValueError:
+        return "#00ff00"
+    return f"#{s.lower()}"
+
+
+def hex_to_rgb01(value) -> np.ndarray:
+    """A color widget value (`_normalize_hex_color`) as float32 RGB in 0..1; green for a value whose channels do not
+    read as hex."""
+    text = _normalize_hex_color(value)[1:]
+    try:
+        rgb = [int(text[idx:idx + 2], 16) / 255.0 for idx in (0, 2, 4)]
+    except ValueError:
+        rgb = [0.0, 1.0, 0.0]
+    return np.asarray(rgb, dtype=np.float32)
 
 
 def _without_non_finite(value):
@@ -52,15 +82,13 @@ def _without_non_finite(value):
     return value
 
 
-def merge_state(state_in: str | None, internal_state: str | None, fallback_preset: int = 2048, fallback_bg: str = "#00ff00") -> dict:
+def merge_state(state_json: str | None, fallback_preset: int = 2048, fallback_bg: str = "#00ff00") -> dict:
     state = deepcopy(DEFAULT_STATE)
     state["output_preset"] = int(fallback_preset)
     state["bg_color"] = fallback_bg
 
-    for src in (internal_state, state_in):
-        parsed = parse_state(src)
-        if parsed is None:
-            continue
+    parsed = parse_state(state_json)
+    if parsed is not None:
         state.update({k: v for k, v in parsed.items() if k in state})
 
     state["version"] = 1
@@ -104,10 +132,6 @@ def parse_state(state_raw: str | None) -> dict | None:
     return None
 
 
-def dump_state(state: dict) -> str:
-    return json.dumps(state, ensure_ascii=True, separators=(",", ":"))
-
-
 def _wrap_yaw(yaw_deg: float) -> float:
     return ((float(yaw_deg) + 180.0) % 360.0) - 180.0
 
@@ -126,27 +150,20 @@ def parse_sticker_state(state_raw: str | None) -> dict | None:
         return None
     if str(parsed.get("kind") or "") != "pano_sticker_state":
         return None
-    version_value = parsed.get("version")
-    if isinstance(version_value, bool):
-        return None
-    if isinstance(version_value, int):
-        version = version_value
-    elif isinstance(version_value, str) and version_value.isdigit():
-        try:
-            version = int(version_value)
-        except ValueError:
-            return None
-    else:
-        return None
-    if version != 1:
+    version = parsed.get("version")
+    if isinstance(version, bool) or not isinstance(version, int) or version != 1:
         return None
     pose = parsed.get("pose")
     if not isinstance(pose, dict):
         return None
 
+    raw_values = [pose.get(key) for key in ("yaw_deg", "pitch_deg", "roll_deg", "hFOV_deg")]
+    # JSON numbers only (ADR 0063): a number written as text, a bool, or anything else is not read.
+    if any(isinstance(value, bool) or not isinstance(value, (int, float)) for value in raw_values):
+        return None
     try:
-        values = [float(pose[key]) for key in ("yaw_deg", "pitch_deg", "roll_deg", "hFOV_deg")]
-    except Exception:
+        values = [float(value) for value in raw_values]
+    except OverflowError:
         return None
     # Finiteness before the clamps, which would turn an infinite pitch or hFOV into an edge value.
     if not all(math.isfinite(v) for v in values):
@@ -164,10 +181,10 @@ def parse_sticker_state(state_raw: str | None) -> dict | None:
     }
 
     source_aspect = parsed.get("source_aspect", None)
-    if source_aspect is not None:
+    if isinstance(source_aspect, (int, float)) and not isinstance(source_aspect, bool):
         try:
             source_aspect_val = float(source_aspect)
-        except Exception:
+        except OverflowError:
             source_aspect_val = None
         if source_aspect_val is not None and math.isfinite(source_aspect_val) and source_aspect_val > 0.0:
             out["source_aspect"] = source_aspect_val

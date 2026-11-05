@@ -2,16 +2,15 @@
 
 import bisect
 import copy
-import math
-import os
 
 import torch
 from comfy_api.latest import InputImpl, Types
 
 from .core import gltf_animation
-from .core.cache import CACHE
+from .core.cache import CACHE, file_key
 from .core.scene_eval import FRAME_EPSILON
-from .core.video_source import MaterializedVideo, PtsTimes, StreamedVideo, coded_size, scan_video
+from .core.scene_state import round_frame
+from .core.video_source import MaterializedVideo, PtsTimes, StreamedVideo, coded_size, pts_tolerance_frames, scan_video
 from .core.world_render import SceneContent
 from .core_adapters import _gaussian_item, get_mesh_batch_item
 from .node_runtime import NodeRuntime
@@ -28,8 +27,7 @@ OPENED_VIDEOS = (StreamedVideo, MaterializedVideo, RenderedVideo)
 def _source_key(source) -> tuple:
     """A video source: a file by its path, modification time, and size, a file in memory by the object."""
     if isinstance(source, str):
-        stat = os.stat(source)
-        return ("file", source, stat.st_mtime_ns, stat.st_size)
+        return ("file", *file_key(source))
     return NodeRuntime.object_identity(source)
 
 
@@ -88,7 +86,7 @@ def batch_index(clip_frame: float, count: int, fps: float, stored_fps: float) ->
     of the state, at `stored_fps`."""
     if count == 1:
         return 0
-    index = math.floor(clip_frame * fps / stored_fps + 0.5)
+    index = round_frame(clip_frame * fps / stored_fps)
     return index if 0 <= index < count else None
 
 
@@ -126,7 +124,7 @@ class PortMedia:
         self.frame_rate, self.times, self.time_base, self.first_frame = video.frame_rate, video.times, video.time_base, video.first_frame
         self.streamed = isinstance(video, StreamedVideo)
         # Half the step its PTS are rounded to, in Timeline frames.
-        self._tolerance = float(video.time_base) / 2 * stored_fps
+        self._tolerance = pts_tolerance_frames(video.time_base, stored_fps)
         # Where each frame starts and where the last one ends, in Timeline frames from the first frame.
         seconds = video.times.seconds() if isinstance(video.times, PtsTimes) else [float(time) for time in video.times]
         self._starts = [second * stored_fps for second in [*seconds, float(video.times[-1] + 1 / video.frame_rate)]]

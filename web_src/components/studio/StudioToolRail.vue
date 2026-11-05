@@ -1,6 +1,7 @@
 <script setup>
 import { computed } from "vue";
 import { ICON } from "../../icons.js";
+import { CAMERA_TAB_TIP } from "../../studio/camera_ui.js";
 import StudioAddIcon from "./StudioAddIcon.vue";
 import StudioFloatGroup from "./StudioFloatGroup.vue";
 import StudioIconButton from "./StudioIconButton.vue";
@@ -27,12 +28,11 @@ const props = defineProps({
 });
 const emit = defineEmits(["press"]);
 
-const CAMERA_TAB_TIP = "Not available in the Camera view";
 const groups = computed(() => [
   [
     { key: "cursor", icon: ICON.cursor_tool, label: "Cursor", active: props.tool === "cursor" },
-    { key: "paint", icon: ICON.palette_tool, label: "Paint", active: props.tool === "paint", disabled: !props.canPaint, tip: props.canPaint ? "Paint" : "Paint · Read-only" },
-    { key: "mask", icon: ICON.circle_dashed_tool, label: "Mask", active: props.tool === "mask", disabled: !props.canPaint, tip: props.canPaint ? "Mask" : "Mask · Read-only" },
+    { key: "paint", icon: ICON.palette_tool, label: "Paint", active: props.tool === "paint", disabled: !props.canPaint, tip: props.canPaint ? "Paint on Sky" : "Paint on Sky · Read-only" },
+    { key: "mask", icon: ICON.circle_dashed_tool, label: "Mask", active: props.tool === "mask", disabled: !props.canPaint, tip: props.canPaint ? "Mask on Sky" : "Mask on Sky · Read-only" },
   ],
   [
     { key: "add", icon: "", drawn: "add", label: "Add", disabled: !props.canAdd, tip: "Add an image or a 3D file" },

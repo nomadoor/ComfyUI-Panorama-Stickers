@@ -18,6 +18,21 @@ _BYTE_FORMATS = ("yuvj420p", "yuvj422p", "yuvj444p", "rgb24", "rgba", "pal8")
 _log = logging.getLogger(__name__)
 
 
+def pts_half_step(time_base) -> Fraction:
+    """Half the step `time_base` that PTS are rounded to, in seconds, exactly: a time within it of a PTS is that frame."""
+    return Fraction(time_base) / 2
+
+
+def pts_tolerance(time_base) -> float:
+    """`pts_half_step` of `time_base` as a float."""
+    return float(pts_half_step(time_base))
+
+
+def pts_tolerance_frames(time_base, stored_fps: float) -> float:
+    """`pts_tolerance` of `time_base` in Timeline frames of a state recorded at `stored_fps`."""
+    return pts_tolerance(time_base) * stored_fps
+
+
 def _open(source):
     # Each container reads a BytesIO through a reader of its own, so containers open on one source at once do not
     # move each other's position. A BytesIO made from bytes shares them; one filled by writes is copied once.
@@ -262,6 +277,14 @@ def _alignment_graph(frame, time_base):
     return graph, src, sink
 
 
+def cut_audio(audio: dict | None, seconds: float) -> dict | None:
+    """The AUDIO `audio` cut to its first `seconds`, or None without one."""
+    if audio is None:
+        return None
+    sample_rate = int(audio["sample_rate"])
+    return {"waveform": audio["waveform"][..., :int(seconds * sample_rate)], "sample_rate": sample_rate}
+
+
 class MaterializedVideo:
     """A VIDEO read whole through `get_components()`, with the same interface as `StreamedVideo`. Its times are
     exact, so `time_base` is 0."""
@@ -280,7 +303,4 @@ class MaterializedVideo:
         return self._images[index]
 
     def audio(self, seconds: float) -> dict | None:
-        if self._audio is None:
-            return None
-        sample_rate = int(self._audio["sample_rate"])
-        return {"waveform": self._audio["waveform"][..., :int(seconds * sample_rate)], "sample_rate": sample_rate}
+        return cut_audio(self._audio, seconds)

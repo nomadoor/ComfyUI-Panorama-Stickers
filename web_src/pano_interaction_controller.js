@@ -1,13 +1,10 @@
+import { VIEW_HFOV_MAX_DEG, VIEW_HFOV_MIN_DEG, VIEW_PITCH_LIMIT_DEG, fovZoomStep, vFovFromHfov } from "./pano_camera_math.js";
 import { clamp, wrapYaw } from "./pano_math.js";
 import { PANO_FOV_WHEEL_STEP_DEG, readWheelDirection } from "./pano_wheel.js";
 
-const DEG2RAD = Math.PI / 180;
-
-export const PANO_DRAG_SENSITIVITY = 0.12;
-export const PANO_WHEEL_STEP = PANO_FOV_WHEEL_STEP_DEG;
-export const PANO_FOV_MIN = 35;
-export const PANO_FOV_MAX = 140;
-export const PANO_INITIAL_FOV = 100;
+const PANO_DRAG_SENSITIVITY = 0.12;
+const PANO_WHEEL_STEP = PANO_FOV_WHEEL_STEP_DEG;
+const PANO_INITIAL_FOV = 100;
 export const PANO_INERTIA_DAMPING = 5.5;
 export const PANO_INERTIA_START_SPEED = 20;
 export const PANO_INERTIA_STOP_SPEED = 0.8;
@@ -15,8 +12,7 @@ export const PANO_INERTIA_STOP_SPEED = 0.8;
 function deriveVerticalFovDeg(horizontalFovDeg, width, height) {
   const w = Math.max(1, Number(width || 1));
   const h = Math.max(1, Number(height || 1));
-  const hf = clamp(Number(horizontalFovDeg || PANO_INITIAL_FOV), 1, 179) * DEG2RAD;
-  return (2 * Math.atan(Math.tan(hf * 0.5) * (h / w))) / DEG2RAD;
+  return vFovFromHfov(clamp(Number(horizontalFovDeg || PANO_INITIAL_FOV), 1, 179), h / w);
 }
 
 export function createPanoInteractionController(options = {}) {
@@ -96,7 +92,7 @@ export function createPanoInteractionController(options = {}) {
     }
 
     view.yaw = wrapYaw(Number(view.yaw || 0) + dYaw);
-    view.pitch = clamp(Number(view.pitch || 0) + dPitch, -89.9, 89.9);
+    view.pitch = clamp(Number(view.pitch || 0) + dPitch, -VIEW_PITCH_LIMIT_DEG, VIEW_PITCH_LIMIT_DEG);
     setView(view);
 
     // Record position for windowed velocity estimation; keep last 100ms only.
@@ -150,7 +146,7 @@ export function createPanoInteractionController(options = {}) {
     state.inertia.lastTs = now;
     const view = { ...getView() };
     view.yaw = wrapYaw(Number(view.yaw || 0) + state.inertia.vx * dt);
-    view.pitch = clamp(Number(view.pitch || 0) + state.inertia.vy * dt, -89.9, 89.9);
+    view.pitch = clamp(Number(view.pitch || 0) + state.inertia.vy * dt, -VIEW_PITCH_LIMIT_DEG, VIEW_PITCH_LIMIT_DEG);
     const damping = Math.exp(-PANO_INERTIA_DAMPING * dt);
     state.inertia.vx *= damping;
     state.inertia.vy *= damping;
@@ -183,15 +179,29 @@ export function createPanoInteractionController(options = {}) {
     if (!sign) return false;
     const view = { ...getView() };
     const before = Number(view.fov || PANO_INITIAL_FOV);
-    view.fov = clamp(before + sign * PANO_WHEEL_STEP, PANO_FOV_MIN, PANO_FOV_MAX);
+    view.fov = clamp(before + sign * PANO_WHEEL_STEP, VIEW_HFOV_MIN_DEG, VIEW_HFOV_MAX_DEG);
     setView(view);
     onInteraction();
     log("wheel", { deltaSign: sign, fovBefore: before, fovAfter: view.fov });
     return true;
   }
 
-  function applyWheelEvent(ev, fallbackDelta = 0) {
-    return applyWheel(readWheelDirection(ev, fallbackDelta));
+  // One zoom step of the new Preview's node (docs/preview-node.md "ノード上"; ADR 0061): the FOV smaller by one FOV step
+  // (pano_camera_math.js fovZoomStep, within its range) rolled away (`step` > 0), larger back.
+  function applyZoomStep(step) {
+    const sign = Math.sign(Number(step || 0));
+    if (!sign) return false;
+    const view = { ...getView() };
+    const before = Number(view.fov || PANO_INITIAL_FOV);
+    view.fov = fovZoomStep(before, sign);
+    if (view.fov === before) return false;
+    setView(view);
+    onInteraction();
+    return true;
+  }
+
+  function applyWheelEvent(ev) {
+    return applyWheel(readWheelDirection(ev));
   }
 
   function resetView() {
@@ -211,6 +221,7 @@ export function createPanoInteractionController(options = {}) {
     stopMotion,
     applyWheel,
     applyWheelEvent,
+    applyZoomStep,
     resetView,
   };
 }

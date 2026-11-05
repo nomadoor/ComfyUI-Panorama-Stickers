@@ -1,7 +1,7 @@
 // The layers of an upstream Scene read from a node's result (`pano_upstream_layers`, docs/studio-node.md "上流の
 // Scene") and what the views draw of them: their working copies (pano_upstream.js upstreamWorkingLayers, with the
 // override records given), their Stickers' images, port media and paint, and each layer's view at a frame
-// (upstreamLayerView). Studio's editor (editor/upstream.js, which also keeps and writes the overrides) and the
+// (upstreamLayerView). Studio's editor (studio/upstream.js, which also keeps and writes the overrides) and the
 // Preview's viewer (pano_scene_viewer.js, without overrides) use it; it holds no editor state.
 //
 // list(): the `pano_upstream_layers` value of the current result, or null. fps(): the Timeline fps the working copies
