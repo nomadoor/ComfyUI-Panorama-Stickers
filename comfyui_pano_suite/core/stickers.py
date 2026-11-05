@@ -344,31 +344,3 @@ def render_stickers_to_rgba_erp(
         )
 
     return np.clip(canvas, 0.0, 1.0).astype(np.float32)
-
-
-def compose_single_sticker_to_canvas_erp(
-    canvas: np.ndarray | None,
-    sticker: dict,
-    assets: dict,
-    *,
-    base_dir: Path | None = None,
-    quality: str = "export",
-    coverage: int = 360,
-) -> np.ndarray | None:
-    if canvas is None or not isinstance(sticker, dict):
-        return canvas
-    if sticker.get("visible", True) is False:
-        return canvas
-    img = _normalize_runtime_sticker_image(sticker, assets if isinstance(assets, dict) else {}, base_dir=base_dir)
-    if img is None:
-        return canvas
-    _compose_sticker_patch(
-        canvas,
-        img,
-        sticker,
-        int(canvas.shape[1]),
-        int(canvas.shape[0]),
-        quality=quality,
-        coverage=normalize_coverage(coverage),
-    )
-    return canvas
