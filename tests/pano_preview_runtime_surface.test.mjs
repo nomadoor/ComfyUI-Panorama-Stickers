@@ -645,3 +645,15 @@ test("a legacy node surface reads a v1 state's shots and Stickers without their 
   assert.deepEqual(state.shots, expected.shots);
   assert.deepEqual(state.stickers, expected.stickers);
 });
+
+// The surface takes away only its own DOM widget: the names older ComfyUI frontends used are not looked for.
+test("teardown removes the surface's DOM widget and leaves a widget of an old frontend's name", () => {
+  const node = createFakeNode({ type: LEGACY, widgets: { state_json: "" } });
+  attachPanoramaPreview(node, {});
+  const own = nodeSurface(node).dom.widget;
+  const old = { name: "pano_preview", type: "pano_preview" };
+  node.widgets.push(old);
+  nodeSurface(node).controller.teardown();
+  assert.equal(node.widgets.includes(own), false);
+  assert.equal(node.widgets.includes(old), true);
+});

@@ -115,16 +115,9 @@ function teardownPreview(node, options = {}) {
   }
   try {
     if (Array.isArray(node.widgets)) {
-      // Ensure we remove the DOM widget even if name/type mapping varies by frontend version.
-      const removable = node.widgets.filter((w) => {
-        if (w === dom?.widget) return true;
-        const name = String(w?.name || "");
-        const type = String(w?.type || "");
-        const animWidgetName = getAnimPreviewWidgetName();
-        if (name === animWidgetName || type === animWidgetName) return true;
-        if (name === "pano_preview" || type === "pano_preview") return true;
-        return name === "preview" && type === "pano_preview";
-      });
+      // The surface's DOM widget: the one it holds, or one of the name it is added under (dom.js).
+      const animWidgetName = getAnimPreviewWidgetName();
+      const removable = node.widgets.filter((w) => w === dom?.widget || String(w?.name || "") === animWidgetName);
       removable.forEach((widget) => removeNodeWidget(node, widget));
     }
   } catch {
