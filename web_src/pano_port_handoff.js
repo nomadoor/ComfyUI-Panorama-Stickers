@@ -18,13 +18,14 @@ const OVERRIDE_ORDER = SKY_STICKER_LANES.map(([name]) => name);
 // The fields a port Sticker keeps when the handoff replaces it by one of the other placement.
 const KEPT_FIELDS = ["id", "source", "clip", "visible", "locked", "crop", "opacity", "handoff_overrides"];
 
-// The handoff of a node's result (`pano_sticker_handoff`, or its first entry): { placement, lanes, fps }, or null.
-// `fps` is the Timeline fps its Keyframes are at (the run's state_json); a result without it is taken to be at
-// the fps it is shown at. A result of a run before ADR 0059 that handed a world Sticker is not applied (null).
+// The handoff of a node's result (`pano_sticker_handoff` as the editor reads it, or its first entry as the node
+// surface reads it): { placement, lanes, fps }, or null. `fps` is the Timeline fps its Keyframes are at (the run's
+// state_json). A result without it, or of a run before ADR 0059 that handed a world Sticker, is not applied (ADR 0063).
 export function portHandoff(value) {
   const entry = Array.isArray(value) ? value[0] : value;
   if (!entry || typeof entry !== "object" || entry.placement !== "sky" || !entry.lanes || typeof entry.lanes !== "object") return null;
-  return { placement: entry.placement, lanes: entry.lanes, fps: timelineFps(entry.fps) };
+  const fps = timelineFps(entry.fps);
+  return fps === null ? null : { placement: entry.placement, lanes: entry.lanes, fps };
 }
 
 // Whether the LiteGraph node's input `name` has a link.
@@ -55,7 +56,7 @@ function sameValue(a, b) {
 // the Sticker's media, from its origin (start - in); the run put that origin where rebaseSceneState puts it at
 // the handoff's fps, so they round to `fps` as the whole state does (rebaseUpstreamRecord, docs/scene-state-v2.md).
 function handoffLanes(handoff, fps, clip) {
-  const from = handoff.fps ?? fps;
+  const from = handoff.fps;
   if (from === fps) return handoff.lanes;
   const origin = clipOrigin(clip);
   const runOrigin = Math.floor(origin * from / fps + 0.5);

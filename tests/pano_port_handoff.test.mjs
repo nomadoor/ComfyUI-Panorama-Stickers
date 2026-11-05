@@ -123,6 +123,14 @@ test("a world handoff of a run before ADR 0059 is not applied", () => {
   assert.equal(showPortHandoff(state, portHandoff(OLD_WORLD_HANDOFF)), state);
 });
 
+test("a handoff without its fps is not applied (ADR 0063)", () => {
+  const { fps, ...withoutFps } = SKY_HANDOFF;
+  assert.equal(fps, 24);
+  assert.equal(portHandoff([withoutFps]), null);
+  assert.equal(portHandoff([{ ...SKY_HANDOFF, fps: "24" }]), null);
+  assert.deepEqual(portHandoff([SKY_HANDOFF]).fps, 24);
+});
+
 test("a handoff at another fps is rebased to the editor's, as the whole state is", () => {
   const state = working(stateText([SKY_PORT]), 48);
 

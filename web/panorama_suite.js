@@ -10772,7 +10772,9 @@ async function tF(e, { fetchApi: t } = {}) {
 const Sd = { sky: ["direction", "roll", "size", "curve"] }, Op = (e) => Sd[e] ?? [], nF = Ar.map(([e]) => e), rF = ["id", "source", "clip", "visible", "locked", "crop", "opacity", "handoff_overrides"];
 function VS(e) {
   const t = Array.isArray(e) ? e[0] : e;
-  return !t || typeof t != "object" || t.placement !== "sky" || !t.lanes || typeof t.lanes != "object" ? null : { placement: t.placement, lanes: t.lanes, fps: co(t.fps) };
+  if (!t || typeof t != "object" || t.placement !== "sky" || !t.lanes || typeof t.lanes != "object") return null;
+  const n = co(t.fps);
+  return n === null ? null : { placement: t.placement, lanes: t.lanes, fps: n };
 }
 function wc(e, t) {
   const n = (Array.isArray(e == null ? void 0 : e.inputs) ? e.inputs : []).findIndex((r) => (r == null ? void 0 : r.name) === t);
@@ -10791,7 +10793,7 @@ function HS(e, t) {
   return JSON.stringify(e) === JSON.stringify(t);
 }
 function oF(e, t, n) {
-  const r = e.fps ?? t;
+  const r = e.fps;
   if (r === t) return e.lanes;
   const i = Wr(n), o = Math.floor(i * r / t + 0.5);
   return Object.fromEntries(Object.entries(e.lanes).map(([a, s]) => [a, {
