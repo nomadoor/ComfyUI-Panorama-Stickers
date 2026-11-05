@@ -191,3 +191,28 @@ test("a field's drag is cancelled by its pointer's pointercancel, the window's b
   assert.equal(cancels, 3);
   locked();
 });
+
+// docs/editor-interaction.md: Escape during a drag gives it up and is kept from the editor (ui_drag.js watchDragCancel).
+test("Escape cancels a field's drag and is kept from the editor; other keys pass", async () => {
+  const { watchDragCancel } = await import("../web_src/studio/ui_drag.js");
+  const listeners = [];
+  const win = {
+    addEventListener: (type, fn, capture) => listeners.push({ type, fn, capture }),
+    removeEventListener: (type, fn) => listeners.splice(listeners.findIndex((item) => item.type === type && item.fn === fn), 1),
+  };
+  let cancels = 0;
+  const stop = watchDragCancel({ element: null, pointerId: 1, cancel: () => (cancels += 1), win, lostCapture: false });
+  const keydown = listeners.find((item) => item.type === "keydown");
+  assert.equal(keydown.capture, true);
+  const press = (key) => {
+    const event = { key, prevented: false, stopped: false, preventDefault() { this.prevented = true; }, stopPropagation() { this.stopped = true; } };
+    keydown.fn(event);
+    return event;
+  };
+  const other = press("a");
+  assert.deepEqual([cancels, other.prevented, other.stopped], [0, false, false]);
+  const escape = press("Escape");
+  assert.deepEqual([cancels, escape.prevented, escape.stopped], [1, true, true]);
+  stop();
+  assert.equal(listeners.length, 0);
+});

@@ -64,7 +64,6 @@ function onPointerDown(event) {
     drag = null;
     return;
   }
-  window.addEventListener("keydown", onDragKeydown, true);
   drag.stopCancel = watchDragCancel({ element: root.value, pointerId: event.pointerId, cancel: cancelDrag });
   moveTo(event.clientX);
 }
@@ -83,12 +82,6 @@ function onPointerUp(event) {
   else emit("cancel");
 }
 
-function onDragKeydown(event) {
-  if (!drag || event.key !== "Escape") return;
-  event.preventDefault();
-  event.stopPropagation();
-  cancelDrag();
-}
 
 // The value goes back to where the drag started, and the drag ends with cancel.
 function cancelDrag() {
@@ -107,7 +100,6 @@ function endDrag() {
   } catch {
     // The capture was already gone.
   }
-  window.removeEventListener("keydown", onDragKeydown, true);
   drag = null;
   live.value = null;
 }

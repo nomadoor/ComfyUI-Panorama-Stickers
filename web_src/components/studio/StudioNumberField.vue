@@ -74,7 +74,6 @@ function startDrag(event) {
   }
   window.addEventListener("pointermove", onPointerMove, true);
   window.addEventListener("pointerup", onPointerUp, true);
-  window.addEventListener("keydown", onDragKeydown, true);
   document.addEventListener("pointerlockchange", onLockChange);
   drag.stopCancel = watchDragCancel({ element: root.value, pointerId: event.pointerId, cancel: cancelDrag, lostCapture: false });
 }
@@ -127,13 +126,6 @@ function onPointerUp(event) {
   else emit("cancel");
 }
 
-function onDragKeydown(event) {
-  if (!drag || event.key !== "Escape") return;
-  // Escape here undoes the drag only; it must not reach the editor (which would close).
-  event.preventDefault();
-  event.stopPropagation();
-  cancelDrag();
-}
 
 function onLockChange() {
   if (!drag) return;
@@ -191,7 +183,6 @@ function endDrag() {
   }
   window.removeEventListener("pointermove", onPointerMove, true);
   window.removeEventListener("pointerup", onPointerUp, true);
-  window.removeEventListener("keydown", onDragKeydown, true);
   document.removeEventListener("pointerlockchange", onLockChange);
   drag = null;
   dragging.value = false;
