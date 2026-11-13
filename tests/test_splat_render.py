@@ -406,3 +406,79 @@ def test_pinhole_and_erp_splats_draw_with_the_analytic_windows(monkeypatch):
     for (rgba, depth), (expected_rgba, expected_depth) in zip(drawn, reference):
         assert float(rgba[..., 3].max()) > 0.5
         assert torch.equal(rgba, expected_rgba) and torch.equal(depth, expected_depth)
+
+
+def _mixed_windows(count, seed=11):
+    """Gaussians ahead of the Camera whose projected sizes span many window sizes."""
+    generator = torch.Generator().manual_seed(seed)
+    positions = torch.randn((count, 3), generator=generator) * torch.tensor([1.0, 0.7, 0.3]) + torch.tensor([0.0, 0.0, 4.0])
+    scales = torch.exp(torch.rand((count, 3), generator=generator) * 4.0 - 6.0)
+    return _splat(positions, scales, torch.rand((count,), generator=generator) * 0.5 + 0.5, torch.rand((count, 3), generator=generator), seed=seed)
+
+
+def test_window_sizes_with_few_pairs_share_one_pass_per_slab(monkeypatch):
+    # A pass per window size in each slab made thousands of small passes a frame, which took several times longer
+    # than the pairs themselves; the window sizes under RUN_PAIRS pairs in a slab share one pass of its five sums.
+    splat = _mixed_windows(3000)
+    view = CameraView(np.zeros(3), world_rotation(0.0, 0.0, 0.0), Projection.perspective(128, 96, 70.0))
+    sums = []
+    index_add = torch.Tensor.index_add_
+
+    def counted(self, *args, **kwargs):
+        # The sums into the slab's per-pixel buffers.
+        if self.shape[0] == 128 * 96:
+            sums.append(self)
+        return index_add(self, *args, **kwargs)
+
+    sizes = []
+    original = splat_render._levels
+    monkeypatch.setattr(splat_render, "_levels", lambda half: sizes.append(original(half)) or sizes[-1])
+    monkeypatch.setattr(splat_render, "RUN_PAIRS", 1 << 40, raising=False)
+    monkeypatch.setattr(torch.Tensor, "index_add_", counted)
+    rgba, _depth = splat_content(splat).render(view, 0, CPU)
+
+    assert float(rgba[..., 3].max()) > 0.5
+    assert min(len(levels) for levels in sizes) >= 3
+    # Three slabs (about 1000 gaussians each), one pass each.
+    assert len(sums) <= 5 * 3
+
+
+@pytest.mark.parametrize("projection", [Projection.perspective(96, 64, 70.0), Projection.erp(96, 48)], ids=["perspective", "erp"])
+def test_pairs_evaluated_together_and_cut_anywhere_draw_as_a_pass_per_window_size(monkeypatch, projection):
+    # Window sizes evaluated together, with a gaussian's window cut between two passes wherever PAIRS falls, add the
+    # same sums as a pass per window size.
+    splat = _mixed_windows(2500, seed=12)
+    view = CameraView(np.array([0.0, 0.1, 0.2]), world_rotation(5.0, -3.0, 0.0), projection)
+    monkeypatch.setattr(splat_render, "RUN_PAIRS", 0)
+    rgba, depth = splat_content(splat).render(view, 0, CPU)
+    monkeypatch.setattr(splat_render, "RUN_PAIRS", 1 << 40)
+    monkeypatch.setattr(splat_render, "PAIRS", 997)
+    shared_rgba, shared_depth = splat_content(splat).render(view, 0, CPU)
+
+    assert float(rgba[..., 3].max()) > 0.5
+    assert torch.allclose(shared_rgba, rgba, atol=1e-5)
+    assert torch.equal(torch.isfinite(shared_depth), torch.isfinite(depth))
+    assert torch.allclose(shared_depth[torch.isfinite(depth)], depth[torch.isfinite(depth)], atol=1e-4)
+
+
+def test_what_lies_behind_an_empty_stretch_of_depth_is_drawn():
+    # Two balls with a long stretch of depth between them whose gaussians are all off the image: those slabs add
+    # nothing, yet the far ball is not hidden by anything and is drawn.
+    generator = torch.Generator().manual_seed(21)
+
+    def ball(count, center, radius):
+        direction = torch.nn.functional.normalize(torch.randn((count, 3), generator=generator), dim=-1)
+        return direction * radius * torch.rand((count, 1), generator=generator) + torch.tensor(center)
+
+    near, far = ball(2000, (-0.6, 0.0, 2.0), 0.3), ball(2000, (1.5, 0.0, 8.0), 0.8)
+    aside = ball(20000, (40.0, 0.0, 4.5), 1.5)
+    positions = torch.cat([near, aside, far])
+    count = positions.shape[0]
+    splat = _splat(positions, torch.full((count, 3), 0.03), torch.full((count,), 0.9), torch.full((count, 3), 0.8), seed=21)
+    view = CameraView(np.zeros(3), world_rotation(0.0, 0.0, 0.0), Projection.perspective(64, 48, 60.0))
+
+    rgba, _depth = splat_content(splat).render(view, 0, CPU)
+
+    # The SPLAT's +Z is ahead and its +X is to the right of the Camera at rotation 0 (`_GLTF_TO_SPLAT`).
+    assert float(rgba[:, :28, 3].max()) > 0.9
+    assert float(rgba[:, 36:, 3].max()) > 0.9
