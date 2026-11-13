@@ -460,3 +460,25 @@ def test_pairs_evaluated_together_and_cut_anywhere_draw_as_a_pass_per_window_siz
     assert torch.equal(torch.isfinite(shared_depth), torch.isfinite(depth))
     assert torch.allclose(shared_depth[torch.isfinite(depth)], depth[torch.isfinite(depth)], atol=1e-4)
 
+
+def test_what_lies_behind_an_empty_stretch_of_depth_is_drawn():
+    # Two balls with a long stretch of depth between them whose gaussians are all off the image: those slabs add
+    # nothing, yet the far ball is not hidden by anything and is drawn.
+    generator = torch.Generator().manual_seed(21)
+
+    def ball(count, center, radius):
+        direction = torch.nn.functional.normalize(torch.randn((count, 3), generator=generator), dim=-1)
+        return direction * radius * torch.rand((count, 1), generator=generator) + torch.tensor(center)
+
+    near, far = ball(2000, (-0.6, 0.0, 2.0), 0.3), ball(2000, (1.5, 0.0, 8.0), 0.8)
+    aside = ball(20000, (40.0, 0.0, 4.5), 1.5)
+    positions = torch.cat([near, aside, far])
+    count = positions.shape[0]
+    splat = _splat(positions, torch.full((count, 3), 0.03), torch.full((count,), 0.9), torch.full((count, 3), 0.8), seed=21)
+    view = CameraView(np.zeros(3), world_rotation(0.0, 0.0, 0.0), Projection.perspective(64, 48, 60.0))
+
+    rgba, _depth = splat_content(splat).render(view, 0, CPU)
+
+    # The SPLAT's +Z is ahead and its +X is to the right of the Camera at rotation 0 (`_GLTF_TO_SPLAT`).
+    assert float(rgba[:, :28, 3].max()) > 0.9
+    assert float(rgba[:, 36:, 3].max()) > 0.9

@@ -326,7 +326,6 @@ def render_gaussians(xyz, rgb, opacity, scale, rot, view: CameraView, rays: torc
     slab_rgb = torch.zeros((flat, 3), device=device)
     weight = torch.zeros((flat,), device=device)
     slab_depth = torch.zeros((flat,), device=device)
-    stale = 0
 
     def add(index, alpha, along, colors):
         index = index.reshape(-1)
@@ -366,13 +365,10 @@ def render_gaussians(xyz, rgb, opacity, scale, rot, view: CameraView, rays: torc
         crossed = (trans >= 0.5) & (trans * (1 - slab_alpha) < 0.5)
         depth = torch.where(crossed, slab_depth, depth)
         trans.mul_(1 - slab_alpha)
-        if slab % 8 == 7:
-            if float(front.max()) < 1e-3:
-                stale += 1
-                if stale >= 2:
-                    break
-            else:
-                stale = 0
+        # Once every pixel is opaque, what lies behind adds under 1e-3 anywhere. (A slab that adds little does not
+        # say that: its gaussians may all be off the image, with more seen behind them.)
+        if slab % 8 == 7 and float(trans.max()) < 1e-3:
+            break
 
     coverage = 1 - trans
     color = _linear_to_srgb(color / coverage.clamp_min(1e-6)[:, None]).clamp(0, 1)
