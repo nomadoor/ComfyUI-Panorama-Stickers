@@ -22,6 +22,11 @@ from .core_adapters import _C0, File3DToSplat, _detect_splat_format, _gaussian_i
 SPLAT_FILE_FORMATS = ("ply", "splat", "spz", "ksplat")
 # RenderSplat's default: biases each pixel's color toward its dominant gaussian.
 SHARPEN = 2.0
+# The (gaussian, pixel) pairs evaluated at once (about 4M).
+PAIRS = 1 << 22
+# The pairs a window size needs in a slab to get a pass of its own. Under it, the few dozen kernel launches of a pass
+# cost more than reading each pair's gaussian in a shared pass; measured in docs/legacy-baselines.md ("SPLAT").
+RUN_PAIRS = 1 << 18
 # A SPLAT is in the 3DGS frame (Y down, Z forward); its glTF frame is a half turn about X, as the core's Load3D
 # and RenderSplat place it.
 _GLTF_TO_SPLAT = np.diag([1.0, -1.0, -1.0])
@@ -240,7 +245,10 @@ def render_gaussians(xyz, rgb, opacity, scale, rot, view: CameraView, rays: torc
     level_x = torch.bucketize(half_x, torch.tensor(levels_x, device=device, dtype=torch.float32)).clamp_(max=len(levels_x) - 1)
     level_y = torch.bucketize(half_y, torch.tensor(levels_y, device=device, dtype=torch.float32)).clamp_(max=len(levels_y) - 1)
 
-    # Group by depth slab, then by window size, as the core does; within a slab the sums are order free.
+    # Group by depth slab, then by window size, as the core does; within a slab the sums are order free. A window
+    # size with fewer than RUN_PAIRS (gaussian, pixel) pairs in its slab does not get a pass of its own: a pass
+    # launches a few dozen small kernels, and a frame can have thousands of such groups. Those gaussians are
+    # evaluated together, as one list of pairs per slab (window 0 of the slab).
     count = depth_key.shape[0]
     slabs = int(min(256, max(1, count // 1000)))
     rank = torch.empty(count, dtype=torch.long, device=device)
@@ -248,9 +256,19 @@ def render_gaussians(xyz, rgb, opacity, scale, rot, view: CameraView, rays: torc
     bounds = torch.linspace(0, count, slabs + 1, device=device).round().long()
     slab_of = (torch.searchsorted(bounds, rank, right=True) - 1).clamp_(0, slabs - 1)
     windows = len(levels_x) * len(levels_y)
-    key = slab_of * windows + level_x * len(levels_y) + level_y
+    window = level_x * len(levels_y) + level_y
+    reach_x = torch.tensor(levels_x, device=device)[level_x]
+    reach_y = torch.tensor(levels_y, device=device)[level_y]
+    area = (2 * reach_x + 1) * (2 * reach_y + 1)
+    group = slab_of * windows + window
+    own = torch.zeros(slabs * windows, dtype=torch.long, device=device).index_add_(0, group, area)[group] >= RUN_PAIRS
+    key = slab_of * (windows + 1) + torch.where(own, window + 1, 0)
     order = torch.argsort(key)
-    key = key[order]
+    key, reach_x, reach_y = key[order], reach_x[order], reach_y[order]
+    span = 2 * reach_x + 1
+    # The pairs of gaussian i evaluated together are [pair_end[i] - shared[i], pair_end[i]).
+    shared = torch.where(own[order], 0, area[order])
+    pair_end = shared.cumsum(0)
     s00, s11, s22 = si[:, 0, 0], si[:, 1, 1], si[:, 2, 2]
     params = torch.stack([
         u.floor(), v.floor(), s00, s11, s22, si[:, 0, 1] * 2, si[:, 0, 2] * 2, si[:, 1, 2] * 2, opacity, *simu.unbind(-1), musimu,
@@ -258,14 +276,21 @@ def render_gaussians(xyz, rgb, opacity, scale, rot, view: CameraView, rays: torc
     rgb = rgb[order]
     starts = torch.cat([torch.zeros(1, dtype=torch.long, device=device), (key[1:] != key[:-1]).nonzero().flatten() + 1])
     run_keys = key[starts]
-    run_lo = starts.tolist() + [count]
+    ends = torch.cat([starts, torch.tensor([count], device=device)])
+    run_lo, pair_lo = torch.stack([ends, torch.cat([pair_end.new_zeros(1), pair_end])[ends]]).tolist()
     slab_runs = [[] for _ in range(slabs)]
-    for run, (slab, window) in enumerate(zip((run_keys // windows).tolist(), (run_keys % windows).tolist())):
-        slab_runs[slab].append((run_lo[run], run_lo[run + 1], levels_x[window // len(levels_y)], levels_y[window % len(levels_y)]))
+    for run, (slab, window) in enumerate(zip((run_keys // (windows + 1)).tolist(), (run_keys % (windows + 1)).tolist())):
+        if window == 0:
+            slab_runs[slab].append((pair_lo[run], pair_lo[run + 1], None, None))
+        else:
+            window -= 1
+            slab_runs[slab].append((run_lo[run], run_lo[run + 1], levels_x[window // len(levels_y)], levels_y[window % len(levels_y)]))
     grids = {}
 
-    def splat(lo, hi, ox, oy):
-        cx, cy, a00, a11, a22, b01, b02, b12, opa, su0, su1, su2, mus = params[:, lo:hi, None].unbind(0)
+    def splat(values, ox, oy):
+        """The pixel index, alpha, and distance to the density peak of gaussians `values` (rows of `params`) at
+        offsets (ox, oy) from their centers; the shapes broadcast."""
+        cx, cy, a00, a11, a22, b01, b02, b12, opa, su0, su1, su2, mus = values.unbind(0)
         px, py = cx + ox, cy + oy
         valid = (py >= 0) & (py < height)
         if wrap:
@@ -282,6 +307,16 @@ def render_gaussians(xyz, rgb, opacity, scale, rot, view: CameraView, rays: torc
         # The rays are unit length, so this is the distance to the density peak along the ray.
         return index, alpha, dsimu / dsid
 
+    def shared_pairs(first, last):
+        """`splat` of the pairs first..last of the gaussians evaluated together, and the gaussian of each pair."""
+        pair = torch.arange(first, last, device=device)
+        gaussian = torch.searchsorted(pair_end, pair, right=True)
+        local = pair - pair_end[gaussian] + shared[gaussian]
+        across = span[gaussian]
+        ox = (local % across - reach_x[gaussian]).float()
+        oy = (local // across - reach_y[gaussian]).float()
+        return gaussian, *splat(params[:, gaussian], ox, oy)
+
     color = torch.zeros((flat, 3), device=device)
     trans = torch.ones((flat,), device=device)
     mean_depth = torch.zeros((flat,), device=device)
@@ -291,30 +326,37 @@ def render_gaussians(xyz, rgb, opacity, scale, rot, view: CameraView, rays: torc
     slab_rgb = torch.zeros((flat, 3), device=device)
     weight = torch.zeros((flat,), device=device)
     slab_depth = torch.zeros((flat,), device=device)
-    stale = 0
+
+    def add(index, alpha, along, colors):
+        index = index.reshape(-1)
+        alpha_sum.index_add_(0, index, alpha.reshape(-1))
+        tau.index_add_(0, index, (-torch.log1p(-alpha)).reshape(-1))
+        sharpened = alpha.pow(SHARPEN)
+        slab_rgb.index_add_(0, index, (sharpened[..., None] * colors).reshape(-1, 3))
+        weight.index_add_(0, index, sharpened.reshape(-1))
+        slab_depth.index_add_(0, index, (alpha * along).reshape(-1))
+
     for slab in range(slabs):
         if not slab_runs[slab]:
             continue
         for buffer in (alpha_sum, tau, slab_rgb, weight, slab_depth):
             buffer.zero_()
-        for first, last, reach_x, reach_y in slab_runs[slab]:
-            if (reach_x, reach_y) not in grids:
-                gy, gx = torch.meshgrid(torch.arange(-reach_y, reach_y + 1, device=device, dtype=torch.float32),
-                                        torch.arange(-reach_x, reach_x + 1, device=device, dtype=torch.float32), indexing="ij")
-                grids[reach_x, reach_y] = gx.reshape(-1), gy.reshape(-1)
-            ox, oy = grids[reach_x, reach_y]
-            # About 10M (gaussian, pixel) pairs at a time, or one gaussian when its window alone is larger.
-            chunk = max(1, 10_000_000 // ox.shape[0])
+        for first, last, box_x, box_y in slab_runs[slab]:
+            if box_x is None:
+                for lo in range(first, last, PAIRS):
+                    gaussian, index, alpha, along = shared_pairs(lo, min(lo + PAIRS, last))
+                    add(index, alpha, along, rgb[gaussian])
+                continue
+            if (box_x, box_y) not in grids:
+                gy, gx = torch.meshgrid(torch.arange(-box_y, box_y + 1, device=device, dtype=torch.float32),
+                                        torch.arange(-box_x, box_x + 1, device=device, dtype=torch.float32), indexing="ij")
+                grids[box_x, box_y] = gx.reshape(-1), gy.reshape(-1)
+            ox, oy = grids[box_x, box_y]
+            # About PAIRS pairs at a time, or one gaussian when its window alone is larger.
+            chunk = max(1, PAIRS // ox.shape[0])
             for lo in range(first, last, chunk):
                 hi = min(lo + chunk, last)
-                index, alpha, along = splat(lo, hi, ox, oy)
-                index, flat_alpha = index.reshape(-1), alpha.reshape(-1)
-                alpha_sum.index_add_(0, index, flat_alpha)
-                tau.index_add_(0, index, (-torch.log1p(-alpha)).reshape(-1))
-                sharpened = alpha.pow(SHARPEN)
-                slab_rgb.index_add_(0, index, (sharpened[:, :, None] * rgb[lo:hi, None, :]).reshape(-1, 3))
-                weight.index_add_(0, index, sharpened.reshape(-1))
-                slab_depth.index_add_(0, index, (alpha * along).reshape(-1))
+                add(*splat(params[:, lo:hi, None], ox, oy), rgb[lo:hi, None, :])
         slab_alpha = 1 - torch.exp(-tau)
         front = trans * slab_alpha
         color.addcmul_(front[:, None], slab_rgb / weight.clamp_min(1e-8)[:, None])
@@ -323,13 +365,10 @@ def render_gaussians(xyz, rgb, opacity, scale, rot, view: CameraView, rays: torc
         crossed = (trans >= 0.5) & (trans * (1 - slab_alpha) < 0.5)
         depth = torch.where(crossed, slab_depth, depth)
         trans.mul_(1 - slab_alpha)
-        if slab % 8 == 7:
-            if float(front.max()) < 1e-3:
-                stale += 1
-                if stale >= 2:
-                    break
-            else:
-                stale = 0
+        # Once every pixel is opaque, what lies behind adds under 1e-3 anywhere. (A slab that adds little does not
+        # say that: its gaussians may all be off the image, with more seen behind them.)
+        if slab % 8 == 7 and float(trans.max()) < 1e-3:
+            break
 
     coverage = 1 - trans
     color = _linear_to_srgb(color / coverage.clamp_min(1e-6)[:, None]).clamp(0, 1)
