@@ -282,7 +282,7 @@ test("an upstream element's overridden row has the mark; its reset returns the u
 test("selecting Keyframes brings the Easing panel at the bottom: presets, a square graph, the bezier text, its reset", async ({ page }, testInfo) => {
   const problems = await open(page);
   await expect(page.locator(".pano-studio-easing")).toHaveCount(0);
-  await scene(page, "select", { ids: ["sticker_1"], keyframes: { owner: "sticker_1", lane: null, frames: [0] } });
+  await scene(page, "select", { ids: ["sticker_1"], keyframes: [{ owner: "sticker_1", lane: null, frames: [0] }] });
   const panel = page.locator(".pano-studio-easing");
   await expect(panel).toBeVisible();
   // Icons only; the names are the tooltips and the accessible names (docs/studio-ui.md "Easing のパネル").
@@ -351,7 +351,7 @@ test("selecting Keyframes brings the Easing panel at the bottom: presets, a squa
 test("the Easing copy button copies the bezier text, shows a check for a moment, and is off when mixed or off", async ({ page, context }) => {
   const problems = await open(page);
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
-  await scene(page, "select", { ids: ["sticker_1"], keyframes: { owner: "sticker_1", lane: null, frames: [0] } });
+  await scene(page, "select", { ids: ["sticker_1"], keyframes: [{ owner: "sticker_1", lane: null, frames: [0] }] });
   const panel = page.locator(".pano-studio-easing");
   const copy = panel.locator('[data-part="easing-copy"]');
   const text = panel.locator(".pano-studio-easing-text");
@@ -377,12 +377,12 @@ test("the Easing copy button copies the bezier text, shows a check for a moment,
     navigator.clipboard.writeText = () => { window.__copied = true; return Promise.resolve(); };
   });
   await scene(page, "keyMixed");
-  await scene(page, "select", { ids: ["sticker_1"], keyframes: { owner: "sticker_1", lane: null, frames: [0, 12] } });
+  await scene(page, "select", { ids: ["sticker_1"], keyframes: [{ owner: "sticker_1", lane: null, frames: [0, 12] }] });
   await expect(text).toHaveAttribute("placeholder", "Mixed");
   await expect(copy).toHaveAttribute("aria-disabled", "true");
   await copy.click({ force: true });
   // The panel off (the last Keyframe alone has no segment).
-  await scene(page, "select", { ids: ["sticker_1"], keyframes: { owner: "sticker_1", lane: null, frames: [24] } });
+  await scene(page, "select", { ids: ["sticker_1"], keyframes: [{ owner: "sticker_1", lane: null, frames: [24] }] });
   await expect(copy).toHaveAttribute("aria-disabled", "true");
   await copy.click({ force: true });
   expect(await page.evaluate(() => window.__copied ?? false)).toBe(false);
@@ -395,7 +395,7 @@ test("the Easing copy button copies the bezier text, shows a check for a moment,
 test("the Easing copy button falls back to the copy command, says when copying failed, and drops its check when it turns off", async ({ page, context }) => {
   const problems = await open(page);
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
-  await scene(page, "select", { ids: ["sticker_1"], keyframes: { owner: "sticker_1", lane: null, frames: [0] } });
+  await scene(page, "select", { ids: ["sticker_1"], keyframes: [{ owner: "sticker_1", lane: null, frames: [0] }] });
   const panel = page.locator(".pano-studio-easing");
   const copy = panel.locator('[data-part="easing-copy"]');
   await expect(copy).not.toHaveAttribute("aria-disabled", "true");
@@ -403,8 +403,8 @@ test("the Easing copy button falls back to the copy command, says when copying f
   // Turned off within the moment: the check goes, and does not come back when it turns on again.
   await copy.click();
   await expect(copy.locator("svg.icon-tabler-check")).toHaveCount(1);
-  await scene(page, "select", { ids: ["sticker_1"], keyframes: { owner: "sticker_1", lane: null, frames: [24] } });
-  await scene(page, "select", { ids: ["sticker_1"], keyframes: { owner: "sticker_1", lane: null, frames: [0] } });
+  await scene(page, "select", { ids: ["sticker_1"], keyframes: [{ owner: "sticker_1", lane: null, frames: [24] }] });
+  await scene(page, "select", { ids: ["sticker_1"], keyframes: [{ owner: "sticker_1", lane: null, frames: [0] }] });
   await expect(copy).not.toHaveAttribute("aria-disabled", "true");
   await expect(copy.locator("svg.icon-tabler-copy")).toHaveCount(1);
   await expect(copy).toHaveAttribute("data-tip", "Copy");
@@ -449,7 +449,7 @@ test("the Easing copy button falls back to the copy command, says when copying f
 for (const trigger of ["pointercancel", "blur", "lostpointercapture"]) {
   test(`an Easing handle's drag is cancelled by ${trigger}: the curve goes back, no Undo step, and the next edit records`, async ({ page }) => {
     const problems = await open(page);
-    await scene(page, "select", { ids: ["sticker_1"], keyframes: { owner: "sticker_1", lane: null, frames: [0] } });
+    await scene(page, "select", { ids: ["sticker_1"], keyframes: [{ owner: "sticker_1", lane: null, frames: [0] }] });
     const panel = page.locator(".pano-studio-easing");
     await expect(panel).toBeVisible();
     await page.evaluate(() => document.addEventListener("pointerdown", (event) => (window.__pointerId = event.pointerId), true));
@@ -477,7 +477,7 @@ for (const trigger of ["pointercancel", "blur", "lostpointercapture"]) {
 test("in a short inspector the graph shrinks, square, to leave EASING_MIN_ABOVE above the panel", async ({ page }) => {
   const problems = await open(page);
   await scene(page, "height", 560);
-  await scene(page, "select", { ids: ["sticker_1"], keyframes: { owner: "sticker_1", lane: null, frames: [0] } });
+  await scene(page, "select", { ids: ["sticker_1"], keyframes: [{ owner: "sticker_1", lane: null, frames: [0] }] });
   await page.waitForTimeout(250);
   const boxes = await page.evaluate(() => {
     const rect = (selector) => document.querySelector(selector).getBoundingClientRect();

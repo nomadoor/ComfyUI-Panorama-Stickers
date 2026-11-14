@@ -267,15 +267,34 @@ test("a cancel changes nothing here: the shell puts back the state from before t
 test("Easing: a preset or a bezier sets every selected segment; the reset goes back to ease-in-out", () => {
   const keyed = (easing) => [{ frame: 0, value: 1, easing }, { frame: 10, value: 2, easing }, { frame: 20, value: 3, easing }];
   const state = load({ stickers: [world("sticker_1", { scale: { value: 1, keyframes: keyed([0, 0, 1, 1]) }, opacity: { value: 1, keyframes: keyed([0, 0, 1, 1]) } })] });
-  const keyframes = { owner: "sticker_1", lane: null, frames: [0, 10] };
+  const keyframes = [{ owner: "sticker_1", lane: null, frames: [0, 10] }];
   applyInspectorEdit(state, { type: "easing", keyframes, easing: "hold", phase: "commit" }, { playhead: 0 });
   const easings = (lane) => state.stickers[0][lane].keyframes.map((key) => key.easing);
   assert.deepEqual(easings("scale").slice(0, 2), ["hold", "hold"]);
   assert.deepEqual(easings("opacity").slice(0, 2), ["hold", "hold"]);
-  applyInspectorEdit(state, { type: "easing", keyframes: { ...keyframes, lane: "scale", frames: [10] }, easing: [0.1, 0.2, 0.3, 0.4], phase: "commit" }, { playhead: 0 });
+  applyInspectorEdit(state, { type: "easing", keyframes: [{ ...keyframes[0], lane: "scale", frames: [10] }], easing: [0.1, 0.2, 0.3, 0.4], phase: "commit" }, { playhead: 0 });
   assert.deepEqual(easings("scale").slice(0, 2), ["hold", [0.1, 0.2, 0.3, 0.4]]);
   applyInspectorEdit(state, { type: "easing-reset", keyframes }, { playhead: 0 });
   assert.deepEqual(easings("scale").slice(0, 2), [DEFAULT_EASING, DEFAULT_EASING]);
+});
+
+test("Easing: an edit reaches every selected group, on other Lanes and other rows", () => {
+  const keyed = (easing) => [{ frame: 0, value: 1, easing }, { frame: 10, value: 2, easing }];
+  const state = load({
+    camera: { fov: { value: 90, keyframes: [{ frame: 0, value: 90 }, { frame: 10, value: 40 }] } },
+    stickers: [world("sticker_1", { scale: { value: 1, keyframes: keyed([0, 0, 1, 1]) }, opacity: { value: 1, keyframes: keyed([0, 0, 1, 1]) } })],
+  });
+  const keyframes = [
+    { owner: "sticker_1", lane: "scale", frames: [0] },
+    { owner: "sticker_1", lane: "opacity", frames: [0] },
+    { owner: "camera", lane: "fov", frames: [0] },
+  ];
+  const outcome = applyInspectorEdit(state, { type: "easing", keyframes, easing: "hold", phase: "commit" }, { playhead: 0 });
+  assert.equal(outcome.changed, true);
+  assert.equal(outcome.history, true);
+  assert.equal(state.stickers[0].scale.keyframes[0].easing, "hold");
+  assert.equal(state.stickers[0].opacity.keyframes[0].easing, "hold");
+  assert.equal(state.camera.fov.keyframes[0].easing, "hold");
 });
 
 function upstreamFixture() {

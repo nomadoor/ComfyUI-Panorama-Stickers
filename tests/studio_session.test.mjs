@@ -32,15 +32,15 @@ test("the inspector's selection follows the Timeline's: the selected row's objec
   assert.deepEqual(inspectorSelection({ row: "camera", keys: [] }), { ids: ["camera"], keyframes: null });
   assert.deepEqual(inspectorSelection({ row: "sticker_1", keys: [{ row: "sticker_1", lane: "size", frame: 4 }, { row: "sticker_1", lane: "size", frame: 0 }] }), {
     ids: ["sticker_1"],
-    keyframes: { owner: "sticker_1", lane: "size", frames: [0, 4] },
+    keyframes: [{ owner: "sticker_1", lane: "size", frames: [0, 4] }],
   });
   // An open row's Keyframes keep their Lanes apart (docs/timeline-ui.md "行とポチ"); a closed row's pin is all its Lanes.
-  assert.deepEqual(inspectorSelection({ row: null, keys: [{ row: "camera", lane: "fov", frame: 2 }, { row: "camera", lane: "position", frame: 6 }] }).keyframes, {
-    owner: "camera",
-    lane: "fov",
-    frames: [2],
-  });
-  assert.deepEqual(inspectorSelection({ row: null, keys: [{ row: "camera", lane: null, frame: 6 }] }).keyframes, { owner: "camera", lane: null, frames: [6] });
+  // Every group goes to the Easing panel, in the order first selected.
+  assert.deepEqual(inspectorSelection({ row: null, keys: [{ row: "camera", lane: "fov", frame: 2 }, { row: "camera", lane: "position", frame: 6 }] }).keyframes, [
+    { owner: "camera", lane: "fov", frames: [2] },
+    { owner: "camera", lane: "position", frames: [6] },
+  ]);
+  assert.deepEqual(inspectorSelection({ row: null, keys: [{ row: "camera", lane: null, frame: 6 }] }).keyframes, [{ owner: "camera", lane: null, frames: [6] }]);
   // The background and the painting have no Easing.
   assert.equal(inspectorSelection({ row: null, keys: [{ row: "background", lane: null, frame: 0 }] }).keyframes, null);
 });

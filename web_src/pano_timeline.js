@@ -160,7 +160,13 @@ function easedKeyframes(owner, names, frames) {
 // The Easing of the selected segments of the Lanes `names`: { easing, mixed }, with easing null when
 // they differ, or null when the selection has no segment.
 export function selectedEasing(owner, names, frames) {
-  const keys = easedKeyframes(owner, names, frames);
+  return selectedEasingOf([{ owner, names, frames }]);
+}
+
+// selectedEasing over the selections of several owners (`targets`: [{ owner, names, frames }]), compared
+// as one: Mixed when any two of their segments differ.
+export function selectedEasingOf(targets) {
+  const keys = targets.flatMap(({ owner, names, frames }) => easedKeyframes(owner, names, frames));
   if (!keys.length) return null;
   const mixed = keys.some((key) => JSON.stringify(key.easing) !== JSON.stringify(keys[0].easing));
   return { easing: mixed ? null : keys[0].easing, mixed };

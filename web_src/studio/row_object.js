@@ -12,7 +12,7 @@ export function findSticker(state, upstream, id) {
     ?? null;
 }
 
-// The owner of a Keyframe selection's Lanes (selection.keyframes.owner): "camera" (the state's Camera), "scene", or a Sticker's id (findSticker).
+// The owner of a Keyframe selection group's Lanes (selection.keyframes[i].owner): "camera" (the state's Camera), "scene", or a Sticker's id (findSticker).
 export function keyframeOwner(state, upstream, id) {
   if (id === "camera") return state.camera;
   if (id === "scene") return state.scene;
