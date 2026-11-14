@@ -195,8 +195,9 @@ test("Easing edits set the selected segments, ignoring each Lane's last Keyframe
   sticker.opacity = keyed(sticker.opacity, [0, 0], [10, 1], [20, 0], [30, 1, "auto"]);
   sticker.roll = keyed(sticker.roll, [0, 0, LINEAR], [10, 5, "hold"]);
 
+  // The pin at 20 is not selected, so its segment stays; the one at 30 is the Lane's last.
   setSegmentEasing(sticker, ["opacity"], [10, 30], LINEAR);
-  assert.deepEqual(sticker.opacity.keyframes.map((key) => key.easing), [EASE_IN_OUT, LINEAR, LINEAR, "auto"]);
+  assert.deepEqual(sticker.opacity.keyframes.map((key) => key.easing), [EASE_IN_OUT, LINEAR, EASE_IN_OUT, "auto"]);
   assert.deepEqual(selectedEasing(sticker, ["opacity", "roll"], [0]), { easing: null, mixed: true });
   // The roll's Keyframe at 10 is its last, so its stored hold does not count.
   assert.deepEqual(selectedEasing(sticker, ["opacity", "roll"], [10]), { easing: LINEAR, mixed: false });
@@ -205,6 +206,21 @@ test("Easing edits set the selected segments, ignoring each Lane's last Keyframe
   assert.equal(selectedEasing(sticker, ["roll"], [10]), null);
   const saved = loadSceneState({ version: 2, stickers: [sticker] }).stickers[0];
   assert.deepEqual(saved.opacity, sticker.opacity);
+});
+
+test("an Easing edit sets the segment after every selected pin, not only the first", () => {
+  const sticker = skySticker();
+  sticker.opacity = keyed(sticker.opacity, [0, 0], [10, 1], [20, 0], [30, 1]);
+
+  // Two neighboring pins: both of their segments change (0→10 and 10→20).
+  setSegmentEasing(sticker, ["opacity"], [0, 10], LINEAR);
+  assert.deepEqual(sticker.opacity.keyframes.map((key) => key.easing), [LINEAR, LINEAR, EASE_IN_OUT, EASE_IN_OUT]);
+  assert.deepEqual(selectedEasing(sticker, ["opacity"], [0, 10]), { easing: LINEAR, mixed: false });
+
+  // Pins apart: the unselected pin's segment between them stays, and it does not count for Mixed.
+  setSegmentEasing(sticker, ["opacity"], [0, 20], "hold");
+  assert.deepEqual(sticker.opacity.keyframes.map((key) => key.easing), ["hold", LINEAR, "hold", EASE_IN_OUT]);
+  assert.deepEqual(selectedEasing(sticker, ["opacity"], [0, 20]), { easing: "hold", mixed: false });
 });
 
 test("moving a Clip range keeps its Keyframes on the content", () => {

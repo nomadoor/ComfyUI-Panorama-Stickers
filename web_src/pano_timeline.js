@@ -147,15 +147,14 @@ export function moveKeyframes(owner, names, frames, delta, floor, ceiling = Infi
   return delta;
 }
 
-// The Keyframes whose Easing a selection of Keyframe frames edits: those from the first selected frame
-// up to (not including) the last, or the one at a single selected frame. A Lane's last Keyframe is
-// left out, as its Easing is not used.
+// The Keyframes whose Easing a selection of Keyframe frames edits: every selected one, each owning the
+// segment up to the next Keyframe (docs/timeline-ui.md "Easing"). A Lane's last Keyframe is left out, as
+// its Easing is not used.
 function easedKeyframes(owner, names, frames) {
-  const from = Math.min(...frames);
-  const to = Math.max(...frames);
+  const selected = new Set(frames);
   return names.flatMap((name) => owner[name].keyframes
     .slice(0, -1)
-    .filter((key) => (frames.length > 1 ? key.frame >= from && key.frame < to : key.frame === from)));
+    .filter((key) => selected.has(key.frame)));
 }
 
 // The Easing of the selected segments of the Lanes `names`: { easing, mixed }, with easing null when

@@ -363,7 +363,7 @@ test("the Easing panel shows only while Keyframes are selected: the shared Easin
   assert.deepEqual(one.presets.filter((preset) => preset.active).map((preset) => preset.label), ["Linear"]);
   assert.equal(one.atDefault, false);
 
-  const mixed = model(state, { selection: { ids: [], keyframes: { owner: "sticker_1", lane: null, frames: [0, 20] } } }).easing;
+  const mixed = model(state, { selection: { ids: [], keyframes: { owner: "sticker_1", lane: null, frames: [0, 10] } } }).easing;
   assert.equal(mixed.mixed, true);
   assert.equal(mixed.easing, null);
   assert.equal(mixed.text, "");
