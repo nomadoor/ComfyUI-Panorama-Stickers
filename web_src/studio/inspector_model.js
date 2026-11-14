@@ -18,7 +18,7 @@ import {
   rebaseSceneState,
   stickerLanes,
 } from "../pano_scene_state.js";
-import { EASING_PRESETS, rowLaneNames, selectedEasing } from "../pano_timeline.js";
+import { EASING_PRESETS, rowLaneNames, selectedEasingOf } from "../pano_timeline.js";
 import { UPSTREAM_INHERITED_TIP, isUpstreamSticker, upstreamOverrideOf, upstreamStickerInherited } from "../pano_upstream.js";
 import { animationClipIndex } from "../pano_animation.js";
 import { HANDOFF_LANES } from "../pano_port_handoff.js";
@@ -453,20 +453,21 @@ function headingCard(kind, title, icon) {
   return { kind, title, icon, note: "", target: null, rows: [] };
 }
 
-// The Easing panel of a Keyframe selection (`keyframes`: { owner, lane, frames } with frames in the owner's own
-// time base), or null without one. `segment` is false when the selection has no segment (the last Keyframe alone).
-function easingModel(state, upstream, keyframes) {
-  if (!keyframes?.frames?.length) return null;
-  const owner = keyframeOwner(state, upstream, keyframes.owner);
-  if (!owner) return null;
-  const names = keyframes.lane ? [keyframes.lane] : rowLaneNames(owner);
-  const selected = selectedEasing(owner, names, keyframes.frames);
+// The Easing panel of a Keyframe selection (`groups`: [{ owner, lane, frames }] with frames in each owner's own
+// time base), or null without one. It reads every group, as its edit reaches them all (docs/timeline-ui.md "Easing").
+// `segment` is false when no group has a segment (only Lanes' last Keyframes).
+function easingModel(state, upstream, groups) {
+  const kept = (groups ?? []).filter((keyframes) => keyframes.frames?.length && keyframeOwner(state, upstream, keyframes.owner));
+  if (!kept.length) return null;
+  const selected = selectedEasingOf(kept.map((keyframes) => {
+    const owner = keyframeOwner(state, upstream, keyframes.owner);
+    return { owner, names: keyframes.lane ? [keyframes.lane] : rowLaneNames(owner), frames: keyframes.frames };
+  }));
   const easing = selected?.easing ?? null;
   const mixed = !!selected?.mixed;
   return {
     // The selection the panel's edits send back (inspector_actions.js "easing").
-    keyframes: { owner: keyframes.owner, lane: keyframes.lane ?? null, frames: [...keyframes.frames] },
-    names,
+    keyframes: kept.map((keyframes) => ({ owner: keyframes.owner, lane: keyframes.lane ?? null, frames: [...keyframes.frames] })),
     segment: !!selected,
     easing,
     mixed,
@@ -484,7 +485,7 @@ export function buildCameraCard({ state, playhead = 0, readOnly = false }) {
 }
 
 // The inspector for the working `state` (state v2), the editor's `selection` ({ ids: [...], paint?: true,
-// keyframes?: { owner, lane, frames } }; ids are "camera" or Sticker ids, an upstream element's working id
+// keyframes?: [{ owner, lane, frames }] }; ids are "camera" or Sticker ids, an upstream element's working id
 // `upstream:<key>:<id>`) and the Timeline frame `playhead`. What it shows follows the selection (docs/studio-ui.md
 // "インスペクタ", ADR 0051): nothing selected shows the Scene card, the Camera's card over the Ground's. In the Camera
 // tab (`tab` "camera") the Camera's card is always on top, the selected object's under it. `upstream` is the

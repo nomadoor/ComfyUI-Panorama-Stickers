@@ -10,8 +10,8 @@
 //   { type: "reset", target, row }                 a row's reset (the Camera's "roll": its Roll alone)
 //   { type: "easing", keyframes, easing, phase }   a preset, the curve or the bezier text of the Easing panel
 //   { type: "easing-reset", keyframes }            the Easing panel's reset
-// `target` is a card's target ({ kind: "sticker" | "camera" | "scene", id }), `keyframes` the selection's
-// ({ owner, lane, frames }).
+// `target` is a card's target ({ kind: "sticker" | "camera" | "scene", id }), `keyframes` the selection's groups
+// ([{ owner, lane, frames }], every one of them edited).
 //
 // applyInspectorEdit returns { changed, history, stopPlayback, upstreamRevert }: `history` asks for one Undo step
 // (a commit), `stopPlayback` for the dot's stop of playback, `upstreamRevert` ({ sticker, lanes }, else null) the reset
@@ -196,7 +196,13 @@ function applyReset(state, found, row, context) {
   return { done: true };
 }
 
-function applyEasing(state, keyframes, easing, upstream) {
+function applyEasing(state, groups, easing, upstream) {
+  let changed = false;
+  for (const keyframes of groups ?? []) changed = applyGroupEasing(state, keyframes, easing, upstream) || changed;
+  return changed;
+}
+
+function applyGroupEasing(state, keyframes, easing, upstream) {
   if (!keyframes?.frames?.length) return false;
   const owner = keyframes.owner === "camera" ? state.camera : keyframeOwner(state, upstream, keyframes.owner);
   if (!owner || owner.locked) return false;

@@ -56,11 +56,12 @@ function keyframeGroups(selection) {
 }
 
 // The inspector's selection (inspector_model.js buildInspectorModel) for the Timeline's: the selected object (a paint
-// group shows the Paint card), and the Easing panel's Keyframes (the first group's; the panel's edit reaches every
-// group, applyInspector).
+// group shows the Paint card), and the Easing panel's Keyframes (every group: the panel reads and edits them all), or
+// null without one.
 export function inspectorSelection(selection) {
   const row = selection?.row ?? null;
-  const keyframes = keyframeGroups(selection)[0] ?? null;
+  const groups = keyframeGroups(selection);
+  const keyframes = groups.length ? groups : null;
   if (paintObjectRow(row)) return { ids: [], paint: true, keyframes };
   return { ids: row ? [row] : [], keyframes };
 }
@@ -161,16 +162,7 @@ export function createStudioSession({ state: opening, readOnly = false, upstream
     }
     context = withHandoff(context);
     const draft = structuredClone(state);
-    const easing = edit.type === "easing" || edit.type === "easing-reset";
-    const groups = easing ? keyframeGroups(selection) : [];
-    let outcome;
-    if (easing && groups.length > 1) {
-      // The panel's edit reaches every selected group's Keyframes (docs/timeline-ui.md "Easing").
-      const outcomes = groups.map((keyframes) => applyInspectorEdit(draft, { ...edit, keyframes }, { ...context, readOnly }));
-      outcome = outcomes.reduce((all, one) => ({ ...all, changed: all.changed || one.changed, history: all.history || one.history }), result(false));
-    } else {
-      outcome = applyInspectorEdit(draft, edit, { ...context, readOnly });
-    }
+    const outcome = applyInspectorEdit(draft, edit, { ...context, readOnly });
     // An upstream row's reset takes its Lanes' overrides off the records (never the upstream values into the working
     // copy: docs/studio-ui.md "上流の物の編集").
     if (outcome.upstreamRevert) {

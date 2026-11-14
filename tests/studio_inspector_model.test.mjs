@@ -351,7 +351,7 @@ test("the Easing panel shows only while Keyframes are selected: the shared Easin
   const keyframes = (easings) => easings.map((easing, index) => ({ frame: index * 10, value: [index, 0, 0], easing }));
   const state = load({ stickers: [world("sticker_1", { position: { value: [0, 0, 0], keyframes: keyframes([[0, 0, 1, 1], "hold", [0, 0, 1, 1]]) } })] });
   assert.equal(model(state, { selection: { ids: ["sticker_1"] } }).easing, null);
-  const one = model(state, { selection: { ids: ["sticker_1"], keyframes: { owner: "sticker_1", lane: null, frames: [0] } } }).easing;
+  const one = model(state, { selection: { ids: ["sticker_1"], keyframes: [{ owner: "sticker_1", lane: null, frames: [0] }] } }).easing;
   assert.deepEqual(one.easing, [0, 0, 1, 1]);
   assert.equal(one.mixed, false);
   assert.equal(one.segment, true);
@@ -363,20 +363,37 @@ test("the Easing panel shows only while Keyframes are selected: the shared Easin
   assert.deepEqual(one.presets.filter((preset) => preset.active).map((preset) => preset.label), ["Linear"]);
   assert.equal(one.atDefault, false);
 
-  const mixed = model(state, { selection: { ids: [], keyframes: { owner: "sticker_1", lane: null, frames: [0, 10] } } }).easing;
+  const mixed = model(state, { selection: { ids: [], keyframes: [{ owner: "sticker_1", lane: null, frames: [0, 10] }] } }).easing;
   assert.equal(mixed.mixed, true);
   assert.equal(mixed.easing, null);
   assert.equal(mixed.text, "");
   assert.ok(mixed.presets.every((preset) => !preset.active));
 
   // The last Keyframe alone has no segment: the panel shows, its controls off.
-  const last = model(state, { selection: { ids: [], keyframes: { owner: "sticker_1", lane: "position", frames: [20] } } }).easing;
+  const last = model(state, { selection: { ids: [], keyframes: [{ owner: "sticker_1", lane: "position", frames: [20] }] } }).easing;
   assert.equal(last.segment, false);
+});
+
+// docs/timeline-ui.md "Easing" and "行とポチ": the panel reads every selected group, as its edit reaches them all.
+test("the Easing panel reads every selected group: Mixed across Lanes, on while any group has a segment", () => {
+  const scalar = (easings) => easings.map((easing, index) => ({ frame: index * 10, value: 1 + index, easing }));
+  const state = load({ stickers: [world("sticker_1", { scale: { value: 1, keyframes: scalar([[0, 0, 1, 1], [0, 0, 1, 1]]) }, opacity: { value: 1, keyframes: scalar(["hold", "hold"]) } })] });
+  const scale = { owner: "sticker_1", lane: "scale", frames: [0] };
+  const opacity = { owner: "sticker_1", lane: "opacity", frames: [0] };
+  const mixed = model(state, { selection: { ids: [], keyframes: [scale, opacity] } }).easing;
+  assert.equal(mixed.mixed, true);
+  assert.equal(mixed.easing, null);
+  assert.deepEqual(mixed.keyframes, [scale, opacity]);
+  // The first group is a Lane's last Keyframe alone; the second still has a segment, so the panel is on with its Easing.
+  const later = model(state, { selection: { ids: [], keyframes: [{ ...scale, frames: [10] }, opacity] } }).easing;
+  assert.equal(later.segment, true);
+  assert.equal(later.mixed, false);
+  assert.equal(later.easing, "hold");
 });
 
 test("the Easing panel reads a Camera's Keyframes, and is at its default on ease-in-out", () => {
   const state = load({ camera: { fov: { value: 90, keyframes: [{ frame: 0, value: 90 }, { frame: 12, value: 40 }] } } });
-  const easing = model(state, { tab: "camera", selection: { ids: [], keyframes: { owner: "camera", lane: "fov", frames: [0] } } }).easing;
+  const easing = model(state, { tab: "camera", selection: { ids: [], keyframes: [{ owner: "camera", lane: "fov", frames: [0] }] } }).easing;
   assert.deepEqual(easing.easing, [0.42, 0, 0.58, 1]);
   assert.equal(easing.atDefault, true);
   assert.deepEqual(easing.presets.filter((preset) => preset.active).map((preset) => preset.label), ["Ease in-out"]);
