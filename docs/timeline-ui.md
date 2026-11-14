@@ -100,7 +100,7 @@ Panorama Studio はいつも新しい UI で開き、古い UI に Panorama Stud
 
 - 既定値は ease-in-out。Easing は区間ごとに、インスペクタのパネルで選ぶ（cubic-bezier のプリセットと曲線、`auto`、`hold`）。タイムラインの上で直接は曲げない。
 - cubic-bezier の制御点の縦方向は 0〜1 に限る。
-- 対象の区間：ポチを一つ選んだときはその Keyframe から次の Keyframe までの区間、二つ以上選んだときは最初から最後のポチまでのすべての区間。
+- 対象の区間：選んだポチそれぞれの、その Keyframe から次の Keyframe までの区間。選んでいないポチから始まる区間は、選んだポチの間にあっても変えない。Lane の最後の Keyframe には次の区間がないので、選んでも対象にしない（その Easing は使われない値なので変えない）。
 - パネルの選択肢は ease-in-out（既定）・linear・ease-in・ease-out のプリセット、`auto`、`hold`。cubic-bezier はグラフの二つの制御点をドラッグして変えられる。
 
 ## タイムラインの表示

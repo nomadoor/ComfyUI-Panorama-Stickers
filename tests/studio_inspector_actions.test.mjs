@@ -267,7 +267,7 @@ test("a cancel changes nothing here: the shell puts back the state from before t
 test("Easing: a preset or a bezier sets every selected segment; the reset goes back to ease-in-out", () => {
   const keyed = (easing) => [{ frame: 0, value: 1, easing }, { frame: 10, value: 2, easing }, { frame: 20, value: 3, easing }];
   const state = load({ stickers: [world("sticker_1", { scale: { value: 1, keyframes: keyed([0, 0, 1, 1]) }, opacity: { value: 1, keyframes: keyed([0, 0, 1, 1]) } })] });
-  const keyframes = { owner: "sticker_1", lane: null, frames: [0, 20] };
+  const keyframes = { owner: "sticker_1", lane: null, frames: [0, 10] };
   applyInspectorEdit(state, { type: "easing", keyframes, easing: "hold", phase: "commit" }, { playhead: 0 });
   const easings = (lane) => state.stickers[0][lane].keyframes.map((key) => key.easing);
   assert.deepEqual(easings("scale").slice(0, 2), ["hold", "hold"]);

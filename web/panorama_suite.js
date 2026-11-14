@@ -2036,8 +2036,8 @@ function UE(e, t, n, r, i, o = 1 / 0) {
   return r;
 }
 function D1(e, t, n) {
-  const r = Math.min(...n), i = Math.max(...n);
-  return t.flatMap((o) => e[o].keyframes.slice(0, -1).filter((a) => n.length > 1 ? a.frame >= r && a.frame < i : a.frame === r));
+  const r = new Set(n);
+  return t.flatMap((i) => e[i].keyframes.slice(0, -1).filter((o) => r.has(o.frame)));
 }
 function YE(e, t, n) {
   const r = D1(e, t, n);

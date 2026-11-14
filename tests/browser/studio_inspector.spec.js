@@ -372,12 +372,12 @@ test("the Easing copy button copies the bezier text, shows a check for a moment,
   await expect(copy.locator("svg.icon-tabler-copy")).toHaveCount(1, { timeout: 5000 });
   expect(await scene(page, "history")).toBe(history);
 
-  // Mixed: the two segments from 0 to 24 with different Easings.
+  // Mixed: the pins at 0 and 12, whose segments have different Easings.
   await page.evaluate(() => {
     navigator.clipboard.writeText = () => { window.__copied = true; return Promise.resolve(); };
   });
   await scene(page, "keyMixed");
-  await scene(page, "select", { ids: ["sticker_1"], keyframes: { owner: "sticker_1", lane: null, frames: [0, 24] } });
+  await scene(page, "select", { ids: ["sticker_1"], keyframes: { owner: "sticker_1", lane: null, frames: [0, 12] } });
   await expect(text).toHaveAttribute("placeholder", "Mixed");
   await expect(copy).toHaveAttribute("aria-disabled", "true");
   await copy.click({ force: true });
