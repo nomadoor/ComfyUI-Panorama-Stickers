@@ -3,6 +3,7 @@
 [![English](https://img.shields.io/badge/README-English-3b82f6.svg)](./README.md)
 [![日本語](https://img.shields.io/badge/README-日本語-e11d48.svg)](./README_JA.md)
 [![中文](https://img.shields.io/badge/README-中文-16a34a.svg)](./README_ZH.md)
+[![swm cloud](https://img.shields.io/badge/swm%20cloud-Run%20Panorama%20Studio-0A84FF.svg)](https://cloud.swmgpu.com/w/samofvaani/comfyart-panorama-canvas-studio)
 
 A ComfyUI node set for placing images, videos and 3D in a 360° panorama and shooting it from any viewpoint.
 
@@ -59,6 +60,7 @@ Connect a video to the background, or move stickers or the Camera with Keyframes
 
 - Search for "Panorama Stickers" in ComfyUI Manager and install it.
 - Requires ComfyUI 0.35.0 or later.
+- **1-click cloud GPU:** Launch the pre-loaded [ComfyArt Infinite Canvas, 360° Panorama Stickers & Qwen-Image-Layered Studio on **swm cloud**](https://cloud.swmgpu.com/w/samofvaani/comfyart-panorama-canvas-studio) with `ComfyUI-Panorama-Stickers`, `qwen-image-2.1-360-panorama-outpaint-lora`, `Qwen-Image-2.1`, and `MoGe-3` ready to run.
 
 ## Workflows
 
