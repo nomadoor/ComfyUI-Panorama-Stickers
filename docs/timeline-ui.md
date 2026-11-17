@@ -219,6 +219,19 @@ Panorama Studio はいつも新しい UI で開き、古い UI に Panorama Stud
 - スライダーと両端の数は、調整している間だけ出す（`docs/agents/ux-principles.md` の例外）。バーでこれより右の部品は右寄せなので、出入りでほかの部品は動かない。両端の数は調整の間は変わらないので、スライダーも動かない。調整している間は、ボタンから元の数までを一つの灰色の地で囲む（見た目は `docs/design.md` の「Simplify の調整の部品」）。
 - 量（`SIMPLIFY_TOLERANCE`・`SIMPLIFY_MIN_EXTENT`・`SIMPLIFY_MIN_TURN_DEG`）は `web_src/studio/simplify.js` の定数に置く。
 
+## Constant speed
+
+選んだ Keyframe の範囲を、一定の速さで動くようにする。Keyframe の時刻を、通る距離に合わせて打ち直す（形は変えない）。
+
+- 入口はタイムラインのバーの Constant speed のボタン（並びは `docs/studio-ui.md` の「タイムラインのバー」。Simplify の左）。ボタンはいつも出す。押せる条件と、押せないときの理由の出し方は Simplify と同じ（一つの行だけで Keyframe を 3 つ以上選んでいるとき。tooltip は「Constant speed · Select 3+ Keyframes」「Constant speed · Select Keyframes in one row」、読み取り専用とロックはその理由）。Simplify を調整している間は押せない（「Constant speed · Finish Simplify first」）。押せるときの tooltip は「Constant speed · Moves the selected Keyframes in time」。
+- 範囲は Simplify と同じ（その行の、一番左の選んだ Keyframe から一番右まで。間の選んでいない Keyframe も含む）。閉じた行ではポチごと（その時刻の全部の Lane の Keyframe）、開いた行ではその Lane の Keyframe を動かす。Camera の `look_at` の Lane は行に数えないので、動かさない。
+- 動かさない Keyframe：範囲の最初と最後、`hold` の区間の始まりと終わり、ループの継ぎ目の Keyframe。これらを区切りにして、間ごとに打ち直す。
+- 打ち直し方：区切りの間ごとに、元の動きで通った距離を、区切りの最初からの累計で測る（範囲の中の時刻を 1 フレームの 4 分の 1 ごとに評価する）。間の Keyframe の新しい時刻は `区切りの最初 + (区切りの最後 − 区切りの最初) × その Keyframe までの距離 ÷ 全体の距離`。整数のフレームに丸め、順番は入れ替えず、隣とは 1 フレーム以上あける（足りなければ詰める）。全体の距離が 0 の間は、動かさない。
+- 距離の測り方：Position の Lane があれば軌道に沿った長さ。無ければ向きの変わった角度（Camera と World の物は `rotation`、空の画像は `direction`）。どちらも無い行や、開いた行で一つの Lane だけを選んでいるときは、その Lane の変化の量。物差しは Simplify の「ずれの測り方」の表と同じ。
+- 緩急：範囲の中の区間（`hold` を除く）の Easing を Smooth にする。時刻を距離に合わせても、区間ごとに ease-in-out などが残っていると、速さは一定にならないためである。範囲の両端は Smooth の規則どおり、その先に Keyframe があれば止まらずに通り、無ければゆっくり止まる。
+- 一回押すと一回打ち直し、Undo の 1 段になる。スライダーは出さない。何も変わらない（もう揃っている）ときは、何もせず Undo の段も作らない。終わったら、上端の一行に「Constant speed · ＜動かした数＞ Keyframes moved」と短く出す（済んだ操作の知らせ）。選択は、動かした後の同じ Keyframe に移る。
+- 実装は `web_src/studio/constant_speed.js`（物差しは `web_src/studio/simplify.js` と共有）。
+
 ## 表示（目のアイコン）
 
 Camera・Sticker・`scene`・ペイントは、タイムラインの行の左端の目のアイコンで表示・非表示を切り替える（After Effects・Photoshop のレイヤーと同じ）。アイコンが今の状態を示す（表示は目、非表示は破線の目）。状態 v2 の `visible`（Camera・`scene`・Sticker）と `painting_visible`（ペイント）に入る（`docs/scene-state-v2.md`）。

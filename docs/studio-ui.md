@@ -1010,7 +1010,7 @@ Camera タブでは同じ席で無効にする（tooltip は「Not available in 
 |---|---|---|
 | できなかった・止まった | 珊瑚の丸 | 効かなかった操作（境界で止まった、何もない所へのダブルクリック、Frame Selected で囲むものが無い、Panorama モードの Alt + ホイール、Camera を消そうとした）。Look at の Pick で拾える物が無い所を押した「Nothing to look at here」、相手を切り替えている途中の区間での Camera タブのドラッグとホイール「Look at is changing here」（上の「Look at」） |
 | 気をつけてほしい | 落ち着いた黄の丸 | ノードの `state_json` を読めない（下の「閉じ方」）、背景を読めない、3D の表示を作れない（three.js のチャンクか WebGL が使えない）、深度のグリッドの要素が GPU のテクスチャの上限より大きい（`depthGridTooLarge` の文。「ノードの入力から来た物」）、上流の警告、Add とドロップの失敗（3D ファイルの読み込みの失敗を含む。上の「Add とドロップの見せ方」） |
-| 済んだ | ライムの丸 | 済んだ操作の短い知らせ（左の列の Camera のボタンで Camera を動かした「Camera moved to this view」。ほかの短い知らせと同じ間で消える）。Look at の相手が決まった「Looking at ＜物の名前＞」、Simplify を確定した「48 Keyframes → 11」の形（元の数と残した数）、値を変えて Keyframe が入った「Keyframe added」（`docs/timeline-ui.md` の「記録の規則」の、Keyframe の無い時刻で値を変えたとき） |
+| 済んだ | ライムの丸 | 済んだ操作の短い知らせ（左の列の Camera のボタンで Camera を動かした「Camera moved to this view」。ほかの短い知らせと同じ間で消える）。Look at の相手が決まった「Looking at ＜物の名前＞」、Simplify を確定した「48 Keyframes → 11」の形（元の数と残した数）、Constant speed の「Constant speed · 6 Keyframes moved」、値を変えて Keyframe が入った「Keyframe added」（`docs/timeline-ui.md` の「記録の規則」の、Keyframe の無い時刻で値を変えたとき） |
 | 知らせるだけ | 中立の丸（主の文字の色を不透明度 55%） | Sky だけのときのホイール（「Sky only · Alt+wheel zooms」、Camera タブの Frame モードは「Sky only · Alt+wheel changes the FOV」。`docs/space-and-view.md` の「Sky だけのときのホイール」）、Set orbit center の待ち（「Click a spot to orbit around · Esc to cancel」。待っている間だけ。`docs/space-and-view.md` の「Set orbit center」）、上流の Scene を待っている（「ノードの入力から来た物」）、空の画面の案内。Look at の Pick の待ち「Click a spot to look at · Esc to cancel」、最後の Keyframe が最初と同じでループがオフの物「＜物の名前＞ ends where it starts · Loop is off」（`docs/timeline-ui.md` の「動きのループ」）、`sticker_state` が届いている絵の、辺のハンドルの上「Can't stretch a returned shot」（`docs/editor-interaction.md`）、軌道の線の上の案内（点「Click to go to this Keyframe · Double-click for Corner」・角の点「Click to go to this Keyframe · Double-click for Auto」・ハンドル「Drag to bend」・線「Click to go to this frame」。上の「軌道の線」） |
 | 読み込み中 | 小さく回る輪 | 3D の表示や背景、置いた 3D ファイル、深度のグリッドの色の動画（「Loading depth video…」）を読み込んでいる |
 
@@ -1029,7 +1029,7 @@ Camera タブでは同じ席で無効にする（tooltip は「Not available in 
 | 前の Keyframe へ、次の Keyframe へ | `docs/timeline-ui.md` の「前後の Keyframe へ飛ぶ」 |
 | 再生のループのボタン（一つのアイコンのボタンで、オンとオフをアイコンの形 `repeat` ／ `repeat-off` で示す。`docs/agents/ux-principles.md` の例外。既定はオン。tooltip は「Loop playback: on」「Loop playback: off」） | `docs/timeline-ui.md` の「タイムラインの長さ」 |
 | 時刻とフレーム（例 `00:03.12  78 / 240`。フレームの表示は、一番広い形（`240 / 240`）の幅をいつも取り、再生位置の桁が増えても後ろの部品を動かさない） | `docs/timeline-ui.md` の「タイムラインの表示」 |
-| Constant speed のボタン（アイコンと文字。選んだ Keyframe の時刻を、通る距離に合わせて打ち直し、一定の速さにする操作の場所。押すと Keyframe がタイムラインの上で動くことは、アイコン（並んだ Keyframe の菱形と左右の矢印）と、作った後の tooltip「Constant speed · Moves the selected Keyframes in time」で伝える。未実装：いつも無効で出し、tooltip は「Constant speed · in development」） | （未実装。働きは作るときに `docs/timeline-ui.md` に書く） |
+| Constant speed のボタン（アイコンと文字。選んだ Keyframe の時刻を、通る距離に合わせて打ち直し、一定の速さにする。押すと Keyframe がタイムラインの上で動くことは、アイコン（並んだ Keyframe の菱形と左右の矢印）と tooltip「Constant speed · Moves the selected Keyframes in time」で伝える） | `docs/timeline-ui.md` の「Constant speed」 |
 | Simplify のボタン（アイコンと文字。いつも出し、使えないときは無効にして理由を tooltip に出す）と、調整している間だけその右に出すスライダーと両端の数（左は必ず残す数、右は選んだ数） | `docs/timeline-ui.md` の「Simplify」 |
 | （ここから右寄せ）fps の欄、Length の欄とそのリセット、畳むボタン（状態はアイコンの形で示す） | `docs/timeline-ui.md` の「タイムラインの表示」 |
 
