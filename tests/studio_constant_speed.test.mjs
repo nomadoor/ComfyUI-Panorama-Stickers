@@ -48,3 +48,25 @@ test("the bar's Constant speed is pressable as Simplify is, and not while Simpli
   assert.deepEqual(bar({ row: "camera", keys }), { disabled: false, tip: "Constant speed · Moves the selected Keyframes in time" });
   assert.deepEqual(bar({ row: "camera", keys }, { row: "camera", lane: null, original: 3, least: 2, count: 2, going: [] }), { disabled: true, tip: "Constant speed · Finish Simplify first" });
 });
+
+// docs/timeline-ui.md "Constant speed": a looping row with all its Keyframes selected is one turn, the segment back to
+// the first included; only the first stays.
+test("on a looping row with every Keyframe selected, one turn of the loop goes at one speed, the way back included", () => {
+  const point = (deg) => [5 * Math.sin(deg * Math.PI / 180), 1.6, 5 * Math.cos(deg * Math.PI / 180)];
+  const owner = camera([0, 75, 126].map((frame, i) => ({ frame, value: point(120 * i) })), { loop: true });
+  const plan = planConstantSpeed(owner, ["position"], [0, 75, 126], { period: 152 });
+  const moved = frames(plan.lanes.position);
+  assert.equal(moved[0], 0);
+  assert.ok(Math.abs(moved[1] - 51) <= 1 && Math.abs(moved[2] - 101) <= 1, JSON.stringify(moved));
+  // The speed over the whole turn, the way back to the first Keyframe included, varies by little.
+  const lane = { loop: true, position: plan.lanes.position };
+  const steps = [];
+  for (let f = 0; f < 152; f += 1) {
+    const a = evaluateLane(lane, "position", f, 152);
+    const b = evaluateLane(lane, "position", f + 1, 152);
+    steps.push(Math.hypot(b[0] - a[0], b[2] - a[2]));
+  }
+  assert.ok(Math.max(...steps) / Math.min(...steps) < 1.1, `${Math.min(...steps)}..${Math.max(...steps)}`);
+  // Part of the Keyframes selected: the stretch only, its ends kept as before.
+  assert.equal(planConstantSpeed(owner, ["position"], [0, 75], { period: 152 }), null);
+});

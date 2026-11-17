@@ -27,8 +27,15 @@ export function planConstantSpeed(owner, names, frames, { period = null, ground 
   const candidates = [...new Set(lanes.flatMap((name) => owner[name].keyframes.map((key) => key.frame)))]
     .filter((frame) => frame >= start && frame <= end).sort((a, b) => a - b);
   if (candidates.length < 3) return null;
-  // The Keyframes that stay: the ends, a hold's start and end, and a loop's seam.
-  const fixed = new Set([start, end]);
+  const measured = measuredLane(owner, lanes);
+  if (!measured) return null;
+  // A looping row with all its Keyframes selected is one turn of the loop: from the first Keyframe to the first one a
+  // period later, the segment back to it included; only the first Keyframe (and a hold's ends) stays.
+  const all = [...new Set(lanes.flatMap((name) => owner[name].keyframes.map((key) => key.frame)))].sort((a, b) => a - b);
+  const cycle = laneView(owner[measured].keyframes, period).loop && all.length === candidates.length;
+  const until = cycle ? start + period : end;
+  // The Keyframes that stay: the ends, a hold's start and end, and a loop's seam (one turn: its first only).
+  const fixed = new Set(cycle ? [start] : [start, end]);
   for (const name of lanes) {
     const keys = owner[name].keyframes;
     keys.forEach((key, index) => {
@@ -37,17 +44,15 @@ export function planConstantSpeed(owner, names, frames, { period = null, ground 
         fixed.add(keys[index + 1].frame);
       }
     });
-    if (laneView(keys, period).loop) {
+    if (laneView(keys, period).loop && !cycle) {
       fixed.add(keys[0].frame);
       fixed.add(keys[keys.length - 1].frame);
     }
   }
-  const measured = measuredLane(owner, lanes);
-  if (!measured) return null;
   // The distance gone along the original motion from `start`, at each step.
   const read = laneSampler(owner, measured, period);
   const times = [];
-  for (let t = start; t <= end + 1e-9; t += 1 / STEPS_PER_FRAME) times.push(t);
+  for (let t = start; t <= until + 1e-9; t += 1 / STEPS_PER_FRAME) times.push(t);
   const values = times.map((t) => read(t));
   const { distance } = laneMeasure(measured, values, { camera, ground, hfov });
   const gone = [0];
@@ -55,7 +60,8 @@ export function planConstantSpeed(owner, names, frames, { period = null, ground 
   const goneAt = (frame) => gone[Math.round((frame - start) * STEPS_PER_FRAME)];
   // Each stretch between two Keyframes that stay: the ones between go where their distance puts them.
   const moves = new Map();
-  const stays = candidates.filter((frame) => fixed.has(frame));
+  // One turn ends at the first Keyframe a period later (not a Keyframe of its own).
+  const stays = [...candidates.filter((frame) => fixed.has(frame)), ...(cycle ? [until] : [])];
   for (let s = 0; s + 1 < stays.length; s += 1) {
     const from = stays[s];
     const to = stays[s + 1];
@@ -77,7 +83,7 @@ export function planConstantSpeed(owner, names, frames, { period = null, ground 
   for (const name of lanes) {
     const keyframes = owner[name].keyframes.map((key) => {
       const moved = moves.has(key.frame) ? { ...structuredClone(key), frame: moves.get(key.frame) } : structuredClone(key);
-      if (key.frame >= start && key.frame < end && key.easing !== "hold" && key.easing !== DEFAULT_EASING) {
+      if (key.frame >= start && (key.frame < end || cycle) && key.easing !== "hold" && key.easing !== DEFAULT_EASING) {
         moved.easing = DEFAULT_EASING;
         changed = true;
       }
