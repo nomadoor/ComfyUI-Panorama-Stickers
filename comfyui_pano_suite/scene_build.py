@@ -19,7 +19,7 @@ from .pano_scene import PanoSceneValue, SceneLayer
 from .port_sticker import _port_media, _port_rgba
 from .scene_mesh import mesh_animation
 from .scene_timeline import _decide_timeline, _open_media, _timing_video
-from .sticker_media import PortMedia
+from .sticker_media import PortMedia, content_box
 
 
 def _resolve_sources(state: dict, port: PortMedia | None, warnings: list[str]) -> SceneSources:
@@ -122,6 +122,40 @@ def _override_layer(layer: SceneLayer, record: dict, rate: float) -> tuple[Scene
     return replace(layer, state=state, sources=sources, port=port), ends
 
 
+def look_at_boxes(state: dict, sources: SceneSources, port: PortMedia | None) -> dict:
+    """The content boxes ({"center", "size"}, its own glTF frame, before its turn and scale) of the World Stickers the
+    state's Camera looks at (docs/scene-state-v2.md "Look at" "中身の箱"), by id: an image plane is centered, 1 wide and
+    as tall as its cropped first frame is over its width; 3D content its `content_box`. One with no content is left out
+    (its point is the Sticker's position)."""
+    camera = state.get("camera") or {}
+    lane = camera.get("look_at") or {"value": None, "keyframes": []}
+    targets = [lane["value"], *(key["value"] for key in lane["keyframes"])]
+    ids = {target["sticker"] for target in targets if isinstance(target, dict) and "sticker" in target}
+    stickers = {item["id"]: item for item in state["stickers"]}
+    boxes = {}
+    for sticker_id in sorted(ids):
+        sticker = stickers.get(sticker_id)
+        if sticker is None or sticker["placement"] != "world":
+            continue
+        media = sources.contents.get(sticker_id)
+        if media is None and port is not None and port.is_3d and port.sticker_id == sticker_id:
+            media = port.media
+        if media is not None:
+            box = content_box(media)
+            if box is not None:
+                low, high = box["min"], box["max"]
+                boxes[sticker_id] = {"center": [(a + b) / 2.0 for a, b in zip(low, high)], "size": [b - a for a, b in zip(low, high)]}
+            continue
+        source = sources.stickers.get(sticker_id)
+        if isinstance(source, StickerSource) and source.rgba.shape[0] > 0 and source.rgba.shape[1] > 0:
+            crop = sticker["crop"]
+            width = source.rgba.shape[1] * (crop["x1"] - crop["x0"])
+            height = source.rgba.shape[0] * (crop["y1"] - crop["y0"])
+            if width > 0:
+                boxes[sticker_id] = {"center": [0.0, 0.0, 0.0], "size": [1.0, height / width, 0.0]}
+    return boxes
+
+
 def _build_scene(state_json: str, background, world, scene, sticker, sticker_state, background_color, background_range, warnings: list[str]):
     """The Scene that Studio builds from its inputs, as the PANO_SCENE value: the state with the port Sticker
     appended when missing, its sources, the Timeline (counting the state's Camera), and the media `ui` for the
@@ -145,7 +179,7 @@ def _build_scene(state_json: str, background, world, scene, sticker, sticker_sta
     _check_moge_inputs(world, sticker)
     state = load_scene_state(state_json)
     stored_port = next((item for item in state["stickers"] if item["source"]["kind"] == "port"), None)
-    port, handoff = _port_media(state, sticker, sticker_state, warnings)
+    port, shot = _port_media(state, sticker, sticker_state, warnings)
     sources = _resolve_sources(state, port, warnings)
     inherited_bg = background is None and upstream is not None and upstream.bg_media is not None
     if inherited_bg:
@@ -174,9 +208,9 @@ def _build_scene(state_json: str, background, world, scene, sticker, sticker_sta
     else:
         bg_ui = {} if bg_media is None else _bg_media_ui(bg_media, bg, fps)
     media_ui = {**layer_ui}
-    if handoff is not None:
-        # What sticker_state hands to the port Sticker on this run, for the editor to show apart from the overrides.
-        media_ui["pano_sticker_handoff"] = [{"placement": "sky", "lanes": handoff, "fps": state["timeline"]["fps"]}]
+    if shot is not None:
+        # The sticker_state handed to the port Sticker on this run, which the editor places it by as the node does.
+        media_ui["pano_sticker_handoff"] = [{"state": shot}]
     if upstream is None:
         _merge_ui_payload(media_ui, bg_ui)
         if _timing_video(bg, port) is not None:
@@ -188,7 +222,10 @@ def _build_scene(state_json: str, background, world, scene, sticker, sticker_sta
             _merge_ui_payload(media_ui, bg_ui)
         # The upstream Scene sets the Timeline fps; the editor shows its length too.
         media_ui.update(_timeline_ui(fps, len(frames)))
-    layer = SceneLayer(state, sources, port, world, layer_ui)
+    # The output length in frames of the state's own fps: the loop period of its owners, downstream too.
+    stored_fps = state["timeline"]["fps"]
+    length = len(frames) if stored_fps == fps else len(frames) * stored_fps / fps
+    layer = SceneLayer(state, sources, port, world, layer_ui, length, look_at_boxes(state, sources, port), shot)
     layers = (layer,) if upstream is None else (*applied.layers, layer)
     if inherited_bg:
         bg_clip = upstream.bg_clip
@@ -225,7 +262,7 @@ def _upstream_ui(upstream: PanoSceneValue, bg_ui: dict | None) -> dict:
     none) under `pano_upstream_` keys with its Clip range (`pano_upstream_bg_clip`: the `background.clip` of the
     Studio it came from, with that state's `timeline.fps`)."""
     ui = {
-        "pano_upstream_layers": [{"state": layer.state, "ui": layer.media_ui} for layer in upstream.layers],
+        "pano_upstream_layers": [{"state": layer.state, "ui": layer.media_ui, "length": layer.length, "shot": layer.shot} for layer in upstream.layers],
         "pano_upstream_frames": [len(upstream.frames)],
         "pano_upstream_coverage": [upstream.coverage],
         "pano_upstream_bg_color": [list(upstream.bg_color)],

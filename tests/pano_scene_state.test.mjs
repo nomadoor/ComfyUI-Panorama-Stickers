@@ -35,10 +35,12 @@ test("a state without a Camera object has the default Camera, and a Camera has a
     erp_range: 360,
     visible: true,
     locked: false,
+    loop: false,
     position: { value: [0, 0, 0], keyframes: [] },
     rotation: { value: { yaw_deg: 0, pitch_deg: 0, roll_deg: 0 }, keyframes: [] },
     fov: { value: 90, keyframes: [] },
     curve: { value: 1, keyframes: [] },
+    look_at: { value: null, keyframes: [] },
   });
   for (const [projection, expected] of [["erp", "erp"], ["perspective", "perspective"], ["ERP", "perspective"], [null, "perspective"], [1, "perspective"]]) {
     assert.equal(loadSceneState({ version: 2, camera: { projection } }).camera.projection, expected);
@@ -79,12 +81,12 @@ test("the state text leaves out shown Camera, scene and painting and keeps hidde
   assert.deepEqual(loadSceneState(text), state);
 });
 
-test("sticker_state v1 and v2 fixtures load as sticker_state v2", () => {
-  for (const name of ["sticker_state_v1", "sticker_state_v2"]) {
-    assertClose(loadStickerState(fixture(name)), JSON.parse(fixture(`${name}.v2`)));
+test("sticker_state v1, v2 and v3 fixtures load as sticker_state v3", () => {
+  for (const name of ["sticker_state_v1", "sticker_state_v2", "sticker_state_v3"]) {
+    assertClose(loadStickerState(fixture(name)), JSON.parse(fixture(`${name}.v3`)));
   }
   assert.equal(loadStickerState('{"kind":"other","version":2}'), null);
-  assert.throws(() => loadStickerState('{"kind":"pano_sticker_state","version":3}'), /sticker_state version 3/);
+  assert.throws(() => loadStickerState('{"kind":"pano_sticker_state","version":4}'), /sticker_state version 4; supported versions are 1, 2 and 3/);
 });
 
 test("unsupported state_json versions name the version", () => {
@@ -303,8 +305,9 @@ test("vector tangents stop only where the motion turns back", () => {
     { frame: 10, value: { position: [4, 0, 0] } },
     { frame: 20, value: { position: [4, 4, 0] } },
   ]));
+  // The path turns along the bisector of the two chords and keeps moving (Smooth passes the key).
   const [vx, vy, vz] = speedAt(corner, 10);
-  assert.ok(Math.abs(vx - 0.2) < 1e-6 && Math.abs(vy - 0.2) < 1e-6 && Math.abs(vz) < 1e-9);
+  assert.ok(vx > 0.1 && Math.abs(vx - vy) < 1e-3 && Math.abs(vz) < 1e-9, `${vx} ${vy} ${vz}`);
   const back = cameraState(auto([
     { frame: 0, value: { position: [0, 0, 0] } },
     { frame: 10, value: { position: [4, 0, 0] } },
@@ -321,9 +324,11 @@ test("vector tangents stop only where the motion turns back", () => {
   assert.ok(yawSpeed > 0.5, `${yawSpeed}`);
 });
 
-test("missing Easing is ease-in-out, and a cubic-bezier outside 0..1 falls back to it", () => {
+test("missing Easing is Smooth, and a cubic-bezier outside 0..1 and the earlier auto fall back to it", () => {
   const state = cameraState([{ frame: 0, value: { hFOV_deg: 40 } }, { frame: 20, value: { hFOV_deg: 80 }, easing: [0.2, -0.1, 0.8, 1] }]);
-  assert.deepEqual(state.camera.fov.keyframes.map((key) => key.easing), [[0.42, 0, 0.58, 1], [0.42, 0, 0.58, 1]]);
+  assert.deepEqual(state.camera.fov.keyframes.map((key) => key.easing), ["smooth", "smooth"]);
+  assert.deepEqual(loadSceneState({ version: 2, camera: { fov: { keyframes: [{ frame: 0, value: 40, easing: "auto" }] } } }).camera.fov.keyframes[0].easing, "smooth");
+  // A Smooth segment that stops at both ends moves as ease-in-out did.
   assert.ok(Math.abs(cameraAt(state, 5).hFOV_deg - (40 + 40 * 0.129161)) < 1e-4);
 });
 
@@ -373,6 +378,7 @@ test("the state text of a state saved before ADR 0030 stays the same", () => {
     assert.equal("next_sticker_id" in saved, false, name);
     assert.equal("upstream" in saved, false, name);
     assert.equal(saved.stickers.some((item) => "handoff_overrides" in item), false, name);
+    assert.equal(saved.stickers.some((item) => "offset_rotation" in item && item.source.kind !== "port"), false, name);
     assert.equal(sceneStateText(loadSceneState(text)), text, name);
   }
 });
@@ -398,16 +404,19 @@ test("the state text keeps an id, a counter past the Stickers, overrides and ups
   assert.deepEqual(Object.keys(saved), ["version", "id", "timeline", "camera", "scene", "stickers", "painting", "painting_layer", "upstream"]);
   assert.equal(saved.id, "scene_a");
   assert.equal(state.next_sticker_id, 9);
-  assert.deepEqual(saved.stickers.map((item) => item.handoff_overrides), [undefined, ["direction", "size", "opacity"], undefined]);
+  // The earlier handoff_overrides are dropped; a port Sticker's offset Lanes at their defaults are left out.
+  assert.equal(saved.stickers.some((item) => "handoff_overrides" in item || "offset_rotation" in item || "offset_fov" in item), false);
   assert.deepEqual(loadSceneState(text), state);
   // A counter past the Stickers (sticker_2 to sticker_3 were deleted) is kept.
   const deleted = loadSceneState({ version: 2, stickers: [{ id: "sticker_1", source: { kind: "port" } }], next_sticker_id: 4 });
   assert.equal(JSON.parse(sceneStateText(deleted)).next_sticker_id, 4);
   assert.deepEqual(loadSceneState(sceneStateText(deleted)), deleted);
-  // A port Sticker whose Lanes all come from sticker_state leaves out the empty list.
-  const port = loadSceneState({ version: 2, stickers: [{ id: "p", source: { kind: "port" }, handoff_overrides: ["roll", "scale"] }] });
-  assert.deepEqual(port.stickers[0].handoff_overrides, ["roll"]);
-  assert.equal("handoff_overrides" in JSON.parse(sceneStateText({ ...port, stickers: [{ ...port.stickers[0], handoff_overrides: [] }] })).stickers[0], false);
+  // A port Sticker's offset Lanes off their defaults are written and read back.
+  const port = loadSceneState({ version: 2, stickers: [{ id: "p", source: { kind: "port" }, offset_rotation: { value: { yaw_deg: 5 } }, offset_fov: { value: 1, keyframes: [{ frame: 3, value: 1.5 }] } }] });
+  const portSaved = JSON.parse(sceneStateText(port)).stickers[0];
+  assert.deepEqual(portSaved.offset_rotation, { value: { yaw_deg: 5, pitch_deg: 0, roll_deg: 0 }, keyframes: [] });
+  assert.deepEqual(portSaved.offset_fov, { value: 1, keyframes: [{ frame: 3, value: 1.5 }] });
+  assert.deepEqual(loadSceneState(sceneStateText(port)), port);
 });
 
 test("the Sticker id counter is at least one past the largest sticker_<n> and gives ids to Stickers without one", () => {
@@ -430,13 +439,14 @@ test("the Sticker id counter is at least one past the largest sticker_<n> and gi
   assert.equal(counter([file("sticker_9007199254740991"), file("sticker_12")], undefined).next_sticker_id, 13);
 });
 
-test("rebasing keeps the id, the Sticker id counter, the upstream records and the handoff overrides", () => {
+test("rebasing keeps the id, the Sticker id counter and the upstream records, and moves the offset Keyframes", () => {
   const state = loadSceneState(fixture("v2_upstream"));
   const rebased = rebaseSceneState(state, 60);
   assert.equal(rebased.id, "scene_a");
   assert.equal(rebased.next_sticker_id, 9);
   assert.deepEqual(rebased.upstream, state.upstream);
-  assert.deepEqual(rebased.stickers[1].handoff_overrides, ["direction", "size", "opacity"]);
+  const port = loadSceneState({ version: 2, stickers: [{ id: "p", source: { kind: "port" }, offset_fov: { value: 1.5, keyframes: [{ frame: 30, value: 2 }] } }] });
+  assert.equal(rebaseSceneState(port, 60).stickers[0].offset_fov.keyframes[0].frame, 75);
 });
 
 test("a Scene id is a non-empty string or null and is written as it is", () => {

@@ -5,11 +5,12 @@
 // scene and the Stickers.
 import { animationCycleFrames } from "./pano_animation.js";
 import { portMediaFrames } from "./pano_port_media.js";
-import { clipOrigin, evaluateLane, FRAME_EPSILON } from "./pano_scene_eval.js";
+import { clipOrigin, evaluateLane, FRAME_EPSILON, laneView, ownerPeriod, positionSplit, splitEasing } from "./pano_scene_eval.js";
 import {
   CAMERA_LANES,
   DEFAULT_EASING,
   defaultClip,
+  EASE_IN_OUT,
   SCENE_LANES,
   TIMELINE_FPS_MAX,
   TIMELINE_LENGTH_MAX,
@@ -30,42 +31,106 @@ function keyAt(lane, frame) {
   return lane.keyframes.find((item) => Math.abs(item.frame - frame) <= FRAME_EPSILON);
 }
 
-// The Easing presets of the inspector's panel (docs/timeline-ui.md "Easing"): the cubic-bezier curves, `auto` and
-// `hold`, in the order the old UI's panel shows them. The panels show their own selection of them.
+// Linear, the cubic-bezier that moves at one speed.
+export const LINEAR_EASING = Object.freeze([0, 0, 1, 1]);
+
+// The Easing presets of the panels (docs/timeline-ui.md "Easing"): Smooth (the default, no Easing written), `hold`
+// and the cubic-bezier curves. The panels show their own selection of them.
 export const EASING_PRESETS = Object.freeze([
-  Object.freeze({ label: "Ease in-out", easing: Object.freeze([...DEFAULT_EASING]) }),
-  Object.freeze({ label: "Linear", easing: Object.freeze([0, 0, 1, 1]) }),
+  Object.freeze({ label: "Smooth", easing: DEFAULT_EASING }),
+  Object.freeze({ label: "Hold", easing: "hold" }),
+  Object.freeze({ label: "Linear", easing: LINEAR_EASING }),
+  Object.freeze({ label: "Ease in-out", easing: EASE_IN_OUT }),
   Object.freeze({ label: "Ease in", easing: Object.freeze([0.42, 0, 1, 1]) }),
   Object.freeze({ label: "Ease out", easing: Object.freeze([0, 0, 0.58, 1]) }),
-  Object.freeze({ label: "Auto", easing: "auto" }),
-  Object.freeze({ label: "Hold", easing: "hold" }),
 ]);
 
-// Adds a Keyframe. Between two Keyframes it takes the Easing of the segment it splits, so both halves
-// keep it. Before the first it has the default; after the last, the former last Keyframe's stored
-// Easing now governs the new segment and the new Keyframe has the default.
-function insertKeyframe(lane, frame, value) {
-  const index = lane.keyframes.findIndex((item) => item.frame > frame);
-  const easing = index > 0 ? copyEasing(lane.keyframes[index - 1].easing) : [...DEFAULT_EASING];
-  lane.keyframes.splice(index < 0 ? lane.keyframes.length : index, 0, { frame, value, easing });
+function isLinear(easing) {
+  return Array.isArray(easing) && easing.every((value, i) => value === LINEAR_EASING[i]);
+}
+
+// The segment of a Lane that a frame not on a Keyframe falls in: { k, u } of a laneView (in a looping Lane, a frame
+// before the first Keyframe or after the last is in the segment from the last back to the first), or null outside.
+function segmentAt(view, frame) {
+  const keys = view.keyframes;
+  const first = keys[0].frame;
+  const last = keys[keys.length - 1].frame;
+  let time = frame;
+  if (view.loop && (frame < first || frame > last)) {
+    time = frame < first ? frame + view.period : frame;
+    if (time <= last || time >= first + view.period) return null;
+    return { k: view.n - 1, u: (time - last) / (first + view.period - last) };
+  }
+  if (frame <= first || frame >= last) return null;
+  const k = keys.findIndex((item) => item.frame > frame) - 1;
+  return { k, u: (frame - keys[k].frame) / (keys[k + 1].frame - keys[k].frame) };
+}
+
+// Adds a Keyframe of the Lane `name` of owner at frame holding value, without changing the motion
+// (docs/timeline-ui.md "記録の規則"): inside a segment, Smooth, `hold` and Linear stay on both sides, another
+// cubic-bezier is split at that time into the two halves that move as it did, and a position segment with handles has
+// them split so the path keeps its shape. Outside every segment the new Keyframe is Smooth. `period` is the owner's
+// loop period (ownerPeriod).
+function insertKeyframe(owner, name, frame, value, period) {
+  const keys = owner[name].keyframes;
+  const index = keys.findIndex((item) => item.frame > frame);
+  const at = keys.length >= 2 ? segmentAt(laneView(keys, period), frame) : null;
+  const added = { frame, value, easing: DEFAULT_EASING };
+  let split = null;
+  if (at) {
+    const previous = keys[at.k];
+    const { easing } = previous;
+    if (easing === "hold" || isLinear(easing)) added.easing = copyEasing(easing);
+    else if (Array.isArray(easing)) [previous.easing, added.easing] = splitEasing(easing, at.u);
+    if (name === "position") split = positionSplit(laneView(keys, period), at.k, at.u);
+  }
+  keys.splice(index < 0 ? keys.length : index, 0, added);
+  if (!split) return;
+  const at2 = keys.indexOf(added);
+  const before = keys[(at2 - 1 + keys.length) % keys.length];
+  const after = keys[(at2 + 1) % keys.length];
+  before.handles = { ...(before.handles ?? {}), out: split.prevOut };
+  added.handles = { in: split.newIn, out: split.newOut };
+  after.handles = { ...(after.handles ?? {}), in: split.nextIn };
 }
 
 // An edit of the Lane `name` of `owner` at frame. Without Keyframes it changes the static value. With
 // Keyframes it updates the Keyframe at frame, or adds one there from the current value, so a drag adds
-// a Keyframe on its first change and updates it after; the static value stays as it is.
-export function setLaneValue(owner, name, frame, patch) {
+// a Keyframe on its first change and updates it after; the static value stays as it is. `length` is the output
+// length, the loop period of a looping owner (docs/scene-state-v2.md "ループ").
+export function setLaneValue(owner, name, frame, patch, length = null) {
   const lane = owner[name];
   if (!lane.keyframes.length) {
     lane.value = merged(lane.value, patch);
     return;
   }
   const key = keyAt(lane, frame);
+  const period = ownerPeriod(owner, length);
   if (key) key.value = merged(key.value, patch);
-  else insertKeyframe(lane, frame, merged(evaluateLane(owner, name, frame), patch));
+  else insertKeyframe(owner, name, frame, merged(evaluateLane(owner, name, frame, period), patch), period);
+}
+
+// The Lanes of the port Sticker a sticker_state places, which the editor marks `placedByShot` (studio/session.js):
+// its offset from the Camera that shot it and its opacity (docs/timeline-ui.md "`sticker_state` で届く `port` の
+// Sticker"); the Camera's own Keyframes are the upstream node's.
+const SHOT_PLACED_LANES = ["offset_rotation", "offset_fov", "opacity"];
+
+// The recording rule (setLaneValue) for a Lane whose values do not mix, the Camera's Look at (docs/studio-ui.md "Look
+// at"): `value` replaces the Lane's value without Keyframes, else the Keyframe at `frame`, added when there is none.
+export function setLaneTarget(owner, name, frame, value, length = null) {
+  const lane = owner[name];
+  if (!lane.keyframes.length) {
+    lane.value = value;
+    return;
+  }
+  const key = keyAt(lane, frame);
+  if (key) key.value = value;
+  else insertKeyframe(owner, name, frame, value, ownerPeriod(owner, length));
 }
 
 // The names of the Lanes an owner of a working state v2 has, in their stored order.
 export function laneNames(owner) {
+  if (owner.placedByShot === true) return SHOT_PLACED_LANES;
   if (owner.placement === "world" || owner.placement === "sky") return stickerLanes(owner).map(([name]) => name);
   // The background (state.background) has a Clip range and no Lanes.
   if (owner.clip && !owner.position) return [];
@@ -75,7 +140,8 @@ export function laneNames(owner) {
 // The lens Lanes (ADR 0042): the Camera's `curve`, and the `curve` and `lens` Pose handoff writes on a Sticker. A
 // row's key button and its pins leave them out, so a row keyed everywhere stays one full pin and pressing the
 // button writes no lens Keyframes; a lens Lane is keyed by its own edits and shows on its own Lane line.
-const ROW_EXCLUDED_LANES = new Set(["curve", "lens"]);
+// The Camera's Look at Lane (ADR 0065) is left out too, so changing the target never asks to key every Keyframe.
+const ROW_EXCLUDED_LANES = new Set(["curve", "lens", "look_at"]);
 
 // The Lanes a row's key button and pins act on: laneNames() without the lens Lanes.
 export function rowLaneNames(owner) {
@@ -84,15 +150,16 @@ export function rowLaneNames(owner) {
 
 // Each of the Lanes `names` of owner without a Keyframe at frame gets one there holding its current value. This
 // also makes the first Keyframe of a Lane.
-export function keyLanes(owner, names, frame) {
+export function keyLanes(owner, names, frame, length = null) {
+  const period = ownerPeriod(owner, length);
   for (const name of names) {
-    if (!keyAt(owner[name], frame)) insertKeyframe(owner[name], frame, evaluateLane(owner, name, frame));
+    if (!keyAt(owner[name], frame)) insertKeyframe(owner, name, frame, evaluateLane(owner, name, frame, period), period);
   }
 }
 
 // The row's key button: every Lane of the row (rowLaneNames) gets a Keyframe at frame (keyLanes).
-export function keyAllLanes(owner, frame) {
-  keyLanes(owner, rowLaneNames(owner), frame);
+export function keyAllLanes(owner, frame, length = null) {
+  keyLanes(owner, rowLaneNames(owner), frame, length);
 }
 
 // The frames of a row's Keyframes, one pin per frame: `full` when every Lane has a Keyframe there.
@@ -114,12 +181,12 @@ export function keyedAt(keys, frame) {
 // Removes the Keyframes at frames from the Lanes `names` of owner. A Lane left without Keyframes keeps
 // the value it had at playhead as its static value, so nothing jumps; deleting a Lane's only Keyframe
 // keeps that Keyframe's value.
-export function deleteKeyframes(owner, names, frames, playhead) {
+export function deleteKeyframes(owner, names, frames, playhead, length = null) {
   const removed = new Set(frames);
   for (const name of names) {
     const lane = owner[name];
     if (!lane.keyframes.some((item) => removed.has(item.frame))) continue;
-    const value = evaluateLane(owner, name, playhead);
+    const value = evaluateLane(owner, name, playhead, ownerPeriod(owner, length));
     lane.keyframes = lane.keyframes.filter((item) => !removed.has(item.frame));
     if (!lane.keyframes.length) lane.value = value;
   }
@@ -147,28 +214,45 @@ export function moveKeyframes(owner, names, frames, delta, floor, ceiling = Infi
   return delta;
 }
 
-// The Keyframes whose Easing a selection of Keyframe frames edits: every selected one, each owning the
-// segment up to the next Keyframe (docs/timeline-ui.md "Easing"). A Lane's last Keyframe is left out, as
-// its Easing is not used.
-function easedKeyframes(owner, names, frames) {
+// The segments a selection of Keyframe frames edits the Easing of (docs/timeline-ui.md "Easing"), Lane by Lane, as
+// { name, index } (the segment from Keyframe `index` to the next): one selected Keyframe owns the segment up to the
+// next one; two or more own every segment from the leftmost selected to the rightmost, the unselected ones between
+// included. A Lane's last Keyframe has no segment after it, unless the owner loops (its segment runs back to the
+// first); a range of two or more does not cross that seam. `length` is the output length, the loop period of a
+// looping owner.
+export function easingSegments(owner, names, frames, length = null) {
   const selected = new Set(frames);
-  return names.flatMap((name) => owner[name].keyframes
-    .slice(0, -1)
-    .filter((key) => selected.has(key.frame)));
+  const period = ownerPeriod(owner, length);
+  return names.flatMap((name) => {
+    const keys = owner[name].keyframes;
+    const picked = keys.flatMap((key, index) => (selected.has(key.frame) ? [index] : []));
+    if (!picked.length) return [];
+    if (picked.length === 1) {
+      const loops = keys.length >= 2 && laneView(keys, period).loop;
+      return picked[0] < keys.length - 1 || loops ? [{ name, index: picked[0] }] : [];
+    }
+    const out = [];
+    for (let index = picked[0]; index < picked[picked.length - 1]; index += 1) out.push({ name, index });
+    return out;
+  });
 }
 
-// The Easing of the selected segments of the Lanes `names`: { easing, mixed }, with easing null when
-// they differ, or null when the selection has no segment.
-export function selectedEasing(owner, names, frames) {
-  const keys = easedKeyframes(owner, names, frames);
+function easedKeyframes(owner, names, frames, length = null) {
+  return easingSegments(owner, names, frames, length).map(({ name, index }) => owner[name].keyframes[index]);
+}
+
+// The Easing of the segments an Easing edit of the Lanes `names` sets (easedKeyframes): { easing, mixed }, with
+// easing null when they differ, or null when the selection has no segment.
+export function selectedEasing(owner, names, frames, length = null) {
+  const keys = easedKeyframes(owner, names, frames, length);
   if (!keys.length) return null;
   const mixed = keys.some((key) => JSON.stringify(key.easing) !== JSON.stringify(keys[0].easing));
   return { easing: mixed ? null : keys[0].easing, mixed };
 }
 
-// Sets the Easing of every selected segment of the Lanes `names`.
-export function setSegmentEasing(owner, names, frames, easing) {
-  for (const key of easedKeyframes(owner, names, frames)) key.easing = copyEasing(easing);
+// Sets the Easing of every segment an Easing edit of the Lanes `names` sets (easedKeyframes). Smooth clears it.
+export function setSegmentEasing(owner, names, frames, easing, length = null) {
+  for (const key of easedKeyframes(owner, names, frames, length)) key.easing = copyEasing(easing);
 }
 
 // Moving a Clip range keeps `in`, so the material and its Keyframes move with it.
@@ -331,10 +415,13 @@ export const LANE_LABELS = {
   rotation: "Rotation",
   fov: "FOV",
   curve: "Lens curve",
+  look_at: "Look at",
   lens: "Lens",
   scale: "Scale",
   direction: "Direction",
   roll: "Roll",
   size: "Size",
   opacity: "Opacity",
+  offset_rotation: "Offset",
+  offset_fov: "Zoom",
 };

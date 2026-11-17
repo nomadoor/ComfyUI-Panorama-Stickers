@@ -12,12 +12,17 @@ pytest.importorskip(
 )
 
 from comfyui_pano_suite.core.scene_eval import evaluate_scene_state
-from comfyui_pano_suite.core.scene_state import load_scene_state
+from comfyui_pano_suite.core.scene_state import load_scene_state, load_sticker_state
 from comfyui_pano_suite.nodes import PanoramaStudioNode
 from scene_test_helpers import camera_state as _camera, output_size, shoot as _shoot, state_text, video_frames as _frames
 from test_studio_camera import _solid, _upstream
 from tools.bake_legacy_goldens import render_only_runtime
-from comfyui_pano_suite.port_sticker import _inherit_handoff
+
+
+def _placed(layer, frame):
+    """The port Sticker of a layer as the node evaluates it at a Timeline frame: placed by the shot it is handed."""
+    evaluated = evaluate_scene_state(layer.state, frame, layer.length, layer.boxes, layer.shot)
+    return next(item for item in evaluated["stickers"] if item["id"] == next(s["id"] for s in layer.state["stickers"] if s["source"]["kind"] == "port"))
 
 
 def _textured_erp(height=256, width=512):
@@ -96,8 +101,8 @@ def test_trajectory_returns_through_the_sticker_video_at_another_fps():
     assert _interior_error(again, _frames(shot)) < ROUND_TRIP_ERROR
 
 
-def test_moving_camera_is_baked_into_auto_keyframes_at_every_timeline_frame():
-    sticker_state = json.dumps({"kind": "pano_sticker_state", "version": 2, "fps": 12.0, "camera": {
+def test_a_moving_camera_is_not_baked_and_the_sticker_follows_it_at_the_media_time():
+    sticker_state = json.dumps({"kind": "pano_sticker_state", "version": 3, "fps": 12.0, "camera": {
         "rotation": [
             {"frame": 0, "value": {"yaw_deg": 170.0, "pitch_deg": 0.0, "roll_deg": 175.0}},
             {"frame": 2, "value": {"yaw_deg": 190.0, "pitch_deg": 0.0, "roll_deg": 185.0}},
@@ -105,19 +110,17 @@ def test_moving_camera_is_baked_into_auto_keyframes_at_every_timeline_frame():
         "fov": [{"frame": 0, "value": 40.0}],
     }})
 
-    port = _upstream({"version": 2}, sticker=_solid([1.0, 0.0, 0.0]), sticker_state=sticker_state)[0].layers[-1].state["stickers"][0]
+    layer = _upstream({"version": 2}, sticker=_solid([1.0, 0.0, 0.0]), sticker_state=sticker_state)[0].layers[-1]
+    port = layer.state["stickers"][0]
 
-    # Two frames at 12 fps are four at the 24 fps of the state; the Camera is read between its Keyframes too.
-    assert [key["frame"] for key in port["direction"]["keyframes"]] == [0, 1, 2, 3, 4]
-    assert all(key["easing"] == "auto" for lane in ("direction", "roll") for key in port[lane]["keyframes"])
-    # Yaw and roll turn on past 180 instead of jumping back a whole turn.
-    yaws = [key["value"]["yaw_deg"] for key in port["direction"]["keyframes"]]
-    rolls = [key["value"] for key in port["roll"]["keyframes"]]
-    assert yaws[0] == pytest.approx(170.0) and yaws[-1] == pytest.approx(190.0)
-    assert rolls[0] == pytest.approx(175.0) and rolls[-1] == pytest.approx(185.0)
-    assert all(b > a for a, b in zip(yaws, yaws[1:])) and all(b > a for a, b in zip(rolls, rolls[1:]))
-    # A Lane the Camera does not move stays a static value. vFOV follows the media; stored, it is hFOV.
-    assert port["size"] == {"value": {"hFOV_deg": 40.0, "vFOV_deg": 40.0}, "keyframes": []}
+    # The state's own Lanes are not written (ADR 0067): no Keyframes, the default pose.
+    assert all(port[name]["keyframes"] == [] for name in ("direction", "roll", "size", "curve"))
+    assert layer.shot == load_sticker_state(sticker_state)
+    # Frame 2 at the 24 fps of the state is frame 1 of the 12 fps sticker_state: halfway, past 180.
+    middle = _placed(layer, 2.0)
+    assert (middle["yaw_deg"] % 360.0, middle["roll_deg"] % 360.0) == pytest.approx((180.0, 180.0))
+    # vFOV follows the media; evaluated, it is hFOV.
+    assert (middle["hFOV_deg"], middle["vFOV_deg"]) == pytest.approx((40.0, 40.0))
 
 
 def test_camera_cut_stays_a_cut_at_another_fps():
@@ -127,23 +130,8 @@ def test_camera_cut_stays_a_cut_at_another_fps():
     # The 30 fps shot's `video` sets the Timeline of the receiving state recorded at 24 fps.
     scene = _upstream(sticker=shot[3], sticker_state=shot[4], **output_size(1024))[0]
 
-    yaws = [evaluate_scene_state(scene.layers[-1].state, frame)["stickers"][0]["yaw_deg"] for _bg_index, ((frame, *_rest),) in scene.frames]
+    yaws = [_placed(scene.layers[-1], frame)["yaw_deg"] for _bg_index, ((frame, *_rest),) in scene.frames]
     assert yaws == pytest.approx([0.0] * 10 + [90.0])
-
-
-def test_camera_keyframes_of_one_rotation_keep_the_direction_static():
-    rotation = {"yaw_deg": 33.0, "pitch_deg": 21.0, "roll_deg": 7.0}
-    sticker_state = json.dumps({"kind": "pano_sticker_state", "version": 2, "fps": 24.0, "camera": {
-        "rotation": [{"frame": 0, "value": rotation}, {"frame": 10, "value": rotation}],
-        "fov": [{"frame": 0, "value": 60.0}, {"frame": 10, "value": 40.0}],
-    }})
-
-    port = _upstream({"version": 2}, sticker=_solid([1.0, 0.0, 0.0]), sticker_state=sticker_state)[0].layers[-1].state["stickers"][0]
-
-    assert (port["direction"]["keyframes"], port["roll"]["keyframes"]) == ([], [])
-    assert port["direction"]["value"] == pytest.approx({"yaw_deg": 33.0, "pitch_deg": 21.0})
-    assert len(port["size"]["keyframes"]) == 11
-    assert all(key["value"]["vFOV_deg"] == key["value"]["hFOV_deg"] for key in port["size"]["keyframes"])
 
 
 def test_a_port_sticker_added_without_sticker_state_stores_vfov_as_hfov():
@@ -165,7 +153,7 @@ def _port(output):
 
 
 def _sticker_state(camera, fps=24.0):
-    return json.dumps({"kind": "pano_sticker_state", "version": 2, "fps": fps, "camera": camera})
+    return json.dumps({"kind": "pano_sticker_state", "version": 3, "fps": fps, "camera": camera})
 
 
 MOVING = _sticker_state({
@@ -175,7 +163,6 @@ MOVING = _sticker_state({
     ],
     "fov": [{"frame": 0, "value": 70.0}, {"frame": 6, "value": 50.0}],
 })
-SKY_LANES = ("direction", "roll", "size", "curve")
 # A port Sticker as the editor adds it when `sticker` is connected before `sticker_state`.
 STORED_PORT = {"id": "sticker_1", "source": {"kind": "port"}, "direction": {"value": {"yaw_deg": -90.0, "pitch_deg": 5.0}},
                "size": {"value": {"hFOV_deg": 20.0, "vFOV_deg": 20.0}}, "clip": {"start": 2, "in": 1, "duration": 30},
@@ -183,17 +170,20 @@ STORED_PORT = {"id": "sticker_1", "source": {"kind": "port"}, "direction": {"val
 
 
 def test_a_stored_port_sticker_still_receives_the_camera_work():
-    added = _port(_run(sticker=_solid([1.0, 0.0, 0.0]), sticker_state=MOVING))
+    added = _run(sticker=_solid([1.0, 0.0, 0.0]), sticker_state=MOVING).result[0].layers[-1]
     output = _run({"version": 2, "stickers": [STORED_PORT]}, sticker=_solid([1.0, 0.0, 0.0]), sticker_state=MOVING)
+    layer = output.result[0].layers[-1]
     port = _port(output)
 
-    assert {name: port[name] for name in SKY_LANES} == {name: added[name] for name in SKY_LANES}
-    assert len(port["direction"]["keyframes"]) == 7
-    # The rest of the stored Sticker is kept, and the editor is not asked to add it again.
-    assert (port["id"], port["clip"], port["z_index"], port["locked"]) == ("sticker_1", {"start": 2, "in": 1, "duration": 30}, 3, True)
+    # Placed by the same Camera at the same media time (the stored clip starts 1 frame later from media frame 1).
+    for frame in (3.0, 5.5, 8.0):
+        here, there = _placed(layer, frame), _placed(added, frame - 1.0)
+        assert {key: here[key] for key in ("yaw_deg", "pitch_deg", "roll_deg", "hFOV_deg")} == pytest.approx({key: there[key] for key in ("yaw_deg", "pitch_deg", "roll_deg", "hFOV_deg")})
+    # The stored Sticker is kept as it is, and the editor is not asked to add it again.
+    assert port == load_scene_state({"version": 2, "stickers": [STORED_PORT]})["stickers"][0]
     assert "pano_sticker_input_pose" not in output.ui
-    # At the state's recorded Timeline fps, which the editor rebases it from.
-    assert output.ui["pano_sticker_handoff"] == [{"placement": "sky", "lanes": {name: added[name] for name in SKY_LANES}, "fps": 24.0}]
+    # The sticker_state as it was read, which the editor evaluates the same way.
+    assert output.ui["pano_sticker_handoff"] == [{"state": load_sticker_state(MOVING)}]
 
 
 def test_a_stored_port_sticker_returns_where_it_was_shot():
@@ -214,22 +204,26 @@ def test_connection_order_does_not_matter():
     assert torch.equal(_frames(second.result), _frames(first.result))
 
 
-def test_an_overridden_lane_keeps_its_stored_value():
-    stored = {**STORED_PORT, "handoff_overrides": ["size", "opacity"], "opacity": {"value": 0.5}}
-    added = _port(_run(sticker=_solid([1.0, 0.0, 0.0]), sticker_state=MOVING))
+def test_the_offset_lanes_turn_and_zoom_from_the_shot_camera_and_the_earlier_overrides_are_dropped():
+    level = _sticker_state({"rotation": [{"frame": 0, "value": {"yaw_deg": 30.0, "pitch_deg": 0.0, "roll_deg": 0.0}}], "fov": [{"frame": 0, "value": 50.0}]})
+    stored = {**STORED_PORT, "handoff_overrides": ["size"], "offset_rotation": {"value": {"yaw_deg": 10.0, "pitch_deg": 0.0, "roll_deg": 0.0}},
+              "offset_fov": {"value": 1.2}}
 
-    port = _port(_run({"version": 2, "stickers": [stored]}, sticker=_solid([1.0, 0.0, 0.0]), sticker_state=MOVING))
+    output = _run({"version": 2, "stickers": [stored]}, sticker=_solid([1.0, 0.0, 0.0]), sticker_state=level)
+    port, placed = _port(output), _placed(output.result[0].layers[-1], 4.0)
 
-    assert port["size"] == {"value": {"hFOV_deg": 20.0, "vFOV_deg": 20.0}, "keyframes": []}
-    assert port["opacity"] == {"value": 0.5, "keyframes": []}
-    assert (port["direction"], port["roll"]) == (added["direction"], added["roll"])
-    assert port["handoff_overrides"] == ["size", "opacity"]
+    assert "handoff_overrides" not in port
+    assert port["offset_fov"] == {"value": 1.2, "keyframes": []}
+    assert (placed["yaw_deg"], placed["pitch_deg"], placed["roll_deg"], placed["hFOV_deg"]) == pytest.approx((40.0, 0.0, 0.0, 60.0))
+    # The Sticker's own size Lane is kept but not used while the shot places it.
+    assert port["size"]["value"] == {"hFOV_deg": 20.0, "vFOV_deg": 20.0}
 
 
 def test_without_sticker_state_a_stored_port_sticker_is_unchanged():
     output = _run({"version": 2, "stickers": [STORED_PORT]}, sticker=_solid([1.0, 0.0, 0.0]))
 
     assert _port(output) == load_scene_state({"version": 2, "stickers": [STORED_PORT]})["stickers"][0]
+    assert output.result[0].layers[-1].shot is None
     assert "pano_sticker_handoff" not in output.ui
     assert "pano_sticker_input_pose" not in output.ui
 
@@ -249,45 +243,25 @@ def test_a_static_camera_away_from_the_origin_hands_a_sky_sticker():
     })
 
     output = _run(sticker=_solid([1.0, 0.0, 0.0]), sticker_state=sticker_state)
-    port = _port(output)
+    port, placed = _port(output), _placed(output.result[0].layers[-1], 0.0)
 
     assert port["placement"] == "sky" and "position" not in port
-    assert port["direction"]["value"] == pytest.approx({"yaw_deg": 90.0, "pitch_deg": 0.0})
-    assert port["roll"]["value"] == pytest.approx(20.0)
-    assert port["size"]["value"]["hFOV_deg"] == pytest.approx(90.0)
-    assert all(port[name]["keyframes"] == [] for name in ("direction", "roll", "size"))
-    assert output.ui["pano_sticker_handoff"][0]["placement"] == "sky"
+    assert (placed["yaw_deg"], placed["pitch_deg"], placed["roll_deg"], placed["hFOV_deg"]) == pytest.approx((90.0, 0.0, 20.0, 90.0))
 
 
-def test_a_camera_at_the_origin_in_every_frame_still_hands_a_sky_sticker():
-    sticker_state = _sticker_state({
-        "position": [{"frame": 0, "value": [0.0, 0.0, 0.0]}, {"frame": 4, "value": [0.0, 0.0, 0.0]}],
-        "rotation": [{"frame": 0, "value": {"yaw_deg": 10.0}}, {"frame": 4, "value": {"yaw_deg": 50.0}}],
-    })
-
-    port = _port(_run(sticker=_solid([1.0, 0.0, 0.0]), sticker_state=sticker_state))
-
-    assert port["placement"] == "sky" and len(port["direction"]["keyframes"]) == 5
-
-
-def test_a_moving_camera_is_baked_into_sky_keyframes_its_position_unused():
+def test_a_moving_camera_hands_a_sky_sticker_its_position_unused():
     sticker_state = _sticker_state({
         "position": [{"frame": 0, "value": [0.0, 0.0, 0.0], "easing": "hold"}, {"frame": 4, "value": [1.0, 0.0, 0.0]}],
-        "rotation": [{"frame": 0, "value": {"yaw_deg": 170.0}}, {"frame": 4, "value": {"yaw_deg": 190.0}}],
+        "rotation": [{"frame": 0, "value": {"yaw_deg": 170.0}, "easing": [0, 0, 1, 1]}, {"frame": 4, "value": {"yaw_deg": 190.0}}],
         "fov": [{"frame": 0, "value": 60.0}],
     })
 
-    port = _port(_run(sticker=_solid([1.0, 0.0, 0.0]), sticker_state=sticker_state))
+    layer = _run(sticker=_solid([1.0, 0.0, 0.0]), sticker_state=sticker_state).result[0].layers[-1]
 
-    assert port["placement"] == "sky" and "position" not in port
-    directions = port["direction"]["keyframes"]
-    assert [key["frame"] for key in directions] == [0, 1, 2, 3, 4]
-    # The position's hold does not make the direction hold: only the rotation's Keyframes count for it.
-    assert all(key["easing"] == "auto" for key in directions)
-    # Yaw turns on past 180; a Lane the Camera does not move stays a static value.
-    yaws = [key["value"]["yaw_deg"] for key in directions]
-    assert yaws[0] == pytest.approx(170.0) and yaws[-1] == pytest.approx(190.0) and all(b > a for a, b in zip(yaws, yaws[1:]))
-    assert port["size"] == {"value": pytest.approx({"hFOV_deg": 60.0, "vFOV_deg": 60.0}), "keyframes": []}
+    assert layer.state["stickers"][0]["placement"] == "sky" and "position" not in layer.state["stickers"][0]
+    # The position's hold does not hold the turn: only the rotation's Keyframes move it, here at one speed.
+    yaws = [_placed(layer, frame)["yaw_deg"] % 360.0 for frame in range(5)]
+    assert yaws == pytest.approx([170.0, 175.0, 180.0, 185.0, 190.0])
 
 
 @pytest.mark.parametrize("aspect", [1.0, 16 / 9], ids=["square", "16:9"])
@@ -306,10 +280,10 @@ def test_a_shot_away_from_the_origin_returns_seen_from_the_camera_and_from_the_o
     assert _interior_error(from_origin, _frames(shot)) < ROUND_TRIP_ERROR
 
 
-def test_a_stored_world_port_sticker_becomes_sky_and_drops_the_world_overrides():
+def test_a_stored_world_port_sticker_becomes_sky_keeping_its_offsets():
     world = {"id": "sticker_1", "placement": "world", "source": {"kind": "port"}, "clip": STORED_PORT["clip"], "locked": True,
              "visible": False, "crop": {"x0": 0.1, "y0": 0.0, "x1": 0.9, "y1": 1.0}, "opacity": {"value": 0.5},
-             "position": {"value": [0.0, 0.0, -1.0]}, "handoff_overrides": ["position", "opacity"]}
+             "position": {"value": [0.0, 0.0, -1.0]}, "handoff_overrides": ["position", "opacity"], "offset_fov": {"value": 0.5}}
     other = {"id": "sticker_2", "source": {"kind": "file", "filename": "x.png"}, "z_index": 5}
     to_side = _sticker_state({"position": [{"frame": 0, "value": [0.0, 0.0, 1.0]}]})
 
@@ -318,26 +292,10 @@ def test_a_stored_world_port_sticker_becomes_sky_and_drops_the_world_overrides()
 
     assert port["placement"] == "sky" and "position" not in port
     assert (port["id"], port["clip"], port["visible"], port["locked"]) == ("sticker_1", STORED_PORT["clip"], False, True)
-    assert (port["crop"], port["opacity"]) == ({"x0": 0.1, "y0": 0.0, "x1": 0.9, "y1": 1.0}, {"value": 0.5, "keyframes": []})
-    # Above the other sky Stickers, without the world overrides.
-    assert port["z_index"] == 6 and port["handoff_overrides"] == ["opacity"]
+    assert (port["crop"], port["opacity"], port["offset_fov"]) == ({"x0": 0.1, "y0": 0.0, "x1": 0.9, "y1": 1.0}, {"value": 0.5, "keyframes": []}, {"value": 0.5, "keyframes": []})
+    # Above the other sky Stickers; the earlier overrides are not read.
+    assert port["z_index"] == 6 and "handoff_overrides" not in port
     assert output.ui["pano_sticker_input_pose"][0]["replace"] is True
-
-
-# The editor shows the handoff by the same rule (web_src/pano_port_handoff.js `inheritPortHandoff`), held to these
-# fixtures by tests/pano_port_handoff.test.mjs too (ADR 0030 T11).
-HANDOFF_FIXTURES = Path(__file__).resolve().parent / "fixtures" / "scene_inherit"
-
-
-# Every `handoff_*` case, as tests/pano_port_handoff.test.mjs lists them.
-@pytest.mark.parametrize("name", sorted(path.stem for path in HANDOFF_FIXTURES.glob("handoff_*.json")))
-def test_inheriting_the_handoff_matches_the_fixture_the_editor_shares(name):
-    case = json.loads((HANDOFF_FIXTURES / f"{name}.json").read_text(encoding="utf-8"))
-    state = load_scene_state(case["state"])
-    port = next(item for item in state["stickers"] if item["source"]["kind"] == "port")
-
-    assert case["handoff"]["placement"] == "sky"
-    assert _inherit_handoff(state, port, case["handoff"]["lanes"]) == case["expected"]
 
 
 # The lens curve κ (ADR 0042): a shot through a lens hands a sky Sticker of the same lens (`curve`), so that the same
@@ -375,7 +333,7 @@ def test_a_lens_shot_returns_where_it_was_shot(lanes, aspect):
     again = _frames(_shoot(scene, camera))
 
     assert port["placement"] == "sky" and "lens" not in port
-    assert port["curve"]["keyframes"] or port["curve"]["value"] != 1.0
+    assert _placed(scene.layers[-1], 0.0)["curve"] == pytest.approx(lanes["curve"][0]["value"])
     assert _interior_error(again, _frames(shot)) < ROUND_TRIP_ERROR
 
 
@@ -383,6 +341,37 @@ def test_a_pinhole_only_moving_shot_hands_a_pinhole_sky_sticker():
     camera = _camera(MOVING_LENS)
     shot = _shoot(_textured_erp(), camera)
 
-    [port] = _upstream(None, sticker=_frames(shot), sticker_state=shot[4], **output_size(2048))[0].layers[-1].state["stickers"]
+    layer = _upstream(None, sticker=_frames(shot), sticker_state=shot[4], **output_size(2048))[0].layers[-1]
 
-    assert port["placement"] == "sky" and port["curve"] == {"value": 1.0, "keyframes": []}
+    assert layer.state["stickers"][0]["placement"] == "sky"
+    assert all(_placed(layer, frame)["curve"] == 1.0 for frame in (0.0, 3.0, 6.0))
+
+
+# A Camera that looks at a moving Sticker hands that relation, not baked turns (ADR 0067): the sticker_state carries its
+# Look at Lane and the target's motion on the Timeline, and the receiving Studio places the shot by the same rules.
+LOOKING = {**_camera({"position": [{"frame": 0, "value": [0.0, 0.0, 0.0]}, {"frame": 6, "value": [0.5, 0.2, -0.5]}]}, hFOV_deg=60.0),
+           "stickers": [{"id": "target", "placement": "world", "source": {"kind": "file", "filename": "pano_suite_missing_target.png"},
+                         "clip": {"start": 2, "in": 0, "duration": None}, "visible": False,
+                         "position": {"value": [0.0, 0.0, -3.0], "keyframes": [{"frame": 0, "value": [1.0, 0.0, -3.0]}, {"frame": 4, "value": [-1.0, 0.5, -3.0]}]}}]}
+LOOKING["camera"]["look_at"] = {"value": None, "keyframes": [{"frame": 0, "value": {"point": [0.0, 0.3, -2.0]}}, {"frame": 4, "value": {"sticker": "target", "offset": [0.0, 0.0, 0.0]}}]}
+
+
+def test_a_looking_camera_hands_its_look_at_and_the_targets_motion_on_the_timeline():
+    payload = json.loads(_shoot(_textured_erp(), LOOKING)[4])
+
+    assert payload["version"] == 3 and payload["length"] == 7
+    assert payload["camera"]["look_at"] == load_scene_state(LOOKING)["camera"]["look_at"]
+    [target] = payload["targets"]
+    # The target's Keyframes moved onto the Timeline by its Clip range's origin (start - in = 2); no content, no box.
+    assert (target["id"], target["loop"], [key["frame"] for key in target["position"]], target["box"]) == ("target", False, [2, 6], None)
+    assert target["rotation"] == [{"frame": 0, "value": {"yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0}, "easing": "smooth"}]
+
+
+def test_a_looking_shot_returns_where_it_was_shot():
+    shot = _shoot(_textured_erp(), LOOKING, **output_size(512))
+    frames = _frames(shot)
+    scene = _upstream(None, sticker=frames, sticker_state=shot[4], **output_size(2048))[0]
+    again = _frames(_shoot(scene, LOOKING, **output_size(512)))
+
+    assert again.shape == frames.shape
+    assert _interior_error(again, frames) < ROUND_TRIP_ERROR

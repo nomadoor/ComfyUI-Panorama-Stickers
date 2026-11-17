@@ -21,15 +21,40 @@ MESH_FILE_TYPES = [io.File3DGLB, io.File3DGLTF, io.File3DFBX, io.File3DOBJ, io.F
 SPLAT_FILE_TYPES = [io.File3DPLY, io.File3DSPLAT, io.File3DSPZ, io.File3DKSPLAT, io.File3DSplatAny]
 
 
-def _camera_sticker_state(state: dict, width: int, height: int) -> str:
-    """`sticker_state` v2: each Lane of the state's Camera as its Keyframes at the fps the state records them at
-    (not rebased to the Timeline fps, which would move them by up to half a frame), or its value as one Keyframe."""
+def _lane_keys(lane: dict, shift: float = 0.0) -> list[dict]:
+    """A Lane as a sticker_state carries it: its Keyframes moved by `shift` frames, or its value as one Keyframe."""
+    if not lane["keyframes"]:
+        return [{"frame": 0, "value": lane["value"], "easing": DEFAULT_EASING}]
+    return [{**key, "frame": key["frame"] + shift} for key in lane["keyframes"]]
+
+
+def _camera_sticker_state(layer, width: int, height: int) -> str:
+    """`sticker_state` v3 (docs/scene-state-v2.md "`sticker_state`"): the layer's Camera as its Lanes' Keyframes at the
+    fps the state records them at (not rebased to the Timeline fps, which would move them by up to half a frame), its
+    loop mark and its Look at Lane when it has one, the output length in those frames, and the motion and content box
+    of each Sticker of the state that the Look at points at, its Keyframes moved onto the Timeline. Nothing is baked:
+    the receiving Studio evaluates the Camera by the same rules (ADR 0067)."""
+    state = layer.state
     camera = state["camera"]
-    lanes = {
-        name: camera[name]["keyframes"] or [{"frame": 0, "value": camera[name]["value"], "easing": list(DEFAULT_EASING)}]
-        for name, _value in CAMERA_LANES
-    }
-    payload = {"kind": STICKER_STATE_KIND, "version": 2, "fps": state["timeline"]["fps"], "camera": lanes, "source_aspect": width / height}
+    shot_camera = {"loop": camera["loop"], **{name: _lane_keys(camera[name]) for name, _value in CAMERA_LANES if name != "look_at"}}
+    look_at = camera["look_at"]
+    if look_at["value"] is not None or look_at["keyframes"]:
+        shot_camera["look_at"] = look_at
+    ids = []
+    for target in (look_at["value"], *(key["value"] for key in look_at["keyframes"])):
+        if isinstance(target, dict) and "sticker" in target and target["sticker"] not in ids:
+            ids.append(target["sticker"])
+    stickers = {item["id"]: item for item in state["stickers"]}
+    targets = []
+    for sticker_id in ids:
+        sticker = stickers.get(sticker_id)
+        if sticker is None or sticker["placement"] != "world":
+            continue
+        shift = sticker["clip"]["start"] - sticker["clip"]["in"]
+        targets.append({"id": sticker_id, "loop": sticker["loop"], **{name: _lane_keys(sticker[name], shift) for name in ("position", "rotation", "scale")},
+                        "box": (layer.boxes or {}).get(sticker_id)})
+    payload = {"kind": STICKER_STATE_KIND, "version": 3, "fps": state["timeline"]["fps"], "length": layer.length, "camera": shot_camera,
+               "targets": targets, "source_aspect": width / height}
     return json.dumps(payload, ensure_ascii=True, separators=(",", ":"))
 
 
@@ -148,7 +173,7 @@ class PanoramaStudioNode(io.ComfyNode):
 
         image, mask, video = _render_outputs(built, bg, capture, (width, height))
         # Only a Frame Camera hands its pose to a Sticker (Pose handoff).
-        handoff = _camera_sticker_state(state, width, height) if camera["projection"] == "perspective" else ""
+        handoff = _camera_sticker_state(built.layers[-1], width, height) if camera["projection"] == "perspective" else ""
         ui_ret = {**built.media_ui, **_port_pose_ui(state, built.layers[-1].port, stored_port)}
         # The size the run gave, which media and an upstream Scene can make differ from what the surface works out.
         ui_ret["pano_output_size"] = [{"width": width, "height": height, "capped": reduced_from is not None,

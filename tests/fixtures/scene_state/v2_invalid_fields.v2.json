@@ -11,6 +11,7 @@
     "erp_range": 360,
     "visible": true,
     "locked": false,
+    "loop": false,
     "position": {
       "value": [
         0.0,
@@ -25,12 +26,7 @@
             2.0,
             3.0
           ],
-          "easing": [
-            0.42,
-            0.0,
-            0.58,
-            1.0
-          ],
+          "easing": "smooth",
           "handles": {
             "out": [
               0.0,
@@ -69,12 +65,7 @@
             "pitch_deg": 0.0,
             "roll_deg": 0.0
           },
-          "easing": [
-            0.42,
-            0.0,
-            0.58,
-            1.0
-          ]
+          "easing": "smooth"
         },
         {
           "frame": 11,
@@ -83,12 +74,7 @@
             "pitch_deg": 0.0,
             "roll_deg": 0.0
           },
-          "easing": [
-            0.42,
-            0.0,
-            0.58,
-            1.0
-          ]
+          "easing": "smooth"
         }
       ]
     },
@@ -98,6 +84,10 @@
     },
     "curve": {
       "value": 1.0,
+      "keyframes": []
+    },
+    "look_at": {
+      "value": null,
       "keyframes": []
     }
   },
@@ -143,6 +133,7 @@
       },
       "visible": true,
       "locked": false,
+      "loop": false,
       "crop": {
         "x0": 0.0,
         "y0": 0.2,
@@ -162,12 +153,7 @@
           {
             "frame": 1,
             "value": 30.0,
-            "easing": [
-              0.42,
-              0.0,
-              0.58,
-              1.0
-            ]
+            "easing": "smooth"
           }
         ]
       },
@@ -193,7 +179,18 @@
         "keyframes": []
       },
       "z_index": 0,
-      "handoff_overrides": []
+      "offset_rotation": {
+        "value": {
+          "yaw_deg": 0.0,
+          "pitch_deg": 0.0,
+          "roll_deg": 0.0
+        },
+        "keyframes": []
+      },
+      "offset_fov": {
+        "value": 1.0,
+        "keyframes": []
+      }
     },
     {
       "id": "dup",
@@ -211,6 +208,7 @@
       },
       "visible": true,
       "locked": false,
+      "loop": false,
       "crop": {
         "x0": 0.2,
         "y0": 0.1,
@@ -258,6 +256,7 @@
       },
       "visible": true,
       "locked": false,
+      "loop": false,
       "crop": {
         "x0": 0.0,
         "y0": 0.0,
@@ -308,6 +307,7 @@
       },
       "visible": true,
       "locked": false,
+      "loop": false,
       "crop": {
         "x0": 0.0,
         "y0": 0.0,

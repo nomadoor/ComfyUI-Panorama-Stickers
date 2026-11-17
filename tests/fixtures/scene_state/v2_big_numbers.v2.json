@@ -2,48 +2,48 @@
   "version": 2,
   "id": null,
   "timeline": {
-    "fps": 24,
+    "fps": 24.0,
     "length": null
   },
   "camera": {
-    "aspect": 1,
+    "aspect": 1.0,
     "projection": "perspective",
     "erp_range": 360,
     "visible": true,
     "locked": false,
+    "loop": false,
     "position": {
       "value": [
-        0,
-        0,
-        0
+        0.0,
+        0.0,
+        0.0
       ],
       "keyframes": []
     },
     "rotation": {
       "value": {
-        "yaw_deg": 0,
-        "pitch_deg": 0,
-        "roll_deg": 0
+        "yaw_deg": 0.0,
+        "pitch_deg": 0.0,
+        "roll_deg": 0.0
       },
       "keyframes": []
     },
     "fov": {
-      "value": 90,
+      "value": 90.0,
       "keyframes": [
         {
           "frame": 2,
-          "value": 90,
-          "easing": [
-            0.42,
-            0,
-            0.58,
-            1
-          ]
+          "value": 90.0,
+          "easing": "smooth"
         }
       ]
     },
     "curve": {
-      "value": 1,
+      "value": 1.0,
+      "keyframes": []
+    },
+    "look_at": {
+      "value": null,
       "keyframes": []
     }
   },
@@ -56,27 +56,27 @@
     "visible": true,
     "position": {
       "value": [
-        0,
-        0,
-        0
+        0.0,
+        0.0,
+        0.0
       ],
       "keyframes": []
     },
     "rotation": {
       "value": {
-        "yaw_deg": 0,
-        "pitch_deg": 0,
-        "roll_deg": 0
+        "yaw_deg": 0.0,
+        "pitch_deg": 0.0,
+        "roll_deg": 0.0
       },
       "keyframes": []
     },
     "scale": {
-      "value": 1,
+      "value": 1.0,
       "keyframes": []
     },
     "animation": {
       "clip": "a",
-      "speed": 1
+      "speed": 1.0
     }
   },
   "stickers": [
@@ -93,40 +93,52 @@
       },
       "visible": true,
       "locked": false,
+      "loop": false,
       "crop": {
-        "x0": 0,
-        "y0": 0,
-        "x1": 1,
-        "y1": 1
+        "x0": 0.0,
+        "y0": 0.0,
+        "x1": 1.0,
+        "y1": 1.0
       },
       "direction": {
         "value": {
-          "yaw_deg": 0,
-          "pitch_deg": 0
+          "yaw_deg": 0.0,
+          "pitch_deg": 0.0
         },
         "keyframes": []
       },
       "roll": {
-        "value": 0,
+        "value": 0.0,
         "keyframes": []
       },
       "size": {
         "value": {
-          "hFOV_deg": 20,
-          "vFOV_deg": 20
+          "hFOV_deg": 20.0,
+          "vFOV_deg": 20.0
         },
         "keyframes": []
       },
       "opacity": {
-        "value": 1,
+        "value": 1.0,
         "keyframes": []
       },
       "curve": {
-        "value": 1,
+        "value": 1.0,
         "keyframes": []
       },
       "z_index": 0,
-      "handoff_overrides": []
+      "offset_rotation": {
+        "value": {
+          "yaw_deg": 0.0,
+          "pitch_deg": 0.0,
+          "roll_deg": 0.0
+        },
+        "keyframes": []
+      },
+      "offset_fov": {
+        "value": 1.0,
+        "keyframes": []
+      }
     }
   ],
   "next_sticker_id": 2,

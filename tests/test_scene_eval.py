@@ -1,10 +1,11 @@
+import json
 import math
 
 import numpy as np
 import pytest
 
-from comfyui_pano_suite.core.scene_eval import evaluate_scene_state
-from comfyui_pano_suite.core.scene_state import load_scene_state, rebase_scene_state
+from comfyui_pano_suite.core.scene_eval import evaluate_scene_state, shot_camera
+from comfyui_pano_suite.core.scene_state import load_scene_state, load_sticker_state, rebase_scene_state
 from comfyui_pano_suite.core.world import world_rotation
 
 
@@ -116,7 +117,10 @@ def test_rotation_velocity_is_continuous_with_very_uneven_spacing(frames):
         left = angular_velocity(state, frame - h, frame)
         right = angular_velocity(state, frame, frame + h)
         assert np.linalg.norm(left) > 1e-3
-        assert np.linalg.norm(left - right) < 1e-3 * np.linalg.norm(left) + 1e-6
+        # Progress is read along the measured length (65 samples), so a segment whose shape bunches up near a key
+        # (here 3 frames between 30 and 57 frame segments) keeps the speed only to a few percent there
+        # (docs/scene-state-v2.md "長さと τ").
+        assert np.linalg.norm(left - right) < 5e-2 * np.linalg.norm(left) + 1e-6
 
 
 def test_fast_move_then_stop_does_not_overshoot():
@@ -168,7 +172,7 @@ def test_half_turn_through_the_view_axis_is_deterministic():
 def test_yaw_tie_between_stored_numbers_and_shortest_turn_takes_the_lower_value():
     # The shortest turn from 0 to 350 is -10 degrees; halfway the blend of the numbers (175) is exactly
     # 180 degrees from the true yaw (-5), and the tie takes the lower value.
-    state = camera_state([{"frame": 0, "value": {"yaw_deg": 0}, "easing": "auto"}, {"frame": 20, "value": {"yaw_deg": 350}}])
+    state = camera_state([{"frame": 0, "value": {"yaw_deg": 0}, "easing": [0.0, 0.0, 1.0, 1.0]}, {"frame": 20, "value": {"yaw_deg": 350}}])
     assert camera_at(state, 10)["yaw_deg"] == pytest.approx(-5.0, abs=1e-9)
     assert camera_at(state, 19)["yaw_deg"] == pytest.approx(350.5, abs=1e-9)
 
@@ -202,7 +206,7 @@ def bezier_point(p0, c1, c2, p1, t):
 
 def test_position_path_is_smooth_without_handles_and_follows_handles():
     keys = [
-        {"frame": 0, "value": {"position": [0, 0, 0]}, "easing": "auto"},
+        {"frame": 0, "value": {"position": [0, 0, 0]}, "easing": [0.0, 0.0, 1.0, 1.0]},
         {"frame": 10, "value": {"position": [4, 0, 0]}},
     ]
     state = camera_state(keys)
@@ -210,25 +214,43 @@ def test_position_path_is_smooth_without_handles_and_follows_handles():
     keys[0]["handles"] = {"out": [0, 3, 0]}
     keys[1]["handles"] = {"in": [0, 0, 2]}
     state = camera_state(keys)
-    for t in (0.2, 0.5, 0.7):
-        expected = bezier_point([0, 0, 0], [0, 3, 0], [4, 0, 2], [4, 0, 0], t)
-        assert camera_at(state, 10 * t)["position"] == pytest.approx(expected.tolist(), abs=1e-9)
-    # Only the handle that is present overrides; the other end keeps the automatic tangent.
-    three = camera_state(with_easing([
+    # Handles shape the path; Linear runs along it at an even speed (docs/scene-state-v2.md "長さと τ").
+    curve = [bezier_point([0, 0, 0], [0, 3, 0], [4, 0, 2], [4, 0, 0], t) for t in np.linspace(0.0, 1.0, 4001)]
+    points = [np.array(camera_at(state, frame)["position"]) for frame in np.arange(0.0, 10.01, 0.5)]
+    for point in points:
+        assert min(np.linalg.norm(point - c) for c in curve) < 2e-3
+    steps = [np.linalg.norm(b - a) for a, b in zip(points, points[1:])]
+    assert max(steps) == pytest.approx(min(steps), rel=2e-2)
+    # A handle on one side of a passing key turns the automatic side to its opposite, so the path does not fold.
+    three = camera_state([
         {"frame": 0, "value": {"position": [0, 0, 0]}},
         {"frame": 10, "value": {"position": [4, 0, 0]}, "handles": {"out": [0, 1, 0]}},
         {"frame": 20, "value": {"position": [4, 4, 0]}},
-    ], "auto"))
-    auto = camera_state(with_easing([
+    ])
+    before = np.array(camera_at(three, 10)["position"]) - np.array(camera_at(three, 10 - 1e-4)["position"])
+    after = np.array(camera_at(three, 10 + 1e-4)["position"]) - np.array(camera_at(three, 10)["position"])
+    assert before / np.linalg.norm(before) == pytest.approx([0.0, 1.0, 0.0], abs=1e-3)
+    assert after / np.linalg.norm(after) == pytest.approx([0.0, 1.0, 0.0], abs=1e-3)
+    # Without handles the path curves through a right-angle key along the bisector, at the shared speed of the two
+    # Smooth segments: three keys on a circle of radius 2√2, so each segment is a quarter of it.
+    smooth = camera_state([
         {"frame": 0, "value": {"position": [0, 0, 0]}},
         {"frame": 10, "value": {"position": [4, 0, 0]}},
         {"frame": 20, "value": {"position": [4, 4, 0]}},
-    ], "auto"))
-    assert camera_at(three, 5)["position"] == camera_at(auto, 5)["position"]
-    assert camera_at(three, 15)["position"] != camera_at(auto, 15)["position"]
-    # Without handles the auto path curves through a right-angle key instead of stopping at the corner.
-    velocity = (np.array(camera_at(auto, 10 + 1e-4)["position"]) - np.array(camera_at(auto, 10 - 1e-4)["position"])) / 2e-4
-    assert velocity == pytest.approx([0.2, 0.2, 0.0], abs=1e-6)
+    ])
+    velocity = (np.array(camera_at(smooth, 10 + 1e-4)["position"]) - np.array(camera_at(smooth, 10 - 1e-4)["position"])) / 2e-4
+    speed = 2 * math.sqrt(2) * math.pi / 2 / 10
+    assert velocity == pytest.approx([speed / math.sqrt(2), speed / math.sqrt(2), 0.0], rel=1e-3)
+    # The shape does not depend on the key times.
+    slow = camera_state([
+        {"frame": 0, "value": {"position": [0, 0, 0]}},
+        {"frame": 10, "value": {"position": [4, 0, 0]}},
+        {"frame": 110, "value": {"position": [4, 4, 0]}},
+    ])
+    path = [np.array(camera_at(smooth, frame)["position"]) for frame in np.arange(10.0, 20.0, 0.002)]
+    for frame in (30.0, 60.0, 90.0):
+        point = np.array(camera_at(slow, frame)["position"])
+        assert min(np.linalg.norm(point - q) for q in path) < 1e-3
 
 
 def test_position_stops_only_where_it_turns_back():
@@ -410,7 +432,7 @@ def direction_keys(*keys, easing="auto"):
     return [{"frame": frame, "value": {"yaw_deg": yaw, "pitch_deg": pitch}, "easing": easing} for frame, yaw, pitch in keys]
 
 
-@pytest.mark.parametrize("curve", ["auto", [0.42, 0.0, 0.58, 1.0], [0.9, 0.0, 0.1, 1.0]])
+@pytest.mark.parametrize("curve", ["smooth", [0.0, 0.0, 1.0, 1.0], [0.42, 0.0, 0.58, 1.0], [0.9, 0.0, 0.1, 1.0]])
 def test_direction_follows_the_great_circle_with_the_eased_progress(curve):
     state = sky_state(direction=direction_keys((0, -40, 10), (20, 70, 50), easing=curve))
     a, b = direction_vector({"yaw_deg": -40, "pitch_deg": 10}), direction_vector({"yaw_deg": 70, "pitch_deg": 50})
@@ -418,7 +440,8 @@ def test_direction_follows_the_great_circle_with_the_eased_progress(curve):
     total = math.acos(a @ b)
     for u in (0.1, 0.3, 0.5, 0.85):
         d = direction_vector(sky_at(state, 20 * u))
-        progress = u if curve == "auto" else css_cubic_bezier(*curve, u)
+        # Two Smooth keys stop at both ends, so they move as ease-in-out.
+        progress = css_cubic_bezier(*([0.42, 0.0, 0.58, 1.0] if curve == "smooth" else curve), u)
         assert d @ normal == pytest.approx(0.0, abs=1e-9)
         assert math.acos(min(1.0, d @ a)) == pytest.approx(total * progress, abs=1e-4)
 
@@ -473,7 +496,7 @@ def test_roll_is_a_number_without_the_shortest_turn():
 def test_size_angles_and_lanes_move_independently():
     state = sky_state(
         direction=direction_keys((0, 0, 0), (10, 40, 0)),
-        size=[{"frame": 0, "value": {"hFOV_deg": 20, "vFOV_deg": 10}, "easing": "auto"}, {"frame": 30, "value": {"hFOV_deg": 50, "vFOV_deg": 10}}],
+        size=[{"frame": 0, "value": {"hFOV_deg": 20, "vFOV_deg": 10}, "easing": [0.0, 0.0, 1.0, 1.0]}, {"frame": 30, "value": {"hFOV_deg": 50, "vFOV_deg": 10}}],
     )
     out = sky_at(state, 20)
     assert out["yaw_deg"] == 40.0
@@ -482,7 +505,7 @@ def test_size_angles_and_lanes_move_independently():
     assert out["roll_deg"] == 0.0
 
 
-def test_default_easing_is_ease_in_out():
+def test_two_keys_without_easing_move_as_ease_in_out():
     state = load_scene_state({"version": 2, "camera": {"fov": {"keyframes": [{"frame": 0, "value": 40}, {"frame": 20, "value": 80}]}}})
     for u in (0.25, 0.5, 0.75):
         assert camera_at(state, 20 * u)["hFOV_deg"] == pytest.approx(40 + 40 * css_cubic_bezier(0.42, 0.0, 0.58, 1.0, u), abs=1e-4)
@@ -515,7 +538,7 @@ def test_segments_that_do_not_pass_a_key_are_the_great_circle_slerp():
     pairs = [((rng.uniform(-180, 180), rng.uniform(-90, 90)), (rng.uniform(-180, 180), rng.uniform(-90, 90))) for _ in range(20)]
     pairs += [((30.0, 20.0), (210.0, -20.0)), ((0.0, 90.0), (45.0, -90.0)), ((10.0, 0.0), (10.0, 0.0))]
     for (yaw0, pitch0), (yaw1, pitch1) in pairs:
-        state = sky_state(direction=direction_keys((0, yaw0, pitch0), (10, yaw1, pitch1)))
+        state = sky_state(direction=direction_keys((0, yaw0, pitch0), (10, yaw1, pitch1), easing=[0.0, 0.0, 1.0, 1.0]))
         a = direction_vector({"yaw_deg": yaw0, "pitch_deg": pitch0})
         b = direction_vector({"yaw_deg": yaw1, "pitch_deg": pitch1})
         w = b - (a @ b) * a
@@ -527,4 +550,295 @@ def test_segments_that_do_not_pass_a_key_are_the_great_circle_slerp():
             v = p * chord
             angle = np.linalg.norm(v)
             expected = math.cos(angle) * a + (math.sin(angle) / angle if angle > 1e-12 else 1.0) * v
-            assert direction_vector(sky_at(state, 10 * p)) == pytest.approx(expected, abs=1e-12)
+            assert direction_vector(sky_at(state, 10 * p)) == pytest.approx(expected, abs=1e-9)
+
+
+# Shapes apart from Easing, Smooth, corners and loops (docs/scene-state-v2.md "補間" and "ループ", ADR 0064).
+
+FIXTURES = __import__("pathlib").Path(__file__).resolve().parent / "fixtures" / "scene_state"
+
+
+def motion_cases(name):
+    return json.loads((FIXTURES / f"{name}.json").read_text(encoding="utf-8"))["cases"]
+
+
+def close(py, expected, path="$"):
+    if isinstance(expected, dict):
+        assert list(py.keys()) == list(expected.keys()), path
+        for key in expected:
+            close(py[key], expected[key], f"{path}.{key}")
+    elif isinstance(expected, list):
+        assert len(py) == len(expected), path
+        for index, (a, b) in enumerate(zip(py, expected)):
+            close(a, b, f"{path}[{index}]")
+    elif isinstance(expected, (bool, str)) or expected is None:
+        assert py == expected, path
+    else:
+        assert abs(py - expected) <= 1e-4, f"{path}: {py} != {expected}"
+
+
+@pytest.mark.parametrize("fixture", ["v2_shape_progress", "v2_loop"])
+def test_motion_fixtures_evaluate_as_the_js_side_does(fixture):
+    for case in motion_cases(fixture):
+        state = load_scene_state(case["state"])
+        got = [evaluate_scene_state(state, frame, case["length"]) for frame in case["frames"]]
+        close(got, case["expected"], case["name"])
+
+
+def circle_keys(count, easing=None, step=12, radius=5.0):
+    keys = []
+    for i in range(count):
+        angle = 2 * math.pi * i / count
+        key = {"frame": step * i, "value": [radius * math.sin(angle), 1.6, radius * math.cos(angle)]}
+        if easing is not None:
+            key["easing"] = easing
+        keys.append(key)
+    return keys
+
+
+def position_state(keys, loop=False):
+    return load_scene_state({"version": 2, "timeline": {"fps": 24.0}, "camera": {"loop": loop, "position": {"keyframes": keys}}})
+
+
+def position_at(state, frame, length=None):
+    return np.array(evaluate_scene_state(state, frame, length)["camera"]["position"])
+
+
+def radius_of(point):
+    return math.hypot(point[0], point[2])
+
+
+@pytest.mark.parametrize("easing", [[0.0, 0.0, 1.0, 1.0], [0.42, 0.0, 0.58, 1.0], None])
+def test_four_keys_on_a_circle_follow_it_whatever_the_easing(easing):
+    state = position_state(circle_keys(4, easing), loop=True)
+    radii = [radius_of(position_at(state, frame, 48)) for frame in np.arange(0.0, 48.0, 0.25)]
+    assert max(abs(r - 5.0) for r in radii) < 5.0 * 2e-3
+    # Without the loop the first and last segments are arcs of the same circle too.
+    open_state = position_state(circle_keys(4, easing))
+    radii = [radius_of(position_at(open_state, frame)) for frame in np.arange(0.0, 36.0, 0.25)]
+    assert max(abs(r - 5.0) for r in radii) < 5.0 * 2e-3
+
+
+def test_linear_runs_at_an_even_speed_along_a_curved_path_and_through_the_seam():
+    state = position_state(circle_keys(4, [0.0, 0.0, 1.0, 1.0]), loop=True)
+    steps = [np.linalg.norm(position_at(state, f + 0.25, 48) - position_at(state, f, 48)) for f in np.arange(-6.0, 54.0, 0.25)]
+    assert max(steps) == pytest.approx(min(steps), rel=1e-2)
+    # One period: frame 48 is frame 0, and the last frame is not a copy of the first.
+    assert position_at(state, 48.0, 48) == pytest.approx(position_at(state, 0.0, 48), abs=1e-9)
+    assert np.linalg.norm(position_at(state, 47.0, 48) - position_at(state, 0.0, 48)) > 0.1
+
+
+def test_smooth_passes_middle_keys_and_eases_out_of_the_first_and_into_the_last():
+    state = position_state([{"frame": 0, "value": [0, 0, 0]}, {"frame": 10, "value": [4, 0, 0]}, {"frame": 30, "value": [4, 0, 6]}, {"frame": 36, "value": [8, 0, 6]}])
+    h = 1e-4
+    assert np.linalg.norm(position_at(state, h) - position_at(state, 0)) / h < 1e-3
+    assert np.linalg.norm(position_at(state, 36) - position_at(state, 36 - h)) / h < 1e-3
+    for frame in (10, 30):
+        left = (position_at(state, frame) - position_at(state, frame - h)) / h
+        right = (position_at(state, frame + h) - position_at(state, frame)) / h
+        assert np.linalg.norm(left) > 0.1
+        assert np.linalg.norm(left - right) < 1e-2 * np.linalg.norm(left)
+
+
+def test_a_corner_turns_sharply_on_straight_segments_and_does_not_stop():
+    state = position_state([{"frame": 0, "value": [0, 0, 0]}, {"frame": 10, "value": [4, 0, 0], "corner": True}, {"frame": 20, "value": [4, 0, 4]}])
+    for frame in np.arange(0.0, 10.0, 0.5):
+        assert position_at(state, frame)[2] == pytest.approx(0.0, abs=1e-9)
+    for frame in np.arange(10.0, 20.0, 0.5):
+        assert position_at(state, frame)[0] == pytest.approx(4.0, abs=1e-9)
+    h = 1e-4
+    assert np.linalg.norm(position_at(state, 10) - position_at(state, 10 - h)) / h > 0.1
+
+
+def test_smooth_joins_the_speed_of_a_cubic_bezier_neighbor():
+    state = position_state([
+        {"frame": 0, "value": [0, 0, 0], "easing": [0.42, 0.0, 1.0, 1.0]},
+        {"frame": 10, "value": [5, 0, 0]},
+        {"frame": 20, "value": [10, 0, 0], "easing": [0.0, 0.0, 0.58, 1.0]},
+        {"frame": 30, "value": [15, 0, 0]},
+    ])
+    h = 1e-4
+    for frame in (10, 20):
+        left = np.linalg.norm(position_at(state, frame) - position_at(state, frame - h)) / h
+        right = np.linalg.norm(position_at(state, frame + h) - position_at(state, frame)) / h
+        assert left == pytest.approx(right, rel=1e-3)
+        assert left > 0.5
+
+
+def test_a_near_turn_back_does_not_swing_out_into_a_loop():
+    for degrees in (150.0, 170.0, 179.99):
+        turn = math.radians(180.0 - degrees)
+        state = position_state([
+            {"frame": 0, "value": [0, 0, 0]}, {"frame": 10, "value": [10, 0, 0]},
+            {"frame": 20, "value": [10 - 10 * math.cos(turn), 0, 10 * math.sin(turn)]},
+        ])
+        sideways = min(position_at(state, frame)[2] for frame in np.arange(0.0, 20.0, 0.05))
+        assert sideways > -2.0, degrees
+
+
+def test_only_lanes_shorter_than_the_period_loop_and_only_with_a_length():
+    keys = circle_keys(4, [0.0, 0.0, 1.0, 1.0])
+    looping = position_state(keys, loop=True)
+    assert position_at(looping, 60.0, 48) == pytest.approx(position_at(looping, 12.0, 48), abs=1e-9)
+    # No length: the loop does nothing, the last value holds.
+    assert position_at(looping, 60.0) == pytest.approx(position_at(looping, 36.0), abs=1e-9)
+    # The mark off: the same.
+    assert position_at(position_state(keys), 60.0, 48) == pytest.approx(position_at(looping, 36.0), abs=1e-9)
+    # Keys spanning the whole period: that Lane does not loop.
+    spanning = position_state(keys + [{"frame": 48, "value": keys[0]["value"], "easing": [0.0, 0.0, 1.0, 1.0]}], loop=True)
+    assert position_at(spanning, 60.0, 48) == pytest.approx(position_at(spanning, 48.0, 48), abs=1e-9)
+
+
+def test_a_last_key_that_repeats_the_first_stays_at_its_frame_and_the_seam_does_not_fold():
+    keys = circle_keys(4) + [{"frame": 48, "value": circle_keys(4)[0]["value"]}]
+    state = position_state(keys, loop=True)
+    # Frames 48..60 hold the first value: the key stays at its own frame.
+    for frame in (48.0, 52.0, 59.5):
+        assert position_at(state, frame, 60) == pytest.approx(position_at(state, 0.0, 60), abs=1e-9)
+    # Into the last key and out of the first, the path runs along one direction.
+    h = 1e-3
+    into = position_at(state, 48.0, 60) - position_at(state, 48.0 - h, 60)
+    out = position_at(state, 60.0 + h, 60) - position_at(state, 60.0, 60)
+    assert into / np.linalg.norm(into) == pytest.approx(out / np.linalg.norm(out), abs=1e-3)
+    # The Smooth speed carries across the seam: it does not stop at the last key and the first.
+    assert np.linalg.norm(into) / h > 0.5 and np.linalg.norm(out) / h > 0.5
+
+
+def test_a_one_way_fade_returns_over_the_rest_of_a_loop():
+    state = load_scene_state({"version": 2, "timeline": {"fps": 24.0}, "stickers": [{
+        "id": "st", "placement": "sky", "source": {"kind": "port"}, "loop": True,
+        "opacity": {"keyframes": [{"frame": 0, "value": 0.0, "easing": [0.0, 0.0, 1.0, 1.0]}, {"frame": 10, "value": 1.0, "easing": [0.0, 0.0, 1.0, 1.0]}]},
+    }]})
+    opacity = [evaluate_scene_state(state, frame, 48)["stickers"][0]["opacity"] for frame in (5.0, 10.0, 29.0, 48.0)]
+    assert opacity == pytest.approx([0.5, 1.0, 0.5, 0.0], abs=1e-9)
+
+
+def test_the_scene_never_loops():
+    state = load_scene_state({"version": 2, "scene": {"loop": True, "scale": {"keyframes": [{"frame": 0, "value": 1.0}, {"frame": 10, "value": 2.0}]}}})
+    assert evaluate_scene_state(state, 30.0, 20)["scene"]["scale"] == pytest.approx(2.0)
+
+
+# Look at (docs/scene-state-v2.md "Look at", ADR 0065).
+
+def test_the_look_at_fixture_evaluates_as_the_js_side_does():
+    for case in motion_cases("v2_look_at"):
+        state = load_scene_state(case["state"])
+        got = [evaluate_scene_state(state, frame, case["length"], case["boxes"]) for frame in case["frames"]]
+        close(got, case["expected"], case["name"])
+
+
+def forward_of(camera):
+    return world_rotation(camera["yaw_deg"], camera["pitch_deg"], camera["roll_deg"]) @ np.array([0.0, 0.0, -1.0])
+
+
+def test_the_camera_faces_its_target_keeps_its_roll_and_world_up():
+    state = load_scene_state({"version": 2, "camera": {
+        "position": {"keyframes": [{"frame": 0, "value": [0, 1, 6]}, {"frame": 30, "value": [5, 2, 3]}]},
+        "rotation": {"value": {"yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 12.0}},
+        "look_at": {"value": {"point": [1.0, 0.5, -2.0]}},
+    }})
+    for frame in (0.0, 7.5, 18.0, 30.0):
+        camera = evaluate_scene_state(state, frame)["camera"]
+        toward = np.array([1.0, 0.5, -2.0]) - np.array(camera["position"])
+        assert forward_of(camera) == pytest.approx(toward / np.linalg.norm(toward), abs=1e-9)
+        assert camera["roll_deg"] == pytest.approx(12.0)
+
+
+def test_a_sticker_target_point_is_its_box_share_scaled_turned_and_moved():
+    box = {"center": [0.0, 0.5, 0.0], "size": [2.0, 1.0, 0.0]}
+    state = load_scene_state({"version": 2, "camera": {"position": {"value": [0.0, 0.0, 5.0]}, "look_at": {"value": {"sticker": "s", "offset": [0.5, 0.5, 0.0]}}},
+                              "stickers": [{"id": "s", "placement": "world", "source": {"kind": "file", "filename": "a.png"},
+                                            "position": {"value": [1.0, 0.0, -1.0]}, "rotation": {"value": {"yaw_deg": 90.0}}, "scale": {"value": 2.0}}]})
+    camera = evaluate_scene_state(state, 0.0, None, {"s": box})["camera"]
+    # The box's point (0.5 * 2 + 0, 0.5 + 0.5 * 1) = (1, 1, 0), scaled by 2 and turned 90° to the right: (0, 2, 2) in World.
+    local = np.array([2.0, 2.0, 0.0])
+    point = np.array([1.0, 0.0, -1.0]) + world_rotation(90.0, 0.0, 0.0) @ local
+    toward = point - np.array([0.0, 0.0, 5.0])
+    assert forward_of(camera) == pytest.approx(toward / np.linalg.norm(toward), abs=1e-9)
+    # Without the box the point is the Sticker's position.
+    camera = evaluate_scene_state(state, 0.0)["camera"]
+    toward = np.array([1.0, 0.0, -1.0]) - np.array([0.0, 0.0, 5.0])
+    assert forward_of(camera) == pytest.approx(toward / np.linalg.norm(toward), abs=1e-9)
+
+
+def test_over_the_target_the_yaw_is_the_frame_before_else_after_else_the_rotation_lane():
+    def at(keys, frame, yaw=77.0):
+        state = load_scene_state({"version": 2, "timeline": {"fps": 24.0}, "camera": {
+            "position": {"keyframes": keys}, "rotation": {"value": {"yaw_deg": yaw}}, "look_at": {"value": {"point": [0.0, 0.0, 0.0]}}}})
+        return evaluate_scene_state(state, frame, 20)["camera"]
+    keys = [{"frame": 0, "value": [0, 5, 2]}, {"frame": 10, "value": [0, 5, 0]}, {"frame": 19, "value": [3, 5, -1]}]
+    over = at(keys, 10.0)
+    assert over["pitch_deg"] == -90.0
+    assert over["yaw_deg"] == pytest.approx(at(keys, 9.0)["yaw_deg"])
+    # Over it from the start: the frame just after.
+    first = [{"frame": 0, "value": [0, 5, 0]}, {"frame": 10, "value": [3, 5, 0]}]
+    assert at(first, 0.0)["yaw_deg"] == pytest.approx(at(first, 1.0)["yaw_deg"])
+    # Over it the whole time: the rotation Lane's.
+    always = [{"frame": 0, "value": [0, 3, 0]}, {"frame": 9, "value": [0, 1, 0]}]
+    assert at(always, 4.0)["yaw_deg"] == 77.0
+
+
+def test_between_two_targets_the_turn_slerps_by_the_segment_s_progress():
+    state = load_scene_state({"version": 2, "camera": {"position": {"value": [0.0, 0.0, 0.0]}, "look_at": {"keyframes": [
+        {"frame": 0, "value": {"point": [0.0, 0.0, -1.0]}, "easing": [0.0, 0.0, 1.0, 1.0]},
+        {"frame": 10, "value": {"point": [1.0, 0.0, 0.0]}},
+    ]}}})
+    assert evaluate_scene_state(state, 0.0)["camera"]["yaw_deg"] == pytest.approx(0.0, abs=1e-9)
+    assert evaluate_scene_state(state, 5.0)["camera"]["yaw_deg"] == pytest.approx(45.0, abs=1e-6)
+    assert evaluate_scene_state(state, 10.0)["camera"]["yaw_deg"] == pytest.approx(90.0, abs=1e-9)
+
+
+# Pose handoff (docs/scene-state-v2.md "受け渡しの置き方", ADR 0067).
+
+def test_the_handoff_fixture_evaluates_as_the_js_side_does():
+    for case in motion_cases("v2_handoff"):
+        state = load_scene_state(case["state"])
+        shot = load_sticker_state(json.dumps(case["shot"]))
+        got = [evaluate_scene_state(state, frame, case["length"], None, shot) for frame in case["frames"]]
+        close(got, case["expected"], case["name"])
+
+
+def _handoff_case(name):
+    case = next(item for item in motion_cases("v2_handoff") if item["name"] == name)
+    return load_scene_state(case["state"]), load_sticker_state(json.dumps(case["shot"]))
+
+
+def test_without_an_offset_the_sticker_is_the_shot_camera_at_the_media_time():
+    state, shot = _handoff_case("moving_camera_no_offset")
+    for frame in (6.0, 17.5, 40.0):
+        sticker = evaluate_scene_state(state, frame, None, None, shot)["stickers"][0]
+        camera = shot_camera(shot, sticker["clip_frame"] * shot["fps"] / state["timeline"]["fps"])
+        assert np.allclose(world_rotation(sticker["yaw_deg"], sticker["pitch_deg"], sticker["roll_deg"]), world_rotation(camera["yaw_deg"], camera["pitch_deg"], camera["roll_deg"]), atol=1e-9)
+        assert (sticker["hFOV_deg"], sticker["vFOV_deg"], sticker["curve"]) == pytest.approx((camera["hFOV_deg"], camera["hFOV_deg"], camera["curve"]))
+
+
+def test_the_offset_turns_in_the_shot_cameras_own_axes_and_scales_its_angle_of_view():
+    # The Camera that shot it is rolled a quarter turn: a pitch of the offset (up in that Camera's own axes) moves the
+    # Sticker sideways in the World, not up.
+    shot = load_sticker_state(json.dumps({"kind": "pano_sticker_state", "version": 3, "fps": 24, "camera": {
+        "rotation": [{"frame": 0, "value": {"yaw_deg": 0, "pitch_deg": 0, "roll_deg": 90}}], "fov": [{"frame": 0, "value": 50}]}}))
+    state = load_scene_state({"version": 2, "stickers": [{"id": "p", "placement": "sky", "source": {"kind": "port"},
+        "offset_rotation": {"value": {"yaw_deg": 0, "pitch_deg": 10, "roll_deg": 0}}, "offset_fov": {"value": 1.2}}]})
+    sticker = evaluate_scene_state(state, 0.0, None, None, shot)["stickers"][0]
+    forward = world_rotation(sticker["yaw_deg"], sticker["pitch_deg"], sticker["roll_deg"]) @ np.array([0.0, 0.0, -1.0])
+    assert abs(forward[1]) < 1e-9
+    assert abs(forward[0]) == pytest.approx(math.sin(math.radians(10.0)))
+    assert (sticker["hFOV_deg"], sticker["vFOV_deg"]) == pytest.approx((60.0, 60.0))
+
+
+def test_a_shot_places_only_the_sky_port_sticker():
+    case = next(item for item in motion_cases("v2_handoff") if item["name"] == "not_a_port_or_world")
+    state = load_scene_state(case["state"])
+    shot = load_sticker_state(json.dumps(case["shot"]))
+    assert evaluate_scene_state(state, 10.0, None, None, shot) == evaluate_scene_state(state, 10.0)
+
+
+def test_a_looping_look_at_lane_closes_at_a_seam_when_it_ends_on_its_first_target():
+    from comfyui_pano_suite.core.scene_eval import _Lane
+
+    a = {"sticker": "s", "offset": [0.0, 0.5, 0.0]}
+    keys = lambda last: [{"frame": 0, "value": a, "easing": "smooth"}, {"frame": 10, "value": {"point": [0.0, 0.0, -1.0]}, "easing": "smooth"}, {"frame": 20, "value": last, "easing": "smooth"}]
+    assert _Lane(keys(dict(a)), 40).seam
+    assert not _Lane(keys({"sticker": "s", "offset": [0.0, 0.25, 0.0]}), 40).seam
+    assert not _Lane(keys({"point": [0.0, 0.5, 0.0]}), 40).seam
+    assert not _Lane(keys(None), 40).seam

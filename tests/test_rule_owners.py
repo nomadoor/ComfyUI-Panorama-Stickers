@@ -9,12 +9,10 @@ import torch
 from comfyui_pano_suite import nodes
 from comfyui_pano_suite.core.cache import file_key
 from comfyui_pano_suite.core.math import over_rgb, over_rgba, unpremultiply
-from comfyui_pano_suite.core.scene_eval import segment_easing
 from comfyui_pano_suite.core.scene_state import round_frame
 from comfyui_pano_suite.core.state import coverage_span, normalize_coverage
 from comfyui_pano_suite.core.video_source import cut_audio, pts_half_step, pts_tolerance, pts_tolerance_frames
 from comfyui_pano_suite.core.state import hex_to_rgb01
-from comfyui_pano_suite.port_sticker import _in_hold
 
 
 def test_coverage_span_is_180_or_else_360_and_raises_on_what_int_cannot_read():
@@ -66,12 +64,6 @@ def test_round_frame_rounds_a_fraction_exactly():
     assert round_frame(just_under_half) == 0
     assert round_frame(Fraction(5, 2)) == 3 and round_frame(Fraction(-1, 2)) == 0
     assert round_frame(Fraction(5, 2)) == 3
-
-
-def test_segment_easing_is_the_easing_of_the_keyframe_that_starts_the_segment():
-    keys = [{"frame": 0, "easing": "hold"}, {"frame": 10, "easing": "linear"}, {"frame": 20, "easing": "auto"}]
-    assert [segment_easing(keys, frame) for frame in (-1, 0, 9.5, 10, 15, 20 - 1e-7, 20, 25)] == [None, "hold", "hold", "linear", "linear", None, None, None]
-    assert _in_hold(keys, 5) and not _in_hold(keys, 15)
 
 
 def test_file_key_is_the_path_modification_time_and_size(tmp_path):

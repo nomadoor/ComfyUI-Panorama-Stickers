@@ -340,8 +340,9 @@ def test_studio_ui_reports_the_pose_of_an_added_port_sticker():
         sticker_state=sticker_state,
     )
 
+    # Nothing is baked (ADR 0067): the Sticker is added at the default pose, and the sticker_state places it.
     assert added["pano_sticker_input_pose"] == [{
-        "yaw_deg": 40.0, "pitch_deg": -10.0, "roll_deg": 5.0, "hFOV_deg": 50.0,
+        "yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0, "hFOV_deg": 30.0,
         "keyframes": {"direction": [], "roll": [], "size": []},
     }]
     assert "pano_sticker_input_pose" not in stored
@@ -355,15 +356,3 @@ def test_studio_ui_reports_the_timeline_fps_a_video_sets(tmp_path):
     assert "pano_timeline_fps" not in _studio_ui(background=_solid([0.0, 0.0, 1.0], batch=3), sticker=_solid([1.0, 0.0, 0.0]))
 
 
-def test_studio_ui_reports_the_keyframes_of_a_port_sticker_added_from_a_moving_camera():
-    sticker_state = json.dumps({"kind": "pano_sticker_state", "version": 2, "fps": 24.0, "camera": {
-        "rotation": [{"frame": 0, "value": {"yaw_deg": 0.0}}, {"frame": 2, "value": {"yaw_deg": 20.0}}],
-    }})
-
-    ui = _studio_ui({"version": 2}, sticker=_solid([0.0, 0.0, 1.0]), sticker_state=sticker_state)
-
-    (pose,) = ui["pano_sticker_input_pose"]
-    port = load_scene_state({"version": 2, "stickers": [{"id": "p", "source": {"kind": "port"}, "direction": {"keyframes": pose["keyframes"]["direction"]}}]})["stickers"][0]
-    assert [key["frame"] for key in port["direction"]["keyframes"]] == [0, 1, 2]
-    assert port["direction"]["keyframes"][2]["value"] == {"yaw_deg": 20.0, "pitch_deg": 0.0}
-    assert (pose["keyframes"]["roll"], pose["keyframes"]["size"]) == ([], [])

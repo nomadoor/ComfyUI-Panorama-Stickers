@@ -60,7 +60,7 @@ def test_overridden_lanes_replace_whole_lanes_and_the_other_lanes_follow_the_lay
     layer = load_scene_state(case["layer"])
     result = apply_upstream_overrides(layer, record(case["records"][0]))
     sticker = result["stickers"][0]
-    assert sticker["direction"]["keyframes"] == [{"frame": 3, "value": {"yaw_deg": -20.0, "pitch_deg": 5.0}, "easing": "auto"}]
+    assert sticker["direction"]["keyframes"] == [{"frame": 3, "value": {"yaw_deg": -20.0, "pitch_deg": 5.0}, "easing": "smooth"}]
     assert sticker["roll"] is layer["stickers"][0]["roll"]
     assert sticker["size"] is layer["stickers"][0]["size"]
     assert result["stickers"][2] is layer["stickers"][2]
@@ -154,7 +154,7 @@ def test_chained_records_apply_in_order_and_the_later_record_wins():
     assert [sticker["id"] for sticker in first["stickers"]] == ["sticker_1", "sticker_3"]
     assert first["stickers"][0]["roll"]["value"] == 10.0
     second = apply_upstream_overrides(first, record(case["records"][1]))
-    assert second["stickers"][0]["roll"] == {"value": 20.0, "keyframes": [{"frame": 10, "value": 20.0, "easing": [0.42, 0.0, 0.58, 1.0]}]}
+    assert second["stickers"][0]["roll"] == {"value": 20.0, "keyframes": [{"frame": 10, "value": 20.0, "easing": "smooth"}]}
     assert second["stickers"][0]["opacity"]["value"] == 0.5
     assert second["painting_visible"] is False
 
@@ -177,3 +177,14 @@ def js_out():
 @pytest.mark.parametrize("name", CASES)
 def test_js_application_matches_python(js_out, name):
     assert_parity(apply_all(fixture(name)), js_out[name])
+
+
+def test_an_upstream_sticker_s_loop_is_an_override_like_its_visibility():
+    # docs/scene-state-v2.md "上流の上書き": `loop` is overridden as `visible` and `locked` are (ADR 0064).
+    layer = load_scene_state({"version": 2, "id": "scene_a", "stickers": [{"id": "sticker_1", "source": {"kind": "port"}}]})
+    record = {"layer": "scene_a", "fps": 24.0, "deleted": [], "stickers": [{"id": "sticker_1", "placement": "sky", "loop": True}]}
+    state = load_scene_state({"version": 2, "upstream": [record]})
+    assert state["upstream"][0]["stickers"][0]["loop"] is True
+    assert apply_upstream_overrides(layer, state["upstream"][0])["stickers"][0]["loop"] is True
+    ignored = load_scene_state({"version": 2, "upstream": [{**record, "stickers": [{"id": "sticker_1", "placement": "sky", "loop": "yes"}]}]})
+    assert ignored["upstream"] == []
