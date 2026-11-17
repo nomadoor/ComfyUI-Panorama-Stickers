@@ -325,7 +325,8 @@ export function simplifyReadiness(ctx, selection, label = "Simplify") {
   if (rows.length > 1) return { ready: false, why: `${label} · Select Keyframes in one row` };
   const row = rows[0] ?? null;
   const lanes = [...new Set(keys.map((key) => key.lane ?? null))];
-  const lane = lanes.length === 1 ? lanes[0] : null;
+  if (lanes.length > 1) return { ready: false, why: `${label} · Select Keyframes in one Lane` };
+  const lane = lanes[0] ?? null;
   const frames = [...new Set(keys.map((key) => key.frame))];
   const picked = lane === null ? frames.length : keys.length;
   if (!row || picked < 3) return { ready: false, why: `${label} · Select 3+ Keyframes` };

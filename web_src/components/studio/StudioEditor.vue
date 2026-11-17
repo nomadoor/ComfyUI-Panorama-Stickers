@@ -43,8 +43,9 @@ import StudioViewButtons from "./StudioViewButtons.vue";
 // The editor's state lives in studio/editor.js: `view` is its view model (the working state, the selection, the
 // playhead, playback, Undo), `ui` what the stage reports (stage.js stageUi(), with `background` and `empty`), and
 // `controller` what this shell calls: onStage({ canvas, root }) makes the stage once the elements are in the page and
-// returns its controls; onTimeline({ handleDelete, copyKeys, pasteKeys }) hands over the Timeline's Delete and its
-// Keyframes' copy and paste; the inspector's and the Timeline's events go to its handlers.
+// returns its controls; onTimeline({ handleDelete, copyKeys, pasteKeys, settleSimplify }) hands over the Timeline's
+// Delete, its Keyframes' copy and paste, and the keeping of Simplify's result before Undo and Redo; the inspector's and
+// the Timeline's events go to its handlers.
 const props = defineProps({
   nodeTitle: { type: String, default: "" },
   ui: { type: Object, required: true },
@@ -76,6 +77,7 @@ onMounted(() => {
     handleDelete: () => timeline.value?.handleDelete() ?? false,
     copyKeys: () => timeline.value?.copyKeys() ?? null,
     pasteKeys: (clipboard) => timeline.value?.pasteKeys(clipboard) ?? false,
+    settleSimplify: () => timeline.value?.settleSimplify(),
   });
   // The editor takes the focus from the graph behind it, so the stage has the keys at once (pano_key_focus.js).
   root.value?.focus({ preventScroll: true });
@@ -117,7 +119,7 @@ const camera = computed(() => props.view.state.camera);
 const panorama = computed(() => camera.value.projection === "erp");
 const frameAspect = computed(() => (panorama.value ? liveErpRatio(camera.value.erp_range) : camera.value.aspect));
 const rulers = computed(() => (cameraTab.value
-  ? cameraRulers(buildCameraCard({ state: props.view.state, playhead: props.view.playhead, readOnly: props.view.readOnly, length: props.view.outputLength }))
+  ? cameraRulers(buildCameraCard({ state: props.view.state, playhead: props.view.playhead, readOnly: props.view.readOnly, length: props.view.outputLength, boxes: props.view.lookBoxes }))
   : null));
 // The Lens row's lensStart where a Lens drag began (a κ edit keeps the image's center scale from there).
 let lensStart = null;
@@ -550,6 +552,7 @@ function setCollapsed(value) {
         :image-sizes="view.imageSizes"
         :port-size="view.portSize"
         :handoff="view.portHandoff"
+        :boxes="view.lookBoxes"
         @edit="(edit) => controller.inspectorEdit(edit)"
         @close="controller.close()"
       />

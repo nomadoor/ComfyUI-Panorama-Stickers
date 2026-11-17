@@ -47,6 +47,9 @@ test("the bar's Constant speed is pressable as Simplify is, and not while Simpli
   const keys = [0, 10, 20].map((frame) => ({ row: "camera", lane: null, frame }));
   assert.deepEqual(bar({ row: "camera", keys }), { disabled: false, tip: "Constant speed · Moves the selected Keyframes in time" });
   assert.deepEqual(bar({ row: "camera", keys }, { row: "camera", lane: null, original: 3, least: 2, count: 2, going: [] }), { disabled: true, tip: "Constant speed · Finish Simplify first" });
+  // An open row: the Keyframes of one Lane only (docs/timeline-ui.md "Simplify").
+  const mixed = [{ row: "camera", lane: "position", frame: 0 }, { row: "camera", lane: "position", frame: 10 }, { row: "camera", lane: "fov", frame: 20 }];
+  assert.deepEqual(bar({ row: "camera", keys: mixed }), { disabled: true, tip: "Constant speed · Select Keyframes in one Lane" });
 });
 
 // docs/timeline-ui.md "Constant speed": a looping row with all its Keyframes selected is one turn, the segment back to
@@ -69,4 +72,25 @@ test("on a looping row with every Keyframe selected, one turn of the loop goes a
   assert.ok(Math.max(...steps) / Math.min(...steps) < 1.1, `${Math.min(...steps)}..${Math.max(...steps)}`);
   // Part of the Keyframes selected: the stretch only, its ends kept as before.
   assert.equal(planConstantSpeed(owner, ["position"], [0, 75], { period: 152 }), null);
+});
+
+// Fable review: "all selected" means every Keyframe of the row is selected, not every Keyframe between the picked ends.
+test("on a looping row, the ends of the row selected without the ones between are a stretch, not one turn", () => {
+  const point = (deg) => [5 * Math.sin(deg * Math.PI / 180), 1.6, 5 * Math.cos(deg * Math.PI / 180)];
+  const owner = camera([0, 30, 75, 126].map((frame, i) => ({ frame, value: point(90 * i) })), { loop: true });
+  const plan = planConstantSpeed(owner, ["position"], [0, 75, 126], { period: 152 });
+  // A stretch keeps both its ends; one turn would have moved the last Keyframe.
+  const moved = frames(plan.lanes.position);
+  assert.equal(moved[0], 0);
+  assert.equal(moved[3], 126);
+});
+
+// Fable review: a Lane's last Keyframe in the stretch whose next Keyframe is past the stretch keeps its Easing; that
+// segment is not in the stretch.
+test("a segment running past the stretch keeps its Easing", () => {
+  const owner = camera([
+    { frame: 0, value: [0, 0, 0] }, { frame: 10, value: [1, 0, 0] }, { frame: 20, value: [3, 0, 0] }, { frame: 30, value: [6, 0, 0] },
+  ], { fov: { keyframes: [{ frame: 0, value: 60, easing: [0.42, 0, 0.58, 1] }, { frame: 15, value: 70, easing: [0, 0, 1, 1] }, { frame: 40, value: 80 }] } });
+  const plan = planConstantSpeed(owner, ["position", "fov"], [0, 10, 20, 30]);
+  assert.deepEqual(plan.lanes.fov.keyframes.map((key) => key.easing), ["smooth", [0, 0, 1, 1], "smooth"]);
 });

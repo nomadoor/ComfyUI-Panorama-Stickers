@@ -610,7 +610,7 @@
   height: 13px;
 }
 
-/* The Look at row (docs/studio-ui.md "Look at"): the target's name in a field (the strong fill while on), Pick and ✕. */
+/* The Look at row (docs/studio-ui.md "Look at"): the target's name in a field (the strong fill while on) and Pick; its ✕ is in the reset column. */
 .pano-studio-look {
   display: inline-flex;
   flex: 1 1 auto;

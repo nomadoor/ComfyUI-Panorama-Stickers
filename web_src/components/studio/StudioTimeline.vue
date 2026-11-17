@@ -136,7 +136,14 @@ function finishSimplify(keep) {
 }
 
 // Constant speed (docs/timeline-ui.md "Constant speed"): one press, one Undo step; nothing when nothing changes.
+// A press on Constant speed while Simplify adjusted kept Simplify's result (a press elsewhere); the click that follows
+// it is not a press of Constant speed, which was disabled when the press began.
+let constantSpeedPressedWhileAdjusting = false;
 function onConstantSpeed() {
+  if (constantSpeedPressedWhileAdjusting) {
+    constantSpeedPressedWhileAdjusting = false;
+    return;
+  }
   if (simplifyRun.value) return;
   const result = constantSpeedEdit(ctx.value, props.selection, sceneGround(props.state));
   if (!result) return;
@@ -163,6 +170,11 @@ function onSimplifyKey(event) {
 
 function onSimplifyOutside(event) {
   if (event.target?.closest?.('[data-tl="simplify-group"]')) return;
+  if (event.target?.closest?.('[data-tl="constant-speed"]')) {
+    constantSpeedPressedWhileAdjusting = true;
+    // The click comes right after the release, or never (released elsewhere): the mark goes after either.
+    window.addEventListener("pointerup", () => setTimeout(() => { constantSpeedPressedWhileAdjusting = false; }), { once: true, capture: true });
+  }
   finishSimplify(true);
 }
 
@@ -576,7 +588,14 @@ function onGroupAction(group, kind) {
   if (!button.disabled) emit("edit", { kind, key: group.key });
 }
 
+// Another edit while Simplify adjusts keeps Simplify's result first, as a press elsewhere does (docs/timeline-ui.md
+// "Simplify"). The live edits already show that result, so the edit that follows reads the state it acts on.
+function settleSimplify() {
+  if (simplifyRun.value) finishSimplify(true);
+}
+
 function handleDelete() {
+  settleSimplify();
   if (deleteTarget(props.selection) !== "keys") return false;
   const result = deleteKeys(ctx.value, props.selection, props.playhead);
   if (result) emit("edit", { kind: "state", ...result.edit, selection: result.selection, phase: "commit", stopsPlayback: true });
@@ -605,12 +624,13 @@ function copySelectedKeys() {
 }
 
 function pasteCopiedKeys(clipboard) {
+  settleSimplify();
   const result = pasteKeys(ctx.value, clipboard, props.selection, props.playhead);
   if (result) emit("edit", { kind: "state", ...result.edit, selection: result.selection, phase: "commit", stopsPlayback: true });
   return !!result;
 }
 
-defineExpose({ handleDelete, copyKeys: copySelectedKeys, pasteKeys: pasteCopiedKeys });
+defineExpose({ handleDelete, copyKeys: copySelectedKeys, pasteKeys: pasteCopiedKeys, settleSimplify });
 </script>
 
 <template>

@@ -136,7 +136,7 @@ export function createEditorEdits(ctx) {
   // step) or cancel. The run: { value (the last written), playhead (where it writes: a seek or playback before the run
   // ends does not move its Keyframe) }, or null.
   let fovRun = null;
-  const rulersAt = (playhead) => cameraRulers(buildCameraCard({ state: ctx.session.state, playhead, readOnly: ctx.readOnly, length: ctx.outputLength() }));
+  const rulersAt = (playhead) => cameraRulers(buildCameraCard({ state: ctx.session.state, playhead, readOnly: ctx.readOnly, length: ctx.outputLength(), boxes: ctx.lookBoxes() }));
   function fovApply(edit, playhead) {
     const outcome = ctx.session.applyInspector(edit, { ...inspectorContext(), playhead });
     // A step stops playback as every move of the Frame view does (docs/space-and-view.md "Frame 表示" 記録).
@@ -233,6 +233,8 @@ export function createEditorEdits(ctx) {
     const box = lookAtBoxes(state, { image: ctx.imageSizeOf, content: ctx.contentBoxOf }, [sticker.id])[sticker.id] ?? null;
     const outcome = ctx.session.setLookAt(pickedTarget(sticker, point, ctx.view.playhead, box, ctx.outputLength()), ctx.view.playhead, ctx.outputLength());
     objectOutcome(outcome);
+    // Nothing taken (a gesture under way): no notice, and the Pick keeps waiting.
+    if (!outcome.changed) return false;
     ctx.doneNotice(lookingAtText(objectLabel(sticker)));
     return true;
   }

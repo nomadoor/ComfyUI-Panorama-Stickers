@@ -42,6 +42,9 @@ export function createEditorController(ctx) {
     }
     event.preventDefault();
     event.stopPropagation();
+    // Undo and Redo while Simplify adjusts: its result is kept first, as a press elsewhere does (docs/timeline-ui.md
+    // "Simplify"); Undo then takes it back.
+    if (action === "undo" || action === "redo") ctx.timeline?.settleSimplify?.();
     if (action === "undo") ctx.historyStep(-1);
     else if (action === "redo") ctx.historyStep(1);
     else if (action === "delete") ctx.deleteSelection();

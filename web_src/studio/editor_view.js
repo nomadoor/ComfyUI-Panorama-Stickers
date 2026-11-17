@@ -69,6 +69,9 @@ export function createEditorView(ctx) {
     confirm: null,
     // The output length (outputLength(), written by sync()).
     outputLength: null,
+    // The content boxes of what the Camera looks at, as the stage draws them (editor_content.js lookBoxes, written
+    // when they change), so the inspector reads Look at as the stage does.
+    lookBoxes: null,
   });
   const timelineCtx = () => ({ state: ctx.session.state, upstream: view.upstream, media: view.media });
   // The output length (the Timeline's span, timeline_model.js spanOf): the loop period of looping owners

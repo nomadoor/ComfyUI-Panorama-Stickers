@@ -36,6 +36,8 @@ const props = defineProps({
   handoff: { type: Object, default: null },
   // The output length, the loop period of looping owners (docs/scene-state-v2.md "ループ").
   length: { type: Number, default: null },
+  // The content boxes of what the Camera looks at, as the stage draws them (stage_content.js `lookBoxes`).
+  boxes: { type: Object, default: null },
   // Look at's Pick waits for a click on the stage (its row's Pick shows it).
   lookPicking: { type: Boolean, default: false },
 });
@@ -53,6 +55,7 @@ const model = computed(() => buildInspectorModel({
   imageSizes: props.imageSizes,
   handoff: props.handoff,
   length: props.length,
+  boxes: props.boxes,
   lookPicking: props.lookPicking,
 }));
 

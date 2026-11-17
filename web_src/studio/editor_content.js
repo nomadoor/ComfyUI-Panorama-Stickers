@@ -27,6 +27,7 @@ export function createEditorContent(ctx) {
     return { ...value, space: { ...value.space, fileStickers: requests } };
   }
   let contentCache = null;
+  let lookBoxesText = "null";
   function content() {
     reveal.retain(new Set(ctx.session.state.stickers.map((sticker) => sticker.id)));
     const files = ctx.sceneFiles();
@@ -44,6 +45,12 @@ export function createEditorContent(ctx) {
     // Sticker's 3D item and the upstream items too.
     const pending = value.space.fileStickers.length > 0 || !!value.space.scene || !!value.space.sticker || value.space.upstreamItems.length > 0;
     contentCache = { key, value, pending };
+    // The inspector reads the same boxes (editor_view.js `lookBoxes`); written only when they change.
+    const boxesText = JSON.stringify(value.lookBoxes ?? null);
+    if (boxesText !== lookBoxesText) {
+      lookBoxesText = boxesText;
+      ctx.view.lookBoxes = value.lookBoxes ?? null;
+    }
     return value;
   }
   // The stage's selection (view_camera.js orbitCenter, frameSelectedSphere) of the object of the row `row` (a Sticker

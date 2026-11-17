@@ -92,3 +92,66 @@ test("Simplify measures a returned shot's offset Lanes as a turn and a ratio", a
   assert.ok(plan.errors.every((value) => value === undefined || Number.isFinite(value)), JSON.stringify(plan.errors));
   assert.ok(plan.fallback < 11, `kept ${plan.fallback}`);
 });
+
+// The memo of per-segment decisions and the measure of only the frames that can change give exactly what deciding and
+// measuring everything again gives (docs/timeline-ui.md "Simplify": every count is made again from the original).
+test("Simplify's memo gives exactly the full recompute on random lanes", async () => {
+  const { planSimplify } = await import("../web_src/studio/simplify.js");
+  const { loadSceneState: load } = await import("../web_src/pano_scene_state.js");
+  let seed = 12345;
+  const rand = () => {
+    seed = (seed * 1103515245 + 12345) % 2147483648;
+    return seed / 2147483648;
+  };
+  const easings = ["smooth", "smooth", "smooth", [0, 0, 1, 1], [0.42, 0, 0.58, 1], [0.3, 0, 1, 1], "hold"];
+  let compared = 0;
+  for (let c = 0; c < 120; c += 1) {
+    const n = 4 + Math.floor(rand() * 10);
+    let frame = 0;
+    const position = [];
+    const rotation = [];
+    let p = [0, 0, 0];
+    for (let i = 0; i < n; i += 1) {
+      p = p.map((v) => v + (rand() - 0.3) * 3);
+      const key = { frame, value: [...p], easing: easings[Math.floor(rand() * easings.length)] };
+      if (rand() < 0.15) key.corner = true;
+      if (rand() < 0.15) key.handles = { out: [rand(), rand() - 0.5, rand()] };
+      position.push(key);
+      rotation.push({ frame, value: { yaw_deg: rand() * 200 - 100, pitch_deg: rand() * 40 - 20, roll_deg: 0 }, easing: easings[Math.floor(rand() * 4)] });
+      frame += 1 + Math.floor(rand() * 8);
+    }
+    const loop = rand() < 0.25;
+    const owner = load({ version: 2, camera: { loop, position: { keyframes: position }, rotation: { keyframes: rotation } } }).camera;
+    const frames = position.map((key) => key.frame);
+    const options = { period: loop ? frame + 4 : null, camera: true, hfov: 60 };
+    const fast = planSimplify(owner, ["position", "rotation"], frames, options);
+    const full = planSimplify(owner, ["position", "rotation"], frames, { ...options, memo: false });
+    if (!full) continue;
+    compared += 1;
+    assert.deepEqual(fast.order, full.order, `case ${c}: order`);
+    assert.deepEqual(fast.errors, full.errors, `case ${c}: errors`);
+    assert.equal(fast.fallback, full.fallback, `case ${c}: default count`);
+    for (let k = full.least; k <= full.original; k += 1) assert.deepEqual(fast.build(k), full.build(k), `case ${c}: build(${k})`);
+  }
+  assert.ok(compared > 60, `compared ${compared}`);
+});
+
+test("Simplify's memo gives exactly the full recompute where a pick changes a segment four keys away", async () => {
+  // A case the earlier memo (two keys before, three after) got wrong: its default count was 8, the full recompute's 9.
+  const frames = [0, 2, 8, 13, 17, 21, 26, 32, 35, 42, 46];
+  const values = [
+    [0, 0, 0], [-0.478, -0.067, 1.949], [-0.431, -0.137, 2.494], [0.148, -0.237, 4.587], [1.059, -0.144, 6.618],
+    [1.477, -0.11, 6.926], [1.794, -0.081, 7.168], [3.389, -0.099, 7.308], [5.239, -0.075, 6.629], [5.894, -0.01, 6.674],
+    [8.094, 0.018, 6.828],
+  ];
+  const easing = { 17: [0.3, 0, 1, 1], 21: [0.42, 0, 0.58, 1], 32: [0.42, 0, 0.58, 1], 42: [0.42, 0, 0.58, 1], 35: [0, 0, 1, 1] };
+  const keyframes = frames.map((frame, i) => ({ frame, value: values[i], easing: easing[frame] ?? "smooth" }));
+  const owner = loadSceneState({ version: 2, camera: { position: { keyframes } } }).camera;
+  const options = { camera: true, hfov: 60 };
+  const fast = planSimplify(owner, ["position"], frames, options);
+  const full = planSimplify(owner, ["position"], frames, { ...options, memo: false });
+  assert.equal(full.fallback, 9);
+  assert.deepEqual(fast.order, full.order);
+  assert.deepEqual(fast.errors, full.errors);
+  assert.equal(fast.fallback, full.fallback);
+});

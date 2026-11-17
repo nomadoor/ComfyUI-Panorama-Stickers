@@ -119,7 +119,7 @@ export function fitEasing(samples) {
 //   { start, end, candidates, mustKeep, order, errors, original, least, fallback, build(n) }
 // order lists the frames kept first (the ends and the must-keeps) then each added back; errors[n] is the deviation with
 // the first n kept; build(n) gives the Lanes (by name) with the first n kept, their handles and Easing written again.
-export function planSimplify(owner, names, frames, { period = null, ground = -1.6, camera = false, hfov = 90, lookAt = null } = {}) {
+export function planSimplify(owner, names, frames, { period = null, ground = -1.6, camera = false, hfov = 90, lookAt = null, memo = true } = {}) {
   if (!frames.length) return null;
   const start = Math.min(...frames);
   const end = Math.max(...frames);
@@ -165,11 +165,11 @@ export function planSimplify(owner, names, frames, { period = null, ground = -1.
   const measures = Object.fromEntries(lanes.map((name) => [name, laneMeasure(name, original[name], { camera, ground, hfov })]));
 
   // The deviation per frame of Lanes `built` from the original, the largest over the Lanes.
-  // Only the frames from `from` to `to` are measured again when given (the others are kept from `previous`).
-  const deviations = (built, previous = null, from = -Infinity, to = Infinity) => {
+  // Only the frames from `from` on are measured again when given (the earlier ones are kept from `previous`).
+  const deviations = (built, previous = null, from = -Infinity) => {
     const reads = Object.fromEntries(lanes.map((name) => [name, laneSampler({ [name]: built[name] }, name, period)]));
     return sampleFrames.map((frame, i) => {
-      if (previous && (frame < from || frame > to)) return previous[i];
+      if (previous && frame < from) return previous[i];
       return Math.max(0, ...lanes.map((name) => {
         const { distance, scale } = measures[name];
         return distance(original[name][i], reads[name](frame)) / scale;
@@ -199,10 +199,12 @@ export function planSimplify(owner, names, frames, { period = null, ground = -1.
         const a = inside[j].key;
         const b = inside[j + 1].key;
         if (a.easing === "hold") continue;
-        // A segment's shape and speed read the kept Keyframes up to two on each side of it: with the same ones kept
-        // there, its handles and Easing come out the same, so they are decided once.
-        const context = `${name}|${[j - 2, j - 1, j, j + 1, j + 2, j + 3].map((i) => inside[i]?.key.frame ?? "x").join(",")}`;
-        const known = decided.get(context);
+        // A segment's handles and Easing are decided in order from the left: they read what was decided before them
+        // and the kept Keyframes up to three on their right. With the same kept Keyframes from the stretch's start to
+        // there, they come out the same, so they are decided once (`memo`; without it, every time).
+        // (Near the end the slice is the whole list for several segments: the segment's own index tells them apart.)
+        const context = `${name}|${j}|${inside.slice(0, j + 4).map((item) => item.key.frame).join(",")}`;
+        const known = memo ? decided.get(context) : null;
         if (known) {
           if (known.bend) {
             const { out, into } = bent.get(`${name}:${a.frame}:${b.frame}`);
@@ -278,10 +280,15 @@ export function planSimplify(owner, names, frames, { period = null, ground = -1.
     kept.add(pick);
     order.push(pick);
     built = buildKept(kept);
-    // Bringing a Keyframe back changes the shape and the speed only near it: up to three kept Keyframes on each side.
-    const sorted = [...kept].sort((x, y) => x - y);
-    const at = sorted.indexOf(pick);
-    devs = deviations(built, devs, sorted[Math.max(0, at - 3)], sorted[Math.min(sorted.length - 1, at + 3)]);
+    // A Keyframe brought back changes the decisions of the segments from three before it in its Lane on (they read
+    // the kept Keyframes up to three on their right, and every decision before them), and what a segment shows reads
+    // its neighbors' decisions: the frames from four kept Keyframes before it, in each Lane, on are measured again.
+    const from = Math.min(...lanes.map((name) => {
+      const frames = built[name].keyframes.map((key) => key.frame).filter((frame) => frame >= start && frame <= end);
+      const at = frames.findIndex((frame) => frame >= pick);
+      return frames[Math.max(0, (at < 0 ? frames.length : at) - 4)] ?? start;
+    }));
+    devs = memo ? deviations(built, devs, from) : deviations(built);
     errors[kept.size] = Math.max(0, ...devs);
   }
   const least = kept0.length;

@@ -212,8 +212,8 @@ function applyReset(state, found, row, context) {
     // A port sky Sticker's vFOV follows its media: only its hFOV is stored. Another sky image goes back to the size
     // it was placed at (docs/studio-ui.md "種類ごとの中身").
     if (name === "size" && sticker.source.kind === "port") value = { hFOV_deg: value.hFOV_deg };
-    else if (name === "size") value = skyPlacedSize(evaluateLane(sticker, "size", frame, ownerPeriod(sticker, context.length)), context.imageSizes?.[sticker.id]);
-    setLaneValue(sticker, name, frame, value, context.length);
+    else if (name === "size") value = skyPlacedSize(evaluateLane(sticker, "size", frame, ownerPeriod(sticker, lengthOf(context, sticker))), context.imageSizes?.[sticker.id]);
+    setLaneValue(sticker, name, frame, value, lengthOf(context, sticker));
   }
   return { done: true };
 }

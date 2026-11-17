@@ -43,20 +43,45 @@ extension.setup = async function (...args) {
   preloadStudio();
 };
 // A write of a state_json widget tells ComfyUI's active workflow to take the graph again (pano_state_widget.js). ComfyUI
-// skips that take at times (mid-gesture, loading, another tab in front); then its `graphChanged` is sent here, which
-// writes the draft a reload restores from the graph as it is, and the console says why (docs/studio-ui.md "閉じ方").
-setWorkflowChangeNotifier(() => {
+// skips that take at times (mid-gesture, loading); then it is tried again each 100 ms for up to 3 s, so the workflow is
+// marked changed and its draft kept, and only after that is its `graphChanged` sent here, which writes the draft a
+// reload restores from the graph as it is. The console says why (docs/studio-ui.md "閉じ方").
+const TAKE_RETRY_MS = 100;
+const TAKE_RETRY_LIMIT_MS = 3000;
+let takeRetry = null;
+function takeWorkflowChange() {
   const tracker = app.extensionManager?.workflow?.activeWorkflow?.changeTracker;
-  if (!tracker) return;
+  if (!tracker) return true;
   const before = tracker.activeState;
   if (typeof tracker.captureCanvasState === "function") tracker.captureCanvasState();
   else tracker.checkState?.();
-  if (tracker.activeState !== before) return;
-  console.warn("[PanoramaSuite] ComfyUI did not take the state_json change; saving the workflow draft directly.", {
-    changeCount: tracker.changeCount,
-    restoring: !!tracker._restoringState,
-    activeTab: app.extensionManager?.workflow?.activeWorkflow?.changeTracker === tracker,
+  if (tracker.activeState !== before) return true;
+  // Unchanged: the graph was already as taken (a write of the same text), or the take was skipped.
+  const equal = tracker.constructor?.graphEqual;
+  if (typeof equal !== "function" || !app.rootGraph) return false;
+  return equal(tracker.activeState, JSON.parse(JSON.stringify(app.rootGraph.serialize())));
+}
+setWorkflowChangeNotifier(() => {
+  if (takeRetry) return;
+  if (takeWorkflowChange()) return;
+  const tracker = app.extensionManager?.workflow?.activeWorkflow?.changeTracker;
+  console.warn("[PanoramaSuite] ComfyUI did not take the state_json change; trying again.", {
+    changeCount: tracker?.changeCount,
+    restoring: !!tracker?._restoringState,
   });
-  api.dispatchCustomEvent?.("graphChanged", tracker.activeState);
+  const started = Date.now();
+  takeRetry = setInterval(() => {
+    if (takeWorkflowChange()) {
+      clearInterval(takeRetry);
+      takeRetry = null;
+      return;
+    }
+    if (Date.now() - started < TAKE_RETRY_LIMIT_MS) return;
+    clearInterval(takeRetry);
+    takeRetry = null;
+    const current = app.extensionManager?.workflow?.activeWorkflow?.changeTracker;
+    console.warn("[PanoramaSuite] ComfyUI still did not take the state_json change; saving the workflow draft directly.");
+    api.dispatchCustomEvent?.("graphChanged", current?.activeState);
+  }, TAKE_RETRY_MS);
 });
 app.registerExtension(extension);

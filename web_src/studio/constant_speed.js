@@ -32,7 +32,8 @@ export function planConstantSpeed(owner, names, frames, { period = null, ground 
   // A looping row with all its Keyframes selected is one turn of the loop: from the first Keyframe to the first one a
   // period later, the segment back to it included; only the first Keyframe (and a hold's ends) stays.
   const all = [...new Set(lanes.flatMap((name) => owner[name].keyframes.map((key) => key.frame)))].sort((a, b) => a - b);
-  const cycle = laneView(owner[measured].keyframes, period).loop && all.length === candidates.length;
+  const selected = new Set(frames);
+  const cycle = laneView(owner[measured].keyframes, period).loop && all.every((frame) => selected.has(frame));
   const until = cycle ? start + period : end;
   // The Keyframes that stay: the ends, a hold's start and end, and a loop's seam (one turn: its first only).
   const fixed = new Set(cycle ? [start] : [start, end]);
@@ -77,13 +78,18 @@ export function planConstantSpeed(owner, names, frames, { period = null, ground 
       previous = next;
     });
   }
-  // The Easing of the segments in the stretch becomes Smooth (a hold stays).
+  // The Easing of the segments in the stretch becomes Smooth (a hold stays). A segment is in the stretch when both of
+  // its Keyframes are (one turn: every segment, the one back to the first included); a Lane's segment that runs past
+  // the stretch keeps its Easing.
   const out = {};
   let changed = moves.size > 0;
   for (const name of lanes) {
-    const keyframes = owner[name].keyframes.map((key) => {
+    const keys = owner[name].keyframes;
+    const keyframes = keys.map((key, index) => {
       const moved = moves.has(key.frame) ? { ...structuredClone(key), frame: moves.get(key.frame) } : structuredClone(key);
-      if (key.frame >= start && (key.frame < end || cycle) && key.easing !== "hold" && key.easing !== DEFAULT_EASING) {
+      const next = keys[index + 1];
+      const inside = cycle || (key.frame >= start && next !== undefined && next.frame <= end);
+      if (inside && key.easing !== "hold" && key.easing !== DEFAULT_EASING) {
         moved.easing = DEFAULT_EASING;
         changed = true;
       }
