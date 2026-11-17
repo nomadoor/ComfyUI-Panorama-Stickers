@@ -1174,7 +1174,7 @@ Camera タブでは同じ席で無効にする（tooltip は「Not available in 
   視点のドラッグ、ギズモのドラッグ、ペイントのまとまりのドラッグ、ペイントのストロークの最中の Escape（取り消し）は、今の規則（`docs/editor-interaction.md` の「ポインタの取り消しとフォーカスの
   喪失」）のまま、表より先に当たる。
 - 閉じると編集はいつも保存する。開いて閉じただけなら `state_json` を書かない（今の規則のまま。`docs/timeline-ui.md`）。
-- `state_json` を書いたら、ComfyUI に、開いているワークフローが変わったことを知らせる（`web_src/pano_state_widget.js` `writeStateWidget`。エディタ、ノード上の UI、古いエディタが書くときも同じ）。ComfyUI は、再読み込みや再起動の後に戻すワークフローを、ウィンドウの `mouseup` と `keyup` のときに取り直す。✕ はその後の `click` で書くので、知らせないと、次にどこかを押すまで新しい値がワークフローに入らず、その前に再起動すると編集が消える。
+- `state_json` を書いたら、ComfyUI に、開いているワークフローが変わったことを知らせる（`web_src/pano_state_widget.js` `writeStateWidget`。エディタ、ノード上の UI、古いエディタが書くときも同じ）。ComfyUI は、再読み込みや再起動の後に戻すワークフローを、ウィンドウの `mouseup` と `keyup` のときに取り直す。✕ はその後の `click` で書くので、知らせないと、次にどこかを押すまで新しい値がワークフローに入らず、その前に再起動すると編集が消える。ComfyUI がその取り直しをしない時（操作の途中、読み込み中など）は、下書きの保存の合図（`graphChanged`）を直接出し、再読み込みで戻る下書きには必ず入れる。そのときはブラウザのコンソールに理由を一行出す。
 - 読めない `state_json`（JSON として読めない、または読めない `version`。空のテキストは読める：空の状態）：エディタを読み取り専用で開き
   （中身は空の状態）、閉じても `state_json` を書かない。上端の中央に「気をつけてほしい」の一行
   「This node's saved state can't be read, so changes won't be saved」を、エディタを閉じるまで出す。編集を受けてから捨てると気づかずに
