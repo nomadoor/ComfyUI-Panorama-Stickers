@@ -268,8 +268,9 @@ function rowDotState(entry, playhead) {
   return pins.length ? "has" : "none";
 }
 
-// The output length whose loop a row's owner follows: an upstream layer's own length, else the span (the node's).
-function entryLength(entry, span) {
+// The output length whose loop a row's owner follows: an upstream layer's own length, else the span (the node's). The
+// Timeline's marks and bands and its actions (timeline_actions.js) read it.
+export function entryLength(entry, span) {
   return entry.layer ? entry.layer.length ?? null : span;
 }
 
@@ -327,6 +328,8 @@ export function simplifyReadiness(ctx, selection, label = "Simplify") {
   const lanes = [...new Set(keys.map((key) => key.lane ?? null))];
   if (lanes.length > 1) return { ready: false, why: `${label} · Select Keyframes in one Lane` };
   const lane = lanes[0] ?? null;
+  // The Camera's Look at Keyframes always stay (docs/timeline-ui.md "Simplify").
+  if (lane === "look_at") return { ready: false, why: `${label} · Look at Keyframes stay` };
   const frames = [...new Set(keys.map((key) => key.frame))];
   const picked = lane === null ? frames.length : keys.length;
   if (!row || picked < 3) return { ready: false, why: `${label} · Select 3+ Keyframes` };

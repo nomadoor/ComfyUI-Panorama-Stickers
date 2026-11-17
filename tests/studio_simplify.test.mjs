@@ -155,3 +155,10 @@ test("Simplify's memo gives exactly the full recompute where a pick changes a se
   assert.deepEqual(fast.errors, full.errors);
   assert.equal(fast.fallback, full.fallback);
 });
+
+// CodeRabbit review: a size with only its hFOV (a port Sticker's) is measured by the hFOV, not NaN.
+test("a size without a vFOV is measured by its hFOV", async () => {
+  const { laneMeasure } = await import("../web_src/studio/simplify.js");
+  const { distance } = laneMeasure("size", [{ hFOV_deg: 30 }, { hFOV_deg: 60 }], { camera: false, ground: -1.6, hfov: 90 });
+  assert.ok(Math.abs(distance({ hFOV_deg: 30 }, { hFOV_deg: 60 }) - Math.log(2)) < 1e-12);
+});

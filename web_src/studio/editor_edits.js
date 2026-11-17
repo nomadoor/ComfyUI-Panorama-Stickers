@@ -114,12 +114,12 @@ export function createEditorEdits(ctx) {
       if (camera.locked === true) return false;
       const length = ctx.outputLength();
       // Looking at a target the drag goes round it and the wheel changes the distance; where the target changes, neither
-      // (docs/studio-ui.md "Look at").
+      // (docs/studio-ui.md "Look at"), also from no target to one, where the view is between the two turns.
+      if (lookSwitching(camera, ctx.view.playhead, length)) {
+        ctx.notice(LINE_TEXT.lookChanging);
+        return false;
+      }
       if (cameraLooks(camera, ctx.view.playhead, length)) {
-        if (lookSwitching(camera, ctx.view.playhead, length)) {
-          ctx.notice(LINE_TEXT.lookChanging);
-          return false;
-        }
         orbitCameraLooking(camera, ctx.view.playhead, pose, length, { stickers: draft.stickers, boxes: ctx.lookBoxes() });
         return true;
       }

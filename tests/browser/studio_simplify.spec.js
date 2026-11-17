@@ -95,6 +95,28 @@ test("Escape while adjusting puts every Keyframe back", async ({ page }) => {
   expect(problems).toEqual([]);
 });
 
+// CodeRabbit review: another key while adjusting keeps Simplify's result first, so an Escape after that key's edit does
+// not put back the state from before it (docs/timeline-ui.md "Simplify").
+test("Delete while adjusting keeps Simplify first, then deletes; Escape after it changes nothing", async ({ page }) => {
+  const problems = await open(page);
+  await boxAll(page);
+  await page.locator('[data-tl="simplify"]').click();
+  const reduced = await count(page);
+  expect(reduced).toBeLessThan(24);
+  await page.keyboard.press("Delete");
+  await expect(page.locator('[data-tl="simplify-adjust"]')).toHaveCount(0);
+  await expect.poll(() => count(page)).toBe(0);
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(150);
+  expect(await count(page)).toBe(0);
+  // Undo takes back the Delete, then Simplify.
+  await page.keyboard.press("Control+z");
+  await expect.poll(() => count(page)).toBe(reduced);
+  await page.keyboard.press("Control+z");
+  await expect.poll(() => count(page)).toBe(24);
+  expect(problems).toEqual([]);
+});
+
 test("the Simplify slider is as wide as its seat and a pointer drag on it changes the count", async ({ page }) => {
   const problems = await open(page);
   await boxAll(page);

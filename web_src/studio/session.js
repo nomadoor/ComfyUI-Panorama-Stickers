@@ -37,7 +37,7 @@ import { stickerChangedRows } from "./inspector_model.js";
 import { pointTargets, setPointType } from "./path_line.js";
 import { handedOff } from "./port_offset.js";
 import { writeLookTarget } from "./look_at.js";
-import { findSticker } from "./row_object.js";
+import { findSticker, ownerLength } from "./row_object.js";
 import { BACKGROUND_ROW, PAINTING_ROW } from "../pano_timeline.js";
 
 const EMPTY_SELECTION = Object.freeze({ row: null, keys: [] });
@@ -103,6 +103,8 @@ export function createStudioSession({ state: opening, readOnly = false, upstream
   let handoff = readOnly ? null : openingHandoff;
   let storedPort = null;
   let handoffWaits = false;
+  // The shot that came during a drag: the drag and the stage keep the one it began with until it ends.
+  let waitingHandoff = null;
   // What the last keepSelection() of the editor checked.
   let kept = { state: null, list: null, selection: null };
 
@@ -113,7 +115,9 @@ export function createStudioSession({ state: opening, readOnly = false, upstream
   // is a stored one (opening, Undo, Redo). The object selection stays; a switch of placement lets the Keyframe
   // selection go. Returns whether the port Sticker changed.
   function showHandoff({ restored = false } = {}) {
+    if (handoffWaits) handoff = waitingHandoff;
     handoffWaits = false;
+    waitingHandoff = null;
     if (readOnly) return false;
     const port = state.stickers.find((item) => item.source.kind === "port");
     if (restored || !port || storedPort?.id !== port.id) storedPort = null;
@@ -501,7 +505,8 @@ export function createStudioSession({ state: opening, readOnly = false, upstream
     const apply = (owner) => {
       if (owner.locked === true || !owner.position) return false;
       const targets = pointTargets(owner, frames, playhead - (owner.clip ? clipOrigin(owner.clip) : 0));
-      return targets.length > 0 && setPointType(owner, targets, type, ownerPeriod(owner, length));
+      // An upstream owner loops with its layer's length (row_object.js ownerLength), as the stage draws its path.
+      return targets.length > 0 && setPointType(owner, targets, type, ownerPeriod(owner, ownerLength(working(), owner, length)));
     };
     if (selectedUpstream()) return editUpstream(apply);
     if (selection.row === "camera") return editCamera(apply);
@@ -700,11 +705,12 @@ export function createStudioSession({ state: opening, readOnly = false, upstream
     // Returns whether the port Sticker changed.
     setPortHandoff(next) {
       if (readOnly) return false;
-      handoff = next ?? null;
       if (gestureBase) {
+        waitingHandoff = next ?? null;
         handoffWaits = true;
         return false;
       }
+      handoff = next ?? null;
       return showHandoff();
     },
     select(next) {

@@ -73,8 +73,9 @@ export function lookTargetName(state, frame, length = null) {
   const target = evaluateLane(camera, "look_at", frame, ownerPeriod(camera, length));
   if (!target) return null;
   if (target.point) return "Point";
+  // A Sticker that is gone (kept in the Lane for Undo) or sky is no target (docs/scene-state-v2.md "Look at" "相手の位置").
   const sticker = state.stickers.find((item) => item.id === target.sticker);
-  return sticker ? objectLabel(sticker) : target.sticker;
+  return sticker && sticker.placement === "world" ? objectLabel(sticker) : null;
 }
 
 // Whether the Camera looks at a target now (its Look at Lane has a target at the frame).

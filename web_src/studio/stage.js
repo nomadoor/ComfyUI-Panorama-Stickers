@@ -596,7 +596,10 @@ export function createStage({
     },
     // Look at's Pick was pressed: it waits for a click on the stage (either tab), or stops waiting when it already did.
     pickLook() {
-      setLookPicking(!shared.lookPicking && (viewMode() === "space" || viewMode() === "frame"));
+      const on = !shared.lookPicking && (viewMode() === "space" || viewMode() === "frame");
+      // One wait at a time: Set orbit center's stops (the next click would otherwise do both).
+      if (on && shared.picking) setPicking(false);
+      setLookPicking(on);
     },
     // Look at's Pick stops waiting (a target was picked).
     stopLookPick() {
@@ -605,7 +608,9 @@ export function createStage({
     // Set orbit center was pressed: it waits for a click on the stage, or stops waiting when it already did. The 3D tab
     // only (the Preview window's stage is a 3D view too).
     pickCenter() {
-      setPicking(!shared.picking && viewMode() === "space");
+      const on = !shared.picking && viewMode() === "space";
+      if (on && shared.lookPicking) setLookPicking(false);
+      setPicking(on);
     },
     // The Frame view's change still waiting (a wheel run) becomes one Undo step now: before another edit or a step.
     settle() {

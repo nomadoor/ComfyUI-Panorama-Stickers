@@ -23,8 +23,8 @@ import {
   toggleLoop,
   toggleVisible,
 } from "../../studio/timeline_actions.js";
+import { groundOf } from "../../studio/defaults.js";
 import { buildStudioTimeline, findEntry, frameToX, keysInRange, xToFrame, xToFrameExact } from "../../studio/timeline_model.js";
-import { sceneGround } from "../../pano_scene_state.js";
 import { passedDragThreshold } from "../../studio/ui_drag.js";
 import StudioTimelineBar from "./StudioTimelineBar.vue";
 import StudioTimelineHead from "./StudioTimelineHead.vue";
@@ -109,7 +109,7 @@ function applySimplify(count) {
 }
 
 function startSimplify() {
-  const run = simplifyPlan(ctx.value, props.selection, sceneGround(props.state));
+  const run = simplifyPlan(ctx.value, props.selection, groundOf(props.state, props.upstream));
   if (!run) return;
   simplifyRun.value = { ...run, base: ctx.value, baseSelection: props.selection, count: run.plan.original, going: [] };
   // The path line keeps the original as a faint line while adjusting (docs/studio-ui.md "軌道の線").
@@ -145,7 +145,7 @@ function onConstantSpeed() {
     return;
   }
   if (simplifyRun.value) return;
-  const result = constantSpeedEdit(ctx.value, props.selection, sceneGround(props.state));
+  const result = constantSpeedEdit(ctx.value, props.selection, groundOf(props.state, props.upstream));
   if (!result) return;
   emit("edit", { kind: "state", ...result.edit, selection: result.selection, phase: "commit", stopsPlayback: true });
   emit("done", `Constant speed · ${result.moved} Keyframe${result.moved === 1 ? "" : "s"} moved`);
@@ -156,6 +156,11 @@ function onSimplify() {
   else startSimplify();
 }
 
+// The keys that do not end the adjusting (docs/timeline-ui.md "Simplify"): the focus's move, a modifier alone, and the
+// slider's own keys while it has the focus.
+const SIMPLIFY_QUIET_KEYS = new Set(["Tab", "Shift", "Control", "Alt", "Meta"]);
+const SIMPLIFY_SLIDER_KEYS = new Set(["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"]);
+
 function onSimplifyKey(event) {
   if (event.key === "Escape") {
     event.preventDefault();
@@ -164,6 +169,11 @@ function onSimplifyKey(event) {
   } else if (event.key === "Enter") {
     event.preventDefault();
     event.stopPropagation();
+    finishSimplify(true);
+  } else if (!SIMPLIFY_QUIET_KEYS.has(event.key)
+    && !(SIMPLIFY_SLIDER_KEYS.has(event.key) && event.target?.closest?.('[data-tl="simplify-group"]'))) {
+    // Any other key keeps the result first, then does what it does (a toggle, a Delete, an Undo...), as a press
+    // elsewhere does; an Escape after it cannot put back a state from before that edit.
     finishSimplify(true);
   }
 }

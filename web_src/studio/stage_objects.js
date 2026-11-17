@@ -311,14 +311,16 @@ export function createStageObjects({
     return { row, owner, offset: owner.clip ? clipOrigin(owner.clip) : 0, length: ownLength, period: ownerPeriod(owner, ownLength), canEdit };
   }
 
-  // The path line now ({ target, path, screen }), its path made again only when the owner changes and its screen points
-  // when the view does too.
-  let pathMade = { owner: null, period: null, offset: null, path: null, key: null, screen: null };
+  // The path line now ({ target, path, screen }), its path made again only when the owner or its position Lane changes
+  // and its screen points when the view does too. An upstream working copy is changed in place by a drag (stickerOf),
+  // so the Lane's text is compared, not only the owner.
+  let pathMade = { owner: null, lane: null, period: null, offset: null, path: null, key: null, screen: null };
   function pathNow() {
     const target = pathTarget();
     if (!target) return null;
-    if (pathMade.owner !== target.owner || pathMade.period !== target.period || pathMade.offset !== target.offset) {
-      pathMade = { owner: target.owner, period: target.period, offset: target.offset, path: pathOf(target.owner, target.period, target.offset), key: null, screen: null };
+    const lane = JSON.stringify(target.owner.position);
+    if (pathMade.owner !== target.owner || pathMade.lane !== lane || pathMade.period !== target.period || pathMade.offset !== target.offset) {
+      pathMade = { owner: target.owner, lane, period: target.period, offset: target.offset, path: pathOf(target.owner, target.period, target.offset), key: null, screen: null };
     }
     if (!pathMade.path) return null;
     const { width, height } = size();
@@ -467,14 +469,21 @@ export function createStageObjects({
     };
   }
 
-  // A press on the line: the playhead to the frame there, following the pointer while it is held.
+  // A press on the line: the playhead to the frame there, following the pointer while it is held. A looping line runs
+  // one period from its first Keyframe; a frame past the output's last is the same place a period earlier
+  // (docs/studio-ui.md "軌道の線").
+  function onTimeline(frame) {
+    const target = pathTarget();
+    const last = (length() ?? Infinity) - 1;
+    return target?.period && frame > last ? frame - target.period : frame;
+  }
   function linePress(part, shown) {
-    seek(part.frame);
+    seek(onTimeline(part.frame));
     return {
       move(next) {
         const now = pathNow();
         const frame = now ? frameNear(now.screen, next) : null;
-        if (frame !== null) seek(frame);
+        if (frame !== null) seek(onTimeline(frame));
       },
       end() {},
       cancel() {},

@@ -50,6 +50,10 @@ test("the mark is at the target of the Lane now, and the name is the Sticker's r
   assert.equal(lookTargetName(state, 5), "Point");
   assert.equal(lookTargetName(state, 12), "board.png");
   assert.equal(lookTargetName(loadSceneState({ version: 2 }), 0), null);
+  // A deleted target (its id kept in the Lane for Undo) and a sky one are no target (CodeRabbit review).
+  assert.equal(lookTargetName({ ...state, stickers: [] }, 12), null);
+  assert.equal(lookTargetName({ ...state, stickers: [board({ placement: "sky" })] }, 12), null);
+  assert.equal(lookTargetName(state, 12), "board.png");
 });
 
 test("the target switches only inside a segment between two different targets that is not a hold", () => {
@@ -64,6 +68,10 @@ test("the target switches only inside a segment between two different targets th
   assert.equal(lookSwitching(camera, 15), false, "a hold cuts");
   assert.equal(lookSwitching(camera, 25), false, "the same target");
   assert.equal(lookSwitching(camera, 35), false);
+  // From no target to one is a switch too: the view is between the rotation Lane's turn and the target's, so the
+  // Camera tab's drag stops there (CodeRabbit review; editor_edits.js cameraEdits checks it before cameraLooks).
+  const starting = loadSceneState({ version: 2, camera: { look_at: { keyframes: [{ frame: 0, value: null }, { frame: 10, value: { point: [1, 0, 0] } }] } } }).camera;
+  assert.equal(lookSwitching(starting, 5), true);
 });
 
 test("the Camera tab's drag goes round the target and the wheel changes the distance, writing the position only", () => {

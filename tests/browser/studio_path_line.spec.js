@@ -133,3 +133,26 @@ test("the line takes the playhead to the frame there; a handle drag makes the po
   expect(cos).toBeLessThan(-0.999);
   expect(problems).toEqual([]);
 });
+
+// docs/studio-ui.md "軌道の線": a press on a looping line's way back past the output's last frame takes the playhead to
+// the same place a period earlier (CodeRabbit review: it went past the last frame).
+test("a press on a looping line's way back past the last frame takes the playhead a period earlier", async ({ page }) => {
+  const problems = watch(page);
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await page.goto("/tests/browser/pages/studio_path_line.html?loop=1");
+  await page.waitForFunction(() => window.__studio?.ready, null, { timeout: 30_000 });
+  expect(await page.evaluate(() => window.__studio.error)).toBeNull();
+  await page.waitForTimeout(300);
+  await selectCamera(page);
+  // Frame 4 is where the way back from frame 40 is at frame 52 (period 48).
+  const back = await at(page, 4);
+  await page.mouse.move(back.x, back.y);
+  await page.waitForTimeout(100);
+  await page.mouse.down();
+  await page.mouse.up();
+  await page.waitForTimeout(150);
+  const frame = await playhead(page);
+  expect(frame).toBeLessThanOrEqual(47);
+  expect(Math.abs(frame - 4)).toBeLessThanOrEqual(1);
+  expect(problems).toEqual([]);
+});

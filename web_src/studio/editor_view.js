@@ -137,8 +137,9 @@ export function createEditorView(ctx) {
     view.canRedo = ctx.session.canRedo;
     view.portHandoff = ctx.session.portHandoff;
     world.ground = groundNow();
-    world.camera = outputView(ctx.session.state, view.playhead, outputLength()).position;
     syncMedia();
+    // After the media: a new Auto span is the loop period the Camera is evaluated with.
+    world.camera = outputView(ctx.session.state, view.playhead, outputLength()).position;
     // The output length the inspector and the bar read (the loop period of looping owners).
     view.outputLength = outputLength();
     loopHint();

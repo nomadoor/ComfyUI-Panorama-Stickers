@@ -7,7 +7,8 @@ import { projectPoint } from "/web_src/pano_space.js";
 import { openStudioEditor } from "/web_src/studio/editor.js";
 import { rememberView } from "/web_src/studio/view_camera.js";
 
-// ?dense=1: a Keyframe every 2 frames along a curve, as a video estimate writes them (for Simplify).
+// ?dense=1: a Keyframe every 2 frames along a curve, as a video estimate writes them (for Simplify). ?loop=1: the Camera
+// loops, its first Keyframe at frame 8, so its line's way back runs past the output's last frame.
 const params = new URLSearchParams(location.search);
 const denseKeys = () => {
   const keys = [];
@@ -22,8 +23,9 @@ const STATE = {
   timeline: { fps: 24, length: 48 },
   camera: {
     projection: "perspective",
+    loop: params.has("loop"),
     position: { keyframes: params.has("dense") ? denseKeys() : [
-      { frame: 0, value: [-3, -1.2, -4] },
+      { frame: params.has("loop") ? 8 : 0, value: [-3, -1.2, -4] },
       { frame: 20, value: [0, -1.2, -4] },
       { frame: 40, value: [3, -1.2, -6] },
     ] },
@@ -68,7 +70,7 @@ try {
     return q ? { x: rect.left + q.x, y: rect.top + q.y } : null;
   };
   // Where the Camera is at a Timeline frame, on the page.
-  studio.pathAt = (frame) => studio.at(evaluateLane(editor.session.state.camera, "position", frame));
+  studio.pathAt = (frame) => studio.at(evaluateLane(editor.session.state.camera, "position", frame, STATE.camera.loop ? STATE.timeline.length : null));
   studio.topLine = () => document.querySelector("[data-part='top-line'], .pano-studio-notice")?.textContent?.trim() ?? "";
   // The overlay pixels near the path line's yellow, in page CSS px.
   studio.yellowCount = () => {

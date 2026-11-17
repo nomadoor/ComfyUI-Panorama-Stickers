@@ -1010,6 +1010,12 @@ export function shotCamera(shot, time) {
   return evaluateCamera(owner, time, shot.length, { stickers, boxes });
 }
 
+// The hFOV a handed-off port Sticker is drawn with: the Camera `taken`'s hFOV times the zoom `k`, kept within its lens
+// curve's limit (docs/scene-state-v2.md "受け渡しの置き方").
+export function handoffHfov(taken, k) {
+  return Math.min(lensFovLimit(taken.curve), Math.max(0.1, taken.hFOV_deg * k));
+}
+
 // A port Sticker placed by the Camera that shot what `shot` hands, at its clip frame `own` (the media's time) on a
 // Timeline of `fps`: that Camera's turn turned by the offset in its own axes, its hFOV times the offset factor, its lens
 // curve. The vFOV is the hFOV, as a stored port Sticker's (its media's aspect gives the drawn one).
@@ -1021,7 +1027,7 @@ function handoffValues(sticker, own, period, shot, fps) {
   const b = worldRotation(offset.yaw_deg, offset.pitch_deg, offset.roll_deg);
   const turn = a.map((row) => [0, 1, 2].map((j) => row[0] * b[0][j] + row[1] * b[1][j] + row[2] * b[2][j]));
   const { yawDeg, pitchDeg, rollDeg } = panoramaAngles(turn);
-  const hFov = Math.min(lensFovLimit(taken.curve), Math.max(0.1, taken.hFOV_deg * k));
+  const hFov = handoffHfov(taken, k);
   return { yaw_deg: yawDeg, pitch_deg: pitchDeg, roll_deg: rollDeg, hFOV_deg: hFov, vFOV_deg: hFov, curve: taken.curve };
 }
 

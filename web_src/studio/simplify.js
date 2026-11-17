@@ -63,7 +63,13 @@ export function laneMeasure(name, values, { camera, ground, hfov }) {
     const moved = Math.max(0, ...values.map((value) => distance(values[0], value)));
     return { distance, scale: Math.max(moved, SIMPLIFY_MIN_TURN_DEG * DEG) };
   }
-  if (name === "size") return { distance: (a, b) => Math.max(logRatio(a.hFOV_deg, b.hFOV_deg), logRatio(a.vFOV_deg, b.vFOV_deg)), scale: 1 };
+  // A port Sticker's vFOV follows its media and may be left out: the vFOV counts only where both have it.
+  if (name === "size") {
+    const distance = (a, b) => (Number.isFinite(a.vFOV_deg) && Number.isFinite(b.vFOV_deg)
+      ? Math.max(logRatio(a.hFOV_deg, b.hFOV_deg), logRatio(a.vFOV_deg, b.vFOV_deg))
+      : logRatio(a.hFOV_deg, b.hFOV_deg));
+    return { distance, scale: 1 };
+  }
   if (name === "lens") return { distance: (a, b) => Math.max(Math.abs(a.curve - b.curve), logRatio(a.hFOV_deg, b.hFOV_deg)), scale: 1 };
   if (name === "fov" || name === "scale" || name === "offset_fov") return { distance: logRatio, scale: 1 };
   return { distance: (a, b) => Math.abs(a - b), scale: 1 };

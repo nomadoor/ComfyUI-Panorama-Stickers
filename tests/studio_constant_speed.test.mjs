@@ -50,6 +50,9 @@ test("the bar's Constant speed is pressable as Simplify is, and not while Simpli
   // An open row: the Keyframes of one Lane only (docs/timeline-ui.md "Simplify").
   const mixed = [{ row: "camera", lane: "position", frame: 0 }, { row: "camera", lane: "position", frame: 10 }, { row: "camera", lane: "fov", frame: 20 }];
   assert.deepEqual(bar({ row: "camera", keys: mixed }), { disabled: true, tip: "Constant speed · Select Keyframes in one Lane" });
+  // The Look at Lane alone: its Keyframes stay (CodeRabbit review).
+  const looks = [0, 10, 20].map((frame) => ({ row: "camera", lane: "look_at", frame }));
+  assert.deepEqual(bar({ row: "camera", keys: looks }), { disabled: true, tip: "Constant speed · Look at Keyframes stay" });
 });
 
 // docs/timeline-ui.md "Constant speed": a looping row with all its Keyframes selected is one turn, the segment back to
@@ -112,4 +115,14 @@ test("Constant speed on a Camera's rotation keeps the orientations it passes", a
   const farthest = (from, to) => Math.max(...from.map((a) => Math.min(...to.map((b) => angle(a, b)))));
   // Within the samples' own spacing; the time-aware shape strayed by about 18°.
   assert.ok(farthest(after, before) < 2 && farthest(before, after) < 2, `${farthest(after, before)} ${farthest(before, after)}`);
+});
+
+// CodeRabbit review: one turn of a loop whose last Keyframe holds back to the first keeps that hold's start.
+test("one turn of a loop keeps the start of its last hold", () => {
+  const owner = camera([
+    { frame: 0, value: [0, 0, 0] }, { frame: 10, value: [1, 0, 0] }, { frame: 20, value: [3, 0, 0], easing: "hold" },
+  ], { loop: true });
+  const plan = planConstantSpeed(owner, ["position"], [0, 10, 20], { period: 30 });
+  assert.equal(frames(plan?.lanes.position ?? owner.position)[2], 20);
+  assert.equal((plan?.lanes.position ?? owner.position).keyframes[2].easing, "hold");
 });

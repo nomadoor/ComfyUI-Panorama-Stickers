@@ -2,7 +2,7 @@
 // の表示と記録", the rule: docs/scene-state-v2.md "受け渡しの置き方"): the stage's drags of it, said as the turn and size
 // it shows in the World, written as the offset Lanes (`offset_rotation`, `offset_fov`) from the Camera that shot it.
 // Pure: values in, Lane writes out.
-import { clipFrame, evaluateLane, ownerPeriod, shotCamera } from "../pano_scene_eval.js";
+import { clipFrame, evaluateLane, handoffHfov, ownerPeriod, shotCamera } from "../pano_scene_eval.js";
 import { setLaneValue } from "../pano_timeline.js";
 import { isUpstreamSticker } from "../pano_upstream.js";
 import { lookRotation, worldRotation } from "../pano_world.js";
@@ -60,7 +60,13 @@ export function setPortOffsetPose(sticker, shot, fps, frame, pose, start, length
     setLaneValue(sticker, "offset_rotation", own, offsetDirection(taken, pose.yaw_deg, pose.pitch_deg), length);
   }
   if (pose.roll_delta !== undefined) setLaneValue(sticker, "offset_rotation", own, { roll_deg: start.offset_rotation.roll_deg + pose.roll_delta }, length);
-  if (pose.fov_factor !== undefined) setLaneValue(sticker, "offset_fov", own, Math.max(PORT_ZOOM_MIN, start.offset_fov * pose.fov_factor), length);
+  // A corner scales the angle of view drawn when the drag started (kept within the lens's limit), not the stored zoom,
+  // which can be past that limit.
+  if (pose.fov_factor !== undefined) {
+    const taken = shotCameraAt(sticker, shot, frame, fps);
+    const zoom = (handoffHfov(taken, start.offset_fov) * pose.fov_factor) / taken.hFOV_deg;
+    setLaneValue(sticker, "offset_fov", own, Math.max(PORT_ZOOM_MIN, zoom), length);
+  }
 }
 
 // The offset of the port Sticker `sticker` at the Timeline frame `frame` ({ offset_rotation, offset_fov }).

@@ -29,6 +29,7 @@ import {
   entryClipEditable,
   entryKeyable,
   entryKeysEditable,
+  entryLength,
   entryVisible,
   entryWritable,
   findEntry,
@@ -164,11 +165,6 @@ export function moveKeys(ctx, selection, delta, limit) {
   return { edit: draft.result(), selection: { ...selection, keys }, delta: applied };
 }
 
-// The output length a row's loop follows: an upstream layer's own length, else the Timeline's span (the node's).
-function entryLength(ctx, entry) {
-  return entry.layer ? entry.layer.length ?? null : spanOf(ctx);
-}
-
 // Delete of the selected Keyframes: a Lane left without Keyframes keeps its value at the playhead (pano_timeline.js
 // deleteKeyframes). { edit, selection } with no Keyframes selected, or null when none may be deleted.
 export function deleteKeys(ctx, selection, playhead) {
@@ -177,7 +173,7 @@ export function deleteKeys(ctx, selection, playhead) {
   const draft = createDraft(ctx);
   for (const { entry, lanes } of groups) {
     const owner = draft.owner(entry);
-    for (const [name, list] of lanes) deleteKeyframes(owner, [name], list, playhead - entry.offset, entryLength(ctx, entry));
+    for (const [name, list] of lanes) deleteKeyframes(owner, [name], list, playhead - entry.offset, entryLength(entry, spanOf(ctx)));
   }
   return { edit: draft.result(), selection: { row: selection.row ?? null, keys: [] } };
 }
@@ -253,7 +249,7 @@ export function keyRow(ctx, id, playhead) {
   const missing = rowLaneNames(entry.owner).some((name) => !entry.owner[name].keyframes.some((key) => Math.abs(key.frame - frame) <= FRAME_EPSILON));
   if (!missing) return null;
   const draft = createDraft(ctx);
-  keyAllLanes(draft.owner(entry), frame, entryLength(ctx, entry));
+  keyAllLanes(draft.owner(entry), frame, entryLength(entry, spanOf(ctx)));
   return draft.result();
 }
 
@@ -282,7 +278,7 @@ export function simplifyPlan(ctx, selection, ground = -1.6) {
   const owner = entry.owner;
   const names = readiness.lane ? [readiness.lane] : rowLaneNames(owner);
   const camera = entry.kind === "camera";
-  const length = entryLength(ctx, entry);
+  const length = entryLength(entry, spanOf(ctx));
   // The least turn measure is the H FOV over the stretch, as its Lane evaluates (its smallest), not the Lane's static value.
   const period = ownerPeriod(owner, length);
   const fovAt = (frame) => (camera ? evaluateLane(owner, "fov", frame, period) : owner.size ? evaluateLane(owner, "size", frame, period).hFOV_deg : 90);
@@ -300,7 +296,7 @@ export function constantSpeedEdit(ctx, selection, ground = -1.6) {
   const owner = entry.owner;
   const names = readiness.lane ? [readiness.lane] : rowLaneNames(owner);
   const camera = entry.kind === "camera";
-  const length = entryLength(ctx, entry);
+  const length = entryLength(entry, spanOf(ctx));
   const period = ownerPeriod(owner, length);
   const fovAt = (frame) => (camera ? evaluateLane(owner, "fov", frame, period) : owner.size ? evaluateLane(owner, "size", frame, period).hFOV_deg : 90);
   const hfov = Math.min(...readiness.frames.map(fovAt));

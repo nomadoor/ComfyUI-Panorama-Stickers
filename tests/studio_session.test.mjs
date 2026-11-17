@@ -889,7 +889,10 @@ test("a new result's shot is applied at once, or after the drag under way ends; 
   });
   assert.equal(world.setPortHandoff(SHOT), false);
   assert.equal(portOf(world.state).placement, "world");
+  // The stage and the drag keep the shot the drag began with (CodeRabbit review): the new one waits too.
+  assert.equal(world.portHandoff, null);
   world.cancelGesture();
+  assert.equal(world.portHandoff, SHOT);
   assert.equal(portOf(world.state).placement, "sky");
   assert.deepEqual(world.selection, { row: "sticker_1", keys: [] });
   // Undo history and state_json still hold the stored world Sticker...

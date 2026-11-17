@@ -74,3 +74,16 @@ test("an upstream port Sticker placed by its layer's shot has the offset rows, a
   const reset = applyInspectorEdit(own, { type: "reset", target: { kind: "sticker", id }, row: "zoom" }, { upstream });
   assert.deepEqual(reset.upstreamRevert.lanes, ["offset_fov"]);
 });
+
+// CodeRabbit review: a corner scales the angle of view drawn when the drag began, also when the stored zoom puts it past
+// the lens's limit (drawn at the limit).
+test("a corner drag from a zoom past the lens's limit scales the drawn angle of view", () => {
+  const s = state();
+  const sticker = s.stickers[0];
+  const frame = 9;
+  sticker.offset_fov = { value: 100, keyframes: [] };
+  const before = placed(s, frame);
+  setPortOffsetPose(sticker, SHOT, 24, frame, { fov_factor: 0.5 }, portOffsetAt(sticker, frame));
+  const after = placed(s, frame);
+  assert.ok(Math.abs(after.hFOV_deg - before.hFOV_deg * 0.5) < 1e-9, `${before.hFOV_deg} → ${after.hFOV_deg}`);
+});
