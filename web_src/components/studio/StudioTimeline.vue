@@ -16,10 +16,15 @@ import {
   pasteKeys,
   selectKeys,
   selectRow,
+  constantSpeedEdit,
+  simplifyEdit,
+  simplifyPlan,
   startClipDrag,
+  toggleLoop,
   toggleVisible,
 } from "../../studio/timeline_actions.js";
-import { buildStudioTimeline, frameToX, keysInRange, xToFrame, xToFrameExact } from "../../studio/timeline_model.js";
+import { groundOf } from "../../studio/defaults.js";
+import { buildStudioTimeline, findEntry, frameToX, keysInRange, xToFrame, xToFrameExact } from "../../studio/timeline_model.js";
 import { passedDragThreshold } from "../../studio/ui_drag.js";
 import StudioTimelineBar from "./StudioTimelineBar.vue";
 import StudioTimelineHead from "./StudioTimelineHead.vue";
@@ -69,7 +74,7 @@ const props = defineProps({
   collapsed: { type: Boolean, default: false },
   lengthUnit: { type: String, default: "frames" },
 });
-const emit = defineEmits(["seek", "play", "select", "edit", "frame-selected", "loop-change", "length-unit-change", "collapse-change"]);
+const emit = defineEmits(["seek", "play", "select", "edit", "frame-selected", "loop-change", "length-unit-change", "collapse-change", "done", "simplify-ghost"]);
 
 // The empty space at both ends of a track (docs/timeline-ui.md "タイムラインの長さ": only a visual margin).
 const TRACK_PAD = 8;
@@ -84,12 +89,126 @@ const ctx = computed(() => ({
   fpsLocked: props.fpsLocked,
   readOnly: props.readOnly,
 }));
+// --- Simplify (docs/timeline-ui.md "Simplify"): pressed, it removes Keyframes down to the default count and shows the
+// slider; each slider step makes the result again from the state before; Enter or a press elsewhere keeps it, Escape
+// puts the state back. All of it is one Undo step (live edits, then a commit or a cancel).
+// A shallow ref: the run holds the state it started from, which must stay a plain object (no Vue proxies).
+const simplifyRun = shallowRef(null);
+
+function simplifyCleanup() {
+  window.removeEventListener("keydown", onSimplifyKey, true);
+  window.removeEventListener("pointerdown", onSimplifyOutside, true);
+}
+
+function applySimplify(count) {
+  const run = simplifyRun.value;
+  if (!run) return;
+  const { edit, selection, going } = simplifyEdit(run.base, run, count);
+  simplifyRun.value = { ...run, count, going };
+  emit("edit", { kind: "state", ...edit, selection, phase: "live", stopsPlayback: false });
+}
+
+function startSimplify() {
+  const run = simplifyPlan(ctx.value, props.selection, groundOf(props.state, props.upstream));
+  if (!run) return;
+  simplifyRun.value = { ...run, base: ctx.value, baseSelection: props.selection, count: run.plan.original, going: [] };
+  // The path line keeps the original as a faint line while adjusting (docs/studio-ui.md "軌道の線").
+  emit("simplify-ghost", { row: run.row, owner: findEntry(ctx.value, run.row)?.owner ?? null });
+  window.addEventListener("keydown", onSimplifyKey, true);
+  window.addEventListener("pointerdown", onSimplifyOutside, true);
+  applySimplify(run.plan.fallback);
+}
+
+function finishSimplify(keep) {
+  const run = simplifyRun.value;
+  if (!run) return;
+  simplifyRun.value = null;
+  simplifyCleanup();
+  emit("simplify-ghost", null);
+  // Back to the original count, or given up: nothing changes and no Undo step.
+  if (!keep || run.count >= run.plan.original) {
+    emit("edit", { kind: "state", state: run.base.state, upstream: baseUpstream(run.base), selection: run.baseSelection, phase: "cancel", stopsPlayback: false });
+    return;
+  }
+  const { edit, selection } = simplifyEdit(run.base, run, run.count);
+  emit("edit", { kind: "state", ...edit, selection, phase: "commit", stopsPlayback: false });
+  emit("done", `${run.plan.original} Keyframes → ${run.count}`);
+}
+
+// Constant speed (docs/timeline-ui.md "Constant speed"): one press, one Undo step; nothing when nothing changes.
+// A press on Constant speed while Simplify adjusted kept Simplify's result (a press elsewhere); the click that follows
+// it is not a press of Constant speed, which was disabled when the press began.
+let constantSpeedPressedWhileAdjusting = false;
+function onConstantSpeed() {
+  if (constantSpeedPressedWhileAdjusting) {
+    constantSpeedPressedWhileAdjusting = false;
+    return;
+  }
+  if (simplifyRun.value) return;
+  const result = constantSpeedEdit(ctx.value, props.selection, groundOf(props.state, props.upstream));
+  if (!result) return;
+  emit("edit", { kind: "state", ...result.edit, selection: result.selection, phase: "commit", stopsPlayback: true });
+  emit("done", `Constant speed · ${result.moved} Keyframe${result.moved === 1 ? "" : "s"} moved`);
+}
+
+function onSimplify() {
+  if (simplifyRun.value) finishSimplify(true);
+  else startSimplify();
+}
+
+// The keys that do not end the adjusting (docs/timeline-ui.md "Simplify"): the focus's move, a modifier alone, and the
+// slider's own keys while it has the focus.
+const SIMPLIFY_QUIET_KEYS = new Set(["Tab", "Shift", "Control", "Alt", "AltGraph", "Meta", "CapsLock", "Process", "Dead"]);
+const SIMPLIFY_SLIDER_KEYS = new Set(["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"]);
+
+function onSimplifyKey(event) {
+  if (event.key === "Escape") {
+    event.preventDefault();
+    event.stopPropagation();
+    finishSimplify(false);
+  } else if (event.key === "Enter") {
+    event.preventDefault();
+    event.stopPropagation();
+    finishSimplify(true);
+  } else if (!SIMPLIFY_QUIET_KEYS.has(event.key) && !event.isComposing
+    && !(SIMPLIFY_SLIDER_KEYS.has(event.key) && event.target?.closest?.('[data-tl="simplify-group"]'))) {
+    // Any other key keeps the result first, then does what it does (a toggle, a Delete, an Undo...), as a press
+    // elsewhere does; an Escape after it cannot put back a state from before that edit.
+    finishSimplify(true);
+  }
+}
+
+function onSimplifyOutside(event) {
+  if (event.target?.closest?.('[data-tl="simplify-group"]')) return;
+  if (event.target?.closest?.('[data-tl="constant-speed"]')) {
+    constantSpeedPressedWhileAdjusting = true;
+    // The click comes right after the release, or never (released elsewhere, or the press cancelled): the mark goes
+    // after any of them.
+    const clear = () => {
+      window.removeEventListener("pointerup", clear, true);
+      window.removeEventListener("pointercancel", clear, true);
+      setTimeout(() => { constantSpeedPressedWhileAdjusting = false; });
+    };
+    window.addEventListener("pointerup", clear, true);
+    window.addEventListener("pointercancel", clear, true);
+  }
+  finishSimplify(true);
+}
+
+onBeforeUnmount(() => {
+  if (simplifyRun.value) finishSimplify(true);
+  simplifyCleanup();
+});
+
 const model = computed(() => buildStudioTimeline(ctx.value, {
   selection: props.selection,
   playhead: props.playhead,
   playing: props.playing,
   loop: props.loop,
   openRows: openRows.value,
+  simplify: simplifyRun.value
+    ? { row: simplifyRun.value.row, lane: simplifyRun.value.lane, original: simplifyRun.value.plan.original, least: simplifyRun.value.plan.least, count: simplifyRun.value.count, going: simplifyRun.value.going }
+    : null,
 }));
 
 // The lines top to bottom: group headers, rows and their open Lanes; `line` is the index in model.lines.
@@ -150,6 +269,18 @@ function clipStyle(clip) {
   const left = x(clip.start);
   const right = clip.end === null ? width.value : Math.min(width.value, x(clip.end));
   return { left: `${left}px`, width: `${Math.max(2, right - left)}px` };
+}
+
+// The mark of a looping line from its last Keyframe to the end of the period (docs/design.md "タイムラインのループの戻る印").
+function loopLineStyle(mark) {
+  const left = x(mark.from);
+  return { left: `${left}px`, width: `${Math.max(0, x(Math.min(mark.to, model.value.span)) - left)}px` };
+}
+
+// The band of the segments the Easing panel sets (docs/design.md "タイムラインの Easing の対象の帯").
+function bandStyle(band) {
+  const left = x(band.start);
+  return { left: `${left}px`, width: `${Math.max(0, x(band.end) - left)}px` };
 }
 
 // --- Drags: the ruler scrub, a box on the tracks, Keyframes, a Clip range. One at a time.
@@ -421,6 +552,11 @@ function onEye(id) {
   if (result) emit("edit", { kind: "state", ...result.edit, selection: result.selection, phase: "commit", stopsPlayback: false });
 }
 
+function onLoop(id) {
+  const edit = toggleLoop(ctx.value, id);
+  if (edit) emit("edit", { kind: "state", ...edit, phase: "commit", stopsPlayback: false });
+}
+
 function onKeyRow(id) {
   const edit = keyRow(ctx.value, id, props.playhead);
   if (edit) emit("edit", { kind: "state", ...edit, phase: "commit", stopsPlayback: true });
@@ -469,7 +605,14 @@ function onGroupAction(group, kind) {
   if (!button.disabled) emit("edit", { kind, key: group.key });
 }
 
+// Another edit while Simplify adjusts keeps Simplify's result first, as a press elsewhere does (docs/timeline-ui.md
+// "Simplify"). The live edits already show that result, so the edit that follows reads the state it acts on.
+function settleSimplify() {
+  if (simplifyRun.value) finishSimplify(true);
+}
+
 function handleDelete() {
+  settleSimplify();
   if (deleteTarget(props.selection) !== "keys") return false;
   const result = deleteKeys(ctx.value, props.selection, props.playhead);
   if (result) emit("edit", { kind: "state", ...result.edit, selection: result.selection, phase: "commit", stopsPlayback: true });
@@ -498,12 +641,13 @@ function copySelectedKeys() {
 }
 
 function pasteCopiedKeys(clipboard) {
+  settleSimplify();
   const result = pasteKeys(ctx.value, clipboard, props.selection, props.playhead);
   if (result) emit("edit", { kind: "state", ...result.edit, selection: result.selection, phase: "commit", stopsPlayback: true });
   return !!result;
 }
 
-defineExpose({ handleDelete, copyKeys: copySelectedKeys, pasteKeys: pasteCopiedKeys });
+defineExpose({ handleDelete, copyKeys: copySelectedKeys, pasteKeys: pasteCopiedKeys, settleSimplify });
 </script>
 
 <template>
@@ -528,6 +672,9 @@ defineExpose({ handleDelete, copyKeys: copySelectedKeys, pasteKeys: pasteCopiedK
       @length-cancel="onLengthCancel"
       @length-unit="(unit) => emit('length-unit-change', unit)"
       @collapse="(folded) => emit('collapse-change', folded)"
+      @simplify="onSimplify"
+      @constant-speed="onConstantSpeed"
+      @simplify-count="applySimplify"
     />
     <div v-show="!collapsed" ref="body" class="pano-studio-tl-body">
       <div ref="rulerLine" class="pano-studio-tl-line is-ruler">
@@ -578,6 +725,7 @@ defineExpose({ handleDelete, copyKeys: copySelectedKeys, pasteKeys: pasteCopiedK
               @expand="toggleOpen(item.row.id)"
               @select="onSelectRow(item.row.id)"
               @frame="emit('frame-selected', item.row.id)"
+              @loop="onLoop(item.row.id)"
               @key="onKeyRow(item.row.id)"
             />
             <div
@@ -597,6 +745,32 @@ defineExpose({ handleDelete, copyKeys: copySelectedKeys, pasteKeys: pasteCopiedK
                 <span class="pano-studio-tl-clip-edge is-start" data-part="clip-start" @pointerdown.stop="onClipDown($event, item.row, 'start')" />
                 <span class="pano-studio-tl-clip-edge is-end" data-part="clip-end" @pointerdown.stop="onClipDown($event, item.row, 'end')" />
               </div>
+              <template v-if="(item.type === 'lane' ? item.lane.loopMark : item.row.loopMark)">
+                <span
+                  class="pano-studio-tl-loopline"
+                  :style="loopLineStyle(item.type === 'lane' ? item.lane.loopMark : item.row.loopMark)"
+                  data-part="loop-mark"
+                />
+                <span
+                  v-if="(item.type === 'lane' ? item.lane.loopMark : item.row.loopMark).to <= model.span"
+                  class="pano-studio-tl-key is-return"
+                  :style="{ left: `${x((item.type === 'lane' ? item.lane.loopMark : item.row.loopMark).to)}px` }"
+                  data-part="loop-return"
+                />
+              </template>
+              <span
+                v-if="(item.type === 'lane' ? item.lane.band : item.row.band)"
+                class="pano-studio-tl-band"
+                :style="bandStyle(item.type === 'lane' ? item.lane.band : item.row.band)"
+                data-part="easing-band"
+              />
+              <span
+                v-for="frame in (item.type === 'lane' ? item.lane.going : item.row.going) ?? []"
+                :key="`going-${frame}`"
+                class="pano-studio-tl-key is-going"
+                :style="{ left: `${x(frame)}px` }"
+                data-part="key-going"
+              />
               <span
                 v-for="key in (item.type === 'lane' ? item.lane.keys : item.row.pins)"
                 :key="key.ownerFrame"

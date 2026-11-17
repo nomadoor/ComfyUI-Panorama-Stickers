@@ -70,9 +70,8 @@ Python はこの文書の規則を持たない（列は `—`）。「（未実�
 | `TARGET_MIN_DISTANCE` | `E` | 0.005 `E`（0.008） | `d` の下限 |
 | `TARGET_MAX_DISTANCE` | `E` | 30 `E`（48） | `d` の上限。パンで掴む深さとホイールの中心までの距離の上限も兼ねる |
 | `CAMERA_FRAME_RADIUS` | `E` | 1 `E`（1.6） | Camera を選んで Frame Selected するときの球の半径（中心は Camera の位置） |
-| `CAMERA_GUIDE_LENGTH` | `E` | 0.5 `E`（0.8） | 3D タブの Camera の印の基本の長さ（Frame モードの視錐台の奥行き。Panorama モードの球の直径はその半分）。視点がこの距離より Camera に近いときは、印を描かず当たりにも数えない（開いたときの視点は Camera の位置にあり、印が視点を包んでしまうため） |
+| `CAMERA_GUIDE_LENGTH` | `E` | 0.5 `E`（0.8） | 3D タブの Camera の印の基本の長さ（Frame モードの視錐台の奥行き。Panorama モードの球の直径はその半分）。視点がこの距離より Camera に近いときは、印を描かず当たりにも数えない（開いたときの視点は Camera の位置にあり、印が視点を包んでしまうため）。印の長さはいつもこの World の長さで、遠くから見れば、ほかの物と同じように小さく写る（画面の大きさに下限を設けると、遠くの印が手前の物より大きく写り、遠近が狂うため。持ち主、2026-11-17） |
 | `ROTATE_SNAP_DEG` | 絶対 | 15° | Shift を押して回すときに止める角度の刻み（ギズモの Rotate、空の画像の回転のハンドル。絶対の角度の倍数に止める。`docs/studio-ui.md` の「ギズモ」「下の中央のバー」）。Camera タブの Roll の目盛りも同じ値を使う |
-| `CAMERA_GUIDE_MIN_PIXELS` | 絶対 | 80 px | Camera の印の長さの画面の下限。印の長さは、`CAMERA_GUIDE_LENGTH` と、Camera の位置の深さでこの CSS px に写る長さの大きい方にする（遠くから見ても、地面のグリッドの 1 マスほどに縮んでまぎれないため） |
 | `WORLD_IMAGE_HEIGHT` | `E` | 1 `E`（1.6） | World に置く画像の板の高さ |
 | `GRID_MINOR_FADE` | `E` | 8 `E` → 24 `E`（12.8 → 38.4） | 1 単位の線が薄れ始める距離と消える距離（視点からの水平の距離） |
 | `GRID_MAJOR_FADE` | `E` | 16 `E` → 30 `E`（25.6 → 48） | 10 単位の線が薄れ始める距離と消える距離。X 軸と Z 軸は薄れない（下の「地面のグリッド」） |
@@ -107,6 +106,9 @@ Python はこの文書の規則を持たない（列は `—`）。「（未実�
 | `KEY_MOVE_FAST` | 4 | `pano_view_keys.js`。WASD / QE の速さに Shift で掛ける数。Alt では遅くしない（下の「直接の操作」の WASD / QE。ADR 0048） |
 | `NEW_STICKER_HFOV`（参照） | 30° | `space/placement.js`。新しい Sky の Sticker の横の画角 |
 | `CAMERA_HIT_PIXELS` | 6 px | `web_src/studio/camera_marker.js`。Camera の印の線の当たりの幅（下の「ホバーの判定」） |
+| `PATH_HIT` | 7 px | `web_src/studio/path_line.js`。軌道の線の当たりの幅（`docs/studio-ui.md` の「軌道の線」） |
+| `PATH_POINT_HIT` | 9 px | `path_line.js`。軌道の Keyframe の点と、ハンドルの先の当たりの半径 |
+| `PATH_TICK_FRAMES` | 2 | `path_line.js`。軌道の線の速さの点を置く間隔（Timeline frame） |
 | `COARSE_GRID_CELLS` | 16 | `web_src/pano_coarse_grid.js`。3D の Sticker の当たりの粗い占有グリッドの、各辺のマスの数（下の「ホバーの判定」） |
 | `COARSE_GRID_SLICE_MS` | 4 ms | `web_src/pano_coarse_grid.js`。そのグリッドを手の空いた時間に作るとき、1 回に使う時間の上限 |
 | `COARSE_GRID_IDLE_TIMEOUT_MS` | 100 ms | `web_src/pano_coarse_grid.js`。手が空かなくても、グリッドを作る次の 1 回が呼ばれるまでの最長の待ち |

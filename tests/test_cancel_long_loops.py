@@ -14,14 +14,13 @@ from comfy_api.latest import Types
 
 from comfyui_pano_suite import nodes
 from comfyui_pano_suite.core import video as core_video
-from comfyui_pano_suite.core.scene_state import STICKER_STATE_KIND, load_scene_state, load_sticker_state
+from comfyui_pano_suite.core.scene_state import load_scene_state
 from comfyui_pano_suite.core.video_source import MaterializedVideo, scan_video
 from comfyui_pano_suite.node_runtime import NodeRuntime
 from comfyui_pano_suite.progress import loop_progress
 from comfyui_pano_suite.scene_files import write_editor_files
 from comfyui_pano_suite.scene_video import SceneVideo
 from test_stickers_scene_video import _cfr
-from comfyui_pano_suite.port_sticker import _handoff_lanes
 from comfyui_pano_suite.scene_timeline import _decide_timeline
 
 
@@ -173,11 +172,6 @@ def test_cancelled_legacy_stickers_batch_leaves_no_preview_mp4(tmp_path, monkeyp
     assert not [name for name in _files(tmp_path) if name.endswith(".mp4")]
 
 
-def _handoff():
-    keys = [{"frame": frame, "value": {"yaw_deg": frame * 9.0, "pitch_deg": 0.0, "roll_deg": 0.0}} for frame in (0, 10)]
-    _handoff_lanes(load_sticker_state(json.dumps({"kind": STICKER_STATE_KIND, "version": 2, "fps": 24.0, "camera": {"rotation": keys}})), 24.0)
-
-
 def _timeline():
     _decide_timeline(load_scene_state(json.dumps({"version": 2, "timeline": {"length": 10}})), None, None)
 
@@ -190,8 +184,9 @@ def _components():
     SceneVideo(render, 32, 16, Fraction(24), [Fraction(index, 24) for index in range(4)], Fraction(0), None).get_components()
 
 
-# The output size no longer evaluates the Camera at every frame (ADR 0048), so it has no loop to stop.
-@pytest.mark.parametrize("run", [_handoff, _timeline, _components], ids=["handoff", "timeline", "components"])
+# The output size no longer evaluates the Camera at every frame (ADR 0048), and Pose handoff no longer bakes Keyframes
+# (ADR 0067), so they have no loop to stop.
+@pytest.mark.parametrize("run", [_timeline, _components], ids=["timeline", "components"])
 def test_cancel_stops_the_per_frame_loops_of_a_run(run, monkeypatch):
     checks = []
 

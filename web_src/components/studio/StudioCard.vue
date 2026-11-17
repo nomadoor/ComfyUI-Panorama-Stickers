@@ -8,6 +8,8 @@ defineProps({
   title: { type: String, required: true },
   icon: { type: String, default: "" },
   note: { type: String, default: "" },
+  // A badge after the title ({ label, icon, tip }), shown only, or null (docs/studio-ui.md "Look at" "オンの見せ方").
+  badge: { type: Object, default: null },
 });
 </script>
 
@@ -16,6 +18,9 @@ defineProps({
     <header class="pano-studio-card-title">
       <SvgIcon v-if="icon" :icon="icon" />
       <span class="pano-studio-card-name" :data-tip="title">{{ title }}</span>
+      <span v-if="badge" class="pano-studio-card-badge" :data-tip="badge.tip" data-part="card-badge">
+        <SvgIcon v-if="badge.icon" :icon="badge.icon" />{{ badge.label }}
+      </span>
       <span v-if="note" class="pano-studio-card-sub pano-studio-cap">{{ note }}</span>
     </header>
     <div class="pano-studio-card-rows">

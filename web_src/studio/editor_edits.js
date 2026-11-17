@@ -7,11 +7,14 @@ import { queuePendingStickerOperation } from "../pano_sticker_operations.js";
 import { cameraShot } from "../pano_editor_state.js";
 import { loadSceneState } from "../pano_scene_state.js";
 import { needsPaintLayer, textWithPaintLayer, uploadPaintLayer } from "./paint_upload.js";
-import { moveCameraPose } from "./camera_state.js";
+import { cameraLooks, moveCameraPose, orbitCameraLooking } from "./camera_state.js";
 import { fovZoomStep } from "../pano_camera_math.js";
 import { cameraRulers, rulerEdit } from "./frame_layout.js";
 import { buildCameraCard } from "./inspector_model.js";
-import { LINE_TEXT } from "./notice_line.js";
+import { LINE_TEXT, lookingAtText } from "./notice_line.js";
+import { lookAtBoxes, lookSwitching, pickedTarget } from "./look_at.js";
+import { objectLabel } from "./timeline_model.js";
+import { writeStateWidget } from "../pano_state_widget.js";
 
 // The edits and writing to the node.
 export function createEditorEdits(ctx) {
@@ -19,7 +22,7 @@ export function createEditorEdits(ctx) {
 
   // What the inspector's edits read (inspector_actions.js applyInspectorEdit's context), with the upstream working
   // copies an upstream object's edit changes (docs/studio-ui.md "上流の物の編集").
-  const inspectorContext = () => ({ playhead: ctx.view.playhead, imageSizes: ctx.view.imageSizes, animations: ctx.view.animations, portSize: ctx.view.portSize, upstream: ctx.view.upstreamWorking, handoff: ctx.session.portHandoff });
+  const inspectorContext = () => ({ playhead: ctx.view.playhead, length: ctx.outputLength(), imageSizes: ctx.view.imageSizes, animations: ctx.view.animations, portSize: ctx.view.portSize, upstream: ctx.view.upstreamWorking, handoff: ctx.session.portHandoff });
 
   // [inputs] A result of this node while the editor is open: the port Sticker is shown with its Pose handoff
   // (docs/studio-ui.md "`port` の Sticker"; during a drag, once it ends). ComfyUI stores the output before this
@@ -33,6 +36,11 @@ export function createEditorEdits(ctx) {
   ctx.api?.addEventListener?.("executed", onExecuted);
 
   function inspectorEdit(edit) {
+    // Look at's Pick waits for a click on the stage (the stage's own wait; nothing changes yet).
+    if (edit.type === "look-pick") {
+      if (!ctx.readOnly && ctx.session.state.camera.locked !== true) ctx.stage?.pickLook();
+      return;
+    }
     // A wheel run of the Camera tab's Frame view still waiting to be one Undo step is one first.
     ctx.stage?.settle();
     const outcome = ctx.session.applyInspector(edit, inspectorContext());
@@ -104,8 +112,19 @@ export function createEditorEdits(ctx) {
     live: (pose) => objectOutcome(ctx.session.gesture((draft) => {
       const { camera } = draft;
       if (camera.locked === true) return false;
+      const length = ctx.outputLength();
+      // Looking at a target the drag goes round it and the wheel changes the distance; where the target changes, neither
+      // (docs/studio-ui.md "Look at"), also from no target to one, where the view is between the two turns.
+      if (lookSwitching(camera, ctx.view.playhead, length)) {
+        ctx.notice(LINE_TEXT.lookChanging);
+        return false;
+      }
+      if (cameraLooks(camera, ctx.view.playhead, length, draft.stickers)) {
+        orbitCameraLooking(camera, ctx.view.playhead, pose, length, { stickers: draft.stickers, boxes: ctx.lookBoxes() });
+        return true;
+      }
       // A move back onto the start writes nothing, and the state is the start again (each move starts from it).
-      moveCameraPose(camera, ctx.view.playhead, pose);
+      moveCameraPose(camera, ctx.view.playhead, pose, length);
       return true;
     })),
     commit: () => objectOutcome(ctx.session.commitGesture()),
@@ -117,7 +136,7 @@ export function createEditorEdits(ctx) {
   // step) or cancel. The run: { value (the last written), playhead (where it writes: a seek or playback before the run
   // ends does not move its Keyframe) }, or null.
   let fovRun = null;
-  const rulersAt = (playhead) => cameraRulers(buildCameraCard({ state: ctx.session.state, playhead, readOnly: ctx.readOnly }));
+  const rulersAt = (playhead) => cameraRulers(buildCameraCard({ state: ctx.session.state, playhead, readOnly: ctx.readOnly, length: ctx.outputLength(), boxes: ctx.lookBoxes() }));
   function fovApply(edit, playhead) {
     const outcome = ctx.session.applyInspector(edit, { ...inspectorContext(), playhead });
     // A step stops playback as every move of the Frame view does (docs/space-and-view.md "Frame 表示" 記録).
@@ -156,7 +175,7 @@ export function createEditorEdits(ctx) {
   const cameraTab = {
     tab: () => ctx.view.tab,
     mode: () => (ctx.session.state.camera.projection === "erp" ? "panorama" : "frame"),
-    shot: () => cameraShot(ctx.session.state.camera, ctx.view.playhead),
+    shot: () => cameraShot(ctx.session.state.camera, ctx.view.playhead, ctx.outputLength(), { stickers: ctx.session.state.stickers, boxes: ctx.lookBoxes() }),
     erpRange: () => ctx.session.state.camera.erp_range,
     frame: () => ctx.frameRect,
     erpCanvas: () => ctx.erpCanvas,
@@ -173,7 +192,7 @@ export function createEditorEdits(ctx) {
   function cameraToView() {
     if (ctx.view.tab !== "3d" || !ctx.stage) return;
     ctx.stage.settle();
-    const outcome = ctx.session.cameraToView(ctx.stage.pose(), ctx.view.playhead);
+    const outcome = ctx.session.cameraToView(ctx.stage.pose(), ctx.view.playhead, ctx.outputLength());
     objectOutcome(outcome);
     if (!outcome.changed) return;
     ctx.doneNotice(LINE_TEXT.cameraMoved);
@@ -201,8 +220,28 @@ export function createEditorEdits(ctx) {
     ctx.redraw();
   }
 
+  // Look at's Pick took `picked` ({ point, stickerId }, stage_input.js): a World Sticker of the node's own is the target,
+  // at the point as the share of its content box (look_at.js pickedTarget); anything else says there is nothing to look
+  // at and keeps waiting. Whether it took a target.
+  function lookPicked({ point, stickerId }) {
+    const state = ctx.session.state;
+    const sticker = state.stickers.find((item) => item.id === stickerId && item.placement === "world");
+    if (!sticker || !point) {
+      ctx.notice(LINE_TEXT.nothingToLookAt);
+      return false;
+    }
+    const box = lookAtBoxes(state, { image: ctx.imageSizeOf, content: ctx.contentBoxOf }, [sticker.id])[sticker.id] ?? null;
+    const outcome = ctx.session.setLookAt(pickedTarget(sticker, point, ctx.view.playhead, box, ctx.outputLength()), ctx.view.playhead, ctx.outputLength());
+    objectOutcome(outcome);
+    // Refused (a drag under way, locked): no notice, and the Pick keeps waiting. The target it already has is taken.
+    if (!outcome.accepted) return false;
+    ctx.doneNotice(lookingAtText(objectLabel(sticker)));
+    return true;
+  }
+
   function barPress(key) {
     if (key.startsWith("gizmo:")) setGizmoMode(key.slice("gizmo:".length));
+    else if (key.startsWith("point:")) objectOutcome(ctx.session.setPointType(key.slice("point:".length), ctx.view.playhead, ctx.outputLength()));
     else if (key === "lock") objectOutcome(ctx.session.toggleLock());
     else if (key === "duplicate") objectOutcome(ctx.session.duplicateSelected());
     else if (key === "front" || key === "back") objectOutcome(ctx.session.orderSelected(key));
@@ -216,8 +255,7 @@ export function createEditorEdits(ctx) {
     if (ctx.readOnly || !ctx.stateWidget) return false;
     const text = ctx.session.stateText(ctx.node, ctx.stateWidget.value);
     if (text === null) return false;
-    ctx.stateWidget.value = text;
-    ctx.stateWidget.callback?.(text);
+    writeStateWidget(ctx.stateWidget, text);
     ctx.node.setDirtyCanvas?.(true, true);
     return true;
   }
@@ -236,8 +274,7 @@ export function createEditorEdits(ctx) {
       const layer = await uploadPaintLayer(ctx.api, { nodeId, painting, sources });
       const text = textWithPaintLayer(String(ctx.stateWidget.value ?? ""), painting, layer);
       if (text === null) return;
-      ctx.stateWidget.value = text;
-      ctx.stateWidget.callback?.(text);
+      writeStateWidget(ctx.stateWidget, text);
       ctx.node.setDirtyCanvas?.(true, true);
     }).catch((error) => {
       console.error("[PanoramaPaintingLayerSync] close upload failed", error);
@@ -246,5 +283,5 @@ export function createEditorEdits(ctx) {
 
   // frameRect: the frame box the shell laid out (StudioCameraFrame.vue's rect, the stage's CSS px); erpCanvas: the canvas
   // in it that shows the live ERP; outputCanvases: the Output window's canvases while it is open ({ frame, erp }), else null.
-  return { onExecuted, inspectorEdit, timelineEdit, historyStep, timeline: null, keyClipboardKey, deleteSelection, objectEdits, frameRect: null, erpCanvas: null, outputCanvases: null, cameraTab, cameraToView, setTab, selectObject, setGizmoMode, barPress, save, uploadPaintLayerOnClose };
+  return { onExecuted, inspectorEdit, timelineEdit, historyStep, timeline: null, keyClipboardKey, deleteSelection, objectEdits, frameRect: null, erpCanvas: null, outputCanvases: null, cameraTab, cameraToView, setTab, selectObject, setGizmoMode, barPress, lookPicked, save, uploadPaintLayerOnClose };
 }

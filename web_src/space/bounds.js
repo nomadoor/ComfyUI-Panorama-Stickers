@@ -55,6 +55,15 @@ export function contentPoints(evaluated, sceneBox, planes, items = []) {
   return points;
 }
 
+// A crop narrower or lower than this draws no plane, as core/world_render.py CROP_MIN (docs/scene-state-v2.md "Look at"
+// "中身の箱").
+export const CROP_MIN = 1e-6;
+
+// Whether a world Sticker's crop is empty: its plane is not drawn and it has no content box.
+export function cropEmpty(crop) {
+  return crop.x1 - crop.x0 < CROP_MIN || crop.y1 - crop.y0 < CROP_MIN;
+}
+
 // The plane of a world Sticker evaluated at a frame: centered at its position, turned by its rotation,
 // facing its local +Z. It is scale wide and as tall as its cropped media's aspect makes it (media sizes
 // in pixels). null when the crop or the media is empty.
@@ -62,7 +71,7 @@ export function contentPoints(evaluated, sceneBox, planes, items = []) {
 export function worldStickerPlane(value, crop, mediaWidth, mediaHeight) {
   const cropWidth = (crop.x1 - crop.x0) * mediaWidth;
   const cropHeight = (crop.y1 - crop.y0) * mediaHeight;
-  if (!(cropWidth > 0 && cropHeight > 0)) return null;
+  if (cropEmpty(crop) || !(cropWidth > 0 && cropHeight > 0)) return null;
   const plane = {
     position: [...value.position],
     quaternion: rotationToQuaternion(worldRotation(value.yaw_deg, value.pitch_deg, value.roll_deg)),

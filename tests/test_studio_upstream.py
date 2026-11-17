@@ -11,6 +11,7 @@ pytest.importorskip(
 )
 
 from comfyui_pano_suite import nodes
+from comfyui_pano_suite.core.scene_state import load_sticker_state
 from comfyui_pano_suite.nodes import PanoramaPreviewSceneNode, PanoramaStudioNode
 from scene_test_helpers import blob, blobs, output_size
 from test_stickers_scene_video import _cfr
@@ -287,3 +288,47 @@ def test_a_scene_is_timed_at_its_fps_as_a_fraction():
     video = _studio(scene=a).result[3]
 
     assert video.get_frame_rate() == Fraction(30000, 1001)
+
+
+def test_each_upstream_layer_carries_the_length_its_node_decided_and_loops_with_it():
+    # docs/scene-state-v2.md "ループ": an upstream object loops over the length of the node that made its layer, repeating
+    # to the end of the downstream output.
+    keys = [{"frame": 0, "value": {"yaw_deg": 0.0, "pitch_deg": 0.0}, "easing": [0.0, 0.0, 1.0, 1.0]}, {"frame": 5, "value": {"yaw_deg": 50.0, "pitch_deg": 0.0}}]
+    a = _studio({"timeline": {"fps": 24.0, "length": 10}, "stickers": [_sky_port(loop=True, direction={"keyframes": keys})]}, sticker=_solid(RED)).result[0]
+    assert a.layers[0].length == 10
+    output = _studio({"timeline": {"fps": 24.0, "length": 30}}, scene=a)
+    assert [layer["length"] for layer in output.ui["pano_upstream_layers"]] == [10]
+    layer = output.result[0].layers[0]
+    from comfyui_pano_suite.core.scene_eval import evaluate_scene_state
+    at = lambda frame: evaluate_scene_state(layer.state, frame, layer.length)["stickers"][0]["yaw_deg"]
+    assert at(2.5) == pytest.approx(25.0)
+    # Frame 12.5 of the downstream output is 2.5 of the second period upstream.
+    assert at(12.5) == pytest.approx(25.0)
+    json.dumps(output.ui)
+
+
+def test_each_upstream_layer_carries_the_sticker_state_its_port_sticker_was_handed():
+    # docs/scene-state-v2.md "受け渡しの置き方": the shot places the upstream port Sticker downstream as it did upstream.
+    shot = json.dumps({"kind": "pano_sticker_state", "version": 3, "fps": 24.0, "camera": {"rotation": [{"frame": 0, "value": {"yaw_deg": 40.0}}], "fov": [{"frame": 0, "value": 50.0}]}})
+    a = _studio({"timeline": {"fps": 24.0, "length": 4}}, sticker=_solid(RED), sticker_state=shot).result[0]
+    output = _studio({"timeline": {"fps": 24.0, "length": 4}}, scene=a)
+    [entry] = output.ui["pano_upstream_layers"]
+    assert entry["shot"] == a.layers[0].shot == load_sticker_state(shot)
+    layer = output.result[0].layers[0]
+    from comfyui_pano_suite.core.scene_eval import evaluate_scene_state
+    placed = evaluate_scene_state(layer.state, 1.0, layer.length, layer.boxes, layer.shot)["stickers"][0]
+    assert (placed["yaw_deg"], placed["hFOV_deg"]) == pytest.approx((40.0, 50.0))
+
+
+def test_a_downstream_override_of_the_offset_moves_an_upstream_port_sticker_its_layer_places():
+    # docs/scene-state-v2.md "上流の上書き": a sky override holds the offset Lanes; the node applies it and places the
+    # Sticker by its layer's shot with that offset.
+    shot = json.dumps({"kind": "pano_sticker_state", "version": 3, "fps": 24.0, "camera": {"rotation": [{"frame": 0, "value": {"yaw_deg": 40.0}}], "fov": [{"frame": 0, "value": 50.0}]}})
+    a = _studio({"id": "scene_a", "timeline": {"fps": 24.0, "length": 4}}, sticker=_solid(RED), sticker_state=shot).result[0]
+    port_id = a.layers[0].state["stickers"][0]["id"]
+    record = {"layer": "scene_a", "fps": 24.0, "stickers": [{"id": port_id, "placement": "sky", "offset_fov": {"value": 1.5}, "offset_rotation": {"value": {"yaw_deg": 10.0}}}]}
+    output = _studio({"timeline": {"fps": 24.0, "length": 4}, "upstream": [record]}, scene=a)
+    layer = output.result[0].layers[0]
+    from comfyui_pano_suite.core.scene_eval import evaluate_scene_state
+    placed = evaluate_scene_state(layer.state, 1.0, layer.length, layer.boxes, layer.shot)["stickers"][0]
+    assert (placed["yaw_deg"], placed["hFOV_deg"]) == pytest.approx((50.0, 75.0))

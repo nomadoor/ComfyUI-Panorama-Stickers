@@ -6,6 +6,8 @@ Accepted
 
 一部（Drone への言及）を ADR 0038 が置き換えた（2026-10-09）。
 
+一部（Easing の既定値 ease-in-out、`auto` の意味、cubic-bezier の区間が端の値の間をまっすぐ進むこと）を ADR 0064 が置き換えた（2026-11-17）。
+
 ## Date
 
 2026-10-02

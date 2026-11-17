@@ -71,6 +71,7 @@
       "erp_range": 360,
       "visible": true,
       "locked": false,
+      "loop": false,
       "position": {
         "value": [
           0.0,
@@ -93,6 +94,10 @@
       },
       "curve": {
         "value": 1.0,
+        "keyframes": []
+      },
+      "look_at": {
+        "value": null,
         "keyframes": []
       }
     },
@@ -125,12 +130,7 @@
               "pitch_deg": 0.0,
               "roll_deg": 0.0
             },
-            "easing": [
-              0.42,
-              0.0,
-              0.58,
-              1.0
-            ]
+            "easing": "smooth"
           }
         ]
       },
@@ -160,6 +160,7 @@
         },
         "visible": true,
         "locked": false,
+        "loop": false,
         "crop": {
           "x0": 0.0,
           "y0": 0.0,
@@ -192,12 +193,7 @@
             {
               "frame": 10,
               "value": 0.5,
-              "easing": [
-                0.42,
-                0.0,
-                0.58,
-                1.0
-              ]
+              "easing": "smooth"
             }
           ]
         },

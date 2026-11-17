@@ -5,15 +5,14 @@ import { ICON } from "../../icons.js";
 import { formatBezier, parseBezier } from "../../studio/inspector_model.js";
 import { watchDragCancel } from "../../studio/ui_drag.js";
 import StudioIconButton from "./StudioIconButton.vue";
-import StudioResetButton from "./StudioResetButton.vue";
 import StudioSegmented from "./StudioSegmented.vue";
 
 // The Easing panel at the inspector's bottom while Keyframes are selected (docs/studio-ui.md "Easing のパネル";
-// what it changes: docs/timeline-ui.md "Easing"): the heading and its reset, the five presets, the square curve
-// graph whose two control points drag, and the four bezier values as text to copy and paste, with a copy button right
-// of it. Presentational: the
-// panel of web_src/studio/inspector_model.js comes in, `edit` goes out ("easing" / "easing-reset" of
-// web_src/studio/inspector_actions.js).
+// what it changes: docs/timeline-ui.md "Easing"): the heading with the range of Timeline frames it sets, the six
+// presets (Smooth first: it clears the Easing, so there is no reset), the square curve graph whose two control points
+// drag (a Smooth segment's current curve; over several Smooth segments their progress, which only shows), and the four
+// bezier values as text to copy and paste, with a copy button right of it. Presentational: the panel of
+// web_src/studio/inspector_model.js comes in, `edit` goes out ("easing" of web_src/studio/inspector_actions.js).
 const props = defineProps({
   model: { type: Object, required: true },
   // The side of the square graph in px (inspector_model.js easingGraphSide).
@@ -26,12 +25,14 @@ const off = computed(() => props.disabled || !props.model.segment);
 const PAD = 10;
 // The curve while a control point is dragged, so the graph answers before the state comes back.
 const live = ref(null);
-const curve = computed(() => live.value ?? (Array.isArray(props.model.easing) ? props.model.easing : null));
+const curve = computed(() => live.value ?? props.model.curve ?? null);
 const inner = computed(() => Math.max(0, props.graphSide - PAD * 2));
 const toX = (x) => PAD + x * inner.value;
 const toY = (y) => PAD + (1 - y) * inner.value;
 const path = computed(() => {
   if (props.model.easing === "hold") return `M${toX(0)} ${toY(0)} H${toX(1)} V${toY(1)}`;
+  const progress = props.model.progress;
+  if (!curve.value && progress) return progress.points.map(([x, y], i) => `${i ? "L" : "M"}${toX(x)} ${toY(y)}`).join(" ");
   if (!curve.value) return "";
   const [x1, y1, x2, y2] = curve.value;
   return `M${toX(0)} ${toY(0)} C${toX(x1)} ${toY(y1)} ${toX(x2)} ${toY(y2)} ${toX(1)} ${toY(1)}`;
@@ -39,12 +40,15 @@ const path = computed(() => {
 
 const active = computed(() => props.model.presets.find((preset) => preset.active)?.label ?? null);
 // Icons only: the names do not fit the panel's width, so they are the tooltips (and the accessible names).
-const options = computed(() => props.model.presets.map((preset) => ({ value: preset.label, label: preset.label, icon: preset.icon, iconOnly: true, tip: preset.label })));
-const placeholder = computed(() => {
-  if (props.model.mixed) return "Mixed";
-  if (props.model.easing === "auto") return "Auto";
-  if (props.model.easing === "hold") return "Hold";
-  return "";
+const options = computed(() => props.model.presets.map((preset) => ({ value: preset.label, label: preset.label, icon: preset.icon, iconOnly: true, tip: preset.tip })));
+// The Keyframes inside a range of Smooth segments: a dotted vertical and a small diamond on the curve at each.
+const keyMarks = computed(() => {
+  const progress = props.model.progress;
+  if (!progress || curve.value) return [];
+  return progress.keys.map((x) => {
+    const near = progress.points.reduce((best, point) => (Math.abs(point[0] - x) < Math.abs(best[0] - x) ? point : best));
+    return { x: toX(x), y: toY(near[1]) };
+  });
 });
 
 function send(easing, phase) {
@@ -218,7 +222,7 @@ function onPaste(event) {
   <section class="pano-studio-easing" :class="{ 'is-disabled': off }" aria-label="Easing">
     <header class="pano-studio-easing-head">
       <span class="pano-studio-cap">Easing</span>
-      <StudioResetButton :at-default="off || model.atDefault" label="Reset Easing" @reset="emit('edit', { type: 'easing-reset', keyframes: model.keyframes })" />
+      <span class="pano-studio-easing-range" data-part="easing-range">{{ model.range }}</span>
     </header>
     <StudioSegmented
       :options="options"
@@ -241,6 +245,10 @@ function onPaste(event) {
     >
       <rect class="pano-studio-easing-square" :x="toX(0)" :y="toY(1)" :width="inner" :height="inner" />
       <line class="pano-studio-easing-diagonal" :x1="toX(0)" :y1="toY(0)" :x2="toX(1)" :y2="toY(1)" />
+      <template v-for="mark in keyMarks" :key="mark.x">
+        <line class="pano-studio-easing-keyline" :x1="mark.x" :y1="toY(0)" :x2="mark.x" :y2="toY(1)" />
+        <path class="pano-studio-easing-keymark" :d="`M${mark.x} ${mark.y - 4}l4 4l-4 4l-4 -4z`" />
+      </template>
       <path v-if="path" class="pano-studio-easing-curve" :d="path" />
       <template v-if="curve">
         <line class="pano-studio-easing-arm" :x1="toX(0)" :y1="toY(0)" :x2="toX(curve[0])" :y2="toY(curve[1])" />
@@ -266,7 +274,7 @@ function onPaste(event) {
         class="pano-studio-easing-text pano-studio-num"
         spellcheck="false"
         aria-label="Cubic bezier"
-        :placeholder="placeholder"
+        :placeholder="model.placeholder"
         :disabled="off"
         @keydown="onTextKeydown"
         @blur="applyText(text)"

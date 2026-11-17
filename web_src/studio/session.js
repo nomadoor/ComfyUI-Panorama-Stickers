@@ -18,20 +18,26 @@
 // Undo step writes the edits back into the state's `upstream` records first (pano_upstream_edits.js). A given-up
 // gesture, Undo and Redo make the working copies again from the records.
 //
-// The port Sticker is shown with the Pose handoff of the node's result (docs/studio-ui.md "`port` の Sticker",
-// docs/editor-interaction.md "`port` の Sticker の Pose handoff の表示と記録"): the working state holds the shown one,
-// and the pair of pano_port_handoff.js the stored one, which every Undo step and the state_json text hold.
+// The port Sticker is placed by the sticker_state of the node's result (docs/studio-ui.md "`port` の Sticker",
+// docs/editor-interaction.md "`port` の Sticker の Pose handoff の表示と記録"): the evaluation places it by that shot, so
+// the working state holds the stored form (its offset Lanes). A stored one that is not sky is shown as sky
+// (pano_port_handoff.js showPortHandoff) and kept as it was, in every Undo step and the state_json text, until its
+// offset first changes.
 import { createEditorHistory, duplicateSceneSticker, editorStateWrite, restoredHistoryState, takeStickerId } from "../pano_editor_state.js";
+import { clipOrigin, ownerPeriod } from "../pano_scene_eval.js";
 import { rebaseSceneState, stickerCounter } from "../pano_scene_state.js";
 import { isUpstreamSticker, upstreamStickerInherited, upstreamStickerLocked } from "../pano_upstream.js";
 import { deletePaintObjects, numberSkyOrder, paintObjectOf, paintObjectRow, restackSkyOrder, skyDisplayList, skyStickersOf } from "../pano_paint_objects.js";
 import { syncPaintGroups } from "../pano_paint_strokes.js";
-import { NO_PORT_HANDOFF_PAIR, storedPortState, syncPortHandoffPair } from "../pano_port_handoff.js";
+import { defaultPortOffsets, showPortHandoff, storedPortSticker } from "../pano_port_handoff.js";
 import { normalizePaintingState } from "../pano_paint_types.js";
 import { cameraToView as moveCameraToView } from "./camera_ui.js";
 import { applyInspectorEdit } from "./inspector_actions.js";
 import { stickerChangedRows } from "./inspector_model.js";
-import { findSticker } from "./row_object.js";
+import { pointTargets, setPointType } from "./path_line.js";
+import { handedOff } from "./port_offset.js";
+import { writeLookTarget } from "./look_at.js";
+import { findSticker, ownerLength } from "./row_object.js";
 import { BACKGROUND_ROW, PAINTING_ROW } from "../pano_timeline.js";
 
 const EMPTY_SELECTION = Object.freeze({ row: null, keys: [] });
@@ -92,32 +98,64 @@ export function createStudioSession({ state: opening, readOnly = false, upstream
   // The opening step holds the stored state; the working state then shows the port Sticker with the handoff.
   const history = createEditorHistory(state);
   const working = () => upstream?.working() ?? [];
-  // The Pose handoff shown and the pair of the stored and shown port Sticker (pano_port_handoff.js syncPortHandoffPair);
-  // a handoff that came during a drag waits for its end (`handoffWaits`).
+  // The sticker_state the port Sticker is placed by (the shot), and the stored port Sticker that is not sky while the
+  // shot shows it as sky (null otherwise); a shot that came during a drag waits for its end (`handoffWaits`).
   let handoff = readOnly ? null : openingHandoff;
-  let pair = NO_PORT_HANDOFF_PAIR;
+  let storedPort = null;
   let handoffWaits = false;
+  // The shot that came during a drag: the drag and the stage keep the one it began with until it ends.
+  let waitingHandoff = null;
   // What the last keepSelection() of the editor checked.
   let kept = { state: null, list: null, selection: null };
 
-  // Shows the port Sticker with the current handoff (syncPortHandoffPair): with `record`, the handed Lanes an edit
-  // changed since the last shown one become overrides first; `restored` says the state's port Sticker is a stored one
-  // (opening, Undo, Redo). The object selection stays; a switch of placement lets the Keyframe selection go. Returns
-  // whether the shown Sticker changed.
-  function showHandoff({ record: recording = true, restored = false } = {}) {
+  // Shows the port Sticker as the current shot places it: a stored one that is not sky as the sky one, kept aside
+  // (`storedPort`) until its offset changes; without a shot, a kept one whose offset did not change comes back. The
+  // working sky port Sticker a shot places carries the editor's own mark `placedByShot` (its Timeline Lanes are its
+  // offset's, pano_timeline.js laneNames), which no Undo step or text keeps. `restored` says the state's port Sticker
+  // is a stored one (opening, Undo, Redo). The object selection stays; a switch of placement lets the Keyframe
+  // selection go. Returns whether the port Sticker changed.
+  function showHandoff({ restored = false } = {}) {
+    if (handoffWaits) handoff = waitingHandoff;
     handoffWaits = false;
-    if (readOnly || (!handoff && !pair.handoff)) return false;
-    const before = state.stickers.find((item) => item.source.kind === "port");
-    const out = syncPortHandoffPair(state, pair, handoff, { record: recording, restored });
-    pair = out.pair;
-    if (!out.shown || JSON.stringify(out.shown) === JSON.stringify(before)) return false;
-    state = { ...state, stickers: state.stickers.map((item) => (item === before ? out.shown : item)) };
-    if (out.shown.placement !== before.placement) selection = { row: selection.row, keys: [] };
+    waitingHandoff = null;
+    if (readOnly) return false;
+    const port = state.stickers.find((item) => item.source.kind === "port");
+    if (restored || !port || storedPort?.id !== port.id) storedPort = null;
+    if (!port) return false;
+    // An offset changed: the shown sky Sticker is the stored one now.
+    if (storedPort && storedPortSticker(port, storedPort).placement === "sky") storedPort = null;
+    let next = port;
+    if (handoff && port.placement !== "sky") {
+      storedPort = withoutMark(port);
+      next = showPortHandoff(state, handoff).stickers.find((item) => item.id === port.id);
+    } else if (!handoff && storedPort) {
+      next = storedPortSticker(withoutMark(port), storedPort);
+      storedPort = null;
+    }
+    const marked = !!handoff && next.placement === "sky";
+    if (marked !== (next.placedByShot === true)) next = marked ? { ...next, placedByShot: true } : withoutMark(next);
+    if (next === port) return false;
+    state = { ...state, stickers: state.stickers.map((item) => (item === port ? next : item)) };
+    if (next.placement !== port.placement) selection = { row: selection.row, keys: [] };
     return true;
   }
 
-  // The state as the node keeps it: the port Sticker shown with the handoff is the stored one.
-  const storedState = () => storedPortState(state, pair);
+  // A port Sticker without the editor's mark.
+  function withoutMark(sticker) {
+    if (!Object.hasOwn(sticker, "placedByShot")) return sticker;
+    const { placedByShot, ...rest } = sticker;
+    void placedByShot;
+    return rest;
+  }
+
+  // The state as the node keeps it: without the editor's mark, and a port Sticker shown as sky whose offset did not
+  // change is the stored one.
+  function storedState() {
+    const port = state.stickers.find((item) => item.source.kind === "port");
+    if (!port || (!storedPort && !Object.hasOwn(port, "placedByShot"))) return state;
+    const kept = storedPort ? storedPortSticker(withoutMark(port), storedPort) : withoutMark(port);
+    return { ...state, stickers: state.stickers.map((item) => (item === port ? kept : item)) };
+  }
 
   // A drag ended or was given up: a handoff that came during it is shown now.
   function afterGesture() {
@@ -125,7 +163,7 @@ export function createStudioSession({ state: opening, readOnly = false, upstream
   }
 
   // An Undo step: the upstream objects' edits are written back and the records pruned first (docs/studio-ui.md
-  // "上流の物の編集" "書き戻し"), and the handed Lanes an edit changed become overrides; the step holds the stored state.
+  // "上流の物の編集" "書き戻し"); the step holds the stored state.
   function record() {
     if (upstream) {
       upstream.edits.sync();
@@ -137,8 +175,8 @@ export function createStudioSession({ state: opening, readOnly = false, upstream
     settledInGesture = false;
   }
 
-  // The inspector's context with the handoff shown, the one its reset and the bar's Back to source read.
-  const withHandoff = (context) => ({ ...context, handoff: pair.handoff });
+  // The inspector's context with the shot, the one its rows, its reset and the bar's Back to source read.
+  const withHandoff = (context) => ({ ...context, handoff });
 
   showHandoff({ restored: true });
 
@@ -161,7 +199,7 @@ export function createStudioSession({ state: opening, readOnly = false, upstream
     }
     context = withHandoff(context);
     const draft = structuredClone(state);
-    const easing = edit.type === "easing" || edit.type === "easing-reset";
+    const easing = edit.type === "easing";
     const groups = easing ? keyframeGroups(selection) : [];
     let outcome;
     if (easing && groups.length > 1) {
@@ -459,12 +497,42 @@ export function createStudioSession({ state: opening, readOnly = false, upstream
     });
   }
 
+  // The point types on the bar (docs/studio-ui.md "軌道の線" "点の種類"): the selected position Keyframes of the
+  // selected Camera or World object, else the one at the playhead (a Timeline frame), to `type`, as one Undo step.
+  // `length` is the output length (the loop period). Not while it is locked.
+  function setPointTypeOfSelected(type, playhead, length = null) {
+    const frames = (selection.keys ?? []).filter((key) => key.row === selection.row && (key.lane === null || key.lane === "position")).map((key) => key.frame);
+    const apply = (owner) => {
+      if (owner.locked === true || !owner.position) return false;
+      const targets = pointTargets(owner, frames, playhead - (owner.clip ? clipOrigin(owner.clip) : 0));
+      // An upstream owner loops with its layer's length (row_object.js ownerLength), as the stage draws its path.
+      return targets.length > 0 && setPointType(owner, targets, type, ownerPeriod(owner, ownerLength(working(), owner, length)));
+    };
+    if (selectedUpstream()) return editUpstream(apply);
+    if (selection.row === "camera") return editCamera(apply);
+    return editSelected((draft, sticker) => apply(sticker));
+  }
+
+  // Look at's Pick (docs/studio-ui.md "Look at"): the Camera's Look at target is `target` (its Lane's value; the
+  // Keyframes another tool wrote stay), one Undo step, and the Camera is selected. Not while it is locked.
+  // `accepted` tells a pick taken (also on the target the Camera already has, which changes nothing) from one refused
+  // (read-only, locked, a drag under way).
+  function setLookAt(target, playhead = 0, length = null) {
+    if (readOnly || gestureBase || state.camera.locked === true) return result(false, { accepted: false });
+    // By the recording rule: with Keyframes, "from here look at this" (docs/studio-ui.md "Look at").
+    const outcome = editCamera((camera) => writeLookTarget(camera, playhead, target, length));
+    const before = selection.row;
+    // A pick selects the Camera, as before; one that changed nothing on the selected Camera keeps its Keyframes selected.
+    selection = { row: "camera", keys: !outcome.changed && before === "camera" ? selection.keys : [] };
+    return { ...outcome, changed: outcome.changed || before !== "camera", accepted: true };
+  }
+
   // The left column's Camera button (docs/studio-ui.md "エディタの中の Camera"): the Camera to the view `pose` at the
   // Timeline frame `playhead` (camera_ui.js cameraToView, Panorama mode switching to Frame), as one Undo step. Not
   // while the Camera is locked. A move selects the Camera (the inspector shows its card); nothing moved changes nothing.
-  function cameraToView(pose, playhead) {
+  function cameraToView(pose, playhead, length = null) {
     if (state.camera.locked === true) return result(false);
-    const outcome = editCamera((camera) => moveCameraToView(camera, playhead, pose));
+    const outcome = editCamera((camera) => moveCameraToView(camera, playhead, pose, length, state.stickers));
     if (outcome.changed) selection = { row: "camera", keys: [] };
     return outcome;
   }
@@ -561,6 +629,13 @@ export function createStudioSession({ state: opening, readOnly = false, upstream
     }
     const port = selectedSticker();
     const rows = port && !port.locked && port.source.kind === "port" ? stickerChangedRows(state, port, context) : [];
+    // A returned shot's offset goes back to the defaults, its Keyframes too (docs/editor-interaction.md).
+    if (rows.length && handedOff(port, handoff)) {
+      return editSelected((_draft, sticker) => {
+        Object.assign(sticker, defaultPortOffsets());
+        return true;
+      });
+    }
     return editSelected((draft, sticker) => {
       if (!rows.length) return false;
       let changed = false;
@@ -625,19 +700,21 @@ export function createStudioSession({ state: opening, readOnly = false, upstream
       return !!gestureBase;
     },
     readOnly,
-    // The Pose handoff the port Sticker is shown with, or null (the inspector's and the bar's `handoff`).
+    // The sticker_state the port Sticker is placed by, or null (the evaluation's `shot`; the inspector's and the bar's
+    // `handoff`).
     get portHandoff() {
-      return pair.handoff;
+      return handoff;
     },
-    // A new result's Pose handoff (or null): shown at once, or after the drag under way ends. Returns whether the
-    // shown port Sticker changed.
+    // A new result's sticker_state (or null): placing the port Sticker at once, or after the drag under way ends.
+    // Returns whether the port Sticker changed.
     setPortHandoff(next) {
       if (readOnly) return false;
-      handoff = next ?? null;
       if (gestureBase) {
+        waitingHandoff = next ?? null;
         handoffWaits = true;
         return false;
       }
+      handoff = next ?? null;
       return showHandoff();
     },
     select(next) {
@@ -670,6 +747,8 @@ export function createStudioSession({ state: opening, readOnly = false, upstream
     settlePlaced,
     dropPlaced,
     toggleLock,
+    setPointType: setPointTypeOfSelected,
+    setLookAt,
     cameraToView,
     duplicateSelected,
     orderSelected,
@@ -685,7 +764,7 @@ export function createStudioSession({ state: opening, readOnly = false, upstream
     redo: () => step(1),
     // The text to write to state_json over the widget's `current` text (pano_editor_state.js editorStateWrite: null
     // when `current` already means the state, its fps rebased included; a Scene id given on the first write), or null.
-    // The port Sticker shown with the Pose handoff is written as the stored one.
+    // A port Sticker shown as sky whose offset did not change is written as the stored one.
     stateText(node, current) {
       if (readOnly) return null;
       showHandoff();

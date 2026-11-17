@@ -14,6 +14,7 @@ import {
 import { paintObjectRowOf } from "../pano_paint_objects.js";
 import { paintIndex } from "./stage_paint_objects.js";
 import { ROTATE_SNAP_DEG } from "./view_scale.js";
+import { placingShot, portOffsetAt, setPortOffsetPose } from "./port_offset.js";
 
 // A sky image as the geometry helpers read it (pano_sticker_geometry.js) from its evaluated pose `value`.
 function skyItem(sticker, value) {
@@ -42,7 +43,7 @@ export function upstreamSkyItems(upstream, content, frame) {
     .filter(({ sticker }) => sticker.placement === "sky" && drawn.has(sticker.id))
     .sort((a, b) => Number(b.sticker.z_index || 0) - Number(a.sticker.z_index || 0) || b.index - a.index)
     .map(({ sticker }) => {
-      const value = evaluateSticker(sticker, frame);
+      const value = evaluateSticker(sticker, frame, layer.length ?? null, layer.shot ?? null, layer.sceneState.timeline.fps);
       return skyItem(sticker, { ...value, vFOV_deg: skyStickerVfov(sticker, value, mediaSize(drawn.get(sticker.id).media)) });
     }));
 }
@@ -83,23 +84,38 @@ export function skyObjects(state, content, upstream = [], frame = 0) {
 
 // The drag of a sky image (stage_objects.js createStageObjects): playhead() is the Timeline frame, projection() the
 // stage's view now (pano_editor_view.js viewProjection), edits the stage's edits, draftOf(id) and stickerOf(scene, id)
-// stage_objects.js's.
-export function createSkyDrag({ playhead, projection, edits, draftOf, stickerOf }) {
+// stage_objects.js's. shot() is the sticker_state that places the node's port Sticker (null without one), fps() the
+// Timeline fps.
+export function createSkyDrag({ playhead, projection, edits, draftOf, stickerOf, lengthOf = () => null, shot = () => null, fps = () => 24, state = () => null, upstream = () => [] }) {
   // A drag of a sky image: `kind` "move" (its direction follows the pointer), "scale" (both FOVs), "scale_x" /
-  // "scale_y" (one), "rotate" (the Roll), from `geometry` and `item` where it started.
+  // "scale_y" (one), "rotate" (the Roll), from `geometry` and `item` where it started. The port Sticker a
+  // sticker_state places writes its offset (port_offset.js); it has no one-axis scale (null: no drag).
   function skyDrag(kind, item, geometry, point) {
+    // The sticker_state that places it: the node's for its own port Sticker, its layer's for an upstream one.
+    const handed = placingShot(stickerOf(state(), item.id), shot(), upstream());
+    if (handed && (kind === "scale_x" || kind === "scale_y")) return null;
     const frame = playhead();
     const center = geometry.center;
     const offset = { x: point.x - center.x, y: point.y - center.y };
     const startDistance = Math.max(1, Math.hypot(point.x - center.x, point.y - center.y));
     const startAngle = Math.atan2(point.y - center.y, point.x - center.x);
     const copy = draftOf(item.id);
+    const start = handed ? portOffsetAt(stickerOf(state(), item.id), frame, lengthOf(stickerOf(state(), item.id))) : null;
     const write = (pose) => edits.live((draft) => {
       const sticker = stickerOf(draft, item.id);
       if (!sticker) return false;
-      setStickerPose(sticker, frame, pose);
+      if (handed) setPortOffsetPose(sticker, handed, fps(), frame, offsetPose(pose), start, lengthOf(sticker));
+      else setStickerPose(sticker, frame, pose, lengthOf(sticker));
       return true;
     }, copy);
+    // A drag's World pose as the offset asks for it: the Roll as its change, the FOV as a factor.
+    function offsetPose(pose) {
+      const out = {};
+      if (pose.yaw_deg !== undefined) Object.assign(out, { yaw_deg: pose.yaw_deg, pitch_deg: pose.pitch_deg });
+      if (pose.rot_deg !== undefined) out.roll_delta = pose.rot_deg - item.rot_deg;
+      if (pose.hFOV_deg !== undefined) out.fov_factor = pose.hFOV_deg / Math.max(1e-6, item.hFOV_deg);
+      return out;
+    }
     return {
       move(next, event = {}) {
         if (kind === "move") {

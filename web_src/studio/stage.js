@@ -44,6 +44,11 @@ export function stageUi() {
     // Set orbit center waits for a click on the stage (docs/space-and-view.md "Set orbit center"): the button shows it,
     // the top line says what to do, the stage's cursor is a crosshair.
     pickingCenter: false,
+    // The path line's hint for the top line while the pointer is over it (stage_objects.js), or null.
+    pathHint: null,
+    // Look at's Pick waits for a click on the stage (docs/studio-ui.md "Look at"): Pick shows it, the top line says what
+    // to do, the cursor is a crosshair.
+    pickingLook: false,
     // The 3D tab's view FOV as it shows, in whole degrees (the FOV number, docs/studio-ui.md "右下の View の群"), and
     // whether the view is (going to) the start view, where Reset View is off (view_camera.js atResetView).
     fov: DEFAULT_VIEW_HFOV,
@@ -133,6 +138,9 @@ export function createStage({
     keysMoving: false,
     // Whether the Set orbit center button waits for a click on the stage (StudioNavWidget.vue).
     picking: false,
+    // Look at's Pick waits, and the World point under the pointer it would pick.
+    lookPicking: false,
+    lookHover: null,
     // The Frame view's viewpoint (view_camera.js, `frame`), made when the Frame view first shows.
     frameCamera: null,
     // The Frame view's change not yet one Undo step: "drag", "keys" or "wheel" (the editor holds it live), or null.
@@ -317,6 +325,7 @@ export function createStage({
     if (shared.drag) end(true);
     if (shared.keysMoving) endKeys();
     commitFrame();
+    setLookPicking(false);
     if (lastMode === "erp") {
       editorView.releaseSplats(LIVE_ERP_OWNER);
       liveErp = null;
@@ -325,6 +334,17 @@ export function createStage({
     if (mode === "frame") shared.frameCamera = null;
     setPicking(false);
     lastMode = mode;
+  }
+
+  // Look at's Pick waits for a click (`on`) or no longer (docs/studio-ui.md "Look at"); `hover` is the World point under
+  // the pointer that a click would pick, for the faint mark.
+  function setLookPicking(on) {
+    if (shared.lookPicking === on) return;
+    shared.lookPicking = on;
+    shared.lookHover = null;
+    ui.pickingLook = on;
+    syncUi();
+    requestDraw(DRAW_REASON.OVERLAY);
   }
 
   // Set orbit center waits for a click (`on`) or no longer (docs/space-and-view.md "Set orbit center").
@@ -428,7 +448,7 @@ export function createStage({
     const ctx = overlay.getContext("2d");
     if (!ctx) return;
     const view = viewport();
-    const scene = objectsOn() ? objects.overlay({ altHeld: input.altHeld(), gridHidden: ui.gridHidden }) : null;
+    const scene = objectsOn() ? objects.overlay({ altHeld: input.altHeld(), gridHidden: ui.gridHidden, lookHover: shared.lookPicking ? shared.lookHover : null }) : null;
     // No brush ring while Set orbit center waits (its press paints nothing; the cursor is a crosshair).
     const ring = paintOn() && !shared.picking && shared.pointer && (!shared.drag || shared.drag.action === "paint") ? paint.ring(local(shared.pointer, view), directionsOf(view)) : null;
     drawStageOverlay(ctx, {
@@ -529,8 +549,8 @@ export function createStage({
     ui.lit = litKnobs({ gesture, keysMoving: shared.keysMoving, altHeld: input.altHeld() });
     ui.knobDrag = shared.drag?.knob ?? null;
     const dragged = shared.drag?.action === "object" ? shared.objectCursor : null;
-    // Set orbit center waits for a click.
-    if (shared.picking && !shared.drag) {
+    // Set orbit center or Look at's Pick waits for a click.
+    if ((shared.picking || shared.lookPicking) && !shared.drag) {
       ui.cursor = "crosshair";
       return;
     }
@@ -548,7 +568,7 @@ export function createStage({
     canvas, root, world, selected, onEscape, follow, paint, win, now, objectDeps,
     camera, input, wheelSteps, editorView, scheduler, objects,
     viewMode, viewport, navCamera, commitFrame, cancelFrame, zoomFrame, report, skyWheel,
-    stopCoast, local, objectsOn, paintOn, directionsOf, samplesOf, moved, setPicking, setCenterAt, syncUi, requestDraw, resize,
+    stopCoast, local, objectsOn, paintOn, directionsOf, samplesOf, moved, setPicking, setLookPicking, setCenterAt, syncUi, requestDraw, resize,
   });
 
   listen();
@@ -574,10 +594,23 @@ export function createStage({
       toolbarHover = next;
       requestDraw(DRAW_REASON.OVERLAY);
     },
+    // Look at's Pick was pressed: it waits for a click on the stage (either tab), or stops waiting when it already did.
+    pickLook() {
+      const on = !shared.lookPicking && (viewMode() === "space" || viewMode() === "frame");
+      // One wait at a time: Set orbit center's stops (the next click would otherwise do both).
+      if (on && shared.picking) setPicking(false);
+      setLookPicking(on);
+    },
+    // Look at's Pick stops waiting (a target was picked).
+    stopLookPick() {
+      setLookPicking(false);
+    },
     // Set orbit center was pressed: it waits for a click on the stage, or stops waiting when it already did. The 3D tab
     // only (the Preview window's stage is a 3D view too).
     pickCenter() {
-      setPicking(!shared.picking && viewMode() === "space");
+      const on = !shared.picking && viewMode() === "space";
+      if (on && shared.lookPicking) setLookPicking(false);
+      setPicking(on);
     },
     // The Frame view's change still waiting (a wheel run) becomes one Undo step now: before another edit or a step.
     settle() {

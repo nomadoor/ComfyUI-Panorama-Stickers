@@ -7,7 +7,9 @@
 // Unchanged parts are shared, the upstream painting too. `ctx` and selections are as timeline_model.js describes.
 // The shell applies an edit (applyEdit), records it as one Undo step and stops playback where the spec says so.
 import { paintObjectRow } from "../pano_paint_objects.js";
-import { clipActive, FRAME_EPSILON } from "../pano_scene_eval.js";
+import { clipActive, evaluateLane, FRAME_EPSILON, laneView, ownerPeriod } from "../pano_scene_eval.js";
+import { planSimplify } from "./simplify.js";
+import { planConstantSpeed } from "./constant_speed.js";
 import { TIMELINE_LENGTH_MAX } from "../pano_scene_state.js";
 import {
   PAINTING_ROW,
@@ -27,11 +29,13 @@ import {
   entryClipEditable,
   entryKeyable,
   entryKeysEditable,
+  entryLength,
   entryVisible,
   entryWritable,
   findEntry,
   jumpFrames,
   nearestKeyFrame,
+  simplifyReadiness,
   spanOf,
 } from "./timeline_model.js";
 
@@ -169,7 +173,7 @@ export function deleteKeys(ctx, selection, playhead) {
   const draft = createDraft(ctx);
   for (const { entry, lanes } of groups) {
     const owner = draft.owner(entry);
-    for (const [name, list] of lanes) deleteKeyframes(owner, [name], list, playhead - entry.offset);
+    for (const [name, list] of lanes) deleteKeyframes(owner, [name], list, playhead - entry.offset, entryLength(entry, spanOf(ctx)));
   }
   return { edit: draft.result(), selection: { row: selection.row ?? null, keys: [] } };
 }
@@ -245,7 +249,7 @@ export function keyRow(ctx, id, playhead) {
   const missing = rowLaneNames(entry.owner).some((name) => !entry.owner[name].keyframes.some((key) => Math.abs(key.frame - frame) <= FRAME_EPSILON));
   if (!missing) return null;
   const draft = createDraft(ctx);
-  keyAllLanes(draft.owner(entry), frame);
+  keyAllLanes(draft.owner(entry), frame, entryLength(entry, spanOf(ctx)));
   return draft.result();
 }
 
@@ -262,6 +266,84 @@ export function toggleVisible(ctx, selection, id) {
   // Hiding the painting lets a selected paint group go too (docs/studio-ui.md "ペイントのまとまり").
   const released = visible && (selection?.row === id || (id === PAINTING_ROW && !!paintObjectRow(selection?.row)));
   return { edit: draft.result(), selection: released ? { ...selection, row: null } : selection };
+}
+
+// --- Simplify (docs/timeline-ui.md "Simplify").
+
+// The plan of a Simplify of the selection (simplify.js planSimplify) with what it needs to apply it, or null.
+export function simplifyPlan(ctx, selection, ground = -1.6) {
+  const readiness = simplifyReadiness(ctx, selection);
+  if (!readiness.ready) return null;
+  const entry = findEntry(ctx, readiness.row);
+  const owner = entry.owner;
+  const names = readiness.lane ? [readiness.lane] : rowLaneNames(owner);
+  const camera = entry.kind === "camera";
+  const length = entryLength(entry, spanOf(ctx));
+  // The least turn measure is the H FOV over the stretch, as its Lane evaluates (its smallest), not the Lane's static value.
+  const period = ownerPeriod(owner, length);
+  const fovAt = (frame) => (camera ? evaluateLane(owner, "fov", frame, period) : owner.size ? evaluateLane(owner, "size", frame, period).hFOV_deg : 90);
+  const hfov = Math.min(...readiness.frames.map(fovAt));
+  const plan = planSimplify(owner, names, readiness.frames, { period, ground, camera, hfov, lookAt: camera ? owner.look_at : null });
+  return plan ? { ...readiness, names, plan } : null;
+}
+
+// Constant speed of the selection (docs/timeline-ui.md "Constant speed"): { edit, selection (the same Keyframes at their
+// new frames), moved (how many moved) }, or null when it cannot be pressed or changes nothing.
+export function constantSpeedEdit(ctx, selection, ground = -1.6) {
+  const readiness = simplifyReadiness(ctx, selection, "Constant speed");
+  if (!readiness.ready) return null;
+  const entry = findEntry(ctx, readiness.row);
+  const owner = entry.owner;
+  const names = readiness.lane ? [readiness.lane] : rowLaneNames(owner);
+  const camera = entry.kind === "camera";
+  const length = entryLength(entry, spanOf(ctx));
+  const period = ownerPeriod(owner, length);
+  const fovAt = (frame) => (camera ? evaluateLane(owner, "fov", frame, period) : owner.size ? evaluateLane(owner, "size", frame, period).hFOV_deg : 90);
+  const hfov = Math.min(...readiness.frames.map(fovAt));
+  const plan = planConstantSpeed(owner, names, readiness.frames, { period, ground, camera, hfov });
+  if (!plan) return null;
+  const draft = createDraft(ctx);
+  const target = draft.owner(entry);
+  for (const name of names) target[name] = plan.lanes[name];
+  const keys = (selection?.keys ?? []).map((key) => (key.row === readiness.row && plan.moves.has(key.frame) ? { ...key, frame: plan.moves.get(key.frame) } : key));
+  return { edit: draft.result(), selection: { row: readiness.row, keys }, moved: plan.moves.size };
+}
+
+// The edit of a Simplify run (simplifyPlan's) keeping `count` Keyframes: the Lanes rebuilt (simplify.js), and the
+// selection on the kept Keyframes of the stretch. { edit, selection, going (the frames gone, Timeline frames) }.
+export function simplifyEdit(ctx, run, count) {
+  const entry = findEntry(ctx, run.row);
+  const draft = createDraft(ctx);
+  const owner = draft.owner(entry);
+  const lanes = run.plan.build(count);
+  for (const name of run.names) owner[name] = lanes[name];
+  const kept = new Set(run.names.flatMap((name) => owner[name].keyframes.map((key) => key.frame)));
+  const going = run.plan.candidates.filter((frame) => !kept.has(frame)).map((frame) => frame + entry.offset);
+  const keys = run.plan.candidates.filter((frame) => kept.has(frame)).map((frame) => ({ row: run.row, lane: run.lane, frame }));
+  return { edit: draft.result(), selection: { row: run.row, keys }, going };
+}
+
+// The objects of `state` (the Camera and its own Stickers) that end where they start with their loop off
+// (docs/timeline-ui.md "動きのループ"): a Lane with Keyframes whose last value is its first, within the loop's 1e-9
+// (pano_scene_eval.js laneView's seam). Their row ids.
+export function endsWhereItStarts(state) {
+  const owners = [state.camera, ...state.stickers];
+  return owners.filter((owner) => owner && owner.loop !== true && laneNames(owner).some((name) => {
+    const keys = owner[name].keyframes;
+    return keys.length >= 2 && laneView(keys, Infinity).seam;
+  })).map((owner) => (owner === state.camera ? "camera" : owner.id));
+}
+
+// The motion loop's button (docs/timeline-ui.md "動きのループ"): the owner's `loop` turns over, one Undo step. An
+// upstream object's goes to its working copy (written back as an override). The edit, or null when the row has no loop
+// or cannot change.
+export function toggleLoop(ctx, id) {
+  const entry = findEntry(ctx, id);
+  if (!entry || (entry.kind !== "camera" && entry.kind !== "sticker") || !entryKeysEditable(ctx, entry)) return null;
+  const draft = createDraft(ctx);
+  const owner = draft.owner(entry);
+  owner.loop = owner.loop !== true;
+  return draft.result();
 }
 
 // The start of a Clip range drag on the row `id`: { id, base, limit, span, end }, or null when its Clip range cannot

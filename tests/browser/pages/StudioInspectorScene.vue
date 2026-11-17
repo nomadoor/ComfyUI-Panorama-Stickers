@@ -16,7 +16,7 @@ let raw = loadSceneState({
       id: "sticker_1",
       placement: "world",
       source: file("chair.glb"),
-      position: { value: [0, 0, 0], keyframes: [{ frame: 0, value: [1.2, -1.6, -3] }, { frame: 24, value: [2, -1.6, -3] }] },
+      position: { value: [0, 0, 0], keyframes: [{ frame: 0, value: [1.2, -1.6, -3], easing: [0.42, 0, 0.58, 1] }, { frame: 24, value: [2, -1.6, -3] }] },
       rotation: { value: { yaw_deg: 30, pitch_deg: 0, roll_deg: 0 } },
       scale: { value: 1.5 },
       opacity: { value: 0.72 },

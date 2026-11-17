@@ -15,6 +15,7 @@ from .paint_state import normalize_painting_state
 
 STATE_VERSION = 2
 STICKER_STATE_KIND = "pano_sticker_state"
+STICKER_STATE_VERSION = 3
 PLACEMENTS = ("sky", "world")
 # How the Camera shoots; the first is the default of a stored Camera that does not say.
 PROJECTIONS = ("perspective", "erp")
@@ -40,8 +41,12 @@ FILE_STORAGES = ("input", "output", "temp")
 # The extensions of the 3D files a `file` Source may name, as ComfyUI's Load3D takes them (docs/scene-state-v2.md);
 # tests/fixtures/scene_state/file_3d_formats.json holds the same table for the JS side.
 FILE_3D_EXTENSIONS = (".gltf", ".glb", ".obj", ".fbx", ".stl", ".spz", ".splat", ".ply", ".ksplat")
-# ease-in-out, the Easing of a Keyframe without a valid one.
-DEFAULT_EASING = (0.42, 0.0, 0.58, 1.0)
+# Smooth, the Easing of a Keyframe without a valid one (ADR 0064).
+DEFAULT_EASING = "smooth"
+# ease-in-out, a preset, and the Easing a `sticker_state` v2 Keyframe without one reads as.
+EASE_IN_OUT = (0.42, 0.0, 0.58, 1.0)
+# A missing Easing, apart from an invalid one.
+_MISSING = object()
 # The Clip range a missing or invalid one reads as: the whole Timeline from the content's first frame.
 DEFAULT_CLIP = {"start": 0, "in": 0, "duration": None}
 # The range of `timeline.fps` and the largest `timeline.length` (Timeline frames) a state keeps.
@@ -200,10 +205,28 @@ def _opacity_value(raw):
 
 
 # The Lanes of each owner, in the order they are stored.
-CAMERA_LANES = (("position", _position_value), ("rotation", _rotation_value), ("fov", _camera_fov_value), ("curve", _curve_value))
+def look_at_value(raw):
+    """The Camera's Look at target (docs/scene-state-v2.md "向く相手の値", ADR 0065): a World Sticker and a point on it
+    ({"sticker", "offset"}: the offset a share of its content box), a World point ({"point"}), or none (None)."""
+    if not isinstance(raw, dict):
+        return None
+    sticker = raw.get("sticker")
+    if isinstance(sticker, str) and sticker:
+        offset = _vec3(raw.get("offset"))
+        return {"sticker": sticker, "offset": offset if offset is not None else [0.0, 0.0, 0.0]}
+    if "point" in raw:
+        point = _vec3(raw.get("point"))
+        return None if point is None else {"point": point}
+    return None
+
+
+CAMERA_LANES = (("position", _position_value), ("rotation", _rotation_value), ("fov", _camera_fov_value), ("curve", _curve_value), ("look_at", look_at_value))
 SCENE_LANES = (("position", _position_value), ("rotation", _rotation_value), ("scale", _scale_value))
 SKY_STICKER_LANES = (("direction", _direction_value), ("roll", _roll_value), ("size", _size_value), ("opacity", _opacity_value), ("curve", _curve_value))
 WORLD_STICKER_LANES = (*SCENE_LANES, ("opacity", _opacity_value))
+# The port Sticker's offset from the Camera that shot what `sticker_state` hands it (docs/scene-state-v2.md "受け渡しの
+# 置き方", ADR 0067): a turn in that Camera's own axes and a factor on its angle of view.
+PORT_OFFSET_LANES = (("offset_rotation", _rotation_value), ("offset_fov", _scale_value))
 def _lens_value(raw):
     raw = raw if isinstance(raw, dict) else {}
     return {"curve": _curve_value(raw.get("curve")), "hFOV_deg": _camera_fov_value(raw.get("hFOV_deg"))}
@@ -221,14 +244,18 @@ def _sticker_lanes(sticker_or_raw, placement):
     return (*WORLD_STICKER_LANES, WORLD_STICKER_LENS) if isinstance(sticker_or_raw.get("lens"), dict) else WORLD_STICKER_LANES
 
 
-def _easing(raw):
-    if raw in ("auto", "hold"):
+def _easing(raw, missing=DEFAULT_EASING):
+    """A Keyframe's Easing: "hold", a cubic-bezier, or Smooth for anything else (missing, the earlier "auto",
+    unreadable). `missing` is what a missing one reads as (a `sticker_state` v2 reads ease-in-out)."""
+    if raw is _MISSING:
+        return list(missing) if isinstance(missing, tuple) else missing
+    if raw == "hold":
         return raw
     if isinstance(raw, list) and len(raw) == 4:
         values = [_number(v, None) for v in raw]
         if None not in values and all(0.0 <= v <= 1.0 for v in values):
             return values
-    return list(DEFAULT_EASING)
+    return DEFAULT_EASING
 
 
 def _handles(raw):
@@ -242,7 +269,8 @@ def _handles(raw):
     return out or None
 
 
-def _keyframes(raw, value_fn, has_handles):
+def _keyframes(raw, value_fn, has_handles, missing_easing=DEFAULT_EASING):
+    """A Lane's Keyframes in frame order; only `position` Keyframes (has_handles) keep a corner mark and handles."""
     by_frame = {}
     for item in raw if isinstance(raw, list) else []:
         if not isinstance(item, dict):
@@ -250,7 +278,9 @@ def _keyframes(raw, value_fn, has_handles):
         frame = _event_frame(item.get("frame"))
         if frame is None:
             continue
-        key = {"frame": frame, "value": value_fn(item.get("value")), "easing": _easing(item.get("easing"))}
+        key = {"frame": frame, "value": value_fn(item.get("value")), "easing": _easing(item.get("easing", _MISSING), missing_easing)}
+        if has_handles and item.get("corner") is True:
+            key["corner"] = True
         handles = _handles(item.get("handles")) if has_handles else None
         if handles:
             key["handles"] = handles
@@ -355,6 +385,7 @@ def _sticker(raw):
         "clip": _clip(raw.get("clip")),
         "visible": _bool(raw.get("visible"), True),
         "locked": _bool(raw.get("locked"), False),
+        "loop": _bool(raw.get("loop"), False),
         "crop": _crop(raw.get("crop")),
         **_lanes(raw, _sticker_lanes(raw, placement)),
     }
@@ -366,14 +397,9 @@ def _sticker(raw):
         z_index = _frame(raw.get("z_index"))
         sticker["z_index"] = 0 if z_index is None else z_index
     if source["kind"] == "port":
-        sticker["handoff_overrides"] = _lane_names(raw.get("handoff_overrides"), placement)
+        # The earlier `handoff_overrides` are not read (ADR 0067): the offset Lanes hold the downstream edits.
+        sticker.update(_lanes(raw, PORT_OFFSET_LANES))
     return sticker
-
-
-def _lane_names(raw, placement):
-    """The names in `raw` of the Lanes a Sticker of `placement` has, once each and in Lane order."""
-    raw = raw if isinstance(raw, list) else []
-    return [name for name, _value_fn in (WORLD_STICKER_LANES if placement == "world" else SKY_STICKER_LANES) if name in raw]
 
 
 def _stickers(raw, raw_next):
@@ -444,6 +470,7 @@ def _camera(raw):
         "erp_range": _erp_range(raw.get("erp_range")),
         "visible": _bool(raw.get("visible"), True),
         "locked": _bool(raw.get("locked"), False),
+        "loop": _bool(raw.get("loop"), False),
         **_lanes(raw, CAMERA_LANES),
     }
 
@@ -475,6 +502,12 @@ def _last_by(items, key):
     return [item for index, item in enumerate(items) if last[key(item)] == index]
 
 
+def _override_lanes(placement):
+    """The Lanes an upstream Sticker's override of `placement` can hold (docs/scene-state-v2.md "上流の上書き"): a sky
+    one's offset Lanes too, which move a port Sticker its layer's sticker_state places."""
+    return WORLD_STICKER_LANES if placement == "world" else (*SKY_STICKER_LANES, *PORT_OFFSET_LANES)
+
+
 def _sticker_override(raw):
     """An upstream Sticker's overridden fields, or None without any. An invalid field is left out (inherited)."""
     if not isinstance(raw, dict) or _text(raw.get("id")) is None or raw.get("placement") not in PLACEMENTS:
@@ -483,12 +516,12 @@ def _sticker_override(raw):
     fields = {}
     if isinstance(raw.get("clip"), dict):
         fields["clip"] = _clip(raw["clip"])
-    for name in ("visible", "locked"):
+    for name in ("visible", "locked", "loop"):
         if isinstance(raw.get(name), bool):
             fields[name] = raw[name]
     if isinstance(raw.get("crop"), dict):
         fields["crop"] = _crop(raw["crop"])
-    fields.update(_lanes(raw, [lane for lane in (WORLD_STICKER_LANES if world else SKY_STICKER_LANES) if isinstance(raw.get(lane[0]), dict)]))
+    fields.update(_lanes(raw, [lane for lane in _override_lanes(raw["placement"]) if isinstance(raw.get(lane[0]), dict)]))
     z_index = None if world else _frame(raw.get("z_index"))
     if z_index is not None:
         fields["z_index"] = z_index
@@ -672,6 +705,8 @@ def rebase_scene_state(state: dict, fps: float) -> dict:
     for sticker in state["stickers"]:
         clip = _rebase_clip(sticker["clip"], rebase)
         lanes = _sticker_lanes(sticker, sticker["placement"])
+        if sticker["source"]["kind"] == "port":
+            lanes = (*lanes, *PORT_OFFSET_LANES)
         stickers.append({**sticker, "clip": clip["clip"], **_rebase_lanes(sticker, lanes, rebase, clip["anchor"], clip["new_anchor"])})
     # Only the frames change: every other field (ids, the counter, painting, an animation, the `upstream`
     # records, which keep their own fps (docs/scene-state-v2.md "上流の上書き")) is carried over as it is.
@@ -704,7 +739,7 @@ def rebase_upstream_record(record: dict, layer_state: dict) -> dict:
     origins = {sticker["id"]: sticker["clip"]["start"] - sticker["clip"]["in"] for sticker in layer_state["stickers"]}
     stickers = []
     for override in record["stickers"]:
-        lanes = [lane for lane in (WORLD_STICKER_LANES if override["placement"] == "world" else SKY_STICKER_LANES) if lane[0] in override]
+        lanes = [lane for lane in _override_lanes(override["placement"]) if lane[0] in override]
         if "clip" in override:
             clip = _rebase_clip(override["clip"], rebase)
             stickers.append({**override, "clip": clip["clip"], **_rebase_lanes(override, lanes, rebase, clip["anchor"], clip["new_anchor"])})
@@ -727,13 +762,40 @@ def _v1_pose_number(value):
     return _float(value)
 
 
-def _sticker_state_camera(raw):
-    """Each Camera Lane's Keyframes; an empty or invalid Lane is one Keyframe of its default value at frame 0."""
+def _sticker_state_camera(raw, missing_easing=DEFAULT_EASING):
+    """The Camera of a sticker_state: each Lane's Keyframes (an empty or invalid Lane is one Keyframe of its default
+    value at frame 0), its loop mark and its Look at Lane (docs/scene-state-v2.md "`sticker_state`")."""
     raw = raw if isinstance(raw, dict) else {}
-    return {
-        name: _keyframes(raw.get(name), value_fn, name == "position") or [{"frame": 0, "value": value_fn(None), "easing": list(DEFAULT_EASING)}]
-        for name, value_fn in CAMERA_LANES
-    }
+    camera = {"loop": _bool(raw.get("loop"), False)}
+    for name, value_fn in CAMERA_LANES:
+        if name == "look_at":
+            continue
+        camera[name] = _keyframes(raw.get(name), value_fn, name == "position", missing_easing) or [{"frame": 0, "value": value_fn(None), "easing": DEFAULT_EASING}]
+    camera["look_at"] = _lanes(raw, (("look_at", look_at_value),))["look_at"]
+    return camera
+
+
+def _box(raw):
+    """A content box {"center", "size"} (3 numbers each), or None."""
+    if not isinstance(raw, dict):
+        return None
+    center, size = _vec3(raw.get("center")), _vec3(raw.get("size"))
+    return None if center is None or size is None else {"center": center, "size": size}
+
+
+def _sticker_state_targets(raw):
+    """The motion of what the Camera of a sticker_state looks at: id, loop, Keyframes of position, rotation and
+    scale (an empty Lane one Keyframe of its default value at frame 0), and its content box."""
+    targets = []
+    for item in raw if isinstance(raw, list) else []:
+        if not isinstance(item, dict) or _text(item.get("id")) is None:
+            continue
+        target = {"id": item["id"], "loop": _bool(item.get("loop"), False)}
+        for name, value_fn in SCENE_LANES:
+            target[name] = _keyframes(item.get(name), value_fn, name == "position") or [{"frame": 0, "value": value_fn(None), "easing": DEFAULT_EASING}]
+        target["box"] = _box(item.get("box"))
+        targets.append(target)
+    return targets
 
 
 def _v1_sticker_state_camera(pose):
@@ -749,9 +811,10 @@ def _v1_sticker_state_camera(pose):
 
 
 def load_sticker_state(text) -> dict | None:
-    """Read `sticker_state` v1 or v2 as a normalized v2 sticker_state.
+    """Read `sticker_state` v1, v2 or v3 as a normalized v3 sticker_state (docs/scene-state-v2.md "`sticker_state`").
 
-    Returns None when the text is not a sticker_state, which callers ignore as before.
+    Returns None when the text is not a sticker_state, which callers ignore as before. A v2 one reads its Keyframes by
+    today's rules but a missing Easing as v2's default, ease-in-out; it has no length, loop, Look at or targets.
     """
     if not isinstance(text, str) or not text.strip():
         return None
@@ -769,19 +832,30 @@ def load_sticker_state(text) -> dict | None:
         aspect = _v1_pose_number(raw.get("source_aspect"))
         source_aspect = aspect if math.isfinite(aspect) and aspect > 0.0 else None
         fps = 24.0
-    elif not isinstance(version, bool) and version == 2:
+        length, targets = None, []
+    elif not isinstance(version, bool) and version in (2, 3):
         # A sticker_state without a readable fps is not read (ADR 0063).
         fps = _timeline_fps(raw.get("fps"))
         if fps is None:
             return None
-        camera = _sticker_state_camera(raw.get("camera"))
+        if version == 2:
+            # v2 had no length, loop, Look at or targets; its missing Easing was ease-in-out.
+            lanes_only = {key: value for key, value in raw["camera"].items() if key not in ("loop", "look_at")} if isinstance(raw.get("camera"), dict) else None
+            camera = _sticker_state_camera(lanes_only, EASE_IN_OUT)
+            length, targets = None, []
+        else:
+            camera = _sticker_state_camera(raw.get("camera"))
+            length = _positive(raw.get("length"), None)
+            targets = _sticker_state_targets(raw.get("targets"))
         source_aspect = _positive(raw.get("source_aspect"), None)
     else:
-        raise ValueError(f"Unsupported sticker_state version {version!r}; supported versions are 1 and 2.")
+        raise ValueError(f"Unsupported sticker_state version {version!r}; supported versions are 1, 2 and 3.")
     return {
         "kind": STICKER_STATE_KIND,
-        "version": STATE_VERSION,
+        "version": STICKER_STATE_VERSION,
         "fps": fps,
+        "length": length,
         "camera": camera,
+        "targets": targets,
         "source_aspect": source_aspect,
     }
