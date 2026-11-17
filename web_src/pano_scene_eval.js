@@ -386,6 +386,8 @@ const POSITION = {
     return {
       point: (t) => [0, 1, 2].map((axis) => bezier(p0[axis], p0[axis] + out[axis], p1[axis] + into[axis], p1[axis], t)),
       value: (point) => point,
+      // The numbers point() is made of (shapedKind's measure cache).
+      controls: [...p0, ...out, ...into, ...p1],
     };
   },
   distance: (a, b) => norm(minus(a, b)),
@@ -484,6 +486,7 @@ const ROTATION = {
     const right = lane.at(k + 1).value;
     return {
       point: (t) => slerp(slerp(q0, q1, t), slerp(a, b, t), 2 * t * (1 - t)),
+      controls: [...q0, ...q1, ...a, ...b],
       value: ([x, y, z, w], t) => {
         const { yawDeg, pitchDeg, rollDeg } = panoramaAngles(quaternionToRotation({ x, y, z, w }));
         // Output yaw and roll follow the stored numbers, so they do not wrap mid-segment and meet each key's own number at its ends.
@@ -575,6 +578,7 @@ const DIRECTION = {
       };
     return {
       point,
+      controls: opposite ? [1, ...a, ...chordStart] : [0, ...a, ...b, ...start, ...end],
       value: ([x, y, z], t) => {
         const horizontal = Math.hypot(x, z);
         // At a pole the yaw follows the stored numbers; elsewhere it is the turn nearest to them, like a rotation's.
@@ -598,13 +602,38 @@ const SHAPED = { position: POSITION, rotation: ROTATION, direction: DIRECTION, o
 // opacity, curve) are one number.
 const FIELDS = { size: ["hFOV_deg", "vFOV_deg"], lens: ["curve", "hFOV_deg"] };
 
+// The measured lengths of segment shapes by the numbers their points are made of (`controls`), per kind of shape:
+// the same numbers give the same points, so a measure is made once. Simplify and Constant speed build many Lanes that
+// share most of their segments. Bounded: emptied when it grows past MEASURE_CACHE_LIMIT.
+const MEASURE_CACHE_LIMIT = 4096;
+const measureCache = new Map();
+let measureCacheSize = 0;
+function measuredShape(shaped, shape) {
+  if (!shape.controls) return measure(shape, shaped.distance);
+  let cache = measureCache.get(shaped);
+  if (!cache) measureCache.set(shaped, (cache = new Map()));
+  const key = shape.controls.join(",");
+  let measured = cache.get(key);
+  if (!measured) {
+    if (measureCacheSize >= MEASURE_CACHE_LIMIT) {
+      measureCache.clear();
+      measureCacheSize = 0;
+      measureCache.set(shaped, (cache = new Map()));
+    }
+    measured = measure(shape, shaped.distance);
+    cache.set(key, measured);
+    measureCacheSize += 1;
+  }
+  return measured;
+}
+
 // The shapes of a shaped Lane's segments and their measured lengths, made once per evaluation.
 function shapedKind(shaped, lane) {
   const made = new Map();
   const shapeOf = (index) => {
     if (!made.has(index)) {
       const shape = shaped.shape(lane, index);
-      made.set(index, { shape, measured: measure(shape, shaped.distance) });
+      made.set(index, { shape, measured: measuredShape(shaped, shape) });
     }
     return made.get(index);
   };

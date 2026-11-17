@@ -158,7 +158,7 @@ function onSimplify() {
 
 // The keys that do not end the adjusting (docs/timeline-ui.md "Simplify"): the focus's move, a modifier alone, and the
 // slider's own keys while it has the focus.
-const SIMPLIFY_QUIET_KEYS = new Set(["Tab", "Shift", "Control", "Alt", "Meta"]);
+const SIMPLIFY_QUIET_KEYS = new Set(["Tab", "Shift", "Control", "Alt", "AltGraph", "Meta", "CapsLock", "Process", "Dead"]);
 const SIMPLIFY_SLIDER_KEYS = new Set(["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"]);
 
 function onSimplifyKey(event) {
@@ -170,7 +170,7 @@ function onSimplifyKey(event) {
     event.preventDefault();
     event.stopPropagation();
     finishSimplify(true);
-  } else if (!SIMPLIFY_QUIET_KEYS.has(event.key)
+  } else if (!SIMPLIFY_QUIET_KEYS.has(event.key) && !event.isComposing
     && !(SIMPLIFY_SLIDER_KEYS.has(event.key) && event.target?.closest?.('[data-tl="simplify-group"]'))) {
     // Any other key keeps the result first, then does what it does (a toggle, a Delete, an Undo...), as a press
     // elsewhere does; an Escape after it cannot put back a state from before that edit.
@@ -182,8 +182,15 @@ function onSimplifyOutside(event) {
   if (event.target?.closest?.('[data-tl="simplify-group"]')) return;
   if (event.target?.closest?.('[data-tl="constant-speed"]')) {
     constantSpeedPressedWhileAdjusting = true;
-    // The click comes right after the release, or never (released elsewhere): the mark goes after either.
-    window.addEventListener("pointerup", () => setTimeout(() => { constantSpeedPressedWhileAdjusting = false; }), { once: true, capture: true });
+    // The click comes right after the release, or never (released elsewhere, or the press cancelled): the mark goes
+    // after any of them.
+    const clear = () => {
+      window.removeEventListener("pointerup", clear, true);
+      window.removeEventListener("pointercancel", clear, true);
+      setTimeout(() => { constantSpeedPressedWhileAdjusting = false; });
+    };
+    window.addEventListener("pointerup", clear, true);
+    window.addEventListener("pointercancel", clear, true);
   }
   finishSimplify(true);
 }

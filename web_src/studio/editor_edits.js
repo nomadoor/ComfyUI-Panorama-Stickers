@@ -119,7 +119,7 @@ export function createEditorEdits(ctx) {
         ctx.notice(LINE_TEXT.lookChanging);
         return false;
       }
-      if (cameraLooks(camera, ctx.view.playhead, length)) {
+      if (cameraLooks(camera, ctx.view.playhead, length, draft.stickers)) {
         orbitCameraLooking(camera, ctx.view.playhead, pose, length, { stickers: draft.stickers, boxes: ctx.lookBoxes() });
         return true;
       }

@@ -31,14 +31,14 @@ export function cameraButton({ projection, locked = false, readOnly = false }) {
 // frame `frame`: Panorama mode switches to Frame mode, and the position, Yaw and Pitch go to the view's by the recording
 // rule (camera_state.js moveCameraPose: only the Lanes that change, keyed at `frame` where they have Keyframes).
 // Roll, the FOV, the lens and the aspect stay. Returns whether anything changed.
-export function cameraToView(camera, frame, pose, length = null) {
+export function cameraToView(camera, frame, pose, length = null, stickers = []) {
   let changed = false;
   if (camera.projection === "erp") {
     camera.projection = "perspective";
     changed = true;
   }
   // Looking at a target, the Camera's turn is the target's: only its position comes (docs/studio-ui.md "Look at").
-  if (cameraLooks(camera, frame, length)) {
+  if (cameraLooks(camera, frame, length, stickers)) {
     const before = JSON.stringify(camera.position);
     setLaneValue(camera, "position", frame, [...pose.position], length);
     return JSON.stringify(camera.position) !== before || changed;

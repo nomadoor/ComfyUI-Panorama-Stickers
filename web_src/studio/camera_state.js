@@ -2,7 +2,7 @@
 // has its Camera (loadSceneState puts the default one there, ADR 0048). The recording rule is pano_editor_state.js
 // setCameraShot's and pano_timeline.js setLaneValue's, called here. Pure: only the Camera it is given changes.
 import { cameraShot, setCameraShot } from "../pano_editor_state.js";
-import { evaluateCamera, evaluateLane, lookAtPoint, ownerPeriod } from "../pano_scene_eval.js";
+import { evaluateCamera, lookAtPoint } from "../pano_scene_eval.js";
 import { setLaneValue } from "../pano_timeline.js";
 
 // The Camera of `state` at the Timeline frame `frame`: its evaluated values (pano_scene_eval.js evaluateCamera) with the
@@ -30,9 +30,11 @@ export function moveCameraPose(camera, frame, pose, length = null) {
   return JSON.stringify([camera.position, camera.rotation]) !== before;
 }
 
-// Whether `camera` looks at a target at the Timeline frame `frame` (its Look at Lane has one there).
-export function cameraLooks(camera, frame, length = null) {
-  return !!camera.look_at && evaluateLane(camera, "look_at", frame, ownerPeriod(camera, length)) !== null;
+// Whether `camera` looks at a target at the Timeline frame `frame`: its Look at Lane has one there that the evaluation
+// finds among `stickers` (a gone or sky Sticker is no target; docs/scene-state-v2.md "Look at" "相手の位置"), as the
+// inspector reads it (look_at.js lookTargetName).
+export function cameraLooks(camera, frame, length = null, stickers = []) {
+  return !!camera.look_at && lookAtPoint(camera, frame, length, { stickers }) !== null;
 }
 
 // A Camera tab move of `camera` while it looks at a target (docs/studio-ui.md "Look at" "Camera タブのドラッグとホイール"):

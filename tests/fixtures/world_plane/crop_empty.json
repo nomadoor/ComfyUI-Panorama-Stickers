@@ -1,0 +1,11 @@
+{
+ "about": "Whether a world Sticker's crop draws no plane and has no Look at box (docs/scene-state-v2.md \"Look at\" \"中身の箱\"): core/world_render.py crop_empty and web_src/space/bounds.js cropEmpty both read these cases.",
+ "cases": [
+  {"crop": {"x0": 0, "y0": 0, "x1": 1, "y1": 1}, "empty": false},
+  {"crop": {"x0": 0, "y0": 0.5, "x1": 1, "y1": 0.5}, "empty": true},
+  {"crop": {"x0": 0.3, "y0": 0, "x1": 0.3, "y1": 1}, "empty": true},
+  {"crop": {"x0": 0, "y0": 0, "x1": 0.0000009, "y1": 1}, "empty": true},
+  {"crop": {"x0": 0, "y0": 0, "x1": 0.000002, "y1": 0.000002}, "empty": false},
+  {"crop": {"x0": 0.25, "y0": 0.25, "x1": 0.75, "y1": 0.75}, "empty": false}
+ ]
+}

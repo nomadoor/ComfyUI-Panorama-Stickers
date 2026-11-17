@@ -71,3 +71,15 @@ def test_an_upstream_override_of_the_crop_makes_the_layer_s_box_again():
         {"id": "board", "placement": "world", "crop": {"x0": 0.0, "y0": 0.5, "x1": 1.0, "y1": 0.5}}]}]})
     applied, _ = _override_layers(upstream, own["upstream"], [])
     assert applied[0].boxes == {}
+
+
+def test_the_empty_crop_rule_is_the_fixture_s():
+    # One rule in Python and JS: web_src/space/bounds.js cropEmpty reads the same fixture.
+    import json
+    from pathlib import Path
+
+    from comfyui_pano_suite.core.world_render import crop_empty
+
+    fixture = json.loads((Path(__file__).parent / "fixtures" / "world_plane" / "crop_empty.json").read_text(encoding="utf-8"))
+    for case in fixture["cases"]:
+        assert crop_empty(case["crop"]) is case["empty"], case

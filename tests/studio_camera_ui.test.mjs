@@ -54,3 +54,14 @@ test("a Lane with Keyframes gets one at the playhead (the recording rule), a Lan
   assert.equal(camera.rotation.keyframes.length, 0, "no Keyframe on a Lane that had none");
   assert.equal(camera.rotation.value.yaw_deg, 30);
 });
+
+// Fable review: a Look at target that is gone (its id kept for Undo) or sky is no target, as the inspector reads it, so
+// the Camera button turns the Camera as without Look at.
+test("the Camera button turns the Camera when its Look at target is gone or sky", () => {
+  const camera = load({ projection: "perspective", look_at: { value: { sticker: "gone", offset: [0, 0, 0] } }, rotation: { value: { yaw_deg: 0, pitch_deg: 0, roll_deg: 0 } } });
+  assert.equal(cameraToView(camera, 0, pose, null, []), true);
+  assert.equal(camera.rotation.value.yaw_deg, 30);
+  const sky = load({ projection: "perspective", look_at: { value: { sticker: "s", offset: [0, 0, 0] } }, rotation: { value: { yaw_deg: 0, pitch_deg: 0, roll_deg: 0 } } });
+  assert.equal(cameraToView(sky, 0, pose, null, [{ id: "s", placement: "sky" }]), true);
+  assert.equal(sky.rotation.value.yaw_deg, 30);
+});

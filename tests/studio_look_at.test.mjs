@@ -184,3 +184,11 @@ test("Look at switching is read as the evaluation reads it, a loop's last segmen
   assert.equal(lookSwitching(camera, 25, null), false, "without a loop, after the last Keyframe");
   assert.equal(lookSwitching(camera, 10, 40), false, "on a Keyframe");
 });
+
+// The empty-crop rule is one rule in Python and JS: both read tests/fixtures/world_plane/crop_empty.json.
+test("the empty crop rule is the fixture's", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { cropEmpty } = await import("../web_src/space/bounds.js");
+  const { cases } = JSON.parse(readFileSync(new URL("./fixtures/world_plane/crop_empty.json", import.meta.url), "utf8"));
+  for (const { crop, empty } of cases) assert.equal(cropEmpty(crop), empty, JSON.stringify(crop));
+});

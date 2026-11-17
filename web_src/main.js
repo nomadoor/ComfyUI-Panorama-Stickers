@@ -52,6 +52,8 @@ let takeRetry = null;
 function takeWorkflowChange() {
   const tracker = app.extensionManager?.workflow?.activeWorkflow?.changeTracker;
   if (!tracker) return true;
+  // While ComfyUI holds its takes (a gesture, Undo or Redo under way), no take can happen: no need to read the graph.
+  if (tracker.changeCount > 0 || tracker._restoringState) return false;
   const before = tracker.activeState;
   if (typeof tracker.captureCanvasState === "function") tracker.captureCanvasState();
   else tracker.checkState?.();

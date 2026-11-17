@@ -532,7 +532,7 @@ export function createStudioSession({ state: opening, readOnly = false, upstream
   // while the Camera is locked. A move selects the Camera (the inspector shows its card); nothing moved changes nothing.
   function cameraToView(pose, playhead, length = null) {
     if (state.camera.locked === true) return result(false);
-    const outcome = editCamera((camera) => moveCameraToView(camera, playhead, pose, length));
+    const outcome = editCamera((camera) => moveCameraToView(camera, playhead, pose, length, state.stickers));
     if (outcome.changed) selection = { row: "camera", keys: [] };
     return outcome;
   }
