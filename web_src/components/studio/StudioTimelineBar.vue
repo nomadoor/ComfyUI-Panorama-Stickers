@@ -11,7 +11,7 @@ import StudioSlider from "./StudioSlider.vue";
 
 // The Timeline's bar (docs/studio-ui.md "タイムラインのバー"; what each part does: docs/timeline-ui.md). From the left:
 // play and pause, the previous and the next Keyframe, the playback loop button (its icon shows the state), the time and
-// frame, Constant speed (its place only) and Simplify with its slider between the fewest it keeps and the count selected while adjusting (docs/timeline-ui.md "Simplify"); on the right the fps
+// frame, Constant speed and Simplify with its slider between the fewest it keeps and the count selected while adjusting (docs/timeline-ui.md "Simplify"); on the right the fps
 // field, the Length field and its reset, and the collapse button. Presentational: `bar` (timeline_model.js
 // buildStudioTimeline().bar) in; `play`, `jump` (direction), `loop-change`, `fps`, `length-input` (each value while
 // the Length field is dragged, and a typed one just before its `length`), `length` (a number once on release or typing,
@@ -30,7 +30,7 @@ const props = defineProps({
   collapsed: { type: Boolean, default: false },
   lengthUnit: { type: String, default: "frames" },
 });
-const emit = defineEmits(["play", "jump", "loop-change", "fps", "length-input", "length", "length-cancel", "length-unit", "collapse", "simplify", "simplify-count"]);
+const emit = defineEmits(["play", "jump", "loop-change", "fps", "length-input", "length", "length-cancel", "length-unit", "collapse", "simplify", "simplify-count", "constant-speed"]);
 
 // Simplify's slider is the count of Keyframes to keep: the least at its left, the original count at its right.
 const simplify = computed(() => props.bar.simplify ?? null);
@@ -98,13 +98,14 @@ const lengthParse = (text) => {
       </span>
     </span>
     <span class="pano-studio-sep" />
-    <!-- Constant speed: its place only, not working yet (docs/studio-ui.md "タイムラインのバー"). -->
+    <!-- Constant speed (docs/timeline-ui.md "Constant speed"): one press moves the selected Keyframes in time. -->
     <button
       type="button"
       class="pano-studio-tl-simplify-btn"
-      aria-disabled="true"
-      data-tip="Constant speed · in development"
+      :aria-disabled="bar.constantSpeed?.disabled !== false ? 'true' : null"
+      :data-tip="bar.constantSpeed?.tip ?? 'Constant speed'"
       data-tl="constant-speed"
+      @click="bar.constantSpeed?.disabled === false && emit('constant-speed')"
     >
       <SvgIcon :icon="ICON.constant_speed" />
       <span>Constant speed</span>

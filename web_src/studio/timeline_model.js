@@ -315,22 +315,23 @@ function overridden(entry) {
   return upstreamStickerOverridden([record], entry.owner);
 }
 
-// Whether Simplify can be pressed for the selection: { ready, row, lane, frames, why }. One row only, three Keyframes
+// Whether Simplify (or Constant speed, `label`, docs/timeline-ui.md "Constant speed": the same rule) can be pressed for
+// the selection: { ready, row, lane, frames, why }. One row only, three Keyframes
 // or more selected in it (a closed row's pins count by frame), the row's Keyframes editable. `lane` is null for a closed
 // row's pins (its Lanes keep or go together by frame), else the one Lane of the open row's selected Keyframes.
-export function simplifyReadiness(ctx, selection) {
+export function simplifyReadiness(ctx, selection, label = "Simplify") {
   const keys = selection?.keys ?? [];
   const rows = [...new Set(keys.map((key) => key.row))];
-  if (rows.length > 1) return { ready: false, why: "Simplify · Select Keyframes in one row" };
+  if (rows.length > 1) return { ready: false, why: `${label} · Select Keyframes in one row` };
   const row = rows[0] ?? null;
   const lanes = [...new Set(keys.map((key) => key.lane ?? null))];
   const lane = lanes.length === 1 ? lanes[0] : null;
   const frames = [...new Set(keys.map((key) => key.frame))];
   const picked = lane === null ? frames.length : keys.length;
-  if (!row || picked < 3) return { ready: false, why: "Simplify · Select 3+ Keyframes" };
+  if (!row || picked < 3) return { ready: false, why: `${label} · Select 3+ Keyframes` };
   const entry = findEntry(ctx, row);
-  if (!entry || !entryKeyable(entry)) return { ready: false, why: "Simplify · Select 3+ Keyframes" };
-  if (!entryKeysEditable(ctx, entry)) return { ready: false, why: `Simplify · ${ctx.readOnly ? "Read-only" : entry.owner?.locked ? "Locked" : "Read-only"}` };
+  if (!entry || !entryKeyable(entry)) return { ready: false, why: `${label} · Select 3+ Keyframes` };
+  if (!entryKeysEditable(ctx, entry)) return { ready: false, why: `${label} · ${ctx.readOnly ? "Read-only" : entry.owner?.locked ? "Locked" : "Read-only"}` };
   return { ready: true, row, lane, frames, why: "" };
 }
 
@@ -478,6 +479,12 @@ export function buildStudioTimeline(ctx, { selection = null, playhead = 0, playi
           const readiness = simplifyReadiness(ctx, selection);
           return { adjusting: false, disabled: !readiness.ready, tip: readiness.ready ? "Simplify Keyframes" : readiness.why };
         })(),
+      // Constant speed (docs/timeline-ui.md "Constant speed"): pressable as Simplify is, not while Simplify adjusts.
+      constantSpeed: (() => {
+        if (simplify) return { disabled: true, tip: "Constant speed · Finish Simplify first" };
+        const readiness = simplifyReadiness(ctx, selection, "Constant speed");
+        return { disabled: !readiness.ready, tip: readiness.ready ? "Constant speed · Moves the selected Keyframes in time" : readiness.why };
+      })(),
     },
     rows,
     groups: groupModels,

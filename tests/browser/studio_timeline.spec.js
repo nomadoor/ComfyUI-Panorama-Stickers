@@ -51,8 +51,8 @@ test("the bar and a row's head are in the spec's order", async ({ page }) => {
   await open(page);
   const bar = await dark(page).locator(".pano-studio-tl-bar [data-tl]").evaluateAll((els) => els.map((el) => el.dataset.tl));
   expect(bar).toEqual(["play", "prev", "next", "loop", "time", "constant-speed", "simplify-group", "simplify", "fps", "length", "length-reset", "collapse"]);
-  // Constant speed has its place, not working yet.
-  await expect(dark(page).locator('[data-tl="constant-speed"]')).toHaveAttribute("data-tip", "Constant speed · in development");
+  // Constant speed is off, with its reason, until Keyframes are selected.
+  await expect(dark(page).locator('[data-tl="constant-speed"]')).toHaveAttribute("data-tip", "Constant speed · Select 3+ Keyframes");
   const head = await dark(page).locator('[data-head="camera"] > *').evaluateAll((els) => els.map((el) => el.dataset.part || el.getAttribute("class")));
   expect(head[0]).toBe("eye");
   expect(head[1]).toBe("expand");

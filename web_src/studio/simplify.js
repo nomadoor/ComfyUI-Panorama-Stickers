@@ -41,7 +41,7 @@ const logRatio = (a, b) => Math.abs(Math.log(Math.max(a, 1e-9) / Math.max(b, 1e-
 
 // How far apart two values of the Lane `name` are, and the measure that divides it (docs/timeline-ui.md "Simplify"
 // "ずれの測り方"), from the original values over the stretch (`values`).
-function laneMeasure(name, values, { camera, ground, hfov }) {
+export function laneMeasure(name, values, { camera, ground, hfov }) {
   if (name === "position") {
     const min = [0, 1, 2].map((axis) => Math.min(...values.map((value) => value[axis])));
     const max = [0, 1, 2].map((axis) => Math.max(...values.map((value) => value[axis])));

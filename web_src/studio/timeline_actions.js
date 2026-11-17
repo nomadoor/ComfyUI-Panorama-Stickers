@@ -9,6 +9,7 @@
 import { paintObjectRow } from "../pano_paint_objects.js";
 import { clipActive, evaluateLane, FRAME_EPSILON, laneView, ownerPeriod } from "../pano_scene_eval.js";
 import { planSimplify } from "./simplify.js";
+import { planConstantSpeed } from "./constant_speed.js";
 import { TIMELINE_LENGTH_MAX } from "../pano_scene_state.js";
 import {
   PAINTING_ROW,
@@ -288,6 +289,28 @@ export function simplifyPlan(ctx, selection, ground = -1.6) {
   const hfov = Math.min(...readiness.frames.map(fovAt));
   const plan = planSimplify(owner, names, readiness.frames, { period, ground, camera, hfov, lookAt: camera ? owner.look_at : null });
   return plan ? { ...readiness, names, plan } : null;
+}
+
+// Constant speed of the selection (docs/timeline-ui.md "Constant speed"): { edit, selection (the same Keyframes at their
+// new frames), moved (how many moved) }, or null when it cannot be pressed or changes nothing.
+export function constantSpeedEdit(ctx, selection, ground = -1.6) {
+  const readiness = simplifyReadiness(ctx, selection, "Constant speed");
+  if (!readiness.ready) return null;
+  const entry = findEntry(ctx, readiness.row);
+  const owner = entry.owner;
+  const names = readiness.lane ? [readiness.lane] : rowLaneNames(owner);
+  const camera = entry.kind === "camera";
+  const length = entryLength(ctx, entry);
+  const period = ownerPeriod(owner, length);
+  const fovAt = (frame) => (camera ? evaluateLane(owner, "fov", frame, period) : owner.size ? evaluateLane(owner, "size", frame, period).hFOV_deg : 90);
+  const hfov = Math.min(...readiness.frames.map(fovAt));
+  const plan = planConstantSpeed(owner, names, readiness.frames, { period, ground, camera, hfov });
+  if (!plan) return null;
+  const draft = createDraft(ctx);
+  const target = draft.owner(entry);
+  for (const name of names) target[name] = plan.lanes[name];
+  const keys = (selection?.keys ?? []).map((key) => (key.row === readiness.row && plan.moves.has(key.frame) ? { ...key, frame: plan.moves.get(key.frame) } : key));
+  return { edit: draft.result(), selection: { row: readiness.row, keys }, moved: plan.moves.size };
 }
 
 // The edit of a Simplify run (simplifyPlan's) keeping `count` Keyframes: the Lanes rebuilt (simplify.js), and the

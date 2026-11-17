@@ -16,6 +16,7 @@ import {
   pasteKeys,
   selectKeys,
   selectRow,
+  constantSpeedEdit,
   simplifyEdit,
   simplifyPlan,
   startClipDrag,
@@ -132,6 +133,15 @@ function finishSimplify(keep) {
   const { edit, selection } = simplifyEdit(run.base, run, run.count);
   emit("edit", { kind: "state", ...edit, selection, phase: "commit", stopsPlayback: false });
   emit("done", `${run.plan.original} Keyframes → ${run.count}`);
+}
+
+// Constant speed (docs/timeline-ui.md "Constant speed"): one press, one Undo step; nothing when nothing changes.
+function onConstantSpeed() {
+  if (simplifyRun.value) return;
+  const result = constantSpeedEdit(ctx.value, props.selection, sceneGround(props.state));
+  if (!result) return;
+  emit("edit", { kind: "state", ...result.edit, selection: result.selection, phase: "commit", stopsPlayback: true });
+  emit("done", `Constant speed · ${result.moved} Keyframe${result.moved === 1 ? "" : "s"} moved`);
 }
 
 function onSimplify() {
@@ -626,6 +636,7 @@ defineExpose({ handleDelete, copyKeys: copySelectedKeys, pasteKeys: pasteCopiedK
       @length-unit="(unit) => emit('length-unit-change', unit)"
       @collapse="(folded) => emit('collapse-change', folded)"
       @simplify="onSimplify"
+      @constant-speed="onConstantSpeed"
       @simplify-count="applySimplify"
     />
     <div v-show="!collapsed" ref="body" class="pano-studio-tl-body">

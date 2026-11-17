@@ -125,3 +125,25 @@ test("the playhead's digits do not move Simplify on the bar", async ({ page }) =
   expect(await left()).toBe(atStart);
   expect(problems).toEqual([]);
 });
+
+// docs/timeline-ui.md "Constant speed": off until three Keyframes of one row are selected; a press moves them in time
+// as one Undo step and says how many moved.
+test("Constant speed moves the selected Keyframes in time as one Undo step", async ({ page }) => {
+  const problems = await open(page);
+  const button = page.locator('[data-tl="constant-speed"]');
+  await expect(button).toHaveAttribute("aria-disabled", "true");
+  await expect(button).toHaveAttribute("data-tip", "Constant speed · Select 3+ Keyframes");
+  const before = await page.evaluate(() => window.__studio.keys().map((key) => key.frame));
+  await boxAll(page);
+  await expect(button).not.toHaveAttribute("aria-disabled", "true");
+  await expect(button).toHaveAttribute("data-tip", "Constant speed · Moves the selected Keyframes in time");
+  await button.click();
+  await expect(page.locator(".pano-studio-notice")).toContainText(/Constant speed · \d+ Keyframes? moved/);
+  const after = await page.evaluate(() => window.__studio.keys().map((key) => key.frame));
+  expect(after).not.toEqual(before);
+  expect([after[0], after.at(-1)]).toEqual([before[0], before.at(-1)]);
+  expect(await page.evaluate(() => window.__studio.keys().every((key) => key.easing === "smooth" || key.easing === undefined))).toBe(true);
+  await page.keyboard.press("Control+z");
+  await expect.poll(() => page.evaluate(() => window.__studio.keys().map((key) => key.frame))).toEqual(before);
+  expect(problems).toEqual([]);
+});
