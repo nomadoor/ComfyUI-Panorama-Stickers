@@ -1,7 +1,9 @@
 // What the new UI's editor hands the stage to draw (editor.js openStudioEditor puts it together): the content at the
 // playhead (stage_content.js stageContent, made again only when what it reads changes), a placed 3D file's reveal, and
 // the stage's selection of a row. `ctx` is the editor's context (editor.js).
+import { mediaSize } from "../pano_editor_view.js";
 import { paintObjectRow } from "../pano_paint_objects.js";
+import { sceneContentBox } from "../pano_space.js";
 import { createLoadReveal } from "./load_reveal.js";
 import { cameraAt } from "./camera_state.js";
 import { stageContent, stageDepthNotice, stickerFrameSphere } from "./stage_content.js";
@@ -33,9 +35,9 @@ export function createEditorContent(ctx) {
     // The `scene` result can arrive while the editor is open (the node ran): its files are part of the key.
     const playing = !!ctx.backgroundVideo?.playback.advancing;
     const running = ctx.comfyRunning.running();
-    const key = [ctx.session.state, ctx.view.playhead, ctx.view.imageSizes, ctx.view.animations, files ? files.urls.join("\n") : "", stickerFiles ? stickerFiles.urls.join("\n") : "", ctx.upstreamList(), ctx.upstreamMedia, ctx.paint.revision(), playing, running];
+    const key = [ctx.session.state, ctx.view.playhead, ctx.view.imageSizes, ctx.view.animations, files ? files.urls.join("\n") : "", stickerFiles ? stickerFiles.urls.join("\n") : "", ctx.upstreamList(), ctx.upstreamMedia, ctx.paint.revision(), playing, running, ctx.outputLength(), ctx.session.portHandoff];
     if (contentCache && !contentCache.pending && contentCache.key.every((item, index) => item === key[index])) return contentCache.value;
-    const value = revealed(stageContent(ctx.session.state, ctx.view.playhead, { media: mediaOf, editorFile: ctx.stageMedia.editorFile, sceneFiles: files, sceneBox, stickerFiles, upstream: ctx.upstream.viewInput(ctx.view.playhead), paintLayers: ctx.paint.layers(), depthColor: ctx.depthColor, playing, idle: !playing && !running, lean: running }));
+    const value = revealed(stageContent(ctx.session.state, ctx.view.playhead, { media: mediaOf, editorFile: ctx.stageMedia.editorFile, sceneFiles: files, sceneBox, stickerFiles, upstream: ctx.upstream.viewInput(ctx.view.playhead), paintLayers: ctx.paint.layers(), depthColor: ctx.depthColor, playing, idle: !playing && !running, lean: running, length: ctx.outputLength(), shot: ctx.session.portHandoff }));
     ctx.depthColors.retain(value.space.depthSlots);
     ctx.ui.depthNotice = stageDepthNotice(value, (key) => ctx.stage?.sceneItemError(key) ?? null, (key) => !!sceneBox(key));
     // A World item may still be loading (no box yet): the content is made again on the next frame. [inputs] The port
@@ -49,7 +51,7 @@ export function createEditorContent(ctx) {
   function selectionOf(row) {
     if (!row) return null;
     if (row === "camera") {
-      return { kind: "camera", position: [...cameraAt(ctx.session.state, ctx.view.playhead).position] };
+      return { kind: "camera", position: [...cameraAt(ctx.session.state, ctx.view.playhead, ctx.outputLength(), ctx.lookBoxes()).position] };
     }
     // A paint group is on the Sky, as a sky image: it has no sphere of its own (docs/space-and-view.md "Frame Selected").
     if (paintObjectRow(row)) return { kind: "object", sphere: content().sphere };
@@ -57,5 +59,19 @@ export function createEditorContent(ctx) {
     return { kind: "object", sphere };
   }
 
-  return { sceneBox, reveal, content, selectionOf };
+  // The content boxes of what the Camera looks at, as the stage draws them now (stage_content.js `lookBoxes`).
+  const lookBoxes = () => content()?.lookBoxes ?? null;
+  // A World Sticker's content box once loaded ({ min, max }, its own frame; look_at.js lookAtBoxes `content`): the port
+  // Sticker's 3D item or a 3D file's; and an image plane's image size ({ width, height } px) once known (`image`).
+  function contentBoxOf(sticker) {
+    const { space } = content();
+    if (space.sticker?.id === sticker.id && space.sticker.url) return sceneContentBox(space.sticker, sceneBox(space.sticker.url));
+    const request = space.fileStickers.find((item) => item?.id === sticker.id);
+    return request?.url ? sceneContentBox(request, sceneBox(request.url)) : null;
+  }
+  function imageSizeOf(sticker) {
+    const shown = mediaOf(sticker);
+    return shown ? mediaSize(shown.media) : null;
+  }
+  return { sceneBox, reveal, content, selectionOf, lookBoxes, contentBoxOf, imageSizeOf };
 }

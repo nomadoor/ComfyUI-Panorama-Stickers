@@ -14,7 +14,7 @@ FIXTURES = REPO_ROOT / "tests" / "fixtures" / "scene_state"
 TOLERANCE = 1e-4
 
 STATE_CASES = ["v2_canonical", "v1_stickers", "v1_cutout", "v2_invalid_fields", "v2_interpolation", "v2_half_turns", "v2_no_camera", "v2_erp_camera", "v2_hidden", "v2_timeline_limits", "v2_upstream", "v2_background", "v2_animation", "v2_big_numbers", "v1_cutout_shots"]
-STICKER_STATE_CASES = ["sticker_state_v1", "sticker_state_v2"]
+STICKER_STATE_CASES = ["sticker_state_v1", "sticker_state_v2", "sticker_state_v3"]
 EVAL_FRAMES = {
     "v2_canonical": [10.0 - 1e-7, 50.0 - 1e-7] + [case["frame"] for case in json.loads((FIXTURES / "v2_canonical.eval.json").read_text(encoding="utf-8"))] + [0.0, 1.0, 23.999, 24.0 - 5e-7, 24.0 + 5e-7, 48.0, 119.0],
     "v1_stickers": [-1.0, 0.0, 0.5, 7.25, 100.0],

@@ -22,6 +22,8 @@ const props = defineProps({
   // A small mark beside the name (an upstream value this node overrides).
   marked: { type: Boolean, default: false },
   tip: { type: String, default: "" },
+  // A row that belongs to the row above it (the Look at's Offset): its name indented under a line from that row.
+  sub: { type: Boolean, default: false },
 });
 const emit = defineEmits(["key-toggle", "reset"]);
 </script>
@@ -29,7 +31,7 @@ const emit = defineEmits(["key-toggle", "reset"]);
 <template>
   <div
     class="pano-studio-row"
-    :class="{ 'is-disabled': disabled }"
+    :class="{ 'is-disabled': disabled, 'is-sub': sub }"
     role="group"
     :aria-label="name"
     :aria-disabled="disabled ? 'true' : null"

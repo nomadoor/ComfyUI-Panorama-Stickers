@@ -199,6 +199,8 @@ export function createNodePlayback({ video, stickerVideo, createImage, clock, re
       followSticker(state);
       return playable;
     },
+    // The output length the surface's Timeline has (the editor's span): the loop period of looping owners.
+    span,
     dispose() {
       solo?.forget(api);
       playback.dispose();

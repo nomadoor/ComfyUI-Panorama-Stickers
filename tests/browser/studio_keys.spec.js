@@ -82,6 +82,9 @@ test("the Easing panel's text field still copies and pastes its text, and ComfyU
   await keyAt(page, "sticker_1", second).click({ modifiers: ["Shift"] });
   const field = page.locator(".pano-studio-easing-text");
   await expect(field).toBeEnabled();
+  // Smooth, the default, has no curve text (the field shows only its placeholder): give the segment a curve first.
+  await page.locator('[aria-label="Easing preset"] [data-value="Ease in-out"]').click();
+  await expect(field).toHaveValue(/0\.42/);
   // Copy: the field's text goes to the system clipboard.
   await field.focus();
   await page.keyboard.press("Control+a");

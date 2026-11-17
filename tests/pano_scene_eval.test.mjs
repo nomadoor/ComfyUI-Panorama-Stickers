@@ -93,3 +93,77 @@ test("clipOrigin is start − in and clipFrame is frame − (start − in), to t
     for (const frame of FRAMES) assert.equal(clipFrame(clip, frame), frame - (clip.start - clip.in));
   }
 });
+
+// The shape and progress of segments and looping owners as the fixtures shared with Python say (docs/scene-state-v2.md
+// "補間" and "ループ", ADR 0064; tests/test_scene_eval.py reads the same files).
+function closeTo(actual, expected, path) {
+  if (Array.isArray(expected)) {
+    assert.equal(actual.length, expected.length, path);
+    expected.forEach((item, i) => closeTo(actual[i], item, `${path}[${i}]`));
+  } else if (expected && typeof expected === "object") {
+    assert.deepEqual(Object.keys(actual), Object.keys(expected), path);
+    for (const key of Object.keys(expected)) closeTo(actual[key], expected[key], `${path}.${key}`);
+  } else if (typeof expected === "number") {
+    assert.ok(Math.abs(actual - expected) <= 1e-4, `${path}: ${actual} != ${expected}`);
+  } else {
+    assert.equal(actual, expected, path);
+  }
+}
+
+for (const name of ["v2_shape_progress", "v2_loop"]) {
+  test(`the motion fixture ${name} evaluates as the file says`, async () => {
+    const { readFileSync } = await import("node:fs");
+    const { evaluateSceneState } = await import("../web_src/pano_scene_eval.js");
+    const { cases } = JSON.parse(readFileSync(new URL(`./fixtures/scene_state/${name}.json`, import.meta.url), "utf8"));
+    for (const item of cases) {
+      const state = loadSceneState(item.state);
+      closeTo(item.frames.map((frame) => evaluateSceneState(state, frame, item.length)), item.expected, item.name);
+    }
+  });
+}
+
+test("a Smooth segment's current curve is its Hermite as control points, ease-in-out where it stops at both ends", async () => {
+  const { smoothEasing } = await import("../web_src/pano_scene_eval.js");
+  const state = loadSceneState({ version: 2, camera: { fov: { keyframes: [{ frame: 0, value: 40 }, { frame: 10, value: 60 }, { frame: 20, value: 80 }] } } });
+  // Two segments of the same speed: the first eases out of 0 and runs into the middle key at the average speed.
+  const [x1, y1, x2, y2] = smoothEasing(state.camera, "fov", 0);
+  assert.deepEqual([x1, x2], [1 / 3, 2 / 3]);
+  assert.equal(y1, 0);
+  assert.ok(Math.abs(y2 - 2 / 3) < 1e-9);
+  const two = loadSceneState({ version: 2, camera: { fov: { keyframes: [{ frame: 0, value: 40 }, { frame: 10, value: 60 }] } } });
+  assert.deepEqual(smoothEasing(two.camera, "fov", 0), [0.42, 0, 0.58, 1]);
+  assert.equal(smoothEasing(loadSceneState({ version: 2, camera: { fov: { keyframes: [{ frame: 0, value: 40, easing: "hold" }, { frame: 10, value: 60 }] } } }).camera, "fov", 0), null);
+});
+
+test("the handoff fixture evaluates as the file says", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { evaluateSceneState } = await import("../web_src/pano_scene_eval.js");
+  const { loadStickerState } = await import("../web_src/pano_scene_state.js");
+  const { cases } = JSON.parse(readFileSync(new URL("./fixtures/scene_state/v2_handoff.json", import.meta.url), "utf8"));
+  for (const item of cases) {
+    const state = loadSceneState(item.state);
+    const shot = loadStickerState(JSON.stringify(item.shot));
+    closeTo(item.frames.map((frame) => evaluateSceneState(state, frame, item.length, null, shot)), item.expected, item.name);
+  }
+});
+
+test("the Look at fixture evaluates as the file says", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { evaluateSceneState } = await import("../web_src/pano_scene_eval.js");
+  const { cases } = JSON.parse(readFileSync(new URL("./fixtures/scene_state/v2_look_at.json", import.meta.url), "utf8"));
+  for (const item of cases) {
+    const state = loadSceneState(item.state);
+    closeTo(item.frames.map((frame) => evaluateSceneState(state, frame, item.length, item.boxes)), item.expected, item.name);
+  }
+});
+
+// The same cases test_scene_eval.py checks.
+test("a looping Look at Lane closes at a seam when it ends on its first target", async () => {
+  const { laneView } = await import("../web_src/pano_scene_eval.js");
+  const a = { sticker: "s", offset: [0, 0.5, 0] };
+  const keys = (last) => [{ frame: 0, value: a, easing: "smooth" }, { frame: 10, value: { point: [0, 0, -1] }, easing: "smooth" }, { frame: 20, value: last, easing: "smooth" }];
+  assert.equal(laneView(keys({ ...a }), 40).seam, true);
+  assert.equal(laneView(keys({ sticker: "s", offset: [0, 0.25, 0] }), 40).seam, false);
+  assert.equal(laneView(keys({ point: [0, 0.5, 0] }), 40).seam, false);
+  assert.equal(laneView(keys(null), 40).seam, false);
+});

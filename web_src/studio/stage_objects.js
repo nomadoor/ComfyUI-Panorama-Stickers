@@ -4,19 +4,24 @@
 // on the overlay. It builds no DOM. The sky images' part is stage_sky_objects.js, the paint groups' stage_paint_objects.js.
 //
 // A left press, in this order (docs/studio-ui.md "ペイントのまとまり" "押したときの順"):
-//   1. a handle of the gizmo of the selected World object or Camera (gizmo_overlay.js): drags it;
-//   2. a handle of the selected sky image (a corner scales both FOVs, an edge one, the rotate handle the Roll), or the
+//   1. a handle of the selected object's path line (3D tab; path_line.js): bends that side of its Keyframe;
+//   2. a handle of the gizmo of the selected World object or Camera (gizmo_overlay.js): drags it;
+//   3. a handle of the selected sky image (a corner scales both FOVs, an edge one, the rotate handle the Roll), or the
 //      rotate handle (turns it) or a corner (scales it) of the selected paint group; not while locked;
-//   3. the World object under the pointer (objectUnder: the same test as the hover, hit_test.js coarseUnder): selects
+//   4. a Keyframe point of the path line: selects that Keyframe (Shift adds), takes the playhead to it, and its drag
+//      moves its position on the plane facing the view;
+//   5. the path line: takes the playhead to the frame there, and follows the pointer while it is held;
+//   6. the World object under the pointer (objectUnder: the same test as the hover, hit_test.js coarseUnder): selects
 //      it (its drag does nothing: the gizmo moves it);
-//   4. the Camera's mark (3D tab; camera_marker.js: anywhere on its filled shape or near its lines): selects the Camera;
-//   5. the node's own Sky from the visual front (skyObjects: the sky images and the paint groups by the draw order,
+//   7. the Camera's mark (3D tab; camera_marker.js: anywhere on its filled shape or near its lines): selects the Camera;
+//   8. the node's own Sky from the visual front (skyObjects: the sky images and the paint groups by the draw order,
 //      reversed), then the upstream sky images under it (from the downstream layer, in a layer from the front): selects
 //      it and its drag turns a sky image (its direction) or moves a paint group (not a locked one);
-//   6. nothing: the stage looks around, and a press let go without moving lets the selection go.
+//   9. nothing: the stage looks around, and a press let go without moving lets the selection go.
+// A locked or read-only object's path line is drawn and its points and line move the playhead, but nothing moves.
 // The upstream objects (docs/studio-ui.md "上流の物の編集") are found by their working ids in the working layers
-// (`upstream`) and count as the node's own: the upstream World objects in 3 (their guides, world_guides.js), the sky
-// images after 5, the selected one's gizmo or handles in 1 and 2. Their drags change their working copies (the session
+// (`upstream`) and count as the node's own: the upstream World objects in 6 (their guides, world_guides.js), the sky
+// images after 8, the selected one's gizmo or handles in 2 and 3. Their drags change their working copies (the session
 // writes them back as overrides); one of a layer whose overrides cannot be kept is locked.
 // The Camera tab's Frame view does the same for the selected object (its gizmo, its handles, its body: docs/studio-ui.md
 // "Camera タブ", ADR 0051); a press on any other object, or on a locked one, selects it and its drag is the stage's,
@@ -30,7 +35,7 @@
 // the painting as it is (it has no Lanes).
 import { viewProjection } from "../pano_editor_view.js";
 import { setWorldStickerTransform } from "../pano_editor_state.js";
-import { evaluateSticker } from "../pano_scene_eval.js";
+import { clipOrigin, evaluateSticker, ownerPeriod } from "../pano_scene_eval.js";
 import { isUpstreamSticker, upstreamStickerLocked } from "../pano_upstream.js";
 import { gizmoDragLanes, sceneTransform } from "../pano_space.js";
 import { hitFrameAffordance, ROTATE_HANDLE_HIT_PX } from "../pano_sticker_affordance.js";
@@ -40,7 +45,7 @@ import {
   paintCornerHandle, paintObjectOf, rasterAlphaHits, rasterObjectAlphaAt, strokeDotHit, strokePathsHit,
 } from "../pano_paint_objects.js";
 import { cameraAt, setCameraLanes } from "./camera_state.js";
-import { findSticker } from "./row_object.js";
+import { findSticker, ownerLength } from "./row_object.js";
 import { ROTATE_SNAP_DEG } from "./view_scale.js";
 import { shownGizmoMode, selectedKind } from "./selection_bar.js";
 import { cameraMarkerHit, cameraMarkerLength, cameraMarkerScreen, cameraMarkerShape, cameraMarkerShown } from "./camera_marker.js";
@@ -48,10 +53,22 @@ import { gizmoDrag as startGizmoDrag, gizmoGuideSegment, gizmoHandles, gizmoHit 
 import { guideLook, pointInPolygon, screenLines, worldGuideItems } from "./world_guides.js";
 import { coarseUnder } from "./hit_test.js";
 import { createPaintDrags, erpUnder, paintFrame, paintPaths, selectOnly, viewKey } from "./stage_paint_objects.js";
+import {
+  PATH_TICK_FRAMES, dragPoint, easedSegments, frameNear, handleUnder, keyUnder, onLine, pathHandles, pathOf, pathScreen,
+  togglePointCorner, writeHandle,
+} from "./path_line.js";
+import { projectPoint } from "../space/camera.js";
+import { lookMarkPoint, lookingAt } from "./look_at.js";
 import { createSkyDrag, skyItems, skyObjects, upstreamSkyItems } from "./stage_sky_objects.js";
+import { handedOff } from "./port_offset.js";
 
 // The cursor over an object's body (hit_test.js's rule: the default arrow; handles bring their own).
 const BODY_CURSOR = "default";
+// The top line over an edge handle of a returned shot (docs/studio-ui.md "一行の知らせの種類").
+const STRETCH_HINT = "Can't stretch a returned shot";
+
+// Whether a frame handle scales one axis (an edge handle).
+const oneAxis = (handle) => handle.kind === "scale_x" || handle.kind === "scale_y";
 
 // state(), content() (stage_content.js stageContent()), playhead(): the working state, what is drawn of it and the
 // Timeline frame. camera() and size(): the stage's three.js camera (stage_view.js stageCamera(); on a lens Camera's
@@ -63,6 +80,11 @@ const BODY_CURSOR = "default";
 // createLoadReveal()'s for the guides of 3D files just placed (their stand-in box and band), or null.
 // rasterAlpha(item, u, v): the alpha (0..255) of a paint raster object's image at a point of its box (0..1 across), or
 // null while it cannot be read (studio/paint.js rasterAlpha); a raster object is then hit anywhere in its box.
+// The path line (docs/studio-ui.md "軌道の線"): keys() the Timeline's selected Keyframes ([{ row, lane, frame }]),
+// selectKeys(row, keys) selects Keyframes of a row (the Timeline's selection), seek(frame) takes the playhead to a Timeline
+// frame, playing() whether it plays, hint(text) the top line's hint while the pointer is over the line (null: none),
+// length() the output length (the loop period), tool() the left column's tool (the line shows with Cursor). shot(): the
+// sticker_state that places the port Sticker, or null (its drags write its offset; its edge handles do not stretch it).
 export function createStageObjects({
   editorView,
   camera,
@@ -80,6 +102,15 @@ export function createStageObjects({
   loading = null,
   rasterAlpha = () => null,
   upstream = () => [],
+  keys = () => [],
+  selectKeys = () => {},
+  seek = () => {},
+  playing = () => false,
+  hint = () => {},
+  length = () => null,
+  tool = () => "cursor",
+  simplifyGhost = () => null,
+  shot = () => null,
 }) {
   let hovered = null;
   // The gizmo's handle under the pointer, and the one being dragged (gizmo_overlay.js gizmoHit's names).
@@ -87,23 +118,31 @@ export function createStageObjects({
   let draggedAxis = null;
   // The axis guide lines of the gizmo drag under way (gizmo_overlay.js gizmoDrag's `guides`), or none.
   let dragGuides = [];
+  // The part of the path line under the pointer ({ kind: "handle" | "point" | "line", index, side, frame, x, y }), and
+  // the handle being dragged ({ index, side }), or null.
+  let pathHovered = null;
+  let pathDragged = null;
+  // The hint sent to the top line (hint()), so it is sent again only when it changes.
+  let hintShown = null;
 
   // The objects can be edited on the stage: not read-only.
   const editable = () => !readOnly();
 
   function cameraValue() {
-    return cameraAt(state(), playhead());
+    return cameraAt(state(), playhead(), length(), content()?.lookBoxes ?? null);
   }
 
   // The Sticker with the id `id`: the node's own, else an upstream working copy (a drag changes it in place).
   const stickerOf = (scene, id) => findSticker(scene, upstream(), id);
+  // The output length a Sticker's loop follows: an upstream one's layer's, else the node's (row_object.js ownerLength).
+  const lengthOf = (sticker) => ownerLength(upstream(), sticker, length());
   // What a drag of the Sticker `id` copies of the state it started from (session.js gesture's copy): an upstream
   // object's drag changes its working copy, not the state, so the state is only replaced.
   const draftOf = (id) => (isUpstreamSticker(stickerOf(state(), id)) ? (base) => ({ ...base }) : undefined);
   // The evaluated value of a World Sticker at the playhead: the node's own from what is drawn, an upstream one from its
   // working copy.
   function stickerValue(sticker) {
-    if (isUpstreamSticker(sticker)) return evaluateSticker(sticker, playhead());
+    if (isUpstreamSticker(sticker)) return evaluateSticker(sticker, playhead(), lengthOf(sticker));
     return content()?.evaluated.stickers.find((item) => item.id === sticker.id) ?? null;
   }
 
@@ -139,7 +178,7 @@ export function createStageObjects({
   }
 
   // The drags of a sky image and of a paint group (stage_sky_objects.js, stage_paint_objects.js).
-  const skyDrag = createSkyDrag({ playhead, projection, edits, draftOf, stickerOf });
+  const skyDrag = createSkyDrag({ playhead, projection, edits, draftOf, stickerOf, lengthOf, shot, fps: () => state().timeline.fps, state, upstream });
   const { paintDrag } = createPaintDrags({ state, projection, edits });
 
   // --- What shows.
@@ -156,7 +195,7 @@ export function createStageObjects({
       if (tab() !== "3d") return null;
       const value = cameraValue();
       if (!value.visible || state().camera.locked === true) return null;
-      return { mode: shownGizmoMode(kind, mode()), transform: sceneTransform({ ...value, scale: 1 }) };
+      return { mode: shownGizmoMode(kind, mode(), lookingAt(state(), playhead(), length())), transform: sceneTransform({ ...value, scale: 1 }) };
     }
     if (kind !== "world-image" && kind !== "world-3d") return null;
     const sticker = stickerOf(state(), row);
@@ -167,14 +206,14 @@ export function createStageObjects({
   }
 
   // The selected sky image's geometry with its handles (pano_sticker_geometry.js), or null: the node's own or an
-  // upstream one.
+  // upstream one. `handed`: a sticker_state places it (its edge handles do not stretch it).
   function selectedSky() {
     const row = selection();
     const item = skyItems(state(), content()).find((entry) => entry.id === row)
       ?? (String(row ?? "").startsWith("upstream:") ? upstreamSkyItems(upstream(), content(), playhead()).find((entry) => entry.id === row) : null);
     if (!item) return null;
     const geometry = buildStickerGeometry(item, projection());
-    return geometry.visible ? { item, geometry } : null;
+    return geometry.visible ? { item, geometry, handed: handedOff(findSticker(state(), upstream(), row), shot()) } : null;
   }
 
   // The selected paint group with its geometry on the stage ({ object, geometry }, paintFrame), or null: not while
@@ -245,8 +284,261 @@ export function createStageObjects({
     const view = camera();
     if (!cameraMarkerShown(value, view.position, ground())) return null;
     const { width, height } = size();
-    const length = cameraMarkerLength(value, view, height, ground());
+    const length = cameraMarkerLength(ground());
     return cameraMarkerScreen(cameraMarkerShape(value, value.projection, length), view, width, height);
+  }
+
+  // --- The path line (docs/studio-ui.md "軌道の線").
+
+  // The selected object whose path line shows: { row, owner, offset (its time base's Timeline frame 0), length (the output
+// length its loop follows), period, canEdit },
+  // or null. In the 3D tab with the Cursor tool, the Camera or one World object with two position Keyframes or more.
+  function pathTarget() {
+    if (tab() !== "3d" || tool() !== "cursor") return null;
+    const row = selection();
+    const kind = selectedKind(state(), row, upstream());
+    let owner = null;
+    let canEdit = editable();
+    if (kind === "camera") {
+      owner = state().camera;
+      canEdit = canEdit && owner.locked !== true;
+    } else if (kind === "world-image" || kind === "world-3d") {
+      owner = stickerOf(state(), row);
+      canEdit = canEdit && !!owner && !upstreamStickerLocked(owner) && owner.locked !== true;
+    }
+    if (!owner || (owner.position?.keyframes.length ?? 0) < 2) return null;
+    const ownLength = kind === "camera" ? length() : lengthOf(owner);
+    return { row, owner, offset: owner.clip ? clipOrigin(owner.clip) : 0, length: ownLength, period: ownerPeriod(owner, ownLength), canEdit };
+  }
+
+  // The path line now ({ target, path, screen }), its path made again only when the owner changes and its screen points
+  // when the view does too.
+  let pathMade = { owner: null, period: null, offset: null, path: null, key: null, screen: null };
+  function pathNow() {
+    const target = pathTarget();
+    if (!target) return null;
+    if (pathMade.owner !== target.owner || pathMade.period !== target.period || pathMade.offset !== target.offset) {
+      pathMade = { owner: target.owner, period: target.period, offset: target.offset, path: pathOf(target.owner, target.period, target.offset), key: null, screen: null };
+    }
+    if (!pathMade.path) return null;
+    const { width, height } = size();
+    const view = camera();
+    const key = `${viewKey(view, width, height)}|${view.position.join(",")}`;
+    if (pathMade.key !== key) {
+      pathMade.key = key;
+      pathMade.screen = pathScreen(pathMade.path, view, width, height);
+    }
+    return { target, path: pathMade.path, screen: pathMade.screen };
+  }
+
+  // The selected Keyframes of the path's row on its position Lane (a closed row's pins and the position Lane's), as frames
+  // of its own time base.
+  function pathSelectedFrames(target) {
+    return keys().filter((key) => key.row === target.row && (key.lane === null || key.lane === "position")).map((key) => key.frame);
+  }
+
+  // The Keyframe whose handles show (docs/studio-ui.md "軌道の線" "ハンドル"): the one selected Keyframe, else (not while
+  // it plays) the one at the playhead; its index, or null.
+  function handleKey(shown) {
+    const { target, path } = shown;
+    const selected = pathSelectedFrames(target).filter((frame) => path.keys.some((key) => key.frame === frame));
+    if (selected.length === 1) return path.keys.find((key) => key.frame === selected[0]).index;
+    if (selected.length || playing()) return null;
+    const at = playhead() - target.offset;
+    return path.keys.find((key) => Math.abs(key.frame - at) <= 1e-6)?.index ?? null;
+  }
+
+  // The handles on the screen of the Keyframe `index` ([{ side, offset, written, x, y }]).
+  function screenHandles(shown, index) {
+    if (index === null) return [];
+    const { width, height } = size();
+    return pathHandles(shown.path, index).flatMap((handle) => {
+      const p = projectPoint(camera(), handle.tip, width, height);
+      return p ? [{ ...handle, x: p.x, y: p.y }] : [];
+    });
+  }
+
+  // The part of the path line under `point`: a handle, a Keyframe point, or the line (with its nearest frame), or null.
+  // Handles and points only count where the order puts them (handlesFirst: the handle; else the point and the line).
+  function pathPart(point, shown = pathNow(), { handles = true, rest = true } = {}) {
+    if (!shown) return null;
+    if (handles && shown.target.canEdit) {
+      const index = handleKey(shown);
+      const handle = handleUnder(screenHandles(shown, index), point);
+      if (handle) return { kind: "handle", index, side: handle.side, x: handle.x, y: handle.y };
+    }
+    if (!rest) return null;
+    const index = keyUnder(shown.screen, point);
+    if (index !== null) return { kind: "point", index, frame: shown.path.keys[index].frame, ...shown.screen.keys[index] };
+    if (onLine(shown.screen, point)) {
+      const frame = frameNear(shown.screen, point);
+      if (frame !== null) return { kind: "line", frame, x: point.x, y: point.y };
+    }
+    return null;
+  }
+
+  // The hint the top line shows over a part of the path line (docs/studio-ui.md "一行の知らせの種類").
+  function pathHint(part, shown) {
+    if (!part) return null;
+    if (part.kind === "handle") return "Drag to bend";
+    if (part.kind === "line") return "Click to go to this frame";
+    const corner = shown.path.keys[part.index].type === "corner";
+    return `Click to go to this Keyframe · Double-click for ${corner ? "Auto" : "Corner"}`;
+  }
+
+  // The working copy of the path's owner in a drag's draft.
+  function pathOwnerIn(draft, row) {
+    return row === "camera" ? draft.camera : stickerOf(draft, row);
+  }
+
+  // A drag of the handle `part` (pathPart): it moves on the plane through its tip facing the view and writes that side
+  // (path_line.js writeHandle: the other side lines up unless it is a corner).
+  function handleDrag(part, shown, point) {
+    const { row, period } = shown.target;
+    const handle = pathHandles(shown.path, part.index).find((item) => item.side === part.side);
+    const keyValue = shown.path.keys[part.index].value;
+    const { width, height } = size();
+    const start = dragPoint(camera(), point, width, height, handle.tip);
+    if (!start) return null;
+    pathDragged = { index: part.index, side: part.side };
+    const copy = row === "camera" ? undefined : draftOf(row);
+    return {
+      move(next) {
+        const now = size();
+        const at = dragPoint(camera(), next, now.width, now.height, handle.tip);
+        if (!at) return;
+        const tip = handle.tip.map((value, axis) => value + at[axis] - start[axis]);
+        edits.live((draft) => {
+          const owner = pathOwnerIn(draft, row);
+          if (!owner) return false;
+          writeHandle(owner, part.index, part.side, tip.map((value, axis) => value - keyValue[axis]), period);
+          return true;
+        }, copy);
+      },
+      end() {
+        pathDragged = null;
+        edits.commit();
+      },
+      cancel() {
+        pathDragged = null;
+        edits.cancel();
+      },
+    };
+  }
+
+  // A press on the Keyframe point `part`: selects it (Shift adds or takes it off) and takes the playhead to it; its drag
+  // moves its position on the plane through it facing the view (one Undo step). A locked one only selects.
+  function pointPress(part, shown, point, { shiftKey = false } = {}) {
+    const { target } = shown;
+    const frame = part.frame;
+    const selected = keys().filter((key) => key.row === target.row);
+    const has = selected.some((key) => (key.lane === null || key.lane === "position") && key.frame === frame);
+    let next = [{ row: target.row, lane: "position", frame }];
+    if (shiftKey) next = has ? selected.filter((key) => key.frame !== frame || (key.lane !== null && key.lane !== "position")) : [...selected, ...next];
+    else if (has) next = selected;
+    selectKeys(target.row, next);
+    seek(frame + target.offset);
+    if (!target.canEdit || shiftKey) return selectOnly();
+    const value = shown.path.keys[part.index].value;
+    const { width, height } = size();
+    const start = dragPoint(camera(), point, width, height, value);
+    if (!start) return selectOnly();
+    const { row } = target;
+    const copy = row === "camera" ? undefined : draftOf(row);
+    return {
+      move(next) {
+        const now = size();
+        const at = dragPoint(camera(), next, now.width, now.height, value);
+        if (!at) return;
+        edits.live((draft) => {
+          const owner = pathOwnerIn(draft, row);
+          const key = owner?.position.keyframes[part.index];
+          if (!key) return false;
+          key.value = value.map((c, axis) => c + at[axis] - start[axis]);
+          return true;
+        }, copy);
+      },
+      end() {
+        edits.commit();
+      },
+      cancel() {
+        edits.cancel();
+      },
+    };
+  }
+
+  // A press on the line: the playhead to the frame there, following the pointer while it is held.
+  function linePress(part, shown) {
+    seek(part.frame);
+    return {
+      move(next) {
+        const now = pathNow();
+        const frame = now ? frameNear(now.screen, next) : null;
+        if (frame !== null) seek(frame);
+      },
+      end() {},
+      cancel() {},
+    };
+  }
+
+  // A double click on a Keyframe point of the editable path line: Corner, or back to Auto from a corner, as one Undo
+  // step; the point takes it (also under the gizmo's center), so it does not set the orbit center. Whether it took it.
+  function doubleClick(point) {
+    const shown = pathNow();
+    if (!shown?.target.canEdit) return false;
+    const index = keyUnder(shown.screen, point);
+    if (index === null) return false;
+    const { row, period } = shown.target;
+    edits.live((draft) => {
+      const owner = pathOwnerIn(draft, row);
+      if (!owner) return false;
+      togglePointCorner(owner, index, period);
+      return true;
+    }, row === "camera" ? undefined : draftOf(row));
+    edits.commit();
+    return true;
+  }
+
+  // The original path of the row Simplify is adjusting, on the screen (path_line.js pathScreen's segments), or null.
+  function ghostScreen(target) {
+    const ghost = simplifyGhost();
+    if (!ghost?.owner || ghost.row !== target.row) return null;
+    const path = pathOf(ghost.owner, target.period, target.offset);
+    if (!path) return null;
+    const { width, height } = size();
+    return pathScreen(path, camera(), width, height).segments;
+  }
+
+  // The path line as stage_overlay.js draws it, or null.
+  function pathOverlay(altHeld) {
+    const shown = pathNow();
+    if (!shown) return null;
+    const { target, path, screen } = shown;
+    const selected = new Set(pathSelectedFrames(target));
+    const eased = selected.size ? easedSegments(target.owner, [...selected], target.length) : new Set();
+    const hot = altHeld ? null : pathHovered;
+    const index = handleKey(shown);
+    return {
+      segments: screen.segments.map((segment) => ({ ...segment, eased: eased.has(segment.k) })),
+      keys: screen.keys.map((key, i) => (key ? {
+        x: key.x,
+        y: key.y,
+        corner: path.keys[i].type === "corner",
+        selected: selected.has(path.keys[i].frame),
+        hot: hot?.kind === "point" && hot.index === i,
+      } : null)),
+      handles: index === null || !screen.keys[index] ? [] : screenHandles(shown, index).map((handle) => ({
+        x: handle.x,
+        y: handle.y,
+        from: screen.keys[index],
+        written: handle.written,
+        hot: (pathDragged ? pathDragged.index === index && pathDragged.side === handle.side : hot?.kind === "handle" && hot.side === handle.side),
+      })),
+      ticks: screen.frames.filter((item) => item.frame % PATH_TICK_FRAMES === 0),
+      // While Simplify is adjusted, the original path stays as a faint line (docs/studio-ui.md "軌道の線").
+      ghost: ghostScreen(target),
+      frame: hot?.kind === "line" ? { x: hot.x, y: hot.y, frame: hot.frame } : null,
+    };
   }
 
   // --- Which World object is under the pointer: one decision for the hover and the press (docs/space-and-view.md
@@ -270,26 +562,42 @@ export function createStageObjects({
   // What the pointer at `point` is over: { cursor (null over nothing touchable), changed (the drawing changed) }.
   function hover(point, { altHeld = false } = {}) {
     let cursor = null;
+    let stretchHint = false;
     let axis = null;
     let over = null;
+    let part = null;
+    const shownPath = point && !altHeld ? pathNow() : null;
     if (point && !altHeld) {
-      axis = gizmoHit(handles(), point);
+      part = pathPart(point, shownPath, { rest: false });
+      if (part) cursor = "grab";
+      axis = cursor === null ? gizmoHit(handles(), point) : null;
       if (axis !== null) cursor = "grab";
       const sky = editable() ? selectedSky() : null;
       if (cursor === null && sky && !sky.item.locked) {
         const handle = hitFrameAffordance(sky.geometry, point, { edges: true });
-        if (handle.kind !== "none" && handle.kind !== "move") cursor = handle.cursor;
+        // The edge handles of a returned shot do not stretch it: the top line says why (docs/editor-interaction.md).
+        if (oneAxis(handle) && sky.handed) stretchHint = true;
+        else if (handle.kind !== "none" && handle.kind !== "move") cursor = handle.cursor;
       }
       const paint = editable() ? selectedPaint() : null;
       if (cursor === null && paint && !paint.object.locked) cursor = paintHandleAt(paint, point)?.cursor ?? null;
-      over = objectUnder(point);
+      if (cursor === null) {
+        part = pathPart(point, shownPath, { handles: false });
+        if (part) cursor = part.kind === "point" && shownPath.target.canEdit ? "grab" : "pointer";
+      }
+      over = cursor === null ? objectUnder(point) : null;
       if (cursor === null && over) cursor = BODY_CURSOR;
       if (cursor === null && cameraMarkerHit(cameraMarker(), point)) cursor = BODY_CURSOR;
       if (cursor === null && skyObjectUnder(point)) cursor = BODY_CURSOR;
     }
-    const changed = over !== hovered || axis !== gizmoAxis;
+    const samePart = (a, b) => (a?.kind ?? null) === (b?.kind ?? null) && a?.index === b?.index && a?.side === b?.side && a?.frame === b?.frame;
+    const changed = over !== hovered || axis !== gizmoAxis || !samePart(part, pathHovered);
     hovered = over;
     gizmoAxis = axis;
+    const text = stretchHint ? STRETCH_HINT : pathHint(part, shownPath);
+    if (text !== hintShown) hint(text);
+    hintShown = text;
+    pathHovered = part;
     return { cursor, changed };
   }
 
@@ -305,7 +613,9 @@ export function createStageObjects({
     if (!grab) return null;
     const row = selection();
     const frame = playhead();
-    const base = row === "camera" ? cameraValue() : evaluateSticker(stickerOf(state(), row), frame);
+    const owned = row === "camera" ? null : stickerOf(state(), row);
+    const ownLength = row === "camera" ? length() : lengthOf(owned);
+    const base = row === "camera" ? cameraValue() : evaluateSticker(owned, frame, ownLength);
     const copy = row === "camera" ? undefined : draftOf(row);
     draggedAxis = axis;
     dragGuides = grab.guides ?? [];
@@ -323,12 +633,12 @@ export function createStageObjects({
         }
         edits.live((draft) => {
           if (row === "camera") {
-            setCameraLanes(draft.camera, frame, lanes);
+            setCameraLanes(draft.camera, frame, lanes, ownLength);
             return true;
           }
           const sticker = stickerOf(draft, row);
           if (!sticker) return false;
-          setWorldStickerTransform(sticker, frame, lanes);
+          setWorldStickerTransform(sticker, frame, lanes, ownLength);
           return true;
         }, copy);
       },
@@ -350,18 +660,31 @@ export function createStageObjects({
 
   // What a left press without Alt at `point` does: a drag handler { move(point, event), end(), cancel() }, or null
   // when it touches nothing (the stage looks around; its click without a move lets the selection go).
-  function press(point) {
+  function press(point, { shiftKey = false } = {}) {
     const canEdit = editable();
     // In the Camera tab only the selected object that can be edited takes the drag; a press on another one, or on a
     // locked one, selects it and passes (the drag moves the Camera).
     const passes = (row, locked) => tab() !== "3d" && !(canEdit && row === selection() && !locked);
+    const shownPath = pathNow();
+    // Shift takes only a Keyframe point (it adds to the selection); anything else keeps the stage's Shift.
+    if (shiftKey) {
+      const part = pathPart(point, shownPath, { handles: false });
+      return part?.kind === "point" ? pointPress(part, shownPath, point, { shiftKey }) : null;
+    }
+    const handlePart = pathPart(point, shownPath, { rest: false });
+    if (handlePart) {
+      const drag = handleDrag(handlePart, shownPath, point);
+      if (drag) return drag;
+    }
     if (canEdit) {
       const drag = gizmoDrag(point);
       if (drag) return drag;
       const sky = selectedSky();
       if (sky && !sky.item.locked) {
         const handle = hitFrameAffordance(sky.geometry, point, { edges: true });
-        if (handle.kind === "scale" || handle.kind === "scale_x" || handle.kind === "scale_y" || handle.kind === "rotate") {
+        // An edge handle of a returned shot takes the press and moves nothing.
+        if (oneAxis(handle) && sky.handed) return selectOnly();
+        if (handle.kind === "scale" || oneAxis(handle) || handle.kind === "rotate") {
           return skyDrag(handle.kind, sky.item, sky.geometry, point);
         }
       }
@@ -369,6 +692,9 @@ export function createStageObjects({
       const paintHandle = paint && !paint.object.locked ? paintHandleAt(paint, point) : null;
       if (paintHandle) return paintDrag(paintHandle.kind, paint.object, paint.geometry, point);
     }
+    const part = pathPart(point, shownPath, { handles: false });
+    if (part?.kind === "point") return pointPress(part, shownPath, point);
+    if (part?.kind === "line") return linePress(part, shownPath);
     const picked = objectUnder(point);
     if (picked) {
       const pass = passes(picked, !!guides().find((item) => item.id === picked)?.locked);
@@ -393,7 +719,20 @@ export function createStageObjects({
 
   // --- The overlay (stage_overlay.js draws it): the guides with their looks, the Camera's mark with its look, the
   // gizmo's handles with the one lit, the selected sky image's or paint group's frame and handles.
-  function overlay({ altHeld = false, gridHidden = false } = {}) {
+  // The Look at marks (docs/studio-ui.md "Look at" "見ている点の印"): the point the Camera looks at, the line to it from the
+  // Camera in the 3D tab, and while Pick waits the faint mark at what a click would pick (`hover`, a World point).
+  function lookOverlay(hover) {
+    const { width, height } = size();
+    const at = (point) => (point ? projectPoint(camera(), point, width, height) : null);
+    const point = lookMarkPoint(state(), playhead(), length(), content()?.lookBoxes ?? null);
+    const mark = at(point);
+    const from = mark && tab() === "3d" ? at(cameraValue().position) : null;
+    const preview = at(hover);
+    if (!mark && !preview) return null;
+    return { mark: mark ? { x: mark.x, y: mark.y } : null, from: from ? { x: from.x, y: from.y } : null, preview: preview ? { x: preview.x, y: preview.y } : null };
+  }
+
+  function overlay({ altHeld = false, gridHidden = false, lookHover = null } = {}) {
     const row = selection();
     // A 3D file just placed: its guide's band of light while it loads and fades in (load_reveal.js).
     const phase = loading ? loading.phase() : 0;
@@ -420,6 +759,9 @@ export function createStageObjects({
       // A guide's band runs now (StudioEditor.vue marks the overlay: data-loading-guide).
       loading: items.some((item) => item.shimmer > 0),
       camera: marker ? { screen: marker, look: row === "camera" ? "selected" : "normal" } : null,
+      // The selected object's path line (docs/studio-ui.md "軌道の線").
+      path: pathOverlay(altHeld),
+      look: lookOverlay(lookHover),
       // The handle dragged, else the one under the pointer (none while Alt is held), is lit.
       // While a handle is dragged, its axis guide lines ([{ name, a, b }] in CSS px: an axis's one, a plane square's two)
       // run across the stage.
@@ -428,7 +770,8 @@ export function createStageObjects({
         active: draggedAxis ?? (altHeld ? null : gizmoAxis),
         guides: guideLines,
       } : null,
-      sky: sky ? { geometry: sky.geometry, handles: editable() && !sky.item.locked, dashed: isUpstreamSticker(stickerOf(state(), sky.item.id)) } : null,
+      // A returned shot's edge handles show disabled (docs/editor-interaction.md).
+      sky: sky ? { geometry: sky.geometry, handles: editable() && !sky.item.locked, dashed: isUpstreamSticker(stickerOf(state(), sky.item.id)), edgesDisabled: sky.handed } : null,
       // The selected paint group's frame (its corners, its edge `outline` (bent on a lens Camera's picture), screen
       // center and rotate handle with its stem's base in CSS px), with its corner and rotate handles unless it is locked.
       paint: paint ? {
@@ -445,12 +788,16 @@ export function createStageObjects({
   return {
     hover,
     press,
+    doubleClick,
     overlay,
     // The pointer left the stage, or a drag began: nothing is hovered.
     leave() {
-      const changed = hovered !== null || gizmoAxis !== null;
+      const changed = hovered !== null || gizmoAxis !== null || pathHovered !== null;
       hovered = null;
       gizmoAxis = null;
+      if (hintShown !== null) hint(null);
+      hintShown = null;
+      pathHovered = null;
       return changed;
     },
   };

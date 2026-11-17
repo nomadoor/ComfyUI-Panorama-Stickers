@@ -22,7 +22,12 @@ class SceneLayer:
     the 3D media on the `scene` input (None without one), a 3D file as the SPLAT or MESH read from it
     (`_read_scene_file`), as is the 3D media in `port`. `media_ui` is the part of the execution `ui` that shows the
     layer's own media in an editor (the `sticker` media and the `scene` and 3D Sticker editor files); the files are
-    the producing node's and are not written again.
+    the producing node's and are not written again. `length` is the Timeline length the producing node decided, in
+    frames of the state's `timeline.fps`: the loop period of its looping owners (docs/scene-state-v2.md "ループ"),
+    carried so a downstream node evaluates the layer as upstream did (None: no loop). `boxes` is the content boxes of
+    the Stickers its Camera's Look at points at (`look_at_boxes`), by id. `shot` is the `sticker_state` its port
+    Sticker is handed (as `load_sticker_state` reads it; None without one), which places it (docs/scene-state-v2.md
+    "受け渡しの置き方").
     """
 
     state: dict
@@ -30,6 +35,9 @@ class SceneLayer:
     port: PortMedia | None
     scene: object
     media_ui: dict
+    length: float | None = None
+    boxes: dict | None = None
+    shot: dict | None = None
 
 
 @dataclass(frozen=True, eq=False)

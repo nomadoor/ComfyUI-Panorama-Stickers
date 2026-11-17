@@ -93,8 +93,6 @@ export const BOUND_NOTICE_SECONDS = 2;
 // A run of wheel steps in the Frame view is one Undo step, taken once the wheel has rested this long (the old Frame
 // view's 180 ms, editor/frame_view.js).
 export const FRAME_WHEEL_REST_MS = 180;
-// The least CSS px the Camera's mark in the 3D tab is long on screen (camera_marker.js cameraMarkerLength).
-export const CAMERA_GUIDE_MIN_PIXELS = 80;
 // The step (degrees) a turn held with Shift stops at, as a multiple of the absolute angle: the gizmo's Rotate, the sky
 // image's rotate handle (docs/studio-ui.md "ギズモ", "下の中央のバー"), and the Camera tab's Roll ruler.
 export const ROTATE_SNAP_DEG = 15;

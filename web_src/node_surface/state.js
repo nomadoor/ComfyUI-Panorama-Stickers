@@ -4,7 +4,7 @@ import { editorActive, LEGACY_BACKGROUND_COLOR, normalizeCoverageValue, parsePan
 import { loadSceneState } from "../pano_scene_state.js";
 import { NODE_SURFACE_FRAME, surfaceSceneEditorState } from "../pano_stickers_node_surface.js";
 import { backgroundColorWidget, isNodeOutputMediaCurrent } from "../pano_preview_video.js";
-import { portHandoffLinked } from "../pano_port_handoff.js";
+import { portHandoff, portHandoffLinked } from "../pano_port_handoff.js";
 import { nodeSurface, stateSync } from "../pano_node_bridge.js";
 import { ownOutputUiValue } from "./media.js";
 import { loadSharedUiSettings } from "../editor/ui_settings.js";
@@ -18,8 +18,19 @@ function getEffectiveStateSource(node) {
   return String(getWidget(node, "state_json")?.value || "");
 }
 
-// The state the node surface shows and edits. Panorama Studio's port Sticker shows the Pose handoff of the
-// node's current result as the run draws it (ADR 0030); the editor's working state already does.
+// The sticker_state of Panorama Studio's current result that places its port Sticker (the evaluation's `shot`,
+// docs/editor-interaction.md "`port` の Sticker の Pose handoff の表示と記録"), while the inputs it came from are linked
+// as they were; null otherwise.
+export function surfacePortShot(node) {
+  if (!node.__panoSceneStateV2 || !portHandoffLinked(node) || !isNodeOutputMediaCurrent(node, "sticker-handoff")) return null;
+  const value = ownOutputUiValue(node, "pano_sticker_handoff") ?? null;
+  const sync = stateSync(node);
+  if (sync.portShot?.value !== value) sync.portShot = { value, shot: portHandoff(value) };
+  return sync.portShot.shot;
+}
+
+// The state the node surface shows and edits. Panorama Studio's port Sticker shows as the sticker_state of the node's
+// current result places it, as the run draws it (ADR 0067); the editor's working state already does.
 export function getCachedState(node) {
   const sync = stateSync(node);
   const source = getEffectiveStateSource(node);

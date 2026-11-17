@@ -377,7 +377,7 @@ NEW_UI_SCRIPT = textwrap.dedent(
     // scene_b (30 fps): its world Sticker moved by the stage's drag, its port Sticker hidden and sized from the Timeline.
     session.gesture(() => {
       const plane = upstream.working().find((layer) => layer.key === "scene_b").sceneState.stickers.find((item) => item.origin.id === "sticker_1");
-      plane.position.keyframes.push({ frame: 20, value: [3, 1, -2], easing: "auto" });
+      plane.position.keyframes.push({ frame: 20, value: [3, 1, -2], easing: "smooth" });
       return true;
     }, (base) => ({ ...base }));
     session.commitGesture();

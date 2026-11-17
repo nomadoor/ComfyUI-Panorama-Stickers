@@ -1,0 +1,200 @@
+{
+  "kind": "pano_sticker_state",
+  "version": 3,
+  "fps": 30.0,
+  "length": 96.0,
+  "camera": {
+    "loop": true,
+    "position": [
+      {
+        "frame": 0,
+        "value": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "easing": "smooth"
+      },
+      {
+        "frame": 48,
+        "value": [
+          1.0,
+          0.0,
+          -2.0
+        ],
+        "easing": [
+          0.0,
+          0.0,
+          1.0,
+          1.0
+        ],
+        "corner": true
+      }
+    ],
+    "rotation": [
+      {
+        "frame": 0,
+        "value": {
+          "yaw_deg": 0.0,
+          "pitch_deg": 0.0,
+          "roll_deg": 0.0
+        },
+        "easing": "smooth"
+      },
+      {
+        "frame": 48,
+        "value": {
+          "yaw_deg": 30.0,
+          "pitch_deg": 0.0,
+          "roll_deg": 0.0
+        },
+        "easing": [
+          0.42,
+          0.0,
+          0.58,
+          1.0
+        ]
+      }
+    ],
+    "fov": [
+      {
+        "frame": 0,
+        "value": 60.0,
+        "easing": "smooth"
+      }
+    ],
+    "curve": [
+      {
+        "frame": 0,
+        "value": 1.0,
+        "easing": "smooth"
+      }
+    ],
+    "look_at": {
+      "value": {
+        "sticker": "sticker_3",
+        "offset": [
+          0.0,
+          0.35,
+          0.0
+        ]
+      },
+      "keyframes": [
+        {
+          "frame": 0,
+          "value": {
+            "point": [
+              0.0,
+              0.0,
+              -5.0
+            ]
+          },
+          "easing": "smooth"
+        },
+        {
+          "frame": 48,
+          "value": {
+            "sticker": "sticker_3",
+            "offset": [
+              0.0,
+              0.35,
+              0.0
+            ]
+          },
+          "easing": "smooth"
+        }
+      ]
+    }
+  },
+  "targets": [
+    {
+      "id": "sticker_3",
+      "loop": false,
+      "position": [
+        {
+          "frame": 10,
+          "value": [
+            0.0,
+            0.0,
+            -4.0
+          ],
+          "easing": "smooth"
+        },
+        {
+          "frame": 60,
+          "value": [
+            2.0,
+            0.0,
+            -4.0
+          ],
+          "easing": "hold"
+        }
+      ],
+      "rotation": [
+        {
+          "frame": 0,
+          "value": {
+            "yaw_deg": 0.0,
+            "pitch_deg": 0.0,
+            "roll_deg": 0.0
+          },
+          "easing": "smooth"
+        }
+      ],
+      "scale": [
+        {
+          "frame": 0,
+          "value": 1.0,
+          "easing": "smooth"
+        }
+      ],
+      "box": {
+        "center": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "size": [
+          1.0,
+          1.5,
+          0.0
+        ]
+      }
+    },
+    {
+      "id": "sticker_9",
+      "loop": false,
+      "position": [
+        {
+          "frame": 0,
+          "value": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "easing": "smooth"
+        }
+      ],
+      "rotation": [
+        {
+          "frame": 0,
+          "value": {
+            "yaw_deg": 0.0,
+            "pitch_deg": 0.0,
+            "roll_deg": 0.0
+          },
+          "easing": "smooth"
+        }
+      ],
+      "scale": [
+        {
+          "frame": 0,
+          "value": 1.0,
+          "easing": "smooth"
+        }
+      ],
+      "box": null
+    }
+  ],
+  "source_aspect": 1.5
+}

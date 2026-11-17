@@ -36,7 +36,6 @@ import { applyStickersNodeSurfaceAction } from "../web_src/pano_stickers_node_su
 import { cutoutFilmPointToWorldDir, worldDirToCutoutFilmPoint } from "../web_src/pano_cutout_view_math.js";
 import { evaluateCamera, evaluateSceneState, evaluateSticker } from "../web_src/pano_scene_eval.js";
 import { defaultCamera, loadSceneState, rebaseSceneState, sceneStateText } from "../web_src/pano_scene_state.js";
-import { laneNames } from "../web_src/pano_timeline.js";
 
 // A test helper: sets the Timeline fps of a working state v2, rebasing its times (rebaseSceneState) so they keep their
 // seconds, in place.
@@ -50,7 +49,8 @@ function setTimelineFps(state, fps) {
     // just added with a default Clip range and no Keyframes.
     if (!next) continue;
     if (owner.clip) owner.clip = next.clip;
-    for (const name of laneNames(owner)) owner[name].keyframes = next[name].keyframes;
+    // Every Lane the owner keeps (a port Sticker's offset Lanes too).
+    for (const name of Object.keys(next)) if (Array.isArray(next[name]?.keyframes)) owner[name].keyframes = next[name].keyframes;
   }
 }
 
@@ -524,16 +524,19 @@ test("Scene ids are random, URL-safe and 16 characters", () => {
 
 // A v2 state saved before the Camera had a projection reads as a Camera that shoots in perspective;
 // saving it again writes the same text, so the node's execution cache still hits.
-// The same holds for the lens curve (ADR 0042), for the fields of ADR 0030 (`id`, `next_sticker_id`, `upstream`, `handoff_overrides`) and for the
-// background's Clip range (`background`).
+// The same holds for the lens curve (ADR 0042), for the fields of ADR 0030 (`id`, `next_sticker_id`, `upstream`), for the
+// background's Clip range (`background`), for the loop marks and the Easing Smooth (ADR 0064) and for a port Sticker's
+// offset Lanes at their defaults (ADR 0067).
 test("a state saved before the Camera had a projection and before the visibility fields is saved as the same text", () => {
   const node = { __panoSceneStateV2: true };
   for (const name of ["v2_canonical", "v2_interpolation"]) {
     const { painting_visible: paintingVisible, id, next_sticker_id: nextStickerId, upstream, background, ...loaded } = loadSceneState(readFixture(name));
-    const { projection, erp_range: erpRange, visible, locked, curve, ...camera } = loaded.camera;
+    const { projection, erp_range: erpRange, visible, locked, curve, loop, look_at: lookAt, ...camera } = loaded.camera;
     const { visible: sceneVisible, ...scene } = loaded.scene;
-    const stickers = loaded.stickers.map(({ handoff_overrides: handoffOverrides, curve: stickerCurve, ...item }) => item);
-    const before = JSON.stringify({ ...loaded, camera, scene, stickers });
+    const atDefault = (lane, value) => !lane.keyframes.length && JSON.stringify(lane.value) === JSON.stringify(value);
+    const stickers = loaded.stickers.map(({ curve: stickerCurve, loop: stickerLoop, ...item }) => Object.fromEntries(Object.entries(item).filter(([key, lane]) => !(key === "offset_rotation" && atDefault(lane, { yaw_deg: 0, pitch_deg: 0, roll_deg: 0 })) && !(key === "offset_fov" && atDefault(lane, 1)))));
+    // Smooth, the default Easing (ADR 0064), is not written either.
+    const before = JSON.stringify({ ...loaded, camera, scene, stickers }, (key, value) => (key === "easing" && value === "smooth" ? undefined : value));
     const state = parseSceneEditorState(before);
     assert.equal(state.camera.projection, "perspective");
     assert.equal(editorStateText(node, state), before, name);

@@ -264,18 +264,20 @@ test("a cancel changes nothing here: the shell puts back the state from before t
   assert.deepEqual(result, { changed: false, history: false, stopPlayback: false, upstreamRevert: null, cancel: true });
 });
 
-test("Easing: a preset or a bezier sets every selected segment; the reset goes back to ease-in-out", () => {
+test("Easing: a preset or a bezier sets every target segment, and Smooth clears it", () => {
   const keyed = (easing) => [{ frame: 0, value: 1, easing }, { frame: 10, value: 2, easing }, { frame: 20, value: 3, easing }];
   const state = load({ stickers: [world("sticker_1", { scale: { value: 1, keyframes: keyed([0, 0, 1, 1]) }, opacity: { value: 1, keyframes: keyed([0, 0, 1, 1]) } })] });
-  const keyframes = { owner: "sticker_1", lane: null, frames: [0, 10] };
+  // Two selected: every segment from the leftmost to the rightmost (0 → 10 → 20).
+  const keyframes = { owner: "sticker_1", lane: null, frames: [0, 20] };
   applyInspectorEdit(state, { type: "easing", keyframes, easing: "hold", phase: "commit" }, { playhead: 0 });
   const easings = (lane) => state.stickers[0][lane].keyframes.map((key) => key.easing);
   assert.deepEqual(easings("scale").slice(0, 2), ["hold", "hold"]);
   assert.deepEqual(easings("opacity").slice(0, 2), ["hold", "hold"]);
   applyInspectorEdit(state, { type: "easing", keyframes: { ...keyframes, lane: "scale", frames: [10] }, easing: [0.1, 0.2, 0.3, 0.4], phase: "commit" }, { playhead: 0 });
   assert.deepEqual(easings("scale").slice(0, 2), ["hold", [0.1, 0.2, 0.3, 0.4]]);
-  applyInspectorEdit(state, { type: "easing-reset", keyframes }, { playhead: 0 });
+  applyInspectorEdit(state, { type: "easing", keyframes, easing: "smooth", phase: "commit" }, { playhead: 0 });
   assert.deepEqual(easings("scale").slice(0, 2), [DEFAULT_EASING, DEFAULT_EASING]);
+  assert.equal(DEFAULT_EASING, "smooth");
 });
 
 function upstreamFixture() {
@@ -319,14 +321,34 @@ test("an upstream element's field edit changes its working copy (the shell write
   assert.deepEqual(evaluateLane(upstream[0].sceneState.stickers[0], "position", 0), [5, 5, 9]);
 });
 
-test("a port Sticker's reset of a handed row puts an override back to the handoff, and does nothing to a Lane not overridden", () => {
-  const handoff = { placement: "sky", lanes: { direction: { value: { yaw_deg: 30, pitch_deg: 10 } }, roll: { value: 5 }, size: { value: { hFOV_deg: 40, vFOV_deg: 40 } } }, fps: 24 };
+// docs/editor-interaction.md "`port` の Sticker の Pose handoff の表示と記録": a returned shot's edits write its offset.
+const SHOT = { kind: "pano_sticker_state", version: 3, fps: 24, length: null, camera: { loop: false, position: [{ frame: 0, value: [0, 0, 0], easing: "smooth" }], rotation: [{ frame: 0, value: { yaw_deg: 30, pitch_deg: 0, roll_deg: 0 }, easing: "smooth" }], fov: [{ frame: 0, value: 50, easing: "smooth" }], curve: [{ frame: 0, value: 1, easing: "smooth" }], look_at: { value: null, keyframes: [] } }, targets: [], source_aspect: null };
+
+test("a returned shot's Offset and Zoom rows write its offset Lanes by the recording rule, and their resets go back to none", () => {
   const target = { kind: "sticker", id: "sticker_1" };
-  const state = load({ stickers: [{ id: "sticker_1", placement: "sky", source: { kind: "port" }, direction: { value: { yaw_deg: 90, pitch_deg: 0 } }, size: { value: { hFOV_deg: 70, vFOV_deg: 70 } }, handoff_overrides: ["size"] }] });
-  const before = structuredClone(state.stickers[0]);
-  assert.equal(applyInspectorEdit(state, { type: "reset", target, row: "rotation" }, { handoff }).changed, false);
-  assert.deepEqual(state.stickers[0], before);
-  assert.equal(applyInspectorEdit(state, { type: "reset", target, row: "fov" }, { handoff }).changed, true);
-  assert.deepEqual(state.stickers[0].size.value, { hFOV_deg: 40, vFOV_deg: 40 });
-  assert.deepEqual(state.stickers[0].handoff_overrides, []);
+  const state = load({ stickers: [{ id: "sticker_1", placement: "sky", source: { kind: "port" }, clip: { start: 4, in: 0, duration: null }, direction: { value: { yaw_deg: 90, pitch_deg: 0 } } }] });
+  const sticker = state.stickers[0];
+  assert.equal(applyInspectorEdit(state, { type: "field", target, field: "offset_yaw_deg", value: 12, phase: "commit" }, { handoff: SHOT, playhead: 10 }).changed, true);
+  assert.equal(applyInspectorEdit(state, { type: "field", target, field: "offset_fov", value: 0, phase: "commit" }, { handoff: SHOT, playhead: 10 }).changed, true);
+  assert.deepEqual([sticker.offset_rotation.value, sticker.offset_fov.value], [{ yaw_deg: 12, pitch_deg: 0, roll_deg: 0 }, 0.01]);
+  // Its own direction is kept, unused while the shot places it.
+  assert.deepEqual(sticker.direction.value, { yaw_deg: 90, pitch_deg: 0 });
+  // A Keyframe dot keys the offset at the clip frame (Timeline 10 is clip frame 6).
+  assert.equal(applyInspectorEdit(state, { type: "key", target, row: "offset" }, { handoff: SHOT, playhead: 10 }).changed, true);
+  assert.deepEqual(sticker.offset_rotation.keyframes.map((key) => key.frame), [6]);
+  assert.equal(applyInspectorEdit(state, { type: "reset", target, row: "zoom" }, { handoff: SHOT, playhead: 10 }).changed, true);
+  assert.equal(sticker.offset_fov.value, 1);
+  // The rows of a sky image do not apply to it.
+  assert.equal(applyInspectorEdit(state, { type: "field", target, field: "yaw_deg", value: 5, phase: "commit" }, { handoff: SHOT, playhead: 10 }).changed, false);
+  // Without the shot it is a sky image again.
+  assert.equal(applyInspectorEdit(state, { type: "field", target, field: "yaw_deg", value: 5, phase: "commit" }, { playhead: 10 }).changed, true);
+});
+
+// docs/studio-ui.md "Look at": the row's reset takes the target off, one Undo step; nothing to take off changes nothing.
+test("the Look at row's reset takes the Camera's target off as one Undo step", () => {
+  const state = load({ camera: { look_at: { value: { point: [0, 0, 0] } } } });
+  const target = { kind: "camera", id: "camera" };
+  assert.deepEqual(applyInspectorEdit(state, { type: "reset", target, row: "look_at" }, { playhead: 0 }).history, true);
+  assert.deepEqual(state.camera.look_at, { value: null, keyframes: [] });
+  assert.equal(applyInspectorEdit(state, { type: "reset", target, row: "look_at" }, { playhead: 0 }).changed, false);
 });

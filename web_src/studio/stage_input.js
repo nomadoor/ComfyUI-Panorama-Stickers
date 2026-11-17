@@ -27,7 +27,7 @@ export function createStageInput(shared, {
   canvas, root, world, selected, onEscape, follow, paint, win, now, objectDeps,
   camera, input, wheelSteps, editorView, scheduler, objects,
   viewMode, viewport, navCamera, commitFrame, cancelFrame, zoomFrame, report, skyWheel,
-  stopCoast, local, objectsOn, paintOn, directionsOf, samplesOf, moved, setPicking, setCenterAt, syncUi, requestDraw, resize,
+  stopCoast, local, objectsOn, paintOn, directionsOf, samplesOf, moved, setPicking, setLookPicking, setCenterAt, syncUi, requestDraw, resize,
 }) {
   // When (now(), ms) the wait's press last set T: the double click its clicks may make is not a second one.
   let pickedAt = -Infinity;
@@ -55,6 +55,17 @@ export function createStageInput(shared, {
     return { camera: view.camera, x, y, width: view.width, height: view.height };
   }
 
+  // What Look at's Pick takes under `point` (the stage's CSS px): the World point of the content there and the id of the
+  // World Sticker it is on (pano_three_view.js pick, pickSticker; null over the `scene` content or nothing).
+  function lookPick(point) {
+    const at = pickView(point);
+    if (!at || !editorView.ready) return { point: null, stickerId: null };
+    return {
+      point: editorView.pick(at.camera, at.x, at.y, at.width, at.height),
+      stickerId: editorView.pickSticker(at.camera, at.x, at.y, at.width, at.height),
+    };
+  }
+
   // The surface hit under `point` (the stage's CSS px): the GPU pick of the World content (pano_three_view.js pick) and
   // the ground. Read on a press and a wheel step only, never on a pointer move.
   function hitAt(point) {
@@ -77,6 +88,13 @@ export function createStageInput(shared, {
   // gizmo's handle lights up or goes out.
   function hoverAt(point) {
     shared.pointer = point;
+    // Look at's Pick: the faint mark follows what a click would pick.
+    if (shared.lookPicking) {
+      const picked = point ? lookPick(point) : null;
+      shared.lookHover = picked?.stickerId ? picked.point : null;
+      requestDraw(DRAW_REASON.OVERLAY);
+      return;
+    }
     if (paintOn()) {
       // The brush ring follows the pointer; nothing lights up under it.
       shared.objectCursor = null;
@@ -202,8 +220,8 @@ export function createStageInput(shared, {
   }
 
   // A left press on the objects (stage_objects.js press), in the view's box (on a lens Camera's bent picture too).
-  function pressObject(point) {
-    return objects.press(local(point, viewport()));
+  function pressObject(point, options = {}) {
+    return objects.press(local(point, viewport()), options);
   }
 
   // --- The stage's events.
@@ -215,6 +233,16 @@ export function createStageInput(shared, {
     const plainLeft = event.button === 0 && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey;
     // Panorama mode's frame only shows: nothing on the stage moves or selects there.
     if (viewMode() === "erp") return;
+    // Look at's Pick waits: the left press picks what is under it (the editor sets the target, or says there is nothing
+    // to look at and keeps waiting) and does nothing else.
+    if (shared.lookPicking && event.button === 0) {
+      event.preventDefault();
+      pickedAt = now();
+      const picked = lookPick(point);
+      if (objectDeps?.lookPicked?.(picked)) setLookPicking(false);
+      requestDraw();
+      return;
+    }
     // Set orbit center waits: the left press sets T there and does nothing else (no look, no selection, no stroke).
     if (shared.picking && event.button === 0) {
       event.preventDefault();
@@ -240,7 +268,10 @@ export function createStageInput(shared, {
     // object selects it and its drag moves the Camera (`passes`, docs/space-and-view.md "Frame 表示"). A press on
     // nothing lets the selection go on its click.
     let pressedObject = false;
-    let handler = plainLeft && objects && editorView.ready ? pressObject(point) : null;
+    // Shift with the left button reaches the objects for a Keyframe point of the path line only (it adds to the
+    // selection, docs/studio-ui.md "軌道の線"); anywhere else it stays the stage's.
+    const shiftLeft = event.button === 0 && event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey;
+    let handler = (plainLeft || shiftLeft) && objects && editorView.ready ? pressObject(point, { shiftKey: shiftLeft }) : null;
     if (handler?.passes) {
       handler.end();
       handler = null;
@@ -345,6 +376,12 @@ export function createStageInput(shared, {
     const mode = viewMode();
     if (event.button !== 0 || (mode !== "space" && mode !== "frame") || paintOn() || (mode === "frame" && paint?.active())) return;
     if (now() - pickedAt < DOUBLE_CLICK_AFTER_PICK_MS) return;
+    // A Keyframe point of the path line takes a double click (Corner or Auto, stage_objects.js doubleClick); Alt keeps
+    // the view's.
+    if (mode === "space" && !event.altKey && objects?.doubleClick?.(local(pointOf(event), viewport()))) {
+      requestDraw();
+      return;
+    }
     setCenterAt(pointOf(event));
   }
 
@@ -373,6 +410,7 @@ export function createStageInput(shared, {
     event.stopPropagation();
     // A view drag under way takes Escape first, then Set orbit center's wait (docs/studio-ui.md "閉じ方").
     if (shared.drag) end(true);
+    else if (shared.lookPicking) setLookPicking(false);
     else if (shared.picking) setPicking(false);
     else onEscape();
   }
@@ -441,6 +479,7 @@ export function createStageInput(shared, {
   function onLostFocus() {
     follow?.stop();
     setPicking(false);
+    setLookPicking(false);
     input.lostFocus();
     shared.keysMoving = false;
     wheelSteps.reset();

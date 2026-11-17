@@ -8,6 +8,7 @@ import { VIEW_CONTROLS_SETTING } from "./pano_view_controls.js";
 import { DIAGNOSTICS_EXPORT_COMMAND, DIAGNOSTICS_SETTING } from "./pano_diagnostics.js";
 import { disposeNodeRuntime, editorSession, nodeSurface, peekSceneViewer, previewNode, stateSync } from "./pano_node_bridge.js";
 import { waitForPendingStickerUploads } from "./pano_sticker_operations.js";
+import { writeStateWidget } from "./pano_state_widget.js";
 
 const STATE_WIDGET = "state_json";
 
@@ -26,8 +27,7 @@ function initializeNewCutoutFrame(node) {
   const result = applyCutoutNodeSurfaceAction(state, { type: "add-frame" });
   if (!result.changed) return false;
   const text = JSON.stringify(result.state);
-  stateWidget.value = text;
-  stateWidget.callback?.(text);
+  writeStateWidget(stateWidget, text);
   return true;
 }
 

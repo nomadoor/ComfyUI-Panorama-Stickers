@@ -34,6 +34,10 @@ const props = defineProps({
   imageSizes: { type: Object, default: () => ({}) },
   // The Pose handoff the port Sticker is shown with (pano_port_handoff.js portHandoff), or null: its handed rows' reset.
   handoff: { type: Object, default: null },
+  // The output length, the loop period of looping owners (docs/scene-state-v2.md "ループ").
+  length: { type: Number, default: null },
+  // Look at's Pick waits for a click on the stage (its row's Pick shows it).
+  lookPicking: { type: Boolean, default: false },
 });
 const emit = defineEmits(["edit", "close"]);
 
@@ -48,6 +52,8 @@ const model = computed(() => buildInspectorModel({
   portSize: props.portSize,
   imageSizes: props.imageSizes,
   handoff: props.handoff,
+  length: props.length,
+  lookPicking: props.lookPicking,
 }));
 
 // --- The Easing panel's size: its graph is square and as wide as the panel, smaller when it would leave less than

@@ -81,9 +81,9 @@ def _record_evaluated_frames(monkeypatch):
     frames = []
     original = evaluate_scene_state
 
-    def recording(state, frame):
+    def recording(state, frame, *rest):
         frames.append(frame)
-        return original(state, frame)
+        return original(state, frame, *rest)
 
     monkeypatch.setattr("comfyui_pano_suite.scene_render.evaluate_scene_state", recording)
     return frames

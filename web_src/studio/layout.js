@@ -93,3 +93,27 @@ export function saveOutputWindow(storage, { width, collapsed }) {
 export function outputWindowView({ collapsed, suspended = false }) {
   return { folded: !!collapsed || !!suspended, open: !collapsed && !suspended, foldable: !suspended };
 }
+
+// The least gap (px) between the bar at the bottom center and the View group at the bottom right (docs/design.md
+// "大きさ" BAR_VIEW_GAP).
+export const BAR_VIEW_GAP = 8;
+
+// Where the bar at the bottom center goes in a stage `stage` px wide (docs/studio-ui.md "下の中央のバー" "バーの置き場所"):
+// centered; moved left where it would come nearer than BAR_VIEW_GAP to the View group (`view` px wide at the bottom
+// right, `inset` from the edges); without its name's text (`name` px of it) where that is not enough; and scrolled inside
+// itself where even that does not fit. `bar` is its width with the name. Returns { left (px from the stage's left),
+// compact (no name text), maxWidth (px, or null: its own width) }.
+export function barPosition({ stage, bar, name = 0, view = 0, inset = 16 }) {
+  const right = stage - inset - view - BAR_VIEW_GAP;
+  const fit = (width) => {
+    const centered = (stage - width) / 2;
+    if (centered + width <= right) return centered;
+    const left = right - width;
+    return left >= inset ? left : null;
+  };
+  const full = fit(bar);
+  if (full !== null) return { left: full, compact: false, maxWidth: null };
+  const compact = fit(bar - name);
+  if (compact !== null) return { left: compact, compact: true, maxWidth: null };
+  return { left: inset, compact: true, maxWidth: Math.max(0, right - inset) };
+}

@@ -22,7 +22,22 @@ export const LINE_TEXT = Object.freeze({
   cameraMoved: "Camera moved to this view",
   // While Set orbit center waits for a click on the stage (docs/space-and-view.md "Set orbit center").
   pickCenter: "Click a spot to orbit around · Esc to cancel",
+  // While Look at's Pick waits for a click on the stage, and a click with nothing to look at (docs/studio-ui.md "Look at").
+  pickLook: "Click a spot to look at · Esc to cancel",
+  nothingToLookAt: "Nothing to look at here",
+  // A drag or wheel of the Camera tab where the Look at target changes.
+  lookChanging: "Look at is changing here",
 });
+
+// The done notice of a target picked (docs/studio-ui.md "Look at").
+export function lookingAtText(name) {
+  return `Looking at ${name}`;
+}
+
+// An object whose last Keyframe repeats its first while its loop is off (docs/timeline-ui.md "動きのループ").
+export function endsWhereItStartsText(name) {
+  return `${name} ends where it starts · Loop is off`;
+}
 
 // The names of the node's inputs that have a link. Asks the node (`isInputConnected(slot)`), not the deprecated
 // `input.link` field of the slot.
@@ -55,7 +70,9 @@ export function topLine(ui) {
   if (ui.notice) return { kind: "stopped", text: String(ui.notice) };
   if (ui.skyOnly) return { kind: "info", text: String(ui.skyOnly) };
   if (ui.done) return { kind: "done", text: String(ui.done) };
+  if (ui.info) return { kind: "info", text: String(ui.info) };
   if (ui.pickingCenter) return { kind: "info", text: LINE_TEXT.pickCenter };
+  if (ui.pickingLook) return { kind: "info", text: LINE_TEXT.pickLook };
   if (ui.view === "loading") return { kind: "loading", text: LINE_TEXT.viewLoading };
   if (ui.background === "loading") return { kind: "loading", text: LINE_TEXT.backgroundLoading };
   if (ui.adding) return { kind: "loading", text: LINE_TEXT.addLoading };
@@ -66,6 +83,9 @@ export function topLine(ui) {
   if (ui.background === "failed") return { kind: "warning", text: LINE_TEXT.backgroundFailed };
   if (ui.addWarning) return { kind: "warning", text: String(ui.addWarning) };
   if (ui.upstreamPending) return { kind: "info", text: LINE_TEXT.upstreamPending };
+  // The path line's hints while the pointer is over it (docs/studio-ui.md "軌道の線"): after every notice, before the
+  // empty screen's guide.
+  if (ui.pathHint) return { kind: "info", text: String(ui.pathHint) };
   if (ui.empty) return { kind: "info", text: LINE_TEXT.empty };
   return { kind: "info", text: "" };
 }

@@ -9,6 +9,7 @@ import { oldEditorHooks } from "./pano_editor.js";
 import { inputLinked, linkedInputType } from "./pano_preview_video.js";
 import { openStudioEditor, preloadStudioEditor } from "./studio/editor.js";
 import { openPreviewWindow } from "./studio/preview_window.js";
+import { setWorkflowChangeNotifier } from "./pano_state_widget.js";
 
 const openEditor = createEditorChooser({
   openOld: oldEditorHooks.openEditor,
@@ -41,4 +42,10 @@ extension.setup = async function (...args) {
   await setup?.apply(this, args);
   preloadStudio();
 };
+// A write of a state_json widget tells ComfyUI's active workflow to take the graph again (pano_state_widget.js).
+setWorkflowChangeNotifier(() => {
+  const tracker = app.extensionManager?.workflow?.activeWorkflow?.changeTracker;
+  if (typeof tracker?.captureCanvasState === "function") tracker.captureCanvasState();
+  else tracker?.checkState?.();
+});
 app.registerExtension(extension);
