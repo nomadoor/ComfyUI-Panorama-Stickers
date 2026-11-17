@@ -18,7 +18,10 @@ Panorama Studio はいつも新しい UI で開き、古い UI に Panorama Stud
 |---|---|---|---|
 | 記録の規則（静的な値・Keyframe の更新と追加・追加した Keyframe の Easing・行のポチ・消したときの `value`） | — | `web_src/pano_timeline.js` `setLaneValue`・`keyAllLanes`・`rowLaneNames`・`rowKeyframes`・`deleteKeyframes` | `tests/pano_timeline.test.mjs`、`tests/pano_editor_state.test.mjs` |
 | 閉じた行のポチ（まとめ表示・移動・削除）と Keyframe の移動の端 | — | `pano_timeline.js` `rowKeyframes`・`moveKeyframes` | `pano_timeline.test.mjs`、`tests/test_upstream_editor_parity.py` |
-| Easing の対象区間と「混在」 | — | `pano_timeline.js` `setSegmentEasing`・`selectedEasing`、`web_src/studio/inspector_model.js` の `easingModel`（画面は `docs/studio-ui.md` の「Easing のパネル」） | `pano_timeline.test.mjs`、`tests/studio_inspector_model.test.mjs` |
+| Easing の対象区間（一つ選んだときと、二つ以上選んだときの左端から右端まで）と「混在」、Smooth を含むプリセット | — | `pano_timeline.js` `setSegmentEasing`・`selectedEasing`、`web_src/studio/inspector_model.js` の `easingModel`（画面は `docs/studio-ui.md` の「Easing のパネル」） | `pano_timeline.test.mjs`、`tests/studio_inspector_model.test.mjs` |
+| 区間の途中に入れた Keyframe（Easing を分ける規則と、ハンドルを分ける規則。未実装） | — | `pano_timeline.js`（入れる所は一つ。曲線を分ける式と形の上の点は `web_src/pano_scene_eval.js` の部品を呼ぶ） | `pano_timeline.test.mjs` |
+| 物ごとのループの切り替えと、最後の Keyframe が最初と同じときの知らせ（未実装） | — | `web_src/studio/timeline_actions.js`、行のモデルは `timeline_model.js`、知らせの文は `web_src/studio/notice_line.js` | `studio_timeline_actions.test.mjs`、`studio_timeline_model.test.mjs` |
+| Simplify（何を残すかの順、ずれの測り方、残した Keyframe の形と Easing の決め方。未実装） | — | `web_src/studio/simplify.js`（評価は `pano_scene_eval.js` を呼ぶ）、バーの部品は `web_src/components/studio/StudioTimelineBar.vue` | `tests/studio_simplify.test.mjs`、`tests/browser/` の場面 |
 | Clip range の移動・切り詰めと、ドラッグで出力を延ばさない | — | `pano_timeline.js` `moveClip`・`trimClipStart`・`trimClipEnd`、`web_src/studio/timeline_actions.js` の `applyClipDrag` | `pano_timeline.test.mjs`、`tests/studio_timeline_actions.test.mjs`、`test_upstream_editor_parity.py` |
 | タイムラインの範囲と、エディタが知っている入力の長さ（Auto の長さの規則そのものは `docs/studio-node.md`） | — | `pano_timeline.js` `timelineSpan`・`autoTimelineLength`、`web_src/studio/timeline_model.js`、`web_src/studio/upstream.js`（上流の長さ） | `pano_timeline.test.mjs`、`tests/test_timeline_length_parity.py`、`tests/studio_timeline_model.test.mjs` |
 | fps と長さの欄（上限、リセット、目盛り） | — | `pano_timeline.js` `enteredTimelineFps`・`enteredTimelineLength`・`timelineTicks`、`web_src/studio/timeline_actions.js` `lengthEdit`・`enteredFps` | `pano_timeline.test.mjs`、`studio_timeline_actions.test.mjs` |
@@ -59,8 +62,13 @@ Panorama Studio はいつも新しい UI で開き、古い UI に Panorama Stud
 - ドラッグ中は、最初の変化でそのフレームに Keyframe が入り、以後はその Keyframe を更新する。
 - Keyframe のある Lane を変えても、静的な `value` は変えない。Lane の最後の Keyframe を消したときは、その Keyframe の値を `value` にする（消した瞬間に値が飛ばない）。複数の Keyframe を一度に消して Lane が空になるときは、再生ヘッドの位置での値を `value` にする。
 - タイムラインの行のポチを押すと、その時点の値で全 Lane に Keyframe が入る（あれば更新する）。最初の Keyframe もこの操作で打つ。
-- 行のポチは、レンズの Lane（Camera の `curve`、Sticker の `curve`（`sky`）と `lens`（`world`））には Keyframe を入れず、閉じた行のまとめ表示にも数えない（ADR 0042）。Blender の LocRotScale のキーがレンズの値を含まないのと同じである。レンズの値は、その Lane の行で、その Lane の編集（Camera の Lens curve の欄など）が記録の規則で Keyframe にする。行が扱う Lane は `pano_timeline.js` の `rowLaneNames` が決め、`keyAllLanes`・`rowKeyframes` が使う（`tests/pano_timeline.test.mjs` の「the row's key button does not key the lens Lanes, and its pins do not count them」）。
-- Keyframe と Keyframe の間に入れた Keyframe の Easing は、入れた区間の Easing を引き継ぐ。前後の区間がどちらも元の区間と同じ Easing になる。手で曲げた cubic-bezier も同じ値をそのまま写す（元の動きと厳密には一致しない）。最初の Keyframe より前に入れたときは、新しい Keyframe の Easing を既定値の ease-in-out とする。最後の Keyframe より後に入れたときは、それまで最後だった Keyframe の Easing（使われていなかった値）が新しい区間に掛かり、新しい Keyframe の Easing は既定値とする。
+- 行のポチは、レンズの Lane（Camera の `curve`、Sticker の `curve`（`sky`）と `lens`（`world`））には Keyframe を入れず、閉じた行のまとめ表示にも数えない（ADR 0042）。Camera の `look_at` の Lane（`docs/scene-state-v2.md` の「向く相手の値」）にも入れず、まとめ表示にも数えない（相手を変えるたびに、全部の Keyframe を直すことにならないようにするため。ADR 0065）。Blender の LocRotScale のキーがレンズの値を含まないのと同じである。レンズの値は、その Lane の行で、その Lane の編集（Camera の Lens curve の欄など）が記録の規則で Keyframe にする。行が扱う Lane は `pano_timeline.js` の `rowLaneNames` が決め、`keyAllLanes`・`rowKeyframes` が使う（`tests/pano_timeline.test.mjs` の「the row's key button does not key the lens Lanes, and its pins do not count them」）。
+- Keyframe と Keyframe の間に Keyframe を入れても、入れただけでは動きを変えない（ADR 0064）。入れる入口（行のポチ、インスペクタのポチ、値を変えたときの記録）はどれも同じ一つの部品を通る。ほかの Keyframe の `frame` は動かさない。
+  - 値：新しい Keyframe の値は、その時刻の今の値。
+  - Easing：入れた区間が Smooth なら、前後の区間は Smooth のまま（新しい Keyframe は止まらずに通る。前後に合わせて進み方が決まるので、進み具合はわずかに変わりうる）。`hold` なら前後とも `hold`。Linear（`[0, 0, 1, 1]`）なら前後とも Linear。それ以外の cubic-bezier（プリセットと、手で曲げた曲線）は、その時刻で曲線を二つに分け、前の区間に前半、新しい Keyframe に後半を書く。分けた二つは元の曲線と同じ動きになる（分けた値は丸めずに持つ。パネルに出す数字の桁は `docs/studio-ui.md` の「Easing のパネル」）。
+  - 軌道の形（`position` の Lane）：入れた区間の両端のどちらかにハンドルがあるときは、その時刻の形の上の点で区間のベジェを二つに分け（de Casteljau）、前の Keyframe の `handles.out`、新しい Keyframe の `handles.in`・`handles.out`、次の Keyframe の `handles.in` に書く（形は変わらない）。両端ともハンドルが無いときは、ハンドルを書かず、新しい Keyframe は自動のまま（点は元の線の上に乗るが、線の形はわずかに変わりうる。隣の Keyframe に古いハンドルを残さないため）。新しい Keyframe は角にしない。
+  - 値を今の値と違う値で入れたとき（ギズモでつかんで動かしたときなど）は、分けたハンドルを新しい値からの相対のまま保つ。
+  - 最初の Keyframe より前、最後の Keyframe より後に入れたときは、区間の途中ではないので、新しい Keyframe の Easing は Smooth とする。最後より後に入れたときは、それまで最後だった Keyframe の Easing（使われていなかった値）が新しい区間に掛かる。ループする持ち主の Lane（`docs/scene-state-v2.md` の「ループ」）では、最初より前と最後より後は、最後の Keyframe から最初へ戻る区間の途中なので、上の規則を当てる（前の区間の Easing を持つのは最後の Keyframe）。
 - Delete キーは、Keyframe を選んでいればその Keyframe を消し、そうでなければ選んだ物を消す（自分の物も上流の物も同じ順。上流の物の扱いは下の「上流の層の行」）。
 - Keyframe を消せるのは、タイムラインで選んで Delete したときだけ。消した後は残った Keyframe で補間し直す。全 Keyframe を一度に消すスイッチは作らない。
 - 古い UI のインスペクタには Keyframe を打つボタンを置かない。新しい UI のインスペクタには、行ごとの Keyframe のポチがある（下）。
@@ -98,10 +106,18 @@ Panorama Studio はいつも新しい UI で開き、古い UI に Panorama Stud
 
 ## Easing
 
-- 既定値は ease-in-out。Easing は区間ごとに、インスペクタのパネルで選ぶ（cubic-bezier のプリセットと曲線、`auto`、`hold`）。タイムラインの上で直接は曲げない。
-- cubic-bezier の制御点の縦方向は 0〜1 に限る。
-- 対象の区間：選んだポチそれぞれの、その Keyframe から次の Keyframe までの区間。選んでいないポチから始まる区間は、選んだポチの間にあっても変えない。Lane の最後の Keyframe には次の区間がないので、選んでも対象にしない（その Easing は使われない値なので変えない）。
-- パネルの選択肢は ease-in-out（既定）・linear・ease-in・ease-out のプリセット、`auto`、`hold`。cubic-bezier はグラフの二つの制御点をドラッグして変えられる。
+- Easing は区間ごとに、インスペクタのパネルで選ぶ（`docs/studio-ui.md` の「Easing のパネル」）。タイムラインの上で直接は曲げない。Easing が決めるのは、区間の形（軌道・回転の経路）の上をどう進むかだけで、形は変えない（`docs/scene-state-v2.md` の「補間」、ADR 0064）。どの操作も Keyframe の `frame` を動かさない。
+- 既定値は Smooth（何も設定していない区間。`docs/scene-state-v2.md` の「Keyframe」）。Keyframe を打っただけの動きは、最初でゆっくり出て、途中の Keyframe を止まらずに通り、最後でゆっくり止まる。
+- パネルの選択肢は Smooth・Hold・Linear・Ease in-out・Ease in・Ease out。Smooth を選ぶと、その区間の Easing を消す（Smooth に戻す）。プリセットと手で曲げた曲線は、書かれたとおりに進む。Ease in-out の区間は Keyframe ごとに止まり、Linear の区間は区間の中を同じ速さで進む。
+- cubic-bezier はグラフの二つの制御点をドラッグして変えられる。制御点の縦方向は 0〜1 に限る。
+- 対象の区間は、持ち主ごと、Lane ごとに数える。
+  - その Lane の選んだ Keyframe が一つなら、その Keyframe から次の Keyframe までの区間。
+  - 二つ以上なら、一番左の選んだ Keyframe から一番右の選んだ Keyframe までの全部の区間（間の、選んでいない Keyframe から始まる区間も含む）。
+  - 閉じた行のポチは、その時刻にある全部の Lane の Keyframe を選んだものとして数える。開いた行では、その Lane だけ。
+  - Lane の最後の Keyframe には次の区間がないので、一つだけ選んでも対象にしない（その Easing は使われない値なので変えない）。ループする持ち主の Lane では、最後の Keyframe から最初の Keyframe へ戻る区間を対象にする。二つ以上選んだときの範囲は、ループの継ぎ目をまたがない。
+- プリセットを選ぶと、対象の区間のそれぞれに同じ Easing を書く。グラフの制御点をドラッグしたときも、同じ曲線を対象の全部に書く。対象の区間の Easing が同じでないときは「混在」（下の「行とポチ」）。
+- 対象の範囲は、タイムラインの行の帯、軌道の線、パネルの見出しのフレームの範囲で示す（`docs/studio-ui.md` の「Easing のパネル」と「軌道の線」）。
+- Linear の区間が続くと、区間ごとの平均の速さが違えば、Keyframe の所で速さが変わる。そろえるには、Smooth を選ぶか、軌道の線の速さの点（`docs/studio-ui.md` の「軌道の線」）を見ながら Keyframe をドラッグして間隔を直す。
 
 ## タイムラインの表示
 
@@ -153,13 +169,55 @@ Panorama Studio はいつも新しい UI で開き、古い UI に Panorama Stud
   - `scene` 入力の要素：現在の実行結果の `pano_scene_files` の数。
   - 上流の Scene：実行結果の `pano_upstream_frames`（上流の出力のフレーム数）。
 - 実行前で入力の長さが分からないときの扱い：分からない入力は無いものとして、規則の次の段へ進む（1 フレームの入力と同じ）。例外として、背景の入力が LoadVideo のファイルを直接読むときは、そのファイルの長さ × Timeline fps を背景の VIDEO のフレーム数とする（ノードは VIDEO 自身のフレーム数を使うので、fps が違えば実行までずれる）。ほかに一致しないのは、背景の 1 フレームの VIDEO（エディタ用 MP4 を作らないのでエディタは長さを知らず、ノードはその VIDEO の 1 フレームを長さにする。`port` の 1 フレームの VIDEO はメタ情報だけを出すので一致する）。`pano_upstream_frames` を持たない古い版の実行結果では、上流の長さを 0 と数える（ADR 0063）。どれも次の実行で正しくなる。上流の Scene の下の VFR の背景 VIDEO は、実行の後もずれうる（エディタはメタ情報の `duration`（フレーム数 ÷ 平均 fps）を使い、ノードは最後のフレームの時刻 + 平均 fps の 1 フレームを使う。CFR では一致する）。
-- 再生はこの長さの中でループする（新しい UI では、タイムラインのバーのループのボタンがオンのとき。既定はオン。オフのときは最後の
+- 再生はこの長さの中でループする（新しい UI では、タイムラインのバーの再生のループのボタンがオンのとき。既定はオン。オフのときは最後の
   フレームで止まり、もう一度再生すると先頭から始める。スイッチはエディタだけの設定で、状態に入らず、ブラウザごとに覚える。ADR 0048）。
+  このボタンは再生だけのもので、出力の動きはループさせない。tooltip は「Loop playback: on」「Loop playback: off」。出力の動きのループは、物ごとの印が持つ（下の「動きのループ」）。
   再生ヘッドは最後のフレーム（長さ − 1）より先に行かない（`pano_video_playback.js` の `seek`。長さが縮んだときは最後のフレームへ戻す。新しい UI でそれを見るのは `web_src/studio/editor_view.js` の `keepPlayheadInSpan`、`tests/browser/studio_session.spec.js`）。そのため出力より先に Keyframe は打てない。
 - Keyframe の移動と Clip range のトリムは、出力の終わりより先へはドラッグできない（`pano_timeline.js` の `moveKeyframes` の `ceiling`、`web_src/studio/timeline_actions.js` の `moveKeys`・`applyClipDrag`）。Clip range の移動は、始まり（`start`）が出力の中（最後のフレーム、長さ − 1 まで）にある限り、終わりが出力の終わりより先へ出てよい。出た分は出力の外になるだけである。これはすべての Clip range の行（背景・Sticker・`scene`・上流の層の行）で同じ。Clip range の終わりのトリムは出力の終わりで止まる。すでに終わりより先にある Keyframe と Clip range は、それ以上先へは押さず、引き戻しもしない。ドラッグの間はタイムラインの範囲をドラッグを始めたときのまま保ち（`web_src/studio/timeline_actions.js` の `startClipDrag` の `limit`）、離してから新しい長さにする。
   - ドラッグで出力を延ばすことはできない（Auto の長さでも同じ）。延ばすときは長さの欄に値を入れる。Auto の長さが Sticker や `scene` の Clip range の終わりで決まるとき（背景の VIDEO・IMAGE バッチも `timeline.length` も無いとき）は、その終わりを先へ動かすと長さが延びてしまうので、移動した後にタイムラインの範囲がドラッグを始めたときの範囲（`limit`）を超えた分だけ戻す（`web_src/studio/timeline_actions.js` の `applyClipDrag`）。その Clip range は今の終わりで止まり、何度ドラッグしても長さは変わらない。長さが背景の素材か `timeline.length` で決まるときは、範囲がその Clip range によらないので戻さず、上の規則どおり終わりの外へ出てよい。
 - 終わりより先にある Keyframe と Clip range（`timeline.length` を短くしたとき）は、状態に残すが、出力に入らず、タイムラインにも出ない（After Effects と同じ）。消しも動かしもしない（既定値。オーナーは未承認）。
 - 時間で変わるものが何もない新しい Panorama Studio は 1 フレームのタイムラインになる。再生ボタンは無効になり（配置はそのまま）、Space キーも何もしない。再生ヘッドは frame 0 に留まる。長さの欄に値を入れるとその長さになり、アニメーションを付けられる。
+
+## 動きのループ
+
+出力の動きのループは、物ごとに決める（ADR 0064。規則は `docs/scene-state-v2.md` の「ループ」）。
+
+- Camera の行と Sticker の行（自分の物と、上書きを持てる上流の物）の頭に、ループのボタンを置く。置き場所は名前と行のポチの間（`docs/studio-ui.md` の「タイムラインのバー」の行の頭の並び）。ほかの行（背景、ペイント、`scene`、上流の層の見出し）は同じ幅を空ける。
+- 押すたびに、その物の `loop` を切り替える（オンかオフかだけのスイッチ。`docs/agents/ux-principles.md`）。Undo の 1 段。状態はアイコンの形で示し（`infinity` ／ `infinity-off`。`docs/design.md`）、再生のループのボタン（`repeat`）とは別の形にする。tooltip は「Loop motion: on」「Loop motion: off」。
+- ロックした物、読み取り専用のエディタ、上書きを持てない上流の層の物では、隠さずに無効にする。上流の物では、切り替えは上書きとして記録する（`docs/scene-state-v2.md` の「上流の上書き」）。
+- 周期はタイムラインの長さ（下の「タイムラインの長さ」。Auto の長さでも、そのとき決まった長さ）。ループのボタンは `timeline.length` を変えない。長さを変えると周期も変わる。
+- ループする Lane の行には、最後の Keyframe の後に、最初の Keyframe へ戻る印を出す：最後の Keyframe から周期の終わりまでの点線と、周期の終わりの位置の白抜きのポチ（見た目は `docs/design.md`）。印は表示だけで、選べない。
+- ループは、使う人がボタンを押したときだけオンになる。最後の Keyframe の値が最初と同じでも、エディタはループをオンにしない。
+- 物の、Keyframe を持つ Lane のどれかで、最後の Keyframe の値が最初の Keyframe の値と同じ（`docs/scene-state-v2.md` の「ループ」の許容差）で、その物のループがオフのとき、そうなった編集の直後に、上端の一行で一度知らせる（文は `docs/studio-ui.md` の「一行の知らせの種類」）。
+- 最後の Keyframe から最初へ戻る区間は、ほかの区間と同じに進む（残りのフレームが少なければ短い時間で戻る）。滑らかに戻したいときは、使う人がタイムラインを長くするか、最後の Keyframe を手前へ動かす。
+
+## Simplify
+
+選んだ Keyframe の範囲から、形を保ったまま Keyframe を減らす（ADR 0064）。細かい Keyframe（ほかの道具が書いたもの、動画から推定したもの）を、手で直せる数にするためのものである。残す Keyframe の `frame` は動かさず、するのは消すことと、残した Keyframe の Easing・ハンドルの書き直しだけである。
+
+- 入口はタイムラインのバーの Simplify のボタン（並びは `docs/studio-ui.md` の「タイムラインのバー」）。ボタンはいつも出す。押せるのは、一つの行だけで Keyframe を 3 つ以上選んでいるとき（二つ以上の行にまたがる選択では押せない。残す数が、どの行の数かを決められないため）。形を保ったまま消せるものがあるかどうかは、押せる条件にしない（一度減らした後に、さらに減らせるようにするため。持ち主、2026-11-17）。押せないときは、隠さずに無効にして理由を tooltip に出す。
+- 範囲は、その行の、一番左の選んだ Keyframe から一番右の選んだ Keyframe まで（間の、選んでいない Keyframe も含む）。閉じた行ではポチごとに、開いた行ではその Lane の Keyframe ごとに、残すか消すかを決める（閉じた行で、ポチの一部の Lane だけを消すことはしない）。
+- ずれの測り方：範囲の中の整数の Timeline frame ごとに、元の評価と、減らした後の評価を比べる。その行の全部の Lane を見て、Lane ごとのずれを下の物差しで割った値の最大を、その結果のずれとする。同じ frame どうしを比べるので、形のずれと、通る時刻のずれの両方を数える。
+
+  | Lane | ずれ | 物差し |
+  |---|---|---|
+  | `position` | World の距離 | 範囲の中の軌道を囲む箱の対角の長さ。`SIMPLIFY_MIN_EXTENT`（目の高さ `E`）より小さければその値 |
+  | Camera の `rotation` | 二つの向きの間の角度 | 範囲の中で向きが動いた角度（最初の Keyframe からの角度の最大）。Camera の H FOV より小さければその値 |
+  | `sky` の `direction` | 二つの方向の間の角度 | 同じく、動いた角度。その Sticker の `hFOV_deg` より小さければその値 |
+  | `world` の `rotation`、`sky` の `roll` | 角度 | 動いた角度。`SIMPLIFY_MIN_TURN_DEG`（5°）より小さければその値 |
+  | `fov`・`size`・`scale` | 値の比の対数の差 | 1（元の値に対する割合で測る） |
+  | `opacity`・`curve` | 値の差 | 1 |
+
+- 何を残すかの順：範囲の最初と最後、必ず残すもの（下）から始める。今の結果でずれが最大の frame を探し、その frame に一番近い、消してある Keyframe を一つ戻す。これを繰り返した順を「残す順」とする。残す数 `n` の結果は、この順の最初の `n` 個である（数を減らした結果は、数を多くした結果の一部になる）。
+- 必ず残すもの：範囲の最初と最後、`hold` の区間の始まりと終わりの Keyframe、角の Keyframe（`corner`）、ループの継ぎ目の Keyframe（範囲は継ぎ目をまたがない）、Camera の `look_at` の Lane の Keyframe。`hold` の区間は `hold` のままにし、その前後を別々に減らす。
+- 残した Keyframe の間の決め方（残す数を変えるたびに、元の状態から決め直す）：
+  - 形（`position`）：残した Keyframe のハンドルを消した自動の形で、その区間のずれが `SIMPLIFY_TOLERANCE` 以内なら自動のまま。そうでなければ、元の軌道のその点での向きと、隣の残した Keyframe までの元の軌道の長さの 3 分の 1 から、ハンドルを書く。
+  - Easing：その区間で、Smooth、Linear の順に試し、ずれが `SIMPLIFY_TOLERANCE` 以内になる最初のものを書く。どちらも合わなければ、元の進み方（時刻に対する、形に沿って進んだ長さの割合）に最小二乗で合わせた cubic-bezier を書く。
+- 既定の数：ずれが `SIMPLIFY_TOLERANCE`（1.2%）以内になる、一番少ない数。それが今の数と同じ（形を保ったまま消せるものが無い）なら、今の数。
+- 押した後の流れ：押すと、既定の数まで減らし（既定の数が今の数と同じなら、何も減らさずに）、ボタンのすぐ右にスライダーと数の表示（`48 → 11` の形。元の数と今の数）を出す。スライダーの目盛りは残す数で、元の数（左端）から、必ず残すものだけの数（右端。必ず残すものが範囲の両端だけなら 2）までの整数。既定の数より少なくすると、形が変わる（どこまで変えるかは、使う人が軌道を見て決める）。スライダーを動かすたびに、元の状態から、その数の結果を作り直す。ほかの所を押すか Enter で確定し、Escape で押す前の状態に戻す。スライダーをどれだけ動かしても、全部で Undo の 1 段。元の数のまま確定したときは、何も変えず Undo の段も作らない。確定した後、同じ範囲を選んでもう一度押せば、そこからさらに減らせる。
+- 調整している間：タイムラインには、消える Keyframe を薄い白抜きのポチで出す。ステージには、元の軌道を灰色の線で残す（`docs/studio-ui.md` の「軌道の線」）。再生は調整中も使える。
+- スライダーと数の表示は、調整している間だけ出す（`docs/agents/ux-principles.md` の例外）。席はいつも空けておき、出入りでバーのほかの部品を動かさない。
+- 量（`SIMPLIFY_TOLERANCE`・`SIMPLIFY_MIN_EXTENT`・`SIMPLIFY_MIN_TURN_DEG`）は `web_src/studio/simplify.js` の定数に置く。
 
 ## 表示（目のアイコン）
 
@@ -200,7 +258,7 @@ Keyframe の選び方（新しい UI。ADR 0048）：
 
 - 囲みの四角は、ルーラーのすぐ下からトラックの列の下端までに収め、上辺と角丸がいつも見えるようにする。カーソルはその外へ出てよい。
   選ぶのは、見えている四角が囲んだ Keyframe。
-- Keyframe を選んでいる間は、インスペクタの下端に Easing のパネルが出て、変えると選んだ全部の区間に効く（「混在」の規則は上と同じ）。
+- Keyframe を選んでいる間は、インスペクタの下端に Easing のパネルが出て、変えると対象の区間（上の「Easing」）の全部に効く（「混在」の規則は上と同じ）。
 - 再生ヘッドはルーラーのクリックとドラッグだけで動く。トラックのクリックでは動かさない（範囲選択を始めたクリックで再生ヘッドが飛ばない
   ように）。
 - 行の名前をダブルクリックすると、その物へ Frame Selected で寄る（`docs/space-and-view.md` の「Frame Selected」。tooltip で知らせる）。
@@ -257,7 +315,7 @@ Keyframe の選び方（新しい UI。ADR 0048）：
 
 ## Camera の動き
 
-Camera は Keyframe だけで動く（撮り方のモードは持たない）。ドリーズームは `position` と `fov` の Lane に Keyframe を打って作る（κ を一緒に動かしてもよい）。レンズの曲線の Lane（`curve`）も、Camera の行を開いた Lane ごとの行に、ほかの Lane と同じく出る（`docs/scene-state-v2.md`）。行のポチは `curve` に Keyframe を入れない（上の「記録の規則」）。止まらずに複数の点を通る動きは、Easing の `auto` で作る（ADR 0026、0038）。Camera のタイムラインは Panorama Studio が持つ（ADR 0029）。
+Camera は Keyframe だけで動く（撮り方のモードは持たない）。ドリーズームは `position` と `fov` の Lane に Keyframe を打って作る（κ を一緒に動かしてもよい）。レンズの曲線の Lane（`curve`）も、Camera の行を開いた Lane ごとの行に、ほかの Lane と同じく出る（`docs/scene-state-v2.md`）。行のポチは `curve` に Keyframe を入れない（上の「記録の規則」）。止まらずに複数の点を通る動きは、何も設定しない Easing（Smooth）でそのまま作れる（ADR 0064）。被写体を見たまま回り込む動きは、Camera の Look at（`docs/studio-ui.md` の「Look at」）と、軌道の点の種類で作る。Camera のタイムラインは Panorama Studio が持つ（ADR 0029）。
 
 ## 再生の状態
 
@@ -340,4 +398,4 @@ Panorama Studio の `scene` 入力に上流の Scene があるとき、タイム
 
 ## Pose handoff の `port` の Sticker
 
-`sticker_state` で届く `port` の Sticker は、実行結果の Pose handoff（`pano_sticker_handoff`）を当てた姿で、タイムラインの行と Lane にも出る（引き継いだ Lane には上流の Camera の軌道の Keyframe が並ぶ）。引き継いだ Lane の Keyframe を打つ・動かす・消す・Easing を変えると、その Lane は下流の上書き（`handoff_overrides`）になり、Lane 全体（上流から来ていた Keyframe を含む）を保存する。Clip range・目のアイコン・ロックの操作は上書きにならず、ふつうに保存する。上書きを外すのはインスペクタの行のリセットと下の中央のバーの「元に戻す」（`docs/studio-ui.md` の「`port` の Sticker」）。ノードの規則は `docs/studio-node.md` の「`sticker_state` で届く `port` の Sticker」、エディタの表示と記録は `docs/editor-interaction.md` の「`port` の Sticker の Pose handoff の表示と記録」。
+`sticker_state` で届く `port` の Sticker は、撮った Camera に従う姿で、タイムラインの行に出る（ADR 0067）。行を開いたときの Lane は、ずらし（向きと画角）と不透明度で、撮った Camera の Keyframe は並ばない（Camera の動きは上流のノードのもので、ここでは直さない）。ずらしの Lane の Keyframe を打つ・動かす・消す・Easing を変えるのは、ほかの Lane と同じ規則で、上流の Camera を直してもそのまま残る。Clip range・目のアイコン・ロック・ループの操作も、ほかの Sticker と同じに保存する。

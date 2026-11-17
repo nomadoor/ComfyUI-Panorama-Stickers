@@ -49,10 +49,24 @@ _Avoid_: Keyframe group, トラック
 ある Timeline frame における Lane の値。
 
 **Easing**:
-Keyframe 間の時間方向の補間。cubic-bezier（既定は ease-in-out）、`auto`（止まらずに通過）、`hold` のいずれか。
+Keyframe 間の区間を、区間の形（軌道など）の上でどう進むか。形は変えない（ADR 0064）。Smooth（既定）、cubic-bezier、`hold` のいずれか。
+
+**Smooth**:
+何も設定していない区間の Easing。動きの始まりと終わりではゆっくり出て止まり、間の Keyframe は前後と速さをつないで止まらずに通る。
+_Avoid_: Auto（前の版の `auto` は Smooth として読む）、点の種類の意味での「smooth」
 
 **Motion path**:
-位置の Keyframe 間を結ぶ空間方向の軌道。
+位置の Keyframe 間を結ぶ空間方向の軌道。エディタは 3D タブに線で描く。
+
+**点の種類**:
+軌道の上の Keyframe の通り方。Auto（自動で滑らか）、Bezier（書かれたハンドルで滑らか）、Corner（角）。
+_Avoid_: Smooth point（Easing の Smooth と紛れる）
+
+**動きのループ**:
+物ごとの印で、最後の Keyframe の次に最初の Keyframe が来ること。周期は出力の長さ。エディタの再生のループ（出力に影響しない）とは別のもの。
+
+**Look at**:
+Camera が、選んだ相手（World の物の上の一点、または World の一点）を向き続けること。向きだけを決め、軌道は変えない（ADR 0065）。
 
 **Cut**:
 `hold` の Easing によって Camera を次の Keyframe へ瞬時に移すこと。専用の仕組みは持たない。
@@ -96,7 +110,7 @@ Camera で Scene を画像にする方法。ERP、透視投影など。
 _Avoid_: coverage（旧ノードの入力の名前。Panorama Studio では使わない）
 
 **Pose handoff**:
-透視投影の Camera で撮影したときの Camera の軌道（`sticker_state`）を別の Panorama Studio の `sticker` に渡し、切り抜いた内容を撮影した位置と向きへ戻すこと。Camera の位置によらず、撮った向きと画角の `sky` の Sticker になる（ADR 0059）。実行のたびに引き継ぎ、下流で触った Lane（`handoff_overrides`）だけが下流の値になる（ADR 0030）。
+透視投影の Camera で撮影したときの Camera の軌道（`sticker_state`）を別の Panorama Studio の `sticker` に渡し、切り抜いた内容を撮影した位置と向きへ戻すこと。Camera の位置によらず、撮った向きと画角の `sky` の Sticker になる（ADR 0059）。置き方は「撮ったときの Camera」との関係として持ち、下流は、撮った Camera からの小さなずらし（向き `offset_rotation` と画角の倍率 `offset_fov`）だけを保存する（ADR 0067）。
 
 **PANO_SCENE**:
 Panorama Studio が出力する Scene の値。Camera を含まない。状態と入力素材を結び付けた派生値であり、正は各ノードの `state_json` にある。
