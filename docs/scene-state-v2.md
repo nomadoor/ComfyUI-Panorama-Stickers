@@ -1,6 +1,6 @@
 # 状態 v2 と評価関数
 
-Panorama Studio の `state_json`（状態 v2）、Camera を持つ Panorama Studio が出力する `sticker_state` v2、
+Panorama Studio の `state_json`（状態 v2）、Camera を持つ Panorama Studio が出力する `sticker_state`（v3）、
 「状態と時刻 → その時刻の値」を返す評価関数、fps の再基準化、上流の上書きの記録と当て方を定める。
 用語は `CONTEXT.md` に従う。決めた理由は ADR 0023（座標）、0024（時間）、0025（Scene の正）、0026（Keyframe の Lane）、
 0029（Panorama Studio）、0030（上流の上書き）、0032（v1 の読み替えで保たないもの）、0033（Timeline の上限）にある。
@@ -18,7 +18,10 @@ Panorama Studio の `state_json`（状態 v2）、Camera を持つ Panorama Stud
 | パノラマの角度規約（yaw・pitch・roll と ERP の対応） | `core/math.py` `camera_basis`・`ray_directions`・`lon_lat_to_erp` | `web_src/pano_camera_math.js` | `tests/test_camera_orientation.py`、`tests/pano_camera_math.test.mjs` |
 | Timeline の上限の定数 | `scene_state.py` の `TIMELINE_FPS_MIN`・`TIMELINE_FPS_MAX`・`TIMELINE_LENGTH_MAX`・`TIMELINE_FRAME_MAX` | `pano_scene_state.js` の同名の定数 | フィクスチャ `v2_timeline_limits` |
 | `sticker_state` の読み込み | `scene_state.py` `load_sticker_state` | `pano_scene_state.js` `loadStickerState` | `test_scene_state.py`、`pano_scene_state.test.mjs`、`test_scene_state_parity.py` |
+| 受け渡しの置き方（`sticker_state` が届いている `port` の Sticker の向き・大きさを、撮った Camera と、Camera の差としてのずらしから求める規則。未実装） | `scene_eval.py`（評価関数の引数 `shot`） | `pano_scene_eval.js`（同じ引数） | フィクスチャ `tests/fixtures/scene_state/v2_handoff.json`（Python と JS が同じファイルを読む） |
 | 評価関数と補間 | `core/scene_eval.py` `evaluate_scene_state` | `web_src/pano_scene_eval.js` `evaluateSceneState` | `tests/test_scene_eval.py`、`test_scene_state_parity.py` |
+| 形と進み具合（位置の自動の形と角の Keyframe、長さで測る `PATH_SAMPLES`、Smooth の端の速さ）、物ごとのループ（未実装） | `scene_eval.py` の `PATH_SAMPLES` と補間の部品 | `pano_scene_eval.js` の `PATH_SAMPLES` と補間の部品（エディタの軌道の線も同じ部品を呼ぶ。`docs/studio-ui.md` の「軌道の線」） | フィクスチャ `v2_shape_progress`・`v2_loop`（Python と JS が同じファイルを読む）、`test_scene_eval.py` |
+| Look at（Camera の `look_at` の Lane の読み込みと、向く相手から向きを求める規則。未実装） | `scene_state.py` の読み込み、`scene_eval.py` の評価、方向から向きへの変換は `core/world.py`（`look_rotation`） | `pano_scene_state.js`・`pano_scene_eval.js`、変換は `web_src/pano_world.js`（`lookRotation`） | フィクスチャ `v2_look_at`（Python と JS が同じファイルを読む） |
 | 素材の先頭（`start − in`）と、Timeline frame から素材の先頭からのフレームへの直し方（`frame − (start − in)`） | `scene_eval.py` `_clip_frame` | `pano_scene_eval.js` `clipOrigin`・`clipFrame`（エディタ・タイムライン・`port` の素材の時刻も呼ぶ） | `tests/pano_scene_eval.test.mjs`、評価の `clip_frame` を比べる `test_scene_state_parity.py` |
 | fps の再基準化 | `scene_state.py` `rebase_scene_state` | `pano_scene_state.js` `rebaseSceneState` | `test_scene_state.py`、`pano_scene_state.test.mjs`、`test_scene_state_parity.py` |
 | 上書きの記録の再基準化 | `scene_state.py` `rebase_upstream_record` | `pano_scene_state.js` `rebaseUpstreamRecord` | `tests/test_scene_inherit.py`、`tests/pano_scene_inherit.test.mjs`、`tests/test_upstream_editor_parity.py` |
@@ -44,7 +47,7 @@ Python と JS の両方の test が同じファイルを読む。Python と JS �
 - 不正な値は、そのフィールドの既定値に戻す。範囲外の値は範囲の端に寄せる。状態全体を捨てることはしない。
 - 旧ノードの `merge_state`・`parse_sticker_state`（`core/state.py`）も、同じ JSON の読み方（`scene_state.py` の `parse_json`。`NaN`・`Infinity` のリテラルは JSON として読めず、float にできない整数は非有限値）で読み、一つの値のために状態全体を捨てない。`merge_state` は Sticker と shot の中の非有限の値をキーごと除き、読む側がそのフィールドの既定値を使う。
 - 正規化は冪等である。`load_scene_state` の結果をもう一度読むと同じ結果になる。
-- 未知のフィールドは読み込み時に捨てる。状態 v2 には、どのコードも読まない予約項目を置かない。Clip range 外の保持やループなどは、実装するときに項目を追加する。
+- 未知のフィールドは読み込み時に捨てる。状態 v2 には、どのコードも読まない予約項目を置かない。Clip range 外の保持などは、実装するときに項目を追加する。
 - 出力のキーの順序は、この文書の表の順とする（Python と JS で同じ）。
 
 ### 座標と角度
@@ -56,7 +59,7 @@ Python と JS の両方の test が同じファイルを読む。Python と JS �
 | FOV・角度サイズ（`hFOV_deg`・`vFOV_deg`） | 度。`hFOV_deg` は水平方向の全画角 | `camera` の `fov`、`sky` の Sticker の `size` |
 | `scale` | 素材の単位に対する倍率（一様） | `scene`・`world` の Sticker の `scale` |
 
-角度規約と World の間の変換（Z の反転）は `core/world.py` と `web_src/pano_world.js` だけが行う。この契約のコードは変換をしない。回転 0 の `world` の板は、回転 0 の Camera の正面に置くと Camera の方を向く。
+角度規約と World の間の変換（Z の反転）は `core/world.py` と `web_src/pano_world.js` だけが行う。この契約のコードは変換をしない。World の方向 `d = (x, y, z)` を向く yaw と pitch を求める変換（Look at が使う）も、同じ二つのファイルに置く（`look_rotation` / `lookRotation`）：`yaw_deg = atan2(x, −z)`、`pitch_deg = atan2(y, √(x² + z²))`（World の前方 `-Z` が、角度の規約の正面 +Z に当たる）。エディタの、物を点に向ける計算（`web_src/space/placement.js` `facingRotation`、`web_src/studio/landing.js` `facingYaw`）は、この変換を呼ぶ。回転 0 の `world` の板は、回転 0 の Camera の正面に置くと Camera の方を向く。
 
 パノラマの角度規約（`core/math.py` の `camera_basis`・`ray_directions`・`dir_to_lon_lat`・`lon_lat_to_erp`、JS は `web_src/pano_camera_math.js`）：
 
@@ -80,7 +83,7 @@ Python と JS の両方の test が同じファイルを読む。Python と JS �
   "version": 2,
   "id": null,
   "timeline": {"fps": 24.0, "length": null},
-  "camera": {"aspect": 1.0, "projection": "perspective", "position": {...}, "rotation": {...}, "fov": {...}, "curve": {...}},
+  "camera": {"aspect": 1.0, "projection": "perspective", "loop": false, "position": {...}, "rotation": {...}, "fov": {...}, "curve": {...}, "look_at": {...}},
   "scene": {"clip": {...}, "position": {...}, "rotation": {...}, "scale": {...}},
   "stickers": [],
   "next_sticker_id": 1,
@@ -108,6 +111,8 @@ Python と JS の両方の test が同じファイルを読む。Python と JS �
 | `camera.locked` | 真偽値 | `false` | 真偽値でなければ既定値。Camera のロック（下のバーと Camera タブの操作を止める。`docs/studio-ui.md`）。Sticker の `locked` と同じく保存し、既定値のときは書かない。Python は読むだけで、描画には使わない（ロックしても同じに撮る） |
 | `camera.position`・`camera.rotation`・`camera.fov` | Lane | 下記 | Camera の値（Viewport camera は保存しない） |
 | `camera.curve` | Lane | 下記 | レンズの曲線 κ（ADR 0042）。`erp` では読まない |
+| `camera.loop` | 真偽値 | `false` | 真偽値でなければ既定値。Camera の動きをループさせる（下記「ループ」。ADR 0064）。既定値のときは保存するテキストに書かない |
+| `camera.look_at` | Lane | 下記 | Camera が向く相手（下記「Lane」と「Look at」。ADR 0065）。相手が無く Keyframe も無いときは、保存するテキストに書かない |
 | `scene.clip` | Clip range | 下記 | `scene` 入力が有効な範囲 |
 | `scene.visible` | 真偽値 | `true` | 真偽値でなければ既定値。`false` なら `scene` 入力を描かない |
 | `scene.position`・`scene.rotation`・`scene.scale` | Lane | 下記 | `scene` 入力に掛ける変形 |
@@ -123,7 +128,7 @@ Python と JS の両方の test が同じファイルを読む。Python と JS �
 
 `scene` は、`scene` 入力が接続されていなくても常に存在する。
 
-`camera` は、Camera をちょうど 1 台持つ（ADR 0029、ADR 0048）。正規化した結果は常にオブジェクトで、`aspect`・`projection`・`erp_range`・`visible`・`locked`・`position`・`rotation`・`fov`・`curve` をこの順に持つ。
+`camera` は、Camera をちょうど 1 台持つ（ADR 0029、ADR 0048）。正規化した結果は常にオブジェクトで、`aspect`・`projection`・`erp_range`・`visible`・`locked`・`loop`・`position`・`rotation`・`fov`・`curve`・`look_at` をこの順に持つ。
 
 #### 既定の Camera
 
@@ -146,7 +151,8 @@ Python と JS の両方の test が同じファイルを読む。Python と JS �
 - ノードでの扱い：状態 v2 を読み書きするのは Panorama Studio だけで、欠け・`null` の `camera` は既定の Camera として読む（`docs/studio-node.md` の「Panorama Studio」）。エディタは Camera を消さない（消す操作は無い）。Camera のボタンで Camera を今の視点へ持ってくるのは、Camera の Lane の編集である（`docs/studio-ui.md`）。
 - 既存の状態：`camera` のオブジェクトを持つ状態は、そのまま読み、`projection` は書いてあればその値、無ければ `perspective` になる。`camera` が `null` の状態（今までの「Camera が無い」）は既定の Camera（Panorama、原点）として読み、出力は今までと同じ（`coverage` が 180 だった Studio は、Camera の `erp_range` が既定の 360 になるので出力が変わる。Panorama Studio は公開前なので、移す手順は持たない。ADR 0048）。fps の再基準化は状態全体と同じく `camera` の時刻も直す。
 - レンズの値：Keyframe が無く `value` が既定値（1）の `curve` の Lane は、保存するテキストに書かない（下の「保存するテキスト」と同じ理由で、今の状態のテキストとノードのキャッシュを変えない）。既定値ではノードの出力も今と同じになる。読み込みは欠けたら既定値にする。
-- 保存するテキスト：エディタとノード上の UI は `sceneStateText`（`pano_scene_state.js`）で `state_json` を書く。正規化した状態をそのまま JSON にするが、後から足した項目は既定値のときは書かない：`camera.projection` の `perspective`、`camera.erp_range` の 360、`camera.visible`・`scene.visible`・`painting_visible` の `true`、`camera.locked` の `false`。欠けた `ground` は欠けのまま書かない（値が入っているときだけ書く）。`camera` が既定の Camera と同じ（どの値も既定の Camera の値で、Keyframe が無い）ときは、`"camera": null` と書く（読み込みで既定の Camera に戻る。今までの「Camera が無い」状態のテキストも `"camera": null` なので、保存したテキストとノードのキャッシュが変わらない）。ComfyUI の実行のキャッシュは `state_json` のテキストを比べるので、これらを書くと、その項目より前に保存した状態をエディタで開いて閉じただけで再実行になる。書かなくても、読み込みで既定値に戻るので意味は変わらない（`load_scene_state` の結果を書き出して読むと同じ結果になる）。既定値でないとき（`erp`、非表示）だけ書く。同じ理由で、ADR 0030 の項目も次のときは書かない：`id` の `null`、空の `upstream`、`port` の Sticker の空の `handoff_overrides`、Sticker から求まる値（下記「Sticker の id の採番」の最小値）と同じ `next_sticker_id`。既定の Clip range（`start` 0・`in` 0・`duration` `null`）の `background` も書かない（`pano_scene_state.js` の `defaultClip`）。Python は `state_json` を書かないので、この関数を持たない。
+- 保存するテキスト：エディタとノード上の UI は `sceneStateText`（`pano_scene_state.js`）で `state_json` を書く。正規化した状態をそのまま JSON にするが、後から足した項目は既定値のときは書かない：`camera.projection` の `perspective`、`camera.erp_range` の 360、`camera.visible`・`scene.visible`・`painting_visible` の `true`、`camera.locked` の `false`。欠けた `ground` は欠けのまま書かない（値が入っているときだけ書く）。`camera` が既定の Camera と同じ（どの値も既定の Camera の値で、Keyframe が無い）ときは、`"camera": null` と書く（読み込みで既定の Camera に戻る。今までの「Camera が無い」状態のテキストも `"camera": null` なので、保存したテキストとノードのキャッシュが変わらない）。ComfyUI の実行のキャッシュは `state_json` のテキストを比べるので、これらを書くと、その項目より前に保存した状態をエディタで開いて閉じただけで再実行になる。書かなくても、読み込みで既定値に戻るので意味は変わらない（`load_scene_state` の結果を書き出して読むと同じ結果になる）。既定値でないとき（`erp`、非表示）だけ書く。同じ理由で、ADR 0030 の項目も次のときは書かない：`id` の `null`、空の `upstream`、`port` の Sticker の、Keyframe が無く既定値のずらしの Lane（`offset_rotation`・`offset_fov`）、Sticker から求まる値（下記「Sticker の id の採番」の最小値）と同じ `next_sticker_id`。既定の Clip range（`start` 0・`in` 0・`duration` `null`）の `background` も書かない（`pano_scene_state.js` の `defaultClip`）。Python は `state_json` を書かないので、この関数を持たない。
+- 動きの項目（ADR 0064、ADR 0065）も、既定値のときは保存するテキストに書かない：Keyframe の `easing` の Smooth（下記「Keyframe」）、Keyframe の `corner` の `false`、`camera.loop` と Sticker の `loop` の `false`、相手が無く Keyframe も無い `camera.look_at`。
 
 ### Lane
 
@@ -165,6 +171,7 @@ Keyframe を持つ単位である。パラメータごとに一つあり、ど�
 | `camera` | `rotation` | 回転 |
 | `camera` | `fov` | `hFOV_deg` の数値（`90`、保存は 0.1〜360。評価した値は、評価した `curve` の κ による画角の上限（式は `docs/render-contract.md` の「カメラのレンズ」、`lens_fov_limit`・`lensFovLimit`）に寄せる）。画像の横の端の光線が光軸となす角の 2 倍 |
 | `camera` | `curve` | レンズの曲線 κ の数値（`1`、0〜1）。1 が直線の像、0.5 が立体射影、0 が等距離射影の魚眼。写し方の式は `docs/render-contract.md` の「カメラのレンズ」 |
+| `camera` | `look_at` | 向く相手（下記「向く相手の値」。既定値は相手なしの `null`）。数値の Lane ではなく、ハンドルを持たない |
 | `scene`・`world` の Sticker | `position` | 位置（`[0, 0, 0]`） |
 | `scene`・`world` の Sticker | `rotation` | 回転 |
 | `scene`・`world` の Sticker | `scale` | 数値（`1`、0 以下は既定値） |
@@ -173,6 +180,8 @@ Keyframe を持つ単位である。パラメータごとに一つあり、ど�
 | `sky` の Sticker | `size` | `hFOV_deg`（`20`、保存は 0.1〜360）、`vFOV_deg`（`20`、保存は 0.1〜360）。評価した値は、評価した `curve` の κ による上限（Camera の `fov` と同じ）に寄せる |
 | `sky`・`world` の Sticker | `opacity` | 数値（`1`、0〜1） |
 | `world` の Sticker | `lens` | 持たない（既定）か、`curve`（κ、`1`、0〜1）と `hFOV_deg`（`90`、0.1〜360、κ による上限（Camera の `fov` と同じ）に寄せる）の組（ADR 0042）。持たない Sticker は平らな板、持つ Sticker は κ = 1 も含めていつも球面の一部の板（`docs/render-contract.md` の「`world` の Sticker の板」。κ を Keyframe で 1 をまたいで動かしても形が跳ばない） |
+| `port` の Sticker | `offset_rotation` | 撮った Camera の向きからの、向きのずらし。回転と同じ形（`yaw_deg`・`pitch_deg`・`roll_deg`、どれも `0`）で、撮った Camera の自分の軸で測る（下記「受け渡しの置き方」。ADR 0067） |
+| `port` の Sticker | `offset_fov` | 撮った Camera の画角に掛ける倍率の数値（`1`、0 以下は既定値） |
 | `sky` の Sticker | `curve` | レンズの曲線 κ の数値（`1`、0〜1。ADR 0042）。Camera の `curve` と同じ写し方で、素材をその κ のレンズの像として向きに置く（`docs/render-contract.md` の「Sky の描き方」）。`size` の画角の上限は Camera の `fov` と同じ。保存するテキストでは `opacity` の後、`z_index` の前に置く |
 
 回転は `yaw_deg`（`0`）、`pitch_deg`（`0`、−90〜90）、`roll_deg`（`0`）である。欠けたフィールドや不正なフィールドは、Lane の `value` ではなく、このフィールドの既定値になる。Lane 自体が欠けている・オブジェクトでないときは `{"value": 既定値, "keyframes": []}` になり、`value` が数値の Lane で `value` が不正なときも既定値になる。
@@ -181,28 +190,51 @@ Keyframe を持つ単位である。パラメータごとに一つあり、ど�
 - `yaw_deg`・`roll_deg` は範囲に丸めない。360° の差は同じ向きを表す。
 - `sky` の Sticker の `direction` は yaw と pitch を一つの Lane にまとめる。別々に補間すると、球面上をまっすぐ進まないためである。
 - `sky` の Sticker の値は、中心の方向（`direction`）、画面内の回転（`roll`）、角度サイズ（`size`）である。
-- `sky` の Sticker の `curve` は Lane にする。Pose handoff（ADR 0036）は Camera の値をフレームごとに焼くので、撮った Camera の `curve` に Keyframe があれば、Sticker の `curve` もフレームごとの Keyframe になる。動かない κ は Keyframe の無い静的な値になる（ほかの Lane と同じ）。Keyframe が無く `value` が 1 の `curve` は、保存するテキストに書かない（見た目も今と同じ）。`world` の Sticker の `lens` は、`curve` と `hFOV_deg` の組で持つ。球面の一部の形は κ だけでは決まらず（半径か角度の広さがもう一つ要る）、`hFOV_deg` があれば `scale` と合わせて半径が決まるためである（`size` と同じく 2 つの数値をそれぞれ補間する）。`lens` は欠けてよい Lane で、欠けていれば読み込みでも足さず、保存するテキストにも書かない（平らな板）。あれば値によらず書く。今は書く経路が無く（ADR 0059 の前の Pose handoff が書いた。今の Pose handoff はいつも `sky` の Sticker を渡す）、保存した状態にあるものを読んで描く。
+- `sky` の Sticker の `curve` は Lane にする。`sticker_state` が届いている `port` の Sticker は、自分の `curve` ではなく、撮った Camera の `curve` を使う（下記「受け渡しの置き方」）。
 - Source が `port` の Sticker の vFOV は、`hFOV_deg` と素材（最初のフレーム）のアスペクト比から求める派生値で、状態には書かない。ポートの素材は状態の外で差し替わるためである。ノードは描くときに求め（`core/render.py` の `derive_vfov`）、エディタとノード上の表示も描くときと当たり判定のときに同じ式で求める（`web_src/pano_editor_state.js` の `skyStickerVfov`）。`port` の Sticker を加えるときは `vFOV_deg` を `hFOV_deg` と同じ値で保存し（Keyframe も同じ）、素材が読み込まれても書き直さない。これで素材の読み込みが `state_json` を変えず、実行の key（`docs/studio-node-surface.md` の「一行の状態」）がずれない。保存された `vFOV_deg` は、素材の大きさがわかるまでの表示にだけ使い、エディタで `port` の Sticker の大きさを変えても `hFOV_deg` だけを書く（inspector の V FOV は無効）。ノードが加える `port` の Sticker（Pose handoff の Keyframe を含む）も `vFOV_deg` を `hFOV_deg` と同じ値にする。 κ ≠ 1 では、像の中心の `f` が縦横で同じになるよう `g_κ(vFOV ÷ 2) = g_κ(hFOV ÷ 2) × 高さ ÷ 幅` から求める（`core/math.py` の `vfov_from_hfov(..., curve)`。`g_κ` は `docs/render-contract.md` の `lens_radius`。κ = 1 では `tan` の式）。
+
+#### 向く相手の値
+
+`camera.look_at` の Lane の値は、次のどれかである（ADR 0065）。
+
+```json
+{"sticker": "sticker_3", "offset": [0.0, 0.35, 0.0]}
+{"point": [1.0, 1.2, -3.0]}
+null
+```
+
+| 形 | 意味と正規化 |
+|---|---|
+| `{"sticker": <id>, "offset": [x, y, z]}` | 自分の状態の `world` の Sticker と、その Sticker の上の一点。`offset` は、Sticker の中身の箱（下記「Look at」の「中身の箱」）の中心からのずれを、箱の大きさに対する割合で表す（成分ごと。`[0, 0, 0]` が中心、`[0.5, 0, 0]` が右の端）。割合で持つので、中身を入れ替えても（Replace）、切り抜きや縦横比が変わっても、同じ所（顔など）を指し続ける。Sticker の `rotation` と `scale` は、その上に掛かる。`sticker` が空でない文字列でなければ `null`。`offset` が 3 つの有限の数値でなければ `[0, 0, 0]` |
+| `{"point": [x, y, z]}` | World の一点（glTF 座標）。3 つの有限の数値でなければ `null` |
+| `null` | 相手なし。Camera の向きは `rotation` の Lane で決まる |
+
+- `sticker` の id の Sticker が状態に無い、または `sky` の Sticker のときは、評価で相手なしとして扱う（値は保つ。Sticker を消して Undo で戻したときに、相手が戻る）。
+- 上流の層の Sticker は相手にできない（自分の状態の Sticker だけ）。
+- エディタが今書くのは Lane の `value` だけである（相手一つが Timeline の全体に効く）。Keyframe は読み込みと評価が受け付ける（`docs/studio-ui.md` の「Look at」）。
 
 ### Keyframe
 
 ```json
-{"frame": 24, "value": <値>, "easing": [0.42, 0, 0.58, 1], "handles": {"in": [x, y, z], "out": [x, y, z]}}
+{"frame": 24, "value": <値>, "easing": [0.42, 0, 0.58, 1], "corner": false, "handles": {"in": [x, y, z], "out": [x, y, z]}}
 ```
 
 | フィールド | 型 | 正規化 |
 |---|---|---|
 | `frame` | 整数 | 基準は「時間」の節のとおり。負の値も許す。数値でなければその Keyframe を捨てる |
 | `value` | Lane の値の形 | Lane と同じ規則 |
-| `easing` | `[x1, y1, x2, y2]`、`"auto"`、または `"hold"` | この Keyframe から次の Keyframe までの区間の Easing。既定値は ease-in-out の `[0.42, 0, 0.58, 1]`。最後の Keyframe の `easing` は使われない |
+| `easing` | `[x1, y1, x2, y2]`、`"hold"`、または `"smooth"` | この Keyframe から次の Keyframe までの区間の Easing。区間の形の上をどう進むかだけを決め、形は変えない（下記「補間」）。既定値は Smooth（`"smooth"`）。欠けた値、読めない値、`"auto"`（前の版の値）は Smooth として読む。Smooth は保存するテキストに書かない。最後の Keyframe の `easing` は使われない（ループする持ち主では、最後の Keyframe から最初の Keyframe へ戻る区間に使う） |
+| `corner` | 真偽値（任意） | `position` の Lane だけが持つ。それ以外では捨てる。`true` は角の Keyframe（軌道がそこで折れる）。真偽値でなければ `false`。`false` は書かない |
 | `handles` | オブジェクト（任意） | `position` の Lane だけが持つ。それ以外では捨てる |
 
 - `keyframes` は `frame` の昇順に並べる。同じ `frame` が複数あるときは、入力で後にあるものを残す。
-- cubic-bezier は CSS の `cubic-bezier(x1, y1, x2, y2)` と同じで、単位正方形の (0, 0) から (1, 1) への曲線の制御点である。横軸は区間内の時間、縦軸は進み具合。4 つとも 0〜1 でなければならず、外れたもの・数値が 4 つでないものは既定値の ease-in-out になる。`y1`・`y2` も 0〜1 に限るので、値は区間の両端の値の間を外れない（行き過ぎない）。同じ値の Keyframe を二つ置いた区間は完全に止まる。
+- Smooth は、何も設定していない区間の Easing である。動きの始まりと終わり（最初・最後の Keyframe、`hold` の隣）ではゆっくり出て止まり、間の Keyframe は前後と速さをつないで止まらずに通る（下記「補間」の「進み具合」）。Easing を書かずに値だけを並べた状態（ほかの道具が書いたものなど）は、そのまま滑らかに動く。
+- cubic-bezier は CSS の `cubic-bezier(x1, y1, x2, y2)` と同じで、単位正方形の (0, 0) から (1, 1) への曲線の制御点である。横軸は区間内の時間、縦軸は進み具合。4 つとも 0〜1 でなければならず、外れたもの・数値が 4 つでないものは Smooth になる。`y1`・`y2` も 0〜1 に限るので、値は区間の両端の値の間を外れない（行き過ぎない）。cubic-bezier の区間は、書かれた曲線のとおりに進む（評価関数は曲線を変えない）。同じ値の Keyframe を二つ置いた区間は完全に止まる。
 - `"hold"` は、次の Keyframe の `frame` まで値を保ち、その時刻で次の値へ瞬時に切り替える。Camera ではこれが Cut になる。
-- `"auto"` は Keyframe で止まらずに通過する補間とする。`auto` の滑らかさは `hold` をまたがない。
-- Motion path のハンドル `handles.in` / `handles.out` は、その Keyframe の `position` からの相対的なずれで、World の glTF 座標で表す。`in` は前の Keyframe から来る軌道、`out` は次の Keyframe へ向かう軌道の接線を決める。どちらも任意で、ないほうは自動で滑らかにする。不正なハンドルは捨て、両方ないときは `handles` 自体を置かない。
-- `auto`・cubic-bezier・ハンドルの計算は「補間」の節で定める。
+- `"auto"` は前の版の値で、読み込みで Smooth にする。前の版の `auto` は間の Keyframe を通るだけで、動きの始まりと終わりではゆるまなかったので、`auto` を使っていた状態は、端の動きが変わる（ADR 0064）。
+- Motion path のハンドル `handles.in` / `handles.out` は、その Keyframe の `position` からの相対的なずれで、World の glTF 座標で表す。`in` は前の Keyframe から来る軌道、`out` は次の Keyframe へ向かう軌道の接線を決める。ハンドルは軌道の形だけを決め、進む速さは変えない。どちらも任意で、ないほうは自動で滑らかにする。不正なハンドルは捨て、両方ないときは `handles` 自体を置かない。
+- 点の種類（`docs/studio-ui.md` の「軌道の線」の Auto・Bezier・Corner）は、`corner` と `handles` から決まる派生の値で、状態には書かない：`corner` が `true` なら Corner、そうでなく `handles` があれば Bezier、どちらも無ければ Auto。
+- cubic-bezier・Smooth・ハンドル・角の計算は「補間」の節で定める。
 
 ### Clip range
 
@@ -239,6 +271,7 @@ Keyframe を持つ単位である。パラメータごとに一つあり、ど�
   "clip": {"start": 0, "in": 0, "duration": null},
   "visible": true,
   "locked": false,
+  "loop": false,
   "crop": {"x0": 0.0, "y0": 0.0, "x1": 1.0, "y1": 1.0},
   "direction": {"value": {"yaw_deg": 0.0, "pitch_deg": 0.0}, "keyframes": []},
   "roll": {"value": 0.0, "keyframes": []},
@@ -256,6 +289,7 @@ Keyframe を持つ単位である。パラメータごとに一つあり、ど�
 | `clip` | Clip range | 上記 | |
 | `visible` | 真偽値 | `true` | `false` なら描画しない（タイムラインの行の目のアイコン） |
 | `locked` | 真偽値 | `false` | エディタでの操作を禁じる |
+| `loop` | 真偽値 | `false` | 真偽値でなければ既定値。この Sticker の動きをループさせる（下記「ループ」。ADR 0064）。既定値のときは保存するテキストに書かない |
 | `crop` | `x0`・`y0`・`x1`・`y1`（0〜1） | 全体 | 2D の素材の切り抜き。素材の正規化座標（左上が原点）。0〜1 に寄せた後、`x0 ≤ x1`・`y0 ≤ y1` になるよう並べ替える（旧描画の min / max による正規化と同じ） |
 | `direction`・`roll`・`size` | Lane | 上記 | `sky` の Sticker だけが持つ（`world` では捨てる） |
 | `position`・`rotation`・`scale` | Lane | 上記 | `world` の Sticker だけが持つ（`sky` では捨てる） |
@@ -264,7 +298,8 @@ Keyframe を持つ単位である。パラメータごとに一つあり、ど�
 | `lens` | Lane または欠け | 欠け | `world` の Sticker だけが持てる（上の Lane の表。`sky` では捨てる） |
 | `animation` | オブジェクト または欠け | 欠け | 3D ファイル（`file` の 3D ファイルの Source と、`port` の 3D ファイルの素材）の glTF のアニメーション（ADR 0043。`scene_state.py` の `_animation`、`pano_scene_state.js` の `animationValue`。`tests/test_scene_state.py`・`tests/pano_scene_state.test.mjs`、フィクスチャ `v2_animation` を読む `tests/test_scene_state_parity.py`）。`{"clip": 文字列 または null, "speed": 数値}`。`clip` は clip の名前で、`null` は最初の clip（コアの Load3D が最初に選ぶもの）。`speed` は 0.1〜10 の連続の値（Load3D の 0.1・0.5・1・1.5・2 の選択を含む。既定 1、0 以下を含む範囲の外は 0.1〜10 に寄せ、数値でなければ既定値）。Keyframe を持たず、ワークフローに保存する（Load3D の値も時間で変わらない。形はオーナーが承認、2026-10-11）。欠けていれば `{"clip": null, "speed": 1}` と同じ（置いたファイルは最初の clip でタイムラインに沿って動く。Load3D が最初の clip を選ぶのに合わせ、時計は再生ヘッドだけ）で、既定値は保存するテキストに書かない。名前の clip がファイルに無ければ最初の clip にし、警告を出す。アニメーションの無いファイルでは読まない。時刻の規則は `docs/render-contract.md` の「glTF のアニメーション」 |
 | `z_index` | 整数 | `0` | `sky` の Sticker だけが持つ（`world` では捨てる）。読み込みで `floor(x + 0.5)` に丸める。数値でない・非有限の値は既定値。下記「Sky の重なり順」 |
-| `handoff_overrides` | Lane の名前の配列 | `[]` | `port` の Sticker だけが持つ（ほかでは捨てる）。`sticker_state` から引き継がずに、保存した Lane を使う Lane（ADR 0030 の「`sticker_state` で届く Sticker」）。`placement` の Lane の名前だけを、重複を除いて上の Lane の順に並べる（`sky` の `curve` は持てる。`world` の `lens` は持てず、捨てる）。`[]` はすべての Lane を引き継ぐ |
+| `offset_rotation`・`offset_fov` | Lane | 上記 | `port` の Sticker だけが持つ（ほかでは捨てる）。`sticker_state` が届いている間の、撮った Camera からのずらし。Keyframe が無く `value` が既定値の Lane は、保存するテキストに書かない |
+| `handoff_overrides` | — | — | 前の版の項目。読み込みで捨てる（ADR 0063、ADR 0067。前の版で上書きしていた Lane の印は引き継がず、`sticker_state` が届いている Sticker は、ずらし無しで撮った Camera に従う） |
 
 #### Sticker の id の採番
 
@@ -360,17 +395,21 @@ Python のラスタ化（`core/painting.py`。`painting_layer` が無いとき�
 ## 評価関数
 
 ```python
-evaluate_scene_state(state: dict, frame: float) -> dict
+evaluate_scene_state(state: dict, frame: float, length: float | None = None, boxes: dict | None = None, shot: dict | None = None) -> dict
 ```
 
 ```js
-evaluateSceneState(state, frame) // -> object
+evaluateSceneState(state, frame, length = null, boxes = null, shot = null) // -> object
 ```
 
 - `state` は `load_scene_state` / `loadSceneState` の戻り値（正規化済みの v2）とする。
 - `frame` は端数を含む Timeline frame（`timeline.fps` 基準）。
+- `length` は出力の長さ（Timeline frame、`timeline.fps` 基準）で、ループの周期になる（下記「ループ」）。`None` / `null` のときは、どの持ち主もループしない。長さを決めるのは呼び出し側である（`docs/studio-node.md` の「Scene の組み立てと撮影の入口」、エディタは `docs/timeline-ui.md` の「タイムラインの長さ」）。
+- `boxes` は、Sticker の `id` から中身の箱（`{"center": [x, y, z], "size": [x, y, z]}`）への対応で、Look at の相手の点を求めるのに使う（下記「Look at」の「中身の箱」）。状態は中身を持たないので、呼び出し側が渡す。無い `id` の箱は、中心も大きさも 0 として扱う。
+- `shot` は、この状態の `port` の Sticker に届いている `sticker_state`（`load_sticker_state` / `loadStickerState` の戻り値）で、その `port` の Sticker の置き方を決める（下記「受け渡しの置き方」）。無ければ、`port` の Sticker は自分の Lane で置く。
 - 戻り値は `state` と参照を共有しない新しい値である。Python と JS は同じ入力に対して 1e-4 以内で同じ値を返す。
-- Timeline の長さの決定、素材のフレームの選択（PTS ≤ t）、描画は評価関数の役割ではない。
+- Timeline の長さの決定、素材のフレームの選択（PTS ≤ t）、描画は評価関数の役割ではない（長さは引数で受け取る）。
+- 一つの持ち主の Lane を評価する部品（JS の `evaluateCamera`・`evaluateSticker`・`evaluateLane`、Python の Lane の評価の部品）も、同じ `length` と、Look at の相手を引くための状態を受け取る。
 
 戻り値の形（`tests/fixtures/scene_state/v2_canonical.eval.json`）：
 
@@ -388,7 +427,7 @@ evaluateSceneState(state, frame) // -> object
 | フィールド | 意味 |
 |---|---|
 | `frame` | 受け取った Timeline frame |
-| `camera` | `position`、`yaw_deg`・`pitch_deg`・`roll_deg`（`rotation`）、`hFOV_deg`（`fov`、κ による上限に寄せた値）、`curve`、`aspect`。`camera` は自分の状態ではいつもある（読み込みが既定の Camera を入れる。ADR 0048）。上流の層（`PanoSceneValue` の層）の `camera` は `None` のままで、Python の評価関数は `None` を返す（`scene_build.py` の `_scene_output` が `None` にする。下流は上流の Camera を使わない）。JS の状態はいつも Camera を持ち（`loadSceneState` が既定の Camera を入れる。上流の層の読み込みも `pano_upstream.js` が `loadSceneState` を通す）、JS の評価関数の `camera` はいつも値である。上流の層の Camera は使わず捨てる。この違いは Python と JS の一致の対象外とする。`projection`・`erp_range` は時間で変わらないので、状態の `camera` のものを読む |
+| `camera` | `position`、`yaw_deg`・`pitch_deg`・`roll_deg`（`rotation`。Look at の相手があるときは、相手を向いた向き。下記「Look at」）、`hFOV_deg`（`fov`、κ による上限に寄せた値）、`curve`、`aspect`。`camera` は自分の状態ではいつもある（読み込みが既定の Camera を入れる。ADR 0048）。上流の層（`PanoSceneValue` の層）の `camera` は `None` のままで、Python の評価関数は `None` を返す（`scene_build.py` の `_scene_output` が `None` にする。下流は上流の Camera を使わない）。JS の状態はいつも Camera を持ち（`loadSceneState` が既定の Camera を入れる。上流の層の読み込みも `pano_upstream.js` が `loadSceneState` を通す）、JS の評価関数の `camera` はいつも値である。上流の層の Camera は使わず捨てる。この違いは Python と JS の一致の対象外とする。`projection`・`erp_range` は時間で変わらないので、状態の `camera` のものを読む |
 | `scene` | `active`（`visible` かつ `frame` が `scene.clip` の範囲内）、`clip_frame`、`position`、`yaw_deg`・`pitch_deg`・`roll_deg`（`rotation`）、`scale` |
 | `clip_frame` | 素材の先頭からの経過（Timeline frame、端数あり）。`frame − (start − in)`。素材の時刻（秒）は `clip_frame ÷ timeline.fps` |
 | `stickers[]` | `state.stickers` と同じ順。`id`・`placement`、`active`（`visible` かつ Clip range の範囲内）、`clip_frame`、各 Lane の値のフィールド（`sky` は `yaw_deg`・`pitch_deg`・`roll_deg`・`hFOV_deg`・`vFOV_deg`・`curve`、`world` は `position`・`yaw_deg`・`pitch_deg`・`roll_deg`・`scale` と、`lens` の Lane を持つ Sticker だけ `lens`（`curve`・`hFOV_deg`））、`opacity` |
@@ -398,48 +437,121 @@ evaluateSceneState(state, frame) // -> object
 Lane の評価の規則：
 
 1. Keyframe がなければ `value`。
-2. 最初の Keyframe 以前は最初の値、最後の Keyframe 以後は最後の値。
+2. 最初の Keyframe 以前は最初の値、最後の Keyframe 以後は最後の値（ループする持ち主の Lane は、下記「ループ」のとおり周期で読む）。
 3. `frame` がちょうど Keyframe の `frame` なら、その Keyframe の値。
 4. 区間の途中で、区間の始まりの Keyframe の `easing` が `hold` なら、始まりの値。
 
 1〜3 で Keyframe の `frame` と比べるときは、差が `1e-6` 以内なら同じ frame とみなす（`FRAME_EPSILON`）。秒 × fps の浮動小数点の誤差で、Keyframe の直前の値（例：`23.9999999`）になった出力フレームでも、Cut が 1 フレーム遅れないようにするためである。この許容差は浮動小数点の誤差だけを吸収する。ただし、VIDEO の PTS の量子化の幅の半分は、許容差に含める（1ms の timebase なら 0.5ms 分の Timeline frame）。PTS は timebase に丸めて記録されるので、29.97 fps の mkv・webm では、整数の Timeline frame のはずの時刻が最大でその分ずれるためである（`docs/studio-node.md`）。`timeline.fps` は丸めずに記録する（例：29.97 fps の素材は `30000 / 1001`）。コアの VIDEO の fps は分数なので、それを float にした値をそのまま記録する。`29.97` と丸めて記録すると、24 番目のフレームは `23.999976` になり、許容差では吸収できない。
-5. それ以外（`auto`・cubic-bezier の区間の途中）は、次の「補間」の節のとおりに補間する。
+5. それ以外（Smooth・cubic-bezier の区間の途中）は、次の「補間」の節のとおりに補間する。
 
 ### 補間
 
-区間 `k`（Keyframe `k` から `k + 1` まで、長さ `dt = frame[k+1] − frame[k]`）の途中の値は、区間内の時間 `u = (frame − frame[k]) ÷ dt` から求める。
+区間 `k`（Keyframe `k` から `k + 1` まで、長さ `dt = frame[k+1] − frame[k]`）の途中の値は、区間内の時間 `u = (frame − frame[k]) ÷ dt` から求める。値は二つに分けて決める（ADR 0064）。
+
+- **形**：区間の始まりの値から終わりの値までの道。位置の軌道、回転の経路、`direction` の球面の上の道。媒介変数 `τ`（0〜1）で表す。形は Easing によらない。
+- **進み具合** `p`：形に沿った長さの割合（0 が始まり、1 が終わり）。Easing だけで決まる。
+
+値は「進み具合 `p` → 形に沿った長さの割合が `p` になる `τ` → その `τ` の形の点」の順に求める。速さの付き方は、使う人が Easing と Keyframe の時刻で決める。評価関数は Keyframe の時刻を動かさず、cubic-bezier の区間の曲線も変えない。前後に合わせて進み方を変えるのは Smooth の区間だけである（下の「進み具合」）。
 
 - 評価は Lane ごとに独立して行う。戻り値の形（上の表）は Lane の分け方によらない。
-- 進み具合 `p`：`auto` の区間では `p = u`。cubic-bezier の区間では、CSS と同じく `x(t) = u` を満たす `t` を求め（`x(t)` は `x1`・`x2` が 0〜1 なので単調。二分法で 50 回）、`p = y(t)` とする。`y1`・`y2` は 0〜1 なので `p` も 0〜1 に収まる。
-- スプラインが通過する Keyframe：Keyframe `i` の前後の区間がどちらも `auto`（`easing[i−1]` と `easing[i]` が `auto`）で、`i` が最初でも最後でもないとき、`auto` のスプラインは `i` を通過し、`i` の速度（1 Timeline frame あたり）を両側の区間で共有する。そのため、`i` の前後で速度が連続する。それ以外の端（最初・最後の Keyframe、`hold` や cubic-bezier の区間との境）では、その区間自身の変化 `v[k+1] − v[k]` を速度 × `dt` として使う。したがって、cubic-bezier の区間は、ハンドルがなければ端の値の間の直線（回転は slerp、`direction` は大円に沿う slerp）を `p` で進み、Keyframe 二つだけの `auto` は等速になる。
-- 通過する Keyframe の速度 `m`：前後の弦の傾き `s0 = (v[i] − v[i−1]) ÷ dt0`、`s1 = (v[i+1] − v[i]) ÷ dt1`（`dt0`・`dt1` は前後の区間の長さ）から、次のように決める（Fritsch–Carlson 型の制限）。
+- 通過する Keyframe：Keyframe `i` が最初でも最後でもなく、前後の区間がどちらも `hold` でない（`easing[i−1]` と `easing[i]` が `hold` でない）とき、形は `i` を滑らかに通過する。Easing が Smooth か cubic-bezier かによらない。`position` の Lane の角の Keyframe（`corner` が `true`）は通過せず、そこで軌道が折れる（下の「形（位置）」）。ループする持ち主の Lane では、どの Keyframe も最初でも最後でもない（下記「ループ」）。
+- 速度 `m`（1 Timeline frame あたり）：前後の弦の傾き `s0 = (v[i] − v[i−1]) ÷ dt0`、`s1 = (v[i+1] − v[i]) ÷ dt1`（`dt0`・`dt1` は前後の区間の長さ）から、次のように決める（Fritsch–Carlson 型の制限）。スカラーの Smooth の速さと、回転・`direction` の形の接線に使う（位置の形は下の「形（位置）」の規則で、時刻を使わない）。
   1. 前後の変化が逆向きなら `m = 0` とする。
      - スカラー：`s0 × s1 ≤ 0`（符号が違う、またはどちらかが 0）。
-     - ベクトル（位置・回転・`direction`）：内積 `s0 · s1 < 0`（真に後ろへ折り返すときだけ）。向きの変化が 90° 以下なら止まらずに通過する。どちらかの弦が 0 のときは、2 の上限が 0 になるので `m = 0` になる。
-     - 実装は、スカラーを 1 次元のベクトルとして同じ式（`< 0` と 2 の上限）で扱う。符号が同じで片方が 0 のときも上限が 0 になるので、結果はスカラーの規則と一致する。
+     - ベクトル（回転・`direction`）：内積 `s0 · s1 < −1e-9 × |s0| × |s1|`（真に後ろへ折り返すときだけ。ちょうど直角は、丸め誤差で符号が揺れても通過する。Python と JS で結果が分かれないため）。どちらかの弦が 0 のときは、2 の上限が 0 になるので `m = 0` になる。
+     - 実装は、スカラーを 1 次元のベクトルとして同じ式（上の内積の式と 2 の上限）で扱う。スカラーでは内積の式は `s0 × s1 < 0` と同じになる。符号が同じで片方が 0 のときも上限が 0 になるので、結果はスカラーの規則と一致する。
   2. それ以外は、前後の Keyframe を通る放物線の傾き `m = (s0 × dt1 + s1 × dt0) ÷ (dt0 + dt1)` とし、`|m|` が `3 × min(|s0|, |s1|)` を超えるときは、向きを保ってその長さに縮める。
-  - 素早く動いて止まる（間隔の比が大きい）場合も、値が前後の Keyframe を越えて行き過ぎない。
-- スカラーの Lane（`fov`・`roll`・`scale`・`opacity`）、`size`（`hFOV_deg` と `vFOV_deg` をそれぞれ独立したスカラーとして補間する）と位置：3 次ベジェ `B(v[k], v[k] + m0 × dt ÷ 3, v[k+1] − m1 × dt ÷ 3, v[k+1]; p)`。`m0`・`m1` は区間の始まりと終わりの速度。位置は 3 成分を一つのベクトルとして扱い、上の内積と長さもベクトルで計算する（World の軸の向きに依存しない）。`roll` は数値のまま補間し、最短の向きは取らない（`0` → `350` は 350° 回る。`rotation` の Lane の 180° の規則は当てはまらない）。
+- 形（スカラー）：スカラーの Lane（`fov`・`roll`・`scale`・`opacity`・`curve`）、`size`（`hFOV_deg` と `vFOV_deg`）と `lens`（`curve` と `hFOV_deg`）の各数値には形が無く、値は `v[k] + (v[k+1] − v[k]) × p` とする。`roll` は数値のまま補間し、最短の向きは取らない（`0` → `350` は 350° 回る。`rotation` の Lane の 180° の規則は当てはまらない）。
+- 形（位置）：3 次ベジェ `B(v[k], v[k] + H0, v[k+1] + H1, v[k+1]; τ)`。`H0`・`H1` は区間の始まりと終わりの制御点のずれ（ハンドル）。3 成分を一つのベクトルとして扱う（World の軸の向きに依存しない）。自動のずれは、Keyframe の値の並びだけで決め、時刻を使わない（Keyframe の時刻を動かしても軌道の形は変わらない）。
+  - 記号：区間 `k` の弦 `c[k] = v[k+1] − v[k]`、その長さ `|c[k]|`、向き `e[k] = c[k] ÷ |c[k]|`。弦の長さが `1e-12` 以下の区間（動かない区間）は、両方のずれを 0 とする。
+  - 曲がる角：二つの向き `e0`・`e1` について `φ = 2 × atan2(|e0 − e1|, |e0 + e1|)`（0〜π）。
+  - 円弧の係数：`f(φ) = (2/3) × tan(φ/4) ÷ sin(φ/2)`（`φ ≤ 1e-9` なら `1/3`）。円を等しい角で区切った点を通るとき、ずれが円弧に最もよく合う長さになる（直線では弦の 3 分の 1）。
+  - 折り返しの弱め：`g(φ)` は、`φ ≤ 2π/3`（120°）なら 1、それより大きい角では `x = (π − φ) ÷ (π / 3)` として `x² × (3 − 2x)`。真後ろ（`φ = π`）で 0 になり、折り返しに近づくほどずれが連続に縮む（大きく膨らむ輪を描かない）。
+  - 接線を持つ Keyframe：通過する Keyframe `i` のうち、前後の弦がどちらも長さ `1e-12` を超えるもの。動かない区間に接する Keyframe は、もう片側の区間にとって通過しない端として扱う（下）。
+  - 接線を持つ Keyframe `i` の自動のずれ：向き `t` は `e[i−1] + e[i]` を長さ 1 にしたもの（前後の弦の向きの二等分）。`|e[i−1] + e[i]| ≤ 1e-9`（真後ろへの折り返し）なら、前後のずれを 0 にする。`φ` は `e[i−1]` と `e[i]` の曲がる角、出るずれ `t × f(φ) × g(φ) × min(|c[i]|, 2 × |c[i−1]|)`、入るずれ `−t × f(φ) × g(φ) × min(|c[i−1]|, 2 × |c[i]|)`。前後で長さは違ってよく、向きは揃う（軌道が折れない）。片側の弦が長いときに、長い側のずれを短い側の 2 倍までに抑えるので、角の先へ大きく膨らまない。
+  - ハンドル：Keyframe `k` の `handles.out` があれば `H0` を、Keyframe `k+1` の `handles.in` があれば `H1` を、その値に置き換える。ハンドルは形だけを変え、進み方（長さに沿った `p`）は変えない。ループする Lane では、最初の Keyframe の `handles.in` と最後の Keyframe の `handles.out` も使う。
+  - 片側だけのハンドル：接線を持つ Keyframe で、片側だけに長さが `1e-12` を超えるハンドルがあるときは、もう片側の自動のずれの向きを、そのハンドルの逆の向きにする（長さは自動のまま）。両側にハンドルがあり、向きが揃っていないときは、書かれたとおりにし、その Keyframe で軌道が折れる（評価関数は向きを揃え直さない。揃えるのは、エディタでハンドルを引いたときである。`docs/studio-ui.md` の「軌道の線」）。
+  - 角の Keyframe（`corner` が `true`）：通過しない端として扱うが、自動のずれは下の折り返しを使わず、弦の 3 分の 1 とする（出るずれは `c[i] ÷ 3`、入るずれは `−c[i−1] ÷ 3`。隣の Keyframe へまっすぐ向かう）。ハンドルがあればその値を使う。前後のずれは互いに独立で、向きを揃えない。
+  - 実際の向き：Keyframe の側の制御点のずれ（ハンドル、片側だけのハンドルで向きを変えた自動のずれ、または自動のずれ）を、その区間でのその Keyframe の「実際の向き」とする。下の通過しない端は、反対の端の実際の向きを使う。
+  - 通過しない端（最初・最後の Keyframe、`hold` の区間との境、動かない区間に接する Keyframe。角の Keyframe は上の規則）の自動のずれ：その区間の反対の端の実際の向きを、Keyframe から外へ向けた単位ベクトル `t′`（反対の端が始まりなら `H0` の向き、終わりなら `−H1` の向き）とし、それを弦の向きで折り返した向き `2 (e · t′) e − t′` を、この端の接線とする（端の区間が円弧に近くなる）。長さは、`e` と `t′` の曲がる角の 2 倍を `φ`（π を超えたら π）として `f(φ) × g(φ) × |c|`。反対の端の実際の向きが 0（ずれが 0）なら、この端のずれは弦の 3 分の 1（始まりは `c ÷ 3`、終わりは `−c ÷ 3`）とする。両端とも通過しない区間は、両方とも弦の 3 分の 1 で、直線になる（反対の端も通過しない端なので、互いに参照しない）。
+  - Keyframe 2 つの Lane は直線になる。Keyframe を円の上に等しい間隔で置くと、円弧に沿う（4 つで半径のずれ 0.03% 以下、ループしないときも最初と最後の区間が円弧になる）。間隔が等しくないときは円からずれる。
+- 形（回転・`direction`）：区間の端の速度 `V0`・`V1`（`τ` あたり）は、区間の始まりの Keyframe `k` が通過するなら `V0 = m[k] × dt`、しなければ区間自身の変化（弦）とする。終わりの `V1` も、Keyframe `k+1` について同じ。両端とも通過しない区間の形は、端の値の間の slerp（`direction` は大円に沿う slerp）になる。形は下の「回転の補間」と `direction` の項のとおり。回転と `direction` の形は、位置と違い時刻に依存し、90° を超えて向きを変える Keyframe（右へパンしてから戻るように上へ振るなど）では速度の規則 1 で止まり、角になる。
+- 長さと `τ`：形のある Lane（位置・回転・`direction`）では、`τ_j = j ÷ 64`（`j = 0〜64`、`PATH_SAMPLES` は 64）の 65 点で形を測る。隣り合う点の間の距離を `j` の順に足して累積の長さ `L_0 = 0, L_1, …, L_64` を作る。距離は、位置は World の距離、回転は二つの四元数 `a`・`b` の間の `|log(a⁻¹ b)|`（四元数の log のベクトルの長さで、半分の角。速度 `m` と同じ単位。`a · b < 0` なら `b` の符号を反転してから求める）、`direction` は二つの方向の間の角度 `atan2(|a × b|, a · b)`。各点の速さ `s_j`（`τ` あたりの長さ）は、`τ_j − 1e-6` と `τ_j + 1e-6` の 2 点の距離 ÷ 2e-6（`SPEED_STEP`。`j = 0` は `τ = 0` と `1e-6`、`j = 64` は `1 − 1e-6` と `1` の距離 ÷ 1e-6）とする。目標 `L = p × L_64` に対し、`L_{j+1} ≥ L` となる最初の `j`（64 未満）を取る。`ΔL = L_{j+1} − L_j` が `1e-12` 以下なら `τ = τ_j`。そうでなければ `x = (L − L_j) ÷ ΔL`、端の傾き `σ = ΔL × 64 ÷ s`（`s` が `1e-12` 以下なら 3、3 を超えたら 3）として、`τ = τ_j + (x の上の 3 次のエルミート（傾き σ_j・σ_{j+1}）) ÷ 64` とする（エルミートの式は下の Smooth と同じ）。`p = 0` なら `τ = 0`、`p = 1` なら `τ = 1`。`L_64` が `1e-12` 以下（動かない区間）なら `τ = p`。和は `j` の順に一つずつ足し、Python と JS で同じ順にする。
+  - これで、Linear（`[0, 0, 1, 1]`）の区間は、形が曲がっていても一定の速さで進み、点の速さを使うので Keyframe の前後でも速さが続く。形の媒介変数の進みが端で極端に遅い区間（回転・`direction` で、前後の区間の時間の比が 10 倍を超えるときなど）では、`σ` を 3 で止めるので、速さが数 % 揺らぐ。
+- 進み具合 `p`：
+  - cubic-bezier の区間：CSS と同じく `x(t) = u` を満たす `t` を求め（`x(t)` は `x1`・`x2` が 0〜1 なので単調。二分法で 50 回）、`p = y(t)` とする。`y1`・`y2` は 0〜1 なので `p` も 0〜1 に収まる。前後の区間によらず、書かれた曲線のとおりに進む。Linear（`[0, 0, 1, 1]`）の区間は、区間の中を一定の速さで進む。前後の区間と平均の速さが違えば、Keyframe の所で速さが変わる（形は滑らかなまま）。
+  - Smooth の区間：`p = (u³ − 2u² + u) × a0 + (3u² − 2u³) + (u³ − u²) × a1`（3 次のエルミート）。`a0`・`a1` は区間の始まりと終わりの速さ `S` を、この区間の平均の速さ `R = D ÷ dt` で割った値で、両方 1 なら一定の速さになる。`D` は区間の長さ（形のある Lane は上の `L_64`、スカラーは符号付きの変化 `v[k+1] − v[k]`）。端の速さ `S` は、その端の Keyframe の向こう側の区間で決まる。
+    0. その Keyframe で形の接線が 0 なら `S = 0`（位置は真後ろへの折り返しと、動かない区間に接する Keyframe、回転・`direction` は `m = 0`）。角の Keyframe は、接線が 0 でない限り、下の 1〜3 で決める（角でも止まらずに曲がれる）。
+    1. 向こう側の区間が Smooth：形のある Lane は、前後の区間の平均の速さ `R0`・`R1` から `S = (R0 × dt1 + R1 × dt0) ÷ (dt0 + dt1)` とし、`3 × min(R0, R1)` を超えるときはそこまでにする。スカラーは速度 `m`（符号付き。前後の変化が逆向きなら 0）。向こう側の Smooth の区間が動かない区間（`D` が `1e-12` 以下）のときは、その先の区間を向こう側として同じ規則を当てる（ループの継ぎ目で、最後の Keyframe が最初と同じ値のときに、継ぎ目の前後を速さをつないで通るため）。
+    2. 向こう側の区間が cubic-bezier：その区間の、この Keyframe の側の端の傾き × その区間の平均の速さ（スカラーは符号付き）。曲線の端の傾きは、始まりが `y1 ÷ x1`、終わりが `(1 − y2) ÷ (1 − x2)`。分母が 0 で分子が 0 でないときは 3 とする。分母も分子も 0 のときは、次の制御点で、始まりが `y2 ÷ x2`、終わりが `(1 − y1) ÷ (1 − x1)`（それも分母が 0 なら、分子が 0 でなければ 3、0 なら 1）とする（Linear は両端とも 1、ease-in の終わりと ease-out の始まりは約 1.72、ease-in-out の両端は 0）。
+    3. それ以外（向こう側に区間が無い、または `hold`）：`S = 0`（動きの始まりと終わりでは、ゆっくり出て止まる）。
+    - `a = S ÷ R` を 0〜3 に寄せる（`|R|` が `1e-12` 以下なら `a = 1`）。0〜3 の内なら `p` は 0 から 1 へ単調に進み、行き過ぎない（両方 3 のときは、区間の真ん中で一瞬速さが 0 になる）。
+    - `a0` と `a1` がどちらも 0 の区間（Keyframe 2 つだけの動きなど）は、エルミートではなく ease-in-out の cubic-bezier `[0.42, 0, 0.58, 1]` で進む（前の版の既定の動きと同じにするため）。
+    - 二つの Smooth の区間の間の通過する Keyframe では、両側の `S` が同じなので速さが連続する。Smooth と cubic-bezier の区間の間では、Smooth の側がその曲線の端の速さに合わせる（0〜3 に寄せたときを除く）。
+  - `hold` の区間：評価の規則 4 のとおり始まりの値（`p` は使わない）。
 - `sky` の Sticker の `direction`：yaw / pitch を単位ベクトル（中心の方向）にして球面上で補間し、yaw / pitch に戻す。
   - 方向ベクトル：`d(yaw, pitch) = (cos pitch · sin yaw, sin pitch, cos pitch · cos yaw)`。x が右、y が上、z が yaw 0 の正面で、この計算の中だけで使う（World の座標への変換はしない）。`d[k]` は Keyframe `k` の方向。
   - 球面の演算：`log_a(b)` は点 `a` の接平面のベクトルで、`a` から `b` へ大円に沿って向かい、長さは二点の間の角度（ラジアン）。`w = b − (a · b) a` として `log_a(b) = w × atan2(|w|, a · b) ÷ |w|`（`|w| ≤ 1e-12` なら `w`。計算の途中の点がちょうど正反対のときは動かない。四元数の log と同じ扱い）。`exp_a(v) = cos|v| · a + sin|v| · v ÷ |v|`（`|v| ≤ 1e-12` なら `a + v`）。`slerp(a, b, t) = exp_a(t · log_a(b))`。
   - 区間の大円：区間 `k` の始まりの速度（`p` あたり）は `C0 = log_{d[k]}(d[k+1])`。二つの方向がちょうど正反対（`d[k] · d[k+1] < 0` かつ `|d[k+1] − (d[k] · d[k+1]) d[k]| ≤ 1e-6`）のときは大円が決まらないので、Keyframe `k` から右（保存された yaw が増える向き）へ回る：`C0 = π · (cos yaw[k], 0, −sin yaw[k])`。保存された `yaw_deg` で決まるので、`pitch_deg` が ±90 の Keyframe でも決まる。区間の終わりの速度は、`C0` を同じ大円に沿って `d[k+1]` まで運んだ `C1 = cos θ · C0 − θ sin θ · d[k]`（`θ = |C0|`）。
   - 通過する Keyframe `i` の速度 `m`：上の速度の規則を、`d[i]` の接平面の二つのベクトル `s0 = C1[i−1] ÷ dt0`（前の区間の終わりの速度。大円に沿って `d[i]` まで運んだもの）と `s1 = C0[i] ÷ dt1` に当てはめる（内積が負なら 0、放物線の傾き、長さは `3 × min(|s0|, |s1|)` まで）。極にある Keyframe でも接平面は決まるので、yaw が決まらないことは速度に影響しない。
-  - 区間の値：始まりの速度 `V0` は、Keyframe `k` を通過するなら `m[k] × dt`、しなければ `C0`。終わりの速度 `V1` は、Keyframe `k+1` を通過するなら `m[k+1] × dt`、しなければ `C1`。位置と同じく、速度の 3 分の 1 だけ離れた制御点 `c1 = exp_{d[k]}(V0 ÷ 3)`・`c2 = exp_{d[k+1]}(−V1 ÷ 3)` を持つ球面のベジェを、slerp の de Casteljau で評価する：`q0 = exp_{d[k]}(p · V0 ÷ 3)`、`q1 = slerp(c1, c2, p)`、`q2 = exp_{d[k+1]}(−(1 − p) · V1 ÷ 3)`、`r0 = slerp(q0, q1, p)`、`r1 = slerp(q1, q2, p)`、`d = slerp(r0, r1, p)`。両端の速度は `V0`・`V1` になり、通過する Keyframe の前後で速度が連続する。通過しない区間では制御点が大円の上に等間隔に並ぶので、`d` は大円に沿う slerp を `p` で進んだ点 `exp_{d[k]}(p · C0)` になる。
-  - 正反対の区間：`C0` を正反対の規則で決めた区間では、制御点 `c1`・`c2` も正反対になりうる（両端で止まる区間では `c1 = d[k]`・`c2 = d[k+1]`）。そのとき `slerp(c1, c2, p)` は大円が決まらず動かないので、この区間は自身の大円の上だけを進む。`u0 = C0 ÷ π`、`u1 = C1 ÷ π`（大円の両端での進む向き）として、弧長 `s = B(0, (V0 · u0) ÷ 3, π − (V1 · u1) ÷ 3, π; p)` を求め、`d = exp_{d[k]}(s · u0)` とする。両端の速度の大円に沿う成分は `V0`・`V1` と一致する（大円から外れる成分は使わない）。そのため、この区間に隣接する通過 Keyframe では、大円から外れる成分の分だけ速度が不連続になる。両端の Keyframe を通過しない区間では、上の de Casteljau と同じく `exp_{d[k]}(p · C0)` になる。
-  - 戻り値：`pitch_deg = atan2(y, √(x² + z²))` で、必ず −90〜90 に収まる。`yaw_deg` は `atan2(x, z)` を、回転と同じく、区間の両端に保存された `yaw_deg` を `p` で混ぜた値 `c` に対して `c − 180 − 1e-6 ≤ 値 < c + 180 − 1e-6` となるよう 360° の倍数だけずらす。`√(x² + z²) ≤ 1e-9`（極）では yaw が決まらないので、`c` そのものを返す。同じ極にある二つの Keyframe の間では、yaw は保存された数値の間を `p` で進む。
+  - 区間の形：始まりの速度 `V0` は、Keyframe `k` を通過するなら `m[k] × dt`、しなければ `C0`。終わりの速度 `V1` は、Keyframe `k+1` を通過するなら `m[k+1] × dt`、しなければ `C1`。位置と同じく、速度の 3 分の 1 だけ離れた制御点 `c1 = exp_{d[k]}(V0 ÷ 3)`・`c2 = exp_{d[k+1]}(−V1 ÷ 3)` を持つ球面のベジェを、slerp の de Casteljau で `τ` について評価する：`q0 = exp_{d[k]}(τ · V0 ÷ 3)`、`q1 = slerp(c1, c2, τ)`、`q2 = exp_{d[k+1]}(−(1 − τ) · V1 ÷ 3)`、`r0 = slerp(q0, q1, τ)`、`r1 = slerp(q1, q2, τ)`、`d = slerp(r0, r1, τ)`。両端の接線は `V0`・`V1` の向きになる。通過しない区間では制御点が大円の上に等間隔に並ぶので、形は大円になる。
+  - 正反対の区間：`C0` を正反対の規則で決めた区間では、制御点 `c1`・`c2` も正反対になりうる（両端で止まる区間では `c1 = d[k]`・`c2 = d[k+1]`）。そのとき `slerp(c1, c2, τ)` は大円が決まらず動かないので、この区間は自身の大円の上だけを進む。`u0 = C0 ÷ π`、`u1 = C1 ÷ π`（大円の両端での進む向き）として、形は自身の大円そのもので、`d = exp_{d[k]}(π · τ · u0)` とする（長さは `τ` に比例するので、`τ = p`）。この区間に隣接する通過 Keyframe では、形の接線が大円から外れる分だけ向きが折れる。
+  - 戻り値：`pitch_deg = atan2(y, √(x² + z²))` で、必ず −90〜90 に収まる。`yaw_deg` は `atan2(x, z)` を、回転と同じく、区間の両端に保存された `yaw_deg` を `τ` で混ぜた値 `c` に対して `c − 180 − 1e-6 ≤ 値 < c + 180 − 1e-6` となるよう 360° の倍数だけずらす。`√(x² + z²) ≤ 1e-9`（極）では yaw が決まらないので、`c` そのものを返す。同じ極にある二つの Keyframe の間では、yaw は保存された数値の間を `τ` で進む。
   - 1 区間の `direction` は、通過しない区間では 180° 以下の最短の大円を進む。それを超えて回すときは途中に Keyframe を打つ。
   - 極の近く：`direction` が持つのは中心の方向だけで、Sticker の画面内の向きは yaw と `roll` で決まる（Sticker の上は天頂の側）。極の近くを通ると yaw は速く変わり、極をちょうど越えると yaw は 180° 変わって、Sticker の上下も入れ替わる。極にある Keyframe を離れるときも、yaw は保存された値から進む向きの値へ飛ぶ。方向と roll に分けた表し方の性質で、補間では補正しない。向きを保つには `roll` に Keyframe を打つ。
-- 位置のハンドル：Keyframe `k` の `handles.out` があれば 2 番目の制御点を `position[k] + handles.out` に、Keyframe `k+1` の `handles.in` があれば 3 番目の制御点を `position[k+1] + handles.in` に置き換える。ないほうは自動の接線のままとする。ハンドルは自動の接線より優先し、速度の連続は保証しない。
 - 回転（`rotation` の Lane）：yaw / pitch / roll を `world_rotation` / `worldRotation`（`core/world.py`、`web_src/pano_world.js`）（float64）と `rotation_to_quaternion` / `rotationToQuaternion` で四元数にする。区間の計算に使うのは Keyframe `k−1`〜`k+2` だけで、`q[k+1]` は `q[k]` に、`q[k−1]` は `q[k]` に、`q[k+2]` は `q[k+1]` に対して、次の規則で符号を揃える（前の Keyframe → 後の Keyframe の向きで判断する）。
   - 内積が `1e-6` より大きければそのまま、`−1e-6` より小さければ符号を反転する（最短の向き）。
   - 内積の絶対値が `1e-6` 以下（ちょうど 180°）なら、前の Keyframe の glTF のローカル座標での回転ベクトル `log(q_前⁻¹ q_後)` を見て、`−y`・`x`・`z` の順に最初に絶対値が `1e-6` を超える成分が正になる符号を選ぶ。右へ、次に上へ、次に時計回り（画像が時計回りに回る roll の向き）に回ることになる。
-- 回転の補間：`log(a⁻¹b)` を「a から b への回転ベクトル（半角）」、`L = log(q[k]⁻¹ q[k+1])` とする。始まりと終わりの速度（`p` あたり）`V0`・`V1` は、通過する Keyframe では上の速度の規則を回転ベクトルに当てはめたもの（`s0 = −log(q[i]⁻¹ q[i−1]) ÷ dt0`、`s1 = log(q[i]⁻¹ q[i+1]) ÷ dt1`。内積が負なら 0、長さは `3 × min(|s0|, |s1|)` まで）に `dt` を掛けたもの、通過しない端では `L` とする。SQUAD `slerp(slerp(q[k], q[k+1], p), slerp(a, b, p), 2p(1 − p))` を評価する。制御点は `a = q[k] · exp((V0 − L) ÷ 2)`、`b = q[k+1] · exp((L − V1) ÷ 2)`。通過しない端では `a = q[k]`・`b = q[k+1]` となり、cubic-bezier の区間は `slerp(q[k], q[k+1], p)` になる。`slerp(x, y, t) = x · exp(t · log(x⁻¹ y))` で、`a`・`b` と外側の slerp の符号は揃え直さない（揃え直すと区間の途中で向きが飛び、端の速度も変わる）。結果は `quaternion_to_rotation` と `panorama_angles` で yaw / pitch / roll に戻す（`pitch_deg` は −90〜90）。
+- 回転の補間：`log(a⁻¹b)` を「a から b への回転ベクトル（半角）」、`L = log(q[k]⁻¹ q[k+1])` とする。始まりと終わりの速度（`τ` あたり）`V0`・`V1` は、通過する Keyframe では上の速度の規則を回転ベクトルに当てはめたもの（`s0 = −log(q[i]⁻¹ q[i−1]) ÷ dt0`、`s1 = log(q[i]⁻¹ q[i+1]) ÷ dt1`。内積が負なら 0、長さは `3 × min(|s0|, |s1|)` まで）に `dt` を掛けたもの、通過しない端では `L` とする。SQUAD `slerp(slerp(q[k], q[k+1], τ), slerp(a, b, τ), 2τ(1 − τ))` を評価する。制御点は `a = q[k] · exp((V0 − L) ÷ 2)`、`b = q[k+1] · exp((L − V1) ÷ 2)`。通過しない端では `a = q[k]`・`b = q[k+1]` となり、両端とも通過しない区間の形は `slerp(q[k], q[k+1], τ)` になる。`slerp(x, y, t) = x · exp(t · log(x⁻¹ y))` で、`a`・`b` と外側の slerp の符号は揃え直さない（上の「長さと `τ`」で距離を測るときだけ、`a · b < 0` の組の符号を反転する。形そのものには影響しない）（揃え直すと区間の途中で向きが飛び、端の速度も変わる）。結果は `quaternion_to_rotation` と `panorama_angles` で yaw / pitch / roll に戻す（`pitch_deg` は −90〜90）。
 - 1 区間の回転は、必ず 180° 以下の最短の経路になる。180° を超える回転や多回転（yaw 0 → 720 など）は、途中に Keyframe を打つ。
-- 回転の数値：yaw と roll は、区間の両端に保存された値を `p` で混ぜた `c = a + (b − a) × p` に対して、`c − 180 − 1e-6 ≤ 値 < c + 180 − 1e-6` となるよう 360° の倍数だけずらして返す（ちょうど 180° 離れた同点は負の側、`c − 180` を取る）。区間の両端で保存された値の数値に一致する。最短の向きが保存された数値の向きと逆のとき（例：yaw 0 → 350）は、区間の途中で yaw・roll の値が 360° 跳ぶ。これは数値の表し方だけで、向きは連続している。使う側は回転行列を使うか、値を 360° で回して扱う。
+- 回転の数値：yaw と roll は、区間の両端に保存された値を `τ` で混ぜた `c = a + (b − a) × τ` に対して、`c − 180 − 1e-6 ≤ 値 < c + 180 − 1e-6` となるよう 360° の倍数だけずらして返す（ちょうど 180° 離れた同点は負の側、`c − 180` を取る）。区間の両端で保存された値の数値に一致する。最短の向きが保存された数値の向きと逆のとき（例：yaw 0 → 350）は、区間の途中で yaw・roll の値が 360° 跳ぶ。これは数値の表し方だけで、向きは連続している。使う側は回転行列を使うか、値を 360° で回して扱う。
 - 極（pitch ±90 をちょうど通るとき）では、yaw と roll が同じ軸を共有するため、yaw の値は保証しない（その分は roll が受け持つ）。極の近くでも yaw・roll の数値は大きく動きうる。向きの連続は回転行列で判断する。
-- `curve` の Lane はスカラーの Lane と同じく線形の値として補間し（κ は像の形を連続に変えるので、ほかの数値の Lane と別の扱いにする理由が無い）、結果を 0〜1 に寄せる（読み込みも同じ範囲に寄せる）。`hFOV_deg`・`vFOV_deg` は、寄せた κ による上限（`docs/render-contract.md` の「カメラのレンズ」）にも寄せる。
+- `curve` の Lane はスカラーの Lane と同じく補間し（κ は像の形を連続に変えるので、ほかの数値の Lane と別の扱いにする理由が無い）、結果を 0〜1 に寄せる（読み込みも同じ範囲に寄せる）。`hFOV_deg`・`vFOV_deg` は、寄せた κ による上限（`docs/render-contract.md` の「カメラのレンズ」）にも寄せる。
 - 範囲の扱い：補間の結果（数値の誤差を含む）が範囲を外れた `hFOV_deg`・`vFOV_deg` は 0.1〜（κ による上限）に、`opacity` は 0〜1 に、`scale` は `1e-6` 以上に寄せる。
+
+### ループ
+
+ループは持ち主ごとに決める（ADR 0064）。`camera.loop` と Sticker の `loop` が `true` の持ち主は、その持ち主の全部の Lane がループする。`scene`（入力の 3D の変形）は印を持たず、ループしない（エディタに `scene` の変形を動かす画面が無いため。動かせるようにするときに印を足す）。
+
+- 周期 `P` は、評価関数が受け取った出力の長さ `length`（Timeline frame）である。`length` が無いとき、ループは効かない。`timeline.length` が `null`（入力から決める長さ）でも、そのとき決まった長さが周期になる。ループの印を変えても `timeline.length` は変えない。
+- ループする持ち主の Lane のうち、Keyframe が 2 つ以上あり、最初と最後の Keyframe の `frame` の差が `P` より小さい Lane がループする。それ以外の Lane は、ループしないときと同じに評価する。
+- ループする Lane は、Lane の時刻 `f`（Camera は Timeline frame、Sticker は素材基準の `clip_frame`）を `f′ = frame[0] + r` に直して評価する。`r = (f − frame[0]) − P × floor((f − frame[0]) ÷ P)` で、`r < 0`（丸めの誤差）または `r ≥ P − 1e-6`（`FRAME_EPSILON`）なら `r = 0` とする。最後の Keyframe から「最初の Keyframe の `frame` + `P`」（仮の Keyframe。値・`corner`・`handles` は最初の Keyframe のもの）までを最後の区間とし、最後の Keyframe の `easing` を使う。
+- 通過の判定、形の接線、速度、Smooth の端の速さでは、最初の Keyframe の前に最後の Keyframe（`frame − P`）が、最後の Keyframe の後に最初の Keyframe（`frame + P`）があるものとする。そのため、最初と最後の Keyframe も（角でなく、前後の区間が `hold` でなければ）滑らかに通過し、つなぎ目で形も速さも続く。
+- 最後の Keyframe の値が最初の Keyframe の値と同じ（成分ごとの差が `1e-9` 以内）Lane では、最後の区間は動かない区間になる。Keyframe の時刻は動かさないので、最後の Keyframe の `frame` から周期の終わりまで、最初の値のままである。`position` の Lane では、つなぎ目で軌道が折れないように、最初の Keyframe の接線は「一つ前の点」を最後から 2 番目の Keyframe として、最後の Keyframe の接線は「一つ後の点」を 2 番目の Keyframe として求め、二つの Keyframe の向きを揃える（動かない区間の側のずれは 0）。回転と `direction` の速度 `m` も、同じ読み替えで求める。Smooth の端の速さは、「補間」の 1 のとおり動かない区間の先を見る。
+- 最後の Keyframe から最初へ戻る区間は、ほかの区間と同じ規則で進む。残りのフレームが少なければ、短い時間で戻る。評価関数は戻り方をならさない。
+- 上流の層は、それぞれの状態の印に従い、周期はその層を作ったノードの出力の長さ（その層の `timeline.fps` 基準の frame 数）とする。下流の出力がそれより長ければ、その周期で下流の出力の終わりまで繰り返す。層ごとの長さは `PANO_SCENE` が運ぶ（`docs/studio-node.md` の「上流の Scene」）。
+- ループするかは、fps の再基準化の後の値（丸めた `frame`）で決める。
+- `sticker_state` は、Camera と相手の物のループの印と、周期（出力の長さ）を運ぶ（下記「`sticker_state`」）。
+
+### Look at
+
+Camera の `look_at` の Lane に相手があるとき、Camera の向きは相手から決まる（ADR 0065）。位置（`position` の Lane と軌道の形）には何も効かない。
+
+- 中身の箱：Sticker の自分の座標（`rotation` と `scale` を掛ける前の glTF 座標、`scale` 1 のときの大きさ）での、中身を囲む箱の中心と大きさ。画像の板は、中心 `[0, 0, 0]`、大きさ `[1, 切り抜いた素材の高さ ÷ 幅, 0]`（板の幅は `scale`。`docs/render-contract.md` の「`world` の Sticker の板」。`lens` を持つ板も、この平らな箱で数える）。3D の中身は、`docs/studio-node.md` の「中身の箱」（`content_box`。時刻で変わらない一つの箱。glTF のアニメーションを持つファイルは、既定の clip の時刻 0 の姿勢の箱）の、中心と大きさ。箱は評価関数の引数 `boxes` で受け取る（Python はノードが読んだ素材から、JS はエディタが読み込んだ中身から作る。`docs/studio-node.md`、`docs/studio-ui.md` の「Look at」）。まだ分からない箱（読み込み中）は、中心も大きさも 0 として扱い、相手の点は Sticker の `position` になる。
+- 相手の位置：`{"point": p}` は `p`。`{"sticker": id, "offset": o}` は、その Sticker を同じ時刻に評価した `position` に、箱の中の点 `center + o × size`（成分ごと）に `scale` を掛けて `world_rotation` で回したずれを足した点（Sticker の時刻は Timeline frame を素材基準に直したもの。Clip range の外でも値は評価する）。Sticker が無い・`sky` のときは相手なし。
+- 向いた向き：Camera の位置から相手の位置への方向 `d`（World の glTF 座標）を、`core/world.py` `look_rotation` / `pano_world.js` `lookRotation` で yaw と pitch にする。上はいつも World の +Y で、roll は Camera の `rotation` の Lane を同じ時刻に評価した `roll_deg` をそのまま使う。
+- 決まらない方向：`d` の長さが `1e-9` 以下（Camera が相手と同じ位置）のときは、`rotation` の Lane の向きを使う。
+- 極：`d` の水平の成分（x と z）の長さが `d` の長さの `1e-9` 倍以下のとき（相手のちょうど真上か真下。「ほぼ真上」の幅は持たない）は、pitch を ±90 とし、yaw は次の順で決める。評価関数は前のフレームを覚えないので、時刻をたどって決める。
+  1. すぐ前：`ceil(frame) − 1` から 1 ずつ小さい整数の frame を、`lo` までたどり、極でない最初の frame の yaw。
+  2. 無ければ、すぐ後：`floor(frame) + 1` から 1 ずつ大きい整数の frame を、`hi` までたどり、極でない最初の frame の yaw。
+  3. どちらも無ければ（たどった範囲のどこでも真上か真下）、`rotation` の Lane の yaw。
+  - `lo` は、0 と、Camera と相手の Lane の最初の Keyframe の frame のうち小さいほう。`hi` は、`length − 1`（`length` が無ければ 0）と、Camera と相手の Lane の最後の Keyframe の frame のうち大きいほう。たどる frame での相手と Camera の位置は、その frame で同じ規則（ループを含む）で評価する。実装はたどった結果を覚えてよいが、結果は上の順で決まる値と同じでなければならない。
+  - 相手の真上をまたぐと、yaw は 180° 変わる（上を World の +Y に保つための性質で、補正しない）。
+- Keyframe の間：区間 `k` の始まりと終わりの Keyframe の相手 `a`・`b` について、同じ時刻 `frame` に、`a` を向いた向き `Qa` と `b` を向いた向き `Qb` を求める（相手なしは `rotation` の Lane の向き）。値は `slerp(Qa, Qb, p)`（四元数。近い回り方）で、`p` は区間の Easing の進み具合である。cubic-bezier は書かれたとおり、`hold` は `Qa` のまま次の Keyframe で切り替わる。Smooth の進み具合の「区間の長さ」`D` は、区間の始まりの時刻での `Qa` と `Qb` の間の角度とする。
+- 最初の Keyframe 以前は最初の相手、最後の Keyframe 以後は最後の相手を向く。Keyframe が無ければ `value` の相手を向く。
+- 相手を向いているとき、`rotation` の Lane の yaw と pitch は使わない（値と Keyframe は保つ）。
+
+### 受け渡しの置き方
+
+`sticker_state` が届いている `port` の Sticker（2D の素材で、評価関数が `shot` を受け取った）は、置き方を自分の Lane からではなく、撮った Camera から求める（Pose handoff。ADR 0067）。置き方は「撮ったときの Camera」との関係であり、下流の状態に Camera の値を写さない。上流の Camera を直せば、次の実行で、ずらしを保ったまま付いていく。関係をやめて自由に置く操作は持たない（自由に置くときは、`sticker_state` をつながずに素材だけを渡す）。
+
+- 撮った時刻：Sticker の `clip_frame`（素材の時刻）`c` に対して、`sticker_state` の時刻は `c × shot.fps ÷ timeline.fps`（秒で合わせる）。
+- 撮った Camera：`sticker_state` を一つの状態として、その時刻で同じ評価関数で評価した Camera（`camera` の Lane、`look_at`、`targets`、ループと周期 `length`。下記「`sticker_state`」）。向き `(yaw, pitch, roll)`、`hFOV`、`curve` を得る。Camera の位置は使わない（無限遠の Sky に置くため。ADR 0059）。
+- ずらし：`offset_rotation` の `(yaw, pitch, roll)` と `offset_fov` の `k` を、Sticker の時刻で、ほかの Lane と同じ規則で評価する（`offset_rotation` は `rotation` の Lane と同じ補間）。ずらしは、撮った Camera から見た、もう一つの Camera との差である：その Camera の自分の軸で、右へ `yaw`、上へ `pitch`、時計回りに `roll` だけ向きを変え、画角を `k` 倍にする。
+- 置き方：向きは、撮った Camera の向きに、ずらしの回転を右から掛けたもの（`world_rotation(撮った向き) @ world_rotation(ずらし)` を、角度の規約の中で求める）。その向きから `direction`（yaw・pitch）と roll を取る（`panorama_angles`）。大きさは `hFOV × k`（κ による上限に寄せる）。`curve` は撮った Camera の `curve`。ずらしがどれも既定値なら、撮った Camera の向き・画角・レンズそのままになり、同じ Camera で撮り直すと元の画素に戻る（`docs/render-contract.md` の輪の閉じ方）。画面に対する割合への直しは無いので、レンズの曲線 κ によらず同じ式である。
+- 戻り値は、ほかの `sky` の Sticker と同じ形（`yaw_deg`・`pitch_deg`・`roll_deg`・`hFOV_deg`・`vFOV_deg`・`curve`）。`vFOV_deg` は、`port` の Sticker の規則どおり素材の縦横比から求める。描画は違いを知らない。
+- `sticker_state` が届いている間、Sticker の `direction`・`roll`・`size`・`curve` の Lane は使わない（値は保つ）。縦と横の画角を別々に変えることはできない（撮った絵を引き伸ばすことは、撮った所へ戻すことと合わないため）。
+- `shot` が無い（`sticker_state` がつながっていない・読めない）、素材が 3D のときは、自分の Lane で置く。
 
 ## fps の再基準化
 
@@ -455,7 +567,7 @@ rebaseSceneState(state, fps) // -> object
 
 | 値 | 新しい値 |
 |---|---|
-| Camera の Keyframe の `frame`（`aspect`・`projection`・`erp_range` は変えない） | `r(frame)` |
+| Camera の Keyframe の `frame`（`look_at` の Lane を含む。`aspect`・`projection`・`erp_range`・`loop` は変えない） | `r(frame)` |
 | Clip range の `start` | `start' = r(start)` |
 | 素材の先頭の位置 | `anchor' = r(start − in)` |
 | Clip range の `in` | `start' − anchor'` |
@@ -466,8 +578,8 @@ rebaseSceneState(state, fps) // -> object
 
 - Timeline 上のすべての出来事（Keyframe、Clip range の始まりと終わり、素材の先頭）は、新しい fps の半フレーム以内に丸まる。同じ時刻にあった Camera と Sticker の Keyframe は、同じ frame に落ちる。
 - 丸めた結果、同じ Lane で `frame` が重なった Keyframe は、正規化の規則どおり後ろのものを残す。`duration` は正規化で 1 以上になる。
-- 変えるのはフレームの値だけで、フレームでない項目（`scene.animation` などを含む）はすべて保つ。ハンドルは空間のずれなので変えない。表示（`camera.visible`・`scene.visible`・Sticker の `visible`・`painting_visible`）も変えない。
-- `id`・`next_sticker_id`・`upstream`・`handoff_overrides` も変えない。`upstream` の記録は自分の `fps` を持ち、その fps で読む（下記「上流の上書き（`upstream`）」）。
+- 変えるのはフレームの値だけで、フレームでない項目（`scene.animation` などを含む）はすべて保つ。ハンドルと `look_at` の値（`offset`・`point`）は空間のずれなので変えない。`corner` と Sticker の `loop` も変えない。表示（`camera.visible`・`scene.visible`・Sticker の `visible`・`painting_visible`）も変えない。
+- `id`・`next_sticker_id`・`upstream` も変えない。`port` の Sticker のずらしの Lane は、ほかの Sticker の Lane と同じく Keyframe の `frame` だけを変える。`upstream` の記録は自分の `fps` を持ち、その fps で読む（下記「上流の上書き（`upstream`）」）。
 - `fps` は 1〜1000 に寄せてから使う（例：`1e308` は 1000 にする）。長さも正規化で 10,000,000 以下に寄せる。
 - `fps` が正の有限の数値でなければエラーにする（Python は `ValueError`、JS は `Error`）。文面は `Cannot rebase state_json to fps <値>; fps must be a positive number.` で、`<値>` の書き方は実装ごとに違う（Python は `repr`、JS は `JSON.stringify`）。
 
@@ -516,9 +628,9 @@ Sticker の上書きは `id`・`placement` と、上書きしたフィールド�
 | `id` | 上流の Sticker の `id`。空でない文字列でなければ上書きごと捨てる |
 | `placement` | `sky` または `world`。それ以外は上書きごと捨てる。持てる Lane を決める |
 | `clip` | オブジェクトなら Clip range として正規化する |
-| `visible`・`locked` | 真偽値 |
+| `visible`・`locked`・`loop` | 真偽値 |
 | `crop` | オブジェクトなら `crop` として正規化する |
-| Lane | `placement` の Lane（`sky`：`direction`・`roll`・`size`・`opacity`・`curve`、`world`：`position`・`rotation`・`scale`・`opacity`。`world` の `lens` の上書きは捨て、上流から引き継ぐ）。オブジェクトなら Lane として正規化する（`value` と、Easing・ハンドルを含む `keyframes` のすべて）。上書きは Lane ごとに丸ごと置き換える |
+| Lane | `placement` の Lane（`sky`：`direction`・`roll`・`size`・`opacity`・`curve`、`world`：`position`・`rotation`・`scale`・`opacity`。`world` の `lens` の上書きは捨て、上流から引き継ぐ）。オブジェクトなら Lane として正規化する（`value` と、Easing・`corner`・ハンドルを含む `keyframes` のすべて）。上書きは Lane ごとに丸ごと置き換える |
 | `z_index` | `sky` の上書きだけ。数値なら `floor(x + 0.5)` に丸める |
 
 ここだけの規則：**不正な値は既定値にせず、捨てる。捨てたフィールドは上流から引き継ぐ。** 状態のほかの部分では不正な値は既定値に戻すが、上書きで既定値にすると、上流の値を黙って既定値で置き換えることになるためである。型が合っているフィールド（Clip range・`crop`・Lane のオブジェクト）の中身は、状態のほかの部分と同じ規則で正規化する。
@@ -600,20 +712,26 @@ Python は `ValueError`、JS は `Error` を投げる。
 
 Sticker の位置と見た目は変わらない。`yaw_deg` は範囲に丸めない（v1 の描画も丸めない）。
 
-## `sticker_state` v2
+## `sticker_state`
 
-`projection` が `perspective` の Camera を持つ Panorama Studio が出力し、別の Panorama Studio の `sticker_state` 入力が受け取る（Pose handoff）。
+`projection` が `perspective` の Camera を持つ Panorama Studio が出力し、別の Panorama Studio の `sticker_state` 入力が受け取る（Pose handoff）。撮った Camera の動きを、焼き込まずに、Keyframe と関係のまま運ぶ（ADR 0067）。ほかの道具が書いて渡してもよい（Camera の Lane に、フレームごとの Linear の Keyframe を並べれば、書いたとおりに動く）。
 
 ```json
 {
   "kind": "pano_sticker_state",
-  "version": 2,
+  "version": 3,
   "fps": 30.0,
+  "length": 96,
   "camera": {
-    "position": [{"frame": 0, "value": [0.0, 0.0, 0.0], "easing": [0.42, 0, 0.58, 1]}],
-    "rotation": [{"frame": 0, "value": {"yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0}, "easing": [0.42, 0, 0.58, 1]}],
-    "fov": [{"frame": 0, "value": 60.0, "easing": [0.42, 0, 0.58, 1]}]
+    "loop": false,
+    "position": [{"frame": 0, "value": [0.0, 0.0, 0.0]}],
+    "rotation": [{"frame": 0, "value": {"yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0}}],
+    "fov": [{"frame": 0, "value": 60.0}],
+    "look_at": {"value": {"sticker": "sticker_3", "offset": [0.0, 0.35, 0.0]}, "keyframes": []}
   },
+  "targets": [
+    {"id": "sticker_3", "loop": false, "position": [...], "rotation": [...], "scale": [...], "box": {"center": [0.0, 0.0, 0.0], "size": [1.0, 1.5, 0.0]}}
+  ],
   "source_aspect": 1.5
 }
 ```
@@ -621,13 +739,16 @@ Sticker の位置と見た目は変わらない。`yaw_deg` は範囲に丸め�
 | フィールド | 型 | 既定値 | 意味 |
 |---|---|---|---|
 | `kind` | `"pano_sticker_state"` | — | |
-| `version` | `2` | — | |
-| `fps` | 数値 | — | `camera` の `frame` の基準となる fps。撮った Studio の状態の `timeline.fps`（Timeline fps に再基準化しない）。欠け・0 以下・数値でない値なら、その `sticker_state` は読まない（ADR 0063）。`timeline.fps` と同じ 1〜1000（`TIMELINE_FPS_MIN`・`TIMELINE_FPS_MAX`）に寄せる（フィクスチャ `sticker_state_fps`） |
-| `camera` | Lane ごとの Keyframe の配列（`position`・`rotation`・`fov`・`curve`（無ければ κ = 1）） | 各 Lane に Keyframe 一つ | 各配列の形は `state_json` の `camera` の同名の Lane の `keyframes` と同じ。Keyframe のない Lane は、撮影した値を持つ `frame: 0` の Keyframe を一つだけ置く。空または不正な Lane は、既定値を持つ `frame: 0` の Keyframe 一つになる |
+| `version` | `3` | — | Keyframe の読み方の版。3 は、この文書の「Keyframe」と「補間」の規則（Smooth、角、形と進み具合）で読む |
+| `fps` | 数値 | — | `frame` の基準となる fps。撮った Studio の状態の `timeline.fps`（Timeline fps に再基準化しない）。欠け・0 以下・数値でない値なら、その `sticker_state` は読まない（ADR 0063）。`timeline.fps` と同じ 1〜1000（`TIMELINE_FPS_MIN`・`TIMELINE_FPS_MAX`）に寄せる（フィクスチャ `sticker_state_fps`） |
+| `length` | 数値 または欠け | 欠け | 撮った Studio の出力の長さ（`fps` 基準の frame 数）。ループの周期。欠けていれば、どの持ち主もループしない |
+| `camera` | Lane ごとの Keyframe の配列（`position`・`rotation`・`fov`・`curve`（無ければ κ = 1））と、`loop`（真偽値、既定 `false`）、`look_at`（Lane、任意） | 各 Lane に Keyframe 一つ | 各配列の形は `state_json` の `camera` の同名の Lane の `keyframes` と同じ（`easing`・`corner`・`handles` を含む）。Keyframe のない Lane は、撮影した値を持つ `frame: 0` の Keyframe を一つだけ置く。空または不正な Lane は、既定値を持つ `frame: 0` の Keyframe 一つになる。`look_at` は `state_json` の `camera.look_at` と同じ形で、相手が無く Keyframe も無いときは書かない |
+| `targets` | 配列（任意） | `[]` | `look_at` が `sticker` で指す物の動き。`id`、`loop`、`position`・`rotation`・`scale` の Keyframe の配列（Camera と同じ形。`frame` は Timeline 基準に直したもの：素材基準の frame に `start − in` を足す）、`box`（その実行での中身の箱。上記「Look at」の「中身の箱」）。`look_at` が指さない物は書かない。受け取る側は、これを使って撮った Camera の向きを同じ規則で求める |
 | `source_aspect` | 数値 または `null` | `null` | 撮影した画面の幅 ÷ 高さ |
 
-`load_sticker_state(text)` / `loadStickerState(text)` は v1 と v2 を読み、どちらも v2 の形で返す（フィクスチャ：`sticker_state_v1.json`、`sticker_state_v2.json`）。
+`load_sticker_state(text)` / `loadStickerState(text)` は v1・v2・v3 を読み、どれも v3 の形で返す（フィクスチャ：`sticker_state_v1.json`、`sticker_state_v2.json`、`sticker_state_v3.json`）。
 
+- v2（前の版の Studio が出した形）も読む。Keyframe は `state_json` と同じ規則で読むが、欠けた `easing` だけは Smooth にせず、v2 の既定だった ease-in-out（`[0.42, 0, 0.58, 1]`）として読む。`"auto"` は Smooth として読む。`length`・`loop`・`look_at`・`targets` は無いものとして読む。
 - v1（`pose` を一つ持つ形。`version` は数値の `1`）は、旧ノードの `parse_sticker_state` と同じ規則（yaw を −180〜180 に回す、pitch を ±89.9、`hFOV_deg` を 0.1〜179 に寄せる。`pose` と `source_aspect` の値は JSON の数値だけを読み、`"30"` のような文字列は読めない値とする。ADR 0063）で読み、各 Lane に `frame: 0` の Keyframe を一つずつ置く（`position` は `[0, 0, 0]`、`easing` は既定値）。`fps` は `24`。
-- 空、JSON でない、`kind` が違う、v1 の `pose` が読めない、v2 の `fps` が読めない場合は `None` / `null` を返す（無視される）。
-- `kind` が一致して `version` が数値の `1`・`2` 以外（`"1"` を含む）なら、エラー `Unsupported sticker_state version <値>; supported versions are 1 and 2.` にする。
+- 空、JSON でない、`kind` が違う、v1 の `pose` が読めない、v2・v3 の `fps` が読めない場合は `None` / `null` を返す（無視される）。
+- `kind` が一致して `version` が数値の `1`・`2`・`3` 以外（`"1"` を含む）なら、エラー `Unsupported sticker_state version <値>; supported versions are 1, 2 and 3.` にする。

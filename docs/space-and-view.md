@@ -107,6 +107,9 @@ Python はこの文書の規則を持たない（列は `—`）。「（未実�
 | `KEY_MOVE_FAST` | 4 | `pano_view_keys.js`。WASD / QE の速さに Shift で掛ける数。Alt では遅くしない（下の「直接の操作」の WASD / QE。ADR 0048） |
 | `NEW_STICKER_HFOV`（参照） | 30° | `space/placement.js`。新しい Sky の Sticker の横の画角 |
 | `CAMERA_HIT_PIXELS` | 6 px | `web_src/studio/camera_marker.js`。Camera の印の線の当たりの幅（下の「ホバーの判定」） |
+| `PATH_HIT` | 7 px | `web_src/studio/path_line.js`。軌道の線の当たりの幅（`docs/studio-ui.md` の「軌道の線」） |
+| `PATH_POINT_HIT` | 9 px | `path_line.js`。軌道の Keyframe の点と、ハンドルの先の当たりの半径 |
+| `PATH_TICK_FRAMES` | 2 | `path_line.js`。軌道の線の速さの点を置く間隔（Timeline frame） |
 | `COARSE_GRID_CELLS` | 16 | `web_src/pano_coarse_grid.js`。3D の Sticker の当たりの粗い占有グリッドの、各辺のマスの数（下の「ホバーの判定」） |
 | `COARSE_GRID_SLICE_MS` | 4 ms | `web_src/pano_coarse_grid.js`。そのグリッドを手の空いた時間に作るとき、1 回に使う時間の上限 |
 | `COARSE_GRID_IDLE_TIMEOUT_MS` | 100 ms | `web_src/pano_coarse_grid.js`。手が空かなくても、グリッドを作る次の 1 回が呼ばれるまでの最長の待ち |
