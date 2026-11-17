@@ -92,7 +92,7 @@ Panorama Studio の `execute` は次の三つの入口に分かれる。
   - `SceneSources` には 3D の `port` の Sticker の Source を入れない（テンプレートを持たない）。(b) の `_render_frames` がパスごとに `port.frames()`（`sticker_media.py` の `content_of` で作った `SceneContent`）を作り、`_port_source_at` がフレームごとの `ContentSource` にする。device に置いたものはそのパスの間だけ持つ（`tests/test_stickers_3d.py`）。
 - Pose handoff（`sticker_state`、ADR 0067）：2D の素材が接続され、`sticker_state` が読めるときは、`port` の Sticker の置き方をフレームごとに撮った Camera から求める。ノードは `sticker_state` を読み（`load_sticker_state`）、評価関数に `shot` として渡すだけで、Keyframe を焼かない。規則は `docs/scene-state-v2.md` の「受け渡しの置き方」と、下記の「`sticker_state` で届く `port` の Sticker」。
   - 配置：いつも `sky`（上流の Camera の位置は使わない。ADR 0059）。上流の Camera の向きで撮れば、どの位置からでも撮った絵と一致する（`tests/test_pose_handoff.py`）。
-  - 状態の `port` の Sticker の配置が `sky` でなければ、同じ `id` の `sky` の Sticker に置き換える（`clip`・`visible`・`locked`・`crop`・`opacity`・ずらしの Lane を保つ）。
+  - 状態の `port` の Sticker の配置が `sky` でなければ、同じ `id` の `sky` の Sticker に置き換える（`clip`・`visible`・`locked`・`loop`・`crop`・`opacity`・ずらしの Lane を保つ。ループする Sticker は、ずらしの Lane もループする）。
   - ノードは `state_json` を書き換えない。`sticker_state` がないとき、3D の素材のときは、自分の Lane で置く。
 - `video` を読む側（`get_components`・`save_to`）は、`render_frame` が直前と同じテンソルを返したフレームを、device から再び転送せず、直前のフレームから写す。
 - `is_output_node` は `True`。ComfyUI は `ui` を出力ノードでなくても `executed` で送るが、出力ノードでなければ下流に出力ノードがつながっていないと実行されず、エディタとノード上の UI が素材を受け取れない。出力ノードにすると、キューに入れるたびに実行され（変わっていなければキャッシュの `ui` が送られる）、素材の表示が下流の接続に左右されない。

@@ -169,7 +169,7 @@ Panorama Studio のノード上の UI は、`sticker` 入力の素材を `source
 
 - Pose handoff はいつも `sky` の Sticker になる（ADR 0059）。置き方は、撮った Camera との関係で、エディタは Camera の値を Sticker の Lane に写さない。
 - 新しい UI のエディタとノード上の UI は、実行結果が新しく（`isNodeOutputMediaCurrent` の `sticker-handoff`。`sticker` と `sticker_state` のどちらかをつなぎ替えると古くなる）、`sticker` と `sticker_state` がつながっている間、実行結果の `pano_sticker_handoff` の `sticker_state` を評価関数の `shot` に渡して、付いている `port` の Sticker を描く。前の版の形の `pano_sticker_handoff`（`placement`・`lanes` を持つもの）は、無いものとして扱う（ADR 0063）。実行し直せば当たる。
-  - 表示しても `state_json` は変えない。保存する `port` の Sticker は、ずらしの Lane（`offset_rotation`・`offset_fov`）と、Clip range・表示・ロック・切り抜き・不透明度だけが変わる。保存した配置が `sky` でないときは、`sky` に置き換えて表示し、ずらしを最初に変えたときに `sky` の Sticker として保存する。
+  - 表示しても `state_json` は変えない。保存する `port` の Sticker は、ずらしの Lane（`offset_rotation`・`offset_fov`）と、Clip range・表示・ロック・ループ・切り抜き・不透明度だけが変わる。保存した配置が `sky` でないときは、`sky` に置き換えて表示し、ずらしを最初に変えたときに `sky` の Sticker として保存する。
   - 実行結果が古い・無い間は、今までどおり枠も含めて表示しない（`docs/studio-node.md`）。
 - `sticker_state` が届いている Sticker の編集は、どれもずらしを書く。ほかの Lane と同じ記録の規則（`docs/timeline-ui.md`）で、Keyframe も打てる。上流の Camera を直しても、ずらしは保たれる。
   - ステージ：本体のドラッグは `offset_rotation` の yaw と pitch（撮った Camera の自分の軸での角度に直す）、四隅のハンドルは `offset_fov`（縦横比は保つ）、回転のハンドルは `offset_rotation` の roll。
