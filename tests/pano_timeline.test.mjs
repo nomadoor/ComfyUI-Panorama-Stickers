@@ -161,6 +161,23 @@ test("a Keyframe added inside a position segment with handles splits them and ke
   assert.ok(plain.position.keyframes.every((key) => !key.handles));
 });
 
+// CodeRabbit review: the handles are split where the value was read, with the segment's Easing before the split.
+test("a Keyframe added inside a handled position segment with a curved Easing keeps the path", () => {
+  const owner = { position: { value: [0, 0, 0], keyframes: [
+    { frame: 0, value: [0, 0, 0], easing: [0.42, 0, 1, 1], handles: { out: [1, 3, 0] } },
+    { frame: 30, value: [6, 0, 0], easing: "smooth", handles: { in: [-2, 3, 0] } },
+  ] } };
+  const before = [];
+  for (let i = 0; i <= 60; i += 1) before.push(evaluateLane(owner, "position", i / 2));
+  keyLanes(owner, ["position"], 12);
+  const path = [];
+  for (let i = 0; i <= 6000; i += 1) path.push(evaluateLane(owner, "position", i / 200));
+  for (const point of before) {
+    const nearest = Math.min(...path.map((other) => Math.hypot(...other.map((c, i) => c - point[i]))));
+    assert.ok(nearest < 1e-3, `${point} is ${nearest} off the path`);
+  }
+});
+
 test("the playhead finds a Keyframe within FRAME_EPSILON", () => {
   const sticker = skySticker();
   sticker.opacity = keyed(sticker.opacity, [10, 1], [20, 0]);

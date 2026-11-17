@@ -80,9 +80,10 @@ function insertKeyframe(owner, name, frame, value, period) {
   if (at) {
     const previous = keys[at.k];
     const { easing } = previous;
+    // The handles split where the value was read: with the segment's Easing as it was, before it is split.
+    if (name === "position") split = positionSplit(laneView(keys, period), at.k, at.u);
     if (easing === "hold" || isLinear(easing)) added.easing = copyEasing(easing);
     else if (Array.isArray(easing)) [previous.easing, added.easing] = splitEasing(easing, at.u);
-    if (name === "position") split = positionSplit(laneView(keys, period), at.k, at.u);
   }
   keys.splice(index < 0 ? keys.length : index, 0, added);
   if (!split) return;
