@@ -1034,7 +1034,7 @@ Camera タブでは同じ席で無効にする（tooltip は「Not available in 
 | （ここから右寄せ）fps の欄、Length の欄とそのリセット、畳むボタン（状態はアイコンの形で示す） | `docs/timeline-ui.md` の「タイムラインの表示」 |
 
 - 再生位置は、ルーラーの上の ▼ の印と、トラックを縦に貫く 2 px の線で示す（色は `docs/design.md`。▼ はルーラーにだけ出す）。
-- Simplify の tooltip は、使えるとき「Simplify Keyframes」、選んだ Keyframe が足りないとき「Simplify · Select 3+ Keyframes」、二つ以上の行にまたがって選んでいるとき「Simplify · Select Keyframes in one row」、開いた行で二つ以上の Lane にまたがって選んでいるとき「Simplify · Select Keyframes in one Lane」、調整している間「Enter to keep · Esc to cancel」。スライダーの tooltip は「Keyframes to keep」。スライダーと数の見た目は `docs/design.md`。
+- Simplify の tooltip は、使えるとき「Simplify Keyframes」、選んだ Keyframe が足りないとき「Simplify · Select 3+ Keyframes」、二つ以上の行にまたがって選んでいるとき「Simplify · Select Keyframes in one row」、開いた行で二つ以上の Lane にまたがって選んでいるとき「Simplify · Select Keyframes in one Lane」、Look at の Lane の Keyframe だけを選んでいるとき「Simplify · Look at Keyframes stay」、調整している間「Enter to keep · Esc to cancel」。スライダーの tooltip は「Keyframes to keep」。スライダーと数の見た目は `docs/design.md`。
 - 行の頭の並び（左から）：目のアイコン、▶（開閉）、アイコン（Sky / World の印、Camera、Paint、Background）、名前、動きのループのボタン（`docs/timeline-ui.md` の「動きのループ」）、行のポチ。目やループのボタンを持たない
   行も同じ幅を空ける（`docs/timeline-ui.md` の「表示（目のアイコン）」）。
 - 上流の層の見出しは「From ＜元のノードの名前＞」（`docs/timeline-ui.md` の「上流の層の行」）。

@@ -195,7 +195,7 @@ Panorama Studio はいつも新しい UI で開き、古い UI に Panorama Stud
 
 選んだ Keyframe の範囲から、形を保ったまま Keyframe を減らす（ADR 0064）。細かい Keyframe（ほかの道具が書いたもの、動画から推定したもの）を、手で直せる数にするためのものである。残す Keyframe の `frame` は動かさず、するのは消すことと、残した Keyframe の Easing・ハンドルの書き直しだけである。
 
-- 入口はタイムラインのバーの Simplify のボタン（並びは `docs/studio-ui.md` の「タイムラインのバー」）。ボタンはいつも出す。押せるのは、一つの行だけで Keyframe を 3 つ以上選んでいるとき（二つ以上の行にまたがる選択では押せない。残す数が、どの行の数かを決められないため）。開いた行では、一つの Lane だけで選んでいるとき（二つ以上の Lane にまたがる選択では押せない。同じ理由）。形を保ったまま消せるものがあるかどうかは、押せる条件にしない（一度減らした後に、さらに減らせるようにするため。持ち主、2026-11-17）。押せないときは、隠さずに無効にして理由を tooltip に出す。
+- 入口はタイムラインのバーの Simplify のボタン（並びは `docs/studio-ui.md` の「タイムラインのバー」）。ボタンはいつも出す。押せるのは、一つの行だけで Keyframe を 3 つ以上選んでいるとき（二つ以上の行にまたがる選択では押せない。残す数が、どの行の数かを決められないため）。開いた行では、一つの Lane だけで選んでいるとき（二つ以上の Lane にまたがる選択では押せない。同じ理由）。Camera の `look_at` の Lane の Keyframe は必ず残すので（下）、その Lane だけを選んだときも押せない。形を保ったまま消せるものがあるかどうかは、押せる条件にしない（一度減らした後に、さらに減らせるようにするため。持ち主、2026-11-17）。押せないときは、隠さずに無効にして理由を tooltip に出す。
 - 範囲は、その行の、一番左の選んだ Keyframe から一番右の選んだ Keyframe まで（間の、選んでいない Keyframe も含む）。閉じた行ではポチごとに、開いた行ではその Lane の Keyframe ごとに、残すか消すかを決める（閉じた行で、ポチの一部の Lane だけを消すことはしない）。
 - ずれの測り方：範囲の中の整数の Timeline frame ごとに、元の評価と、減らした後の評価を比べる。その行の全部の Lane を見て、Lane ごとのずれを下の物差しで割った値の最大を、その結果のずれとする。同じ frame どうしを比べるので、形のずれと、通る時刻のずれの両方を数える。
 
@@ -223,7 +223,7 @@ Panorama Studio はいつも新しい UI で開き、古い UI に Panorama Stud
 
 選んだ Keyframe の範囲を、一定の速さで動くようにする。Keyframe の時刻を、通る距離に合わせて打ち直す（形は変えない）。
 
-- 入口はタイムラインのバーの Constant speed のボタン（並びは `docs/studio-ui.md` の「タイムラインのバー」。Simplify の左）。ボタンはいつも出す。押せる条件と、押せないときの理由の出し方は Simplify と同じ（一つの行だけで Keyframe を 3 つ以上選んでいるとき。tooltip は「Constant speed · Select 3+ Keyframes」「Constant speed · Select Keyframes in one row」「Constant speed · Select Keyframes in one Lane」、読み取り専用とロックはその理由）。Simplify を調整している間は押せない（「Constant speed · Finish Simplify first」）。押せるときの tooltip は「Constant speed · Moves the selected Keyframes in time」。
+- 入口はタイムラインのバーの Constant speed のボタン（並びは `docs/studio-ui.md` の「タイムラインのバー」。Simplify の左）。ボタンはいつも出す。押せる条件と、押せないときの理由の出し方は Simplify と同じ（一つの行だけで Keyframe を 3 つ以上選んでいるとき。tooltip は「Constant speed · Select 3+ Keyframes」「Constant speed · Select Keyframes in one row」「Constant speed · Select Keyframes in one Lane」「Constant speed · Look at Keyframes stay」、読み取り専用とロックはその理由）。Simplify を調整している間は押せない（「Constant speed · Finish Simplify first」）。押せるときの tooltip は「Constant speed · Moves the selected Keyframes in time」。
 - 範囲は Simplify と同じ（その行の、一番左の選んだ Keyframe から一番右まで。間の選んでいない Keyframe も含む）。閉じた行ではポチごと（その時刻の全部の Lane の Keyframe）、開いた行ではその Lane の Keyframe を動かす。Camera の `look_at` の Lane は行に数えないので、動かさない。
 - 動かさない Keyframe：範囲の最初と最後、`hold` の区間の始まりと終わり、ループの継ぎ目の Keyframe。これらを区切りにして、間ごとに打ち直す。
 - ループする持ち主（`docs/scene-state-v2.md` の「ループ」）の行で、その行の Keyframe を全部選んだときは、一周を一つの範囲にする：範囲は最初の Keyframe から一周後の最初の Keyframe まで（最後の Keyframe から最初へ戻る区間を含む）で、動かさないのは最初の Keyframe（と `hold` の区間の始まりと終わり）だけ。最後の Keyframe も、戻る区間の距離を含めて打ち直す（一周後の最初の Keyframe より 1 フレーム以上前に置く）。戻る区間も含めて一周が同じ速さになり、継ぎ目でも止まらずに通る。最後の Keyframe の値が最初と同じ（継ぎ目で閉じる）Lane では、戻る区間は動かないので、最後の Keyframe は一周の終わりの 1 フレーム前に寄る。
