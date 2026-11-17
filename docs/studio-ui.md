@@ -1034,7 +1034,7 @@ Camera タブでは同じ席で無効にする（tooltip は「Not available in 
 | （ここから右寄せ）fps の欄、Length の欄とそのリセット、畳むボタン（状態はアイコンの形で示す） | `docs/timeline-ui.md` の「タイムラインの表示」 |
 
 - 再生位置は、ルーラーの上の ▼ の印と、トラックを縦に貫く 2 px の線で示す（色は `docs/design.md`。▼ はルーラーにだけ出す）。
-- Simplify の tooltip は、使えるとき「Simplify Keyframes」、選んだ Keyframe が足りないとき「Simplify · Select 3+ Keyframes」、二つ以上の行にまたがって選んでいるとき「Simplify · Select Keyframes in one row」、調整している間「Enter to keep · Esc to cancel」。スライダーの tooltip は「Keyframes to keep」。スライダーと数の見た目は `docs/design.md`。
+- Simplify の tooltip は、使えるとき「Simplify Keyframes」、選んだ Keyframe が足りないとき「Simplify · Select 3+ Keyframes」、二つ以上の行にまたがって選んでいるとき「Simplify · Select Keyframes in one row」、開いた行で二つ以上の Lane にまたがって選んでいるとき「Simplify · Select Keyframes in one Lane」、調整している間「Enter to keep · Esc to cancel」。スライダーの tooltip は「Keyframes to keep」。スライダーと数の見た目は `docs/design.md`。
 - 行の頭の並び（左から）：目のアイコン、▶（開閉）、アイコン（Sky / World の印、Camera、Paint、Background）、名前、動きのループのボタン（`docs/timeline-ui.md` の「動きのループ」）、行のポチ。目やループのボタンを持たない
   行も同じ幅を空ける（`docs/timeline-ui.md` の「表示（目のアイコン）」）。
 - 上流の層の見出しは「From ＜元のノードの名前＞」（`docs/timeline-ui.md` の「上流の層の行」）。
@@ -1174,7 +1174,7 @@ Camera タブでは同じ席で無効にする（tooltip は「Not available in 
   視点のドラッグ、ギズモのドラッグ、ペイントのまとまりのドラッグ、ペイントのストロークの最中の Escape（取り消し）は、今の規則（`docs/editor-interaction.md` の「ポインタの取り消しとフォーカスの
   喪失」）のまま、表より先に当たる。
 - 閉じると編集はいつも保存する。開いて閉じただけなら `state_json` を書かない（今の規則のまま。`docs/timeline-ui.md`）。
-- `state_json` を書いたら、ComfyUI に、開いているワークフローが変わったことを知らせる（`web_src/pano_state_widget.js` `writeStateWidget`。エディタ、ノード上の UI、古いエディタが書くときも同じ）。ComfyUI は、再読み込みや再起動の後に戻すワークフローを、ウィンドウの `mouseup` と `keyup` のときに取り直す。✕ はその後の `click` で書くので、知らせないと、次にどこかを押すまで新しい値がワークフローに入らず、その前に再起動すると編集が消える。ComfyUI がその取り直しをしない時（操作の途中、読み込み中など）は、下書きの保存の合図（`graphChanged`）を直接出し、再読み込みで戻る下書きには必ず入れる。そのときはブラウザのコンソールに理由を一行出す。
+- `state_json` を書いたら、ComfyUI に、開いているワークフローが変わったことを知らせる（`web_src/pano_state_widget.js` `writeStateWidget`。エディタ、ノード上の UI、古いエディタが書くときも同じ）。ComfyUI は、再読み込みや再起動の後に戻すワークフローを、ウィンドウの `mouseup` と `keyup` のときに取り直す。✕ はその後の `click` で書くので、知らせないと、次にどこかを押すまで新しい値がワークフローに入らず、その前に再起動すると編集が消える。ComfyUI がその取り直しをしない時（操作の途中、読み込み中など）は、少し待って（最大 3 秒）取り直せるようになったら取り直させる（保存してあるワークフローも「変更あり」になり、下書きが残る）。待っても取り直さないときは、下書きの保存の合図（`graphChanged`）を直接出し、再読み込みで戻る下書きには入れる。取り直しをしなかったときは、ブラウザのコンソールに理由を一行出す。
 - 読めない `state_json`（JSON として読めない、または読めない `version`。空のテキストは読める：空の状態）：エディタを読み取り専用で開き
   （中身は空の状態）、閉じても `state_json` を書かない。上端の中央に「気をつけてほしい」の一行
   「This node's saved state can't be read, so changes won't be saved」を、エディタを閉じるまで出す。編集を受けてから捨てると気づかずに
