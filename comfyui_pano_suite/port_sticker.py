@@ -56,8 +56,8 @@ def _port_sticker(state: dict) -> dict:
 
 def _sky_port_sticker(state: dict, stored: dict) -> dict:
     """A stored port Sticker that is not `sky` as the sky one a `sticker_state` places, under the same id, keeping its
-    Clip range, visibility, lock, crop, opacity and offset Lanes (docs/studio-node.md "Pose handoff")."""
-    kept = {key: stored[key] for key in ("id", "source", "clip", "visible", "locked", "crop", "opacity", "offset_rotation", "offset_fov")}
+    Clip range, visibility, lock, loop, crop, opacity and offset Lanes (docs/studio-node.md "Pose handoff")."""
+    kept = {key: stored[key] for key in ("id", "source", "clip", "visible", "locked", "loop", "crop", "opacity", "offset_rotation", "offset_fov")}
     return load_scene_state({"version": 2, "stickers": [{**kept, "placement": "sky", "z_index": _top_sky_z_index(state)}]})["stickers"][0]
 
 

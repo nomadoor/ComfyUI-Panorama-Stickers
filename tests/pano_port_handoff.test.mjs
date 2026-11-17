@@ -101,3 +101,13 @@ test("the node surface shows the sticker_state's placement without writing state
   assert.equal(session.apply({ type: "sync-port", value: portStickerSyncValue(node, { pose: replace, handoff: RESULT }) }), false);
   assert.deepEqual(commits, []);
 });
+
+// CodeRabbit review: a looping port Sticker keeps looping its offsets when it is shown and stored as sky.
+test("a looping world port Sticker stays looping as the shown and stored sky one", () => {
+  const world = parseSceneEditorState(stateText([{ ...WORLD_PORT, loop: true }]));
+  const stored = port(world);
+  const shown = skyPortSticker(world, stored);
+  assert.equal(shown.loop, true);
+  shown.offset_rotation.keyframes = [{ frame: 0, value: { yaw_deg: 0, pitch_deg: 0, roll_deg: 0 } }, { frame: 10, value: { yaw_deg: 20, pitch_deg: 0, roll_deg: 0 } }];
+  assert.equal(storedPortSticker(shown, stored).loop, true);
+});

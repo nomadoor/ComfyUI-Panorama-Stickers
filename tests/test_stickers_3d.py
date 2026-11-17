@@ -527,3 +527,15 @@ def test_a_new_port_sticker_of_off_center_content_is_fitted_and_without_content_
     distance = math.sqrt(8.0) / math.sin(math.radians(PORT_3D_FIT_FOV_DEG) / 2.0) * 1.1
     assert np.allclose(fitted, [-3.0, 0.0, -distance])
     assert np.allclose(nothing, [0.0, 0.0, -2.0])
+
+
+def test_a_looping_world_port_sticker_stays_looping_as_the_sky_one():
+    # CodeRabbit review: port_sticker.py `_sky_port_sticker` keeps the loop, so the offset Lanes go on looping.
+    from comfyui_pano_suite.core.scene_state import load_scene_state
+    from comfyui_pano_suite.port_sticker import _sky_port_sticker
+
+    state = load_scene_state({"version": 2, "stickers": [{"id": "p", "placement": "world", "source": {"kind": "port"}, "loop": True,
+                                                         "offset_rotation": {"keyframes": [{"frame": 0, "value": {"yaw_deg": 0}}, {"frame": 10, "value": {"yaw_deg": 20}}]}}]})
+    sky = _sky_port_sticker(state, state["stickers"][0])
+    assert sky["placement"] == "sky" and sky["loop"] is True
+    assert len(sky["offset_rotation"]["keyframes"]) == 2

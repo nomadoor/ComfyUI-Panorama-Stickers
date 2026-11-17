@@ -49,9 +49,9 @@ export function sameOffsets(sticker, other) {
 }
 
 // The port Sticker `stored` that is not sky, as the sky one a sticker_state places in the working `state`: under the
-// same id, keeping its Clip range, visibility, lock, crop, opacity and offset Lanes, above the other sky Stickers.
+// same id, keeping its Clip range, visibility, lock, loop, crop, opacity and offset Lanes, above the other sky Stickers.
 export function skyPortSticker(state, stored) {
-  const kept = Object.fromEntries(["id", "source", "clip", "visible", "locked", "crop", "opacity", ...PORT_OFFSET_NAMES].map((key) => [key, stored[key]]));
+  const kept = Object.fromEntries(["id", "source", "clip", "visible", "locked", "loop", "crop", "opacity", ...PORT_OFFSET_NAMES].map((key) => [key, stored[key]]));
   const zIndex = state.stickers.reduce((top, item) => (item.id !== stored.id && item.placement === "sky" ? Math.max(top, item.z_index) : top), -1) + 1;
   return structuredClone(loadSceneState({ version: 2, stickers: [{ ...kept, placement: "sky", z_index: zIndex }] }).stickers[0]);
 }
@@ -65,11 +65,11 @@ export function showPortHandoff(state, shot) {
 }
 
 // The port Sticker the state keeps for the shown sky one `shown`, over `stored`, the non-sky one it replaced: until an
-// offset Lane changed, the stored one (with the shown Clip range, visibility, lock, crop and opacity), so showing the
+// offset Lane changed, the stored one (with the shown Clip range, visibility, lock, loop, crop and opacity), so showing the
 // handoff writes nothing; after, the shown sky one, as the node keeps it.
 export function storedPortSticker(shown, stored) {
   if (!stored || stored.id !== shown.id || !sameOffsets(shown, stored)) return structuredClone(shown);
   const out = structuredClone(stored);
-  for (const key of ["clip", "visible", "locked", "crop", "opacity"]) out[key] = structuredClone(shown[key]);
+  for (const key of ["clip", "visible", "locked", "loop", "crop", "opacity"]) out[key] = structuredClone(shown[key]);
   return out;
 }
