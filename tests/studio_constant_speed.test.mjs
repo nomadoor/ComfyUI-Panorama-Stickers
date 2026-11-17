@@ -94,3 +94,22 @@ test("a segment running past the stretch keeps its Easing", () => {
   const plan = planConstantSpeed(owner, ["position", "fov"], [0, 10, 20, 30]);
   assert.deepEqual(plan.lanes.fov.keyframes.map((key) => key.easing), ["smooth", [0, 0, 1, 1], "smooth"]);
 });
+
+// Fable review: retiming a turn keeps its shape, as retiming a position does (docs/scene-state-v2.md "形（回転・direction）").
+test("Constant speed on a Camera's rotation keeps the orientations it passes", async () => {
+  const { rotationToQuaternion, worldRotation } = await import("../web_src/pano_world.js");
+  const values = [[0, 0], [40, 30], [80, -20], [120, 10]];
+  const owner = loadSceneState({ version: 2, camera: { rotation: { keyframes: [0, 5, 30, 40].map((frame, i) => ({ frame, value: { yaw_deg: values[i][0], pitch_deg: values[i][1], roll_deg: 0 } })) } } }).camera;
+  const plan = planConstantSpeed(owner, ["rotation"], [0, 5, 30, 40], { camera: true, hfov: 60 });
+  assert.notDeepEqual(frames(plan.lanes.rotation), [0, 5, 30, 40]);
+  const path = (lane) => Array.from({ length: 401 }, (_, j) => {
+    const r = evaluateLane(lane, "rotation", (40 * j) / 400);
+    return rotationToQuaternion(worldRotation(r.yaw_deg, r.pitch_deg, r.roll_deg));
+  });
+  const angle = (a, b) => 2 * Math.acos(Math.min(1, Math.abs(a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w))) * 180 / Math.PI;
+  const before = path(owner);
+  const after = path({ rotation: plan.lanes.rotation });
+  const farthest = (from, to) => Math.max(...from.map((a) => Math.min(...to.map((b) => angle(a, b)))));
+  // Within the samples' own spacing; the time-aware shape strayed by about 18°.
+  assert.ok(farthest(after, before) < 2 && farthest(before, after) < 2, `${farthest(after, before)} ${farthest(before, after)}`);
+});

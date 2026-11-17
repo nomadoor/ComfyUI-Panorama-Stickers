@@ -442,6 +442,18 @@ def _quaternion(value):
     return tuple(float(c) for c in rotation_to_quaternion(world_rotation(value["yaw_deg"], value["pitch_deg"], value["roll_deg"])))
 
 
+def _shape_tangent(back, ahead):
+    """The shape velocity of a turn (rotation, direction) at a key, per length of chord.
+
+    docs/scene-state-v2.md "形（回転・direction）": the speed rule with the two chords' lengths in place of the
+    segments' times, so the shape does not depend on when the keys are. Zero when a side does not move.
+    """
+    l0, l1 = _norm(back), _norm(ahead)
+    if l0 <= LENGTH_EPSILON or l1 <= LENGTH_EPSILON:
+        return [0.0] * len(back)
+    return _tangent(l0, l1, back, ahead)
+
+
 def _unwrap_near_blend(angle, a, b, t):
     """The turn of `angle` nearest to the stored angles a -> b blended by t; a tie takes the lower one."""
     blend = a + (b - a) * t
@@ -449,7 +461,7 @@ def _unwrap_near_blend(angle, a, b, t):
 
 
 def _rotation_tangent(lane, i):
-    before, after, dt0, dt1 = _neighbors(lane, i)
+    before, after, _dt0, _dt1 = _neighbors(lane, i)
     q = _quaternion(lane.at(i)["value"])
     previous = _quaternion(before["value"])
     if _shortest(previous, q):
@@ -457,21 +469,21 @@ def _rotation_tangent(lane, i):
     nxt = _quaternion(after["value"])
     if _shortest(q, nxt):
         nxt = _qneg(nxt)
-    return _tangent(dt0, dt1, _qdelta(q, previous), _qdelta(q, nxt))
+    return _shape_tangent(_qdelta(q, previous), _qdelta(q, nxt))
 
 
 class _RotationShape:
-    """SQUAD with time-aware tangents; a segment that passes neither end is a slerp."""
+    """SQUAD with tangents from the chords' lengths, not the keys' times; a segment that passes neither end is a slerp."""
 
     def __init__(self, lane, k):
         q0 = _quaternion(lane.at(k)["value"])
         q1 = _quaternion(lane.at(k + 1)["value"])
         if _shortest(q0, q1):
             q1 = _qneg(q1)
-        dt = _span(lane, k)
         chord = _qdelta(q0, q1)
-        start = _times(_rotation_tangent(lane, k), dt) if _passes(lane, k) else chord
-        end = _times(_rotation_tangent(lane, k + 1), dt) if _passes(lane, k + 1) else chord
+        length = _norm(chord)
+        start = _times(_rotation_tangent(lane, k), length) if _passes(lane, k) else chord
+        end = _times(_rotation_tangent(lane, k + 1), length) if _passes(lane, k + 1) else chord
         self.q0, self.q1 = q0, q1
         self.a = _qmul(q0, _qexp(tuple(0.5 * (s - c) for s, c in zip(start, chord))))
         self.b = _qmul(q1, _qexp(tuple(0.5 * (c - e) for c, e in zip(chord, end))))
@@ -536,9 +548,8 @@ def _great_circle(lane, k):
 
 
 def _direction_tangent(lane, i):
-    _before, _after, dt0, dt1 = _neighbors(lane, i)
     back = [-c for c in _great_circle(lane, _segment_before(lane, i))[1]]
-    return _tangent(dt0, dt1, back, _great_circle(lane, _segment_after(lane, i))[0])
+    return _shape_tangent(back, _great_circle(lane, _segment_after(lane, i))[0])
 
 
 class _DirectionShape:
@@ -548,10 +559,10 @@ class _DirectionShape:
         self.a = _direction_vector(lane.at(k)["value"])
         self.b = _direction_vector(lane.at(k + 1)["value"])
         chord_start, chord_end, self.opposite = _great_circle(lane, k)
-        dt = _span(lane, k)
+        length = _norm(chord_start)
         self.chord_start = chord_start
-        self.start = _times(_direction_tangent(lane, k), dt) if _passes(lane, k) else chord_start
-        self.end = _times(_direction_tangent(lane, k + 1), dt) if _passes(lane, k + 1) else chord_end
+        self.start = _times(_direction_tangent(lane, k), length) if _passes(lane, k) else chord_start
+        self.end = _times(_direction_tangent(lane, k + 1), length) if _passes(lane, k + 1) else chord_end
         self.left = lane.at(k)["value"]["yaw_deg"]
         self.right = lane.at(k + 1)["value"]["yaw_deg"]
 

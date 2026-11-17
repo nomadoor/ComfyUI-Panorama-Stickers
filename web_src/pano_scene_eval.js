@@ -87,6 +87,16 @@ function times(v, k) {
   return v.map((c) => c * k);
 }
 
+// The shape velocity of a turn (rotation, direction) at a key, per length of chord (docs/scene-state-v2.md "形（回転・
+// direction）"): the speed rule with the two chords' lengths in place of the segments' times, so the shape does not
+// depend on when the keys are. Zero when a side does not move.
+function shapeTangent(back, ahead) {
+  const l0 = norm(back);
+  const l1 = norm(ahead);
+  if (l0 <= LENGTH_EPSILON || l1 <= LENGTH_EPSILON) return back.map(() => 0);
+  return tangent(l0, l1, back, ahead);
+}
+
 // Velocity per frame at a key from the offsets to its neighbors (arrays of equal length) and the two segment
 // lengths: the slope of the parabola through the three keys, limited like Fritsch-Carlson. Zero when the two sides
 // turn back (a negative dot product beyond rounding), and at most three times the slower side's slope, which is
@@ -445,28 +455,29 @@ function unwrapNearBlend(angle, a, b, t) {
   return angle + 360 * Math.ceil((blend - 180 - 1e-6 - angle) / 360);
 }
 
-// The rotation velocity (half-angle vector per frame) at key i, from its neighbors turned the shortest way.
+// The rotation's shape velocity (half-angle vector per length of chord) at key i, from its neighbors turned the
+// shortest way.
 function rotationTangent(lane, i) {
-  const { previous: before, next: after, dt0, dt1 } = neighbors(lane, i);
+  const { previous: before, next: after } = neighbors(lane, i);
   const q = quaternion(lane.at(i).value);
   let previous = quaternion(before.value);
   if (shortest(previous, q)) previous = qneg(previous);
   let next = quaternion(after.value);
   if (shortest(q, next)) next = qneg(next);
-  return tangent(dt0, dt1, qdelta(q, previous), qdelta(q, next));
+  return shapeTangent(qdelta(q, previous), qdelta(q, next));
 }
 
-// SQUAD with time-aware tangents. Where the shape does not pass a key, the tangent is the segment's own, so a
-// segment that passes neither end is a slerp.
+// SQUAD with tangents from the chords' lengths, not the keys' times. Where the shape does not pass a key, the tangent
+// is the segment's own, so a segment that passes neither end is a slerp; a segment that does not turn does not move.
 const ROTATION = {
   shape(lane, k) {
     const q0 = quaternion(lane.at(k).value);
     let q1 = quaternion(lane.at(k + 1).value);
     if (shortest(q0, q1)) q1 = qneg(q1);
-    const dt = span(lane, k);
     const chord = qdelta(q0, q1);
-    const start = passes(lane, k) ? times(rotationTangent(lane, k), dt) : chord;
-    const end = passes(lane, k + 1) ? times(rotationTangent(lane, k + 1), dt) : chord;
+    const length = norm(chord);
+    const start = passes(lane, k) ? times(rotationTangent(lane, k), length) : chord;
+    const end = passes(lane, k + 1) ? times(rotationTangent(lane, k + 1), length) : chord;
     const a = qmul(q0, qexp(start.map((s, i) => 0.5 * (s - chord[i]))));
     const b = qmul(q1, qexp(chord.map((c, i) => 0.5 * (c - end[i]))));
     const left = lane.at(k).value;
@@ -533,11 +544,10 @@ function greatCircle(lane, k) {
   return [start, start.map((c, i) => Math.cos(angle) * c - angle * Math.sin(angle) * a[i]), opposite];
 }
 
-// The velocity at key i in its tangent plane: the speed rule on the chord of the segment before it carried along
-// its great circle to the key, and the chord of the segment after it.
+// The shape velocity (per length of chord) at key i in its tangent plane: the shape rule on the chord of the segment
+// before it carried along its great circle to the key, and the chord of the segment after it.
 function directionTangent(lane, i) {
-  const { dt0, dt1 } = neighbors(lane, i);
-  return tangent(dt0, dt1, greatCircle(lane, segmentBefore(lane, i))[1].map((c) => -c), greatCircle(lane, segmentAfter(lane, i))[0]);
+  return shapeTangent(greatCircle(lane, segmentBefore(lane, i))[1].map((c) => -c), greatCircle(lane, segmentAfter(lane, i))[0]);
 }
 
 // A sky Sticker's direction: a spherical Bezier (de Casteljau with slerps) from key k to key k + 1. The control
@@ -548,9 +558,9 @@ const DIRECTION = {
     const a = directionVector(lane.at(k).value);
     const b = directionVector(lane.at(k + 1).value);
     const [chordStart, chordEnd, opposite] = greatCircle(lane, k);
-    const dt = span(lane, k);
-    const start = passes(lane, k) ? times(directionTangent(lane, k), dt) : chordStart;
-    const end = passes(lane, k + 1) ? times(directionTangent(lane, k + 1), dt) : chordEnd;
+    const length = norm(chordStart);
+    const start = passes(lane, k) ? times(directionTangent(lane, k), length) : chordStart;
+    const end = passes(lane, k + 1) ? times(directionTangent(lane, k + 1), length) : chordEnd;
     const left = lane.at(k).value.yaw_deg;
     const right = lane.at(k + 1).value.yaw_deg;
     // The control points of opposite keys can be opposite too, with no great circle between them, so the segment

@@ -842,3 +842,44 @@ def test_a_looping_look_at_lane_closes_at_a_seam_when_it_ends_on_its_first_targe
     assert not _Lane(keys({"sticker": "s", "offset": [0.0, 0.25, 0.0]}), 40).seam
     assert not _Lane(keys({"point": [0.0, 0.5, 0.0]}), 40).seam
     assert not _Lane(keys(None), 40).seam
+
+
+def _rotation_keys(frames):
+    values = [(0.0, 0.0), (40.0, 30.0), (80.0, -20.0), (120.0, 10.0)]
+    return load_scene_state({"version": 2, "camera": {"rotation": {"keyframes": [
+        {"frame": frame, "value": {"yaw_deg": yaw, "pitch_deg": pitch, "roll_deg": 0.0}} for frame, (yaw, pitch) in zip(frames, values)
+    ]}}})
+
+
+def _turn_path(state, end, samples=400):
+    return [rotation_at(state, end * j / samples) for j in range(samples + 1)]
+
+
+def _farthest(path, other):
+    # The largest angle from a point of `path` to the nearest point of `other` (degrees).
+    return max(min(angle_between(a, b) for b in other) for a in path)
+
+
+def test_the_turn_shape_does_not_depend_on_the_keys_times():
+    # docs/scene-state-v2.md "形（回転・direction）": the same keys at other times pass the same orientations.
+    even = _turn_path(_rotation_keys([0, 12, 24, 36]), 36)
+    uneven = _turn_path(_rotation_keys([0, 4, 40, 48]), 48)
+    # Within the samples' own spacing (about a degree at 400 samples); the time-aware shape strayed by about 20°.
+    assert math.degrees(_farthest(even, uneven)) < 2.0
+    assert math.degrees(_farthest(uneven, even)) < 2.0
+
+
+@pytest.mark.parametrize("lane", ["rotation", "direction"])
+def test_a_looping_turn_back_to_its_first_value_stays_still_through_the_seam(lane):
+    # docs/scene-state-v2.md "ループ": the segment from the last key (the first's value) to the period's end does not move.
+    if lane == "rotation":
+        keys = [{"frame": f, "value": {"yaw_deg": y, "pitch_deg": 0.0, "roll_deg": 0.0}} for f, y in zip([0, 10, 20, 30, 40], [0, 90, 180, 270, 0])]
+        state = load_scene_state({"version": 2, "camera": {"loop": True, "rotation": {"keyframes": keys}}})
+        read = lambda frame: evaluate_scene_state(state, frame, 60)["camera"]
+    else:
+        keys = [{"frame": f, "value": {"yaw_deg": y, "pitch_deg": p}} for f, y, p in zip([0, 10, 20, 40], [0, 60, 120, 0], [0, 30, 0, 0])]
+        state = load_scene_state({"version": 2, "stickers": [{"id": "s", "placement": "sky", "source": {"kind": "port"}, "loop": True, "direction": {"keyframes": keys}}]})
+        read = lambda frame: evaluate_scene_state(state, frame, 60)["stickers"][0]
+    for frame in [40, 43, 47.5, 50, 55, 59.5]:
+        got = read(frame)
+        assert abs(math.remainder(got["yaw_deg"], 360.0)) < 1e-6 and abs(got["pitch_deg"]) < 1e-6, (frame, got)
