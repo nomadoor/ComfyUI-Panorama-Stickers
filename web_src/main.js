@@ -42,10 +42,21 @@ extension.setup = async function (...args) {
   await setup?.apply(this, args);
   preloadStudio();
 };
-// A write of a state_json widget tells ComfyUI's active workflow to take the graph again (pano_state_widget.js).
+// A write of a state_json widget tells ComfyUI's active workflow to take the graph again (pano_state_widget.js). ComfyUI
+// skips that take at times (mid-gesture, loading, another tab in front); then its `graphChanged` is sent here, which
+// writes the draft a reload restores from the graph as it is, and the console says why (docs/studio-ui.md "閉じ方").
 setWorkflowChangeNotifier(() => {
   const tracker = app.extensionManager?.workflow?.activeWorkflow?.changeTracker;
-  if (typeof tracker?.captureCanvasState === "function") tracker.captureCanvasState();
-  else tracker?.checkState?.();
+  if (!tracker) return;
+  const before = tracker.activeState;
+  if (typeof tracker.captureCanvasState === "function") tracker.captureCanvasState();
+  else tracker.checkState?.();
+  if (tracker.activeState !== before) return;
+  console.warn("[PanoramaSuite] ComfyUI did not take the state_json change; saving the workflow draft directly.", {
+    changeCount: tracker.changeCount,
+    restoring: !!tracker._restoringState,
+    activeTab: app.extensionManager?.workflow?.activeWorkflow?.changeTracker === tracker,
+  });
+  api.dispatchCustomEvent?.("graphChanged", tracker.activeState);
 });
 app.registerExtension(extension);
