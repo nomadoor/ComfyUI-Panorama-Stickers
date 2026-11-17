@@ -352,7 +352,7 @@ test("the Easing panel shows only while Keyframes are selected: the shared Easin
   const keyframes = (easings) => easings.map((easing, index) => ({ frame: index * 10, value: [index, 0, 0], easing }));
   const state = load({ stickers: [world("sticker_1", { position: { value: [0, 0, 0], keyframes: keyframes([[0, 0, 1, 1], "hold", [0, 0, 1, 1]]) } })] });
   assert.equal(model(state, { selection: { ids: ["sticker_1"] } }).easing, null);
-  const one = model(state, { selection: { ids: ["sticker_1"], keyframes: { owner: "sticker_1", lane: null, frames: [0] } } }).easing;
+  const one = model(state, { selection: { ids: ["sticker_1"], keyframes: [{ owner: "sticker_1", lane: null, frames: [0] }] } }).easing;
   assert.deepEqual(one.easing, [0, 0, 1, 1]);
   assert.deepEqual(one.curve, [0, 0, 1, 1]);
   assert.equal(one.mixed, false);
@@ -366,7 +366,7 @@ test("the Easing panel shows only while Keyframes are selected: the shared Easin
   assert.deepEqual(one.presets.filter((preset) => preset.active).map((preset) => preset.label), ["Linear"]);
 
   // Two selected: every segment from the leftmost to the rightmost, here Linear and hold.
-  const mixed = model(state, { selection: { ids: [], keyframes: { owner: "sticker_1", lane: null, frames: [0, 20] } } }).easing;
+  const mixed = model(state, { selection: { ids: [], keyframes: [{ owner: "sticker_1", lane: null, frames: [0, 20] }] } }).easing;
   assert.equal(mixed.mixed, true);
   assert.equal(mixed.easing, null);
   assert.equal(mixed.curve, null);
@@ -376,11 +376,41 @@ test("the Easing panel shows only while Keyframes are selected: the shared Easin
   assert.ok(mixed.presets.every((preset) => !preset.active));
 
   // The last Keyframe alone has no segment: the panel shows, its controls off, and says why.
-  const last = model(state, { selection: { ids: [], keyframes: { owner: "sticker_1", lane: "position", frames: [20] } } }).easing;
+  const last = model(state, { selection: { ids: [], keyframes: [{ owner: "sticker_1", lane: "position", frames: [20] }] } }).easing;
   assert.equal(last.segment, false);
   assert.equal(last.range, "");
   assert.equal(last.placeholder, "No segment after the last Keyframe");
   assert.ok(last.presets.every((preset) => !preset.active));
+});
+
+test("the Easing panel reads every selected group, as its edit reaches them all (docs/timeline-ui.md \"Easing\")", () => {
+  const keyed = (easings, value) => easings.map((easing, index) => ({ frame: index * 10, value: value(index), easing }));
+  const state = load({ stickers: [
+    world("sticker_1", {
+      position: { value: [0, 0, 0], keyframes: keyed([[0.42, 0, 0.58, 1], [0.42, 0, 0.58, 1], "hold"], (index) => [index, 0, 0]) },
+      rotation: { value: { yaw_deg: 0, pitch_deg: 0, roll_deg: 0 }, keyframes: keyed(["hold", "hold", "hold"], (index) => ({ yaw_deg: index * 10, pitch_deg: 0, roll_deg: 0 })) },
+    }),
+    world("sticker_2", { position: { value: [0, 0, 0], keyframes: keyed([[0.42, 0, 0.58, 1], "hold"], (index) => [0, index, 0]) } }),
+  ] });
+  const panel = (keyframes) => model(state, { selection: { ids: [], keyframes } }).easing;
+  // Two Lanes of one open row with different Easings: Mixed, and the range covers both.
+  const lanes = panel([{ owner: "sticker_1", lane: "position", frames: [0] }, { owner: "sticker_1", lane: "rotation", frames: [10] }]);
+  assert.equal(lanes.mixed, true);
+  assert.equal(lanes.placeholder, "Mixed");
+  assert.equal(lanes.range, "f 0 → 20 · 2 segments");
+  assert.deepEqual(lanes.keyframes, [{ owner: "sticker_1", lane: "position", frames: [0] }, { owner: "sticker_1", lane: "rotation", frames: [10] }]);
+  // The first group is a Lane's last Keyframe alone: the other group's segment still counts.
+  const last = panel([{ owner: "sticker_1", lane: "rotation", frames: [20] }, { owner: "sticker_1", lane: "position", frames: [0] }]);
+  assert.equal(last.segment, true);
+  assert.deepEqual(last.easing, [0.42, 0, 0.58, 1]);
+  assert.equal(last.range, "f 0 → 10");
+  // Two owners with the same Easing: not Mixed, the shared curve.
+  const owners = panel([{ owner: "sticker_1", lane: "position", frames: [0] }, { owner: "sticker_2", lane: "position", frames: [0] }]);
+  assert.equal(owners.mixed, false);
+  assert.deepEqual(owners.curve, [0.42, 0, 0.58, 1]);
+  assert.equal(owners.range, "f 0 → 10");
+  // Only Lanes' last Keyframes: no segment.
+  assert.equal(panel([{ owner: "sticker_1", lane: "rotation", frames: [20] }, { owner: "sticker_2", lane: "position", frames: [10] }]).segment, false);
 });
 
 test("the Easing panel shows a Smooth segment's current curve, and a range of Smooth segments as their progress", () => {
@@ -388,14 +418,14 @@ test("the Easing panel shows a Smooth segment's current curve, and a range of Sm
     { frame: 0, value: [0, 0, 0] }, { frame: 10, value: [4, 0, 0] }, { frame: 30, value: [4, 0, 4] },
   ] } } });
   // Two Keyframes of Smooth stop at both ends: the curve is ease-in-out, and Smooth is on.
-  const two = model(state, { tab: "camera", selection: { ids: [], keyframes: { owner: "camera", lane: "fov", frames: [0] } } }).easing;
+  const two = model(state, { tab: "camera", selection: { ids: [], keyframes: [{ owner: "camera", lane: "fov", frames: [0] }] } }).easing;
   assert.equal(two.easing, "smooth");
   assert.deepEqual(two.curve, [0.42, 0, 0.58, 1]);
   assert.equal(two.text, "");
   assert.equal(two.placeholder, "Smooth");
   assert.deepEqual(two.presets.filter((preset) => preset.active).map((preset) => preset.label), ["Smooth"]);
   // Several Smooth segments: no control points, the progress across the range with the Keyframe between.
-  const range = model(state, { selection: { ids: [], keyframes: { owner: "camera", lane: "position", frames: [0, 30] } } }).easing;
+  const range = model(state, { selection: { ids: [], keyframes: [{ owner: "camera", lane: "position", frames: [0, 30] }] } }).easing;
   assert.equal(range.curve, null);
   assert.equal(range.range, "f 0 → 30 · 2 segments");
   assert.deepEqual(range.progress.keys, [10 / 30]);

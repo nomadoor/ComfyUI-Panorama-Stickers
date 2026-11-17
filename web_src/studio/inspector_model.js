@@ -568,37 +568,42 @@ function rangeCurve(owner, name, indices, period, scene = null) {
   return { points, keys: indices.slice(1).map((index) => (view.at(index).frame - start) / span) };
 }
 
-// The Easing panel of a Keyframe selection (`keyframes`: { owner, lane, frames } with frames in the owner's own
-// time base), or null without one; `length` is the output length (the loop period). `segment` is false when the
-// selection has no segment (the last Keyframe alone). `range` is the Timeline frames the edit sets, `curve` the
-// cubic-bezier the graph draws with its control points (a Smooth segment's current one), `progress` the curve of a
-// range of Smooth segments, which only shows.
-function easingModel(state, upstream, keyframes, length, boxes = null) {
-  if (!keyframes?.frames?.length) return null;
-  const owner = keyframeOwner(state, upstream, keyframes.owner);
-  if (!owner) return null;
-  length = ownerLength(upstream, owner, length);
-  const names = keyframes.lane ? [keyframes.lane] : rowLaneNames(owner);
-  const segments = easingSegments(owner, names, keyframes.frames, length);
-  const period = ownerPeriod(owner, length);
-  // The Camera's Look at Lane moves by the turns toward its targets: the panel reads them with the state's Stickers.
-  const scene = { stickers: state.stickers, boxes, length };
-  const origin = owner.clip ? clipOrigin(owner.clip) : 0;
-  const spans = segments.map(({ name, index }) => {
-    const view = laneView(owner[name].keyframes, period);
-    return [view.at(index).frame + origin, view.at(index + 1).frame + origin];
+// The Easing panel of a Keyframe selection (`groups`: [{ owner, lane, frames }] with frames in each owner's own time
+// base), or null without one; `length` is the output length (the loop period). It reads every group, as its edit
+// reaches them all (docs/timeline-ui.md "Easing"). `segment` is false when no group has a segment (only Lanes' last
+// Keyframes). `range` is the Timeline frames the edit sets, `curve` the cubic-bezier the graph draws with its control
+// points (a Smooth segment's current one), `progress` the curve of a range of Smooth segments, which only shows (the
+// first group's first Lane with a segment).
+function easingModel(state, upstream, groups, length, boxes = null) {
+  const kept = (groups ?? []).filter((keyframes) => keyframes?.frames?.length && keyframeOwner(state, upstream, keyframes.owner));
+  if (!kept.length) return null;
+  const segments = kept.flatMap((keyframes) => {
+    const owner = keyframeOwner(state, upstream, keyframes.owner);
+    const ownLength = ownerLength(upstream, owner, length);
+    // The Camera's Look at Lane moves by the turns toward its targets: the panel reads them with the state's Stickers.
+    const scene = { stickers: state.stickers, boxes, length: ownLength };
+    const names = keyframes.lane ? [keyframes.lane] : rowLaneNames(owner);
+    const period = ownerPeriod(owner, ownLength);
+    const origin = owner.clip ? clipOrigin(owner.clip) : 0;
+    return easingSegments(owner, names, keyframes.frames, ownLength).map(({ name, index }) => {
+      const view = laneView(owner[name].keyframes, period);
+      return { owner, name, index, period, scene, span: [view.at(index).frame + origin, view.at(index + 1).frame + origin] };
+    });
   });
+  const spans = segments.map((item) => item.span);
   const count = new Set(spans.map((item) => item.join(":"))).size;
-  const easings = segments.map(({ name, index }) => owner[name].keyframes[index].easing);
+  const easings = segments.map(({ owner, name, index }) => owner[name].keyframes[index].easing);
   const mixed = easings.some((item) => !sameJson(item, easings[0]));
   const easing = segments.length && !mixed ? easings[0] : null;
   let curve = null;
   let progress = null;
   if (Array.isArray(easing)) curve = easing;
-  else if (easing === DEFAULT_EASING && count === 1) curve = smoothEasing(owner, segments[0].name, segments[0].index, period, scene);
-  else if (easing === DEFAULT_EASING) {
-    const { name } = segments[0];
-    progress = rangeCurve(owner, name, segments.filter((item) => item.name === name).map((item) => item.index), period, scene);
+  else if (easing === DEFAULT_EASING && count === 1) {
+    const { owner, name, index, period, scene } = segments[0];
+    curve = smoothEasing(owner, name, index, period, scene);
+  } else if (easing === DEFAULT_EASING) {
+    const { owner, name, period, scene } = segments[0];
+    progress = rangeCurve(owner, name, segments.filter((item) => item.owner === owner && item.name === name).map((item) => item.index), period, scene);
   }
   const start = spans.length ? Math.min(...spans.map((item) => item[0])) : null;
   const end = spans.length ? Math.max(...spans.map((item) => item[1])) : null;
@@ -609,8 +614,7 @@ function easingModel(state, upstream, keyframes, length, boxes = null) {
   else if (easing === "hold") placeholder = "Hold";
   return {
     // The selection the panel's edits send back (inspector_actions.js "easing").
-    keyframes: { owner: keyframes.owner, lane: keyframes.lane ?? null, frames: [...keyframes.frames] },
-    names,
+    keyframes: kept.map((keyframes) => ({ owner: keyframes.owner, lane: keyframes.lane ?? null, frames: [...keyframes.frames] })),
     segment: segments.length > 0,
     range: segments.length ? `f ${formatFrame(start)} → ${formatFrame(end)}${count > 1 ? ` · ${count} segments` : ""}` : "",
     easing,
@@ -636,7 +640,7 @@ export function buildCameraCard({ state, playhead = 0, readOnly = false, length 
 }
 
 // The inspector for the working `state` (state v2), the editor's `selection` ({ ids: [...], paint?: true,
-// keyframes?: { owner, lane, frames } }; ids are "camera" or Sticker ids, an upstream element's working id
+// keyframes?: [{ owner, lane, frames }] }; ids are "camera" or Sticker ids, an upstream element's working id
 // `upstream:<key>:<id>`) and the Timeline frame `playhead`. What it shows follows the selection (docs/studio-ui.md
 // "インスペクタ", ADR 0051): nothing selected shows the Scene card, the Camera's card over the Ground's. In the Camera
 // tab (`tab` "camera") the Camera's card is always on top, the selected object's under it. `upstream` is the
