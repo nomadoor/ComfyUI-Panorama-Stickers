@@ -28387,8 +28387,8 @@ function n6(e, t, n, r, o = null) {
     const { owner: y, name: b, index: v, period: k, scene: M } = s[0];
     f = WO(y, b, v, k, M);
   } else if (d === gn) {
-    const { owner: y, name: b, period: v, scene: k } = s[0];
-    p = t6(y, b, s.filter((M) => M.owner === y && M.name === b).map((M) => M.index), v, k);
+    const { owner: y, name: b, period: v, scene: k } = s[0], M = [...new Set(s.filter((S) => S.owner === y && S.name === b).map((S) => S.index))].sort((S, T) => S - T);
+    p = t6(y, b, M, v, k);
   }
   const h = a.length ? Math.min(...a.map((y) => y[0])) : null, m = a.length ? Math.max(...a.map((y) => y[1])) : null;
   let g = "";

@@ -433,6 +433,14 @@ test("the Easing panel shows a Smooth segment's current curve, and a range of Sm
   assert.ok(Math.abs(range.progress.points.at(-1)[0] - 1) < 1e-9 && Math.abs(range.progress.points.at(-1)[1] - 1) < 1e-9);
   const ys = range.progress.points.map((point) => point[1]);
   assert.ok(ys.every((y, i) => !i || y >= ys[i - 1] - 1e-9), "the progress only goes forward");
+  // The same segments reached by two groups, the later one first (a closed row's pin and an open Lane's Keyframes):
+  // the same progress, each segment once and in time order.
+  const groups = model(state, { selection: { ids: [], keyframes: [
+    { owner: "camera", lane: "position", frames: [10, 30] },
+    { owner: "camera", lane: "position", frames: [0, 10] },
+  ] } }).easing;
+  assert.equal(groups.range, "f 0 → 30 · 2 segments");
+  assert.deepEqual(groups.progress, range.progress);
 });
 
 test("the bezier text reads four numbers (or cubic-bezier(...)) with every value in 0..1, and writes them back", () => {

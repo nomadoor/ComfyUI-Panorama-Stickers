@@ -603,7 +603,9 @@ function easingModel(state, upstream, groups, length, boxes = null) {
     curve = smoothEasing(owner, name, index, period, scene);
   } else if (easing === DEFAULT_EASING) {
     const { owner, name, period, scene } = segments[0];
-    progress = rangeCurve(owner, name, segments.filter((item) => item.owner === owner && item.name === name).map((item) => item.index), period, scene);
+    // Two groups can reach the same segments (a closed row's pin and an open Lane's Keyframes): each once, in time order.
+    const indices = [...new Set(segments.filter((item) => item.owner === owner && item.name === name).map((item) => item.index))].sort((a, b) => a - b);
+    progress = rangeCurve(owner, name, indices, period, scene);
   }
   const start = spans.length ? Math.min(...spans.map((item) => item[0])) : null;
   const end = spans.length ? Math.max(...spans.map((item) => item[1])) : null;
