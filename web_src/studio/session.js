@@ -515,12 +515,16 @@ export function createStudioSession({ state: opening, readOnly = false, upstream
 
   // Look at's Pick (docs/studio-ui.md "Look at"): the Camera's Look at target is `target` (its Lane's value; the
   // Keyframes another tool wrote stay), one Undo step, and the Camera is selected. Not while it is locked.
+  // `accepted` tells a pick taken (also on the target the Camera already has, which changes nothing) from one refused
+  // (read-only, locked, a drag under way).
   function setLookAt(target, playhead = 0, length = null) {
-    if (state.camera.locked === true) return result(false);
+    if (readOnly || gestureBase || state.camera.locked === true) return result(false, { accepted: false });
     // By the recording rule: with Keyframes, "from here look at this" (docs/studio-ui.md "Look at").
     const outcome = editCamera((camera) => writeLookTarget(camera, playhead, target, length));
-    if (outcome.changed) selection = { row: "camera", keys: [] };
-    return outcome;
+    const before = selection.row;
+    // A pick selects the Camera, as before; one that changed nothing on the selected Camera keeps its Keyframes selected.
+    selection = { row: "camera", keys: !outcome.changed && before === "camera" ? selection.keys : [] };
+    return { ...outcome, changed: outcome.changed || before !== "camera", accepted: true };
   }
 
   // The left column's Camera button (docs/studio-ui.md "エディタの中の Camera"): the Camera to the view `pose` at the

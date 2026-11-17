@@ -233,8 +233,8 @@ export function createEditorEdits(ctx) {
     const box = lookAtBoxes(state, { image: ctx.imageSizeOf, content: ctx.contentBoxOf }, [sticker.id])[sticker.id] ?? null;
     const outcome = ctx.session.setLookAt(pickedTarget(sticker, point, ctx.view.playhead, box, ctx.outputLength()), ctx.view.playhead, ctx.outputLength());
     objectOutcome(outcome);
-    // Nothing taken (a gesture under way): no notice, and the Pick keeps waiting.
-    if (!outcome.changed) return false;
+    // Refused (a drag under way, locked): no notice, and the Pick keeps waiting. The target it already has is taken.
+    if (!outcome.accepted) return false;
     ctx.doneNotice(lookingAtText(objectLabel(sticker)));
     return true;
   }

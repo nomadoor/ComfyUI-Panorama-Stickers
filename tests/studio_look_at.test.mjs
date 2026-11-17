@@ -132,6 +132,13 @@ test("Look at writes by the recording rule: the value without Keyframes, else a 
   const plain = createStudioSession({ state: load({ version: 2, stickers: [board] }) });
   assert.equal(plain.setLookAt(a, 12).changed, true);
   assert.deepEqual([plain.state.camera.look_at.value, plain.state.camera.look_at.keyframes], [a, []]);
+  // The same target again is taken (Pick ends) with no Undo step; a pick while the Camera is locked is refused
+  // (CodeRabbit review: editor_edits.js lookPicked ends the Pick on `accepted`).
+  const again = plain.setLookAt(a, 12);
+  assert.deepEqual([again.accepted, again.history], [true, false]);
+  plain.selectObject("camera");
+  plain.toggleLock();
+  assert.equal(plain.setLookAt(b, 12).accepted, false);
   // The dot keys the shown target at the playhead; Pick then writes "from here, this" at another frame.
   const state = load({ version: 2, camera: { look_at: { value: a } }, stickers: [board] });
   assert.equal(applyInspectorEdit(state, { type: "key", target, row: "look_at" }, { playhead: 0 }).changed, true);

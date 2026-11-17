@@ -50,3 +50,24 @@ def test_an_empty_crop_has_no_box_so_the_camera_looks_at_the_sticker_s_position(
     rgba = np.zeros((100, 100, 4), dtype=np.uint8)
     sources = SceneSources({"board": StickerSource(rgba, {"x0": 0.0, "y0": 0.5, "x1": 1.0, "y1": 0.5})}, empty_painting_state())
     assert look_at_boxes(state, sources, None) == {}
+
+
+def test_an_upstream_override_of_the_crop_makes_the_layer_s_box_again():
+    # CodeRabbit review: scene_build.py `_override_layer` makes the Look at boxes again from the overridden state.
+    from fractions import Fraction
+
+    from comfyui_pano_suite.pano_scene import PanoSceneValue, SceneLayer
+    from comfyui_pano_suite.scene_build import _override_layers
+
+    raw = {"version": 2, "id": "up", "camera": {"look_at": {"value": {"sticker": "board", "offset": [0.0, 0.0, 0.0]}}},
+           "stickers": [{"id": "board", "placement": "world", "source": {"kind": "file", "filename": "a.png"}}]}
+    state = load_scene_state(raw)
+    full = {"x0": 0.0, "y0": 0.0, "x1": 1.0, "y1": 1.0}
+    sources = SceneSources({"board": StickerSource(np.zeros((100, 200, 4), dtype=np.uint8), full)}, empty_painting_state())
+    layer = SceneLayer(state, sources, None, None, {}, boxes=look_at_boxes(state, sources, None))
+    assert layer.boxes == {"board": {"center": [0.0, 0.0, 0.0], "size": [1.0, 0.5, 0.0]}}
+    upstream = PanoSceneValue((layer,), None, 360, (0.0, 0.0, 0.0), Fraction(24), (), Fraction(0), (), {}, {})
+    own = load_scene_state({"version": 2, "upstream": [{"layer": "up", "fps": 24, "stickers": [
+        {"id": "board", "placement": "world", "crop": {"x0": 0.0, "y0": 0.5, "x1": 1.0, "y1": 0.5}}]}]})
+    applied, _ = _override_layers(upstream, own["upstream"], [])
+    assert applied[0].boxes == {}

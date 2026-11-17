@@ -126,3 +126,13 @@ test("one turn of a loop keeps the start of its last hold", () => {
   assert.equal(frames(plan?.lanes.position ?? owner.position)[2], 20);
   assert.equal((plan?.lanes.position ?? owner.position).keyframes[2].easing, "hold");
 });
+
+// CodeRabbit review: a Lane whose first Keyframe is not the row's keeps both ends of its last hold on one turn.
+test("one turn keeps both ends of a Lane's last hold back to its own first Keyframe", () => {
+  const owner = camera([
+    { frame: 0, value: [0, 0, 0], easing: [0, 0, 1, 1] }, { frame: 10, value: [0, 0, 0], easing: [0, 0, 1, 1] }, { frame: 25, value: [10, 0, 0], easing: [0, 0, 1, 1] },
+  ], { loop: true, fov: { keyframes: [{ frame: 5, value: 60 }, { frame: 20, value: 80, easing: "hold" }] } });
+  const plan = planConstantSpeed(owner, ["position", "fov"], [0, 5, 10, 20, 25], { period: 30 });
+  const fov = frames((plan?.lanes ?? owner).fov ?? owner.fov);
+  assert.deepEqual(fov, [5, 20]);
+});

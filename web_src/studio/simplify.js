@@ -125,7 +125,7 @@ export function fitEasing(samples) {
 //   { start, end, candidates, mustKeep, order, errors, original, least, fallback, build(n) }
 // order lists the frames kept first (the ends and the must-keeps) then each added back; errors[n] is the deviation with
 // the first n kept; build(n) gives the Lanes (by name) with the first n kept, their handles and Easing written again.
-export function planSimplify(owner, names, frames, { period = null, ground = -1.6, camera = false, hfov = 90, lookAt = null, memo = true } = {}) {
+export function planSimplify(owner, names, frames, { period = null, ground = -1.6, camera = false, hfov = 90, lookAt = null, memo: memoAsked = true } = {}) {
   if (!frames.length) return null;
   const start = Math.min(...frames);
   const end = Math.max(...frames);
@@ -152,6 +152,9 @@ export function planSimplify(owner, names, frames, { period = null, ground = -1.
     }
   }
   for (const key of lookAt?.keyframes ?? []) mustKeep.add(key.frame);
+  // A looping Lane's first segments read its last Keyframes across the seam, which the memo's context (the kept
+  // Keyframes from the stretch's start) does not hold: a looping row is made again every time, as without the memo.
+  const memo = memoAsked && !lanes.some((name) => laneView(owner[name].keyframes, period).loop);
   const kept0 = candidates.filter((frame) => mustKeep.has(frame));
   // The original values at each frame of the stretch, and each Lane's measure.
   const sampleFrames = [];

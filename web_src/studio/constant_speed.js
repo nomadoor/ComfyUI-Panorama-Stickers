@@ -42,11 +42,14 @@ export function planConstantSpeed(owner, names, frames, { period = null, ground 
     const looping = laneView(keys, period).loop;
     keys.forEach((key, index) => {
       if (key.easing !== "hold") return;
-      // A looping Lane's last hold runs back to its first Keyframe a period later: its start stays too.
+      // A looping Lane's last hold runs back to its first Keyframe a period later: both its ends stay too.
       if (index + 1 < keys.length) {
         fixed.add(key.frame);
         fixed.add(keys[index + 1].frame);
-      } else if (looping) fixed.add(key.frame);
+      } else if (looping) {
+        fixed.add(key.frame);
+        fixed.add(keys[0].frame);
+      }
     });
     if (looping && !cycle) {
       fixed.add(keys[0].frame);

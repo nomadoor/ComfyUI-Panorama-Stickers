@@ -162,3 +162,35 @@ test("a size without a vFOV is measured by its hFOV", async () => {
   const { distance } = laneMeasure("size", [{ hFOV_deg: 30 }, { hFOV_deg: 60 }], { camera: false, ground: -1.6, hfov: 90 });
   assert.ok(Math.abs(distance({ hFOV_deg: 30 }, { hFOV_deg: 60 }) - Math.log(2)) < 1e-12);
 });
+
+// CodeRabbit review: a looping Lane's first segments read its last Keyframes across the seam, which the memo's context
+// does not hold; a looping row gives exactly the full recompute.
+test("Simplify on looping Lanes gives exactly the full recompute", async () => {
+  const { planSimplify } = await import("../web_src/studio/simplify.js");
+  let seed = 99;
+  const rand = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+  const easings = ["smooth", "smooth", "smooth", [0, 0, 1, 1], [0.42, 0, 0.58, 1]];
+  let compared = 0;
+  for (let c = 0; c < 30; c += 1) {
+    const n = 6 + Math.floor(rand() * 14);
+    let frame = 0;
+    let p = [0, 0, 0];
+    const keys = [];
+    for (let i = 0; i < n; i += 1) {
+      p = p.map((v) => v + (rand() - 0.5) * 4);
+      keys.push({ frame, value: [...p], easing: easings[Math.floor(rand() * easings.length)] });
+      frame += 1 + Math.floor(rand() * 6);
+    }
+    if (rand() < 0.5) keys[keys.length - 1].value = [...keys[0].value];
+    const owner = loadSceneState({ version: 2, camera: { loop: true, position: { keyframes: keys } } }).camera;
+    const frames = keys.map((key) => key.frame);
+    const options = { period: frame + 3, camera: true, hfov: 60 };
+    const fast = planSimplify(owner, ["position"], frames, options);
+    const full = planSimplify(owner, ["position"], frames, { ...options, memo: false });
+    if (!full) continue;
+    compared += 1;
+    assert.deepEqual(fast.order, full.order, `case ${c}: order`);
+    assert.deepEqual(fast.errors, full.errors, `case ${c}: errors`);
+  }
+  assert.ok(compared > 20, `compared ${compared}`);
+});

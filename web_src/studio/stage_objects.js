@@ -472,10 +472,14 @@ export function createStageObjects({
   // A press on the line: the playhead to the frame there, following the pointer while it is held. A looping line runs
   // one period from its first Keyframe; a frame past the output's last is the same place a period earlier
   // (docs/studio-ui.md "軌道の線").
+  // A period longer than the output (an upstream layer's) can put that place before the output's start, where it never
+  // shows: the output's last frame then, as a span that got shorter brings the playhead back.
   function onTimeline(frame) {
     const target = pathTarget();
     const last = (length() ?? Infinity) - 1;
-    return target?.period && frame > last ? frame - target.period : frame;
+    if (!(frame > last)) return frame;
+    const earlier = target?.period ? frame - target.period : frame;
+    return earlier >= 0 && earlier <= last ? earlier : last;
   }
   function linePress(part, shown) {
     seek(onTimeline(part.frame));

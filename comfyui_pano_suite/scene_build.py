@@ -120,7 +120,8 @@ def _override_layer(layer: SceneLayer, record: dict, rate: float) -> tuple[Scene
         port_end = port.end(rate)
         if port_end is not None:
             ends.append((port_end, fps))
-    return replace(layer, state=state, sources=sources, port=port), ends
+    # The Look at boxes follow the overridden crops and Stickers (a crop made empty has none).
+    return replace(layer, state=state, sources=sources, port=port, boxes=look_at_boxes(state, sources, port)), ends
 
 
 def look_at_boxes(state: dict, sources: SceneSources, port: PortMedia | None) -> dict:

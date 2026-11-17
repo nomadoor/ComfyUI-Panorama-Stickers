@@ -150,9 +150,10 @@ test("a press on a looping line's way back past the last frame takes the playhea
   await page.waitForTimeout(100);
   await page.mouse.down();
   await page.mouse.up();
-  await page.waitForTimeout(150);
-  const frame = await playhead(page);
-  expect(frame).toBeLessThanOrEqual(47);
-  expect(Math.abs(frame - 4)).toBeLessThanOrEqual(1);
+  // Inside the output (its last frame is 47) and at the pressed place a period earlier.
+  await expect.poll(async () => {
+    const frame = await playhead(page);
+    return frame <= 47 && Math.abs(frame - 4) <= 1;
+  }).toBe(true);
   expect(problems).toEqual([]);
 });
