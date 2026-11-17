@@ -167,3 +167,11 @@ test("a looping Look at Lane closes at a seam when it ends on its first target",
   assert.equal(laneView(keys({ point: [0, 0.5, 0] }), 40).seam, false);
   assert.equal(laneView(keys(null), 40).seam, false);
 });
+
+// CodeRabbit review: a still Camera straight under a point has no frame that gives a yaw; the rotation Lane's is kept.
+test("a still Camera straight under a point keeps the rotation Lane's yaw", async () => {
+  const { evaluateSceneState } = await import("../web_src/pano_scene_eval.js");
+  const state = loadSceneState({ version: 2, camera: { rotation: { value: { yaw_deg: 30, pitch_deg: 0, roll_deg: 5 } }, look_at: { value: { point: [0, 5, 0] } } } });
+  const { yaw_deg, pitch_deg, roll_deg } = evaluateSceneState(state, 12, 2000).camera;
+  assert.deepEqual([yaw_deg, pitch_deg, roll_deg], [30, 90, 5]);
+});

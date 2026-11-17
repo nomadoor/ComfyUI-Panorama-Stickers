@@ -793,6 +793,9 @@ def _look_toward(camera, target, frame, scene, period):
     yaw, pitch, pole = angles
     if pole is None:
         return {"yaw_deg": yaw, "pitch_deg": pitch, "roll_deg": rotation["roll_deg"]}
+    # A Camera that does not move looking at a point: every frame is on the pole, so no frame gives a yaw.
+    if not camera["position"]["keyframes"] and "point" in target:
+        return {"yaw_deg": rotation["yaw_deg"], "pitch_deg": pole, "roll_deg": rotation["roll_deg"]}
     lo, hi = _pole_range(camera, target, scene)
     found = None
     g = math.ceil(frame) - 1

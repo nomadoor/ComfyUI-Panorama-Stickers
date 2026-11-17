@@ -900,6 +900,8 @@ function lookToward(camera, target, frame, scene, period) {
   const angles = lookAngles(camera, target, frame, scene, period);
   if (!angles) return rotation;
   if (angles.pole === undefined) return { yaw_deg: angles.yaw, pitch_deg: angles.pitch, roll_deg: rotation.roll_deg };
+  // A Camera that does not move looking at a point: every frame is on the pole, so no frame gives a yaw.
+  if (!camera.position.keyframes.length && target.point) return { yaw_deg: rotation.yaw_deg, pitch_deg: angles.pole, roll_deg: rotation.roll_deg };
   const [lo, hi] = poleRange(camera, target, scene);
   let yaw = null;
   for (let g = Math.ceil(frame) - 1; g >= lo && yaw === null; g -= 1) {

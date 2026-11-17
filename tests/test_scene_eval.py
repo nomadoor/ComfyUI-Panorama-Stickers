@@ -883,3 +883,11 @@ def test_a_looping_turn_back_to_its_first_value_stays_still_through_the_seam(lan
     for frame in [40, 43, 47.5, 50, 55, 59.5]:
         got = read(frame)
         assert abs(math.remainder(got["yaw_deg"], 360.0)) < 1e-6 and abs(got["pitch_deg"]) < 1e-6, (frame, got)
+
+
+def test_a_still_camera_straight_under_a_point_keeps_the_rotation_lane_s_yaw():
+    # CodeRabbit review: no frame gives a yaw, so the search is skipped; the result is the rotation Lane's yaw.
+    state = load_scene_state({"version": 2, "camera": {"rotation": {"value": {"yaw_deg": 30.0, "pitch_deg": 0.0, "roll_deg": 5.0}},
+                                                       "look_at": {"value": {"point": [0.0, 5.0, 0.0]}}}})
+    camera = evaluate_scene_state(state, 12.0, 2000)["camera"]
+    assert (camera["yaw_deg"], camera["pitch_deg"], camera["roll_deg"]) == (30.0, 90.0, 5.0)
