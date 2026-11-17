@@ -58,7 +58,7 @@ async function places(page) {
     const { pointInPolygon } = await import("/web_src/studio/world_guides.js");
     const state = loadSceneState(window.__studio.session.state);
     const value = evaluateCamera(state.camera, 0);
-    const length = cameraMarkerLength(value, camera, rect.height, -1.6);
+    const length = cameraMarkerLength(-1.6);
     const marker = cameraMarkerScreen(cameraMarkerShape(value, state.camera.projection, length), camera, rect.width, rect.height);
     const toLine = (p, { a, b }) => {
       const dx = b.x - a.x;
@@ -112,7 +112,8 @@ test("a click selects the World image (GPU pick), the bar shows its buttons, the
   expect(await selected(page)).toBe("sticker_2");
   const bar = page.locator('.pano-studio-at-bar [data-kind="world-image"]');
   await expect(bar).toHaveCount(1);
-  await expect(bar.locator("[data-bar]")).toHaveCount(7);
+  // Move, Rotate, Scale, the three point types, Duplicate, Replace, Lock, Delete.
+  await expect(bar.locator("[data-bar]")).toHaveCount(10);
   await expect(bar.locator('[data-bar="gizmo:translate"]')).toHaveAttribute("data-tip", "Move (1)");
   await expect(bar.locator('[data-bar="gizmo:translate"]')).toHaveClass(/is-active/);
   await expect(bar.locator('[data-bar="replace"]')).toHaveAttribute("aria-disabled", "true");
@@ -219,7 +220,8 @@ test("the Camera is selected by its lines; Delete says it can't be deleted; its 
   await click(page, at.camera);
   expect(await selected(page)).toBe("camera");
   const bar = page.locator('.pano-studio-at-bar [data-kind="camera"]');
-  await expect(bar.locator("[data-bar]")).toHaveCount(3);
+  // Move, Rotate, the three point types, Lock.
+  await expect(bar.locator("[data-bar]")).toHaveCount(6);
   await page.keyboard.press("Delete");
   await expect(page.locator(".pano-studio-notice")).toContainText("The camera can't be deleted");
   expect((await stateOf(page)).camera).not.toBeNull();
@@ -275,6 +277,8 @@ test("dragging the gizmo's XZ square draws the X and Z guide lines through the g
     return { shown: plane.shown, stage: { x: rect.left, y: rect.top }, size: { width: rect.width, height: rect.height }, center: handles.center, grip, lines, board };
   });
   expect(at.shown).toBe(true);
+  // The Camera's mark is drawn over the guides and can lie on the X line here: hide the Camera so only the lines are read.
+  await page.locator('.pano-studio-tl-head[data-head="camera"] [data-part="eye"]').click();
   const page_ = (p) => ({ x: at.stage.x + p.x, y: at.stage.y + p.y });
   await click(page, page_(at.board));
   expect(await selected(page)).toBe("sticker_2");
@@ -320,6 +324,9 @@ const barName = (page) => page.locator(".pano-studio-at-bar .pano-studio-bar-nam
 
 test("the bar's name field: the Camera's fixed name fits its text, a World image's name keeps 140px", async ({ page }, testInfo) => {
   const problems = await open(page, testInfo);
+  // At full HD the World image's whole bar fits beside the View group (docs/studio-ui.md "下の中央のバー" "バーの置き場所").
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await page.waitForTimeout(400);
   const at = await places(page);
   await click(page, at.camera);
   expect(await selected(page)).toBe("camera");
@@ -330,5 +337,14 @@ test("the bar's name field: the Camera's fixed name fits its text, a World image
   await click(page, at.board);
   expect(await selected(page)).toBe("sticker_2");
   expect((await barName(page)).width).toBeCloseTo(140, 0);
+  // In a narrow stage the bar moves left, then drops the name's text, and never reaches the View group.
+  await page.setViewportSize({ width: 1440, height: 860 });
+  await page.waitForTimeout(400);
+  const boxes = await page.evaluate(() => {
+    const rect = (selector) => document.querySelector(selector).getBoundingClientRect();
+    return { bar: rect(".pano-studio-at-bar > *"), view: rect(".pano-studio-at-buttons"), stage: rect('[data-region="stage"]') };
+  });
+  expect(boxes.bar.right).toBeLessThanOrEqual(boxes.view.left - 8 + 0.5);
+  expect(boxes.bar.left).toBeGreaterThanOrEqual(boxes.stage.left + 16 - 0.5);
   expect(problems).toEqual([]);
 });

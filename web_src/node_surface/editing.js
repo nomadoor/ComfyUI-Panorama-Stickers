@@ -11,6 +11,7 @@ import { registerExternalStickerSync } from "../pano_external_sticker_sync.js";
 import { comfy, getNodePreviewImage, ownOutputUiValue } from "./media.js";
 import { getCachedState, getWidget } from "./state.js";
 import { pauseSurfacePlayback } from "./playback.js";
+import { writeStateWidget } from "../pano_state_widget.js";
 
 // Makes the surface's session (ctx.nodeSurfaceSession), syncs its port Sticker with the node's result, and gives it
 // addNodeStickerFile.
@@ -39,8 +40,7 @@ export function createSurfaceEditing(ctx) {
         setEditorActive(node, nextState.active);
         const text = editorStateWrite(node, nextState, String(stateWidget.value ?? ""));
         if (text === null) return;
-        stateWidget.value = text;
-        stateWidget.callback?.(text);
+        writeStateWidget(stateWidget, text);
         sync.parsedState = null;
         node.setDirtyCanvas?.(true, true);
         node.graph?.setDirtyCanvas?.(true, true);

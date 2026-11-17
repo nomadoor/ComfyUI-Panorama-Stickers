@@ -2,7 +2,10 @@
 import { CAMERA_ASPECT_MAX, CAMERA_ASPECT_MIN } from "../../pano_editor_state.js";
 import { aspectLabel, parseAspect } from "../../studio/ui_aspect.js";
 import { roundValue } from "../../studio/ui_drag.js";
+import { ICON } from "../../icons.js";
+import SvgIcon from "../shared/SvgIcon.vue";
 import StudioAspectSlider from "./StudioAspectSlider.vue";
+import StudioIconButton from "./StudioIconButton.vue";
 import StudioCard from "./StudioCard.vue";
 import StudioInspectorRow from "./StudioInspectorRow.vue";
 import StudioModeTiles from "./StudioModeTiles.vue";
@@ -57,12 +60,20 @@ function boxProps(row, field) {
     disabled: field.disabled,
     label: field.axis ? `${row.name} ${field.axis}` : row.name,
     "data-field": field.field,
+    ...(field.tip ? { "data-tip": field.tip } : {}),
   };
 }
+
+// The Look at row's Pick and clear (docs/studio-ui.md "Look at"): Pick asks the editor to wait for a click on the stage.
+function lookPick() {
+  send({ type: "look-pick" });
+}
+
+
 </script>
 
 <template>
-  <StudioCard :title="card.title" :icon="card.icon" :note="card.note" :data-card="card.kind">
+  <StudioCard :title="card.title" :icon="card.icon" :note="card.note" :badge="card.badge" :data-card="card.kind">
     <template v-for="row in card.rows" :key="row.id">
       <div v-if="row.control === 'heading'" class="pano-studio-card-subhead pano-studio-cap" :data-row="row.name">{{ row.name }}</div>
       <StudioModeTiles
@@ -86,6 +97,7 @@ function boxProps(row, field) {
         :disabled="row.disabled"
         :marked="row.marked"
         :tip="row.tip"
+        :sub="!!row.sub"
         @key-toggle="send({ type: 'key', row: row.id })"
         @reset="send({ type: 'reset', row: row.id })"
       >
@@ -107,6 +119,25 @@ function boxProps(row, field) {
             @select="(value) => send({ type: 'choice', field: 'erp_range', value })"
           />
         </template>
+
+        <span v-else-if="row.control === 'look'" class="pano-studio-look-row">
+          <span class="pano-studio-look" :class="{ 'is-on': !!row.look.target }" data-part="look-target">
+            <SvgIcon v-if="row.look.target" :icon="ICON.look_at" />
+            <span class="pano-studio-look-name">{{ row.look.target ?? "None" }}</span>
+          </span>
+          <span class="pano-studio-look-acts">
+            <button
+              type="button"
+              class="pano-studio-chip-btn"
+              :class="{ 'is-active': row.look.picking }"
+              :data-tip="row.look.pickTip"
+              :aria-disabled="row.disabled ? 'true' : null"
+              :aria-pressed="row.look.picking ? 'true' : 'false'"
+              data-part="look-pick"
+              @click="!row.disabled && lookPick()"
+            >Pick</button>
+          </span>
+        </span>
 
         <template v-else-if="row.control === 'select'">
           <select

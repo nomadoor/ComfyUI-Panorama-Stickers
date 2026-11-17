@@ -3,7 +3,7 @@
 // as a run would leave it (docs/studio-node.md "実行結果の `ui`"); ComfyUI is not used. `?case=` picks the inputs:
 //   port      the `sticker` input's image, its port Sticker a sky image in front of the view
 //   port3d    the `sticker` input's GLB, its port Sticker a world object in front of the view
-//   handoff   `sticker` and `sticker_state` linked: the port Sticker stored at yaw -25, the run's Pose handoff at yaw 25
+//   handoff   `sticker` and `sticker_state` linked: the port Sticker stored at yaw -25, the run's shot at yaw 25
 //   handoff-late  the same whose result comes after the editor opened (window.__studio.arrive() stores it and sends
 //             ComfyUI's `executed` event for the node)
 //   upstream  another Studio's Scene on `scene`: a sky image, a world board and its background, edited as overrides
@@ -80,11 +80,10 @@ function portCase() {
   };
 }
 
-// The run's Pose handoff (docs/studio-node.md "`sticker_state` で届く `port` の Sticker"): a sky Sticker at yaw 25.
+// The run's Pose handoff (docs/studio-node.md "`sticker_state` で届く `port` の Sticker"): the sticker_state it read, a
+// Camera turned to yaw 25 with an hFOV of 20, which places the port Sticker there.
 export const HANDOFF = {
-  placement: "sky",
-  lanes: { direction: { value: { yaw_deg: 25, pitch_deg: 0 }, keyframes: [] }, roll: { value: 0, keyframes: [] }, size: { value: { hFOV_deg: 20, vFOV_deg: 20 }, keyframes: [] } },
-  fps: 24,
+  state: { kind: "pano_sticker_state", version: 3, fps: 24, length: null, camera: { rotation: [{ frame: 0, value: { yaw_deg: 25, pitch_deg: 0, roll_deg: 0 } }], fov: [{ frame: 0, value: 20 }] } },
 };
 
 function handoffCase() {

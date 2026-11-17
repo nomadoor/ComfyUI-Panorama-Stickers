@@ -50,7 +50,7 @@ export function createEditorPlayback(ctx) {
     },
     onFrame: (frame) => {
       ctx.view.playhead = frame;
-      ctx.world.camera = outputView(ctx.session.state, frame).position;
+      ctx.world.camera = outputView(ctx.session.state, frame, ctx.outputLength()).position;
       ctx.redraw();
     },
     onChange: () => {

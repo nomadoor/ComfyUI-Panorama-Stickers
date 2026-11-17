@@ -198,6 +198,11 @@ export function gizmoHit(handles, point) {
 }
 
 // The ray through `point`, or null where there is none (past a lens Camera's limit: the drag keeps its last value).
+// The ray through `point` for the path line's drags (path_line.js), or null.
+export function pointerRay(camera, point, width, height) {
+  return ray(camera, point, width, height);
+}
+
 function ray(camera, point, width, height) {
   const direction = placeDirection(camera, point, width, height);
   return direction ? { origin: camera.position, direction } : null;

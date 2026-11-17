@@ -14,7 +14,7 @@ import {
   cameraMarkerShape,
   cameraMarkerShown,
 } from "../web_src/studio/camera_marker.js";
-import { CAMERA_GUIDE_MIN_PIXELS, eyeLengths } from "../web_src/studio/view_scale.js";
+import { eyeLengths } from "../web_src/studio/view_scale.js";
 import { pointInPolygon } from "../web_src/studio/world_guides.js";
 
 const W = 1000;
@@ -122,16 +122,17 @@ test("a face that passes behind the view is cut at the near plane, not dropped",
   assert.ok(screen.fills.length >= 4, "the side faces still fill");
 });
 
-test("the mark is CAMERA_GUIDE_LENGTH long near, and far away never shows shorter than CAMERA_GUIDE_MIN_PIXELS", () => {
+test("the mark is CAMERA_GUIDE_LENGTH long, a World length: far away it shows smaller, as everything else does", () => {
   const camera = { position: [0, 0, 0], yaw_deg: 90, pitch_deg: 0, roll_deg: 0, hFOV_deg: 60, aspect: 16 / 9, curve: 1 };
-  assert.equal(cameraMarkerLength(camera, view([0, 0, 2]), H, -1.6), LENGTH);
-  const far = view([0, 0, 30]);
-  const length = cameraMarkerLength(camera, far, H, -1.6);
-  assert.ok(length > LENGTH);
-  // The frustum points along +X, across the line of sight: its depth shows CAMERA_GUIDE_MIN_PIXELS long.
-  const shape = cameraMarkerShape(camera, "perspective", length);
-  const apex = projectPoint(far, shape.apex, W, H);
+  assert.equal(cameraMarkerLength(-1.6), LENGTH);
+  const shape = cameraMarkerShape(camera, "perspective", cameraMarkerLength(-1.6));
   const middle = shape.faces[4].reduce((sum, p) => sum.map((v, i) => v + p[i] / 4), [0, 0, 0]);
-  const tip = projectPoint(far, middle, W, H);
-  assert.ok(Math.abs(Math.hypot(tip.x - apex.x, tip.y - apex.y) - CAMERA_GUIDE_MIN_PIXELS) < 0.5);
+  const shown = (distance) => {
+    const v = view([0, 0, distance]);
+    const apex = projectPoint(v, shape.apex, W, H);
+    const tip = projectPoint(v, middle, W, H);
+    return Math.hypot(tip.x - apex.x, tip.y - apex.y);
+  };
+  // Three times as far shows a third as long.
+  assert.ok(Math.abs(shown(30) * 3 - shown(10)) < 0.5);
 });

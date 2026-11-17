@@ -7,7 +7,7 @@ import { stickerVfovFromAspect } from "../pano_editor_state.js";
 import { viewProjection } from "../pano_editor_view.js";
 import { NEW_STICKER_HFOV, boxCorners, projectPoint, sceneContentBox, transformPoint } from "../pano_space.js";
 import { buildStickerGeometry } from "../pano_sticker_geometry.js";
-import { worldRotation } from "../pano_world.js";
+import { lookRotation, worldRotation } from "../pano_world.js";
 import { groundDepth } from "./stage_view.js";
 import { boxDepth } from "./view_camera.js";
 import { DROP_PREVIEW_BOX, eyeHeight, eyeLengths } from "./view_scale.js";
@@ -108,15 +108,14 @@ export function groundBelow(target, ground) {
 // eye to it; `viewYaw` when the point is right above or below the eye.
 export function facingYaw(eye, point, viewYaw = 0) {
   const d = sub(point, eye);
-  return Math.hypot(d[0], d[2]) > 1e-9 ? Math.atan2(d[0], -d[2]) * RAD2DEG + 0 : viewYaw;
+  return Math.hypot(d[0], d[2]) > 1e-9 ? lookRotation(d).yawDeg : viewYaw;
 }
 
 // A sky image along the World `direction` (docs/space-and-view.md "着く所" "当たり無し"): its pose in the editor's
 // fields (pano_editor_state.js newSceneSticker), NEW_STICKER_HFOV wide, as tall as the image's aspect (`size`,
 // { width, height } px) makes it, unturned.
 export function skyPose(direction, size) {
-  const yaw = Math.atan2(direction[0], -direction[2]) * RAD2DEG + 0;
-  const pitch = Math.atan2(direction[1], Math.hypot(direction[0], direction[2])) * RAD2DEG;
+  const { yawDeg: yaw, pitchDeg: pitch } = lookRotation(direction);
   return {
     yaw_deg: yaw,
     pitch_deg: pitch,

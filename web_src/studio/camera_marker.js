@@ -5,7 +5,7 @@
 // its lines. Pure: the evaluated Camera in, World shapes and their screen form out; stage_overlay.js draws them.
 import { cameraFrustumShape, projectPoint } from "../pano_space.js";
 import { worldRotation } from "../pano_world.js";
-import { CAMERA_GUIDE_MIN_PIXELS, eyeHeight, eyeLengths } from "./view_scale.js";
+import { eyeHeight, eyeLengths } from "./view_scale.js";
 import { SELECTED_GUIDE_COLOR, distanceToSegment, focalPixels, pointInPolygon, rotateBy, screenSegment, viewDepth, viewForward } from "./world_guides.js";
 
 // How it looks (docs/design.md "新しい UI の見た目" カメラの見た目): white lines over a darker, wider line, so it
@@ -55,14 +55,10 @@ export function cameraMarkerShown(value, viewPosition, ground) {
   return Math.hypot(...sub(value.position, viewPosition)) >= CAMERA_GUIDE_LENGTH;
 }
 
-// How long (World units) the mark of the evaluated Camera `value` is, seen from `view` (a stageCamera()) on a stage
-// `height` CSS px high, for the eye height of `ground` (docs/space-and-view.md "量の一覧"): CAMERA_GUIDE_LENGTH, or
-// longer where that would show shorter than CAMERA_GUIDE_MIN_PIXELS at the Camera's depth.
-export function cameraMarkerLength(value, view, height, ground) {
-  const { CAMERA_GUIDE_LENGTH } = eyeLengths(eyeHeight(ground));
-  const depth = viewDepth(view, value.position);
-  if (!(depth > 0)) return CAMERA_GUIDE_LENGTH;
-  return Math.max(CAMERA_GUIDE_LENGTH, (CAMERA_GUIDE_MIN_PIXELS * depth) / focalPixels(view, height));
+// How long (World units) the Camera's mark is, for the eye height of `ground` (docs/space-and-view.md "量の一覧"):
+// always CAMERA_GUIDE_LENGTH, a World length, so far away it shows small as everything else does.
+export function cameraMarkerLength(ground) {
+  return eyeLengths(eyeHeight(ground)).CAMERA_GUIDE_LENGTH;
 }
 
 // The mark of the evaluated Camera `camera` (pano_scene_eval.js evaluateCamera) in World units, `length` long

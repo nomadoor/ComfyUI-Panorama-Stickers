@@ -3,16 +3,20 @@ import { ICON } from "../../icons.js";
 import SvgIcon from "../shared/SvgIcon.vue";
 import StudioKeyDot from "./StudioKeyDot.vue";
 
-// The head of a Timeline row (docs/studio-ui.md "タイムラインのバー": eye, ▶, the Sky / World icon, name, row dot),
-// or of one of its Lane lines (`lane`: indented name only). A row without an eye, a ▶ or a dot keeps their places,
-// so names and dots line up down the column. An upstream row keeps the place of the "overridden" dot after its name.
-// Presentational: `row` (timeline_model.js) in; `eye`, `expand`, `select`, `frame` (double-click on the name) and
-// `key` (the row dot) out.
+// The head of a Timeline row (docs/studio-ui.md "タイムラインのバー": eye, ▶, the Sky / World icon, name, the motion
+// loop's button, row dot), or of one of its Lane lines (`lane`: indented name only). A row without an eye, a ▶, a loop
+// button or a dot keeps their places, so names and dots line up down the column. An upstream row keeps the place of the
+// "overridden" dot after its name. Presentational: `row` (timeline_model.js) in; `eye`, `expand`, `select`, `frame`
+// (double-click on the name), `loop` (the motion loop's button) and `key` (the row dot) out.
 const props = defineProps({
   row: { type: Object, required: true },
   lane: { type: Object, default: null },
 });
-const emit = defineEmits(["eye", "expand", "select", "frame", "key"]);
+const emit = defineEmits(["eye", "expand", "select", "frame", "loop", "key"]);
+
+function onLoop() {
+  if (props.row.loop && !props.row.loop.disabled) emit("loop");
+}
 
 function onEye() {
   if (!props.row.eye?.disabled) emit("eye");
@@ -74,6 +78,21 @@ function onExpand() {
       :class="{ 'is-on': row.overridden }"
       :data-tip="row.overridden ? 'Overridden in this node' : null"
     />
+    <button
+      v-if="row.loop"
+      type="button"
+      class="pano-studio-tl-head-btn pano-studio-tl-loop"
+      :class="{ 'is-on': row.loop.on }"
+      :aria-label="row.loop.on ? 'Loop motion: on' : 'Loop motion: off'"
+      :aria-pressed="row.loop.on ? 'true' : 'false'"
+      :data-tip="row.loop.tip"
+      :aria-disabled="row.loop.disabled ? 'true' : null"
+      data-part="loop"
+      @click="onLoop"
+    >
+      <SvgIcon :icon="row.loop.icon" />
+    </button>
+    <span v-else class="pano-studio-tl-head-gap" />
     <StudioKeyDot
       v-if="row.dot"
       :state="row.dot.state"

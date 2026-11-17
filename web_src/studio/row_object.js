@@ -12,6 +12,14 @@ export function findSticker(state, upstream, id) {
     ?? null;
 }
 
+// The output length whose loop the owner `owner` follows (docs/scene-state-v2.md "ループ"): an upstream working
+// Sticker its layer's (the length of the node that made it, at the working fps), anything else `length`, the node's own.
+export function ownerLength(upstream, owner, length) {
+  if (!owner?.origin) return length;
+  const layer = upstream.find((item) => item.sceneState.stickers.includes(owner));
+  return layer ? layer.length ?? null : length;
+}
+
 // The owner of a Keyframe selection's Lanes (selection.keyframes.owner): "camera" (the state's Camera), "scene", or a Sticker's id (findSticker).
 export function keyframeOwner(state, upstream, id) {
   if (id === "camera") return state.camera;

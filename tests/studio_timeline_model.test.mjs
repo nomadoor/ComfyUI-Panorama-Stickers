@@ -58,7 +58,7 @@ test("Keyframes at or past the output's end are not on the Timeline", () => {
 
 test("an open row has one line per Lane, the lens Lane included, and the row dot leaves the lens out", () => {
   const model = view(ctxOf(studioState()), { openRows: new Set(["camera", "sticker_1"]) });
-  assert.deepEqual(row(model, "camera").lanes.map((lane) => lane.label), ["Position", "Rotation", "FOV", "Lens curve"]);
+  assert.deepEqual(row(model, "camera").lanes.map((lane) => lane.label), ["Position", "Rotation", "FOV", "Lens curve", "Look at"]);
   assert.deepEqual(row(model, "sticker_1").lanes.map((lane) => lane.lane), ["position", "rotation", "scale", "opacity"]);
   assert.deepEqual(row(model, "sticker_1").lanes[0].keys.map((key) => key.frame), [10, 30]);
   assert.equal(row(model, "sticker_2").open, false);
@@ -76,6 +76,22 @@ test("the selection marks pins and Lane Keyframes: a pin covers its row's Lanes 
   const camera = row(model, "camera");
   assert.deepEqual(camera.pins.map((pin) => pin.selected), [false, false]);
   assert.deepEqual(camera.lanes[0].keys.map((key) => key.selected), [false, true]);
+});
+
+// docs/timeline-ui.md "Easing": the band shows the segments the Easing panel sets, on the line their Keyframes are
+// selected on, in Timeline frames.
+test("the Easing band runs over the segments the selected Keyframes own, on their line", () => {
+  const selection = { row: "sticker_1", keys: [{ row: "sticker_1", lane: null, frame: 0 }, { row: "camera", lane: "position", frame: 0 }] };
+  const model = view(ctxOf(studioState()), { selection, openRows: new Set(["camera", "sticker_1"]) });
+  // The chair's Clip range starts at 10: its pin at its frame 0 owns the segment to 20, Timeline 10 to 30.
+  assert.deepEqual(row(model, "sticker_1").band, { start: 10, end: 30 });
+  assert.equal(row(model, "sticker_1").lanes[0].band, null);
+  const camera = row(model, "camera");
+  assert.equal(camera.band, null);
+  assert.deepEqual(camera.lanes[0].band, { start: 0, end: 48 });
+  // The last Keyframe alone owns nothing.
+  const last = view(ctxOf(studioState()), { selection: { row: "camera", keys: [{ row: "camera", lane: "position", frame: 48 }] }, openRows: new Set(["camera"]) });
+  assert.equal(row(last, "camera").lanes[0].band, null);
 });
 
 // docs/timeline-ui.md "インスペクタの Keyframe のポチ" gives the three looks; the row dot uses them for its row's Lanes.
@@ -360,4 +376,27 @@ test("an upstream row's dot shows for any entry of its record: a Lock only, or o
   assert.equal(dotOf([]), false);
   assert.equal(dotOf([{ id: "sticker_1", placement: "world", locked: false }]), true);
   assert.equal(dotOf([{ id: "sticker_1", placement: "sky", opacity: { value: 0.5, keyframes: [] } }]), true);
+});
+
+// docs/timeline-ui.md "動きのループ": the button at the head of the Camera's and the Stickers' rows, and the mark back to
+// the first Keyframe on a looping line.
+test("the Camera and Sticker rows have the motion loop's button; a looping line has its mark back to the first Keyframe", () => {
+  const state = studioState();
+  const model = view(ctxOf(state), { openRows: new Set(["camera"]) });
+  assert.deepEqual(row(model, "camera").loop, { on: false, icon: ICON.loop_motion_off, disabled: false, tip: "Loop motion: off" });
+  assert.equal(row(model, "sticker_2").loop.on, false);
+  assert.equal(row(model, "camera").loopMark, null);
+  state.camera.loop = true;
+  const looping = view(ctxOf(state), { openRows: new Set(["camera"]) });
+  const camera = row(looping, "camera");
+  assert.deepEqual([camera.loop.on, camera.loop.icon, camera.loop.tip], [true, ICON.loop_motion, "Loop motion: on"]);
+  // Keyframes at 0 and 48 over a span of 100: back to the first at 100.
+  assert.deepEqual(camera.loopMark, { from: 48, to: 100 });
+  assert.deepEqual(camera.lanes.find((lane) => lane.lane === "position").loopMark, { from: 48, to: 100 });
+  assert.equal(camera.lanes.find((lane) => lane.lane === "rotation").loopMark, null, "a Lane without Keyframes");
+  // A locked or read-only owner keeps its button, off with the reason.
+  state.camera.locked = true;
+  assert.deepEqual(row(view(ctxOf(state)), "camera").loop.disabled, true);
+  assert.equal(row(view(ctxOf(state)), "camera").loop.tip, "Locked");
+  assert.equal(row(view(ctxOf(studioState(), { readOnly: true })), "camera").loop.tip, "Read-only");
 });

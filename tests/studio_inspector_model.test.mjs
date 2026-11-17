@@ -215,7 +215,7 @@ test("a state without a Camera shows the default Camera: Panorama, 360°, 16:9, 
   assert.equal(state.camera.projection, "erp");
   const card = model(state, { selection: { ids: ["camera"] } }).cards[0];
   assert.equal(card.kind, "camera");
-  assert.deepEqual(card.rows.map((item) => item.id), ["mode", "range", "aspect", "hfov", "lens", "position", "rotation"]);
+  assert.deepEqual(card.rows.map((item) => item.id), ["mode", "range", "aspect", "hfov", "lens", "position", "rotation", "look_at", "look_offset"]);
   assert.equal(row(card, "mode").value, "erp");
   assert.deepEqual(row(card, "mode").options.map((option) => option.label), ["Panorama", "Frame"]);
   // The mode is two tiles under the heading, not a row of the grid (docs/studio-ui.md "Camera のカード").
@@ -232,20 +232,21 @@ test("a state without a Camera shows the default Camera: Panorama, 360°, 16:9, 
 
 test("the Camera card grays the rows its mode does not use and keeps them in place", () => {
   const panorama = model(load(), { selection: { ids: ["camera"] } }).cards[0];
-  assert.deepEqual(panorama.rows.filter((item) => item.disabled).map((item) => item.id), ["aspect", "hfov", "lens"]);
+  // The Look at's Offset row is off without a target, in either mode.
+  assert.deepEqual(panorama.rows.filter((item) => item.disabled).map((item) => item.id), ["aspect", "hfov", "lens", "look_offset"]);
   const frameState = load({ camera: { projection: "perspective", aspect: 4 / 3, fov: { value: 60 } } });
   const frame = model(frameState, { selection: { ids: ["camera"] } }).cards[0];
-  assert.deepEqual(frame.rows.filter((item) => item.disabled).map((item) => item.id), ["range"]);
+  assert.deepEqual(frame.rows.filter((item) => item.disabled).map((item) => item.id), ["range", "look_offset"]);
   assert.deepEqual(frame.rows.map((item) => item.id), panorama.rows.map((item) => item.id));
   assert.equal(row(frame, "mode").value, "perspective");
   assert.equal(row(frame, "hfov").fields[0].value, 60);
   assert.equal(row(frame, "aspect").atDefault, false);
 });
 
-test("the Camera's rows without a Lane have no dot; its H FOV, Lens, Position and Rotation dots cover fov, curve, position, rotation", () => {
+test("the Camera's rows without a Lane have no dot; its H FOV, Lens, Position, Rotation and Look at dots cover fov, curve, position, rotation, look_at", () => {
   const card = model(load(), { selection: { ids: ["camera"] } }).cards[0];
-  assert.deepEqual(card.rows.map((item) => item.keyState), [null, null, null, "none", "none", "none", "none"]);
-  assert.deepEqual(card.rows.map((item) => item.lanes), [[], [], [], ["fov"], ["curve"], ["position"], ["rotation"]]);
+  assert.deepEqual(card.rows.map((item) => item.keyState), [null, null, null, "none", "none", "none", "none", "none", null]);
+  assert.deepEqual(card.rows.map((item) => item.lanes), [[], [], [], ["fov"], ["curve"], ["position"], ["rotation"], ["look_at"], []]);
   assert.equal(row(card, "mode").resettable, false);
 });
 
@@ -353,33 +354,55 @@ test("the Easing panel shows only while Keyframes are selected: the shared Easin
   assert.equal(model(state, { selection: { ids: ["sticker_1"] } }).easing, null);
   const one = model(state, { selection: { ids: ["sticker_1"], keyframes: { owner: "sticker_1", lane: null, frames: [0] } } }).easing;
   assert.deepEqual(one.easing, [0, 0, 1, 1]);
+  assert.deepEqual(one.curve, [0, 0, 1, 1]);
   assert.equal(one.mixed, false);
   assert.equal(one.segment, true);
   assert.equal(one.text, "0, 0, 1, 1");
-  assert.deepEqual(one.presets.map((preset) => preset.label), ["Hold", "Linear", "Ease in-out", "Ease in", "Ease out"]);
-  // docs/studio-ui.md "Easing のパネル": each preset shows its own icon, the name goes to the tooltip.
-  assert.deepEqual(one.presets.map((preset) => preset.icon), [ICON.ease_hold, ICON.ease_linear, ICON.ease_in_out, ICON.ease_in, ICON.ease_out]);
-  assert.ok(one.presets.every((preset) => typeof preset.icon === "string" && preset.icon));
+  assert.equal(one.range, "f 0 → 10");
+  assert.deepEqual(one.presets.map((preset) => preset.label), ["Smooth", "Hold", "Linear", "Ease in-out", "Ease in", "Ease out"]);
+  // docs/studio-ui.md "Easing のパネル": each preset shows its own icon, the name goes to the tooltip; Smooth says what it does.
+  assert.deepEqual(one.presets.map((preset) => preset.icon), [ICON.ease_smooth, ICON.ease_hold, ICON.ease_linear, ICON.ease_in_out, ICON.ease_in, ICON.ease_out]);
+  assert.deepEqual(one.presets.map((preset) => preset.tip), ["Smooth · passes through Keyframes", "Hold", "Linear", "Ease in-out", "Ease in", "Ease out"]);
   assert.deepEqual(one.presets.filter((preset) => preset.active).map((preset) => preset.label), ["Linear"]);
-  assert.equal(one.atDefault, false);
 
-  const mixed = model(state, { selection: { ids: [], keyframes: { owner: "sticker_1", lane: null, frames: [0, 10] } } }).easing;
+  // Two selected: every segment from the leftmost to the rightmost, here Linear and hold.
+  const mixed = model(state, { selection: { ids: [], keyframes: { owner: "sticker_1", lane: null, frames: [0, 20] } } }).easing;
   assert.equal(mixed.mixed, true);
   assert.equal(mixed.easing, null);
+  assert.equal(mixed.curve, null);
   assert.equal(mixed.text, "");
+  assert.equal(mixed.placeholder, "Mixed");
+  assert.equal(mixed.range, "f 0 → 20 · 2 segments");
   assert.ok(mixed.presets.every((preset) => !preset.active));
 
-  // The last Keyframe alone has no segment: the panel shows, its controls off.
+  // The last Keyframe alone has no segment: the panel shows, its controls off, and says why.
   const last = model(state, { selection: { ids: [], keyframes: { owner: "sticker_1", lane: "position", frames: [20] } } }).easing;
   assert.equal(last.segment, false);
+  assert.equal(last.range, "");
+  assert.equal(last.placeholder, "No segment after the last Keyframe");
+  assert.ok(last.presets.every((preset) => !preset.active));
 });
 
-test("the Easing panel reads a Camera's Keyframes, and is at its default on ease-in-out", () => {
-  const state = load({ camera: { fov: { value: 90, keyframes: [{ frame: 0, value: 90 }, { frame: 12, value: 40 }] } } });
-  const easing = model(state, { tab: "camera", selection: { ids: [], keyframes: { owner: "camera", lane: "fov", frames: [0] } } }).easing;
-  assert.deepEqual(easing.easing, [0.42, 0, 0.58, 1]);
-  assert.equal(easing.atDefault, true);
-  assert.deepEqual(easing.presets.filter((preset) => preset.active).map((preset) => preset.label), ["Ease in-out"]);
+test("the Easing panel shows a Smooth segment's current curve, and a range of Smooth segments as their progress", () => {
+  const state = load({ camera: { fov: { value: 90, keyframes: [{ frame: 0, value: 90 }, { frame: 12, value: 40 }] }, position: { value: [0, 0, 0], keyframes: [
+    { frame: 0, value: [0, 0, 0] }, { frame: 10, value: [4, 0, 0] }, { frame: 30, value: [4, 0, 4] },
+  ] } } });
+  // Two Keyframes of Smooth stop at both ends: the curve is ease-in-out, and Smooth is on.
+  const two = model(state, { tab: "camera", selection: { ids: [], keyframes: { owner: "camera", lane: "fov", frames: [0] } } }).easing;
+  assert.equal(two.easing, "smooth");
+  assert.deepEqual(two.curve, [0.42, 0, 0.58, 1]);
+  assert.equal(two.text, "");
+  assert.equal(two.placeholder, "Smooth");
+  assert.deepEqual(two.presets.filter((preset) => preset.active).map((preset) => preset.label), ["Smooth"]);
+  // Several Smooth segments: no control points, the progress across the range with the Keyframe between.
+  const range = model(state, { selection: { ids: [], keyframes: { owner: "camera", lane: "position", frames: [0, 30] } } }).easing;
+  assert.equal(range.curve, null);
+  assert.equal(range.range, "f 0 → 30 · 2 segments");
+  assert.deepEqual(range.progress.keys, [10 / 30]);
+  assert.deepEqual(range.progress.points[0], [0, 0]);
+  assert.ok(Math.abs(range.progress.points.at(-1)[0] - 1) < 1e-9 && Math.abs(range.progress.points.at(-1)[1] - 1) < 1e-9);
+  const ys = range.progress.points.map((point) => point[1]);
+  assert.ok(ys.every((y, i) => !i || y >= ys[i - 1] - 1e-9), "the progress only goes forward");
 });
 
 test("the bezier text reads four numbers (or cubic-bezier(...)) with every value in 0..1, and writes them back", () => {
@@ -420,20 +443,39 @@ test("an upstream element's row shows its card in the inspector (found in its la
   assert.deepEqual(m.cards.map((card) => card.target?.id), [id], "an upstream element's row shows its card");
 });
 
-// docs/studio-ui.md "リセットと Keyframe のポチ": a port Sticker shown with a Pose handoff of its placement.
-const SKY_HANDOFF = { placement: "sky", lanes: { direction: { value: { yaw_deg: 30, pitch_deg: 10 } }, roll: { value: 5 }, size: { value: { hFOV_deg: 40, vFOV_deg: 40 } } }, fps: 24 };
+// docs/studio-ui.md "種類ごとの中身": the port Sticker a sticker_state places shows its offset, not Rotation and FOV.
+const SHOT = { kind: "pano_sticker_state", version: 3, fps: 24, length: null, camera: { loop: false, position: [{ frame: 0, value: [0, 0, 0], easing: "smooth" }], rotation: [{ frame: 0, value: { yaw_deg: 30, pitch_deg: 0, roll_deg: 0 }, easing: "smooth" }], fov: [{ frame: 0, value: 50, easing: "smooth" }], curve: [{ frame: 0, value: 1, easing: "smooth" }], look_at: { value: null, keyframes: [] } }, targets: [], source_aspect: null };
 
-test("a port Sticker's handed rows are at their reset's value while none of their Lanes is an override, whatever the value", () => {
-  const port = (overrides) => sky("sticker_1", { source: { kind: "port" }, handoff_overrides: overrides });
-  const state = load({ stickers: [port(["size"])] });
-  const card = model(state, { selection: { ids: ["sticker_1"] }, handoff: SKY_HANDOFF }).cards[0];
-  assert.equal(row(card, "rotation").atDefault, true, "handed, not overridden (its value is not the Lane default)");
-  assert.equal(row(card, "fov").atDefault, false, "overridden");
-  assert.equal(row(card, "opacity").atDefault, false, "not handed: the Lane default rule (opacity 0.5)");
-  assert.deepEqual(stickerChangedRows(state, state.stickers[0], { handoff: SKY_HANDOFF }), ["fov", "opacity"]);
-  // Without a handoff, or with one of the other placement, the Lane defaults decide.
-  assert.deepEqual(stickerChangedRows(state, state.stickers[0], {}), ["rotation", "fov", "opacity"]);
-  assert.deepEqual(stickerChangedRows(state, state.stickers[0], { handoff: { ...SKY_HANDOFF, placement: "world" } }), ["rotation", "fov", "opacity"]);
-  const plain = load({ stickers: [port([])] });
-  assert.deepEqual(stickerChangedRows(plain, plain.stickers[0], { handoff: SKY_HANDOFF }), ["opacity"]);
+test("a returned shot's card has Offset, Zoom and Opacity; Back to source counts the offset rows away from none", () => {
+  const port = (extra) => sky("sticker_1", { source: { kind: "port" }, ...extra });
+  const state = load({ stickers: [port({ offset_rotation: { value: { yaw_deg: 5, pitch_deg: 0, roll_deg: 0 } } })] });
+  const card = model(state, { selection: { ids: ["sticker_1"] }, handoff: SHOT }).cards[0];
+  assert.deepEqual(card.rows.map((item) => item.id), ["offset", "zoom", "opacity"]);
+  assert.deepEqual(row(card, "offset").fields.map((field) => [field.field, field.axis, field.value]), [["offset_yaw_deg", "Y", 5], ["offset_pitch_deg", "P", 0], ["offset_roll_deg", "R", 0]]);
+  assert.deepEqual([row(card, "zoom").fields[0].value, row(card, "zoom").fields[0].unit], [100, "%"]);
+  assert.deepEqual([row(card, "offset").atDefault, row(card, "zoom").atDefault], [false, true]);
+  assert.deepEqual(stickerChangedRows(state, state.stickers[0], { handoff: SHOT }), ["offset"]);
+  // An offset Keyframe at the default value still counts: Back to source takes the Keyframes off too.
+  const keyed = load({ stickers: [port({ offset_fov: { value: 1, keyframes: [{ frame: 0, value: 1 }] } })] });
+  assert.deepEqual(stickerChangedRows(keyed, keyed.stickers[0], { handoff: SHOT }), ["zoom"]);
+  // Without the shot it is a sky image with its own rows.
+  assert.deepEqual(model(state, { selection: { ids: ["sticker_1"] } }).cards[0].rows.map((item) => item.id), ["rotation", "fov", "opacity"]);
+});
+
+// docs/studio-ui.md "Look at": the Camera card's Look at row, its heading's badge while on, and Yaw and Pitch set by it.
+test("the Camera card has the Look at row; while it looks at a target the heading has its badge and Yaw and Pitch are set by it", () => {
+  const off = model(load(), { selection: { ids: ["camera"] } }).cards[0];
+  const lookRow = row(off, "look_at");
+  // The reset column takes the target off: at its default without one.
+  assert.deepEqual([lookRow.look.target, lookRow.atDefault, lookRow.resettable, lookRow.look.pickTip], [null, true, true, "Pick a spot to look at"]);
+  assert.equal(off.badge, null);
+  const on = load({ camera: { look_at: { value: { sticker: "sticker_1", offset: [0, 0, 0] } } }, stickers: [world("sticker_1")] });
+  const card = model(on, { selection: { ids: ["camera"] } }).cards[0];
+  assert.equal(row(card, "look_at").look.target, "sticker_1.glb");
+  assert.equal(row(card, "look_at").atDefault, false);
+  assert.deepEqual(card.badge, { label: "Look at", icon: ICON.look_at, tip: "Looking at sticker_1.glb" });
+  assert.deepEqual(row(card, "rotation").fields.map((field) => [field.disabled, field.tip ?? null]),
+    [[true, "Yaw and Pitch · Set by Look at"], [true, "Yaw and Pitch · Set by Look at"], [false, null]]);
+  // Picking shows on the row.
+  assert.equal(row(model(on, { selection: { ids: ["camera"] }, lookPicking: true }).cards[0], "look_at").look.picking, true);
 });

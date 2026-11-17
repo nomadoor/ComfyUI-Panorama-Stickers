@@ -25,15 +25,17 @@ import { sceneStickerLabel } from "../pano_editor_state.js";
 import { paintObjectRow } from "../pano_paint_objects.js";
 import { portMediaFrames } from "../pano_port_media.js";
 import { defaultClip } from "../pano_scene_state.js";
-import { FRAME_EPSILON, clipOrigin } from "../pano_scene_eval.js";
+import { FRAME_EPSILON, clipOrigin, laneView, ownerPeriod } from "../pano_scene_eval.js";
 import {
   BACKGROUND_ROW,
+  easingSegments,
   hasPainting,
   LANE_LABELS,
   laneNames,
   ownerTimed,
   PAINTING_ROW,
   rowKeyframes,
+  rowLaneNames,
   timelinePlayable,
   timelineSpan,
 } from "../pano_timeline.js";
@@ -266,6 +268,44 @@ function rowDotState(entry, playhead) {
   return pins.length ? "has" : "none";
 }
 
+// The output length whose loop a row's owner follows: an upstream layer's own length, else the span (the node's).
+function entryLength(entry, span) {
+  return entry.layer ? entry.layer.length ?? null : span;
+}
+
+// The mark of a looping line (docs/timeline-ui.md "動きのループ"): from its last Keyframe to the end of the period
+// ({ from, to } in Timeline frames, `to` where the first Keyframe comes again), or null when the Lanes `names` of the
+// owner do not loop (the owner's mark off, no length, fewer than two Keyframes, Keyframes spanning the period).
+function loopMark(owner, names, offset, length) {
+  const period = ownerPeriod(owner, length);
+  if (period === null) return null;
+  let first = Infinity;
+  let last = -Infinity;
+  for (const name of names) {
+    const keys = owner[name].keyframes;
+    if (keys.length < 2 || !laneView(keys, period).loop) continue;
+    first = Math.min(first, keys[0].frame);
+    last = Math.max(last, keys[keys.length - 1].frame);
+  }
+  return Number.isFinite(first) ? { from: last + offset, to: first + period + offset } : null;
+}
+
+// The band of the segments an Easing edit of the selected Keyframes `frames` of the Lanes `names` sets
+// (docs/timeline-ui.md "Easing"), in Timeline frames ({ start, end }), or null without one. `length` is the output length.
+function easingBand(owner, names, frames, offset, length) {
+  const segments = frames.length ? easingSegments(owner, names, frames, length) : [];
+  if (!segments.length) return null;
+  const period = ownerPeriod(owner, length);
+  let start = Infinity;
+  let end = -Infinity;
+  for (const { name, index } of segments) {
+    const view = laneView(owner[name].keyframes, period);
+    start = Math.min(start, view.at(index).frame);
+    end = Math.max(end, view.at(index + 1).frame);
+  }
+  return { start: start + offset, end: end + offset };
+}
+
 function overridden(entry) {
   const record = entry.layer?.record;
   if (!record) return false;
@@ -275,14 +315,40 @@ function overridden(entry) {
   return upstreamStickerOverridden([record], entry.owner);
 }
 
+// Whether Simplify (or Constant speed, `label`, docs/timeline-ui.md "Constant speed": the same rule) can be pressed for
+// the selection: { ready, row, lane, frames, why }. One row only, three Keyframes
+// or more selected in it (a closed row's pins count by frame), the row's Keyframes editable. `lane` is null for a closed
+// row's pins (its Lanes keep or go together by frame), else the one Lane of the open row's selected Keyframes.
+export function simplifyReadiness(ctx, selection, label = "Simplify") {
+  const keys = selection?.keys ?? [];
+  const rows = [...new Set(keys.map((key) => key.row))];
+  if (rows.length > 1) return { ready: false, why: `${label} · Select Keyframes in one row` };
+  const row = rows[0] ?? null;
+  const lanes = [...new Set(keys.map((key) => key.lane ?? null))];
+  const lane = lanes.length === 1 ? lanes[0] : null;
+  const frames = [...new Set(keys.map((key) => key.frame))];
+  const picked = lane === null ? frames.length : keys.length;
+  if (!row || picked < 3) return { ready: false, why: `${label} · Select 3+ Keyframes` };
+  const entry = findEntry(ctx, row);
+  if (!entry || !entryKeyable(entry)) return { ready: false, why: `${label} · Select 3+ Keyframes` };
+  if (!entryKeysEditable(ctx, entry)) return { ready: false, why: `${label} · ${ctx.readOnly ? "Read-only" : entry.owner?.locked ? "Locked" : "Read-only"}` };
+  return { ready: true, row, lane, frames, why: "" };
+}
+
 // The Timeline for StudioTimeline.vue. `openRows` holds the ids of the open rows. Rows:
 //   { id, label, icon, eye, expand, open, selected, dot, upstream, overridden, clip, clipEditable, keysEditable,
 //     offset, pins, lanes, nameTip }
 // `eye` null for a row without one (its place is kept); `expand` "yes", "disabled" (no Lanes to open) or "none";
 // `dot` null for a row without Lanes, else { state, disabled, tip }; `clip` { start, end } in Timeline frames, `end`
 // null where the bar runs to the Timeline's end, or null for a row without a bar (hasOwnTime); `pins` and each Lane's `keys` { frame, ownerFrame, selected, full }.
+// `band` (a row's, and each Lane's) is the Timeline frames { start, end } the Easing panel sets for the Keyframes
+// selected on that line, or null. `loop` is the motion loop's button ({ on, icon, disabled, tip }; null for a row
+// without one, which keeps its place), `loopMark` (a row's and each Lane's) the mark back to the first Keyframe of a
+// looping line ({ from, to }), or null.
 // `lines` lists the track lines top to bottom (a row's, then its open Lanes'), the ones keysInRange reads.
-export function buildStudioTimeline(ctx, { selection = null, playhead = 0, playing = false, loop = true, openRows = new Set() } = {}) {
+// `simplify` is the Simplify run being adjusted ({ row, lane, original, least, count, going }) or null: its bar's slider,
+// and the Keyframes it takes away shown faded on its line.
+export function buildStudioTimeline(ctx, { selection = null, playhead = 0, playing = false, loop = true, openRows = new Set(), simplify = null } = {}) {
   const { state } = ctx;
   const span = spanOf(ctx);
   const chosen = new Set((selection?.keys || []).map((key) => keyId(key.row, key.lane, key.frame)));
@@ -313,6 +379,19 @@ export function buildStudioTimeline(ctx, { selection = null, playhead = 0, playi
           .filter((key) => inSpan(key.frame, span)),
       }))
       : [];
+    const picked = (lane) => (selection?.keys || []).filter((key) => key.row === entry.id && (key.lane ?? null) === lane).map((key) => key.frame);
+    const length = entryLength(entry, span);
+    const band = entry.owner && keyable ? easingBand(entry.owner, rowLaneNames(entry.owner), picked(null), entry.offset, length) : null;
+    for (const lane of lanes) {
+      lane.band = easingBand(entry.owner, [lane.lane], picked(lane.lane), entry.offset, length);
+      lane.loopMark = loopMark(entry.owner, [lane.lane], entry.offset, length);
+    }
+    // The motion loop's button: the Camera and the Stickers (docs/timeline-ui.md "動きのループ").
+    const loops = entry.kind === "camera" || entry.kind === "sticker";
+    const loopBlocked = loops ? blockedTip(ctx, entry) : "";
+    // The Keyframes a Simplify being adjusted takes away from this line, faded.
+    const going = simplify && simplify.row === entry.id ? simplify.going : [];
+    for (const lane of lanes) lane.going = simplify?.lane === lane.lane ? going : [];
     lines.push({ row: entry.id, lane: null, keys: pins });
     for (const lane of lanes) lines.push({ row: entry.id, lane: lane.lane, keys: lane.keys });
     const clip = entry.owner?.clip;
@@ -339,6 +418,15 @@ export function buildStudioTimeline(ctx, { selection = null, playhead = 0, playi
       keysEditable: entryKeysEditable(ctx, entry),
       offset: entry.offset,
       pins,
+      going: simplify?.lane === null ? going : [],
+      band,
+      loop: loops ? {
+        on: entry.owner.loop === true,
+        icon: entry.owner.loop === true ? ICON.loop_motion : ICON.loop_motion_off,
+        disabled: !!loopBlocked,
+        tip: loopBlocked || (entry.owner.loop === true ? "Loop motion: on" : "Loop motion: off"),
+      } : null,
+      loopMark: loops ? loopMark(entry.owner, rowLaneNames(entry.owner), entry.offset, length) : null,
       lanes,
       nameTip: entry.kind === "painting" || entry.kind === "background" ? entry.label : `${entry.label} — double-click to frame it`,
     };
@@ -373,6 +461,9 @@ export function buildStudioTimeline(ctx, { selection = null, playhead = 0, playi
       timecode: timecode(playhead, fps),
       frame: playhead,
       frameText: `${playhead} / ${span}`,
+      // The widest the frame text gets (the playhead never passes the span): its width is kept, so a playhead with more
+      // digits does not push what follows on the bar (docs/design.md "数字が揺れない表示").
+      frameWidest: `${span} / ${span}`,
       fps,
       fpsLocked: !!ctx.fpsLocked || !!ctx.readOnly,
       fpsTip: ctx.fpsLocked ? "Set by the video input" : "Timeline fps",
@@ -382,6 +473,18 @@ export function buildStudioTimeline(ctx, { selection = null, playhead = 0, playi
       prev: { frame: prev, disabled: prev === null },
       next: { frame: next, disabled: next === null },
       readOnly: !!ctx.readOnly,
+      simplify: simplify
+        ? { adjusting: true, disabled: false, tip: "Enter to keep · Esc to cancel", original: simplify.original, least: simplify.least, count: simplify.count }
+        : (() => {
+          const readiness = simplifyReadiness(ctx, selection);
+          return { adjusting: false, disabled: !readiness.ready, tip: readiness.ready ? "Simplify Keyframes" : readiness.why };
+        })(),
+      // Constant speed (docs/timeline-ui.md "Constant speed"): pressable as Simplify is, not while Simplify adjusts.
+      constantSpeed: (() => {
+        if (simplify) return { disabled: true, tip: "Constant speed · Finish Simplify first" };
+        const readiness = simplifyReadiness(ctx, selection, "Constant speed");
+        return { disabled: !readiness.ready, tip: readiness.ready ? "Constant speed · Moves the selected Keyframes in time" : readiness.why };
+      })(),
     },
     rows,
     groups: groupModels,

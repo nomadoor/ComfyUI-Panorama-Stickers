@@ -580,12 +580,108 @@
 
 /* The name shrinks into the room left and is cut with "…"; no text-box trim here, so the clip cuts no glyph. */
 .pano-studio-card-name {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   line-height: 24px;
+}
+
+/* The heading's badge while the Camera looks at a target (docs/design.md "Look at がオンのときのインスペクタ"). */
+.pano-studio-card-badge {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  margin-left: 4px;
+  padding: 0 8px 0 6px;
+  border-radius: var(--studio-r-part);
+  background: var(--studio-fill);
+  color: var(--studio-fg);
+  font-size: var(--studio-text-xs);
+  font-weight: var(--studio-weight);
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.pano-studio-card-badge svg.icon {
+  width: 13px;
+  height: 13px;
+}
+
+/* The Look at row (docs/studio-ui.md "Look at"): the target's name in a field (the strong fill while on), Pick and ✕. */
+.pano-studio-look {
+  display: inline-flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: var(--studio-r-field);
+  background: var(--studio-fill);
+  color: var(--studio-fg-2);
+  font-size: var(--studio-text-sm);
+  white-space: nowrap;
+}
+
+.pano-studio-look.is-on {
+  background: var(--studio-strong);
+  color: var(--studio-on-strong);
+  font-weight: var(--studio-weight-head);
+}
+
+.pano-studio-look svg.icon {
+  flex: none;
+  width: 14px;
+  height: 14px;
+}
+
+.pano-studio-look-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pano-studio-look-row {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.pano-studio-look-acts {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  margin-left: 4px;
+}
+
+.pano-studio-chip-btn {
+  height: 24px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--studio-r-part);
+  background: transparent;
+  color: var(--studio-fg);
+  font: inherit;
+  font-size: var(--studio-text-xs);
+  cursor: pointer;
+}
+
+.pano-studio-chip-btn:hover {
+  background: var(--studio-fill-hover);
+}
+
+.pano-studio-chip-btn.is-active {
+  background: var(--studio-strong);
+  color: var(--studio-on-strong);
+}
+
+.pano-studio-chip-btn[aria-disabled="true"] {
+  opacity: 0.4;
+  cursor: default;
 }
 
 .pano-studio-card-sub {
@@ -615,6 +711,25 @@
 
 .pano-studio-row.is-disabled {
   opacity: 0.4;
+}
+
+/* A row that belongs to the row above it (the Look at's Offset): its name indented, a line from the row above bending
+   into it (docs/design.md "インスペクタ"). */
+.pano-studio-row.is-sub .pano-studio-row-name {
+  position: relative;
+  padding-left: 14px;
+}
+
+.pano-studio-row.is-sub .pano-studio-row-name::before {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: -6px;
+  width: 6px;
+  height: calc(50% + 6px);
+  border-left: 1px solid var(--studio-line-strong);
+  border-bottom: 1px solid var(--studio-line-strong);
+  border-bottom-left-radius: 3px;
 }
 
 .pano-studio-row.is-disabled > * {
@@ -934,10 +1049,20 @@
 .pano-studio-easing-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 6px;
   height: 24px;
   font-size: var(--studio-text-md);
   font-weight: var(--studio-weight-head);
+}
+
+/* The Timeline frames the edit sets, beside the heading (docs/studio-ui.md "Easing のパネル"). */
+.pano-studio-easing-range {
+  color: var(--studio-fg-2);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .pano-studio-easing-presets .pano-studio-seg-item {
@@ -966,6 +1091,16 @@
   fill: none;
   stroke: var(--studio-fg);
   stroke-width: 2;
+}
+
+/* The Keyframes inside a range of Smooth segments. */
+.pano-studio-easing-keyline {
+  stroke: var(--studio-line);
+  stroke-dasharray: 2 4;
+}
+
+.pano-studio-easing-keymark {
+  fill: var(--studio-ice);
 }
 
 .pano-studio-easing-arm {
@@ -1055,6 +1190,7 @@
   display: flex;
   flex: none;
   align-items: center;
+  container: pano-studio-tl-bar / inline-size;
   gap: 4px;
   height: var(--studio-tl-bar);
   padding: 0 8px 0 6px;
@@ -1077,6 +1213,106 @@
   transform: rotate(180deg);
 }
 
+/* Simplify on the Timeline's bar and Constant speed beside it (docs/design.md "Simplify の調整の部品"). While adjusting,
+   the count kept, the slider and the original count come out to the right of the button, and one gray fill takes the
+   whole group; nothing is kept for them otherwise. On a narrow bar the slider gives way first. */
+.pano-studio-tl-simplify {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  height: 28px;
+  overflow: hidden;
+  border-radius: var(--studio-r-part);
+}
+
+/* A bar too narrow for both buttons' words shows their icons only; their names stay in the tooltips. */
+@container pano-studio-tl-bar (max-width: 800px) {
+  .pano-studio-tl-simplify-btn > span {
+    display: none;
+  }
+
+  .pano-studio-tl-simplify-btn {
+    padding: 0 6px;
+  }
+}
+
+.pano-studio-tl-simplify.is-adjusting {
+  padding-right: 10px;
+  background: var(--studio-fill-active);
+}
+
+.pano-studio-tl-simplify-btn {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--studio-r-part);
+  background: transparent;
+  color: var(--studio-fg);
+  font: inherit;
+  font-size: var(--studio-text-sm);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.pano-studio-tl-simplify-btn svg.icon {
+  width: 18px;
+  height: 18px;
+}
+
+.pano-studio-tl-simplify-btn:hover {
+  background: var(--studio-fill-hover);
+}
+
+/* While adjusting the group's fill shows it: the button keeps no fill of its own. */
+.pano-studio-tl-simplify.is-adjusting .pano-studio-tl-simplify-btn,
+.pano-studio-tl-simplify.is-adjusting .pano-studio-tl-simplify-btn:hover {
+  background: transparent;
+}
+
+.pano-studio-tl-simplify-btn[aria-disabled="true"] {
+  opacity: 0.35;
+  cursor: default;
+  background: transparent;
+}
+
+.pano-studio-tl-simplify-adjust {
+  display: inline-flex;
+  flex: 0 1 auto;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.pano-studio-tl-simplify-slider {
+  display: inline-flex;
+  flex: 0 1 72px;
+  min-width: 24px;
+  width: 72px;
+}
+
+/* The slider has no content of its own: it takes the seat's width (else it shrinks to its knob). */
+.pano-studio-tl-simplify-slider > .pano-studio-slider {
+  flex: 1 1 auto;
+  margin: 0;
+}
+
+/* The slider's ends: the fewest it can keep and the count selected, both fixed while adjusting. */
+.pano-studio-tl-simplify-end {
+  color: var(--studio-fg-2);
+  font-size: var(--studio-text-sm);
+}
+
+.pano-studio-tl-key.is-going::before {
+  border: 1.25px solid var(--studio-fg);
+  background: transparent;
+  opacity: 0.4;
+}
+
 .pano-studio-tl-time {
   display: inline-flex;
   align-items: baseline;
@@ -1090,9 +1326,19 @@
   font-weight: var(--studio-weight-head);
 }
 
-.pano-studio-tl-frame {
+/* The frame text over an invisible copy of its widest form, which keeps the width (docs/design.md "数字が揺れない表示"). */
+.pano-studio-tl-frame-seat {
+  display: inline-grid;
   color: var(--studio-fg-2);
   font-size: var(--studio-text-xs);
+}
+
+.pano-studio-tl-frame-seat > span {
+  grid-area: 1 / 1;
+}
+
+.pano-studio-tl-frame-widest {
+  visibility: hidden;
 }
 
 .pano-studio-tl-spacer {
@@ -1288,6 +1534,44 @@
   height: 14px;
 }
 
+/* The motion loop's button (docs/design.md "行の頭の動きのループのボタン"): ice when on, the strong line when off. */
+.pano-studio-tl-loop svg.icon {
+  width: 16px;
+  height: 16px;
+}
+
+.pano-studio-tl-loop {
+  color: var(--studio-line-strong, var(--studio-fg-2));
+}
+
+.pano-studio-tl-loop.is-on {
+  color: var(--studio-ice);
+}
+
+.pano-studio-tl-loop[aria-disabled="true"] {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* The mark of a looping line back to the first Keyframe (docs/design.md "タイムラインのループの戻る印"): a dotted ice line
+   from the last Keyframe to the period's end, and a hollow pin there. */
+.pano-studio-tl-loopline {
+  position: absolute;
+  top: 50%;
+  height: 1px;
+  background: repeating-linear-gradient(90deg, var(--studio-ice) 0 2px, transparent 2px 5px);
+  pointer-events: none;
+}
+
+.pano-studio-tl-key.is-return {
+  pointer-events: none;
+}
+
+.pano-studio-tl-key.is-return::before {
+  border: 1.25px solid var(--studio-ice);
+  background: transparent;
+}
+
 /* ▶ closed, ▼ open: a small filled triangle (timeline-2.html). */
 .pano-studio-tl-tri {
   width: 0;
@@ -1429,6 +1713,17 @@
   position: relative;
   border-bottom: 1px solid var(--studio-line);
   touch-action: none;
+}
+
+/* The band of the segments the Easing panel sets: ice at 30%, 8 px high in the line's middle (docs/design.md). */
+.pano-studio-tl-band {
+  position: absolute;
+  top: 50%;
+  height: 8px;
+  margin-top: -4px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--studio-ice) 30%, transparent);
+  pointer-events: none;
 }
 
 .pano-studio-tl-clip {
@@ -1647,6 +1942,11 @@
 }
 .pano-studio-at-nav { position: absolute; right: var(--studio-float-inset); top: 50%; transform: translateY(-50%); }
 .pano-studio-at-bar { position: absolute; left: 50%; bottom: var(--studio-float-inset); transform: translateX(-50%); }
+
+/* The bar moved left as far as it goes still too wide: the name's text goes (the icon stays), then the bar scrolls
+   inside itself (docs/studio-ui.md "下の中央のバー" "バーの置き場所"). */
+.pano-studio-at-bar.is-compact .pano-studio-bar-name { display: none; }
+.pano-studio-at-bar.is-scrolled > * { max-width: 100%; overflow-x: auto; scrollbar-width: thin; }
 
 /* The overlay over the stage's canvas (the guides, the Camera's mark, the sky image's handles): drawn only, the
    pointer goes through to the stage. */

@@ -30,11 +30,12 @@ test("each kind of object has its own bar, with its icon and name at the left", 
   assert.deepEqual(skyBar.groups[0].map((b) => [b.icon, b.tip]), [[ICON.order_front, "Bring to front"], [ICON.order_back, "Send to back"]]);
   const plane = selectionBar({ state, row: "plane_1" });
   assert.deepEqual([plane.kind, plane.icon], ["world-image", ICON.box]);
-  assert.deepEqual(keys(plane), [["gizmo:translate", "gizmo:rotate", "gizmo:scale"], ["duplicate", "replace"], ["lock", "delete"]]);
+  const points = ["point:auto", "point:bezier", "point:corner"];
+  assert.deepEqual(keys(plane), [["gizmo:translate", "gizmo:rotate", "gizmo:scale"], points, ["duplicate", "replace"], ["lock", "delete"]]);
   assert.deepEqual(keys(selectionBar({ state, row: "chair_1" })), keys(plane));
   const camera = selectionBar({ state, row: "camera" });
   assert.deepEqual([camera.kind, camera.icon, camera.name], ["camera", ICON.camera, "Camera"]);
-  assert.deepEqual(keys(camera), [["gizmo:translate", "gizmo:rotate"], ["lock"]], "the Camera cannot be deleted: no Delete");
+  assert.deepEqual(keys(camera), [["gizmo:translate", "gizmo:rotate"], points, ["lock"]], "the Camera cannot be deleted: no Delete");
 });
 
 test("the gizmo's buttons say their keys, and the one of the mode is chosen", () => {
@@ -58,10 +59,11 @@ test("1, 2, 3 choose Move, Rotate, Scale for an object that has them", () => {
 
 test("Lock shows its state by its icon; a locked object's edits are disabled, Lock itself is not", () => {
   const locked = selectionBar({ state, row: "chair_1" });
-  const lock = locked.groups[2][0];
+  const lock = locked.groups[3][0];
   assert.deepEqual([lock.icon, lock.label, lock.disabled], [ICON.lock_closed, "Unlock", false]);
-  assert.equal(locked.groups[2][1].disabled, true, "Delete");
-  const open = selectionBar({ state, row: "plane_1" }).groups[2][0];
+  assert.equal(locked.groups[3][1].disabled, true, "Delete");
+  assert.ok(locked.groups[1].every((button) => button.disabled && button.tip.endsWith("· Locked")), "the point types");
+  const open = selectionBar({ state, row: "plane_1" }).groups[3][0];
   assert.deepEqual([open.icon, open.label], [ICON.lock_open, "Lock"]);
   assert.ok(selectionBar({ state, row: "plane_1", readOnly: true }).groups.flat().filter((button) => !button.key.startsWith("gizmo:")).every((button) => button.disabled));
 });
@@ -72,6 +74,22 @@ test("an input's object adds the one Back to source, and cannot be duplicated or
   assert.equal(bar.groups.flat().find((button) => button.key === "duplicate").disabled, true);
   assert.equal(bar.groups.flat().find((button) => button.key === "delete").disabled, true);
   assert.equal(keys(selectionBar({ state, row: "plane_1" })).flat().includes("revert"), false);
+});
+
+// docs/studio-ui.md "軌道の線" "点の種類": always on the bar, off with the reason without a Keyframe to act on.
+test("the point types act on the selected position Keyframes, else the one at the playhead, and light their type", () => {
+  const moving = loadSceneState({ version: 2, camera: { position: { keyframes: [
+    { frame: 0, value: [0, 0, 0] }, { frame: 10, value: [1, 0, 0], corner: true }, { frame: 20, value: [2, 1, 0], handles: { in: [-0.3, 0, 0] } },
+  ] } } });
+  const points = (options) => selectionBar({ state: moving, row: "camera", ...options }).groups[1];
+  assert.deepEqual(points({ playhead: 0 }).map((b) => [b.active, b.disabled, b.tip]), [[true, false, "Auto · automatic handles"], [false, false, "Bezier · your handles"], [false, false, "Corner · sharp turn"]]);
+  assert.deepEqual(points({ playhead: 10 }).map((b) => b.active), [false, false, true]);
+  assert.deepEqual(points({ playhead: 5 }).map((b) => [b.disabled, b.tip]), [[true, "Auto · No Keyframe at the playhead"], [true, "Bezier · No Keyframe at the playhead"], [true, "Corner · No Keyframe at the playhead"]]);
+  // Selected Keyframes win over the playhead; mixed types light none.
+  const keysOf = (...frames) => frames.map((frame) => ({ row: "camera", lane: "position", frame }));
+  assert.deepEqual(points({ playhead: 5, keys: keysOf(20) }).map((b) => b.active), [false, true, false]);
+  assert.deepEqual(points({ playhead: 0, keys: keysOf(10, 20) }).map((b) => b.active), [false, false, false]);
+  assert.deepEqual(selectionBar({ state, row: "camera" }).groups[1].map((b) => b.tip), ["Auto · No Keyframes", "Bezier · No Keyframes", "Corner · No Keyframes"]);
 });
 
 test("the kinds", () => {
@@ -211,12 +229,34 @@ test("the Camera tab shows no bar for the Camera (ADR 0055), and the other objec
   assert.equal(selectionBar({ state, row: "sky_1", tab: "camera" }).kind, "sky");
 });
 
-test("a port Sticker shown with a Pose handoff lights Back to source only while it has an override of a handed Lane (or another row away)", () => {
-  const handoff = { placement: "sky", lanes: { direction: { value: { yaw_deg: 10, pitch_deg: 0 } }, roll: { value: 0 }, size: { value: { hFOV_deg: 60, vFOV_deg: 60 } } }, fps: 24 };
-  const port = (overrides) => loadSceneState({ version: 2, stickers: [{ id: "port_1", placement: "sky", source: { kind: "port" }, direction: { value: { yaw_deg: 5, pitch_deg: 1 } }, size: { value: { hFOV_deg: 20, vFOV_deg: 20 } }, handoff_overrides: overrides }] });
+test("a returned shot lights Back to source only while it has an offset", () => {
+  const handoff = { kind: "pano_sticker_state", version: 3, fps: 24, length: null, camera: { loop: false, position: [{ frame: 0, value: [0, 0, 0], easing: "smooth" }], rotation: [{ frame: 0, value: { yaw_deg: 0, pitch_deg: 0, roll_deg: 0 }, easing: "smooth" }], fov: [{ frame: 0, value: 50, easing: "smooth" }], curve: [{ frame: 0, value: 1, easing: "smooth" }], look_at: { value: null, keyframes: [] } }, targets: [], source_aspect: null };
+  const port = (offset) => loadSceneState({ version: 2, stickers: [{ id: "port_1", placement: "sky", source: { kind: "port" }, direction: { value: { yaw_deg: 5, pitch_deg: 1 } }, size: { value: { hFOV_deg: 20, vFOV_deg: 20 } }, offset_fov: { value: offset } }] });
   const revert = (s, inputs) => selectionBar({ state: s, row: "port_1", inputs }).groups.flat().find((button) => button.key === "revert");
-  assert.equal(revert(port([]), { handoff }).disabled, true);
-  assert.equal(revert(port(["size"]), { handoff }).disabled, false);
-  // Without the handoff, the values away from the Lane defaults light it.
-  assert.equal(revert(port([]), {}).disabled, false);
+  assert.equal(revert(port(1), { handoff }).disabled, true);
+  assert.equal(revert(port(1.5), { handoff }).disabled, false);
+  // Without the shot, the values away from the Lane defaults light it.
+  assert.equal(revert(port(1), {}).disabled, false);
+});
+
+// docs/studio-ui.md "Look at": the Camera looking at a target keeps Rotate where it is, off, and its key 2 does nothing.
+test("the Camera looking at a target has Rotate off with the reason, shown as Move, and no key 2", () => {
+  const looking = loadSceneState({ version: 2, camera: { look_at: { value: { point: [0, 0, 0] } } } });
+  const [move, rotate] = selectionBar({ state: looking, row: "camera", mode: "rotate" }).groups[0];
+  assert.deepEqual([rotate.disabled, rotate.tip, rotate.active], [true, "Rotate · Set by Look at", false]);
+  assert.equal(move.active, true);
+  assert.equal(shownGizmoMode("camera", "rotate", true), "translate");
+  assert.equal(gizmoModeOfKey("camera", "2", true), null);
+  assert.equal(gizmoModeOfKey("camera", "1", true), "translate");
+});
+
+// docs/studio-ui.md "軌道の線" "点の種類": while playing, the playhead's Keyframe is not a target (it would flicker).
+test("while playing, the point types act on selected Keyframes only, not the one at the playhead", async () => {
+  const { loadSceneState: load } = await import("../web_src/pano_scene_state.js");
+  const state = load({ version: 2, camera: { position: { keyframes: [{ frame: 0, value: [0, 0, 0] }, { frame: 10, value: [1, 0, 0], corner: true }] } } });
+  const corner = (input) => selectionBar({ state, row: "camera", playhead: 10, ...input }).groups.flat().find((button) => button.key === "point:corner");
+  assert.deepEqual([corner({}).active, corner({}).disabled], [true, false]);
+  assert.deepEqual([corner({ playing: true }).active, corner({ playing: true }).disabled, corner({ playing: true }).tip], [false, true, "Corner · Playing"]);
+  const selected = corner({ playing: true, keys: [{ row: "camera", lane: "position", frame: 10 }] });
+  assert.deepEqual([selected.active, selected.disabled], [true, false]);
 });

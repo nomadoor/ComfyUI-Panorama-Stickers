@@ -104,6 +104,8 @@ export function createStudioUpstream({
           key: working.key,
           name: nameOf(working.key),
           sceneState: working.sceneState,
+          // The layer's length at the working fps: the loop period of its owners.
+          length: working.length ?? null,
           editable,
           record: editable ? records.find((item) => item.layer === working.key) ?? null : null,
           scene: layerUiList(layer.ui, "pano_scene_files").length > 0,

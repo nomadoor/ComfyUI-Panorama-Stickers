@@ -24,7 +24,7 @@ import {
   surfaceBackgroundMedia,
   surfaceStickerMedia,
 } from "./media.js";
-import { ensureRenderCache, getCachedState, getWidget, setRenderLoading, surfaceFrame, surfaceSceneState } from "./state.js";
+import { ensureRenderCache, getCachedState, getWidget, setRenderLoading, surfaceFrame, surfaceSceneState, surfacePortShot } from "./state.js";
 
 // Which background Panorama Studio's surface shows (pano_background_choice.js, caller "surface"), from the node's
 // result, its widgets and its working state (`state`, getCachedState's).
@@ -122,7 +122,8 @@ export function drawStudioPicture(node, canvas, surfaceView, layout, erpCanvas) 
   ctx.clip();
 
   const frame = surfaceFrame(node);
-  const shot = cameraShot(sceneState.camera, frame);
+  // The output length, the loop period of looping owners (docs/scene-state-v2.md "ループ"), as the editor has it.
+  const length = surface.playback?.playback.span?.() ?? null;
   // What the inputs bring that the editor draws too: the upstream Scene's layers and the depth grids' colors.
   const inputs = surface.studioInputs;
   const ground = inputs ? groundOf(sceneState, inputs.upstream.working()) : sceneGround(sceneState);
@@ -137,8 +138,13 @@ export function drawStudioPicture(node, canvas, surfaceView, layout, erpCanvas) 
     upstream: inputs?.upstream.viewInput(frame) ?? null,
     depthColor: inputs?.depthColor ?? null,
     playing: !!surface.playback?.playback.advancing,
+    length,
+    shot: surfacePortShot(node),
   });
   inputs?.depthColors.retain(content.space.depthSlots);
+  // The Camera that shoots, as the editor's Output window evaluates it: its Look at target among the Stickers, with the
+  // content boxes loaded (docs/scene-state-v2.md "Look at").
+  const shot = cameraShot(sceneState.camera, frame, length, { stickers: sceneState.stickers, boxes: content.lookBoxes });
   const background = studioBackground(node, surfaceBackgroundChoice(node, state));
   const radius = worldBoundRadius({ eye: eyeHeight(ground), content: content.sphere, camera: shot.position });
   let drawn = false;
