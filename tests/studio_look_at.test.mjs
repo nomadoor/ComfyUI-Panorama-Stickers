@@ -25,6 +25,9 @@ test("the boxes are of what the Camera looks at: a cropped image plane's, a 3D c
   assert.deepEqual(boxes, { board: { center: [0, 0, 0], size: [1, 0.5, 0] }, robot: { center: [0, 1, 0], size: [2, 2, 2] } });
   // Not loaded yet: left out (its point is its position until it loads).
   assert.deepEqual(lookAtBoxes(state), {});
+  // An empty crop draws no plane and has no box (CodeRabbit review; core/world_render.py crop_empty).
+  const flat = loadSceneState({ version: 2, camera: { look_at: { value: { sticker: "board", offset: [0.5, 0, 0] } } }, stickers: [board({ crop: { x0: 0, y0: 0.5, x1: 1, y1: 0.5 } })] });
+  assert.deepEqual(lookAtBoxes(flat, { image: () => ({ width: 100, height: 100 }) }), {});
 });
 
 test("a click picks the point as the share of the box, and the Camera then looks right at that point", () => {

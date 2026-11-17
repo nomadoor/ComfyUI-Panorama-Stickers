@@ -5,6 +5,7 @@ import { clipFrame, evaluateLane, laneSegment, laneView, lookAtPoint, ownerPerio
 import { is3dFileSource, lookAtOn } from "../pano_scene_state.js";
 import { setLaneTarget } from "../pano_timeline.js";
 import { worldRotation } from "../pano_world.js";
+import { cropEmpty } from "../space/bounds.js";
 import { objectLabel } from "./timeline_model.js";
 
 // The ids of the Stickers the Camera's Look at Lane points at, its value's and its Keyframes'.
@@ -33,7 +34,8 @@ export function lookAtBoxes(state, { image = () => null, content = () => null } 
     const size = image(sticker);
     const { crop } = sticker;
     const width = size ? size.width * (crop.x1 - crop.x0) : 0;
-    if (width > 0) boxes[id] = { center: [0, 0, 0], size: [1, size.height * (crop.y1 - crop.y0) / width, 0] };
+    // An empty crop draws no plane and has no box: its point is the Sticker's position.
+    if (width > 0 && !cropEmpty(crop)) boxes[id] = { center: [0, 0, 0], size: [1, size.height * (crop.y1 - crop.y0) / width, 0] };
   }
   return boxes;
 }

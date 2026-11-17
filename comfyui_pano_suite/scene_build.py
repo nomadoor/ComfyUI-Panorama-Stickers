@@ -13,6 +13,7 @@ from .core.scene_inherit import apply_upstream_overrides
 from .core.scene_state import DEFAULT_ANIMATION, is_3d_file_source, load_scene_state
 from .core.state import hex_to_rgb01, normalize_coverage
 from .core.stickers import load_source_rgba
+from .core.world_render import crop_empty
 from .file_3d import _check_da3_inputs, _check_moge_inputs, _file_3d_error, _read_file_3d, _read_scene_file
 from .media_ui import _bg_media_ui, _merge_ui_payload, _port_media_ui
 from .pano_scene import PanoSceneValue, SceneLayer
@@ -151,7 +152,8 @@ def look_at_boxes(state: dict, sources: SceneSources, port: PortMedia | None) ->
             crop = sticker["crop"]
             width = source.rgba.shape[1] * (crop["x1"] - crop["x0"])
             height = source.rgba.shape[0] * (crop["y1"] - crop["y0"])
-            if width > 0:
+            # An empty crop draws no plane and has no box: its point is the Sticker's position.
+            if not crop_empty(crop):
                 boxes[sticker_id] = {"center": [0.0, 0.0, 0.0], "size": [1.0, height / width, 0.0]}
     return boxes
 

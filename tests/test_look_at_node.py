@@ -40,3 +40,13 @@ def test_the_camera_looks_at_the_offset_point_of_the_box():
     forward = world_rotation(camera["yaw_deg"], camera["pitch_deg"], camera["roll_deg"]) @ np.array([0.0, 0.0, -1.0])
     toward = np.array([0.0, 0.5, 0.0]) - np.array([0.0, 0.0, 4.0])
     assert forward == pytest.approx(toward / np.linalg.norm(toward), abs=1e-9)
+
+
+def test_an_empty_crop_has_no_box_so_the_camera_looks_at_the_sticker_s_position():
+    # CodeRabbit review: a crop with no height draws no plane (core/world_render.py crop_empty) and has no box.
+    state = load_scene_state({"version": 2, "camera": {"position": {"value": [0.0, 0.0, 4.0]}, "look_at": {"value": {"sticker": "board", "offset": [0.5, 0.0, 0.0]}}},
+                              "stickers": [{"id": "board", "placement": "world", "source": {"kind": "file", "filename": "a.png"},
+                                            "crop": {"x0": 0.0, "y0": 0.5, "x1": 1.0, "y1": 0.5}}]})
+    rgba = np.zeros((100, 100, 4), dtype=np.uint8)
+    sources = SceneSources({"board": StickerSource(rgba, {"x0": 0.0, "y0": 0.5, "x1": 1.0, "y1": 0.5})}, empty_painting_state())
+    assert look_at_boxes(state, sources, None) == {}
