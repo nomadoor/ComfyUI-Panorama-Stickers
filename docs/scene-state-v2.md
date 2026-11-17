@@ -18,10 +18,10 @@ Panorama Studio の `state_json`（状態 v2）、Camera を持つ Panorama Stud
 | パノラマの角度規約（yaw・pitch・roll と ERP の対応） | `core/math.py` `camera_basis`・`ray_directions`・`lon_lat_to_erp` | `web_src/pano_camera_math.js` | `tests/test_camera_orientation.py`、`tests/pano_camera_math.test.mjs` |
 | Timeline の上限の定数 | `scene_state.py` の `TIMELINE_FPS_MIN`・`TIMELINE_FPS_MAX`・`TIMELINE_LENGTH_MAX`・`TIMELINE_FRAME_MAX` | `pano_scene_state.js` の同名の定数 | フィクスチャ `v2_timeline_limits` |
 | `sticker_state` の読み込み | `scene_state.py` `load_sticker_state` | `pano_scene_state.js` `loadStickerState` | `test_scene_state.py`、`pano_scene_state.test.mjs`、`test_scene_state_parity.py` |
-| 受け渡しの置き方（`sticker_state` が届いている `port` の Sticker の向き・大きさを、撮った Camera と、Camera の差としてのずらしから求める規則。未実装） | `scene_eval.py`（評価関数の引数 `shot`） | `pano_scene_eval.js`（同じ引数） | フィクスチャ `tests/fixtures/scene_state/v2_handoff.json`（Python と JS が同じファイルを読む） |
+| 受け渡しの置き方（`sticker_state` が届いている `port` の Sticker の向き・大きさを、撮った Camera と、Camera の差としてのずらしから求める規則） | `scene_eval.py`（評価関数の引数 `shot`） | `pano_scene_eval.js`（同じ引数） | フィクスチャ `tests/fixtures/scene_state/v2_handoff.json`（Python と JS が同じファイルを読む） |
 | 評価関数と補間 | `core/scene_eval.py` `evaluate_scene_state` | `web_src/pano_scene_eval.js` `evaluateSceneState` | `tests/test_scene_eval.py`、`test_scene_state_parity.py` |
-| 形と進み具合（位置の自動の形と角の Keyframe、長さで測る `PATH_SAMPLES`、Smooth の端の速さ）、物ごとのループ（未実装） | `scene_eval.py` の `PATH_SAMPLES` と補間の部品 | `pano_scene_eval.js` の `PATH_SAMPLES` と補間の部品（エディタの軌道の線も同じ部品を呼ぶ。`docs/studio-ui.md` の「軌道の線」） | フィクスチャ `v2_shape_progress`・`v2_loop`（Python と JS が同じファイルを読む）、`test_scene_eval.py` |
-| Look at（Camera の `look_at` の Lane の読み込みと、向く相手から向きを求める規則。未実装） | `scene_state.py` の読み込み、`scene_eval.py` の評価、方向から向きへの変換は `core/world.py`（`look_rotation`） | `pano_scene_state.js`・`pano_scene_eval.js`、変換は `web_src/pano_world.js`（`lookRotation`） | フィクスチャ `v2_look_at`（Python と JS が同じファイルを読む） |
+| 形と進み具合（位置の自動の形と角の Keyframe、長さで測る `PATH_SAMPLES`、Smooth の端の速さ）、物ごとのループ | `scene_eval.py` の `PATH_SAMPLES` と補間の部品 | `pano_scene_eval.js` の `PATH_SAMPLES` と補間の部品（エディタの軌道の線も同じ部品を呼ぶ。`docs/studio-ui.md` の「軌道の線」） | フィクスチャ `v2_shape_progress`・`v2_loop`（Python と JS が同じファイルを読む）、`test_scene_eval.py` |
+| Look at（Camera の `look_at` の Lane の読み込みと、向く相手から向きを求める規則） | `scene_state.py` の読み込み、`scene_eval.py` の評価、方向から向きへの変換は `core/world.py`（`look_rotation`） | `pano_scene_state.js`・`pano_scene_eval.js`、変換は `web_src/pano_world.js`（`lookRotation`） | フィクスチャ `v2_look_at`（Python と JS が同じファイルを読む） |
 | 素材の先頭（`start − in`）と、Timeline frame から素材の先頭からのフレームへの直し方（`frame − (start − in)`） | `scene_eval.py` `_clip_frame` | `pano_scene_eval.js` `clipOrigin`・`clipFrame`（エディタ・タイムライン・`port` の素材の時刻も呼ぶ） | `tests/pano_scene_eval.test.mjs`、評価の `clip_frame` を比べる `test_scene_state_parity.py` |
 | fps の再基準化 | `scene_state.py` `rebase_scene_state` | `pano_scene_state.js` `rebaseSceneState` | `test_scene_state.py`、`pano_scene_state.test.mjs`、`test_scene_state_parity.py` |
 | 上書きの記録の再基準化 | `scene_state.py` `rebase_upstream_record` | `pano_scene_state.js` `rebaseUpstreamRecord` | `tests/test_scene_inherit.py`、`tests/pano_scene_inherit.test.mjs`、`tests/test_upstream_editor_parity.py` |
@@ -211,7 +211,7 @@ null
 
 - `sticker` の id の Sticker が状態に無い、または `sky` の Sticker のときは、評価で相手なしとして扱う（値は保つ。Sticker を消して Undo で戻したときに、相手が戻る）。
 - 上流の層の Sticker は相手にできない（自分の状態の Sticker だけ）。
-- エディタが今書くのは Lane の `value` だけである（相手一つが Timeline の全体に効く）。Keyframe は読み込みと評価が受け付ける（`docs/studio-ui.md` の「Look at」）。
+- エディタは、ほかの Lane と同じ記録の規則で書く：Keyframe が無ければ `value`（相手一つが Timeline の全体に効く）、あれば再生ヘッドの時刻の Keyframe（`docs/studio-ui.md` の「Look at」）。
 
 ### Keyframe
 
@@ -630,7 +630,7 @@ Sticker の上書きは `id`・`placement` と、上書きしたフィールド�
 | `clip` | オブジェクトなら Clip range として正規化する |
 | `visible`・`locked`・`loop` | 真偽値 |
 | `crop` | オブジェクトなら `crop` として正規化する |
-| Lane | `placement` の Lane（`sky`：`direction`・`roll`・`size`・`opacity`・`curve`、`world`：`position`・`rotation`・`scale`・`opacity`。`world` の `lens` の上書きは捨て、上流から引き継ぐ）。オブジェクトなら Lane として正規化する（`value` と、Easing・`corner`・ハンドルを含む `keyframes` のすべて）。上書きは Lane ごとに丸ごと置き換える |
+| Lane | `placement` の Lane（`sky`：`direction`・`roll`・`size`・`opacity`・`curve`、`sky` の `port` の Sticker のずらし `offset_rotation`・`offset_fov`（層に届いた `sticker_state` が置く絵を、下流で動かす。下記「受け渡しの置き方」）、`world`：`position`・`rotation`・`scale`・`opacity`。`world` の `lens` の上書きは捨て、上流から引き継ぐ）。オブジェクトなら Lane として正規化する（`value` と、Easing・`corner`・ハンドルを含む `keyframes` のすべて）。上書きは Lane ごとに丸ごと置き換える |
 | `z_index` | `sky` の上書きだけ。数値なら `floor(x + 0.5)` に丸める |
 
 ここだけの規則：**不正な値は既定値にせず、捨てる。捨てたフィールドは上流から引き継ぐ。** 状態のほかの部分では不正な値は既定値に戻すが、上書きで既定値にすると、上流の値を黙って既定値で置き換えることになるためである。型が合っているフィールド（Clip range・`crop`・Lane のオブジェクト）の中身は、状態のほかの部分と同じ規則で正規化する。

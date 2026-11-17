@@ -30,9 +30,9 @@ Python はこの文書の規則を持たない（列は `—`）。「（新し�
 
 | 規則 | Python | JS | test |
 |---|---|---|---|
-| 軌道の線（出す条件、線・Keyframe の点・ハンドル・速さの点の描き方、点とハンドルのドラッグ、点と線のクリックとダブルクリック、Easing の対象の強調、当たり。新しい UI、未実装） | — | 描く点・当たり・ハンドルの読み書きは `web_src/studio/path_line.js`（形そのものは `web_src/pano_scene_eval.js` の補間の部品を呼ぶ）、押したときの順とドラッグは `web_src/studio/stage_objects.js`、描くのは `web_src/studio/stage_overlay.js` | `tests/studio_path_line.test.mjs`、`tests/browser/studio_path_line.spec.js`（未作成） |
-| 点の種類（下の中央のバーの Auto・Bezier・Corner、対象の Keyframe、無効の理由。新しい UI、未実装） | — | `web_src/studio/selection_bar.js`（並びと無効）、書き込みは `web_src/studio/path_line.js` | `tests/studio_selection_bar.test.mjs`、`studio_path_line.test.mjs`（未作成） |
-| Look at の画面（Camera のカードの行、Pick、見ている点の印と点線、向いている間に無効にする部品、Camera タブのドラッグ。新しい UI、未実装） | — | 行は `web_src/studio/inspector_model.js`・`inspector_actions.js`、Pick と印は `web_src/studio/stage_objects.js`・`stage_overlay.js`、Camera タブのドラッグは `web_src/studio/camera_state.js` | `tests/studio_inspector_model.test.mjs`、`tests/browser/studio_look_at.spec.js`（未作成） |
+| 軌道の線（出す条件、線・Keyframe の点・ハンドル・速さの点の描き方、点とハンドルのドラッグ、点と線のクリックとダブルクリック、Easing の対象の強調、当たり。新しい UI） | — | 描く点・当たり・ハンドルの読み書きは `web_src/studio/path_line.js`（形そのものは `web_src/pano_scene_eval.js` の補間の部品を呼ぶ）、押したときの順とドラッグは `web_src/studio/stage_objects.js`、描くのは `web_src/studio/stage_overlay.js` | `tests/studio_path_line.test.mjs`、`tests/browser/studio_path_line.spec.js` |
+| 点の種類（下の中央のバーの Auto・Bezier・Corner、対象の Keyframe、無効の理由。新しい UI） | — | `web_src/studio/selection_bar.js`（並びと無効）、書き込みは `web_src/studio/path_line.js` | `tests/studio_selection_bar.test.mjs`、`studio_path_line.test.mjs` |
+| Look at の画面（Camera のカードの行、Pick、見ている点の印と点線、向いている間に無効にする部品、Camera タブのドラッグ。新しい UI） | — | 行は `web_src/studio/inspector_model.js`・`inspector_actions.js`、Pick と印は `web_src/studio/stage_objects.js`・`stage_overlay.js`、Camera タブのドラッグは `web_src/studio/camera_state.js` | `tests/studio_inspector_model.test.mjs`、`tests/browser/studio_look_at.spec.js` |
 | 画面の区画（ステージ、タブ、左の列、右の中央の列、右下、右上、上端の中央、インスペクタ、タイムラインの領域と境界） | — | `web_src/components/studio/StudioEditor.vue`、大きさの規則は `web_src/studio/layout.js`（タイムラインの高さ、Output の小窓の大きさとその記憶）、開くのは `web_src/studio/editor.js` | `tests/studio_stage_view.test.mjs`（`layout.js`）、`tests/browser/studio_editor.spec.js` |
 | 左の列の中身と並び、タブごとの無効 | — | `web_src/components/studio/StudioToolRail.vue`（今は Cursor・Paint・Mask・Add・Camera・Undo・Redo が働き、ほかは席に置いて無効。Paint・Mask は下の「ペイントの道具」。Undo・Redo は `web_src/studio/session.js` の履歴、Add は `web_src/studio/add_files.js`、Camera は下の「エディタの中の Camera」の行）。Camera タブでの無効は `StudioToolRail.vue` の `cameraTab` | `tests/browser/studio_editor.spec.js`、`tests/browser/studio_camera_button.spec.js`、`tests/browser/studio_paint.spec.js` |
 | ペイントの道具（左の列の Paint・Mask、下の中央のバーのペイントの道具、ステージで描くこと、ブラシのカーソル、Clear paint・Clear mask） | — | 道具の選び方・太さ・色とバーの中身は `web_src/studio/paint_bar.js`（`createPaintTools`・`paintBar`）、画面は `web_src/components/studio/StudioPaintBar.vue`（色のポップオーバーは `StudioColorPicker.vue`、Clear の確かめは `StudioConfirm.vue`）。ステージで描くことと描く層は `web_src/studio/paint.js` `createStudioPaint`（下の部品：ストロークの記録・点・確定・消しゴムは `web_src/paint_strokes/*.js`（入口は `pano_paint_strokes.js`）、画素は `pano_paint_engine.js`、ラスタのキャンバスと層は `pano_paint_display.js` `createPaintDisplay`、層の並びは `pano_paint_layers.js` `skyPaintLayers`。古い UI も同じ下の部品を使う）。状態に書いて Undo の 1 段にするのは `web_src/studio/session.js` `editPainting`、組み立ては `web_src/studio/editor_tools.js`、押したときの振り分けは `web_src/studio/stage_input.js`。閉じるときのペイントの層のアップロードは `web_src/studio/paint_upload.js`（下の部品 `web_src/pano_paint_upload.js`、古い UI と同じ）で、呼ぶのは `web_src/studio/editor.js` の閉じる処理（`editor_edits.js` `uploadPaintLayerOnClose`） | `tests/pano_paint_strokes.test.mjs`、`tests/studio_paint.test.mjs`、`tests/studio_session.test.mjs`、`tests/studio_paint_upload.test.mjs`、`tests/pano_paint_upload.test.mjs`、`tests/browser/studio_paint.spec.js` |
@@ -222,7 +222,7 @@ Camera の値の位置は選択で動かない）。
 ### リセットと Keyframe のポチ
 
 - リセット：各行の右端。押すとその行の値だけを既定に戻す。上流から受け取った物では上流の値、ノードの入力から来た物（`port`）では入力の
-  値に戻す。`sticker_state` が届いている `port` の Sticker（Pose handoff。`docs/editor-interaction.md`）の、ずらしの行（Offset・Zoom）は、ずらしの既定値（0°・1）に戻す。そのほかの行（Opacity、
+  値に戻す。`sticker_state` が届いている `port` の Sticker（Pose handoff。`docs/editor-interaction.md`）の、ずらしの行（Offset・Zoom）は、ずらしの既定値（0°・100%）に戻す。そのほかの行（Opacity、
   Animation）は今までどおり Lane の既定で決める。今が戻す先と同じ行では、隠さずに無効にする。押すと Undo の 1 段で、Keyframe のある Lane では記録の規則に従う
   （`docs/timeline-ui.md` の「記録の規則」）。
 - Keyframe のポチ：値の箱とリセットの間に置く。どの行に置くか、三つの状態、押したときの動き、無効になる条件は `docs/timeline-ui.md` の
@@ -240,7 +240,7 @@ Camera の値の位置は選択で動かない）。
 | World に置いた画像の板 | 見出し（World のアイコンと名前）、Position（X・Y・Z）、Rotation（Y・P・R）、Scale、Opacity |
 | World に置いた 3D | 上と同じ。アニメーションを持つときは、その下に小見出し Animation を置き、Clip（1〜3 列目の選択）と Speed |
 | Camera | Camera のカード（下の「Camera のカード」） |
-| `sticker_state` が届いている `port` の Sticker（Pose handoff） | 見出し（Sky のアイコンと名前）、Offset（Y・P・R。撮った Camera からの向きのずらし、°）、Zoom（撮った画角に掛ける倍率）、Opacity。Rotation と FOV の行は出さない（置き方は撮った Camera が決める。`docs/scene-state-v2.md` の「受け渡しの置き方」） |
+| `sticker_state` が届いている `port` の Sticker（Pose handoff） | 見出し（Sky のアイコンと名前）、Offset（Y・P・R。撮った Camera からの向きのずらし、°）、Zoom（撮った画角に掛ける倍率を % で出す。100% が撮ったまま。状態は倍率で持つ）、Opacity。Rotation と FOV の行は出さない（置き方は撮った Camera が決める。`docs/scene-state-v2.md` の「受け渡しの置き方」） |
 | 複数選択 | 見出しに数とアイコン（例：`3 stickers`）だけ。操作は下の中央のバー |
 | ペイントのまとまり | 見出し `Paint` だけ。操作は下の中央のバー。Paint・Mask の道具を選んでいて物を選んでいないときも、このカードを出す |
 | 何も選んでいない | Scene のカード：上に Camera のカード（下の「Camera のカード」）と同じ中身、その下に Ground（地面の高さの値とリセット）。値の 2 列目と 3 列目は `Set ground` のボタン（未実装。作るまで出さない、ADR 0062）の席として空けておく（1 列では名前が収まらない）。地面の自動推定のボタンは、置くときに席を決め直す |
@@ -271,7 +271,7 @@ Camera の値の位置は選択で動かない）。
 | Lens | 灰色・触れない | スライダー（κ） |
 | Position | X・Y・Z。リセットは原点（0, 0, 0）へ | 同じ |
 | Rotation | Y・P・R。リセットは向き 0 へ。Panorama モードの Yaw は ERP の正面の向き | 同じ |
-| Look at | 相手の名前の欄、Pick、外すボタン（下の「Look at」） | 同じ |
+| Look at | 相手の名前の欄、Pick、Keyframe のポチ、相手を外すリセット（下の「Look at」） | 同じ |
 
 - 「原点に戻す」の専用のボタンは置かない。Position と Rotation の行のリセットで戻す。
 - Look at の相手があるとき、Rotation の行の Y と P は灰色にして触れないようにし（値は相手を向いた向きを出す）、R は今までどおり使える。tooltip は「Yaw and Pitch · Set by Look at」。
@@ -667,9 +667,9 @@ Paint・Mask の道具を選んでいる間、下の中央のバーはペイン�
 - ハンドル：対象の Keyframe が一つのとき（一つだけ選んだ Keyframe、または何も選んでいないときの再生ヘッドの上の Keyframe）、その点の前後のハンドルを描く。再生している間は、選んだ Keyframe のハンドルだけを描き、何も選んでいないときの再生ヘッドの上の Keyframe のハンドルは描かない（再生ヘッドが Keyframe を通るたびにハンドルがちらつくため）。自動のハンドルは点線、書かれたハンドル（`handles`）は実線。ハンドルの先をドラッグすると、視線に垂直な面の上で動き、その側の `handles` に書く。角でない Keyframe では、反対側のハンドルを一直線にそろえる（長さは保ち、無ければ今の自動の長さで書く）。角の Keyframe では、その側だけを動かす。案内は「Drag to bend」。
 - 点の種類：下の中央のバーの Auto・Bezier・Corner（上の「下の中央のバー」）。
   - 種類は状態から決まる（`docs/scene-state-v2.md` の「Keyframe」）：Auto は自動で滑らかに通る点、Bezier は書かれたハンドルで滑らかに通る点、Corner は角の点。
-  - 対象は、選んだ Keyframe があればその全部、無ければ再生ヘッドの上の Keyframe。対象の種類が同じなら、そのボタンを点ける（混ざっていれば、どれも点けない）。
+  - 対象は、選んだ Keyframe があればその全部、無ければ再生ヘッドの上の Keyframe。対象の種類が同じなら、そのボタンを点ける（混ざっていれば、どれも点けない）。再生している間は、ハンドルと同じく選んだ Keyframe だけを対象にし、再生ヘッドの上の Keyframe は対象にしない（再生ヘッドが Keyframe を通るたびにボタンがちらつくため）。
   - Auto を押すと、対象の `corner` を外し、`handles` を消す。Bezier を押すと、`corner` を外し、今の形のハンドルを `handles` に書く（形は変わらない）。Corner を押すと、`corner` を立て、`handles` を消す（隣の Keyframe へまっすぐ向かう）。Auto の点のハンドルをドラッグすると、その Keyframe は Bezier になる。
-  - 対象が無いときは、3 つとも隠さずに無効にする。tooltip は、物に Keyframe が無ければ「Auto · No Keyframes」、再生ヘッドが Keyframe の上に無ければ「Auto · No Keyframe at the playhead」（Bezier・Corner も同じ形）。使えるときの tooltip は「Auto · automatic handles」「Bezier · your handles」「Corner · sharp turn」。
+  - 対象が無いときは、3 つとも隠さずに無効にする。tooltip は、物に Keyframe が無ければ「Auto · No Keyframes」、再生ヘッドが Keyframe の上に無ければ「Auto · No Keyframe at the playhead」、Keyframe を選ばずに再生している間は「Auto · Playing」（Bezier・Corner も同じ形）。使えるときの tooltip は「Auto · automatic handles」「Bezier · your handles」「Corner · sharp turn」。
 - Easing の対象の強調：タイムラインで Keyframe を選んでいる間、Easing の対象の区間（`docs/timeline-ui.md` の「Easing」）の線を、白で太く描く。
 - Simplify を調整している間は、元の軌道を灰色の細い線で残す（`docs/timeline-ui.md` の「Simplify」）。
 - ロックした物、読み取り専用の物では、線と点を描くだけで、動かせない（点と線を押して再生ヘッドを動かすことはできる）。上流の物は、ギズモと同じく作業コピーに書く。
@@ -734,6 +734,7 @@ Paint・Mask の道具を選んでいる間、下の中央のバーはペイン�
 | 上流の物 | ステージ（3D タブと Camera タブ） | インスペクタ | タイムラインの行 | 下の中央のバー |
 |---|---|---|---|---|
 | 空に貼った画像 | 選べる。選んだ枠とハンドル、本体のドラッグ・四隅・辺・回転のハンドルは自分の物と同じ | 自分の物と同じカードと行 | 自分の物と同じ（Keyframe・行のポチ・Easing・Clip range・目） | 前面へ・背面へ・Duplicate・Replace は無効。Lock・Delete・元に戻すは働く |
+| 層に届いた `sticker_state` が置く `port` の Sticker（上流で撮った場所に戻した絵） | 選べる。自分の `sticker_state` が置く絵と同じ（本体のドラッグ・四隅・回転のハンドルはずらしを書き、辺のハンドルは無効。`docs/editor-interaction.md` の「Pose handoff の表示と記録」）。置き方は層の `sticker_state` で求める | 自分の `sticker_state` が置く絵と同じ Offset・Zoom・Opacity の行。リセットは上流の値に戻す | 自分の物と同じ（ずらしと不透明度の Lane） | 空に貼った画像と同じ。元に戻すは、ずらしの上書きも外す |
 | World に置いた画像の板、World に置いた 3D（`port` の 3D を含む） | 選べる。ギズモ（Move・Rotate・Scale）は自分の物と同じ | 自分の物と同じ。ただし Animation の Clip と Speed は灰色（上書きが無い） | 自分の物と同じ | ギズモの切り替えは働く。Duplicate・Replace は無効。Lock・Delete・元に戻すは働く |
 | ペイント | つかめない（下の「作らないもの」） | — | ペイントの行の目だけ | — |
 | `scene`（層の 3D の内容） | 選べない（自分の `world` と同じ） | — | 目と Clip range だけ（`docs/timeline-ui.md` の「上流の層の行」） | — |
@@ -845,12 +846,13 @@ Paint・Mask の道具を選んでいる間、下の中央のバーはペイン�
 
 Camera が、選んだ相手を向き続ける（ADR 0065）。向きの決まり方は `docs/scene-state-v2.md` の「Look at」が持ち、この節は画面と操作を持つ。Look at が決めるのは向きだけで、軌道の形は変えない（回り込みの弧は、軌道の点を Bezier にしてハンドルで作るか、Keyframe を足して作る）。
 
-- 今の画面が出すのは、相手一つが Timeline の全体に効く形だけである（`look_at` の Lane の `value` を書く）。Lane に Keyframe がある状態（ほかの道具が書いたもの）は、評価どおりに動く。Keyframe を打つ・相手を途中で変える画面は、まだ作らない。
-- Camera のカードの Look at の行：相手の名前の欄（相手が無ければ「None」）、`Pick`、外すボタン（✕）。
+- Look at の書き方は、ほかの Lane と同じ記録の規則（`docs/timeline-ui.md` の「記録の規則」）に従う：`look_at` の Lane に Keyframe が無ければ値（Timeline 全体の相手）を書き、Keyframe があれば再生ヘッドの時刻の Keyframe を書く（無ければ、そこに Keyframe を足す）。Pick・行のリセット・Offset の欄のどれも同じ。相手は数として補間せず、そのまま書き換える（ほかの Lane のように値を混ぜない）。Keyframe の間は、Camera の向きが前の相手から次の相手へ、その区間の Easing で回る（`docs/scene-state-v2.md` の「Look at」）。`hold` の区間は、次の Keyframe で切り替わる。
+- Camera のカードの Look at の行：相手の名前の欄（相手が無ければ「None」）、`Pick`、Keyframe のポチ、行のリセット（相手を外す。ほかの行のリセットと同じ列に置く）。ポチは `look_at` の Lane だけを打つ・消す（`docs/timeline-ui.md` の「インスペクタの Keyframe のポチ」。打つのは再生ヘッドで今見えている相手で、Offset を含む）。
   - `Pick` を押すと、次の一回のクリックだけ、見る点を拾う状態になる（Set orbit center と同じ形の待ち）。カーソルを十字にし、上端の一行に「Click a spot to look at · Esc to cancel」と出す。ポインタの下に拾える物があるとき、その点に薄い印を出す。
-  - World の物の上を押すと、押した点（画像の板は板の上の点、3D はその表面の点）を、その物の中身の箱の中心からのずれ（箱の大きさに対する割合。`docs/scene-state-v2.md` の「向く相手の値」）にして、相手に書く（`{"sticker": id, "offset": ...}`）。Undo の 1 段で、Camera を選ぶ。3D タブでも Camera タブでも拾える。
+  - World の物の上を押すと、押した点（画像の板は板の上の点、3D はその表面の点）を、その物の中身の箱の中心からのずれ（箱の大きさに対する割合。`docs/scene-state-v2.md` の「向く相手の値」）にして、上の記録の規則で相手に書く（`{"sticker": id, "offset": ...}`。Keyframe があれば「ここからこの相手を見る」）。Undo の 1 段で、Camera を選ぶ。3D タブでも Camera タブでも拾える。
   - 拾える物が無い所を押したときは、何も変えず、待ちのまま「Nothing to look at here」と知らせる。Escape で待ちをやめる。
-  - 外すボタンは、相手を無しにする（Camera は `rotation` の Lane の向きに戻る）。相手が無いときは、隠さずに無効にする。tooltip は `Pick` が「Pick a spot to look at」、外すボタンが「Clear Look at」。
+  - Look at の行の下に、Look at に付いた子の行として Offset の行（見た目は `docs/design.md` の「上の行に付いた子の行」。X・Y・Z の欄。相手の物の中身の箱の中心からのずれを、箱の大きさに対する割合で出す。`0` が中心、`0.5` が端）を、いつも出す。Pick で大まかに拾った点を、後から数値で直すためのもの（ヘッドホンのように中が空いた物の真ん中は、表面が無いので Pick では拾えないが、Pick の後にリセットすれば中心になる）。出すのは、再生ヘッドで今見えている相手のずれ。書くのは上の記録の規則のとおり（Keyframe があれば、再生ヘッドの時刻の Keyframe に、今の相手を、ずれを変えて書く）。行のリセットは `0, 0, 0`（中心）に戻す。Keyframe のポチは持たない（ずれは相手の一部なので、Look at の行のポチで打つ）。相手が無いとき、点（`{"point"}`）のときは、隠さずに無効にする。tooltip は、相手が無ければ「Offset · No target」、点なら「Offset · Looking at a point」。欄の値を変えている間、見ている点の印もその場で動く。
+  - 行のリセットは、上の記録の規則で相手を無しにする（Camera は `rotation` の Lane の向きに戻る。Keyframe があれば「ここで見るのをやめる」Keyframe になる。全部をやめるときは、タイムラインで Keyframe を消す）。再生ヘッドで今見えている相手が無いときは、ほかの行のリセットと同じく既定の見た目（押せない）にする。tooltip は `Pick` が「Pick a spot to look at」、リセットはほかの行と同じ「Reset Look at」。
   - 相手にできるのは、自分の状態の World の物だけ（空に貼った画像、土台の 3D、上流の物は拾えない）。
 - 中身の箱：エディタは、読み込んだ中身（画像の大きさと切り抜き、3D の中身を囲む箱）から、評価に渡す `boxes` を作る（`docs/scene-state-v2.md` の「Look at」の「中身の箱」）。読み込みが済むまでは、相手の点はその物の `position` として描き、読み込みが済んだら描き直す。
 - Replace（下の中央のバー。未実装）は、同じ物（同じ `id`）のまま中身だけを入れ替える。相手に選ばれている物を Replace しても、Look at は続き、ずれは割合なので、新しい中身の同じ所を指す。
@@ -1026,12 +1028,13 @@ Camera タブでは同じ席で無効にする（tooltip は「Not available in 
 | 再生と一時停止（メディアの再生のボタン 1 つ。`docs/agents/ux-principles.md` の例外） | `docs/timeline-ui.md` の「タイムラインの表示」 |
 | 前の Keyframe へ、次の Keyframe へ | `docs/timeline-ui.md` の「前後の Keyframe へ飛ぶ」 |
 | 再生のループのボタン（一つのアイコンのボタンで、オンとオフをアイコンの形 `repeat` ／ `repeat-off` で示す。`docs/agents/ux-principles.md` の例外。既定はオン。tooltip は「Loop playback: on」「Loop playback: off」） | `docs/timeline-ui.md` の「タイムラインの長さ」 |
-| 時刻とフレーム（例 `00:03.12  78 / 240`） | `docs/timeline-ui.md` の「タイムラインの表示」 |
-| Simplify のボタン（アイコンと文字。いつも出し、使えないときは無効にして理由を tooltip に出す）と、その右のスライダーと数の表示の席（調整している間だけ中身を出す。席はいつも空けておく） | `docs/timeline-ui.md` の「Simplify」 |
+| 時刻とフレーム（例 `00:03.12  78 / 240`。フレームの表示は、一番広い形（`240 / 240`）の幅をいつも取り、再生位置の桁が増えても後ろの部品を動かさない） | `docs/timeline-ui.md` の「タイムラインの表示」 |
+| Constant speed のボタン（アイコンと文字。選んだ Keyframe の時刻を、通る距離に合わせて打ち直し、一定の速さにする操作の場所。押すと Keyframe がタイムラインの上で動くことは、アイコン（並んだ Keyframe の菱形と左右の矢印）と、作った後の tooltip「Constant speed · Moves the selected Keyframes in time」で伝える。未実装：いつも無効で出し、tooltip は「Constant speed · in development」） | （未実装。働きは作るときに `docs/timeline-ui.md` に書く） |
+| Simplify のボタン（アイコンと文字。いつも出し、使えないときは無効にして理由を tooltip に出す）と、調整している間だけその右に出すスライダーと両端の数（左は必ず残す数、右は選んだ数） | `docs/timeline-ui.md` の「Simplify」 |
 | （ここから右寄せ）fps の欄、Length の欄とそのリセット、畳むボタン（状態はアイコンの形で示す） | `docs/timeline-ui.md` の「タイムラインの表示」 |
 
 - 再生位置は、ルーラーの上の ▼ の印と、トラックを縦に貫く 2 px の線で示す（色は `docs/design.md`。▼ はルーラーにだけ出す）。
-- Simplify の tooltip は、使えるとき「Simplify Keyframes」、選んだ Keyframe が足りないとき「Simplify · Select 3+ Keyframes」、二つ以上の行にまたがって選んでいるとき「Simplify · Select Keyframes in one row」、調整している間「Enter to keep · Esc to cancel」。スライダーの tooltip は「Keyframes to keep」。スライダーの幅と数の表示の幅は `docs/design.md`。
+- Simplify の tooltip は、使えるとき「Simplify Keyframes」、選んだ Keyframe が足りないとき「Simplify · Select 3+ Keyframes」、二つ以上の行にまたがって選んでいるとき「Simplify · Select Keyframes in one row」、調整している間「Enter to keep · Esc to cancel」。スライダーの tooltip は「Keyframes to keep」。スライダーと数の見た目は `docs/design.md`。
 - 行の頭の並び（左から）：目のアイコン、▶（開閉）、アイコン（Sky / World の印、Camera、Paint、Background）、名前、動きのループのボタン（`docs/timeline-ui.md` の「動きのループ」）、行のポチ。目やループのボタンを持たない
   行も同じ幅を空ける（`docs/timeline-ui.md` の「表示（目のアイコン）」）。
 - 上流の層の見出しは「From ＜元のノードの名前＞」（`docs/timeline-ui.md` の「上流の層の行」）。
@@ -1171,6 +1174,7 @@ Camera タブでは同じ席で無効にする（tooltip は「Not available in 
   視点のドラッグ、ギズモのドラッグ、ペイントのまとまりのドラッグ、ペイントのストロークの最中の Escape（取り消し）は、今の規則（`docs/editor-interaction.md` の「ポインタの取り消しとフォーカスの
   喪失」）のまま、表より先に当たる。
 - 閉じると編集はいつも保存する。開いて閉じただけなら `state_json` を書かない（今の規則のまま。`docs/timeline-ui.md`）。
+- `state_json` を書いたら、ComfyUI に、開いているワークフローが変わったことを知らせる（`web_src/pano_state_widget.js` `writeStateWidget`。エディタ、ノード上の UI、古いエディタが書くときも同じ）。ComfyUI は、再読み込みや再起動の後に戻すワークフローを、ウィンドウの `mouseup` と `keyup` のときに取り直す。✕ はその後の `click` で書くので、知らせないと、次にどこかを押すまで新しい値がワークフローに入らず、その前に再起動すると編集が消える。
 - 読めない `state_json`（JSON として読めない、または読めない `version`。空のテキストは読める：空の状態）：エディタを読み取り専用で開き
   （中身は空の状態）、閉じても `state_json` を書かない。上端の中央に「気をつけてほしい」の一行
   「This node's saved state can't be read, so changes won't be saved」を、エディタを閉じるまで出す。編集を受けてから捨てると気づかずに
