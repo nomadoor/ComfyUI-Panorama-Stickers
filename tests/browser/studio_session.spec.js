@@ -610,3 +610,35 @@ test("the Easing panel of a locked row's Keyframes shows, off, and says it is lo
   await expect(page.locator('[aria-label="Easing preset"] [data-value="Hold"]')).toBeDisabled();
   expect(problems).toEqual([]);
 });
+
+// docs/space-and-view.md "回る中心": while the Timeline plays, an Alt drag turns about T, not the selected object (which
+// moves); stopped, it turns about the selected object's center.
+test("while playing, an Alt drag orbits about T and not the selected object; stopped, about the object", async ({ page }, testInfo) => {
+  const problems = await open(page, testInfo);
+  await page.locator(".pano-studio-tl-head-name", { hasText: "box" }).first().click();
+  // The box has loaded, so its center is known.
+  await page.waitForTimeout(800);
+  const stage = await page.locator("[data-stage-canvas]").boundingBox();
+  const drag = async () => {
+    const x = stage.x + stage.width * 0.3;
+    const y = stage.y + stage.height * 0.4;
+    await page.mouse.move(x, y);
+    await page.keyboard.down("Alt");
+    await page.mouse.down();
+    await page.mouse.move(x + 40, y + 10, { steps: 4 });
+    await page.mouse.up();
+    await page.keyboard.up("Alt");
+  };
+  const target = async () => (await studio(page, "pose")).target;
+  const before = await target();
+  await page.locator('[data-tl="play"]').click();
+  await drag();
+  const playing = await target();
+  playing.forEach((value, axis) => expect(value).toBeCloseTo(before[axis], 6));
+  await page.locator('[data-tl="play"]').click();
+  await drag();
+  const stopped = await target();
+  // The box (1 × 1 × 1 about its origin) stands at [2.5, -1, -4].
+  [2.5, -1, -4].forEach((value, axis) => expect(stopped[axis]).toBeCloseTo(value, 2));
+  expect(problems).toEqual([]);
+});
