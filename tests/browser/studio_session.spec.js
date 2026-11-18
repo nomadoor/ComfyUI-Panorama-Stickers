@@ -498,3 +498,26 @@ test("the Easing panel reads every selected row's Keyframes: Mixed across rows, 
   await expect(page.locator(".pano-studio-easing")).toContainText(`f ${first} → ${second}`);
   expect(problems).toEqual([]);
 });
+
+// docs/studio-ui.md "Look at" "中身の箱": the box is the content's, shown or not, so hiding the target or opening with it
+// hidden leaves where the Camera looks as it was (the output measures it the same way).
+test("hiding the 3D Look at target keeps the Camera facing its box's center, also when the editor opens with it hidden", async ({ page }, testInfo) => {
+  const pitch = () => page.locator('[data-region="inspector"] [data-row="Rotation"] [data-field="pitch_deg"]');
+  const pitchValue = async () => Number((await pitch().textContent()).match(/-?\d+(\.\d+)?/)[0]);
+  const problems = await open(page, testInfo, "?look");
+  await page.locator(".pano-studio-tl-head-name", { hasText: "Camera" }).first().click();
+  // The box at [2.5, -1, -4] from the Camera: its origin is about 12° down, its center (0.5 up) about 6° down.
+  await expect.poll(pitchValue, { timeout: 15_000 }).toBeGreaterThan(-9);
+  const shown = await pitchValue();
+  await page.locator('.pano-studio-tl-head[data-head="sticker_2"] [data-part="eye"]').click();
+  await expect.poll(async () => (await studio(page, "state")).stickers[1].visible).toBe(false);
+  await page.waitForTimeout(300);
+  expect(await pitchValue()).toBe(shown);
+  expect(problems).toEqual([]);
+
+  // Opened with the box hidden: it loads to be measured, and the Camera faces the same point.
+  const again = await open(page, testInfo, "?look=hidden");
+  await page.locator(".pano-studio-tl-head-name", { hasText: "Camera" }).first().click();
+  await expect.poll(pitchValue, { timeout: 15_000 }).toBe(shown);
+  expect(again).toEqual([]);
+});

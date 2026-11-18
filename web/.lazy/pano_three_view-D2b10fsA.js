@@ -27908,7 +27908,7 @@ function Ml(r, e, t) {
 }
 let yl = null;
 function fc() {
-  return yl || (yl = import("./spark.module-DL-TJDal.js")), yl;
+  return yl || (yl = import("./spark.module-xm1n4NRp.js")), yl;
 }
 function B_(r) {
   const e = [], t = /* @__PURE__ */ new Set();
@@ -29728,7 +29728,7 @@ function Ac(r = bc) {
 }
 function wc(r) {
   const e = [...r.sticker ? [r.sticker] : [], ...r.fileStickers ?? []];
-  return { drawn: e, inputs: [...e, { urls: [...r.stickerUrls ?? [], ...r.fileStickerKeys ?? []] }] };
+  return { drawn: e, inputs: [...e, ...r.measuredStickers ?? [], { urls: [...r.stickerUrls ?? [], ...r.fileStickerKeys ?? []] }] };
 }
 const B0 = 16768343;
 function Es(r) {

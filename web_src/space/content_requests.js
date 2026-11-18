@@ -149,7 +149,8 @@ export function fileStickerKey(id, generation) {
 // Sticker whose editor file is there (editorFile(sticker): { kind, unlit, url, generation }, null while it is
 // asked for or when it could not be read), its item's key (fileStickerKey) and a request as
 // stickerContentRequest() makes one, the item keyed by that key and fetched from `src`; the request is null
-// where the Sticker is not active (outside its Clip range, hidden), which keeps its item loaded.
+// where the Sticker is not active (outside its Clip range, hidden), which keeps its item loaded. `item` is the same
+// request whether active or not, for an item loaded only to be measured (a hidden Look at target's content box).
 export function fileStickerRequests(sceneState, evaluated, editorFile) {
   const entries = [];
   sceneState.stickers.forEach((sticker, index) => {
@@ -158,7 +159,7 @@ export function fileStickerRequests(sceneState, evaluated, editorFile) {
     if (!file) return;
     const key = fileStickerKey(sticker.id, file.generation);
     const value = evaluated.stickers[index];
-    const request = value.active ? {
+    const item = {
       kind: file.kind,
       unlit: file.unlit !== false,
       url: key,
@@ -171,8 +172,8 @@ export function fileStickerRequests(sceneState, evaluated, editorFile) {
       opacity: value.opacity,
       value,
       ...animationRequest(file.animation, sticker.animation, value.clip_frame, sceneState.timeline.fps),
-    } : null;
-    entries.push({ id: sticker.id, key, request });
+    };
+    entries.push({ id: sticker.id, key, request: value.active ? item : null, item });
   });
   return entries;
 }
