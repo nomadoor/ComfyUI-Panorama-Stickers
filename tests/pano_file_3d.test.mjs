@@ -119,3 +119,18 @@ test("a refresh happens a few times at most, so a file the server keeps dropping
   }
   assert.equal(calls, 4);
 });
+
+// docs/space-and-view.md "World の物のガイド": the editor reads the node surface's answers without asking the route again.
+test("peek reads an answer already asked for and never asks", async () => {
+  let asked = 0;
+  const files = createFile3dEditorFiles({ fetchApi: async () => {
+    asked += 1;
+    return respond(200, { kind: "mesh", file: entry, box: { min: [0, 0, 0], max: [1, 2, 1] } });
+  } });
+  assert.equal(files.peek(source), null);
+  assert.equal(asked, 0, "peek does not ask");
+  await files.request(source);
+  assert.equal(asked, 1);
+  assert.deepEqual([files.peek(source).state, files.peek(source).box], ["ready", { min: [0, 0, 0], max: [1, 2, 1] }]);
+  assert.equal(asked, 1);
+});

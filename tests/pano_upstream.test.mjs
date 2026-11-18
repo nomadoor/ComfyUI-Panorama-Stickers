@@ -205,6 +205,8 @@ test("an upstream layer's 3D file Stickers ask for the same editor files and dra
     ["scene_a:file:upstream:scene_a:chair", ["file3d:0:upstream:scene_a:chair"], "file3d:0:upstream:scene_a:chair", "/view?filename=e.glb", 0.5, "chair.glb"],
     // Hidden: it keeps its item loaded and shows nothing.
     ["scene_a:file:upstream:scene_a:off", ["file3d:0:upstream:scene_a:off"], null, null, 1, "chair.glb"],
+    // No editor file yet: no item to load, but the Sticker for its loading guide (docs/studio-ui.md "置く間").
+    ["scene_a:file:upstream:scene_a:rig", [], null, null, 0.5, "rig.fbx"],
   ]);
   assert.equal(view.items[0].request.unlit, false);
   assert.equal(view.items[0].request.id, "upstream:scene_a:chair");
@@ -584,4 +586,17 @@ test("an upstream port Sticker placed by its layer's shot is marked, and its off
   const again = upstreamWorkingLayers(layers, upstream, 24);
   assert.equal(again[0].sceneState.stickers[0].offset_fov.value, 1.5);
   assert.deepEqual(upstreamRevertedRecords(upstream, again[0].sceneState.stickers[0], "offset_fov"), []);
+});
+
+// docs/studio-ui.md "置く間": an upstream 3D file Sticker whose editor file has not come yet still has an item, without a
+// request, with its id, Source, value and whether it shows, so its loading guide and line can show.
+test("an upstream 3D file Sticker before its editor file came has an item without a request", () => {
+  const layer = workingOf({ stickers: [world("chair", { source: { kind: "file", filename: "chair.glb", subfolder: "3d", storage: "input" } })] });
+  const view = upstreamLayerView(layer, layer.key, 0, { media: () => null, paintLayers: [], source, editorFile: () => null });
+  const [item] = view.items;
+  assert.deepEqual([item.id, item.request, item.urls, item.active, item.source.filename], ["upstream:#0:chair", null, [], true, "chair.glb"]);
+  assert.ok(item.value?.position);
+  // Once it came, the item asks for its file as before.
+  const ready = upstreamLayerView(layer, layer.key, 0, { media: () => null, paintLayers: [], source, editorFile: () => ({ kind: "mesh", unlit: true, url: "/e.glb", generation: 0 }) });
+  assert.deepEqual([ready.items.length, ready.items[0].id, !!ready.items[0].request, ready.items[0].active], [1, "upstream:#0:chair", true, true]);
 });

@@ -86,7 +86,7 @@ function release(ctx, { vueApp, mountHost, flushBeforeQueue, finished }) {
 // user gives the regions, the loop switch and the Length unit (localStorage). readOnly opens it without edits (nothing is written).
 // Returns { close, session } for the caller (session: session.js's, to read the working state), or null when it is
 // open already.
-export async function openStudioEditor(node, { app = null, api = null, storage = globalThis.localStorage, readOnly = false } = {}) {
+export async function openStudioEditor(node, { app = null, api = null, storage = globalThis.localStorage, readOnly = false, nodeFile3dBox = null } = {}) {
   if (!node || openNodes.has(node)) return null;
   openNodes.add(node);
   try {
@@ -120,6 +120,9 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
       api,
       storage,
       readOnly,
+      // The box the node surface's route answer gave for a 3D file's Source, read without asking (main.js), or null: a
+      // 3D file Sticker's loading guide stands in with it until the editor's own answer (editor_content.js).
+      nodeFile3dBox,
       media,
       stateUnreadable,
       nodeSession,

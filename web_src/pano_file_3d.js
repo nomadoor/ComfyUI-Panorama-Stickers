@@ -112,6 +112,11 @@ export function createFile3dEditorFiles({ fetchApi, onUpdate = () => {} }) {
       if (current.entry.state === "pending" || current.refreshes >= FILE_3D_REFRESHES) return;
       ask(key, current.values, current.entry.generation + 1, current.refreshes + 1);
     },
+    // The entry of a Source asked before ({ state, box, ... } as get() gives it), or null; never asks (the editor reads
+    // the node surface's answers with it: docs/space-and-view.md "World の物のガイド").
+    peek(source) {
+      return entries.get(file3dSourceKey(source))?.entry ?? null;
+    },
     // The Sources whose question failed, with the reason.
     failures() {
       return [...entries.values()].filter(({ entry }) => entry.state === "failed").map(({ entry, values }) => ({ source: values, error: entry.error }));
