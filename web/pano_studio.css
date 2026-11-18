@@ -593,28 +593,6 @@
   line-height: 24px;
 }
 
-/* The heading's badge while the Camera looks at a target (docs/design.md "Look at がオンのときのインスペクタ"). */
-.pano-studio-card-badge {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  gap: 4px;
-  margin-left: 4px;
-  padding: 0 8px 0 6px;
-  border-radius: var(--studio-r-part);
-  background: var(--studio-fill);
-  color: var(--studio-fg);
-  font-size: var(--studio-text-xs);
-  font-weight: var(--studio-weight);
-  line-height: 20px;
-  white-space: nowrap;
-}
-
-.pano-studio-card-badge svg.icon {
-  width: 13px;
-  height: 13px;
-}
-
 /* The Look at row (docs/studio-ui.md "Look at"): the target's name in a field (the strong fill while on) and Pick; its ✕ is in the reset column. */
 .pano-studio-look {
   display: inline-flex;

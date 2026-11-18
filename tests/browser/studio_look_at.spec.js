@@ -117,7 +117,8 @@ test("Pick and a click on the World image make it the Camera's target; the mark 
   expect(state.camera.look_at.value.offset.every((value) => Number.isFinite(value) && Math.abs(value) < 1)).toBe(true);
   expect(await page.evaluate(() => window.__studio.session.selection.row)).toBe("camera");
   await expect(page.locator('[data-part="look-target"]')).not.toHaveText("None");
-  await expect(page.locator('[data-part="card-badge"]')).toContainText("Look at");
+  // The heading has no badge: the target's name in the row is enough (docs/studio-ui.md "Look at" "オンの見せ方").
+  await expect(page.locator('[data-part="card-badge"]')).toHaveCount(0);
   await expect(pick).toHaveAttribute("aria-pressed", "false");
   // The mark (a yellow ring with ticks around a white dot) stands where the Camera looks; Rotate is off with its reason.
   const mark = await page.evaluate(async () => {
