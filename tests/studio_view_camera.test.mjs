@@ -176,6 +176,9 @@ test("the orbit center is the selected object's sphere center when it shows, the
   // In the Camera tab the Camera itself does not count.
   assert.equal(orbitCenter({ selection: { kind: "camera", position: [4, 0, 1] }, frame: true }), null);
   assert.deepEqual(orbitCenter({ selection: { kind: "object", sphere: { center: [1, 2, 3], radius: 1 } }, frame: true }), [1, 2, 3]);
+  // docs/space-and-view.md "回る中心": while the Timeline plays, neither a selected object nor the Camera counts (T).
+  assert.equal(orbitCenter({ selection: { kind: "object", sphere: { center: [1, 2, 3], radius: 1 } }, playing: true }), null);
+  assert.equal(orbitCenter({ selection: { kind: "camera", position: [4, 0, 1] }, playing: true }), null);
 });
 
 test("a center closer than TARGET_MIN_DISTANCE goes to that distance on the line from P", () => {

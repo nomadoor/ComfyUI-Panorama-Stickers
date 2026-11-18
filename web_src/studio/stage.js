@@ -493,7 +493,7 @@ export function createStage({
     if (!(alpha > 0)) return null;
     // The next orbit's center is looked up only when the mark can be on it.
     const wantsCenter = (state.alt || state.orbitKnob) && !state.orbiting && !state.picking;
-    const nextCenter = wantsCenter ? orbitCenter({ selection: frame ? objectSelection() : selected(), frame }) : null;
+    const nextCenter = wantsCenter ? orbitCenter({ selection: frame ? objectSelection() : selected(), frame, playing: !!objectDeps?.playing?.() }) : null;
     const target = nav.focusing() ? nav.destination().target : (nav === camera ? shownPose() : nav.pose()).target;
     const point = orbitMarkPoint({ ...state, target, nextCenter });
     // The Frame view's camera spans more than the frame box (its context reaches the stage's edges): the mark stays in

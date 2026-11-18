@@ -101,6 +101,7 @@ try {
   studio.text = () => widget.value;
   studio.state = () => JSON.parse(JSON.stringify(editor.session.state));
   studio.selection = () => JSON.parse(JSON.stringify(editor.session.selection));
+  studio.pose = () => JSON.parse(JSON.stringify(editor?.stage()?.pose() ?? null));
   // The stage's pixels at the middle of its canvas: [r, g, b].
   studio.middle = () => {
     const canvas = document.querySelector("[data-stage-canvas]");

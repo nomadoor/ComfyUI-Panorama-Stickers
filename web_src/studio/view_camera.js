@@ -181,8 +181,10 @@ export function initialTarget(p, world, radius = boundOf(world)) {
 // The center an orbit turns about when it starts, or null to turn about the current T: the selected World object's
 // center (its Frame Selected sphere, pano_space.js frameSphere; `sphere` null while it does not show or its center is
 // not known), or the selected Camera's position in the 3D tab (`frame` false). In the Camera tab the Camera itself does
-// not count. selection: null, { kind: "object", sphere } or { kind: "camera", position }.
-export function orbitCenter({ selection, frame = false }) {
+// not count. selection: null, { kind: "object", sphere } or { kind: "camera", position }. While the Timeline plays
+// (`playing`) the objects and the Camera move, so none counts: the orbit turns about T (docs/space-and-view.md "回る中心").
+export function orbitCenter({ selection, frame = false, playing = false }) {
+  if (playing) return null;
   if (selection?.kind === "object") return selection.sphere ? [...selection.sphere.center] : null;
   if (selection?.kind === "camera" && !frame) return [...selection.position];
   return null;
