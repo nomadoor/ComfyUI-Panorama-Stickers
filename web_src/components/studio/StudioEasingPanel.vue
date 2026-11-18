@@ -21,7 +21,9 @@ const props = defineProps({
 });
 const emit = defineEmits(["edit"]);
 
-const off = computed(() => props.disabled || !props.model.segment);
+// Off while the editor is read-only, the selection's owners cannot change their Easing (the model's `disabled`, with its
+// `tip` on the panel), or there is no segment.
+const off = computed(() => props.disabled || !!props.model.disabled || !props.model.segment);
 const PAD = 10;
 // The curve while a control point is dragged, so the graph answers before the state comes back.
 const live = ref(null);
@@ -219,7 +221,7 @@ function onPaste(event) {
 </script>
 
 <template>
-  <section class="pano-studio-easing" :class="{ 'is-disabled': off }" aria-label="Easing">
+  <section class="pano-studio-easing" :class="{ 'is-disabled': off }" aria-label="Easing" :data-tip="model.tip || null">
     <header class="pano-studio-easing-head">
       <span class="pano-studio-cap">Easing</span>
       <span class="pano-studio-easing-range" data-part="easing-range">{{ model.range }}</span>
