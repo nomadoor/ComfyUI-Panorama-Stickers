@@ -22,6 +22,7 @@ import {
   selectKeys,
   selectRow,
   startClipDrag,
+  toggleLocked,
   toggleLoop,
   toggleVisible,
   writeLengthUnitSetting,
@@ -368,3 +369,21 @@ test("an object ends where it starts when a keyed Lane's last value is its first
   state.camera.loop = true;
   assert.deepEqual(endsWhereItStarts(state), []);
 });
+
+// docs/timeline-ui.md "ロック（鍵のボタン）": the row's lock button turns the owner's `locked` over, as the bar's Lock
+// does (an upstream object's in its working copy), also while locked; not read-only, not the Paint row.
+test("the lock button turns the Camera's or a Sticker's lock over, locked or not, not read-only", () => {
+  const ctx = ctxOf(studioState());
+  const camera = applyEdit(ctx, toggleLocked(ctx, "camera"));
+  assert.equal(camera.state.camera.locked, true);
+  assert.equal(applyEdit(ctxOf(camera.state), toggleLocked(ctxOf(camera.state), "camera")).state.camera.locked, false);
+  assert.equal(applyEdit(ctx, toggleLocked(ctx, "sticker_1")).state.stickers[0].locked, true);
+  assert.equal(toggleLocked(ctx, "painting"), null);
+  assert.equal(toggleLocked(ctxOf(studioState(), { readOnly: true }), "camera"), null);
+  const layer = upstreamLayer();
+  const upstream = ctxOf(studioState(), { upstream: [layer] });
+  const edit = toggleLocked(upstream, "upstream:scene_up:sticker_1");
+  assert.ok(edit);
+  assert.equal(applyEdit(upstream, edit).upstream[0].sceneState.stickers[0].locked, true);
+});
+

@@ -511,6 +511,7 @@ function setCollapsed(value) {
         <div class="pano-studio-timeline" data-region="timeline" :style="timelineStyle">
           <StudioTimeline
             ref="timeline"
+            :storage="storage"
             :state="view.state"
             :selection="view.selection"
             :playhead="view.playhead"

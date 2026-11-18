@@ -5,7 +5,7 @@ import { projectPoint } from "../pano_space.js";
 import { LOAD_LOOK } from "./load_reveal.js";
 import { MARKER_DOT_RADIUS, MARKER_LOOKS, MARKER_TOP_FILL, MARKER_UNDER } from "./camera_marker.js";
 import { GIZMO_COLORS, GIZMO_LOOK, gizmoColor } from "./gizmo_overlay.js";
-import { GUIDE_LOOKS, GUIDE_UNDER_EXTRA, SELECTED_GUIDE_COLOR, UPSTREAM_SELECTED_DASH, screenLines } from "./world_guides.js";
+import { GUIDE_LOOKS, GUIDE_UNDER_EXTRA, LOCKED_SELECTED_COLOR, SELECTED_GUIDE_COLOR, UPSTREAM_SELECTED_DASH, screenLines } from "./world_guides.js";
 import { BRUSH_RING } from "./paint.js";
 import { ORBIT_MARK_LOOK } from "./orbit_marker.js";
 
@@ -51,7 +51,8 @@ const PATH_LOOK = Object.freeze({
 // Easing's segments white and wide), the speed dots, the handles of one Keyframe, the Keyframe points (corners square),
 // and the frame under the pointer.
 function drawPath(ctx, path) {
-  const look = PATH_LOOK;
+  // A locked object's line and points are gray (docs/studio-ui.md "軌道の線"; its handles are not given).
+  const look = path.locked ? { ...PATH_LOOK, color: LOCKED_SELECTED_COLOR } : PATH_LOOK;
   ctx.save();
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
@@ -499,7 +500,7 @@ function drawBrushRing(ctx, { x, y, radius, fill }) {
 
 function drawScene(ctx, camera, width, height, scene) {
   // Normal ones first, so a hovered or selected outline lies over them.
-  const order = { normal: 0, hover: 1, selected: 2 };
+  const order = { normal: 0, hover: 1, selected: 2, lockedSelected: 2 };
   const lines = [...scene.guides].sort((a, b) => order[a.look] - order[b.look]);
   for (const line of lines) {
     const path = segmentsPath(camera, line.segments, width, height);
@@ -514,7 +515,8 @@ function drawScene(ctx, camera, width, height, scene) {
     const frame = new Path2D();
     geometry.boundaryEdges.flat().forEach((point, index) => (index ? frame.lineTo(point.x, point.y) : frame.moveTo(point.x, point.y)));
     frame.closePath();
-    strokeTwice(ctx, frame, GUIDE_LOOKS.skySelected, !!scene.sky.dashed);
+    // A locked sky image's frame is gray (docs/studio-ui.md "下の中央のバー"); it has no handles.
+    strokeTwice(ctx, frame, scene.sky.locked ? GUIDE_LOOKS.lockedSelected : GUIDE_LOOKS.skySelected, !!scene.sky.dashed);
     if (handles) {
       const stem = new Path2D();
       stem.moveTo(geometry.rotateStemBase.x, geometry.rotateStemBase.y);

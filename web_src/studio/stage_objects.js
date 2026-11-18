@@ -530,8 +530,11 @@ export function createStageObjects({
     const selected = new Set(pathSelectedFrames(target));
     const eased = selected.size ? easedSegments(target.owner, [...selected], target.length) : new Set();
     const hot = altHeld ? null : pathHovered;
-    const index = handleKey(shown);
+    // A locked object's path is gray and shows no handles (docs/studio-ui.md "軌道の線").
+    const locked = target.owner.locked === true;
+    const index = locked ? null : handleKey(shown);
     return {
+      locked,
       segments: screen.segments.map((segment) => ({ ...segment, eased: eased.has(segment.k) })),
       keys: screen.keys.map((key, i) => (key ? {
         x: key.x,
@@ -784,7 +787,7 @@ export function createStageObjects({
         guides: guideLines,
       } : null,
       // A returned shot's edge handles show disabled (docs/editor-interaction.md).
-      sky: sky ? { geometry: sky.geometry, handles: editable() && !sky.item.locked, dashed: isUpstreamSticker(stickerOf(state(), sky.item.id)), edgesDisabled: sky.handed } : null,
+      sky: sky ? { geometry: sky.geometry, handles: editable() && !sky.item.locked, locked: !!sky.item.locked, dashed: isUpstreamSticker(stickerOf(state(), sky.item.id)), edgesDisabled: sky.handed } : null,
       // The selected paint group's frame (its corners, its edge `outline` (bent on a lens Camera's picture), screen
       // center and rotate handle with its stem's base in CSS px), with its corner and rotate handles unless it is locked.
       paint: paint ? {

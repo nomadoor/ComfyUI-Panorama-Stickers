@@ -337,6 +337,17 @@ export function endsWhereItStarts(state) {
 // The motion loop's button (docs/timeline-ui.md "動きのループ"): the owner's `loop` turns over, one Undo step. An
 // upstream object's goes to its working copy (written back as an override). The edit, or null when the row has no loop
 // or cannot change.
+// The lock button of the row `id` (docs/timeline-ui.md "ロック（鍵のボタン）"): the Camera's or a Sticker's `locked` turns
+// over (an upstream object's as its override), the same edit as the bar's Lock; null where it cannot change.
+export function toggleLocked(ctx, id) {
+  const entry = findEntry(ctx, id);
+  if (!entry || (entry.kind !== "camera" && entry.kind !== "sticker") || !entryWritable(ctx, entry)) return null;
+  const draft = createDraft(ctx);
+  const owner = draft.owner(entry);
+  owner.locked = owner.locked !== true;
+  return draft.result();
+}
+
 export function toggleLoop(ctx, id) {
   const entry = findEntry(ctx, id);
   if (!entry || (entry.kind !== "camera" && entry.kind !== "sticker") || !entryKeysEditable(ctx, entry)) return null;

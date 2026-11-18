@@ -14,11 +14,15 @@ import { isUpstreamSticker, upstreamStickerLocked } from "../pano_upstream.js";
 // is (docs/design.md "色").
 export const SELECTED_GUIDE_COLOR = "#e8cf74";
 const SKY_SELECTED_COLOR = "#aecedb";
+// A locked object's selection frame and path line (docs/studio-ui.md "下の中央のバー", "軌道の線"): gray, the secondary
+// text's color of the new UI (web/pano_studio.css --studio-fg-2).
+export const LOCKED_SELECTED_COLOR = "#8e8f93";
 export const GUIDE_LOOKS = Object.freeze({
   normal: Object.freeze({ light: "rgba(255, 255, 255, 0.32)", dark: "rgba(0, 0, 0, 0.32)", width: 1 }),
   hover: Object.freeze({ light: "rgba(255, 255, 255, 0.9)", dark: "rgba(0, 0, 0, 0.6)", width: 1.5 }),
   selected: Object.freeze({ light: SELECTED_GUIDE_COLOR, dark: "rgba(0, 0, 0, 0.7)", width: 1.5 }),
   skySelected: Object.freeze({ light: SKY_SELECTED_COLOR, dark: "rgba(0, 0, 0, 0.7)", width: 1.5 }),
+  lockedSelected: Object.freeze({ light: LOCKED_SELECTED_COLOR, dark: "rgba(0, 0, 0, 0.7)", width: 1.5 }),
 });
 // How much wider the dark line under a guide is than the light one.
 export const GUIDE_UNDER_EXTRA = 2;
@@ -165,7 +169,7 @@ function lensOutline(camera, segments, width, height) {
 // selected one is drawn. A locked object does not light up under the pointer, and nothing does while Alt is held (an Alt
 // drag always orbits). The Camera tab's Frame view draws them the same (ADR 0051; a lens Camera's bent, screenLines).
 export function guideLook({ selected = false, hovered = false, locked = false, altHeld = false, gridHidden = false }) {
-  if (selected) return "selected";
+  if (selected) return locked ? "lockedSelected" : "selected";
   if (gridHidden) return null;
   if (hovered && !locked && !altHeld) return "hover";
   return "normal";

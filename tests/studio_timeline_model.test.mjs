@@ -400,3 +400,20 @@ test("the Camera and Sticker rows have the motion loop's button; a looping line 
   assert.equal(row(view(ctxOf(state)), "camera").loop.tip, "Locked");
   assert.equal(row(view(ctxOf(studioState(), { readOnly: true })), "camera").loop.tip, "Read-only");
 });
+
+// docs/timeline-ui.md "ロック（鍵のボタン）": the lock button at the head of the Camera's and the Stickers' rows (others
+// keep its place), coral while locked; a locked row's Keyframes are drawn hollow.
+test("the Camera and Sticker rows have the lock button; a locked row says so, and read-only or inherited ones are off", () => {
+  const state = studioState();
+  const model = view(ctxOf(state, { background: { end: null } }));
+  assert.deepEqual(row(model, "camera").lock, { on: false, icon: ICON.lock_open, label: "Lock", disabled: false, tip: "Lock" });
+  assert.equal(row(model, "camera").locked, false);
+  assert.equal(row(model, "background").lock, null, "the background row keeps its place");
+  state.stickers[0].locked = true;
+  const locked = row(view(ctxOf(state)), "sticker_1");
+  assert.deepEqual(locked.lock, { on: true, icon: ICON.lock_closed, label: "Unlock", disabled: false, tip: "Unlock" });
+  assert.equal(locked.locked, true);
+  const readOnly = row(view(ctxOf(state, { readOnly: true })), "sticker_1");
+  assert.deepEqual([readOnly.lock.on, readOnly.lock.disabled, readOnly.lock.tip], [true, true, "Read-only"]);
+});
+

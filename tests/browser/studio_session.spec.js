@@ -521,3 +521,68 @@ test("hiding the 3D Look at target keeps the Camera facing its box's center, als
   await expect.poll(pitchValue, { timeout: 15_000 }).toBe(shown);
   expect(again).toEqual([]);
 });
+
+// docs/timeline-ui.md "ロック（鍵のボタン）" and docs/studio-ui.md "タイムライン" / "下の中央のバー": the lock button at the row
+// head turns the lock over (coral while locked, the bar's Lock too), a locked row's Keyframes are hollow, and the row
+// heads' width follows a drag on their border, kept per browser.
+test("the row head's lock button locks in coral with hollow Keyframes, and the row heads' width drags and is kept", async ({ page }, testInfo) => {
+  const problems = await open(page, testInfo);
+  const coral = await page.evaluate(() => getComputedStyle(document.querySelector(".pano-studio")).getPropertyValue("--studio-coral").trim());
+  const colorOf = (locator) => locator.evaluate((element) => getComputedStyle(element).color);
+  const rgb = await page.evaluate((value) => {
+    const probe = document.createElement("span");
+    probe.style.color = value;
+    document.querySelector(".pano-studio").appendChild(probe);
+    const color = getComputedStyle(probe).color;
+    probe.remove();
+    return color;
+  }, coral);
+  const lock = page.locator('.pano-studio-tl-head[data-head="sticker_1"] [data-part="lock"]');
+  await expect(lock).toHaveAttribute("aria-label", "Lock");
+  expect(await colorOf(lock)).not.toBe(rgb);
+  // A Keyframe on the Sky image, then lock it from the row head.
+  await page.locator('.pano-studio-tl-head[data-head="sticker_1"] [data-part="dot"]').click();
+  const key = page.locator('[data-track="sticker_1"] .pano-studio-tl-key').first();
+  const keyLook = () => key.evaluate((element) => {
+    const style = getComputedStyle(element, "::before");
+    return { background: style.backgroundColor, border: style.borderTopWidth };
+  });
+  const filled = await keyLook();
+  await lock.click();
+  await expect.poll(async () => (await studio(page, "state")).stickers[0].locked).toBe(true);
+  await expect(lock).toHaveAttribute("aria-label", "Unlock");
+  // Colors ease in (docs/design.md "動き"): wait for the end.
+  await expect.poll(() => colorOf(lock)).toBe(rgb);
+  const hollow = await keyLook();
+  expect(hollow.background).toBe("rgba(0, 0, 0, 0)");
+  expect(filled.background).not.toBe("rgba(0, 0, 0, 0)");
+  // The bar's Lock of the selected locked image is coral as well.
+  await page.locator(".pano-studio-tl-head-name", { hasText: "red" }).first().click();
+  const barLock = page.locator('.pano-studio-at-bar [data-bar="lock"]');
+  await expect(barLock).toHaveAttribute("aria-label", "Unlock");
+  await expect.poll(() => colorOf(barLock)).toBe(rgb);
+  // One Undo step back.
+  await page.keyboard.press("Control+z");
+  await expect.poll(async () => (await studio(page, "state")).stickers[0].locked).toBe(false);
+
+  // The row heads' width: 260px, dragged wider, kept after the editor opens again.
+  const head = page.locator('.pano-studio-tl-head[data-head="sticker_1"]');
+  expect(Math.round((await head.boundingBox()).width)).toBe(260);
+  const border = await page.locator('[data-part="head-resize"]').boundingBox();
+  const x = border.x + border.width / 2;
+  const y = border.y + 60;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x + 60, y, { steps: 4 });
+  await page.mouse.up();
+  expect(Math.round((await head.boundingBox()).width)).toBe(320);
+  // Escape during a drag puts the width back.
+  await page.mouse.move(x + 60, y);
+  await page.mouse.down();
+  await page.mouse.move(x + 200, y, { steps: 4 });
+  await page.keyboard.press("Escape");
+  await page.mouse.up();
+  expect(Math.round((await head.boundingBox()).width)).toBe(320);
+  expect(JSON.parse(await studio(page, "stored", "PanoramaSuite.Studio.timelineHeadWidth"))).toBe(320);
+  expect(problems).toEqual([]);
+});
