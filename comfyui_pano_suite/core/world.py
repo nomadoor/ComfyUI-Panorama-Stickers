@@ -35,6 +35,13 @@ def world_rotation(yaw_deg: float, pitch_deg: float, roll_deg: float = 0.0) -> n
     return np.stack([pano_to_world(right), pano_to_world(up), -pano_to_world(forward)], axis=1)
 
 
+def look_rotation(d) -> tuple[float, float]:
+    """The yaw and pitch (degrees, the panorama convention) that face the World direction `d` (x, y, z): World's
+    forward -Z is the panorama's +Z (docs/scene-state-v2.md "座標と角度")."""
+    x, y, z = (float(c) for c in d)
+    return math.degrees(math.atan2(x, -z)) + 0.0, math.degrees(math.atan2(y, math.hypot(x, z)))
+
+
 def panorama_angles(rotation) -> tuple[float, float, float]:
     """Inverse of ``world_rotation``. At the poles yaw and roll share an axis."""
     rotation = np.asarray(rotation, dtype=np.float64)

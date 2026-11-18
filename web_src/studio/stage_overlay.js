@@ -5,7 +5,7 @@ import { projectPoint } from "../pano_space.js";
 import { LOAD_LOOK } from "./load_reveal.js";
 import { MARKER_DOT_RADIUS, MARKER_LOOKS, MARKER_TOP_FILL, MARKER_UNDER } from "./camera_marker.js";
 import { GIZMO_COLORS, GIZMO_LOOK, gizmoColor } from "./gizmo_overlay.js";
-import { GUIDE_LOOKS, GUIDE_UNDER_EXTRA, UPSTREAM_SELECTED_DASH, screenLines } from "./world_guides.js";
+import { GUIDE_LOOKS, GUIDE_UNDER_EXTRA, LOCKED_SELECTED_COLOR, SELECTED_GUIDE_COLOR, UPSTREAM_SELECTED_DASH, screenLines } from "./world_guides.js";
 import { BRUSH_RING } from "./paint.js";
 import { ORBIT_MARK_LOOK } from "./orbit_marker.js";
 
@@ -13,7 +13,179 @@ import { ORBIT_MARK_LOOK } from "./orbit_marker.js";
 // dots, edge ticks, in the selected sky image's ice over a dark ring (docs/design.md "色": the color of the Sky).
 const CORNER_RADIUS = 5;
 const EDGE_RADIUS = 3.5;
+// A disabled handle (docs/design.md: a disabled icon button's opacity).
+const DISABLED_HANDLE_ALPHA = 0.35;
 const ROTATE_RADIUS = 6;
+
+// The path line's look (docs/design.md "大きさ" "軌道の線" and the rows after it).
+const PATH_LOOK = Object.freeze({
+  color: SELECTED_GUIDE_COLOR,
+  under: "rgba(0, 0, 0, 0.55)",
+  width: 1.6,
+  underWidth: 4,
+  holdDash: Object.freeze([4, 4]),
+  easedColor: "#ffffff",
+  easedWidth: 3,
+  easedUnderWidth: 6,
+  keyRadius: 4.5,
+  keyHotRadius: 6,
+  keyEdge: "rgba(0, 0, 0, 0.6)",
+  selectedFill: "#ffffff",
+  selectedEdge: 2,
+  handleColor: "#ffffff",
+  handleWidth: 1,
+  handleUnderWidth: 3,
+  handleDash: Object.freeze([3, 3]),
+  tipRadius: 4.5,
+  tipHotRadius: 5.5,
+  tipFill: "#111112",
+  tipEdge: 1.6,
+  tickRadius: 2,
+  tickFill: "#ffffff",
+  tickEdge: "rgba(0, 0, 0, 0.75)",
+  labelFont: "600 11px sans-serif",
+  labelFill: "rgba(0, 0, 0, 0.7)",
+});
+
+// The selected object's path line (docs/studio-ui.md "軌道の線"): the line over its dark underlay (a hold dashed, the
+// Easing's segments white and wide), the speed dots, the handles of one Keyframe, the Keyframe points (corners square),
+// and the frame under the pointer.
+function drawPath(ctx, path) {
+  // A locked object's line and points are gray (docs/studio-ui.md "軌道の線"; its handles are not given).
+  const look = path.locked ? { ...PATH_LOOK, color: LOCKED_SELECTED_COLOR } : PATH_LOOK;
+  ctx.save();
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  // The original path while Simplify is adjusted: gray and thin, under the new one.
+  for (const segment of path.ghost ?? []) {
+    const line = new Path2D();
+    for (const run of segment.runs) run.forEach((point, index) => (index ? line.lineTo(point.x, point.y) : line.moveTo(point.x, point.y)));
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.28)";
+    ctx.lineWidth = 1;
+    ctx.stroke(line);
+  }
+  for (const pass of ["under", "over"]) {
+    for (const segment of path.segments) {
+      const line = new Path2D();
+      for (const run of segment.runs) run.forEach((point, index) => (index ? line.lineTo(point.x, point.y) : line.moveTo(point.x, point.y)));
+      ctx.setLineDash(segment.hold ? look.holdDash : []);
+      if (pass === "under") {
+        ctx.strokeStyle = look.under;
+        ctx.lineWidth = segment.eased ? look.easedUnderWidth : look.underWidth;
+      } else {
+        ctx.strokeStyle = segment.eased ? look.easedColor : look.color;
+        ctx.lineWidth = segment.eased ? look.easedWidth : look.width;
+      }
+      ctx.stroke(line);
+    }
+  }
+  ctx.setLineDash([]);
+  for (const tick of path.ticks) {
+    const disc = new Path2D();
+    disc.arc(tick.x, tick.y, look.tickRadius, 0, Math.PI * 2);
+    ctx.fillStyle = look.tickFill;
+    ctx.fill(disc);
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = look.tickEdge;
+    ctx.stroke(disc);
+  }
+  for (const handle of path.handles) {
+    const arm = new Path2D();
+    arm.moveTo(handle.from.x, handle.from.y);
+    arm.lineTo(handle.x, handle.y);
+    ctx.setLineDash([]);
+    ctx.strokeStyle = look.under;
+    ctx.lineWidth = look.handleUnderWidth;
+    ctx.stroke(arm);
+    ctx.setLineDash(handle.written ? [] : look.handleDash);
+    ctx.strokeStyle = look.handleColor;
+    ctx.lineWidth = look.handleWidth;
+    ctx.stroke(arm);
+    ctx.setLineDash([]);
+    const tip = new Path2D();
+    tip.arc(handle.x, handle.y, handle.hot ? look.tipHotRadius : look.tipRadius, 0, Math.PI * 2);
+    ctx.fillStyle = look.tipFill;
+    ctx.fill(tip);
+    ctx.strokeStyle = look.handleColor;
+    ctx.lineWidth = look.tipEdge;
+    ctx.stroke(tip);
+  }
+  for (const key of path.keys) {
+    if (!key) continue;
+    const radius = key.selected || key.hot ? look.keyHotRadius : look.keyRadius;
+    const mark = new Path2D();
+    if (key.corner) mark.rect(key.x - radius, key.y - radius, radius * 2, radius * 2);
+    else mark.arc(key.x, key.y, radius, 0, Math.PI * 2);
+    ctx.strokeStyle = look.keyEdge;
+    ctx.lineWidth = 4;
+    ctx.stroke(mark);
+    ctx.fillStyle = key.selected ? look.selectedFill : look.color;
+    ctx.fill(mark);
+    if (key.selected) {
+      ctx.strokeStyle = look.color;
+      ctx.lineWidth = look.selectedEdge;
+      ctx.stroke(mark);
+    }
+  }
+  if (path.frame) {
+    const { x, y, frame } = path.frame;
+    const text = `f ${frame}`;
+    ctx.font = look.labelFont;
+    const width = ctx.measureText(text).width;
+    ctx.fillStyle = look.labelFill;
+    ctx.fillRect(x + 10, y - 22, width + 10, 18);
+    ctx.fillStyle = look.tickFill;
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, x + 15, y - 13);
+    const dot2 = new Path2D();
+    dot2.arc(x, y, 3.5, 0, Math.PI * 2);
+    ctx.fill(dot2);
+  }
+  ctx.restore();
+}
+
+// Look at's mark (docs/design.md "Look at の見ている点の印"): a ring with ticks out of it over a dark underlay, a white dot
+// in the middle; the faint one while Pick waits; a dotted line from the Camera to it.
+const LOOK_LOOK = Object.freeze({ color: SELECTED_GUIDE_COLOR, under: "rgba(0, 0, 0, 0.7)", width: 1.6, underWidth: 4, ring: 7, tickFrom: 4, tickTo: 12, dot: 1.6, previewAlpha: 0.6, lineWidth: 1.3, lineDash: Object.freeze([2, 5]) });
+
+function drawLookMark(ctx, { x, y }, alpha) {
+  const look = LOOK_LOOK;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  const shape = new Path2D();
+  shape.arc(x, y, look.ring, 0, Math.PI * 2);
+  for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+    shape.moveTo(x + dx * look.tickFrom, y + dy * look.tickFrom);
+    shape.lineTo(x + dx * look.tickTo, y + dy * look.tickTo);
+  }
+  ctx.strokeStyle = look.under;
+  ctx.lineWidth = look.underWidth;
+  ctx.stroke(shape);
+  ctx.strokeStyle = look.color;
+  ctx.lineWidth = look.width;
+  ctx.stroke(shape);
+  const dot = new Path2D();
+  dot.arc(x, y, look.dot, 0, Math.PI * 2);
+  ctx.fillStyle = "#ffffff";
+  ctx.fill(dot);
+  ctx.restore();
+}
+
+function drawLook(ctx, { mark, from, preview }) {
+  if (mark && from) {
+    ctx.save();
+    ctx.setLineDash(LOOK_LOOK.lineDash);
+    ctx.strokeStyle = LOOK_LOOK.color;
+    ctx.lineWidth = LOOK_LOOK.lineWidth;
+    ctx.beginPath();
+    ctx.moveTo(from.x, from.y);
+    ctx.lineTo(mark.x, mark.y);
+    ctx.stroke();
+    ctx.restore();
+  }
+  if (mark) drawLookMark(ctx, mark, 1);
+  if (preview) drawLookMark(ctx, preview, LOOK_LOOK.previewAlpha);
+}
 
 // `dashed`: an upstream object's selection frame (UPSTREAM_SELECTED_DASH, both strokes on the same dashes, square-cut;
 // the canvas starts the dashes again on each subpath, so each segment of a guide starts with a dash).
@@ -328,7 +500,7 @@ function drawBrushRing(ctx, { x, y, radius, fill }) {
 
 function drawScene(ctx, camera, width, height, scene) {
   // Normal ones first, so a hovered or selected outline lies over them.
-  const order = { normal: 0, hover: 1, selected: 2 };
+  const order = { normal: 0, hover: 1, selected: 2, lockedSelected: 2 };
   const lines = [...scene.guides].sort((a, b) => order[a.look] - order[b.look]);
   for (const line of lines) {
     const path = segmentsPath(camera, line.segments, width, height);
@@ -336,18 +508,25 @@ function drawScene(ctx, camera, width, height, scene) {
     if (line.shimmer > 0) drawShimmer(ctx, camera, line, path, GUIDE_LOOKS[line.look], width, height);
   }
   if (scene.camera) drawCameraMarker(ctx, scene.camera.screen, scene.camera.look);
+  if (scene.path) drawPath(ctx, scene.path);
+  if (scene.look) drawLook(ctx, scene.look);
   if (scene.sky) {
     const { geometry, handles } = scene.sky;
     const frame = new Path2D();
     geometry.boundaryEdges.flat().forEach((point, index) => (index ? frame.lineTo(point.x, point.y) : frame.moveTo(point.x, point.y)));
     frame.closePath();
-    strokeTwice(ctx, frame, GUIDE_LOOKS.skySelected, !!scene.sky.dashed);
+    // A locked sky image's frame is gray (docs/studio-ui.md "下の中央のバー"); it has no handles.
+    strokeTwice(ctx, frame, scene.sky.locked ? GUIDE_LOOKS.lockedSelected : GUIDE_LOOKS.skySelected, !!scene.sky.dashed);
     if (handles) {
       const stem = new Path2D();
       stem.moveTo(geometry.rotateStemBase.x, geometry.rotateStemBase.y);
       stem.lineTo(geometry.rotateHandle.x, geometry.rotateHandle.y);
       strokeTwice(ctx, stem, GUIDE_LOOKS.skySelected);
+      // A returned shot's edge handles stay where they are, disabled (the look of a disabled icon button).
+      ctx.save();
+      if (scene.sky.edgesDisabled) ctx.globalAlpha = DISABLED_HANDLE_ALPHA;
       for (const mid of geometry.edgeMidpoints ?? []) dot(ctx, mid, EDGE_RADIUS);
+      ctx.restore();
       for (const corner of geometry.corners) dot(ctx, corner, CORNER_RADIUS);
       dot(ctx, geometry.rotateHandle, ROTATE_RADIUS);
     }

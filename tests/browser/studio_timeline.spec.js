@@ -50,14 +50,20 @@ async function trackY(page, id) {
 test("the bar and a row's head are in the spec's order", async ({ page }) => {
   await open(page);
   const bar = await dark(page).locator(".pano-studio-tl-bar [data-tl]").evaluateAll((els) => els.map((el) => el.dataset.tl));
-  expect(bar).toEqual(["play", "prev", "next", "loop", "time", "fps", "length", "length-reset", "collapse"]);
+  expect(bar).toEqual(["play", "prev", "next", "loop", "time", "constant-speed", "simplify-group", "simplify", "fps", "length", "length-reset", "collapse"]);
+  // Constant speed is off, with its reason, until Keyframes are selected.
+  await expect(dark(page).locator('[data-tl="constant-speed"]')).toHaveAttribute("data-tip", "Constant speed · Select 3+ Keyframes");
   const head = await dark(page).locator('[data-head="camera"] > *').evaluateAll((els) => els.map((el) => el.dataset.part || el.getAttribute("class")));
   expect(head[0]).toBe("eye");
-  expect(head[1]).toBe("expand");
-  expect(head[2]).toContain("pano-studio-tl-head-icon");
-  expect(head[3]).toBe("name");
-  expect(head[4]).toBe("dot");
-  // A row without an eye (the background) keeps its place, so the names line up.
+  // The lock button right of the eye (docs/timeline-ui.md "ロック（鍵のボタン）").
+  expect(head[1]).toBe("lock");
+  expect(head[2]).toBe("expand");
+  expect(head[3]).toContain("pano-studio-tl-head-icon");
+  expect(head[4]).toBe("name");
+  // The motion loop's button between the name and the row dot (docs/studio-ui.md "タイムラインのバー").
+  expect(head[5]).toBe("loop");
+  expect(head[6]).toBe("dot");
+  // A row without an eye or a lock (the background) keeps their places, so the names line up.
   const nameX = await dark(page).locator('[data-head] [data-part="name"]').evaluateAll((els) => [...new Set(els.map((el) => Math.round(el.getBoundingClientRect().x)))]);
   expect(nameX.length).toBe(1);
   await expect(dark(page).locator(".pano-studio-tl-group-name")).toHaveText("From Studio #4");
@@ -420,7 +426,7 @@ test("the fps and Length fields keep their width as digits are added, shown and 
   // The left and right edges of every part of the bar's right group: the fields, their names, the buttons.
   const layout = () => dark(page).locator(".pano-studio-tl-bar").evaluate((bar) =>
     [...bar.querySelectorAll(".pano-studio-tl-field, .pano-studio-tl-field-name, [data-tl]")]
-      .filter((el) => !["play", "prev", "next", "loop", "time"].includes(el.dataset.tl))
+      .filter((el) => !["play", "prev", "next", "loop", "time", "constant-speed", "simplify-group", "simplify"].includes(el.dataset.tl))
       .map((el) => {
         const r = el.getBoundingClientRect();
         return `${el.dataset.tl || el.className}:${r.left}-${r.right}`;

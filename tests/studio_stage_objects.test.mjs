@@ -1223,3 +1223,38 @@ test("the selected upstream object's frame is dashed (its sky frame, its World g
   session.selectObject("sky");
   assert.equal(objects.overlay().sky.dashed, false);
 });
+
+// CodeRabbit review: an upstream drag changes the working copy in place, so the path line is made again from its Lane,
+// not kept by the owner's identity (stage_objects.js pathNow).
+test("the path line of an upstream World object follows its working copy changed in place", () => {
+  const board = { id: "board", placement: "world", source: file("board.png"), position: { keyframes: [{ frame: 0, value: [0, 0, -5] }, { frame: 10, value: [2, 0, -5] }] } };
+  const { session, objects, upstream } = setup({ stickers: [], upstreamLayers: [upLayer("scene_up", [board])] });
+  session.selectObject("upstream:scene_up:board");
+  const before = objects.overlay().path?.keys?.[1];
+  assert.ok(before, "the path shows");
+  upstream.working()[0].sceneState.stickers[0].position.keyframes[1].value = [-2, 0, -5];
+  const after = objects.overlay().path.keys[1];
+  assert.ok(after.x < before.x - 20, `${before.x} → ${after.x}`);
+});
+
+
+// docs/studio-ui.md "軌道の線" and "下の中央のバー": a locked object's path line is gray with no handles, and a locked sky
+// image's frame says it is locked (drawn gray).
+test("a locked object's path line is marked locked and has no handles; a locked sky image's frame is marked locked", () => {
+  const board = { id: "board", placement: "world", source: file("board.png"), position: { keyframes: [{ frame: 0, value: [0, 0, -5] }, { frame: 10, value: [2, 0, -5] }] } };
+  const { session, objects } = setup({ stickers: [board] });
+  session.selectObject("board");
+  const unlocked = objects.overlay().path;
+  assert.equal(unlocked.locked, false);
+  assert.ok(unlocked.handles.length > 0, "the handles of the Keyframe at the playhead");
+  session.toggleLock();
+  const locked = objects.overlay().path;
+  assert.equal(locked.locked, true);
+  assert.deepEqual(locked.handles, []);
+  assert.equal(locked.keys.filter(Boolean).length, unlocked.keys.filter(Boolean).length, "the points stay");
+  const sky = setup();
+  sky.session.selectObject("sky");
+  assert.equal(sky.objects.overlay().sky.locked, false);
+  sky.session.toggleLock();
+  assert.equal(sky.objects.overlay().sky.locked, true);
+});

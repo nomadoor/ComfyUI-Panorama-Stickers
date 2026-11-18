@@ -11,6 +11,7 @@
     "erp_range": 360,
     "visible": false,
     "locked": false,
+    "loop": false,
     "position": {
       "value": [
         0.0,
@@ -33,6 +34,10 @@
     },
     "curve": {
       "value": 1.0,
+      "keyframes": []
+    },
+    "look_at": {
+      "value": null,
       "keyframes": []
     }
   },
@@ -78,6 +83,7 @@
       },
       "visible": false,
       "locked": false,
+      "loop": false,
       "crop": {
         "x0": 0.0,
         "y0": 0.0,
@@ -111,7 +117,18 @@
         "keyframes": []
       },
       "z_index": 0,
-      "handoff_overrides": []
+      "offset_rotation": {
+        "value": {
+          "yaw_deg": 0.0,
+          "pitch_deg": 0.0,
+          "roll_deg": 0.0
+        },
+        "keyframes": []
+      },
+      "offset_fov": {
+        "value": 1.0,
+        "keyframes": []
+      }
     },
     {
       "id": "shown",
@@ -129,6 +146,7 @@
       },
       "visible": true,
       "locked": false,
+      "loop": false,
       "crop": {
         "x0": 0.0,
         "y0": 0.0,

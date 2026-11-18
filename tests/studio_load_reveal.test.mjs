@@ -111,3 +111,93 @@ test("a frame held up moves the reveal on by LOAD_REVEAL_STEP_MS at most, so the
   assert.ok(Math.abs(reveal.opacity("a") - easeOut(LOAD_REVEAL_STEP_MS / LOAD_REVEAL_MS)) < 1e-9);
   assert.ok(reveal.opacity("a") < 0.5);
 });
+
+// docs/studio-ui.md "置く間" and docs/space-and-view.md "World の物のガイド": a 3D file Sticker shown but not drawn yet
+// (not placed: the editor opened with it) has a guide only of a box it was given, never DROP_PREVIEW_BOX; a band no one
+// sees (no box, or its guide not drawn) does not keep the stage drawing.
+test("a Sticker that was not placed waits with its given box only, and a band not seen does not animate", () => {
+  const { time, now } = clock();
+  const reveal = createLoadReveal({ now });
+  reveal.start("a", { placed: false, box: null });
+  assert.equal(reveal.has("a"), true);
+  assert.equal(reveal.pendingBox("a"), null, "no box yet: no guide, not the 1×1×1 box");
+  assert.equal(reveal.animating(), false);
+  const box = { min: [-1, 0, -1], max: [1, 3, 1] };
+  reveal.box("a", box);
+  assert.deepEqual(reveal.pendingBox("a"), box);
+  assert.equal(reveal.animating(), true);
+  reveal.active("a", false);
+  assert.equal(reveal.animating(), false, "hidden or out of its Clip range");
+  reveal.active("a", true);
+  // The overlay owns whether its guide is drawn: left out (grid hidden, not selected; or no overlay), no band runs.
+  reveal.overlayDrawn();
+  assert.equal(reveal.animating(), false, "its guide was not drawn");
+  reveal.guideDrawn("a");
+  assert.equal(reveal.animating(), true);
+  reveal.box("a", null);
+  assert.equal(reveal.pendingBox("a"), null, "a box taken away");
+  // Once drawn it reveals as a placed one does, its guide drawn or not.
+  reveal.box("a", box);
+  reveal.observe("a", true);
+  reveal.overlayDrawn();
+  assert.equal(reveal.animating(), true, "the reveal runs");
+  time.now += LOAD_REVEAL_MS * 2;
+  reveal.observe("a", true);
+  for (let i = 0; i < 20; i += 1) {
+    time.now += LOAD_REVEAL_STEP_MS;
+    reveal.observe("a", true);
+  }
+  assert.equal(reveal.has("a"), false);
+  assert.equal(reveal.animating(), false);
+  // A placed one keeps DROP_PREVIEW_BOX before the route's box; a null box does not take it away.
+  reveal.start("b");
+  reveal.box("b", null);
+  assert.deepEqual(reveal.pendingBox("b"), DROP_PREVIEW_BOX);
+});
+
+// docs/studio-ui.md "置く間": an upstream layer's 3D file Sticker waits as the node's own does, once its request is there.
+test("an upstream 3D file Sticker whose item has not drawn has a loading guide of its stand-in box", () => {
+  const state = loadSceneState({ version: 2 });
+  const layerState = loadSceneState({ version: 2, stickers: [{ id: "upstream:up:m", placement: "world", source: { kind: "file", filename: "m.glb", subfolder: "3d" }, position: { value: [0, 0, -4] } }] });
+  const value = { position: [0, 0, -4], yaw_deg: 0, pitch_deg: 0, roll_deg: 0, scale: 1, active: true };
+  const request = { id: "upstream:up:m", url: "file3d:0:upstream:up:m", kind: "mesh", value, opacity: 1 };
+  const content = { evaluated: { stickers: [] }, space: { stickers: [], fileStickers: [], upstreamItems: [{ slot: "up:file:upstream:up:m", id: "upstream:up:m", request, source: layerState.stickers[0].source, opacity: 1, active: true }] } };
+  const upstream = [{ sceneState: layerState }];
+  const box = { min: [-1, 0, -1], max: [1, 2, 1] };
+  assert.deepEqual(worldGuideItems(state, content, () => null, () => null, upstream), [], "no box known: no guide");
+  const [item] = worldGuideItems(state, content, () => null, (id) => (id === "upstream:up:m" ? box : null), upstream);
+  assert.deepEqual([item.id, item.loading, item.segments.length], ["upstream:up:m", true, 12]);
+  assert.deepEqual(item.center, [0, 1, -4]);
+});
+
+// CodeRabbit and Fable review: a Sticker hidden or leaving its Clip range mid-reveal ends its reveal, so nothing keeps the
+// stage drawing for it; it shows at once when it comes back.
+test("a reveal cut off by hiding ends at once and does not keep the stage drawing", () => {
+  const { time, now } = clock();
+  const reveal = createLoadReveal({ now });
+  reveal.start("a", { placed: false, box: { min: [0, 0, 0], max: [1, 1, 1] } });
+  reveal.observe("a", true);
+  time.now += 40;
+  reveal.observe("a", true);
+  assert.equal(reveal.revealing(), true);
+  reveal.active("a", false);
+  assert.equal(reveal.has("a"), false);
+  assert.equal(reveal.animating(), false);
+  assert.equal(reveal.opacity("a"), 1);
+});
+
+// Fable review: before its editor file comes, an upstream 3D file Sticker has an item without a request, carrying its
+// value and whether it shows, so its guide stands in with a box known from the node surface.
+test("an upstream 3D file Sticker before its editor file came has a loading guide where it shows", () => {
+  const state = loadSceneState({ version: 2 });
+  const layerState = loadSceneState({ version: 2, stickers: [{ id: "upstream:up:m", placement: "world", source: { kind: "file", filename: "m.glb", subfolder: "3d" }, position: { value: [0, 0, -4] } }] });
+  const value = { position: [0, 0, -4], yaw_deg: 0, pitch_deg: 0, roll_deg: 0, scale: 1, active: true };
+  const entry = { slot: "up:file:upstream:up:m", id: "upstream:up:m", urls: [], request: null, value, source: layerState.stickers[0].source, opacity: 1, active: true };
+  const content = { evaluated: { stickers: [] }, space: { stickers: [], fileStickers: [], upstreamItems: [entry] } };
+  const box = { min: [-1, 0, -1], max: [1, 2, 1] };
+  const [item] = worldGuideItems(state, content, () => null, () => box, [{ sceneState: layerState }]);
+  assert.deepEqual([item.id, item.loading], ["upstream:up:m", true]);
+  const hidden = { ...content, space: { ...content.space, upstreamItems: [{ ...entry, active: false }] } };
+  assert.deepEqual(worldGuideItems(state, hidden, () => null, () => box, [{ sceneState: layerState }]), []);
+});
+

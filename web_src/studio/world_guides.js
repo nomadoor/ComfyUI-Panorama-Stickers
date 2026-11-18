@@ -14,11 +14,15 @@ import { isUpstreamSticker, upstreamStickerLocked } from "../pano_upstream.js";
 // is (docs/design.md "色").
 export const SELECTED_GUIDE_COLOR = "#e8cf74";
 const SKY_SELECTED_COLOR = "#aecedb";
+// A locked object's selection frame and path line (docs/studio-ui.md "下の中央のバー", "軌道の線"): gray, the secondary
+// text's color of the new UI (web/pano_studio.css --studio-fg-2).
+export const LOCKED_SELECTED_COLOR = "#8e8f93";
 export const GUIDE_LOOKS = Object.freeze({
   normal: Object.freeze({ light: "rgba(255, 255, 255, 0.32)", dark: "rgba(0, 0, 0, 0.32)", width: 1 }),
   hover: Object.freeze({ light: "rgba(255, 255, 255, 0.9)", dark: "rgba(0, 0, 0, 0.6)", width: 1.5 }),
   selected: Object.freeze({ light: SELECTED_GUIDE_COLOR, dark: "rgba(0, 0, 0, 0.7)", width: 1.5 }),
   skySelected: Object.freeze({ light: SKY_SELECTED_COLOR, dark: "rgba(0, 0, 0, 0.7)", width: 1.5 }),
+  lockedSelected: Object.freeze({ light: LOCKED_SELECTED_COLOR, dark: "rgba(0, 0, 0, 0.7)", width: 1.5 }),
 });
 // How much wider the dark line under a guide is than the light one.
 export const GUIDE_UNDER_EXTRA = 2;
@@ -41,8 +45,8 @@ function loop(points) {
 // ("plane" | "box"), locked, upstream, loading, segments, corners, center } (a box also has `url`, its item's key or null while
 // it loads, and `value`, the Sticker's evaluated transform)] in World units. `center` is where the object's gizmo sits too (docs/studio-ui.md "ギズモ" "物の中心"). `sceneBox(url)`
 // is the box of a loaded item (null while it loads: that object has no guide yet). `pendingBox(id)` is the box in its
-// own frame of a 3D file just placed whose item has not drawn yet (load_reveal.js: DROP_PREVIEW_BOX, then the route's
-// box), or null: such an object has a guide of that box, `loading`. Hidden objects and those outside their Clip range
+// own frame of a 3D file Sticker whose item has not drawn yet (load_reveal.js: a placed one's DROP_PREVIEW_BOX, then the
+// route's box; another's box as known), or null: such an object has a guide of that box, `loading`. Hidden objects and those outside their Clip range
 // are not in `content`; the `scene` content and the Camera have no guide. The upstream World objects (their planes and
 // 3D items in `content`, by their working ids in the working layers `upstream`) have guides as the node's own, after
 // them; one of a layer whose overrides cannot be kept is `locked` (docs/studio-ui.md "上流の物の編集").
@@ -94,13 +98,23 @@ export function worldGuideItems(state, content, sceneBox = () => null, pendingBo
     boxed.add(sticker.id);
     items.push(boxItem(sticker, box, request.value, false, request.url));
   }
-  // A placed 3D file still loading: the stand-in box at its value now (shown at the playhead only).
+  // A 3D file Sticker still loading: the stand-in box at its value now (shown at the playhead only).
   state.stickers.forEach((sticker, index) => {
     if (boxed.has(sticker.id) || sticker.placement !== "world") return;
     const box = pendingBox(sticker.id);
     const value = content.evaluated?.stickers?.[index];
     if (box && value?.active) items.push(boxItem(sticker, box, value, true));
   });
+  // An upstream layer's 3D file Sticker still loading, with its item asked for or before its editor file came
+  // (pano_upstream.js upstreamLayerView), where it shows.
+  for (const entry of upstream.length ? content.space?.upstreamItems ?? [] : []) {
+    if (!entry.source || entry.id == null) continue;
+    const sticker = byId.get(entry.id);
+    if (!sticker || boxed.has(sticker.id)) continue;
+    const box = pendingBox(sticker.id);
+    const value = entry.request?.value ?? (entry.active ? entry.value : null);
+    if (box && value) items.push(boxItem(sticker, box, value, true));
+  }
   return items;
 }
 
@@ -165,7 +179,7 @@ function lensOutline(camera, segments, width, height) {
 // selected one is drawn. A locked object does not light up under the pointer, and nothing does while Alt is held (an Alt
 // drag always orbits). The Camera tab's Frame view draws them the same (ADR 0051; a lens Camera's bent, screenLines).
 export function guideLook({ selected = false, hovered = false, locked = false, altHeld = false, gridHidden = false }) {
-  if (selected) return "selected";
+  if (selected) return locked ? "lockedSelected" : "selected";
   if (gridHidden) return null;
   if (hovered && !locked && !altHeld) return "hover";
   return "normal";

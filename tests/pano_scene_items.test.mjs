@@ -296,6 +296,20 @@ test("a failed item tells why, so the editor can ask for its file again", async 
   assert.equal(items.error("f9"), null);
 });
 
+// A hidden 3D Look at target's item loads to be measured (docs/scene-state-v2.md "Look at" "中身の箱"), but is not drawn.
+test("a 3D item asked for only to be measured loads, and is not among the items drawn", async () => {
+  const { stickerItemInputs } = await import("../web_src/pano_three_view.js");
+  const { items, calls } = harness({ concurrency: 4 });
+  const file = { kind: "mesh", urls: ["file3d:0:sticker_2"], url: "file3d:0:sticker_2", prefetch: [], src: "/view?filename=e.glb", unlit: false, id: "sticker_2", opacity: 1 };
+  const { drawn, inputs } = stickerItemInputs({ stickerUrls: [], sticker: null, fileStickerKeys: [file.url], fileStickers: [], measuredStickers: [file] });
+  assert.deepEqual(drawn, []);
+  items.requestMany(inputs);
+  assert.equal(calls.length, 1, "the measured item loads");
+  calls.forEach((call) => call.resolve());
+  await settle();
+  assert.deepEqual([...items.items.values()].map((item) => item.state), ["loaded"]);
+});
+
 // Review P1: a 3D Sticker hidden or outside its Clip range asks for nothing to draw but keeps its loaded item, so
 // coming back shows it at once without loading it again (the port Sticker's items and a 3D file Sticker's alike).
 test("the 3D Stickers' items stay loaded while their Stickers are inactive, and coming back loads nothing", async () => {

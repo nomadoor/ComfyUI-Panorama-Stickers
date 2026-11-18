@@ -21,8 +21,9 @@ import { depthGridNotice, withDepthColor } from "../pano_depth_color.js";
 import { skyLayers, worldStickerLayers } from "../pano_editor_view.js";
 import { skyStickerVfov, sourceAsset } from "../pano_editor_state.js";
 import { createFile3dEditorFiles, file3dEditorFileOf } from "../pano_file_3d.js";
-import { evaluateSceneState, evaluateSticker } from "../pano_scene_eval.js";
+import { evaluateCamera, evaluateSceneState, evaluateSticker } from "../pano_scene_eval.js";
 import { is3dFileSource } from "../pano_scene_state.js";
+import { lookAtBoxes, lookAtTargets } from "./look_at.js";
 import {
   boundingSphere,
   contentPoints,
@@ -87,6 +88,9 @@ export function createStageMedia({ assetSource, source, fetchApi = null, onChang
     },
     // The editor file of a 3D file Sticker (pano_file_3d.js file3dEditorFileOf), or null.
     editorFile: (sticker) => file3dEditorFileOf(files, sticker, source),
+    // The route's answer for a 3D file's Source ({ state "pending" | "ready" | "failed", box, ... }; asks the first time,
+    // as editorFile does), or null without the route: what a 3D file Sticker waits for (load_reveal.js).
+    file3dAnswer: (fileSource) => (files && is3dFileSource(fileSource) ? files.get(fileSource) : null),
     // [add-drop] The route's answer for a 3D file's Source once it came ({ state "ready" or "failed", box, error }),
     // asked once with the editor files above (studio/add_files.js places a new 3D file by its box).
     request: (source) => (files ? files.request(source) : Promise.resolve({ state: "failed", error: "The 3D file route is not available." })),
@@ -128,8 +132,10 @@ export function createStageMedia({ assetSource, source, fetchApi = null, onChang
 // pano_scene_items.js overBudget); `idle`: the editor at rest loads the `scene` and upstream items on (space.idle,
 // docs/threejs-spark-integration.md "止まっている間の先読み"); `lean`: ComfyUI runs a job, so only the items drawn and
 // prefetched stay (space.lean, "生成を邪魔しない").
-export function stageContent(state, frame, { media, editorFile = () => null, sceneFiles = null, sceneBox = () => null, stickerFiles = null, upstream = null, paintLayers = [], depthColor = null, playing = false, idle = false, lean = false }) {
-  const evaluated = evaluateSceneState(state, frame);
+export function stageContent(state, frame, { media, editorFile = () => null, sceneFiles = null, sceneBox = () => null, stickerFiles = null, upstream = null, paintLayers = [], depthColor = null, playing = false, idle = false, lean = false, length = null, shot = null }) {
+  // `length` is the output length, the loop period of the looping owners (docs/scene-state-v2.md "ループ"); `shot` the
+  // sticker_state that places the port Sticker (docs/scene-state-v2.md "受け渡しの置き方"), or null.
+  const evaluated = evaluateSceneState(state, frame, length, null, shot);
   // Each Sticker's media once per content: the port Sticker's follows the playhead (one follow per frame).
   const shown = new Map();
   const mediaOnce = (sticker) => {
@@ -169,6 +175,24 @@ export function stageContent(state, frame, { media, editorFile = () => null, sce
     const itemBox = request?.url ? sceneContentBox(request, sceneBox(request.url)) : null;
     if (itemBox) items.push({ box: itemBox, value });
   }
+  // The content boxes of what the Camera looks at, once loaded (look_at.js lookAtBoxes): its turn faces the box's point.
+  // A box is the content's, shown or not (docs/scene-state-v2.md "Look at" "中身の箱", as the output measures it): a 3D
+  // target hidden or outside its Clip range is measured from its item, which loads without being drawn.
+  const targets = new Set(lookAtTargets(state.camera));
+  const measuredStickers = fileStickers.filter((entry) => !entry.request && targets.has(entry.id)).map((entry) => entry.item);
+  const lookBoxes = lookAtBoxes(state, {
+    image: (item) => {
+      const picture = mediaOnce(item);
+      return picture ? mediaSize(picture.media) : null;
+    },
+    content: (item) => {
+      if (sticker?.id === item.id) return stickerBox;
+      const entry = fileStickers.find((candidate) => candidate.id === item.id);
+      const request = entry?.request ?? entry?.item;
+      return request ? sceneContentBox(request, sceneBox(request.url)) : null;
+    },
+  });
+  if (Object.keys(lookBoxes).length) evaluated.camera = evaluateCamera(state.camera, frame, length, { stickers: state.stickers, boxes: lookBoxes });
   const upstreamStickers = upstream?.stickers ?? [];
   const sphere = boundingSphere(contentPoints(evaluated, box, [...stickers, ...upstreamStickers], items));
   // The 3D boxes the first T can hit (view_camera.js boxDepth): each item's box with the transform it is drawn with (the
@@ -177,6 +201,7 @@ export function stageContent(state, frame, { media, editorFile = () => null, sce
   return {
     evaluated,
     boxes,
+    lookBoxes,
     layers,
     sphere,
     space: {
@@ -186,6 +211,7 @@ export function stageContent(state, frame, { media, editorFile = () => null, sce
       sticker,
       fileStickers: fileStickers.map((entry) => entry.request).filter(Boolean),
       fileStickerKeys: fileStickers.map((entry) => entry.key),
+      measuredStickers,
       stickers,
       upstreamStickers,
       upstreamItems,
@@ -228,7 +254,8 @@ export function stickerFrameSphere(state, content, id, { media, sceneBox = () =>
 function upstreamFrameSphere(content, upstream, id, sceneBox) {
   const sticker = upstream.flatMap((layer) => layer.sceneState.stickers).find((item) => item.id === id);
   if (!sticker) return content.sphere;
-  const value = evaluateSticker(sticker, content.evaluated.frame);
+  const layer = upstream.find((item) => item.sceneState.stickers.includes(sticker));
+  const value = evaluateSticker(sticker, content.evaluated.frame, layer?.length ?? null, layer?.shot ?? null, layer?.sceneState.timeline.fps ?? null);
   const plane = content.space.upstreamStickers.find((item) => item.id === id) ?? null;
   const request = content.space.upstreamItems.find((entry) => entry.request?.id === id)?.request ?? null;
   const box = request?.url ? sceneContentBox(request, sceneBox(request.url)) : null;

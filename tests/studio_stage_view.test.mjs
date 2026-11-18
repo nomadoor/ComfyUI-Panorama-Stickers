@@ -14,13 +14,19 @@ import {
   OUTPUT_MIN_WIDTH,
   STAGE_MIN_HEIGHT,
   TIMELINE_DEFAULT_HEIGHT,
+  TIMELINE_HEAD_DEFAULT_WIDTH,
+  TIMELINE_HEAD_MAX_WIDTH,
+  TIMELINE_HEAD_MIN_WIDTH,
   TIMELINE_MIN_HEIGHT,
   loadOutputWindow,
+  loadTimelineHeadWidth,
   loadTimelineHeight,
   outputWindowSize,
   outputWindowView,
   saveOutputWindow,
+  saveTimelineHeadWidth,
   saveTimelineHeight,
+  timelineHeadWidth,
   timelineHeight,
 } from "../web_src/studio/layout.js";
 import { LENS_PAN_MAX_DEG, STAGE_CLEAR_COLOR, STAGE_RENDER_MAX_SIDE, STAGE_RENDER_SCALE, cameraFrameHit, cameraFrameView, frameViewFov, groundDepth, lensPickView, lensPinholePoint, outputView, stageCamera, stageRay, stageRenderInput, stageRenderSize, surfaceHit } from "../web_src/studio/stage_view.js";
@@ -136,6 +142,21 @@ test("the timeline keeps its least height and leaves the stage its least height;
   saveTimelineHeight(refusing, 400);
   assert.equal(loadTimelineHeight(refusing), TIMELINE_DEFAULT_HEIGHT);
   assert.equal(loadTimelineHeight(null), TIMELINE_DEFAULT_HEIGHT);
+});
+
+// docs/studio-ui.md "画面の区画" "タイムラインの行の頭の幅".
+test("the timeline's row heads keep their width between the least and largest, kept per browser", () => {
+  assert.deepEqual([TIMELINE_HEAD_DEFAULT_WIDTH, TIMELINE_HEAD_MIN_WIDTH, TIMELINE_HEAD_MAX_WIDTH], [260, 200, 480]);
+  assert.equal(timelineHeadWidth(Number.NaN), 260);
+  assert.equal(timelineHeadWidth(120), 200);
+  assert.equal(timelineHeadWidth(900), 480);
+  const storage = memoryStorage();
+  assert.equal(loadTimelineHeadWidth(storage), 260);
+  saveTimelineHeadWidth(storage, 333.6);
+  assert.equal(loadTimelineHeadWidth(storage), 334);
+  storage.setItem("PanoramaSuite.Studio.timelineHeadWidth", "9000");
+  assert.equal(loadTimelineHeadWidth(storage), 480, "a kept width out of bounds comes back inside");
+  assert.equal(loadTimelineHeadWidth(null), 260);
 });
 
 test("the Output window's picture fills it at the output's ratio within its least and largest width, and its fold, per browser", () => {

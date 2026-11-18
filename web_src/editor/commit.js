@@ -7,6 +7,7 @@ import {
 } from "../pano_editor_state.js";
 import { peekNodeSurface, peekPreviewNode } from "../pano_node_bridge.js";
 import { saveSharedUiSettings } from "./ui_settings.js";
+import { writeStateWidget } from "../pano_state_widget.js";
 
 export function createCommit(deps) {
   const {
@@ -32,8 +33,7 @@ export function createCommit(deps) {
     if (!stateWidget) return;
     const text = editorStateWrite(node, state, String(stateWidget.value ?? ""));
     if (text === null) return;
-    stateWidget.value = text;
-    stateWidget.callback?.(text);
+    writeStateWidget(stateWidget, text);
   }
   function persistUiSettings() {
     state.ui_settings = saveSharedUiSettings(state.ui_settings);

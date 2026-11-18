@@ -29,6 +29,12 @@ export function worldRotation(yawDeg, pitchDeg, rollDeg = 0) {
   ];
 }
 
+// The yaw and pitch (degrees, the panorama convention) that face the World direction `d` ([x, y, z]): World's
+// forward -Z is the panorama's +Z (docs/scene-state-v2.md "座標と角度"; Look at and the editor's facing use it).
+export function lookRotation(d) {
+  return { yawDeg: Math.atan2(d[0], -d[2]) * RAD2DEG + 0, pitchDeg: Math.atan2(d[1], Math.hypot(d[0], d[2])) * RAD2DEG };
+}
+
 export function panoramaAngles(rotation) {
   // Inverse of worldRotation. At the poles yaw and roll share an axis.
   const right = worldToPano(vec3(rotation[0][0], rotation[1][0], rotation[2][0]));

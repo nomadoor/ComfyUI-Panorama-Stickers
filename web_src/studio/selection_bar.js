@@ -3,9 +3,12 @@
 // studio/editor.js does what its buttons say.
 import { ICON } from "../icons.js";
 import { paintObjectOf } from "../pano_paint_objects.js";
+import { clipOrigin } from "../pano_scene_eval.js";
 import { is3dFileSource } from "../pano_scene_state.js";
 import { UPSTREAM_INHERITED_TIP as INHERITED_TIP, isUpstreamSticker, upstreamStickerInherited, upstreamStickerOverridden } from "../pano_upstream.js";
 import { stickerChangedRows } from "./inspector_model.js";
+import { lookingAt } from "./look_at.js";
+import { pointTargets, pointType } from "./path_line.js";
 import { findSticker } from "./row_object.js";
 import { objectLabel } from "./timeline_model.js";
 
@@ -38,17 +41,47 @@ function gizmoModes(kind) {
 }
 
 // The gizmo's mode for an object of `kind` while the editor's mode is `mode`: a mode it does not have (the Camera has
-// no Scale) shows as Move.
-export function shownGizmoMode(kind, mode) {
+// no Scale; no Rotate while it looks at a target, `looking`) shows as Move.
+export function shownGizmoMode(kind, mode, looking = false) {
+  if (looking && kind === "camera" && mode === "rotate") return "translate";
   return gizmoModes(kind).some((entry) => entry.mode === mode) ? mode : "translate";
 }
 
-// The mode the key `key` (KeyboardEvent.key) chooses for an object of `kind`, or null when the key chooses none.
-export function gizmoModeOfKey(kind, key) {
-  return gizmoModes(kind).find((entry) => entry.key === key)?.mode ?? null;
+// The mode the key `key` (KeyboardEvent.key) chooses for an object of `kind`, or null when the key chooses none (the
+// Camera's 2 while it looks at a target, `looking`).
+export function gizmoModeOfKey(kind, key, looking = false) {
+  const mode = gizmoModes(kind).find((entry) => entry.key === key)?.mode ?? null;
+  return looking && kind === "camera" && mode === "rotate" ? null : mode;
 }
 
 const LATER = "in development";
+
+// The point types (docs/studio-ui.md "軌道の線" "点の種類"), always on the bar of a World object and the Camera.
+export const POINT_TYPES = Object.freeze([
+  Object.freeze({ type: "auto", label: "Auto", icon: ICON.point_auto, tip: "Auto · automatic handles" }),
+  Object.freeze({ type: "bezier", label: "Bezier", icon: ICON.point_bezier, tip: "Bezier · your handles" }),
+  Object.freeze({ type: "corner", label: "Corner", icon: ICON.point_corner, tip: "Corner · sharp turn" }),
+]);
+
+// The point-type buttons of `owner` (the Camera or a World object): on the selected position Keyframes of its row
+// (`keys`, the selection's), else the one at the playhead (`playhead`, a Timeline frame; `offset` its time base's 0),
+// but not while it plays (`playing`): the playhead passing Keyframes would make them flicker, as the handles would.
+// The type of all of them is lit (none when they differ). Off, with the reason, without a Keyframe to act on, and while
+// it cannot be edited (`blocked`: the reason, or "").
+function pointButtons(button, owner, row, keys, playhead, offset, blocked, playing = false) {
+  const lane = owner.position?.keyframes ?? [];
+  const frames = keys.filter((key) => key.row === row && (key.lane === null || key.lane === "position")).map((key) => key.frame);
+  const targets = frames.length || !playing ? pointTargets(owner, frames, playhead - offset) : [];
+  const types = new Set(lane.filter((key) => targets.includes(key.frame)).map(pointType));
+  let why = blocked;
+  if (!why && !lane.length) why = "No Keyframes";
+  else if (!why && !targets.length) why = playing ? "Playing" : "No Keyframe at the playhead";
+  return POINT_TYPES.map((entry) => button(`point:${entry.type}`, entry.icon, entry.label, {
+    tip: why ? `${entry.label} · ${why}` : entry.tip,
+    active: !why && types.size === 1 && types.has(entry.type),
+    disabled: !!why,
+  }));
+}
 
 // Back to source of an input's or an upstream object (docs/studio-ui.md "下の中央のバー"): pressable only with something to
 // put back (an upstream object: any entry of its record, upstreamStickerOverridden; an input's: a row away from the
@@ -78,19 +111,24 @@ function revertButton(button, state, sticker, { readOnly, locked, inherited, ups
 // The Lock of the Camera turns `camera.locked` over (docs/scene-state-v2.md). A paint group has Bring to front / Send to
 // back and Lock / Delete (docs/studio-ui.md "ペイントのまとまり"). Not yet here: the multi-selection; Replace waits for a
 // file picker below the old UI.
-export function selectionBar({ state, row, mode = "translate", readOnly = false, tab = "3d", upstream = [], inputs = {} }) {
+// `keys` is the selection's Keyframes ([{ row, lane, frame }]) and `playhead` the Timeline frame, for the point types.
+export function selectionBar({ state, row, mode = "translate", readOnly = false, tab = "3d", upstream = [], inputs = {}, keys = [], playhead = 0, length = null, playing = false }) {
   const kind = selectedKind(state, row, upstream);
   if (!kind) return null;
   if (kind === "camera" && tab === "camera") return null;
-  const button = (key, icon, label, extra = {}) => ({ key, icon, label, tip: extra.tip ?? label, active: !!extra.active, disabled: !!extra.disabled, overridden: !!extra.overridden });
-  const shown = shownGizmoMode(kind, mode);
-  const gizmo = gizmoModes(kind).map((entry) => button(`gizmo:${entry.mode}`, entry.icon, entry.label, {
-    tip: `${entry.label} (${entry.key})`,
-    active: entry.mode === shown,
-  }));
-  const lockButton = (locked) => button("lock", locked ? ICON.lock_closed : ICON.lock_open, locked ? "Unlock" : "Lock", { disabled: readOnly });
+  // `locked`: the Lock while its thing is locked, drawn in coral (docs/studio-ui.md "下の中央のバー").
+  const button = (key, icon, label, extra = {}) => ({ key, icon, label, tip: extra.tip ?? label, active: !!extra.active, disabled: !!extra.disabled, overridden: !!extra.overridden, locked: !!extra.locked });
+  // The Camera looking at a target has its Rotate where it is, off (docs/studio-ui.md "Look at").
+  const looking = kind === "camera" && lookingAt(state, playhead, length);
+  const shown = shownGizmoMode(kind, mode, looking);
+  const gizmo = gizmoModes(kind).map((entry) => button(`gizmo:${entry.mode}`, entry.icon, entry.label, looking && entry.mode === "rotate"
+    ? { tip: "Rotate · Set by Look at", disabled: true }
+    : { tip: `${entry.label} (${entry.key})`, active: entry.mode === shown }));
+  const lockButton = (locked) => button("lock", locked ? ICON.lock_closed : ICON.lock_open, locked ? "Unlock" : "Lock", { disabled: readOnly, locked });
   if (kind === "camera") {
-    return { kind, icon: ICON.camera, name: "Camera", fixedName: true, groups: [gizmo, [lockButton(state.camera.locked === true)]] };
+    const locked = state.camera.locked === true;
+    const points = pointButtons(button, state.camera, row, keys, playhead, 0, readOnly ? "Read-only" : locked ? "Locked" : "", playing);
+    return { kind, icon: ICON.camera, name: "Camera", fixedName: true, groups: [gizmo, points, [lockButton(locked)]] };
   }
   if (kind === "paint") {
     const { locked } = paintObjectOf(state, row);
@@ -127,10 +165,11 @@ export function selectionBar({ state, row, mode = "translate", readOnly = false,
     button("replace", ICON.replace_image, "Replace", notFor ? offFor("Replace") : { disabled: true, tip: `Replace · ${LATER}` }),
   ];
   const keep = [
-    inherited ? button("lock", locked ? ICON.lock_closed : ICON.lock_open, locked ? "Unlock" : "Lock", { disabled: true, tip: INHERITED_TIP }) : lockButton(locked),
+    inherited ? button("lock", locked ? ICON.lock_closed : ICON.lock_open, locked ? "Unlock" : "Lock", { disabled: true, tip: INHERITED_TIP, locked }) : lockButton(locked),
     button("delete", ICON.delete, "Delete", port ? offFor("Delete") : inherited ? offFor("Delete") : { disabled: edits, tip: "Delete (Del)" }),
   ];
-  const groups = [first, copy, keep];
+  const groups = kind === "sky" ? [first, copy, keep] : [first, pointButtons(button, sticker, row, keys, playhead, sticker.clip ? clipOrigin(sticker.clip) : 0,
+    inherited ? INHERITED_TIP : readOnly ? "Read-only" : locked ? "Locked" : "", playing), copy, keep];
   if (theirs || port) groups.push([revertButton(button, state, sticker, { readOnly, locked, inherited, upstream, inputs })]);
   return { kind, icon: kind === "sky" ? ICON.pano : ICON.box, name: objectLabel(sticker), fixedName: false, groups };
 }

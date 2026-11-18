@@ -7,6 +7,7 @@ import {
   clipDragChanged,
   deleteKeys,
   deleteTarget,
+  endsWhereItStarts,
   enteredFps,
   jumpTarget,
   keyRow,
@@ -21,6 +22,8 @@ import {
   selectKeys,
   selectRow,
   startClipDrag,
+  toggleLocked,
+  toggleLoop,
   toggleVisible,
   writeLengthUnitSetting,
   writeLoopSetting,
@@ -336,3 +339,51 @@ test("a Clip range drag that comes back to where it began changes nothing", () =
   assert.deepEqual(edit.upstream.scene_up.stickers[0].clip, { start: 4, in: 4, duration: null });
   assert.equal(clipDragChanged(ctx, up, edit), true);
 });
+
+// docs/timeline-ui.md "動きのループ": the row's button turns the owner's loop over (an upstream object's in its working
+// copy), and nothing turns it on by itself.
+test("the motion loop's button turns the Camera's or a Sticker's loop over, not a locked or read-only one", () => {
+  const ctx = ctxOf(studioState());
+  const camera = applyEdit(ctx, toggleLoop(ctx, "camera"));
+  assert.equal(camera.state.camera.loop, true);
+  assert.equal(applyEdit(ctxOf(camera.state), toggleLoop(ctxOf(camera.state), "camera")).state.camera.loop, false);
+  assert.equal(applyEdit(ctx, toggleLoop(ctx, "sticker_1")).state.stickers[0].loop, true);
+  assert.equal(toggleLoop(ctx, "painting"), null);
+  assert.equal(toggleLoop(ctxOf(studioState(), { readOnly: true }), "camera"), null);
+  const locked = studioState();
+  locked.stickers[0].locked = true;
+  assert.equal(toggleLoop(ctxOf(locked), "sticker_1"), null);
+  // An upstream object's loop goes to its working copy.
+  const layer = upstreamLayer();
+  const upstream = ctxOf(studioState(), { upstream: [layer] });
+  const edit = toggleLoop(upstream, "upstream:scene_up:sticker_1");
+  assert.ok(edit);
+  assert.equal(applyEdit(upstream, edit).upstream[0].sceneState.stickers[0].loop, true);
+});
+
+test("an object ends where it starts when a keyed Lane's last value is its first, with its loop off", () => {
+  const state = studioState();
+  assert.deepEqual(endsWhereItStarts(state), []);
+  state.camera.position.keyframes.push({ frame: 60, value: [0, 0, 0], easing: "smooth" });
+  assert.deepEqual(endsWhereItStarts(state), ["camera"]);
+  state.camera.loop = true;
+  assert.deepEqual(endsWhereItStarts(state), []);
+});
+
+// docs/timeline-ui.md "ロック（鍵のボタン）": the row's lock button turns the owner's `locked` over, as the bar's Lock
+// does (an upstream object's in its working copy), also while locked; not read-only, not the Paint row.
+test("the lock button turns the Camera's or a Sticker's lock over, locked or not, not read-only", () => {
+  const ctx = ctxOf(studioState());
+  const camera = applyEdit(ctx, toggleLocked(ctx, "camera"));
+  assert.equal(camera.state.camera.locked, true);
+  assert.equal(applyEdit(ctxOf(camera.state), toggleLocked(ctxOf(camera.state), "camera")).state.camera.locked, false);
+  assert.equal(applyEdit(ctx, toggleLocked(ctx, "sticker_1")).state.stickers[0].locked, true);
+  assert.equal(toggleLocked(ctx, "painting"), null);
+  assert.equal(toggleLocked(ctxOf(studioState(), { readOnly: true }), "camera"), null);
+  const layer = upstreamLayer();
+  const upstream = ctxOf(studioState(), { upstream: [layer] });
+  const edit = toggleLocked(upstream, "upstream:scene_up:sticker_1");
+  assert.ok(edit);
+  assert.equal(applyEdit(upstream, edit).upstream[0].sceneState.stickers[0].locked, true);
+});
+

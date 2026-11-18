@@ -1,12 +1,12 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { createBackdropClose } from "../../studio/backdrop.js";
 import { CAMERA_FOV_TIP, CAMERA_TAB_LOCKED_TIP, CAMERA_TAB_TIP, PANORAMA_MODE_TIP, cameraButton } from "../../studio/camera_ui.js";
 import { liveErpRatio } from "../../studio/erp_preview.js";
 import { cameraRulers, rulerEdit } from "../../studio/frame_layout.js";
 import { ROTATE_SNAP_DEG } from "../../studio/view_scale.js";
 import { buildCameraCard } from "../../studio/inspector_model.js";
-import { TIMELINE_BAR_HEIGHT, loadTimelineHeight, saveTimelineHeight, timelineHeight } from "../../studio/layout.js";
+import { TIMELINE_BAR_HEIGHT, barPosition, loadTimelineHeight, saveTimelineHeight, timelineHeight } from "../../studio/layout.js";
 import { topLine } from "../../studio/notice_line.js";
 import { selectionBar } from "../../studio/selection_bar.js";
 import { isMacPlatform, shortcutGroups } from "../../studio/shortcuts.js";
@@ -43,8 +43,9 @@ import StudioViewButtons from "./StudioViewButtons.vue";
 // The editor's state lives in studio/editor.js: `view` is its view model (the working state, the selection, the
 // playhead, playback, Undo), `ui` what the stage reports (stage.js stageUi(), with `background` and `empty`), and
 // `controller` what this shell calls: onStage({ canvas, root }) makes the stage once the elements are in the page and
-// returns its controls; onTimeline({ handleDelete, copyKeys, pasteKeys }) hands over the Timeline's Delete and its
-// Keyframes' copy and paste; the inspector's and the Timeline's events go to its handlers.
+// returns its controls; onTimeline({ handleDelete, copyKeys, pasteKeys, settleSimplify }) hands over the Timeline's
+// Delete, its Keyframes' copy and paste, and the keeping of Simplify's result before Undo and Redo; the inspector's and
+// the Timeline's events go to its handlers.
 const props = defineProps({
   nodeTitle: { type: String, default: "" },
   ui: { type: Object, required: true },
@@ -76,6 +77,7 @@ onMounted(() => {
     handleDelete: () => timeline.value?.handleDelete() ?? false,
     copyKeys: () => timeline.value?.copyKeys() ?? null,
     pasteKeys: (clipboard) => timeline.value?.pasteKeys(clipboard) ?? false,
+    settleSimplify: () => timeline.value?.settleSimplify(),
   });
   // The editor takes the focus from the graph behind it, so the stage has the keys at once (pano_key_focus.js).
   root.value?.focus({ preventScroll: true });
@@ -106,9 +108,9 @@ const paintModel = computed(() => props.view.paint);
 const portInputs = computed(() => {
   const row = props.view.selection?.row ?? null;
   const port = props.view.state.stickers.some((item) => item.id === row && item.source.kind === "port");
-  return port ? { playhead: props.view.playhead, portSize: props.view.portSize, imageSizes: props.view.imageSizes, animations: props.view.animations, handoff: props.view.portHandoff } : undefined;
+  return port ? { playhead: props.view.playhead, length: props.view.outputLength, portSize: props.view.portSize, imageSizes: props.view.imageSizes, animations: props.view.animations, handoff: props.view.portHandoff } : undefined;
 });
-const bar = computed(() => selectionBar({ state: props.view.state, row: props.view.selection?.row ?? null, mode: props.view.gizmoMode, readOnly: props.view.readOnly, tab: props.view.tab, upstream: props.view.upstreamWorking, inputs: portInputs.value }));
+const bar = computed(() => selectionBar({ state: props.view.state, row: props.view.selection?.row ?? null, mode: props.view.gizmoMode, readOnly: props.view.readOnly, tab: props.view.tab, upstream: props.view.upstreamWorking, inputs: portInputs.value, keys: props.view.selection?.keys ?? [], playhead: props.view.playhead, length: props.view.outputLength, playing: props.view.playing }));
 
 // --- The Camera tab (docs/studio-ui.md "Camera タブ"): the frame of the output's ratio (the ERP's in Panorama mode)
 // with the edge rulers, which are the Camera card's rows and send the inspector's edits. Each tick strip has its fixed
@@ -117,7 +119,7 @@ const camera = computed(() => props.view.state.camera);
 const panorama = computed(() => camera.value.projection === "erp");
 const frameAspect = computed(() => (panorama.value ? liveErpRatio(camera.value.erp_range) : camera.value.aspect));
 const rulers = computed(() => (cameraTab.value
-  ? cameraRulers(buildCameraCard({ state: props.view.state, playhead: props.view.playhead, readOnly: props.view.readOnly }))
+  ? cameraRulers(buildCameraCard({ state: props.view.state, playhead: props.view.playhead, readOnly: props.view.readOnly, length: props.view.outputLength, boxes: props.view.lookBoxes }))
   : null));
 // The Lens row's lensStart where a Lens drag began (a κ edit keeps the image's center scale from there).
 let lensStart = null;
@@ -180,6 +182,47 @@ watch([outputFrame, outputErp], ([frame, erp]) => {
   reportOutput();
 });
 onBeforeUnmount(() => outputObserver?.disconnect());
+
+// --- The bar at the bottom center (docs/studio-ui.md "下の中央のバー" "バーの置き場所"): centered, moved left before it
+// comes near the View group, then without its name's text, then scrolled inside itself (layout.js barPosition).
+const stageRegion = ref(null);
+const barRegion = ref(null);
+const viewButtons = ref(null);
+const barPlace = ref({ left: null, compact: false, maxWidth: null });
+let barObserver = null;
+let placing = false;
+async function placeBar() {
+  if (placing) return;
+  placing = true;
+  try {
+    barPlace.value = { left: barPlace.value.left, compact: false, maxWidth: null };
+    await nextTick();
+    const stage = stageRegion.value?.getBoundingClientRect().width ?? 0;
+    const group = barRegion.value?.firstElementChild;
+    if (!stage || !group) return;
+    const name = group.querySelector(".pano-studio-bar-name")?.getBoundingClientRect().width ?? 0;
+    const view = viewButtons.value?.$el?.getBoundingClientRect?.().width ?? 0;
+    const inset = parseFloat(getComputedStyle(stageRegion.value).getPropertyValue("--studio-float-inset")) || 16;
+    barPlace.value = barPosition({ stage, bar: group.getBoundingClientRect().width, name, view, inset });
+  } finally {
+    placing = false;
+  }
+}
+const barStyle = computed(() => {
+  const { left, maxWidth } = barPlace.value;
+  if (left === null) return null;
+  return { left: `${left}px`, transform: "none", ...(maxWidth === null ? {} : { maxWidth: `${maxWidth}px` }) };
+});
+// Placed again when what the bar holds changes (not at each playhead step, which only lights its buttons).
+const barShape = computed(() => (paintModel.value ? `paint|${paintModel.value.tool ?? ""}` : bar.value ? `${bar.value.kind}|${bar.value.name}|${bar.value.groups.map((group) => group.length).join(",")}` : ""));
+watch(barShape, () => placeBar(), { flush: "post" });
+onMounted(() => {
+  if (typeof ResizeObserver !== "function") return;
+  barObserver = new ResizeObserver(() => placeBar());
+  if (stageRegion.value) barObserver.observe(stageRegion.value);
+  placeBar();
+});
+onBeforeUnmount(() => barObserver?.disconnect());
 
 // --- [add-drop] Add: the left column's button opens the file picker; the picked file goes to the editor
 // (studio/add_files.js). The other buttons of the column are the editor's.
@@ -278,7 +321,7 @@ function setCollapsed(value) {
       :aria-label="nodeTitle"
     >
       <div ref="main" class="pano-studio-main">
-        <div class="pano-studio-stage" data-region="stage">
+        <div ref="stageRegion" class="pano-studio-stage" data-region="stage">
           <canvas ref="canvas" class="pano-studio-stage-canvas" data-stage-canvas :style="{ cursor: ui.cursor || null }" />
           <canvas
             ref="overlay"
@@ -428,11 +471,12 @@ function setCollapsed(value) {
           <div v-if="view.shortcuts" class="pano-studio-at-shortcuts">
             <StudioShortcuts :groups="shortcuts" :toggle="helpButton" @close="controller.shortcuts(false)" />
           </div>
-          <div class="pano-studio-at-bar" data-region="bar">
+          <div ref="barRegion" class="pano-studio-at-bar" :class="{ 'is-compact': barPlace.compact, 'is-scrolled': barPlace.maxWidth !== null }" :style="barStyle" data-region="bar">
             <StudioPaintBar v-if="paintModel" :model="paintModel" @edit="(event) => controller.paint(event)" />
             <StudioSelectionBar v-else-if="bar" :model="bar" @press="(key) => controller.bar(key)" />
           </div>
           <StudioViewButtons
+            ref="viewButtons"
             class="pano-studio-at-buttons"
             :fov="ui.fov"
             :fov-lit="ui.fovNumberLit"
@@ -467,6 +511,7 @@ function setCollapsed(value) {
         <div class="pano-studio-timeline" data-region="timeline" :style="timelineStyle">
           <StudioTimeline
             ref="timeline"
+            :storage="storage"
             :state="view.state"
             :selection="view.selection"
             :playhead="view.playhead"
@@ -486,6 +531,8 @@ function setCollapsed(value) {
             @edit="(payload) => controller.timelineEdit(payload)"
             @frame-selected="(row) => controller.frameSelected(row)"
             @loop-change="(on) => controller.loop(on)"
+            @done="(text) => controller.doneNotice?.(text)"
+            @simplify-ghost="(ghost) => controller.simplifyGhost?.(ghost)"
             @length-unit-change="(unit) => controller.lengthUnit(unit)"
             @collapse-change="setCollapsed"
           />
@@ -493,6 +540,8 @@ function setCollapsed(value) {
       </div>
       <StudioInspector
         data-region="inspector"
+        :length="view.outputLength"
+        :look-picking="ui.pickingLook"
         :state="view.state"
         :selection="selected"
         :tab="view.tab"
@@ -504,6 +553,7 @@ function setCollapsed(value) {
         :image-sizes="view.imageSizes"
         :port-size="view.portSize"
         :handoff="view.portHandoff"
+        :boxes="view.lookBoxes"
         @edit="(edit) => controller.inspectorEdit(edit)"
         @close="controller.close()"
       />

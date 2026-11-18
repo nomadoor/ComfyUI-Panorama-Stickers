@@ -7,6 +7,7 @@ import { createDropInput } from "./drop_input.js";
 import { guardEditorKeys } from "./key_guard.js";
 import { closeColor, painting as paintingTool } from "./paint_bar.js";
 import { gizmoModeOfKey, selectedKind } from "./selection_bar.js";
+import { lookingAt } from "./look_at.js";
 import { editorKeyAction } from "./shortcuts.js";
 import { createStage } from "./stage.js";
 import { outputView } from "./stage_view.js";
@@ -31,7 +32,9 @@ export function createEditorController(ctx) {
     if (action.startsWith("gizmo:")) {
       // The gizmo's Move, Rotate, Scale for the selected object that has them.
       const mode = action.slice("gizmo:".length);
-      if (gizmoModeOfKey(selectedKind(ctx.session.state, ctx.session.selection.row, ctx.view.upstreamWorking), event.key) !== mode) return;
+      const kind = selectedKind(ctx.session.state, ctx.session.selection.row, ctx.view.upstreamWorking);
+      const looking = kind === "camera" && lookingAt(ctx.session.state, ctx.view.playhead, ctx.outputLength());
+      if (gizmoModeOfKey(kind, event.key, looking) !== mode) return;
       event.preventDefault();
       event.stopPropagation();
       ctx.setGizmoMode(mode);
@@ -39,6 +42,9 @@ export function createEditorController(ctx) {
     }
     event.preventDefault();
     event.stopPropagation();
+    // Undo and Redo while Simplify adjusts: its result is kept first, as a press elsewhere does (docs/timeline-ui.md
+    // "Simplify"); Undo then takes it back.
+    if (action === "undo" || action === "redo") ctx.timeline?.settleSimplify?.();
     if (action === "undo") ctx.historyStep(-1);
     else if (action === "redo") ctx.historyStep(1);
     else if (action === "delete") ctx.deleteSelection();
@@ -100,6 +106,24 @@ export function createEditorController(ctx) {
           loading: ctx.reveal,
           rasterAlpha: (item, u, v) => ctx.paint.rasterAlpha(item, u, v),
           upstream: () => ctx.upstream.working(),
+          // The path line (docs/studio-ui.md "軌道の線").
+          keys: () => ctx.session.selection.keys ?? [],
+          selectKeys: (row, keys) => {
+            ctx.session.select({ row, keys });
+            ctx.sync();
+          },
+          seek: (frame) => ctx.seek(frame),
+          playing: () => !!ctx.playback?.playing,
+          hint: (text) => {
+            ctx.ui.pathHint = text;
+          },
+          length: () => ctx.outputLength(),
+          tool: () => ctx.view.tool,
+          shot: () => ctx.session.portHandoff,
+          // Look at's Pick (docs/studio-ui.md "Look at").
+          lookPicked: (picked) => ctx.lookPicked(picked),
+          // The original path while Simplify is adjusted ({ row, owner }), or null.
+          simplifyGhost: () => ctx.simplifyGhost ?? null,
         },
         cameraTab: ctx.cameraTab,
         root,
@@ -128,6 +152,12 @@ export function createEditorController(ctx) {
       ctx.sync();
     },
     seek: (frame) => ctx.seek(frame),
+    // A short "done" notice from the Timeline (Simplify kept), and the original path Simplify keeps faint meanwhile.
+    doneNotice: (text) => ctx.doneNotice(text),
+    simplifyGhost: (ghost) => {
+      ctx.simplifyGhost = ghost;
+      ctx.redraw();
+    },
     play: () => ctx.togglePlayback(),
     loop: (on) => {
       ctx.view.loop = !!on;

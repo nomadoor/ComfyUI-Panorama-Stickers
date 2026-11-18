@@ -450,7 +450,7 @@ test("a port Sticker added after a deletion takes a new id from the counter, not
   const result = reconcilePortStickerState(state, portStickerSyncValue(stickersNode(["sticker"]), { pose: null }));
 
   const [port] = portStickers(result.state);
-  assert.deepEqual([port.id, port.handoff_overrides, result.state.next_sticker_id, state.next_sticker_id], ["sticker_3", [], 4, 3]);
+  assert.deepEqual([port.id, port.offset_fov, result.state.next_sticker_id, state.next_sticker_id], ["sticker_3", { value: 1, keyframes: [] }, 4, 3]);
   // The counter is one past the largest id again, so the text leaves it out.
   assert.equal("next_sticker_id" in JSON.parse(editorStateText(stickersNode(["sticker"]), result.state)), false);
 });
@@ -493,25 +493,17 @@ test("with sticker_state connected the port Sticker waits for the pose of the no
   assert.deepEqual(poseOf(port), [40, -10, 5, 50, 50]);
 });
 
-test("a port Sticker added from a moving Camera keeps the Keyframes of the node's pose", () => {
+test("a port Sticker added with sticker_state comes at the node's pose with no Keyframes and no offset", () => {
+  // Nothing is baked (ADR 0067): the evaluation places it by the sticker_state of the result.
   const node = stickersNode(["sticker", "sticker_state"]);
-  const direction = [
-    { frame: 0, value: { yaw_deg: 0, pitch_deg: 0 }, easing: "auto" },
-    { frame: 1, value: { yaw_deg: 10, pitch_deg: 5 }, easing: "auto" },
-  ];
-  const size = [
-    { frame: 0, value: { hFOV_deg: 60, vFOV_deg: 20 }, easing: "auto" },
-    { frame: 1, value: { hFOV_deg: 40, vFOV_deg: 20 }, easing: "auto" },
-  ];
-  const pose = { yaw_deg: 0, pitch_deg: 0, roll_deg: 0, hFOV_deg: 60, keyframes: { direction, roll: [], size } };
+  const pose = { yaw_deg: 10, pitch_deg: 5, roll_deg: 0, hFOV_deg: 60, keyframes: { direction: [], roll: [], size: [] } };
 
   const [port] = portStickers(reconcilePortStickerState(v2EditorState({}), portStickerSyncValue(node, { pose })).state);
 
-  assert.deepEqual(port.direction.keyframes, direction);
-  assert.deepEqual(port.roll.keyframes, []);
-  assert.deepEqual(port.size.keyframes.map((key) => [key.value.hFOV_deg, key.value.vFOV_deg]), [[60, 60], [40, 40]]);
+  assert.deepEqual([port.direction.value, port.direction.keyframes, port.size.value], [{ yaw_deg: 10, pitch_deg: 5 }, [], { hFOV_deg: 60, vFOV_deg: 60 }]);
+  assert.deepEqual([port.offset_rotation, port.offset_fov], [{ value: { yaw_deg: 0, pitch_deg: 0, roll_deg: 0 }, keyframes: [] }, { value: 1, keyframes: [] }]);
   const saved = JSON.parse(editorStateText(node, { ...v2EditorState({}), stickers: [port] })).stickers[0];
-  assert.deepEqual(saved.direction.keyframes, direction);
+  assert.equal("offset_rotation" in saved || "offset_fov" in saved, false);
 });
 
 test("the port Sticker's stored vFOV is not rewritten from the media, and the Sticker is removed with the input", () => {
@@ -704,12 +696,11 @@ test("3D media on the sticker input waits for the node and adds the world Sticke
   assert.deepEqual([saved.placement, saved.source, saved.position.value], ["world", { kind: "port" }, [0, 0, -2]]);
 });
 
-test("a replace pose keeps the crop, the opacity and the overrides of Lanes the new placement has, as the node does", () => {
+test("a replace pose keeps the crop and the opacity, as the node does", () => {
   const node = stickersNode(["sticker"], { sticker: "IMAGE" });
   const state = v2EditorState({ stickers: [{
     id: "sticker_4", source: { kind: "port" }, clip: { start: 2, duration: 5 }, visible: false, locked: true, z_index: 2,
     crop: { x0: 0.1, y0: 0.2, x1: 0.9, y1: 0.8 }, opacity: { value: 0.5, keyframes: [{ frame: 3, value: 0.25 }] },
-    handoff_overrides: ["direction", "opacity"],
   }] });
   const pose = { placement: "world", position: [0, 0, -1], rotation: { yaw_deg: 0, pitch_deg: 0, roll_deg: 0 }, scale: 2, replace: true };
 
@@ -718,7 +709,6 @@ test("a replace pose keeps the crop, the opacity and the overrides of Lanes the 
   assert.deepEqual([port.id, port.placement, port.visible, port.locked, port.clip.start], ["sticker_4", "world", false, true, 2]);
   assert.deepEqual(port.crop, { x0: 0.1, y0: 0.2, x1: 0.9, y1: 0.8 });
   assert.deepEqual([port.opacity.value, port.opacity.keyframes.map((key) => [key.frame, key.value])], [0.5, [[3, 0.25]]]);
-  assert.deepEqual(port.handoff_overrides, ["opacity"]);
 });
 
 test("a link that does not tell its type is read from the output it comes from, else waits for the node", () => {
@@ -754,27 +744,17 @@ test("the node's replace pose turns a sky port Sticker into a world one under th
   assert.equal(again.changed, false);
 });
 
-test("with a Pose handoff, the node's replace pose is not written: the handoff is shown over the stored Sticker", () => {
+test("with a Pose handoff, the node's replace pose is not written: the sticker_state places the stored Sticker", () => {
   const node = stickersNode(["sticker", "sticker_state"], { sticker: "IMAGE" });
   const state = v2EditorState({ stickers: [{ id: "sticker_4", source: { kind: "port" }, z_index: 2 }] });
   const pose = { placement: "world", position: [0, 0, -1], rotation: { yaw_deg: 0, pitch_deg: 0, roll_deg: 0 }, scale: 2, replace: true };
-  const handoff = [{ placement: "sky", lanes: {}, fps: 24 }];
+  const handoff = [{ state: { kind: "pano_sticker_state", version: 3, fps: 24, camera: { fov: [{ frame: 0, value: 50 }] } } }];
 
   const result = reconcilePortStickerState(state, portStickerSyncValue(node, { pose, handoff }));
 
   assert.equal(result.changed, false);
-  assert.equal(nodePortHandoff(node, handoff).placement, "sky");
+  assert.equal(nodePortHandoff(node, handoff).camera.fov[0].value, 50);
   assert.equal(nodePortHandoff(stickersNode(["sticker"]), handoff), null, "sticker_state is no longer connected");
-});
-
-test("a world port Sticker the node adds comes with the Keyframes of the Camera that moved", () => {
-  const node = stickersNode(["sticker", "sticker_state"], { sticker: "IMAGE" });
-  const keyframes = { position: [{ frame: 0, value: [0, 0, -2] }, { frame: 6, value: [1, 0, -2] }], rotation: [], scale: [] };
-  const pose = { placement: "world", position: [0, 0, -2], rotation: { yaw_deg: 0, pitch_deg: 0, roll_deg: 0 }, scale: 4, keyframes };
-
-  const [port] = portStickers(reconcilePortStickerState(v2EditorState({}), portStickerSyncValue(node, { pose })).state);
-
-  assert.deepEqual(port.position.keyframes.map((key) => [key.frame, key.value]), [[0, [0, 0, -2]], [6, [1, 0, -2]]]);
 });
 
 // docs/editor-interaction.md: MOGE_GEOMETRY and DA3_GEOMETRY on `sticker` are 3D media, a world port Sticker the

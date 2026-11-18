@@ -112,7 +112,7 @@ def _render_frames(built: PanoSceneValue, bg, capture, device, size: tuple[int, 
         comfy.model_management.throw_exception_if_processing_interrupted()
         drawn = []
         for index, (layer, (port_frames, others, content, animated), (frame, port_index, scene_index)) in enumerate(zip(built.layers, opened, entries)):
-            evaluated = evaluate_scene_state(layer.state, frame)
+            evaluated = evaluate_scene_state(layer.state, frame, layer.length, layer.boxes, layer.shot)
             stored_fps = layer.state["timeline"]["fps"]
             if animated:
                 items = {item["id"]: item for item in layer.state["stickers"]}

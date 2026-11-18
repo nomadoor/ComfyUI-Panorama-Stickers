@@ -7,22 +7,24 @@ import { ICON } from "../icons.js";
 import { CAMERA_ASPECT_MAX, CAMERA_ASPECT_MIN, WORLD_MIN_SCALE, skyStickerVfov, stickerVfovFromAspect } from "../pano_editor_state.js";
 import { NEW_STICKER_HFOV } from "../pano_space.js";
 import { LENS_CURVE_DIGITS, LENS_CURVE_MAX, LENS_CURVE_MIN, lensFovLimit } from "../pano_lens.js";
-import { FRAME_EPSILON, clipFrame, evaluateCamera, evaluateLane, evaluateSticker } from "../pano_scene_eval.js";
+import { FRAME_EPSILON, clipFrame, clipOrigin, evaluateCamera, evaluateLane, evaluateSticker, laneView, ownerPeriod, segmentLength, segmentProgress, smoothEasing } from "../pano_scene_eval.js";
 import {
   ANIMATION_DEFAULT,
   ANIMATION_SPEED_MAX,
   ANIMATION_SPEED_MIN,
   CAMERA_LANES,
   DEFAULT_EASING,
+  PORT_OFFSET_LANES,
   SCENE_LANES,
   rebaseSceneState,
   stickerLanes,
 } from "../pano_scene_state.js";
-import { EASING_PRESETS, rowLaneNames, selectedEasing } from "../pano_timeline.js";
+import { EASING_PRESETS, easingSegments, rowLaneNames } from "../pano_timeline.js";
 import { UPSTREAM_INHERITED_TIP, isUpstreamSticker, upstreamOverrideOf, upstreamStickerInherited } from "../pano_upstream.js";
 import { animationClipIndex } from "../pano_animation.js";
-import { HANDOFF_LANES } from "../pano_port_handoff.js";
-import { findSticker, keyframeOwner } from "./row_object.js";
+import { PORT_ZOOM_MIN, handedOff } from "./port_offset.js";
+import { lookTargetName, shownLookTarget } from "./look_at.js";
+import { findSticker, keyframeOwner, ownerLength } from "./row_object.js";
 import { defaultCamera, groundOf } from "./defaults.js";
 import { objectLabel, upstreamFromLabel } from "./timeline_model.js";
 
@@ -37,14 +39,17 @@ export function easingGraphSide({ width, height, chrome }) {
 
 // The Easing presets of the panel in their order (docs/studio-ui.md "Easing のパネル"); the values are
 // pano_timeline.js EASING_PRESETS'.
-// Each shows its icon only, its name in the tooltip.
+// Each shows its icon only, its name in the tooltip (Smooth says what it does too).
 const PANEL_PRESETS = [
+  ["Smooth", ICON.ease_smooth, "Smooth · passes through Keyframes"],
   ["Hold", ICON.ease_hold],
   ["Linear", ICON.ease_linear],
   ["Ease in-out", ICON.ease_in_out],
   ["Ease in", ICON.ease_in],
   ["Ease out", ICON.ease_out],
-].map(([label, icon]) => ({ ...EASING_PRESETS.find((preset) => preset.label === label), icon }));
+].map(([label, icon, tip = label]) => ({ ...EASING_PRESETS.find((preset) => preset.label === label), icon, tip }));
+// The points a range of Smooth segments is drawn with, per segment.
+const RANGE_STEPS = 24;
 
 const BEZIER_NUMBER = /^[+-]?(\d+\.?\d*|\.\d+)$/;
 
@@ -78,7 +83,8 @@ function near(a, b) {
 
 // The default value of each Lane of an owner, as the loader reads a missing one.
 function laneDefault(owner, name) {
-  const list = owner.placement ? stickerLanes(owner) : owner.clip ? SCENE_LANES : CAMERA_LANES;
+  const sticker = owner.placement ? [...stickerLanes(owner), ...(owner.source?.kind === "port" ? PORT_OFFSET_LANES : [])] : null;
+  const list = sticker ?? (owner.clip ? SCENE_LANES : CAMERA_LANES);
   const valueOf = list.find(([lane]) => lane === name)?.[1];
   return valueOf ? valueOf(undefined) : undefined;
 }
@@ -111,8 +117,10 @@ function inheritedSticker(upstream, sticker, fps) {
 // reset returns them. A row not here has no Lane, and no dot.
 export const ROW_LANES = Object.freeze({
   sky: { rotation: ["direction", "roll"], fov: ["size"], opacity: ["opacity"] },
+  // The port Sticker a sticker_state places (docs/studio-ui.md "種類ごとの中身"): its offset from the Camera that shot it.
+  port: { offset: ["offset_rotation"], zoom: ["offset_fov"], opacity: ["opacity"] },
   world: { position: ["position"], rotation: ["rotation"], scale: ["scale"], opacity: ["opacity"] },
-  camera: { hfov: ["fov"], lens: ["curve"], position: ["position"], rotation: ["rotation"] },
+  camera: { hfov: ["fov"], lens: ["curve"], position: ["position"], rotation: ["rotation"], look_at: ["look_at"] },
 });
 
 const AXES = ["X", "Y", "Z"];
@@ -156,8 +164,8 @@ function opacityRow(percent) {
 }
 
 // The rows of a sky Sticker at the playhead.
-function skyRows(sticker, playhead, portSize) {
-  const value = evaluateSticker(sticker, playhead);
+function skyRows(sticker, playhead, portSize, length = null) {
+  const value = evaluateSticker(sticker, playhead, length);
   const limit = lensFovLimit(value.curve);
   const port = sticker.source.kind === "port";
   const vfov = skyStickerVfov(sticker, value, portSize);
@@ -179,9 +187,39 @@ function skyRows(sticker, playhead, portSize) {
   ];
 }
 
+// The rows of the port Sticker a sticker_state places, at the playhead (docs/studio-ui.md "種類ごとの中身"): its offset
+// from the Camera that shot it (Offset: Y, P, R in degrees; Zoom: the factor on that Camera's angle of view) and its
+// opacity. No Rotation and FOV rows: the Camera that shot it places it.
+function handoffRows(sticker, playhead, length = null) {
+  const frame = clipFrame(sticker.clip, playhead);
+  const period = ownerPeriod(sticker, length);
+  const offset = evaluateLane(sticker, "offset_rotation", frame, period);
+  return [
+    {
+      id: "offset",
+      name: "Offset",
+      layout: "multi",
+      control: "fields",
+      lanes: ROW_LANES.port.offset,
+      fields: rotationFields(offset).map((field) => ({ ...field, field: `offset_${field.field}` })),
+    },
+    {
+      id: "zoom",
+      name: "Zoom",
+      layout: "multi",
+      control: "fields",
+      lanes: ROW_LANES.port.zoom,
+      // Shown in percent (100% is the angle of view it was shot at); the state keeps the factor.
+      fields: [{ field: "offset_fov", value: evaluateLane(sticker, "offset_fov", frame, period) * 100, unit: "%", step: 1, precision: 0, min: PORT_ZOOM_MIN * 100 }],
+    },
+    opacityRow(evaluateLane(sticker, "opacity", frame, period) * 100),
+  ];
+}
+
+
 // The rows of a world Sticker at the playhead, with its Animation rows when its file has clips (`clips`).
-function worldRows(sticker, playhead, clips) {
-  const value = evaluateSticker(sticker, playhead);
+function worldRows(sticker, playhead, clips, length = null) {
+  const value = evaluateSticker(sticker, playhead, length);
   const rows = [
     { id: "position", name: "Position", layout: "multi", control: "fields", lanes: ROW_LANES.world.position, fields: positionFields(value.position) },
     { id: "rotation", name: "Rotation", layout: "multi", control: "fields", lanes: ROW_LANES.world.rotation, fields: rotationFields(value) },
@@ -232,8 +270,20 @@ const PANORAMA_ONLY_TIP = "Used in Panorama mode";
 
 // The Camera card's rows (docs/studio-ui.md "Camera のカード"): the same rows in both modes, the ones the mode does
 // not use grayed.
-function cameraRows(camera, playhead) {
-  const value = evaluateCamera(camera, playhead);
+// The Look at row's tooltips (docs/studio-ui.md "Look at").
+export const LOOK_AT_TIPS = Object.freeze({
+  pick: "Pick a spot to look at",
+  offsetNone: "Offset · No target",
+  offsetPoint: "Offset · Looking at a point",
+  rotation: "Yaw and Pitch · Set by Look at",
+});
+
+function cameraRows(state, playhead, { length = null, boxes = null, lookPicking = false } = {}) {
+  const { camera } = state;
+  const value = evaluateCamera(camera, playhead, length, { stickers: state.stickers, boxes });
+  const target = lookTargetName(state, playhead, length);
+  // While the Camera looks at a target, its Yaw and Pitch are the target's (shown, not edited); Roll stays.
+  const rotation = rotationFields(value).map((field) => (target && field.field !== "roll_deg" ? { ...field, disabled: true, tip: LOOK_AT_TIPS.rotation } : field));
   const erp = camera.projection === "erp";
   const frameOnly = erp ? { disabled: true, tip: FRAME_ONLY_TIP } : {};
   return [
@@ -284,15 +334,51 @@ function cameraRows(camera, playhead) {
       ...(erp ? frameOnly : { tip: "0 is a fisheye. Keeps the center's size; the H FOV follows." }),
     },
     { id: "position", name: "Position", layout: "multi", control: "fields", lanes: ROW_LANES.camera.position, fields: positionFields(value.position) },
-    { id: "rotation", name: "Rotation", layout: "multi", control: "fields", lanes: ROW_LANES.camera.rotation, fields: rotationFields(value) },
+    { id: "rotation", name: "Rotation", layout: "multi", control: "fields", lanes: ROW_LANES.camera.rotation, fields: rotation },
+    // Look at (docs/studio-ui.md "Look at"): the target's name (None), Pick, the Keyframe dot of the look_at Lane (it keys
+    // the target shown, its offset in it) and the reset, which takes the target off.
+    {
+      id: "look_at",
+      name: "Look at",
+      layout: "wide",
+      control: "look",
+      lanes: ROW_LANES.camera.look_at,
+      // Its reset takes the target off (docs/studio-ui.md "Look at"): at its default without a target shown.
+      atDefault: !target,
+      look: { target, picking: lookPicking, pickTip: LOOK_AT_TIPS.pick },
+    },
+    lookOffsetRow(camera, playhead, length),
   ];
+}
+
+// The Look at's Offset row (docs/studio-ui.md "Look at"): the shown target's offset from the center of its content box,
+// a share of the box's size on each axis; it is always there, off without a target or with a point. No Keyframe dot.
+function lookOffsetRow(camera, playhead, length) {
+  const { target } = shownLookTarget(camera, playhead, length);
+  const offset = target?.sticker ? target.offset : [0, 0, 0];
+  let why = "";
+  if (!target) why = LOOK_AT_TIPS.offsetNone;
+  else if (!target.sticker) why = LOOK_AT_TIPS.offsetPoint;
+  return {
+    id: "look_offset",
+    name: "Offset",
+    // Shown as the Look at row's own: indented under it (docs/design.md "インスペクタ").
+    sub: true,
+    layout: "multi",
+    control: "fields",
+    lanes: [],
+    atDefault: offset.every((value) => value === 0),
+    disabled: !!why,
+    tip: why,
+    fields: ["X", "Y", "Z"].map((axis, index) => ({ field: `look_offset_${axis.toLowerCase()}`, axis, value: offset[index], step: 0.01, precision: 2 })),
+  };
 }
 
 // Whether a row's Lanes hold the value its reset returns to: the upstream value `base` (an owner) for an upstream
 // element, else each Lane's default, compared where the owner is at the playhead.
-function laneRowAtDefault(owner, names, frame, base) {
+function laneRowAtDefault(owner, names, frame, base, period = null) {
   if (base) return names.every((name) => sameJson(owner[name], base[name]));
-  return names.every((name) => near(evaluateLane(owner, name, frame), laneDefault(owner, name)));
+  return names.every((name) => near(evaluateLane(owner, name, frame, period), laneDefault(owner, name)));
 }
 
 // The size a sky image's FOV reset returns to (docs/studio-ui.md "種類ごとの中身"): the size it was placed at, H
@@ -309,29 +395,19 @@ export function skyPlacedSize(size, imageSize) {
 
 // A port sky Sticker's size reset returns its hFOV only; its vFOV follows its media. Another sky image's returns the
 // size it was placed at.
-function skyFovAtDefault(sticker, frame, imageSize) {
-  const size = evaluateLane(sticker, "size", frame);
+function skyFovAtDefault(sticker, frame, imageSize, period = null) {
+  const size = evaluateLane(sticker, "size", frame, period);
   if (sticker.source.kind === "port") return near(size.hFOV_deg, laneDefault(sticker, "size").hFOV_deg);
   return near(size, skyPlacedSize(size, imageSize));
 }
 
-// The Lanes a Pose handoff gives the port Sticker `sticker` (`handoff`, pano_port_handoff.js portHandoff), when it is of
-// the Sticker's placement, else null: a row of only those Lanes is where its reset returns it while none of them is an
-// override (docs/studio-ui.md "リセットと Keyframe のポチ").
-function handedLanes(sticker, handoff) {
-  return sticker.source?.kind === "port" && handoff && handoff.placement === sticker.placement ? HANDOFF_LANES[handoff.placement] : null;
-}
-
-function finishRows(rows, owner, { frame, disabled, disabledTip, base, override, keyable = true, imageSize = null, handed = null }) {
+function finishRows(rows, owner, { frame, disabled, disabledTip, base, override, keyable = true, imageSize = null, period = null }) {
   return rows.map((row) => {
     const lanes = row.lanes ?? [];
     const off = disabled || !!row.disabled;
     let atDefault = row.atDefault;
-    if (atDefault === undefined && lanes.length && handed && lanes.every((name) => handed.includes(name))) {
-      atDefault = !lanes.some((name) => (owner.handoff_overrides ?? []).includes(name));
-    }
     if (atDefault === undefined && lanes.length) {
-      atDefault = owner.placement === "sky" && row.id === "fov" && !base ? skyFovAtDefault(owner, frame, imageSize) : laneRowAtDefault(owner, lanes, frame, base);
+      atDefault = owner.placement === "sky" && row.id === "fov" && !base ? skyFovAtDefault(owner, frame, imageSize, period) : laneRowAtDefault(owner, lanes, frame, base, period);
     }
     const fields = (row.fields ?? []).map((field) => ({ unit: "", step: 0.01, precision: 2, min: -Infinity, max: Infinity, ...field, disabled: off || !!field.disabled }));
     return {
@@ -350,12 +426,16 @@ function finishRows(rows, owner, { frame, disabled, disabledTip, base, override,
   });
 }
 
-function stickerCard(state, sticker, { playhead, readOnly, upstream, animations, portSize, imageSizes, handoff = null }) {
+function stickerCard(state, sticker, { playhead, readOnly, upstream, animations, portSize, imageSizes, handoff = null, length = null }) {
   const frame = ownerFrame(sticker, playhead);
   const isWorld = sticker.placement === "world";
   const fromUpstream = isUpstreamSticker(sticker);
   const editable = !upstreamStickerInherited(sticker);
-  const rows = isWorld ? worldRows(sticker, playhead, animations[sticker.id]) : skyRows(sticker, playhead, portSize);
+  const own = ownerLength(upstream, sticker, length);
+  const handed = handedOff(sticker, handoff);
+  let rows;
+  if (handed) rows = handoffRows(sticker, playhead, own);
+  else rows = isWorld ? worldRows(sticker, playhead, animations[sticker.id], own) : skyRows(sticker, playhead, portSize, own);
   let disabledTip = "";
   if (readOnly) disabledTip = "Read-only";
   else if (!editable) disabledTip = UPSTREAM_INHERITED_TIP;
@@ -378,7 +458,7 @@ function stickerCard(state, sticker, { playhead, readOnly, upstream, animations,
         base: fromUpstream ? inheritedSticker(upstream, sticker, state.timeline.fps) : null,
         override: override && override.placement === sticker.placement ? override : null,
         imageSize: imageSizes[sticker.id] ?? null,
-        handed: handedLanes(sticker, handoff),
+        period: ownerPeriod(sticker, own),
       },
     ),
   };
@@ -387,8 +467,8 @@ function stickerCard(state, sticker, { playhead, readOnly, upstream, animations,
 // The ids of the rows of the Sticker `sticker`'s card that are away from where their reset returns them (resettable,
 // not `atDefault`): what the bar's Back to source of an input's object puts back, and whether it is lit
 // (docs/studio-ui.md "下の中央のバー"). `options` as the card's: { playhead, upstream, animations, portSize, imageSizes,
-// handoff (the port Sticker's Pose handoff shown, the one the inspector's reset and the bar's press get) }.
-export function stickerChangedRows(state, sticker, { playhead, upstream, animations, portSize, imageSizes, handoff } = {}) {
+// handoff (the sticker_state that places the port Sticker, the one the inspector's reset and the bar's press get) }.
+export function stickerChangedRows(state, sticker, { playhead, upstream, animations, portSize, imageSizes, handoff, length = null } = {}) {
   const card = stickerCard(state, sticker, {
     playhead: playhead ?? 0,
     readOnly: false,
@@ -397,11 +477,18 @@ export function stickerChangedRows(state, sticker, { playhead, upstream, animati
     portSize: portSize ?? null,
     imageSizes: imageSizes ?? {},
     handoff: handoff ?? null,
+    length,
   });
+  // A returned shot's Back to source takes its offset back to the defaults, Keyframes too (docs/editor-interaction.md):
+  // the offset rows count while their Lanes are not just the default value.
+  if (handedOff(sticker, handoff)) {
+    const pristine = (name) => !sticker[name].keyframes.length && near(sticker[name].value, laneDefault(sticker, name));
+    return ["offset", "zoom"].filter((id) => !ROW_LANES.port[id].every(pristine));
+  }
   return card.rows.filter((row) => row.resettable && !row.atDefault).map((row) => row.id);
 }
 
-function cameraCard(state, { playhead, readOnly }) {
+function cameraCard(state, { playhead, readOnly, length = null, boxes = null, lookPicking = false }) {
   const { camera } = state;
   const locked = camera.locked === true;
   return {
@@ -410,10 +497,11 @@ function cameraCard(state, { playhead, readOnly }) {
     icon: ICON.camera,
     note: "",
     target: { kind: "camera", id: "camera" },
-    rows: finishRows(cameraRows(camera, playhead), camera, {
+    rows: finishRows(cameraRows(state, playhead, { length, boxes, lookPicking }), camera, {
       frame: playhead,
       disabled: readOnly || locked,
       disabledTip: readOnly ? "Read-only" : "Locked",
+      period: ownerPeriod(camera, length),
     }),
   };
 }
@@ -453,38 +541,118 @@ function headingCard(kind, title, icon) {
   return { kind, title, icon, note: "", target: null, rows: [] };
 }
 
-// The Easing panel of a Keyframe selection (`keyframes`: { owner, lane, frames } with frames in the owner's own
-// time base), or null without one. `segment` is false when the selection has no segment (the last Keyframe alone).
-function easingModel(state, upstream, keyframes) {
-  if (!keyframes?.frames?.length) return null;
-  const owner = keyframeOwner(state, upstream, keyframes.owner);
-  if (!owner) return null;
-  const names = keyframes.lane ? [keyframes.lane] : rowLaneNames(owner);
-  const selected = selectedEasing(owner, names, keyframes.frames);
-  const easing = selected?.easing ?? null;
-  const mixed = !!selected?.mixed;
+// The progress over a range of Smooth segments of one Lane (docs/studio-ui.md "Easing のパネル"): points [x, y] with x
+// the time across the range and y the share of the length along the shape gone, both 0..1, and the x of the Keyframes
+// inside the range.
+function rangeCurve(owner, name, indices, period, scene = null) {
+  const view = laneView(owner[name].keyframes, period);
+  const start = view.at(indices[0]).frame;
+  const span = view.at(indices[indices.length - 1] + 1).frame - start;
+  const lengths = indices.map((index) => segmentLength(owner, name, index, period, scene));
+  const total = lengths.reduce((sum, value) => sum + value, 0);
+  const points = [[0, 0]];
+  let gone = 0;
+  indices.forEach((index, i) => {
+    const from = view.at(index).frame;
+    const to = view.at(index + 1).frame;
+    for (let step = 1; step <= RANGE_STEPS; step += 1) {
+      const u = step / RANGE_STEPS;
+      const share = total > 1e-12 ? (gone + lengths[i] * segmentProgress(owner, name, index, u, period, scene)) / total : (from - start + (to - from) * u) / span;
+      points.push([(from - start + (to - from) * u) / span, share]);
+    }
+    gone += lengths[i];
+  });
+  return { points, keys: indices.slice(1).map((index) => (view.at(index).frame - start) / span) };
+}
+
+// The Easing panel of a Keyframe selection (`groups`: [{ owner, lane, frames }] with frames in each owner's own time
+// base), or null without one; `length` is the output length (the loop period). It reads every group, as its edit
+// reaches them all (docs/timeline-ui.md "Easing"). `segment` is false when no group has a segment (only Lanes' last
+// Keyframes). `range` is the Timeline frames the edit sets, `curve` the cubic-bezier the graph draws with its control
+// points (a Smooth segment's current one), `progress` the curve of a range of Smooth segments, which only shows (the
+// first group's first Lane with a segment).
+// The groups of an owner whose Easing cannot change (locked, an upstream object of a layer that keeps no overrides) do
+// not count among others (docs/studio-ui.md "Easing のパネル"); selected alone, they show, `disabled` with `tip` the
+// reason, as does every selection in a read-only editor.
+function easingModel(state, upstream, groups, length, boxes = null, readOnly = false) {
+  const found = (groups ?? []).filter((keyframes) => keyframes?.frames?.length && keyframeOwner(state, upstream, keyframes.owner));
+  if (!found.length) return null;
+  const blockedOf = (keyframes) => {
+    const owner = keyframeOwner(state, upstream, keyframes.owner);
+    if (upstreamStickerInherited(owner)) return UPSTREAM_INHERITED_TIP;
+    return owner.locked === true ? "Locked" : "";
+  };
+  const editable = found.filter((keyframes) => !blockedOf(keyframes));
+  const kept = editable.length ? editable : found;
+  const tip = readOnly ? "Read-only" : editable.length ? "" : blockedOf(found[0]);
+  const segments = kept.flatMap((keyframes) => {
+    const owner = keyframeOwner(state, upstream, keyframes.owner);
+    const ownLength = ownerLength(upstream, owner, length);
+    // The Camera's Look at Lane moves by the turns toward its targets: the panel reads them with the state's Stickers.
+    const scene = { stickers: state.stickers, boxes, length: ownLength };
+    const names = keyframes.lane ? [keyframes.lane] : rowLaneNames(owner);
+    const period = ownerPeriod(owner, ownLength);
+    const origin = owner.clip ? clipOrigin(owner.clip) : 0;
+    return easingSegments(owner, names, keyframes.frames, ownLength).map(({ name, index }) => {
+      const view = laneView(owner[name].keyframes, period);
+      return { owner, name, index, period, scene, span: [view.at(index).frame + origin, view.at(index + 1).frame + origin] };
+    });
+  });
+  const spans = segments.map((item) => item.span);
+  const count = new Set(spans.map((item) => item.join(":"))).size;
+  const easings = segments.map(({ owner, name, index }) => owner[name].keyframes[index].easing);
+  const mixed = easings.some((item) => !sameJson(item, easings[0]));
+  const easing = segments.length && !mixed ? easings[0] : null;
+  let curve = null;
+  let progress = null;
+  if (Array.isArray(easing)) curve = easing;
+  else if (easing === DEFAULT_EASING && count === 1) {
+    const { owner, name, index, period, scene } = segments[0];
+    curve = smoothEasing(owner, name, index, period, scene);
+  } else if (easing === DEFAULT_EASING) {
+    const { owner, name, period, scene } = segments[0];
+    // Two groups can reach the same segments (a closed row's pin and an open Lane's Keyframes): each once, in time order.
+    const indices = [...new Set(segments.filter((item) => item.owner === owner && item.name === name).map((item) => item.index))].sort((a, b) => a - b);
+    progress = rangeCurve(owner, name, indices, period, scene);
+  }
+  const start = spans.length ? Math.min(...spans.map((item) => item[0])) : null;
+  const end = spans.length ? Math.max(...spans.map((item) => item[1])) : null;
+  let placeholder = "";
+  if (!segments.length) placeholder = "No segment after the last Keyframe";
+  else if (mixed) placeholder = "Mixed";
+  else if (easing === DEFAULT_EASING) placeholder = "Smooth";
+  else if (easing === "hold") placeholder = "Hold";
   return {
     // The selection the panel's edits send back (inspector_actions.js "easing").
-    keyframes: { owner: keyframes.owner, lane: keyframes.lane ?? null, frames: [...keyframes.frames] },
-    names,
-    segment: !!selected,
+    keyframes: kept.map((keyframes) => ({ owner: keyframes.owner, lane: keyframes.lane ?? null, frames: [...keyframes.frames] })),
+    disabled: !!tip,
+    tip,
+    segment: segments.length > 0,
+    range: segments.length ? `f ${formatFrame(start)} → ${formatFrame(end)}${count > 1 ? ` · ${count} segments` : ""}` : "",
     easing,
     mixed,
+    curve,
+    progress,
     text: Array.isArray(easing) ? formatBezier(easing) : "",
-    atDefault: !!selected && !mixed && sameJson(easing, DEFAULT_EASING),
-    presets: PANEL_PRESETS.map((preset) => ({ label: preset.label, icon: preset.icon, easing: preset.easing, active: !mixed && sameJson(preset.easing, easing) })),
+    placeholder,
+    presets: PANEL_PRESETS.map((preset) => ({ label: preset.label, icon: preset.icon, tip: preset.tip, easing: preset.easing, active: !mixed && segments.length > 0 && sameJson(preset.easing, easing) })),
   };
+}
+
+// A Timeline frame as the panel prints it: whole, or to two decimals when the material's start is not whole.
+function formatFrame(frame) {
+  return String(Math.round(frame * 100) / 100);
 }
 
 // The Camera's card (docs/studio-ui.md "Camera のカード") for the working `state` at the Timeline frame `playhead`: the
 // inspector's when the Camera is selected or nothing is, and the Camera tab's edge rulers' (frame_layout.js
 // cameraRulers).
-export function buildCameraCard({ state, playhead = 0, readOnly = false }) {
-  return cameraCard(state, { playhead, readOnly });
+export function buildCameraCard({ state, playhead = 0, readOnly = false, length = null, boxes = null, lookPicking = false }) {
+  return cameraCard(state, { playhead, readOnly, length, boxes, lookPicking });
 }
 
 // The inspector for the working `state` (state v2), the editor's `selection` ({ ids: [...], paint?: true,
-// keyframes?: { owner, lane, frames } }; ids are "camera" or Sticker ids, an upstream element's working id
+// keyframes?: [{ owner, lane, frames }] }; ids are "camera" or Sticker ids, an upstream element's working id
 // `upstream:<key>:<id>`) and the Timeline frame `playhead`. What it shows follows the selection (docs/studio-ui.md
 // "インスペクタ", ADR 0051): nothing selected shows the Scene card, the Camera's card over the Ground's. In the Camera
 // tab (`tab` "camera") the Camera's card is always on top, the selected object's under it. `upstream` is the
@@ -493,8 +661,8 @@ export function buildCameraCard({ state, playhead = 0, readOnly = false }) {
 // ([{ name }]), `portSize` the size of the port Sticker's media ({ width, height }), `imageSizes` the sizes of the
 // Stickers' images by Sticker id ({ width, height } px, once loaded).
 // Returns { cards: [{ kind, title, icon, note, target, rows }], easing }.
-export function buildInspectorModel({ state, selection = {}, tab = "3d", playhead = 0, readOnly = false, upstream = [], animations = {}, portSize = null, imageSizes = {}, handoff = null }) {
-  const options = { playhead, readOnly, upstream, animations, portSize, imageSizes, tab, handoff };
+export function buildInspectorModel({ state, selection = {}, tab = "3d", playhead = 0, readOnly = false, upstream = [], animations = {}, portSize = null, imageSizes = {}, handoff = null, length = null, boxes = null, lookPicking = false }) {
+  const options = { playhead, readOnly, upstream, animations, portSize, imageSizes, tab, handoff, length, boxes, lookPicking };
   const ids = selection.ids ?? [];
   const scene = () => [cameraCard(state, options), sceneCard(state, options)];
   let cards;
@@ -509,5 +677,5 @@ export function buildInspectorModel({ state, selection = {}, tab = "3d", playhea
   else cards = scene();
   // The Camera tab: the Camera's card always on top, the selected object's under it (owner, 2026-10-31).
   if (tab === "camera" && cards[0].kind !== "camera") cards = [cameraCard(state, options), ...cards];
-  return { cards, easing: easingModel(state, upstream, selection.keyframes) };
+  return { cards, easing: easingModel(state, upstream, selection.keyframes, length, boxes, readOnly) };
 }

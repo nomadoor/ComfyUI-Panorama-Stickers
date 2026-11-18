@@ -34,12 +34,21 @@ async function erpUrl() {
 
 async function boxUrl() {
   const scene = new Scene();
-  scene.add(new Mesh(new BoxGeometry(1, 1, 1), new MeshStandardMaterial({ color: 0x40c040 })));
+  // ?look: the box stands on its origin (its center 0.5 up), so where the Camera looks tells its box from its origin.
+  const geometry = new BoxGeometry(1, 1, 1);
+  if (LOOK != null) geometry.translate(0, 0.5, 0);
+  scene.add(new Mesh(geometry, new MeshStandardMaterial({ color: 0x40c040 })));
   const glb = await new GLTFExporter().parseAsync(scene, { binary: true });
   return URL.createObjectURL(new Blob([glb], { type: "model/gltf-binary" }));
 }
 
 const AUTO = new URLSearchParams(location.search).has("auto");
+// ?look: the Camera looks at the 3D box (sticker_2); ?look=hidden: the box opens hidden.
+const LOOK = new URLSearchParams(location.search).get("look");
+// ?slow3d=<ms>: the 3D file route answers that late. ?nodebox: the node surface has answered for box.glb before
+// (openStudioEditor's nodeFile3dBox), so its loading guide shows before the editor's own answer.
+const SLOW_3D = Number(new URLSearchParams(location.search).get("slow3d")) || 0;
+const NODE_BOX = new URLSearchParams(location.search).has("nodebox");
 const studio = (window.__studio = { ready: false, error: null, writes: 0, routeAsks: 0 });
 const storage = new Map();
 const memoryStorage = { getItem: (key) => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, String(value)) };
@@ -56,9 +65,10 @@ try {
     // ?auto: no length; the background image's Clip range (48 frames) sets the Auto length.
     timeline: AUTO ? { fps: 24 } : { fps: 24, length: 48 },
     ...(AUTO ? { background: { clip: { start: 0, in: 0, duration: 48 } } } : {}),
+    ...(LOOK != null ? { camera: { look_at: { value: { sticker: "sticker_2", offset: [0, 0, 0] }, keyframes: [] } } } : {}),
     stickers: [
       { id: "sticker_1", placement: "sky", source: servedImage("red.png", red), direction: { value: { yaw_deg: 0, pitch_deg: 0 } }, size: { value: { hFOV_deg: 40, vFOV_deg: 20 } }, z_index: 1 },
-      { id: "sticker_2", placement: "world", source: { kind: "file", filename: "box.glb", subfolder: "", storage: "input" }, position: { value: [2.5, -1, -4] }, scale: { value: 1 } },
+      { id: "sticker_2", placement: "world", source: { kind: "file", filename: "box.glb", subfolder: "", storage: "input" }, position: { value: [2.5, -1, -4] }, scale: { value: 1 }, ...(LOOK === "hidden" ? { visible: false } : {}) },
     ],
   };
   const origin = { id: 7, title: "Load Image" };
@@ -82,12 +92,14 @@ try {
     apiURL: viewApiURL,
     fetchApi: async () => {
       studio.routeAsks += 1;
+      if (SLOW_3D) await new Promise((resolve) => setTimeout(resolve, SLOW_3D));
       return { status: 200, json: async () => ({ kind: "mesh", unlit: false, file: { url: box }, box: { min: [-0.5, -0.5, -0.5], max: [0.5, 0.5, 0.5] } }) };
     },
   };
   let editor = null;
   studio.open = async () => {
-    editor = await openStudioEditor(node, { app, api, storage: memoryStorage });
+    const nodeFile3dBox = NODE_BOX ? (source) => (source?.filename === "box.glb" ? { min: [-0.5, -0.5, -0.5], max: [0.5, 0.5, 0.5] } : null) : null;
+    editor = await openStudioEditor(node, { app, api, storage: memoryStorage, nodeFile3dBox });
   };
   studio.close = () => editor?.close();
   // The browser's storage the editor keeps its settings in (the loop switch, the Length unit).
@@ -95,6 +107,7 @@ try {
   studio.text = () => widget.value;
   studio.state = () => JSON.parse(JSON.stringify(editor.session.state));
   studio.selection = () => JSON.parse(JSON.stringify(editor.session.selection));
+  studio.pose = () => JSON.parse(JSON.stringify(editor?.stage()?.pose() ?? null));
   // The stage's pixels at the middle of its canvas: [r, g, b].
   studio.middle = () => {
     const canvas = document.querySelector("[data-stage-canvas]");

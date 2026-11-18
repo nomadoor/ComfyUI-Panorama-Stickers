@@ -8,6 +8,7 @@ import { normalizePaintingState } from "./pano_paint_types.js";
 
 const STATE_VERSION = 2;
 const STICKER_STATE_KIND = "pano_sticker_state";
+const STICKER_STATE_VERSION = 3;
 const PLACEMENTS = ["sky", "world"];
 // How the Camera shoots; the first is the default of a stored Camera that does not say.
 const PROJECTIONS = ["perspective", "erp"];
@@ -30,8 +31,10 @@ const DEFAULT_CAMERA = Object.freeze({
 // The ground height (World y) a state without its own `ground` reads as, when no upstream layer has one (ADR 0046).
 export const GROUND_DEFAULT = -1.6;
 const FILE_STORAGES = ["input", "output", "temp"];
-// ease-in-out, the Easing of a Keyframe without a valid one.
-export const DEFAULT_EASING = [0.42, 0, 0.58, 1];
+// Smooth, the Easing of a Keyframe without a valid one (ADR 0064), which the text leaves out.
+export const DEFAULT_EASING = "smooth";
+// ease-in-out, a preset, and the Easing a `sticker_state` v2 Keyframe without one reads as.
+export const EASE_IN_OUT = Object.freeze([0.42, 0, 0.58, 1]);
 // The range of `timeline.fps` and the largest `timeline.length` (Timeline frames) a state keeps.
 export const TIMELINE_FPS_MIN = 1;
 export const TIMELINE_FPS_MAX = 1000;
@@ -153,11 +156,31 @@ function opacityValue(raw) {
   return clamp(number(raw, 1), 0, 1);
 }
 
+// The Camera's Look at target (docs/scene-state-v2.md "向く相手の値", ADR 0065): a World Sticker and a point on it
+// ({ sticker, offset }: the offset a share of its content box), a World point ({ point }), or none (null).
+export function lookAtValue(raw) {
+  if (!isObject(raw)) return null;
+  if (typeof raw.sticker === "string" && raw.sticker) return { sticker: raw.sticker, offset: vec3(raw.offset) ?? [0, 0, 0] };
+  if (Object.hasOwn(raw, "point")) {
+    const point = vec3(raw.point);
+    return point ? { point } : null;
+  }
+  return null;
+}
+
+// Whether a Look at Lane has a target anywhere: its value or a Keyframe.
+export function lookAtOn(lane) {
+  return !!lane && (lane.value !== null || lane.keyframes.length > 0);
+}
+
 // The Lanes of each owner, in the order they are stored.
-export const CAMERA_LANES = [["position", positionValue], ["rotation", rotationValue], ["fov", fovValue], ["curve", curveValue]];
+export const CAMERA_LANES = [["position", positionValue], ["rotation", rotationValue], ["fov", fovValue], ["curve", curveValue], ["look_at", lookAtValue]];
 export const SCENE_LANES = [["position", positionValue], ["rotation", rotationValue], ["scale", scaleValue]];
 export const SKY_STICKER_LANES = [["direction", directionValue], ["roll", rollValue], ["size", sizeValue], ["opacity", opacityValue], ["curve", curveValue]];
 export const WORLD_STICKER_LANES = [...SCENE_LANES, ["opacity", opacityValue]];
+// The port Sticker's offset from the Camera that shot what `sticker_state` hands it (docs/scene-state-v2.md "受け渡しの
+// 置き方", ADR 0067): a turn in that Camera's own axes and a factor on its angle of view.
+export const PORT_OFFSET_LANES = [["offset_rotation", rotationValue], ["offset_fov", scaleValue]];
 // A world Sticker's `lens` Lane, which only Pose handoff before ADR 0059 added (read from saved states): a Sticker
 // without it has none (a flat plane).
 const WORLD_LENS_LANE = ["lens", lensValue];
@@ -168,13 +191,16 @@ export function stickerLanes(sticker) {
   return sticker.lens ? [...WORLD_STICKER_LANES, WORLD_LENS_LANE] : WORLD_STICKER_LANES;
 }
 
-function easing(raw) {
-  if (raw === "auto" || raw === "hold") return raw;
+// A Keyframe's Easing: "hold", a cubic-bezier, or Smooth for anything else (missing, "auto" of the earlier
+// version, unreadable). `missing` is what a missing one reads as (a `sticker_state` v2 reads ease-in-out).
+function easing(raw, missing = DEFAULT_EASING) {
+  if (raw === "hold") return raw;
+  if (raw === undefined) return Array.isArray(missing) ? [...missing] : missing;
   if (Array.isArray(raw) && raw.length === 4) {
     const values = raw.map((item) => number(item, null));
     if (values.every((value) => value !== null && value >= 0 && value <= 1)) return values;
   }
-  return [...DEFAULT_EASING];
+  return DEFAULT_EASING;
 }
 
 function handles(raw) {
@@ -187,13 +213,15 @@ function handles(raw) {
   return Object.keys(out).length ? out : null;
 }
 
-function keyframes(raw, valueFn, hasHandles) {
+// A Lane's Keyframes in frame order; only `position` Keyframes (hasHandles) keep a corner mark and Motion path handles.
+function keyframes(raw, valueFn, hasHandles, missingEasing = DEFAULT_EASING) {
   const byFrame = new Map();
   for (const item of Array.isArray(raw) ? raw : []) {
     if (!isObject(item)) continue;
     const frame = eventFrame(item.frame);
     if (frame === null) continue;
-    const key = { frame, value: valueFn(item.value), easing: easing(item.easing) };
+    const key = { frame, value: valueFn(item.value), easing: easing(item.easing, missingEasing) };
+    if (hasHandles && item.corner === true) key.corner = true;
     const keyHandles = hasHandles ? handles(item.handles) : null;
     if (keyHandles) key.handles = keyHandles;
     byFrame.set(frame, key);
@@ -305,6 +333,7 @@ function sticker(raw) {
     clip: clip(raw.clip),
     visible: bool(raw.visible, true),
     locked: bool(raw.locked, false),
+    loop: bool(raw.loop, false),
     crop: crop(raw.crop),
     ...lanes(raw, world ? WORLD_STICKER_LANES : SKY_STICKER_LANES),
   };
@@ -313,14 +342,9 @@ function sticker(raw) {
   const animation = is3dFileSource(src) || src.kind === "port" ? animationValue(raw.animation) : null;
   if (animation) out.animation = animation;
   if (!world) out.z_index = frameNumber(raw.z_index) ?? 0;
-  if (src.kind === "port") out.handoff_overrides = laneNames(raw.handoff_overrides, placement);
+  // The earlier `handoff_overrides` are not read (ADR 0067): the offset Lanes hold the downstream edits.
+  if (src.kind === "port") Object.assign(out, lanes(raw, PORT_OFFSET_LANES));
   return out;
-}
-
-// The names in `raw` of the Lanes a Sticker of `placement` has, once each and in Lane order.
-function laneNames(raw, placement) {
-  const names = Array.isArray(raw) ? raw : [];
-  return (placement === "world" ? WORLD_STICKER_LANES : SKY_STICKER_LANES).map(([name]) => name).filter((name) => names.includes(name));
 }
 
 // The Stickers and the `next_sticker_id` counter after them.
@@ -405,6 +429,7 @@ function camera(raw) {
     erp_range: erpRange(source.erp_range),
     visible: bool(source.visible, true),
     locked: bool(source.locked, false),
+    loop: bool(source.loop, false),
     ...lanes(source, CAMERA_LANES),
   };
 }
@@ -441,16 +466,22 @@ function lastBy(items, key) {
 }
 
 // An upstream Sticker's overridden fields, or null without any. An invalid field is left out (inherited).
+// The Lanes an upstream Sticker's override of `placement` can hold (docs/scene-state-v2.md "上流の上書き"): a sky one's
+// offset Lanes too, which move a port Sticker its layer's sticker_state places.
+export function overrideLanes(placement) {
+  return placement === "world" ? WORLD_STICKER_LANES : [...SKY_STICKER_LANES, ...PORT_OFFSET_LANES];
+}
+
 function stickerOverride(raw) {
   if (!isObject(raw) || text(raw.id) === null || !PLACEMENTS.includes(raw.placement)) return null;
   const world = raw.placement === "world";
   const fields = {};
   if (isObject(raw.clip)) fields.clip = clip(raw.clip);
-  for (const name of ["visible", "locked"]) {
+  for (const name of ["visible", "locked", "loop"]) {
     if (typeof raw[name] === "boolean") fields[name] = raw[name];
   }
   if (isObject(raw.crop)) fields.crop = crop(raw.crop);
-  Object.assign(fields, lanes(raw, (world ? WORLD_STICKER_LANES : SKY_STICKER_LANES).filter(([name]) => isObject(raw[name]))));
+  Object.assign(fields, lanes(raw, overrideLanes(raw.placement).filter(([name]) => isObject(raw[name]))));
   const zIndex = world ? null : frameNumber(raw.z_index);
   if (zIndex !== null) fields.z_index = zIndex;
   return Object.keys(fields).length ? { id: raw.id, placement: raw.placement, ...fields } : null;
@@ -590,13 +621,19 @@ export function loadSceneState(raw) {
 // without them, they would change the text of those states and miss the node's execution cache.
 const TEXT_DEFAULTS = {
   state: { painting_visible: true },
-  camera: { projection: PROJECTIONS[0], erp_range: ERP_RANGES[0], visible: true, locked: false },
+  camera: { projection: PROJECTIONS[0], erp_range: ERP_RANGES[0], visible: true, locked: false, loop: false },
   scene: { visible: true },
 };
 
 // A Lane without Keyframes at its default value, which the text leaves out.
 function defaultLane(lane, value) {
   return !lane.keyframes.length && lane.value === value;
+}
+
+// Whether `key` is a port Sticker's offset Lane with no Keyframe at its default value, which the text leaves out.
+function defaultOffsetLane(key, lane) {
+  const entry = PORT_OFFSET_LANES.find(([name]) => name === key);
+  return Boolean(entry) && !lane.keyframes.length && JSON.stringify(lane.value) === JSON.stringify(entry[1](null));
 }
 
 // Whether a loaded Camera is the default Camera, which the text leaves out (it reads back as it).
@@ -609,6 +646,8 @@ function isDefaultCamera(value) {
 function cameraText(camera) {
   const out = withoutDefaults(camera, TEXT_DEFAULTS.camera);
   if (defaultLane(camera.curve, LENS_CURVE_DEFAULT)) delete out.curve;
+  // No Look at target and no Keyframes (ADR 0065).
+  if (!lookAtOn(camera.look_at)) delete out.look_at;
   return out;
 }
 
@@ -624,8 +663,8 @@ function withoutDefaults(object, defaults) {
 }
 
 // The `state_json` text of a loaded state, without the fields of TEXT_DEFAULTS at their defaults, and
-// without an unset `id`, a `next_sticker_id` its Stickers give anyway, an empty `upstream` and empty
-// `handoff_overrides`: the texts of states saved before these fields stay the same.
+// without an unset `id`, a `next_sticker_id` its Stickers give anyway, an empty `upstream` and a port Sticker's
+// offset Lanes at their defaults: the texts of states saved before these fields stay the same.
 export function sceneStateText(state) {
   const out = withoutDefaults(state, TEXT_DEFAULTS.state);
   if (out.id === null) delete out.id;
@@ -634,15 +673,30 @@ export function sceneStateText(state) {
   if (defaultClip(out.background.clip)) delete out.background;
   // The default Camera is written as null, the text states without a Camera were saved with before it was always
   // there (ADR 0048), so that their texts stay the same; null reads back as the default Camera.
-  out.camera = !state.camera || isDefaultCamera(state.camera) ? null : cameraText(state.camera);
+  out.camera = !state.camera || isDefaultCamera(state.camera) ? null : lanesText(cameraText(state.camera));
+  if (out.upstream) out.upstream = out.upstream.map((record) => ({ ...record, stickers: record.stickers.map(lanesText) }));
   return JSON.stringify({
     ...out,
-    scene: withoutDefaultAnimation(withoutDefaults(state.scene, TEXT_DEFAULTS.scene)),
+    scene: lanesText(withoutDefaultAnimation(withoutDefaults(state.scene, TEXT_DEFAULTS.scene))),
     // A sky Sticker's lens curve at its default is left out (ADR 0042), as the Camera's, and so is a default
-    // animation (ADR 0043).
-    stickers: state.stickers.map((item) => Object.fromEntries(Object.entries(item).filter(([key, value]) => (key !== "handoff_overrides" || value.length)
-      && !(key === "curve" && defaultLane(value, LENS_CURVE_DEFAULT)) && !(key === "animation" && defaultAnimation(value))))),
+    // animation (ADR 0043) and an unset loop (ADR 0064).
+    stickers: state.stickers.map((item) => lanesText(Object.fromEntries(Object.entries(item).filter(([key, value]) => !defaultOffsetLane(key, value)
+      && !(key === "curve" && defaultLane(value, LENS_CURVE_DEFAULT)) && !(key === "animation" && defaultAnimation(value))
+      && !(key === "loop" && value === false))))),
   });
+}
+
+// An owner as its text keeps it: the Keyframes of its Lanes without the Easing Smooth, the default (ADR 0064).
+function lanesText(owner) {
+  return Object.fromEntries(Object.entries(owner).map(([key, value]) => [key, isObject(value) && Array.isArray(value.keyframes)
+    ? { ...value, keyframes: value.keyframes.map((item) => (item.easing === DEFAULT_EASING ? withoutKey(item, "easing") : item)) }
+    : value]));
+}
+
+function withoutKey(object, name) {
+  const { [name]: removed, ...rest } = object;
+  void removed;
+  return rest;
 }
 
 function rebaseLanes(owner, list, rebase, anchor, newAnchor) {
@@ -685,7 +739,8 @@ export function rebaseSceneState(state, value) {
     scene: { ...state.scene, clip: scene.clip, ...rebaseLanes(state.scene, SCENE_LANES, rebase, scene.anchor, scene.newAnchor) },
     stickers: state.stickers.map((item) => {
       const { clip, anchor, newAnchor } = rebaseClip(item.clip, rebase);
-      return { ...item, clip, ...rebaseLanes(item, stickerLanes(item), rebase, anchor, newAnchor) };
+      const list = item.source.kind === "port" ? [...stickerLanes(item), ...PORT_OFFSET_LANES] : stickerLanes(item);
+      return { ...item, clip, ...rebaseLanes(item, list, rebase, anchor, newAnchor) };
     }),
     background: { ...state.background, clip: rebaseClip(state.background.clip, rebase).clip },
   });
@@ -702,7 +757,7 @@ export function rebaseUpstreamRecord(record, layerState) {
   const rebase = (frame) => frameNumber(frame * ratio);
   const origins = new Map(layerState.stickers.map((item) => [item.id, item.clip.start - item.clip.in]));
   const stickerOverrides = record.stickers.map((override) => {
-    const list = (override.placement === "world" ? WORLD_STICKER_LANES : SKY_STICKER_LANES).filter(([name]) => Object.hasOwn(override, name));
+    const list = overrideLanes(override.placement).filter(([name]) => Object.hasOwn(override, name));
     if (!Object.hasOwn(override, "clip")) {
       // An override of a Sticker the layer does not have is not applied; any origin will do.
       const origin = origins.get(override.id) ?? 0;
@@ -726,15 +781,43 @@ function v1PoseNumber(value) {
   return typeof value === "number" ? value : NaN;
 }
 
-// Each Camera Lane's Keyframes; an empty or invalid Lane is one Keyframe of its default value at frame 0.
-function stickerStateCamera(raw) {
+// The Camera of a sticker_state: each Lane's Keyframes (an empty or invalid Lane is one Keyframe of its default value at
+// frame 0), its loop mark and its Look at Lane (docs/scene-state-v2.md "`sticker_state`"). `missing` is what a missing
+// Easing reads as.
+function stickerStateCamera(raw, missing = DEFAULT_EASING) {
   const src = isObject(raw) ? raw : {};
-  const out = {};
-  for (const [name, valueFn] of CAMERA_LANES) {
-    const keys = keyframes(src[name], valueFn, name === "position");
-    out[name] = keys.length ? keys : [{ frame: 0, value: valueFn(null), easing: [...DEFAULT_EASING] }];
+  const out = { loop: bool(src.loop, false) };
+  for (const [name, valueFn] of CAMERA_LANES.filter(([lane]) => lane !== "look_at")) {
+    const keys = keyframes(src[name], valueFn, name === "position", missing);
+    out[name] = keys.length ? keys : [{ frame: 0, value: valueFn(null), easing: DEFAULT_EASING }];
   }
+  out.look_at = lanes(src, [["look_at", lookAtValue]]).look_at;
   return out;
+}
+
+// A content box { center, size } (3 numbers each), or null.
+function contentBox(raw) {
+  if (!isObject(raw)) return null;
+  const center = vec3(raw.center);
+  const size = vec3(raw.size);
+  return center === null || size === null ? null : { center, size };
+}
+
+// The motion of what the Camera of a sticker_state looks at: id, loop, Keyframes of position, rotation and scale (an
+// empty Lane one Keyframe of its default value at frame 0), and its content box.
+function stickerStateTargets(raw) {
+  const targets = [];
+  for (const item of Array.isArray(raw) ? raw : []) {
+    if (!isObject(item) || text(item.id) === null) continue;
+    const target = { id: item.id, loop: bool(item.loop, false) };
+    for (const [name, valueFn] of SCENE_LANES) {
+      const keys = keyframes(item[name], valueFn, name === "position");
+      target[name] = keys.length ? keys : [{ frame: 0, value: valueFn(null), easing: DEFAULT_EASING }];
+    }
+    target.box = contentBox(item.box);
+    targets.push(target);
+  }
+  return targets;
 }
 
 function v1StickerStateCamera(pose) {
@@ -750,10 +833,10 @@ function v1StickerStateCamera(pose) {
   });
 }
 
-// Reads `sticker_state` v1 or v2 as a normalized v2 sticker_state.
-// Returns null when the text is not a sticker_state, which callers ignore as before.
-// No runtime caller today: kept as the JS twin of core/scene_state.py load_sticker_state, which the parity tests
-// (tests/test_scene_state_parity.py, tests/pano_scene_state.test.mjs) hold to the same fixtures.
+// Reads `sticker_state` v1, v2 or v3 as a normalized v3 sticker_state (docs/scene-state-v2.md "`sticker_state`").
+// Returns null when the text is not a sticker_state, which callers ignore as before. A v2 one reads its Keyframes by
+// today's rules but a missing Easing as v2's default, ease-in-out; it has no length, loop, Look at or targets. The JS
+// twin of core/scene_state.py load_sticker_state; the parity tests hold both to the same fixtures.
 export function loadStickerState(text) {
   if (typeof text !== "string" || !text.trim()) return null;
   let raw;
@@ -767,26 +850,38 @@ export function loadStickerState(text) {
   let camera;
   let sourceAspect;
   let fps;
+  let length = null;
+  let targets = [];
   if (version === 1) {
     camera = v1StickerStateCamera(raw.pose);
     if (!camera) return null;
     const aspect = v1PoseNumber(raw.source_aspect);
     sourceAspect = Number.isFinite(aspect) && aspect > 0 ? aspect : null;
     fps = 24;
-  } else if (version === 2) {
+  } else if (version === 2 || version === 3) {
     // A sticker_state without a readable fps is not read (ADR 0063).
     fps = timelineFps(raw.fps);
     if (fps === null) return null;
-    camera = stickerStateCamera(raw.camera);
+    if (version === 2) {
+      // v2 had no length, loop, Look at or targets; its missing Easing was ease-in-out.
+      const lanesOnly = Object.entries(isObject(raw.camera) ? raw.camera : {}).filter(([key]) => key !== "loop" && key !== "look_at");
+      camera = stickerStateCamera(Object.fromEntries(lanesOnly), EASE_IN_OUT);
+    } else {
+      camera = stickerStateCamera(raw.camera);
+      length = positive(raw.length, null);
+      targets = stickerStateTargets(raw.targets);
+    }
     sourceAspect = positive(raw.source_aspect, null);
   } else {
-    throw new Error(`Unsupported sticker_state version ${JSON.stringify(version)}; supported versions are 1 and 2.`);
+    throw new Error(`Unsupported sticker_state version ${JSON.stringify(version)}; supported versions are 1, 2 and 3.`);
   }
   return {
     kind: STICKER_STATE_KIND,
-    version: STATE_VERSION,
+    version: STICKER_STATE_VERSION,
     fps,
+    length,
     camera,
+    targets,
     source_aspect: sourceAspect,
   };
 }

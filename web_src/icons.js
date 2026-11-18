@@ -62,6 +62,7 @@ export const ICON = Object.freeze({
   pan_move: "pan_move",
   depth_move: "depth_move",
   orbit_center: "orbit_center",
+  ease_smooth: "ease_smooth",
   ease_hold: "ease_hold",
   ease_linear: "ease_linear",
   ease_in_out: "ease_in_out",
@@ -70,6 +71,14 @@ export const ICON = Object.freeze({
   gizmo_move: "gizmo_move",
   gizmo_rotate: "gizmo_rotate",
   gizmo_scale: "gizmo_scale",
+  point_auto: "point_auto",
+  point_bezier: "point_bezier",
+  point_corner: "point_corner",
+  loop_motion: "loop_motion",
+  loop_motion_off: "loop_motion_off",
+  simplify: "simplify",
+  constant_speed: "constant_speed",
+  look_at: "look_at",
 });
 
 const parseAttrs = (raw) => {
@@ -165,10 +174,30 @@ const TABLER_BODIES = {
   // The new UI's gizmo modes on the bar at the bottom center (docs/studio-ui.md "下の中央のバー"; specimen-11.html).
   gizmo_move: { name: "arrows-move", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M18 9l3 3l-3 3' /><path d='M15 12h6' /><path d='M6 9l-3 3l3 3' /><path d='M3 12h6' /><path d='M9 18l3 3l3 -3' /><path d='M12 15v6' /><path d='M15 6l-3 -3l-3 3' /><path d='M12 3v6' />` },
   gizmo_rotate: { name: "rotate-clockwise-2", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M12 16h4v4' /><path d='M19.458 11.042c.86 -2.366 .722 -4.58 -.6 -5.9c-2.272 -2.274 -7.185 -1.045 -10.973 2.743c-3.788 3.788 -5.017 8.701 -2.744 10.974c2.227 2.226 6.987 1.093 10.74 -2.515' />` },
-  gizmo_scale: { name: "maximize", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M4 8v-2a2 2 0 0 1 2 -2h2' /><path d='M4 16v2a2 2 0 0 0 2 2h2' /><path d='M16 4h2a2 2 0 0 1 2 2v2' /><path d='M16 20h2a2 2 0 0 0 2 -2v-2' />` },
+  // Scale is Tabler's "resize": a small square grows into a dashed large one (docs/design.md "アイコン"; `maximize` reads
+  // as full screen).
+  gizmo_scale: { name: "resize", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M4 11v8a1 1 0 0 0 1 1h8m-9 -14v-1a1 1 0 0 1 1 -1h1m5 0h2m5 0h1a1 1 0 0 1 1 1v1m0 5v2m0 5v1a1 1 0 0 1 -1 1h-1' /><path d='M4 12h7a1 1 0 0 1 1 1v7' />` },
+  // The point types on the bar at the bottom center (docs/studio-ui.md "軌道の線"), drawn after Tabler's lines: a curve
+  // through a point with dotted handles (Auto), with solid handles ending in dots (Bezier), and an angle (Corner).
+  point_auto: { name: "point-auto", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M3 19c3 -14.7 15 -14.7 18 0' /><path d='M2.6 8h5.2M16.2 8h5.2' stroke-dasharray='0.1 3.4' /><circle cx='12' cy='8' r='1.9' fill='currentColor' stroke='none' />` },
+  point_bezier: { name: "point-bezier", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M3 19c3 -14.7 15 -14.7 18 0' /><path d='M4 8h16' /><circle cx='12' cy='8' r='1.9' fill='currentColor' stroke='none' /><circle cx='3.4' cy='8' r='2.1' fill='currentColor' stroke='none' /><circle cx='20.6' cy='8' r='2.1' fill='currentColor' stroke='none' />` },
+  point_corner: { name: "point-corner", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M3 19l9 -11l9 11' /><circle cx='12' cy='8' r='1.9' fill='currentColor' stroke='none' />` },
+  // An object's own motion loop at the head of its Timeline row: Tabler's "infinity" / "infinity-off" (apart from the
+  // playback loop's `repeat`).
+  loop_motion: { name: "infinity", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M9.828 9.172a4 4 0 1 0 0 5.656a10 10 0 0 0 2.172 -2.828a10 10 0 0 1 2.172 -2.828a4 4 0 1 1 0 5.656a10 10 0 0 1 -2.172 -2.828a10 10 0 0 0 -2.172 -2.828' />` },
+  loop_motion_off: { name: "infinity-off", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M8.165 8.174a4 4 0 0 0 -5.166 3.826a4 4 0 0 0 6.829 2.828a10 10 0 0 0 2.172 -2.828m1.677 -2.347a10 10 0 0 1 .495 -.481a4 4 0 1 1 5.129 6.1m-3.521 .537a4 4 0 0 1 -1.608 -.981a10 10 0 0 1 -2.172 -2.828' /><path d='M3 3l18 18' />` },
+  // Simplify on the Timeline bar: Tabler's "vector-spline" (provisional, docs/design.md "アイコン").
+  simplify: { name: "vector-spline", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M17 3m0 1a1 1 0 0 1 1 -1h2a1 1 0 0 1 1 1v2a1 1 0 0 1 -1 1h-2a1 1 0 0 1 -1 -1z' /><path d='M3 17m0 1a1 1 0 0 1 1 -1h2a1 1 0 0 1 1 1v2a1 1 0 0 1 -1 1h-2a1 1 0 0 1 -1 -1z' /><path d='M17 5c-6.627 0 -12 5.373 -12 12' />` },
+  // Constant speed (docs/design.md, provisional): three Keyframe diamonds in a row over a left-right arrow, the times
+  // of the Keyframes moving.
+  constant_speed: { name: "constant-speed", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M5 6.5l2 2l-2 2l-2 -2z' /><path d='M12 6.5l2 2l-2 2l-2 -2z' /><path d='M19 6.5l2 2l-2 2l-2 -2z' /><path d='M4 17h16' /><path d='M7 14.5l-3 2.5l3 2.5' /><path d='M17 14.5l3 2.5l-3 2.5' />` },
+  // Look at (docs/studio-ui.md "Look at"): a sight, a ring with a dot and four ticks out of it.
+  look_at: { name: "look-at", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><circle cx='12' cy='12' r='7' /><circle cx='12' cy='12' r='1.6' fill='currentColor' stroke='none' /><path d='M12 2v4M12 18v4M2 12h4M18 12h4' />` },
   // The new UI's Easing presets (docs/studio-ui.md "Easing のパネル"): each preset's curve from the bottom left to the top
   // right, drawn in the Tabler stroke style. The curves are the presets' cubic-beziers (pano_timeline.js EASING_PRESETS)
   // on a 16-unit square; Hold stays, then steps up at the end.
+  // Smooth: a curve that passes its middle point without stopping.
+  ease_smooth: { name: "ease-smooth", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M4 20c3 -1 6 -4 8 -8s5 -7 8 -8' /><circle cx='12' cy='12' r='1.7' fill='currentColor' stroke='none' />` },
   ease_hold: { name: "ease-hold", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M4 20h16v-16' />` },
   ease_linear: { name: "ease-linear", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M4 20l16 -16' />` },
   ease_in_out: { name: "ease-in-out", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M4 20c6.72 0 9.28 -16 16 -16' />` },

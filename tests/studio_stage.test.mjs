@@ -225,3 +225,15 @@ test("after a double click sets T, the mark fades out over overlay-only frames, 
   assert.equal(frames.length, 0, "the frames stop once the mark is gone");
   stage.dispose();
 });
+
+// CodeRabbit review: Look at's Pick and Set orbit center wait one at a time; starting one stops the other.
+test("Look at's Pick and Set orbit center do not wait together", () => {
+  const { stage, ui, run } = setup();
+  run();
+  stage.pickCenter();
+  assert.equal(ui.pickingCenter, true);
+  stage.pickLook();
+  assert.deepEqual([ui.pickingLook, ui.pickingCenter], [true, false]);
+  stage.pickCenter();
+  assert.deepEqual([ui.pickingLook, ui.pickingCenter], [false, true]);
+});

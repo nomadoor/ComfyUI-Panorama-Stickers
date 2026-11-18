@@ -33,24 +33,22 @@ function setup({ view = stage(), state = { stickers: [] }, readOnly = false, upl
   const session = createStudioSession({ state: loadSceneState({ version: 2, ...state }), readOnly });
   const ui = { choice: null, drop: null, adding: false, addWarning: null };
   const notices = [];
-  let drawn = false;
   const add = createAddFiles({
     session,
     ui,
     view: () => view,
     ground: () => GROUND,
     content: () => ({ space: { fileStickers: session.state.stickers.filter((s) => s.source.filename?.endsWith(".glb")).map((s) => ({ id: s.id, url: `u:${s.id}` })) } }),
-    sceneBox: () => (drawn ? { min: [0, 0, 0], max: [1, 1, 1] } : null),
+    sceneBox: () => null,
     uploadImage: uploadImage ?? (async (file) => ({ filename: file.name, subfolder: "panorama_stickers", storage: "input" })),
     upload3d: upload3d ?? (async (file) => ({ kind: "file", filename: file.name, subfolder: "3d", storage: "input" })),
     route: route ?? (async () => ({ state: "ready", box })),
     decode: decode ?? (async () => ({ image: { tag: "img" }, width: 200, height: 100 })),
     notice: (text) => notices.push(text),
-    timers: { set: () => 1, clear: () => {} },
     ...(pending ? { pending } : {}),
     ...(late ? { late } : {}),
   });
-  return { session, ui, add, notices, draw: () => { drawn = true; add.refresh(); } };
+  return { session, ui, add, notices };
 }
 
 test("the file placed is the first image, else the first 3D file; a drag shows an image's mark only for an image type", () => {
@@ -64,7 +62,7 @@ test("the file placed is the first image, else the first 3D file; a drag shows a
 });
 
 test("Add with a GLB places it in the World where the screen center lands, selected; placing is one Undo step", async () => {
-  const { session, ui, add, draw } = setup();
+  const { session, ui, add } = setup();
   const placing = await add.pick([glbFile()]);
   const sticker = session.state.stickers[0];
   assert.equal(sticker.placement, "world");
@@ -82,8 +80,7 @@ test("Add with a GLB places it in the World where the screen center lands, selec
   const turned = boxCorners({ min: [-0.5, -1, -0.5], max: [0.5, 1, 0.5] }).map((p) => transformPoint({ position: settled.position.value, yaw_deg: 0, pitch_deg: 0, roll_deg: 0, scale: 1 }, p));
   assert.ok(near(Math.min(...turned.map((p) => p[1])), GROUND));
   assert.equal(session.canUndo, true);
-  assert.equal(ui.adding, true);
-  draw();
+  // Settled: the upload's line ends here; editor_content.js carries "Loading 3D model…" until its item draws.
   assert.equal(ui.adding, false);
   assert.ok(session.undo());
   assert.equal(session.state.stickers.length, 0);

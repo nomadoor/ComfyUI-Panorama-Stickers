@@ -191,6 +191,15 @@ def _texture(textures: dict, key, source, device) -> torch.Tensor:
     return entry[1]
 
 
+# A crop narrower or lower than this draws no plane (docs/scene-state-v2.md "Look at" "中身の箱").
+CROP_MIN = 1e-6
+
+
+def crop_empty(crop: dict) -> bool:
+    """Whether a `world` Sticker's crop is empty, so its plane is not drawn and it has no content box."""
+    return crop["x1"] - crop["x0"] < CROP_MIN or crop["y1"] - crop["y0"] < CROP_MIN
+
+
 def _sticker_layer(rays: torch.Tensor, origin: np.ndarray, sticker: dict, texture: torch.Tensor, crop: dict):
     """A `world` Sticker as a plane: centered at `position`, spanning `scale` World units along its right axis and
     the cropped source's aspect along its up axis, facing its back axis (+Z of `world_rotation`). Both sides
@@ -198,7 +207,7 @@ def _sticker_layer(rays: torch.Tensor, origin: np.ndarray, sticker: dict, textur
     # TODO: every output pixel is tested against the plane, not only those it covers (docs/render-contract.md, "`world`
     # の Sticker の板"); limit the work to the plane's screen bounds before many Stickers or SPLAT content share a frame.
     crop_w, crop_h = crop["x1"] - crop["x0"], crop["y1"] - crop["y0"]
-    if crop_w < 1e-6 or crop_h < 1e-6:
+    if crop_empty(crop):
         return None
     half_w = sticker["scale"] * 0.5
     half_h = half_w * (crop_h * texture.shape[2]) / (crop_w * texture.shape[3])
@@ -229,7 +238,7 @@ def _lens_sticker_layer(rays: torch.Tensor, origin: np.ndarray, sticker: dict, t
     ray takes its nearest crossing ahead (t > 0) that is on the patch, from either side. Returns None for an empty
     crop."""
     crop_w, crop_h = crop["x1"] - crop["x0"], crop["y1"] - crop["y0"]
-    if crop_w < 1e-6 or crop_h < 1e-6:
+    if crop_empty(crop):
         return None
     curve, hfov = sticker["lens"]["curve"], sticker["lens"]["hFOV_deg"]
     half_w = lens_radius(math.radians(max(0.1, hfov)) * 0.5, curve)

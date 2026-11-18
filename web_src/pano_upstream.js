@@ -4,16 +4,17 @@
 // node draws them, and the edits of the working copies written back as the node's overrides. They never
 // enter the node's Stickers.
 import { normalizeCoverageValue } from "./pano_editor_state.js";
+import { portHandoff } from "./pano_port_handoff.js";
 import { skyLayers, worldStickerLayers } from "./pano_editor_view.js";
 import { portMediaFrames } from "./pano_port_media.js";
 import { evaluateSceneState } from "./pano_scene_eval.js";
 import { applyUpstreamOverrides } from "./pano_scene_inherit.js";
 import {
-  SKY_STICKER_LANES,
-  WORLD_STICKER_LANES,
   defaultClip,
+  is3dFileSource,
   loadSceneState,
   rebaseSceneState,
+  overrideLanes,
   rebaseUpstreamRecord,
 } from "./pano_scene_state.js";
 import { fileStickerRequests, sceneFilesOf, sceneRequest, stickerContentRequest, stickerContentUrls } from "./pano_space.js";
@@ -21,11 +22,19 @@ import { fileStickerRequests, sceneFilesOf, sceneRequest, stickerContentRequest,
 // The type of the link that brings another Studio's `scene` output.
 export const PANO_SCENE_TYPE = "PANO_SCENE";
 
-// The layers of `pano_upstream_layers` (from the farthest upstream): each its loaded state and its media `ui`.
+// The layers of `pano_upstream_layers` (from the farthest upstream): each its loaded state, its media `ui`, the
+// Timeline length the node that made it decided (frames of its own fps; the loop period of its owners, or null), and
+// the sticker_state its port Sticker was handed (the shot that places it, docs/scene-state-v2.md "受け渡しの置き方"),
+// or null.
 export function upstreamLayersOf(list) {
   return list
     .filter((entry) => entry && typeof entry === "object" && entry.state && typeof entry.state === "object")
-    .map((entry) => ({ sceneState: loadSceneState(entry.state), ui: entry.ui && typeof entry.ui === "object" ? entry.ui : {} }));
+    .map((entry) => ({
+      sceneState: loadSceneState(entry.state),
+      ui: entry.ui && typeof entry.ui === "object" ? entry.ui : {},
+      length: typeof entry.length === "number" && entry.length > 0 ? entry.length : null,
+      shot: entry.shot ? portHandoff({ state: entry.shot }) : null,
+    }));
 }
 
 // The upstream Scene's bg_color (`pano_upstream_bg_color`, [r, g, b] in 0..1) as "#rrggbb", or null without one.
@@ -86,7 +95,7 @@ export function upstreamLayerKeys(layers) {
 // painting, which no override changes. `received` is the layer's state as it came, without the overrides.
 export function upstreamWorkingLayers(layers, records, fps) {
   const keys = upstreamLayerKeys(layers);
-  return layers.map(({ sceneState, ui }, index) => {
+  return layers.map(({ sceneState, ui, length = null, shot = null }, index) => {
     const nearest = sceneState.id !== null && keys[index] === sceneState.id;
     const record = nearest ? records.find((item) => item.layer === sceneState.id) ?? null : null;
     const applied = applyUpstreamOverrides(sceneState, record);
@@ -96,8 +105,13 @@ export function upstreamWorkingLayers(layers, records, fps) {
     for (const sticker of working.stickers) {
       sticker.origin = { layer: keys[index], id: sticker.id };
       sticker.id = upstreamId(keys[index], sticker.id);
+      // The port Sticker its layer's sticker_state places carries the editor's mark, as the node's own does
+      // (studio/session.js): its Timeline Lanes and its edits are its offset's.
+      if (shot && sticker.source.kind === "port" && sticker.placement === "sky") sticker.placedByShot = true;
     }
-    return { key: keys[index], sceneState: working, ui, received: sceneState };
+    // The layer's length at the working copy's fps: the loop period of its owners (docs/scene-state-v2.md "ループ").
+    const workingLength = length === null ? null : length * fps / sceneState.timeline.fps;
+    return { key: keys[index], sceneState: working, ui, received: sceneState, length: workingLength, shot };
   });
 }
 
@@ -152,8 +166,9 @@ export function upstreamLayerEditable(key) {
 // The fields of a Sticker an override holds (docs/scene-state-v2.md "上流の上書き"), in the record's order.
 function overrideFields(sticker) {
   const world = sticker.placement === "world";
-  const lanes = (world ? WORLD_STICKER_LANES : SKY_STICKER_LANES).map(([name]) => name);
-  return ["clip", "visible", "locked", "crop", ...lanes, ...(world ? [] : ["z_index"])];
+  // A port Sticker's offset Lanes too, which move it where its layer's sticker_state places it.
+  const lanes = overrideLanes(sticker.placement).map(([name]) => name).filter((name) => Object.hasOwn(sticker, name));
+  return ["clip", "visible", "locked", "loop", "crop", ...lanes, ...(world ? [] : ["z_index"])];
 }
 
 function fieldTexts(sticker) {
@@ -301,7 +316,7 @@ export function upstreamDeletedRecords(records, origins, fps) {
   })), records);
 }
 
-const OVERRIDE_LANES = new Set([...SKY_STICKER_LANES, ...WORLD_STICKER_LANES].map(([name]) => name));
+const OVERRIDE_LANES = new Set([...overrideLanes("sky"), ...overrideLanes("world")].map(([name]) => name));
 
 // The override the node's `upstream` records hold of the upstream element `origin`, or null.
 export function upstreamOverrideOf(records, { layer, id }) {
@@ -397,7 +412,7 @@ export function upstreamPrunedRecords(records, layers) {
 // (pano_space.js fileStickerRequests), each in a slot of the layer's key and its Sticker's id, with its `source`.
 export function upstreamLayerView(layer, key, frame, { media, paintLayers, source, editorFile = null }) {
   const { sceneState, ui, received } = layer;
-  const evaluated = evaluateSceneState(sceneState, frame);
+  const evaluated = evaluateSceneState(sceneState, frame, layer.length ?? null, null, layer.shot ?? null);
   const shown = (sticker) => (sticker.visible ? media(sticker) : null);
   const sky = skyLayers(sceneState, frame, { media: shown, zIndex: (sticker) => sticker.z_index, paintLayers, evaluated })
     .map((item) => (item.kind === "erp" ? { ...item, id: upstreamId(key, item.id) } : item));
@@ -412,10 +427,21 @@ export function upstreamLayerView(layer, key, frame, { media, paintLayers, sourc
     const request = stickerContentRequest(stickerFiles, sceneState, evaluated);
     items.push({ slot: `${key}:sticker`, urls: stickerContentUrls(stickerFiles, received), request, value: request?.value ?? null, opacity: request?.opacity ?? 1 });
   }
+  const asked = new Set();
   for (const entry of editorFile ? fileStickerRequests(sceneState, evaluated, editorFile) : []) {
     const { request } = entry;
     const sticker = sceneState.stickers.find((item) => item.id === entry.id);
-    items.push({ slot: `${key}:file:${entry.id}`, urls: [entry.key], request, value: request?.value ?? null, opacity: request?.opacity ?? 1, source: sticker.source });
+    asked.add(entry.id);
+    items.push({ slot: `${key}:file:${entry.id}`, id: entry.id, urls: [entry.key], request, value: request?.value ?? null, opacity: request?.opacity ?? 1, source: sticker.source, active: !!request });
+  }
+  // A 3D file Sticker whose editor file has not come yet: no item, but its id, Source, value and whether it shows, for
+  // its loading guide and line (docs/studio-ui.md "置く間").
+  if (editorFile) {
+    sceneState.stickers.forEach((sticker, index) => {
+      if (asked.has(sticker.id) || sticker.placement !== "world" || !is3dFileSource(sticker.source)) return;
+      const value = evaluated.stickers[index];
+      items.push({ slot: `${key}:file:${sticker.id}`, id: sticker.id, urls: [], request: null, value, opacity: value?.opacity ?? 1, source: sticker.source, active: !!value?.active });
+    });
   }
   return { evaluated, sky, stickers, items };
 }

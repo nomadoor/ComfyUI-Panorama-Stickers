@@ -194,16 +194,15 @@ function inputMediaKind(node, name) {
 // (skyStickerVfov, as the run derives it), so the media loading never changes state_json; the state
 // keeps vFOV = hFOV. Until the node's result has the media it shows as a frame. `pose` is the pose the
 // node's current result placed the Sticker at
-// (`pano_sticker_input_pose`), with the Keyframes of a Camera that moved. With `sticker_state`
+// (`pano_sticker_input_pose`). With `sticker_state`
 // connected, the Sticker is added only with that pose, so that it keeps the pose of `sticker_state`
 // as the node places it.
 // 3D media (MESH, SPLAT, a 3D file, MOGE_GEOMETRY, DA3_GEOMETRY) is a world Sticker that the node places, and only the node knows
 // what an input of an unknown type carries: unless the input is an IMAGE or a VIDEO, the Sticker is
 // added only with the node's pose, as a world one when the pose says `placement: "world"`. The node
 // replaces a stored sky port Sticker by a world one for 3D media (`replace`), which is applied here.
-// Pose handoff (ADR 0030) places a sky or a world Sticker and replaces one of the other placement too,
-// on every run: `handoff` (the result's `pano_sticker_handoff`) is shown over the stored Sticker
-// (pano_port_handoff.js) and never written here.
+// Pose handoff (ADR 0067) places the sky port Sticker by the sticker_state of the result (`handoff`, the
+// result's `pano_sticker_handoff`) as it is drawn (pano_port_handoff.js), and never writes it here.
 export function portStickerSyncValue(node, { pose = null, handoff = null } = {}) {
   return {
     connected: isInputConnected(node, "sticker"),
@@ -213,24 +212,23 @@ export function portStickerSyncValue(node, { pose = null, handoff = null } = {})
   };
 }
 
-// Panorama Studio's state_json `text` as its node surface shows it (parseSceneEditorState `options`): the port
-// Sticker with the Pose handoff `handoffValue` of the current result (null without one) as the run draws it.
-// It is not written: the text stays as it is.
+// Panorama Studio's state_json `text` as its node surface shows it (parseSceneEditorState `options`): a stored port
+// Sticker that is not sky shown as the sky one the sticker_state of the current result (`handoffValue`, null without
+// one) places, as the run draws it. It is not written: the text stays as it is.
 export function surfaceSceneEditorState(text, options, handoffValue) {
   return showPortHandoff(parseSceneEditorState(text, options), portHandoff(handoffValue));
 }
 
-// The world port Sticker at the node's pose, with the Keyframes of a Camera that moved (Pose handoff).
+// The world port Sticker at the node's pose (3D media).
 function worldPortSticker(id, pose, kept = {}) {
-  const keyframes = pose.keyframes ?? {};
   const raw = {
     ...kept,
     id,
     placement: "world",
     source: { kind: "port" },
-    position: { value: pose.position, keyframes: keyframes.position ?? [] },
-    rotation: { value: pose.rotation, keyframes: keyframes.rotation ?? [] },
-    scale: { value: pose.scale, keyframes: keyframes.scale ?? [] },
+    position: { value: pose.position },
+    rotation: { value: pose.rotation },
+    scale: { value: pose.scale },
   };
   return loadSceneState({ version: 2, stickers: [raw] }).stickers[0];
 }
@@ -252,8 +250,8 @@ export function reconcilePortStickerState(state, { connected = false, awaitingPo
   }
   if (current && pose?.placement === "world" && pose.replace && current.placement === "sky" && !handoff) {
     // The node replaced the stored sky port Sticker by a world one for 3D media under the same id, keeping
-    // these fields; loading keeps only the handoff_overrides of world Lanes.
-    const kept = Object.fromEntries(["clip", "visible", "locked", "crop", "opacity", "handoff_overrides"].map((key) => [key, current[key]]));
+    // these fields.
+    const kept = Object.fromEntries(["clip", "visible", "locked", "crop", "opacity"].map((key) => [key, current[key]]));
     const port = worldPortSticker(current.id, pose, kept);
     return { state: { ...state, stickers: state.stickers.map((item, i) => i === index ? port : item) }, changed: true };
   }
@@ -271,12 +269,6 @@ export function reconcilePortStickerState(state, { connected = false, awaitingPo
     hFOV_deg: hFOV,
     vFOV_deg: hFOV,
   }, surfaceStickers(state).reduce((value, item) => Math.max(value, item.z_index), -1) + 1);
-  // A Camera that moved comes with the Keyframes the node baked from its trajectory (Pose handoff).
-  const keyframes = pose?.keyframes ?? {};
-  port.direction.keyframes = keyframes.direction ?? [];
-  port.roll.keyframes = keyframes.roll ?? [];
-  port.size.keyframes = (keyframes.size ?? []).map((key) => ({ ...key, value: { ...key.value, vFOV_deg: key.value.hFOV_deg } }));
-  port.handoff_overrides = [];
   return { state: { ...next, stickers: [...state.stickers, port] }, changed: true };
 }
 

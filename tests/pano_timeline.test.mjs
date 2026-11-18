@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { readdirSync, readFileSync } from "node:fs";
 
-import { evaluateSceneState } from "../web_src/pano_scene_eval.js";
+import { evaluateLane, evaluateSceneState } from "../web_src/pano_scene_eval.js";
 import { loadSceneState } from "../web_src/pano_scene_state.js";
 import { videoTimelineFps } from "../web_src/pano_video_fps.js";
 import {
@@ -13,6 +13,7 @@ import {
   enteredTimelineFps,
   enteredTimelineLength,
   keyAllLanes,
+  keyLanes,
   ownerTimed,
   moveClip,
   moveKeyframes,
@@ -50,7 +51,7 @@ const LINEAR = [0, 0, 1, 1];
 const SKY_LANES = ["direction", "roll", "size", "opacity"];
 
 function keyed(lane, ...items) {
-  return { value: lane.value, keyframes: items.map(([frame, value, easing = EASE_IN_OUT]) => ({ frame, value, easing })) };
+  return { value: lane.value, keyframes: items.map(([frame, value, easing = "smooth"]) => ({ frame, value, easing })) };
 }
 
 test("an edit of a Lane without Keyframes changes its static value", () => {
@@ -67,7 +68,7 @@ test("the row's key button keys every Lane at its current value, making the firs
   const sticker = skySticker();
   keyAllLanes(sticker, 0);
   assert.deepEqual(rowKeyframes(sticker), [{ frame: 0, full: true }]);
-  assert.deepEqual(sticker.direction.keyframes, [{ frame: 0, value: { yaw_deg: 10, pitch_deg: 0 }, easing: EASE_IN_OUT }]);
+  assert.deepEqual(sticker.direction.keyframes, [{ frame: 0, value: { yaw_deg: 10, pitch_deg: 0 }, easing: "smooth" }]);
   assert.notEqual(sticker.direction.keyframes[0].value, sticker.direction.value);
   assert.equal(keyedAt(rowKeyframes(sticker), 0), true);
   assert.equal(keyedAt(rowKeyframes(sticker), 1), false);
@@ -107,20 +108,74 @@ test("an edit between Keyframes keys the evaluated value with the edit applied",
   assert.deepEqual(sticker.size.keyframes.map((item) => item.frame), [0, 4, 10]);
 });
 
-test("an added Keyframe inherits the Easing of the segment it splits", () => {
+test("an added Keyframe keeps Smooth, hold and Linear on both sides", () => {
   const sticker = skySticker();
-  sticker.opacity = keyed(sticker.opacity, [10, 1, LINEAR], [20, 0, "hold"]);
+  sticker.opacity = keyed(sticker.opacity, [10, 1, LINEAR], [20, 0, "hold"], [30, 1, "smooth"], [40, 0]);
 
   setLaneValue(sticker, "opacity", 15, 0.4);
-  assert.deepEqual(sticker.opacity.keyframes.map((key) => [key.frame, key.easing]), [[10, LINEAR], [15, LINEAR], [20, "hold"]]);
+  setLaneValue(sticker, "opacity", 25, 0.4);
+  setLaneValue(sticker, "opacity", 35, 0.4);
+  assert.deepEqual(sticker.opacity.keyframes.map((key) => [key.frame, key.easing]), [[10, LINEAR], [15, LINEAR], [20, "hold"], [25, "hold"], [30, "smooth"], [35, "smooth"], [40, "smooth"]]);
   assert.notEqual(sticker.opacity.keyframes[1].easing, sticker.opacity.keyframes[0].easing);
 
-  // Before the first Keyframe: the default.
+  // Before the first Keyframe: Smooth.
   setLaneValue(sticker, "opacity", 4, 0.2);
-  assert.deepEqual(sticker.opacity.keyframes[0], { frame: 4, value: 0.2, easing: EASE_IN_OUT });
-  // After the last: the former last Keyframe's stored Easing governs the new segment; the new one has the default.
-  setLaneValue(sticker, "opacity", 30, 0.9);
-  assert.deepEqual(sticker.opacity.keyframes.slice(-2).map((key) => [key.frame, key.easing]), [[20, "hold"], [30, EASE_IN_OUT]]);
+  assert.deepEqual(sticker.opacity.keyframes[0], { frame: 4, value: 0.2, easing: "smooth" });
+  // After the last: the former last Keyframe's stored Easing governs the new segment; the new one is Smooth.
+  sticker.opacity.keyframes[sticker.opacity.keyframes.length - 1].easing = "hold";
+  setLaneValue(sticker, "opacity", 50, 0.9);
+  assert.deepEqual(sticker.opacity.keyframes.slice(-2).map((key) => [key.frame, key.easing]), [[40, "hold"], [50, "smooth"]]);
+});
+
+test("an added Keyframe splits another cubic-bezier into two halves that move as it did", () => {
+  const owner = { opacity: { value: 0, keyframes: [{ frame: 0, value: 0, easing: [0.42, 0, 1, 1] }, { frame: 20, value: 1, easing: "smooth" }] } };
+  const before = [0, 3, 7, 9, 12, 16, 19, 20].map((frame) => evaluateLane(owner, "opacity", frame));
+  keyLanes(owner, ["opacity"], 8);
+  const [first, added] = owner.opacity.keyframes;
+  assert.equal(added.frame, 8);
+  assert.ok(Array.isArray(first.easing) && Array.isArray(added.easing));
+  const after = [0, 3, 7, 9, 12, 16, 19, 20].map((frame) => evaluateLane(owner, "opacity", frame));
+  after.forEach((value, i) => assert.ok(Math.abs(value - before[i]) < 1e-6, `${value} != ${before[i]}`));
+});
+
+test("a Keyframe added inside a position segment with handles splits them and keeps the path", () => {
+  const owner = { position: { value: [0, 0, 0], keyframes: [
+    { frame: 0, value: [0, 0, 0], easing: LINEAR, handles: { out: [1, 2, 0] } },
+    { frame: 30, value: [6, 0, 0], easing: "smooth", handles: { in: [-1, 2, 0] } },
+  ] } };
+  const before = [0, 4, 9, 13, 18, 24, 29, 30].map((frame) => evaluateLane(owner, "position", frame));
+  keyLanes(owner, ["position"], 10);
+  const added = owner.position.keyframes[1];
+  assert.ok(added.handles?.in && added.handles?.out, "the new Keyframe has the split handles");
+  assert.equal(added.corner, undefined);
+  // The path keeps its shape: every point before lies on the new path (the timing may shift slightly).
+  const path = [];
+  for (let i = 0; i <= 600; i += 1) path.push(evaluateLane(owner, "position", i / 20));
+  for (const point of before) {
+    const nearest = Math.min(...path.map((other) => Math.hypot(...other.map((c, i) => c - point[i]))));
+    assert.ok(nearest < 2e-3, `${point} is ${nearest} off the path`);
+  }
+  // Without handles, the new Keyframe stays automatic and writes none.
+  const plain = { position: { value: [0, 0, 0], keyframes: [{ frame: 0, value: [0, 0, 0], easing: "smooth" }, { frame: 30, value: [6, 0, 0], easing: "smooth" }] } };
+  keyLanes(plain, ["position"], 10);
+  assert.ok(plain.position.keyframes.every((key) => !key.handles));
+});
+
+// CodeRabbit review: the handles are split where the value was read, with the segment's Easing before the split.
+test("a Keyframe added inside a handled position segment with a curved Easing keeps the path", () => {
+  const owner = { position: { value: [0, 0, 0], keyframes: [
+    { frame: 0, value: [0, 0, 0], easing: [0.42, 0, 1, 1], handles: { out: [1, 3, 0] } },
+    { frame: 30, value: [6, 0, 0], easing: "smooth", handles: { in: [-2, 3, 0] } },
+  ] } };
+  const before = [];
+  for (let i = 0; i <= 60; i += 1) before.push(evaluateLane(owner, "position", i / 2));
+  keyLanes(owner, ["position"], 12);
+  const path = [];
+  for (let i = 0; i <= 6000; i += 1) path.push(evaluateLane(owner, "position", i / 200));
+  for (const point of before) {
+    const nearest = Math.min(...path.map((other) => Math.hypot(...other.map((c, i) => c - point[i]))));
+    assert.ok(nearest < 1e-3, `${point} is ${nearest} off the path`);
+  }
 });
 
 test("the playhead finds a Keyframe within FRAME_EPSILON", () => {
@@ -190,13 +245,18 @@ test("moved Keyframes stop at the Timeline's last frame; one past it is not push
   assert.equal(moveKeyframes(sticker, ["opacity"], [30], -3, 0, 17), -3, "nor pulled back");
 });
 
-test("Easing edits set the selected segments, ignoring each Lane's last Keyframe", () => {
+test("Easing edits set the segments from the leftmost selected Keyframe to the rightmost, ignoring each Lane's last", () => {
   const sticker = skySticker();
-  sticker.opacity = keyed(sticker.opacity, [0, 0], [10, 1], [20, 0], [30, 1, "auto"]);
+  sticker.opacity = keyed(sticker.opacity, [0, 0], [10, 1], [20, 0], [30, 1, "hold"]);
   sticker.roll = keyed(sticker.roll, [0, 0, LINEAR], [10, 5, "hold"]);
 
+  // Two selected: every segment from 10 to 30, the unselected pin at 20 included; 30 is the Lane's last.
   setSegmentEasing(sticker, ["opacity"], [10, 30], LINEAR);
-  assert.deepEqual(sticker.opacity.keyframes.map((key) => key.easing), [EASE_IN_OUT, LINEAR, LINEAR, "auto"]);
+  assert.deepEqual(sticker.opacity.keyframes.map((key) => key.easing), ["smooth", LINEAR, LINEAR, "hold"]);
+  // One selected: its segment only; the Lane's last alone has none.
+  setSegmentEasing(sticker, ["opacity"], [20], "smooth");
+  assert.deepEqual(sticker.opacity.keyframes.map((key) => key.easing), ["smooth", LINEAR, "smooth", "hold"]);
+  assert.equal(selectedEasing(sticker, ["opacity"], [30]), null);
   assert.deepEqual(selectedEasing(sticker, ["opacity", "roll"], [0]), { easing: null, mixed: true });
   // The roll's Keyframe at 10 is its last, so its stored hold does not count.
   assert.deepEqual(selectedEasing(sticker, ["opacity", "roll"], [10]), { easing: LINEAR, mixed: false });
@@ -205,6 +265,32 @@ test("Easing edits set the selected segments, ignoring each Lane's last Keyframe
   assert.equal(selectedEasing(sticker, ["roll"], [10]), null);
   const saved = loadSceneState({ version: 2, stickers: [sticker] }).stickers[0];
   assert.deepEqual(saved.opacity, sticker.opacity);
+});
+
+test("an Easing edit of pins apart sets the segments between them too, and they count for Mixed", () => {
+  const sticker = skySticker();
+  sticker.opacity = keyed(sticker.opacity, [0, 0], [10, 1], [20, 0], [30, 1]);
+
+  // Two neighboring pins: the one segment between them (0→10).
+  setSegmentEasing(sticker, ["opacity"], [0, 10], LINEAR);
+  assert.deepEqual(sticker.opacity.keyframes.map((key) => key.easing), [LINEAR, "smooth", "smooth", "smooth"]);
+  assert.deepEqual(selectedEasing(sticker, ["opacity"], [0, 10]), { easing: LINEAR, mixed: false });
+  // Pins apart: the segment of the unselected pin between them counts.
+  assert.deepEqual(selectedEasing(sticker, ["opacity"], [0, 20]), { easing: null, mixed: true });
+  setSegmentEasing(sticker, ["opacity"], [0, 20], "hold");
+  assert.deepEqual(sticker.opacity.keyframes.map((key) => key.easing), ["hold", "hold", "smooth", "smooth"]);
+  assert.deepEqual(selectedEasing(sticker, ["opacity"], [0, 20]), { easing: "hold", mixed: false });
+});
+
+test("in a looping owner, the last Keyframe alone owns the segment back to the first, and a range does not cross it", () => {
+  const sticker = { ...skySticker(), loop: true };
+  sticker.opacity = keyed(sticker.opacity, [0, 0], [10, 1], [20, 0]);
+  setSegmentEasing(sticker, ["opacity"], [20], LINEAR, 40);
+  assert.deepEqual(sticker.opacity.keyframes.map((key) => key.easing), ["smooth", "smooth", LINEAR]);
+  setSegmentEasing(sticker, ["opacity"], [0, 20], "hold", 40);
+  assert.deepEqual(sticker.opacity.keyframes.map((key) => key.easing), ["hold", "hold", LINEAR]);
+  // Without the output length it does not loop.
+  assert.equal(selectedEasing(sticker, ["opacity"], [20]), null);
 });
 
 test("moving a Clip range keeps its Keyframes on the content", () => {

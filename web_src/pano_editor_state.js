@@ -3,8 +3,8 @@ import { wrapYaw } from "./pano_math.js";
 import { DEG2RAD, clamp, vFovFromHfov } from "./pano_camera_math.js";
 import { deriveVerticalFovDeg, normalizeCutoutShotItem } from "./pano_cutout_view_math.js";
 import { lensAngle, lensFovKeepingCenter, lensFovLimit, lensRadius } from "./pano_lens.js";
-import { clipFrame, evaluateCamera, evaluateLane, evaluateSticker } from "./pano_scene_eval.js";
-import { SKY_STICKER_LANES, cameraAspect, freeStickerNumber, loadSceneState, rebaseSceneState, sceneStateText, stickerCounter } from "./pano_scene_state.js";
+import { clipFrame, evaluateCamera, evaluateLane, evaluateSticker, ownerPeriod } from "./pano_scene_eval.js";
+import { PORT_OFFSET_LANES, SKY_STICKER_LANES, cameraAspect, freeStickerNumber, loadSceneState, rebaseSceneState, sceneStateText, stickerCounter } from "./pano_scene_state.js";
 import { setLaneValue } from "./pano_timeline.js";
 import { NEW_STICKER_HFOV } from "./pano_space.js";
 import { createSharedStringHistory } from "./pano_paint_history.js";
@@ -278,9 +278,10 @@ export function stickerVfovFromAspect(hFovDeg, width, height) {
 
 // The editor moves, scales and turns Stickers in the v1 pose fields. These map them to the Lanes
 // of a sky Sticker of state v2 at a Timeline frame, the values the evaluator gives there. `size` is the
-// size of a port Sticker's media (skyStickerVfov).
-export function stickerPose(sticker, frame, size = null) {
-  const value = evaluateSticker(sticker, frame);
+// size of a port Sticker's media (skyStickerVfov). `length` (here and in the edits below) is the output length, the
+// loop period of a looping owner (docs/scene-state-v2.md "ループ").
+export function stickerPose(sticker, frame, size = null, length = null) {
+  const value = evaluateSticker(sticker, frame, length);
   return { yaw_deg: value.yaw_deg, pitch_deg: value.pitch_deg, hFOV_deg: value.hFOV_deg, vFOV_deg: skyStickerVfov(sticker, value, size), rot_deg: value.roll_deg, curve: value.curve };
 }
 
@@ -298,13 +299,13 @@ export function unkeyedPose(sticker, pose) {
 
 // An edit changes only the Lanes of the fields it has, each by the recording rule (setLaneValue). A port
 // Sticker's vFOV is not stored: it follows its media (skyStickerVfov).
-export function setStickerPose(sticker, frame, pose) {
+export function setStickerPose(sticker, frame, pose, length = null) {
   const stickerFrame = clipFrame(sticker.clip, frame);
   const direction = pick(pose, ["yaw_deg", "pitch_deg"]);
   const size = pick(pose, sticker.source.kind === "port" ? ["hFOV_deg"] : ["hFOV_deg", "vFOV_deg"]);
-  if (Object.keys(direction).length) setLaneValue(sticker, "direction", stickerFrame, direction);
-  if (pose.rot_deg !== undefined) setLaneValue(sticker, "roll", stickerFrame, pose.rot_deg);
-  if (Object.keys(size).length) setLaneValue(sticker, "size", stickerFrame, size);
+  if (Object.keys(direction).length) setLaneValue(sticker, "direction", stickerFrame, direction, length);
+  if (pose.rot_deg !== undefined) setLaneValue(sticker, "roll", stickerFrame, pose.rot_deg, length);
+  if (Object.keys(size).length) setLaneValue(sticker, "size", stickerFrame, size, length);
 }
 
 const POSITION_FIELDS = ["position_x", "position_y", "position_z"];
@@ -316,8 +317,9 @@ const POSITION_FIELDS = ["position_x", "position_y", "position_z"];
 
 export const CAMERA_SHOT_ID = "camera";
 
-export function cameraShot(camera, frame) {
-  const value = evaluateCamera(camera, frame);
+// `scene` ({ stickers, boxes }) gives a Look at target's Sticker and content box (pano_scene_eval.js evaluateCamera).
+export function cameraShot(camera, frame, length = null, scene = null) {
+  const value = evaluateCamera(camera, frame, length, scene);
   return normalizeCutoutShotItem({
     id: CAMERA_SHOT_ID,
     label: "Camera",
@@ -342,21 +344,21 @@ function nearestTurn(delta) {
 // keeps the turn of its base, so a yaw wrapped across 180 degrees does not send the Camera the long way round. The
 // shot's FOV pair is computed from the Camera and never written back: the angle of view and the aspect are
 // written as the Camera's own fields (setCameraField, docs/editor-interaction.md).
-export function setCameraShot(camera, frame, shot, base) {
+export function setCameraShot(camera, frame, shot, base, length = null) {
   const rotation = {};
   for (const field of ["yaw_deg", "pitch_deg", "roll_deg"]) {
     if (shot[field] !== base[field]) rotation[field] = base[field] + nearestTurn(shot[field] - base[field]);
   }
-  if (Object.keys(rotation).length) setLaneValue(camera, "rotation", frame, rotation);
-  if (shot.position.some((value, axis) => value !== base.position[axis])) setLaneValue(camera, "position", frame, [...shot.position]);
+  if (Object.keys(rotation).length) setLaneValue(camera, "rotation", frame, rotation, length);
+  if (shot.position.some((value, axis) => value !== base.position[axis])) setLaneValue(camera, "position", frame, [...shot.position], length);
 }
 
 // An inspector edit of the Camera's lens curve κ at a Timeline frame (docs/editor-interaction.md "レンズの行"): it
 // keeps the image's center scale of `start` ({ hFOV_deg, curve } where the edit began), so the hFOV follows, and
 // writes both the `curve` and the `fov` Lanes at the frame, each by its recording rule.
-export function setCameraCurveKeepingCenter(camera, frame, curve, start) {
-  setLaneValue(camera, "curve", frame, curve);
-  setLaneValue(camera, "fov", frame, lensFovKeepingCenter(start.hFOV_deg, start.curve, curve));
+export function setCameraCurveKeepingCenter(camera, frame, curve, start, length = null) {
+  setLaneValue(camera, "curve", frame, curve, length);
+  setLaneValue(camera, "fov", frame, lensFovKeepingCenter(start.hFOV_deg, start.curve, curve), length);
 }
 
 // The range the inspector's Aspect field takes (width ÷ height).
@@ -365,52 +367,52 @@ export const CAMERA_ASPECT_MAX = 4;
 
 // An inspector edit of one Camera field at a Timeline frame, by the recording rule of its Lane. The lens curve is
 // setCameraCurveKeepingCenter's.
-export function setCameraField(camera, frame, field, value) {
+export function setCameraField(camera, frame, field, value, length = null) {
   const axis = POSITION_FIELDS.indexOf(field);
   if (axis >= 0) {
-    const position = evaluateLane(camera, "position", frame);
+    const position = evaluateLane(camera, "position", frame, ownerPeriod(camera, length));
     position[axis] = value;
-    setLaneValue(camera, "position", frame, position);
+    setLaneValue(camera, "position", frame, position, length);
   } else if (field === "hFOV_deg") {
-    setLaneValue(camera, "fov", frame, value);
+    setLaneValue(camera, "fov", frame, value, length);
   } else if (field === "aspect") {
     // Not a Lane: the frame's aspect has no Keyframes. Held to the range the state keeps (cameraAspect).
     camera.aspect = cameraAspect(value);
   } else {
-    setLaneValue(camera, "rotation", frame, { [field]: value });
+    setLaneValue(camera, "rotation", frame, { [field]: value }, length);
   }
 }
 
-export function setStickerOpacity(sticker, frame, opacity) {
-  setLaneValue(sticker, "opacity", clipFrame(sticker.clip, frame), opacity);
+export function setStickerOpacity(sticker, frame, opacity, length = null) {
+  setLaneValue(sticker, "opacity", clipFrame(sticker.clip, frame), opacity, length);
 }
 
 // The smallest scale the inspector sets on a world Sticker (its scale has no upper limit).
 export const WORLD_MIN_SCALE = 0.01;
 
 // An inspector edit of one world Sticker field at a Timeline frame, by the recording rule of its Lane.
-export function setWorldStickerField(sticker, frame, field, value) {
+export function setWorldStickerField(sticker, frame, field, value, length = null) {
   const stickerFrame = clipFrame(sticker.clip, frame);
   const axis = POSITION_FIELDS.indexOf(field);
   if (axis >= 0) {
-    const position = evaluateLane(sticker, "position", stickerFrame);
+    const position = evaluateLane(sticker, "position", stickerFrame, ownerPeriod(sticker, length));
     position[axis] = value;
-    setLaneValue(sticker, "position", stickerFrame, position);
+    setLaneValue(sticker, "position", stickerFrame, position, length);
   } else if (field === "scale") {
-    setLaneValue(sticker, "scale", stickerFrame, value);
+    setLaneValue(sticker, "scale", stickerFrame, value, length);
   } else if (field === "opacity") {
-    setLaneValue(sticker, "opacity", stickerFrame, value / 100);
+    setLaneValue(sticker, "opacity", stickerFrame, value / 100, length);
   } else {
-    setLaneValue(sticker, "rotation", stickerFrame, { [field]: value });
+    setLaneValue(sticker, "rotation", stickerFrame, { [field]: value }, length);
   }
 }
 
 // A gizmo edit of a world Sticker at a Timeline frame: only the Lanes of the parts it has
 // ({ position, rotation, scale }), each by the recording rule.
-export function setWorldStickerTransform(sticker, frame, transform) {
+export function setWorldStickerTransform(sticker, frame, transform, length = null) {
   const stickerFrame = clipFrame(sticker.clip, frame);
   for (const name of ["position", "rotation", "scale"]) {
-    if (transform[name] !== undefined) setLaneValue(sticker, name, stickerFrame, transform[name]);
+    if (transform[name] !== undefined) setLaneValue(sticker, name, stickerFrame, transform[name], length);
   }
 }
 
@@ -423,6 +425,7 @@ export function newWorldSceneSticker(id, source, transform) {
     clip: { start: 0, in: 0, duration: null },
     visible: true,
     locked: false,
+    loop: false,
     crop: { x0: 0, y0: 0, x1: 1, y1: 1 },
     position: { value: [...transform.position], keyframes: [] },
     rotation: { value: { ...transform.rotation }, keyframes: [] },
@@ -464,11 +467,14 @@ export function newSceneSticker(id, source, pose, zIndex) {
     clip: { start: 0, in: 0, duration: null },
     visible: true,
     locked: false,
+    loop: false,
     crop: { x0: 0, y0: 0, x1: 1, y1: 1 },
     // Every Lane a loaded sky Sticker has (SKY_STICKER_LANES), each read as the loader reads it; a Lane missing
     // here broke the Timeline's ownerTimed and dropped the new Sticker.
     ...Object.fromEntries(SKY_STICKER_LANES.map(([name, valueOf]) => [name, { value: valueOf(values[name]), keyframes: [] }])),
     z_index: zIndex,
+    // A port Sticker's offset Lanes (docs/scene-state-v2.md "受け渡しの置き方"), at their defaults.
+    ...(source.kind === "port" ? Object.fromEntries(PORT_OFFSET_LANES.map(([name, valueOf]) => [name, { value: valueOf(null), keyframes: [] }])) : {}),
   };
 }
 

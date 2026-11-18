@@ -10,7 +10,7 @@ from comfyui_pano_suite.core.scene_state import DEFAULT_CAMERA, GROUND_DEFAULT, 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "scene_state"
 
 STATE_CASES = ["v2_canonical", "v1_stickers", "v1_cutout", "v2_invalid_fields", "v2_no_camera", "v2_erp_camera", "v2_hidden", "v2_timeline_limits", "v2_upstream", "v2_background", "v2_big_numbers", "v1_cutout_shots"]
-STICKER_STATE_CASES = ["sticker_state_v1", "sticker_state_v2"]
+STICKER_STATE_CASES = ["sticker_state_v1", "sticker_state_v2", "sticker_state_v3"]
 
 
 def read_fixture(name):
@@ -84,10 +84,12 @@ def test_state_without_a_camera_object_has_the_default_camera(camera):
         "erp_range": 360,
         "visible": True,
         "locked": False,
+        "loop": False,
         "position": {"value": [0.0, 0.0, 0.0], "keyframes": []},
         "rotation": {"value": {"yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0}, "keyframes": []},
         "fov": {"value": 90.0, "keyframes": []},
         "curve": {"value": 1.0, "keyframes": []},
+        "look_at": {"value": None, "keyframes": []},
     }
 
 
@@ -98,10 +100,12 @@ def test_camera_object_has_the_default_camera_fields():
         "erp_range": 360,
         "visible": True,
         "locked": False,
+        "loop": False,
         "position": {"value": [0.0, 0.0, 0.0], "keyframes": []},
         "rotation": {"value": {"yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0}, "keyframes": []},
         "fov": {"value": 90.0, "keyframes": []},
         "curve": {"value": 1.0, "keyframes": []},
+        "look_at": {"value": None, "keyframes": []},
     }
 
 
@@ -266,17 +270,17 @@ def test_state_v2_has_no_unread_fields():
     state = load_scene_state(read_fixture("v2_canonical"))
     assert list(state.keys()) == ["version", "id", "timeline", "camera", "scene", "stickers", "next_sticker_id", "painting", "painting_layer", "painting_visible", "upstream", "background"]
     assert list(state["timeline"].keys()) == ["fps", "length"]
-    assert list(state["camera"].keys()) == ["aspect", "projection", "erp_range", "visible", "locked", "position", "rotation", "fov", "curve"]
+    assert list(state["camera"].keys()) == ["aspect", "projection", "erp_range", "visible", "locked", "loop", "position", "rotation", "fov", "curve", "look_at"]
     assert list(state["scene"].keys()) == ["clip", "visible", "position", "rotation", "scale"]
     lanes = {"sky": ["direction", "roll", "size", "opacity", "curve", "z_index"], "world": ["position", "rotation", "scale", "opacity"]}
     for sticker in state["stickers"]:
-        port = ["handoff_overrides"] if sticker["source"]["kind"] == "port" else []
-        assert list(sticker.keys()) == ["id", "placement", "source", "clip", "visible", "locked", "crop", *lanes[sticker["placement"]], *port]
+        port = ["offset_rotation", "offset_fov"] if sticker["source"]["kind"] == "port" else []
+        assert list(sticker.keys()) == ["id", "placement", "source", "clip", "visible", "locked", "loop", "crop", *lanes[sticker["placement"]], *port]
 
 
 @pytest.mark.parametrize("name", STICKER_STATE_CASES)
 def test_load_sticker_state_matches_fixture(name):
-    assert_close(load_sticker_state(read_fixture(name)), json.loads(read_fixture(f"{name}.v2")))
+    assert_close(load_sticker_state(read_fixture(name)), json.loads(read_fixture(f"{name}.v3")))
 
 
 @pytest.mark.parametrize("text", [None, "", "{bad", '{"kind":"other","version":2}', '{"kind":"pano_sticker_state","version":1,"pose":{}}'])
@@ -285,19 +289,26 @@ def test_load_sticker_state_ignores_non_sticker_state(text):
 
 
 def test_load_sticker_state_rejects_unknown_version():
-    with pytest.raises(ValueError, match="sticker_state version 3"):
-        load_sticker_state('{"kind":"pano_sticker_state","version":3}')
+    with pytest.raises(ValueError, match="sticker_state version 4; supported versions are 1, 2 and 3"):
+        load_sticker_state('{"kind":"pano_sticker_state","version":4}')
 
 
 def test_sticker_state_v2_without_camera_gets_one_default_keyframe_per_lane():
     parsed = load_sticker_state('{"kind":"pano_sticker_state","version":2,"fps":24,"camera":[]}')
     easing = [0.42, 0.0, 0.58, 1.0]
     assert parsed["camera"] == {
-        "position": [{"frame": 0, "value": [0.0, 0.0, 0.0], "easing": easing}],
-        "rotation": [{"frame": 0, "value": {"yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0}, "easing": easing}],
-        "fov": [{"frame": 0, "value": 90.0, "easing": easing}],
-        "curve": [{"frame": 0, "value": 1.0, "easing": easing}],
+        "loop": False,
+        "position": [{"frame": 0, "value": [0.0, 0.0, 0.0], "easing": "smooth"}],
+        "rotation": [{"frame": 0, "value": {"yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0}, "easing": "smooth"}],
+        "fov": [{"frame": 0, "value": 90.0, "easing": "smooth"}],
+        "curve": [{"frame": 0, "value": 1.0, "easing": "smooth"}],
+        "look_at": {"value": None, "keyframes": []},
     }
+    assert (parsed["length"], parsed["targets"]) == (None, [])
+    # A v2 Keyframe without an Easing reads v2's default; loop and Look at are not v2 fields.
+    parsed = load_sticker_state('{"kind":"pano_sticker_state","version":2,"fps":24,"camera":{"loop":true,"look_at":{"value":{"point":[0,0,-1]}},"fov":[{"frame":0,"value":50}]}}')
+    assert parsed["camera"]["fov"] == [{"frame": 0, "value": 50.0, "easing": easing}]
+    assert parsed["camera"]["loop"] is False and parsed["camera"]["look_at"]["value"] is None
 
 
 def test_evaluate_canonical_state_matches_fixture():
@@ -409,11 +420,26 @@ def test_the_ground_stays_where_the_spec_lists_it():
     assert list(load_scene_state({"version": 2, "ground": -2.0}))[-4:] == ["painting_visible", "ground", "upstream", "background"]
 
 
-@pytest.mark.parametrize("easing", [None, "smooth", [0.42, 0.0, 0.58], [0.2, -0.1, 0.8, 1.0], [0.2, 0.0, 0.8, 1.1], [1.2, 0.0, 0.5, 1.0]])
-def test_missing_or_invalid_easing_is_ease_in_out(easing):
+@pytest.mark.parametrize("easing", [None, "smooth", "auto", "Smooth", 1, [0.42, 0.0, 0.58], [0.2, -0.1, 0.8, 1.0], [0.2, 0.0, 0.8, 1.1], [1.2, 0.0, 0.5, 1.0]])
+def test_missing_invalid_or_auto_easing_is_smooth(easing):
+    # ADR 0064: Smooth is the Easing nothing is set on; the earlier `auto` reads as it.
     key = {"frame": 0, "value": 0.5} if easing is None else {"frame": 0, "value": 0.5, "easing": easing}
     state = load_scene_state({"version": 2, "stickers": [{"source": {"kind": "port"}, "opacity": {"keyframes": [key]}}]})
-    assert state["stickers"][0]["opacity"]["keyframes"][0]["easing"] == [0.42, 0.0, 0.58, 1.0]
+    assert state["stickers"][0]["opacity"]["keyframes"][0]["easing"] == "smooth"
+
+
+def test_only_a_position_keyframe_keeps_a_corner_mark():
+    keys = [{"frame": 0, "value": [0, 0, 0], "corner": True}, {"frame": 5, "value": [1, 0, 0], "corner": "yes"}, {"frame": 9, "value": [2, 0, 0], "corner": False}]
+    state = load_scene_state({"version": 2, "camera": {"position": {"keyframes": keys}, "fov": {"keyframes": [{"frame": 0, "value": 60, "corner": True}]}}})
+    assert [key.get("corner") for key in state["camera"]["position"]["keyframes"]] == [True, None, None]
+    assert "corner" not in state["camera"]["fov"]["keyframes"][0]
+
+
+def test_loop_marks_are_booleans_on_the_camera_and_each_sticker():
+    state = load_scene_state({"version": 2, "camera": {"loop": True}, "stickers": [{"source": {"kind": "port"}, "loop": 1}], "scene": {"loop": True}})
+    assert state["camera"]["loop"] is True
+    assert state["stickers"][0]["loop"] is False
+    assert "loop" not in state["scene"]
 
 
 def test_missing_or_invalid_lane_is_the_default_lane():
@@ -480,15 +506,17 @@ def test_a_sticker_without_a_valid_id_takes_the_counter_not_a_smaller_unused_num
     assert load_scene_state(state) == state
 
 
-def test_only_port_stickers_keep_handoff_overrides_of_their_lanes_in_lane_order():
+def test_only_port_stickers_have_offset_lanes_and_the_earlier_handoff_overrides_are_dropped():
     state = load_scene_state({"version": 2, "stickers": [
-        {"id": "p", "placement": "world", "source": {"kind": "port"}, "handoff_overrides": ["opacity", "direction", "position", "position", None]},
-        {"id": "f", "source": {"kind": "file", "filename": "a.png"}, "handoff_overrides": ["direction"]},
+        {"id": "p", "placement": "sky", "source": {"kind": "port"}, "handoff_overrides": ["direction"], "offset_rotation": {"value": {"yaw_deg": 5}, "keyframes": [{"frame": 3, "value": {"pitch_deg": 2}}]}, "offset_fov": {"value": 1.5}},
+        {"id": "f", "source": {"kind": "file", "filename": "a.png"}, "offset_rotation": {"value": {"yaw_deg": 5}}},
     ]})
 
-    assert state["stickers"][0]["handoff_overrides"] == ["position", "opacity"]
-    assert "handoff_overrides" not in state["stickers"][1]
-    assert load_scene_state({"version": 2, "stickers": [{"id": "p", "source": {"kind": "port"}, "handoff_overrides": "size"}]})["stickers"][0]["handoff_overrides"] == []
+    port, file = state["stickers"]
+    assert "handoff_overrides" not in port
+    assert port["offset_rotation"] == {"value": {"yaw_deg": 5.0, "pitch_deg": 0.0, "roll_deg": 0.0}, "keyframes": [{"frame": 3, "value": {"yaw_deg": 0.0, "pitch_deg": 2.0, "roll_deg": 0.0}, "easing": "smooth"}]}
+    assert port["offset_fov"] == {"value": 1.5, "keyframes": []}
+    assert "offset_rotation" not in file and "offset_fov" not in file
 
 
 @pytest.mark.parametrize("value", ["", 3, None, ["a"]])
@@ -514,7 +542,8 @@ def test_rebase_keeps_the_id_the_counter_and_the_upstream_records():
     rebased = rebase_scene_state(state, 60.0)
 
     assert (rebased["id"], rebased["next_sticker_id"], rebased["upstream"]) == (state["id"], state["next_sticker_id"], state["upstream"])
-    assert rebased["stickers"][1]["handoff_overrides"] == ["direction", "size", "opacity"]
+    port = load_scene_state({"version": 2, "stickers": [{"id": "p", "source": {"kind": "port"}, "offset_fov": {"value": 1.5, "keyframes": [{"frame": 30, "value": 2}]}}]})
+    assert rebase_scene_state(port, 60.0)["stickers"][0]["offset_fov"]["keyframes"][0]["frame"] == 75
 
 
 def test_sticker_ids_are_numbered_as_the_fixture_shared_with_js_says():

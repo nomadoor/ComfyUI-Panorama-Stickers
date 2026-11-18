@@ -33,6 +33,30 @@ test("the sky image is a sky layer, the world image a plane, the 3D file an item
   assert.ok(content.sphere.radius > 2, "the plane and the 3D item are inside");
 });
 
+// docs/scene-state-v2.md "Look at" "中身の箱": the box is the content's, shown or not. A 3D target hidden or outside its
+// Clip range is not drawn, yet the Camera keeps facing its box's point (as the output does), and its item is loaded to
+// be measured even when it never showed.
+test("a hidden 3D Look at target keeps its content box, and its item loads to be measured without being drawn", () => {
+  const make = (visible, clip = null) => loadSceneState({ version: 2,
+    camera: { look_at: { value: { sticker: "box_1", offset: [0, 0, 0] }, keyframes: [] } },
+    stickers: [{ id: "box_1", placement: "world", visible, ...(clip ? { clip } : {}), source: file("thing.glb"), position: { value: [0, 0, -4] } }] });
+  const standing = { min: [-0.5, 0, -0.5], max: [0.5, 2, 0.5] };
+  const options = { media: () => null, editorFile, sceneBox: (url) => (url.startsWith("file3d:") ? standing : null) };
+  const shown = stageContent(make(true), 0, options);
+  assert.deepEqual(shown.lookBoxes, { box_1: { center: [0, 1, 0], size: [1, 2, 1] } });
+  assert.deepEqual(shown.space.measuredStickers, []);
+  for (const hidden of [make(false), make(true, { start: 10, end: 20, in: 0 })]) {
+    const content = stageContent(hidden, 0, options);
+    assert.deepEqual(content.lookBoxes, shown.lookBoxes);
+    assert.deepEqual(content.evaluated.camera, shown.evaluated.camera);
+    assert.deepEqual(content.space.fileStickers, [], "not drawn");
+    assert.deepEqual(content.space.measuredStickers.map((request) => [request.url, request.src]), [["file3d:0:box_1", "/thing.glb"]]);
+  }
+  // Hidden and not a target: nothing to measure.
+  const other = loadSceneState({ version: 2, stickers: [{ id: "box_1", placement: "world", visible: false, source: file("thing.glb"), position: { value: [0, 0, -4] } }] });
+  assert.deepEqual(stageContent(other, 0, options).space.measuredStickers, []);
+});
+
 test("before anything loads nothing is drawn and there is no World sphere", () => {
   const content = stageContent(state, 0, { media: () => null });
   assert.deepEqual(content.layers, []);

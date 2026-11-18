@@ -1,0 +1,85 @@
+"""The node's side of the Camera's Look at (docs/studio-node.md "Look at の相手の箱", docs/scene-state-v2.md "Look at"):
+the content boxes it hands the evaluation, and an output that faces the target."""
+import numpy as np
+import pytest
+
+from comfyui_pano_suite.core.paint_state import empty_painting_state
+from comfyui_pano_suite.core.render import SceneSources, StickerSource
+from comfyui_pano_suite.core.scene_eval import evaluate_scene_state
+from comfyui_pano_suite.core.scene_state import load_scene_state
+from comfyui_pano_suite.core.world import world_rotation
+from comfyui_pano_suite.scene_build import look_at_boxes
+
+
+def _state(target):
+    return load_scene_state({"version": 2, "camera": {"position": {"value": [0.0, 0.0, 4.0]}, "look_at": {"value": target}},
+                             "stickers": [{"id": "board", "placement": "world", "source": {"kind": "file", "filename": "a.png"},
+                                           "crop": {"x0": 0.0, "y0": 0.0, "x1": 0.5, "y1": 1.0}},
+                                          {"id": "sky", "placement": "sky", "source": {"kind": "file", "filename": "b.png"}}]})
+
+
+def _sources(width, height):
+    rgba = np.zeros((height, width, 4), dtype=np.uint8)
+    return SceneSources({"board": StickerSource(rgba, {"x0": 0.0, "y0": 0.0, "x1": 0.5, "y1": 1.0}), "sky": StickerSource(rgba, {"x0": 0.0, "y0": 0.0, "x1": 1.0, "y1": 1.0})}, empty_painting_state())
+
+
+def test_an_image_plane_s_box_is_one_wide_and_as_tall_as_its_cropped_image():
+    state = _state({"sticker": "board", "offset": [0.0, 0.5, 0.0]})
+    # 200 x 100 cropped to its left half: 100 x 100, a square.
+    assert look_at_boxes(state, _sources(200, 100), None) == {"board": {"center": [0.0, 0.0, 0.0], "size": [1.0, 1.0, 0.0]}}
+    # A sky image, a point and no target have no box.
+    assert look_at_boxes(_state({"sticker": "sky", "offset": [0, 0, 0]}), _sources(200, 100), None) == {}
+    assert look_at_boxes(_state({"point": [0, 0, 0]}), _sources(200, 100), None) == {}
+    assert look_at_boxes(_state(None), _sources(200, 100), None) == {}
+
+
+def test_the_camera_looks_at_the_offset_point_of_the_box():
+    state = _state({"sticker": "board", "offset": [0.0, 0.5, 0.0]})
+    boxes = look_at_boxes(state, _sources(200, 100), None)
+    camera = evaluate_scene_state(state, 0.0, None, boxes)["camera"]
+    forward = world_rotation(camera["yaw_deg"], camera["pitch_deg"], camera["roll_deg"]) @ np.array([0.0, 0.0, -1.0])
+    toward = np.array([0.0, 0.5, 0.0]) - np.array([0.0, 0.0, 4.0])
+    assert forward == pytest.approx(toward / np.linalg.norm(toward), abs=1e-9)
+
+
+def test_an_empty_crop_has_no_box_so_the_camera_looks_at_the_sticker_s_position():
+    # CodeRabbit review: a crop with no height draws no plane (core/world_render.py crop_empty) and has no box.
+    state = load_scene_state({"version": 2, "camera": {"position": {"value": [0.0, 0.0, 4.0]}, "look_at": {"value": {"sticker": "board", "offset": [0.5, 0.0, 0.0]}}},
+                              "stickers": [{"id": "board", "placement": "world", "source": {"kind": "file", "filename": "a.png"},
+                                            "crop": {"x0": 0.0, "y0": 0.5, "x1": 1.0, "y1": 0.5}}]})
+    rgba = np.zeros((100, 100, 4), dtype=np.uint8)
+    sources = SceneSources({"board": StickerSource(rgba, {"x0": 0.0, "y0": 0.5, "x1": 1.0, "y1": 0.5})}, empty_painting_state())
+    assert look_at_boxes(state, sources, None) == {}
+
+
+def test_an_upstream_override_of_the_crop_makes_the_layer_s_box_again():
+    # CodeRabbit review: scene_build.py `_override_layer` makes the Look at boxes again from the overridden state.
+    from fractions import Fraction
+
+    from comfyui_pano_suite.pano_scene import PanoSceneValue, SceneLayer
+    from comfyui_pano_suite.scene_build import _override_layers
+
+    raw = {"version": 2, "id": "up", "camera": {"look_at": {"value": {"sticker": "board", "offset": [0.0, 0.0, 0.0]}}},
+           "stickers": [{"id": "board", "placement": "world", "source": {"kind": "file", "filename": "a.png"}}]}
+    state = load_scene_state(raw)
+    full = {"x0": 0.0, "y0": 0.0, "x1": 1.0, "y1": 1.0}
+    sources = SceneSources({"board": StickerSource(np.zeros((100, 200, 4), dtype=np.uint8), full)}, empty_painting_state())
+    layer = SceneLayer(state, sources, None, None, {}, boxes=look_at_boxes(state, sources, None))
+    assert layer.boxes == {"board": {"center": [0.0, 0.0, 0.0], "size": [1.0, 0.5, 0.0]}}
+    upstream = PanoSceneValue((layer,), None, 360, (0.0, 0.0, 0.0), Fraction(24), (), Fraction(0), (), {}, {})
+    own = load_scene_state({"version": 2, "upstream": [{"layer": "up", "fps": 24, "stickers": [
+        {"id": "board", "placement": "world", "crop": {"x0": 0.0, "y0": 0.5, "x1": 1.0, "y1": 0.5}}]}]})
+    applied, _ = _override_layers(upstream, own["upstream"], [])
+    assert applied[0].boxes == {}
+
+
+def test_the_empty_crop_rule_is_the_fixture_s():
+    # One rule in Python and JS: web_src/space/bounds.js cropEmpty reads the same fixture.
+    import json
+    from pathlib import Path
+
+    from comfyui_pano_suite.core.world_render import crop_empty
+
+    fixture = json.loads((Path(__file__).parent / "fixtures" / "world_plane" / "crop_empty.json").read_text(encoding="utf-8"))
+    for case in fixture["cases"]:
+        assert crop_empty(case["crop"]) is case["empty"], case

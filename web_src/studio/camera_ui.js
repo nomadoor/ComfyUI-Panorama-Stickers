@@ -1,7 +1,8 @@
 // The Camera in the new editor (docs/studio-ui.md "エディタの中の Camera"): the left column's Camera button, whether it
 // can be pressed and what its tooltip says, and how it brings the Camera to the view. Pure; studio/session.js makes the
 // move one Undo step, studio/editor.js hands it the view, components/studio/StudioToolRail.vue draws the button.
-import { moveCameraPose } from "./camera_state.js";
+import { setLaneValue } from "../pano_timeline.js";
+import { cameraLooks, moveCameraPose } from "./camera_state.js";
 import { VIEW_NOTICES } from "./view_camera.js";
 
 const LABEL = "Camera to view";
@@ -30,11 +31,17 @@ export function cameraButton({ projection, locked = false, readOnly = false }) {
 // frame `frame`: Panorama mode switches to Frame mode, and the position, Yaw and Pitch go to the view's by the recording
 // rule (camera_state.js moveCameraPose: only the Lanes that change, keyed at `frame` where they have Keyframes).
 // Roll, the FOV, the lens and the aspect stay. Returns whether anything changed.
-export function cameraToView(camera, frame, pose) {
+export function cameraToView(camera, frame, pose, length = null, stickers = []) {
   let changed = false;
   if (camera.projection === "erp") {
     camera.projection = "perspective";
     changed = true;
   }
-  return moveCameraPose(camera, frame, pose) || changed;
+  // Looking at a target, the Camera's turn is the target's: only its position comes (docs/studio-ui.md "Look at").
+  if (cameraLooks(camera, frame, length, stickers)) {
+    const before = JSON.stringify(camera.position);
+    setLaneValue(camera, "position", frame, [...pose.position], length);
+    return JSON.stringify(camera.position) !== before || changed;
+  }
+  return moveCameraPose(camera, frame, pose, length) || changed;
 }

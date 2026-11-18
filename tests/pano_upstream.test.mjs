@@ -205,6 +205,8 @@ test("an upstream layer's 3D file Stickers ask for the same editor files and dra
     ["scene_a:file:upstream:scene_a:chair", ["file3d:0:upstream:scene_a:chair"], "file3d:0:upstream:scene_a:chair", "/view?filename=e.glb", 0.5, "chair.glb"],
     // Hidden: it keeps its item loaded and shows nothing.
     ["scene_a:file:upstream:scene_a:off", ["file3d:0:upstream:scene_a:off"], null, null, 1, "chair.glb"],
+    // No editor file yet: no item to load, but the Sticker for its loading guide (docs/studio-ui.md "置く間").
+    ["scene_a:file:upstream:scene_a:rig", [], null, null, 0.5, "rig.fbx"],
   ]);
   assert.equal(view.items[0].request.unlit, false);
   assert.equal(view.items[0].request.id, "upstream:scene_a:chair");
@@ -549,4 +551,52 @@ test("an upstream element is overridden when its layer's record has any entry fo
   assert.equal(upstreamStickerOverridden(records([{ id: "other", placement: "sky", visible: false }]), sticker), false);
   assert.equal(upstreamStickerOverridden(records([{ id: "s", placement: "sky", locked: false }]), sticker), true);
   assert.equal(upstreamStickerOverridden(records([{ id: "s", placement: "world", scale: { value: 2, keyframes: [] } }]), sticker), true);
+});
+
+// docs/studio-node.md "実行結果の ui" `pano_upstream_layers`: each layer's length, the loop period of its owners, at the
+// working copy's fps.
+test("an upstream layer keeps the length its node decided, rebased to the working fps", () => {
+  const [layer] = upstreamLayersOf([{ state: { version: 2, timeline: { fps: 24 } }, ui: {}, length: 48 }]);
+  assert.equal(layer.length, 48);
+  assert.equal(upstreamLayersOf([{ state: { version: 2 }, ui: {} }])[0].length, null);
+  const [working] = upstreamWorkingLayers([layer], [], 30);
+  assert.equal(working.length, 60);
+});
+
+// docs/studio-ui.md "上流の物の編集" and docs/scene-state-v2.md "上流の上書き": the port Sticker an upstream layer's
+// sticker_state places is marked as the node's own is, and its offset is written back as an override; the record reads
+// it back, and its revert takes it off.
+test("an upstream port Sticker placed by its layer's shot is marked, and its offset is written as an override", () => {
+  const shot = { kind: "pano_sticker_state", version: 3, fps: 24, camera: { rotation: [{ frame: 0, value: { yaw_deg: 40 } }] } };
+  const layers = upstreamLayersOf([{ state: { version: 2, id: "scene_a", stickers: [{ id: "sticker_1", placement: "sky", source: { kind: "port" } }, sky("sticker_2")] }, shot }]);
+  assert.equal(layers[0].shot.camera.rotation[0].value.yaw_deg, 40);
+  const working = upstreamWorkingLayers(layers, [], 24);
+  const [port, file] = working[0].sceneState.stickers;
+  assert.deepEqual([port.placedByShot, file.placedByShot], [true, undefined]);
+  // Without a shot the layer's port Sticker is a sky image.
+  assert.equal(upstreamWorkingLayers(upstreamLayersOf([{ state: { version: 2, id: "scene_a", stickers: [{ id: "sticker_1", placement: "sky", source: { kind: "port" } }] } }]), [], 24)[0].sceneState.stickers[0].placedByShot, undefined);
+  const baseline = upstreamBaseline(working);
+  port.offset_fov = { value: 1.5, keyframes: [] };
+  const records = upstreamEditedRecords([], layers, working, baseline, 24);
+  assert.deepEqual(records[0].stickers, [{ id: "sticker_1", placement: "sky", offset_fov: { value: 1.5, keyframes: [] } }]);
+  assert.equal("placedByShot" in records[0].stickers[0], false);
+  // Read back, the override holds the offset Lane; the revert of that Lane takes it off.
+  const { upstream } = loadSceneState({ version: 2, upstream: records });
+  assert.deepEqual(upstream[0].stickers[0].offset_fov, { value: 1.5, keyframes: [] });
+  const again = upstreamWorkingLayers(layers, upstream, 24);
+  assert.equal(again[0].sceneState.stickers[0].offset_fov.value, 1.5);
+  assert.deepEqual(upstreamRevertedRecords(upstream, again[0].sceneState.stickers[0], "offset_fov"), []);
+});
+
+// docs/studio-ui.md "置く間": an upstream 3D file Sticker whose editor file has not come yet still has an item, without a
+// request, with its id, Source, value and whether it shows, so its loading guide and line can show.
+test("an upstream 3D file Sticker before its editor file came has an item without a request", () => {
+  const layer = workingOf({ stickers: [world("chair", { source: { kind: "file", filename: "chair.glb", subfolder: "3d", storage: "input" } })] });
+  const view = upstreamLayerView(layer, layer.key, 0, { media: () => null, paintLayers: [], source, editorFile: () => null });
+  const [item] = view.items;
+  assert.deepEqual([item.id, item.request, item.urls, item.active, item.source.filename], ["upstream:#0:chair", null, [], true, "chair.glb"]);
+  assert.ok(item.value?.position);
+  // Once it came, the item asks for its file as before.
+  const ready = upstreamLayerView(layer, layer.key, 0, { media: () => null, paintLayers: [], source, editorFile: () => ({ kind: "mesh", unlit: true, url: "/e.glb", generation: 0 }) });
+  assert.deepEqual([ready.items.length, ready.items[0].id, !!ready.items[0].request, ready.items[0].active], [1, "upstream:#0:chair", true, true]);
 });

@@ -10,11 +10,11 @@ import { ownSceneLinked } from "../pano_upstream.js";
 import { stateAnimationClips } from "../pano_space.js";
 import { timelineFpsLocked, videoTimelineFps } from "../pano_video_fps.js";
 import { groundOf } from "./defaults.js";
-import { linkedInputNames, stageEmpty as emptyStage } from "./notice_line.js";
+import { endsWhereItStartsText, linkedInputNames, stageEmpty as emptyStage } from "./notice_line.js";
 import { stageUi } from "./stage.js";
 import { outputView } from "./stage_view.js";
-import { readLengthUnitSetting, readLoopSetting } from "./timeline_actions.js";
-import { spanOf } from "./timeline_model.js";
+import { endsWhereItStarts, readLengthUnitSetting, readLoopSetting } from "./timeline_actions.js";
+import { objectLabel, spanOf } from "./timeline_model.js";
 import { BOUND_NOTICE_SECONDS } from "./view_scale.js";
 import { BACKGROUND_INPUTS, linked, widgetOf, VIDEO_FPS_INPUTS } from "./editor_inputs.js";
 
@@ -67,8 +67,16 @@ export function createEditorView(ctx) {
     tool: "cursor",
     paint: null,
     confirm: null,
+    // The output length (outputLength(), written by sync()).
+    outputLength: null,
+    // The content boxes of what the Camera looks at, as the stage draws them (editor_content.js lookBoxes, written
+    // when they change), so the inspector reads Look at as the stage does.
+    lookBoxes: null,
   });
   const timelineCtx = () => ({ state: ctx.session.state, upstream: view.upstream, media: view.media });
+  // The output length (the Timeline's span, timeline_model.js spanOf): the loop period of looping owners
+  // (docs/scene-state-v2.md "ループ").
+  const outputLength = () => spanOf(timelineCtx());
 
   function syncMedia() {
     const state = ctx.session.state;
@@ -105,6 +113,21 @@ export function createEditorView(ctx) {
   const groundNow = () => groundOf(ctx.session.state, ctx.upstream.working());
   const world = { ground: groundNow(), camera: outputView(ctx.session.state, 0).position };
 
+  // Says once, right after the edit that made it, that an object ends where it starts while its loop is off
+  // (docs/timeline-ui.md "動きのループ"); the editor never turns the loop on itself.
+  let endsAsStarts = null;
+  function loopHint() {
+    const now = new Set(endsWhereItStarts(ctx.session.state));
+    if (endsAsStarts) {
+      const added = [...now].find((id) => !endsAsStarts.has(id));
+      if (added) {
+        const sticker = ctx.session.state.stickers.find((item) => item.id === added);
+        ctx.infoNotice?.(endsWhereItStartsText(added === "camera" ? "Camera" : objectLabel(sticker)));
+      }
+    }
+    endsAsStarts = now;
+  }
+
   function sync() {
     // [inputs] An upstream object gone with a new result is selected no more.
     ctx.session.keepSelection();
@@ -114,14 +137,18 @@ export function createEditorView(ctx) {
     view.canRedo = ctx.session.canRedo;
     view.portHandoff = ctx.session.portHandoff;
     world.ground = groundNow();
-    world.camera = outputView(ctx.session.state, view.playhead).position;
     syncMedia();
+    // After the media: a new Auto span is the loop period the Camera is evaluated with.
+    world.camera = outputView(ctx.session.state, view.playhead, outputLength()).position;
+    // The output length the inspector and the bar read (the loop period of looping owners).
+    view.outputLength = outputLength();
+    loopHint();
     ctx.ui.empty = ctx.stageEmpty();
     ctx.seekMovedBackground();
     ctx.redraw();
   }
 
-  return { view, timelineCtx, syncMedia, groundNow, world, sync };
+  return { view, timelineCtx, outputLength, syncMedia, groundNow, world, sync };
 }
 
 // What the stage reports and the notices (the background image comes between: editor_playback.js).
@@ -141,11 +168,15 @@ export function createEditorUi(ctx) {
     choice: null,
     drop: null,
     adding: false,
+    // A 3D file Sticker shown but not drawn yet, placed ones once settled (editor_content.js).
+    loading3d: false,
     addWarning: null,
     // The node's state_json cannot be read: the editor is read-only (notice_line.js).
     stateUnreadable: ctx.stateUnreadable,
     // The short notice of an operation that was done (notice_line.js), or null.
     done: null,
+    // A short notice that only tells (notice_line.js), or null: an object that ends where it starts with its loop off.
+    info: null,
     // Counts the Camera button's moves: each new count runs the stage's viewfinder cue once (StudioCameraCue.vue).
     cameraCue: 0,
   });
@@ -177,5 +208,14 @@ export function createEditorUi(ctx) {
     }, BOUND_NOTICE_SECONDS * 1000);
   }
 
-  return { ui, stageEmpty, notice, doneNotice };
+  // A short notice that only tells: shown as long as the notices above.
+  function infoNotice(text) {
+    ui.info = text;
+    clearTimeout(ctx.infoTimer);
+    ctx.infoTimer = setTimeout(() => {
+      if (ui.info === text) ui.info = null;
+    }, BOUND_NOTICE_SECONDS * 1000);
+  }
+
+  return { ui, stageEmpty, notice, doneNotice, infoNotice };
 }

@@ -23,7 +23,7 @@ test("overridden Lanes replace whole Lanes and the other Lanes follow the layer"
   const item = fixture("lanes");
   const layer = loadSceneState(item.layer);
   const result = applyUpstreamOverrides(layer, record(item.records[0]));
-  assert.deepEqual(result.stickers[0].direction.keyframes, [{ frame: 3, value: { yaw_deg: -20, pitch_deg: 5 }, easing: "auto" }]);
+  assert.deepEqual(result.stickers[0].direction.keyframes, [{ frame: 3, value: { yaw_deg: -20, pitch_deg: 5 }, easing: "smooth" }]);
   assert.equal(result.stickers[0].roll, layer.stickers[0].roll);
   assert.equal(result.stickers[2], layer.stickers[2]);
 });
@@ -109,7 +109,7 @@ test("chained records apply in order and the later record wins", () => {
   const first = applyUpstreamOverrides(loadSceneState(item.layer), record(item.records[0]));
   assert.equal(first.stickers[0].roll.value, 10);
   const second = applyUpstreamOverrides(first, record(item.records[1]));
-  assert.deepEqual(second.stickers[0].roll, { value: 20, keyframes: [{ frame: 10, value: 20, easing: [0.42, 0, 0.58, 1] }] });
+  assert.deepEqual(second.stickers[0].roll, { value: 20, keyframes: [{ frame: 10, value: 20, easing: "smooth" }] });
   assert.equal(second.stickers[0].opacity.value, 0.5);
 });
 
@@ -128,4 +128,12 @@ test("frozen inputs apply without errors", () => {
     const result = records.reduce((state, each) => applyUpstreamOverrides(deepFreeze(state), each), deepFreeze(loadSceneState(item.layer)));
     assert.deepEqual(result, loadSceneState(item.expected), name);
   }
+});
+
+// docs/scene-state-v2.md "上流の上書き": `loop` is overridden as `visible` and `locked` are (ADR 0064).
+test("an upstream Sticker's loop is an override like its visibility", () => {
+  const layer = loadSceneState({ version: 2, id: "scene_a", stickers: [{ id: "sticker_1", source: { kind: "port" } }] });
+  const state = loadSceneState({ version: 2, upstream: [{ layer: "scene_a", fps: 24, deleted: [], stickers: [{ id: "sticker_1", placement: "sky", loop: true }] }] });
+  assert.equal(state.upstream[0].stickers[0].loop, true);
+  assert.equal(applyUpstreamOverrides(layer, state.upstream[0]).stickers[0].loop, true);
 });

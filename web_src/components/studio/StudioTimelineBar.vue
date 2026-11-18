@@ -4,17 +4,20 @@ import { ICON } from "../../icons.js";
 import { TIMELINE_FPS_MAX, TIMELINE_FPS_MIN } from "../../pano_scene_state.js";
 import { lengthFromSeconds, lengthSecondsText } from "../../studio/timeline_actions.js";
 import { parseNumber } from "../../studio/ui_drag.js";
+import SvgIcon from "../shared/SvgIcon.vue";
 import StudioIconButton from "./StudioIconButton.vue";
 import StudioNumberField from "./StudioNumberField.vue";
+import StudioSlider from "./StudioSlider.vue";
 
 // The Timeline's bar (docs/studio-ui.md "タイムラインのバー"; what each part does: docs/timeline-ui.md). From the left:
-// play and pause, the previous and the next Keyframe, the loop button (its icon shows the state), the time and frame; on the right the fps
+// play and pause, the previous and the next Keyframe, the playback loop button (its icon shows the state), the time and
+// frame, Constant speed and Simplify with its slider between the fewest it keeps and the count selected while adjusting (docs/timeline-ui.md "Simplify"); on the right the fps
 // field, the Length field and its reset, and the collapse button. Presentational: `bar` (timeline_model.js
 // buildStudioTimeline().bar) in; `play`, `jump` (direction), `loop-change`, `fps`, `length-input` (each value while
 // the Length field is dragged, and a typed one just before its `length`), `length` (a number once on release or typing,
 // or null for the reset), `length-cancel` (the Length field given up: after a drag, its `length-input` with the value
 // from before comes first), `length-unit` (the unit mark: "frames" or "seconds") and `collapse` out. fps goes out on
-// release only.
+// release only. `simplify` (Simplify pressed) and `simplify-count` (the slider: the count of Keyframes to keep) go out too.
 //
 // `lengthUnit` is the unit the Length field shows (docs/timeline-ui.md "タイムラインの長さ"): in seconds it shows the
 // length ÷ fps and reads typed seconds as the nearest frame, while the field itself keeps whole frames (a drag step is
@@ -27,7 +30,14 @@ const props = defineProps({
   collapsed: { type: Boolean, default: false },
   lengthUnit: { type: String, default: "frames" },
 });
-const emit = defineEmits(["play", "jump", "loop-change", "fps", "length-input", "length", "length-cancel", "length-unit", "collapse"]);
+const emit = defineEmits(["play", "jump", "loop-change", "fps", "length-input", "length", "length-cancel", "length-unit", "collapse", "simplify", "simplify-count", "constant-speed"]);
+
+// Simplify's slider is the count of Keyframes to keep: the least at its left, the original count at its right.
+const simplify = computed(() => props.bar.simplify ?? null);
+function onSimplifyCount(value) {
+  const run = simplify.value;
+  if (run?.adjusting) emit("simplify-count", Math.round(value));
+}
 
 const fpsField = ref(null);
 const lengthField = ref(null);
@@ -75,14 +85,60 @@ const lengthParse = (text) => {
       role="switch"
       :aria-checked="bar.loop ? 'true' : 'false'"
       :icon="bar.loop ? ICON.loop : ICON.loop_off"
-      label="Loop"
-      :tip="bar.loop ? 'Loop: on' : 'Loop: off'"
+      label="Loop playback"
+      :tip="bar.loop ? 'Loop playback: on' : 'Loop playback: off'"
       data-tl="loop"
       @press="emit('loop-change', !props.bar.loop)"
     />
     <span class="pano-studio-tl-time pano-studio-num" data-tl="time">
       <span class="pano-studio-tl-timecode">{{ bar.timecode }}</span>
-      <span class="pano-studio-tl-frame">{{ bar.frameText }}</span>
+      <span class="pano-studio-tl-frame-seat">
+        <span class="pano-studio-tl-frame">{{ bar.frameText }}</span>
+        <span class="pano-studio-tl-frame-widest" aria-hidden="true">{{ bar.frameWidest }}</span>
+      </span>
+    </span>
+    <span class="pano-studio-sep" />
+    <!-- Constant speed (docs/timeline-ui.md "Constant speed"): one press moves the selected Keyframes in time. -->
+    <button
+      type="button"
+      class="pano-studio-tl-simplify-btn"
+      :aria-disabled="bar.constantSpeed?.disabled !== false ? 'true' : null"
+      :data-tip="bar.constantSpeed?.tip ?? 'Constant speed'"
+      data-tl="constant-speed"
+      @click="bar.constantSpeed?.disabled === false && emit('constant-speed')"
+    >
+      <SvgIcon :icon="ICON.constant_speed" />
+      <span>Constant speed</span>
+    </button>
+    <span v-if="simplify" class="pano-studio-tl-simplify" :class="{ 'is-adjusting': simplify.adjusting }" data-tl="simplify-group">
+      <button
+        type="button"
+        class="pano-studio-tl-simplify-btn"
+        :aria-disabled="simplify.disabled ? 'true' : null"
+        :data-tip="simplify.tip"
+        data-tl="simplify"
+        @click="!simplify.disabled && emit('simplify')"
+      >
+        <SvgIcon :icon="ICON.simplify" />
+        <span>Simplify</span>
+      </button>
+      <!-- While adjusting only: the slider between its ends, the fewest it can keep and the count selected (docs/timeline-ui.md
+           "Simplify"). -->
+      <span v-if="simplify.adjusting" class="pano-studio-tl-simplify-adjust" data-tl="simplify-adjust">
+        <span class="pano-studio-tl-simplify-end pano-studio-num" data-tl="simplify-least">{{ simplify.least }}</span>
+        <span class="pano-studio-tl-simplify-slider" data-tip="Keyframes to keep">
+          <StudioSlider
+            :value="simplify.count"
+            :min="simplify.least"
+            :max="simplify.original"
+            :step="1"
+            label="Keyframes to keep"
+            @input="onSimplifyCount"
+            @change="onSimplifyCount"
+          />
+        </span>
+        <span class="pano-studio-tl-simplify-end pano-studio-num" data-tl="simplify-total">{{ simplify.original }}</span>
+      </span>
     </span>
     <span class="pano-studio-tl-spacer" />
     <span
