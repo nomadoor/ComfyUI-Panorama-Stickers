@@ -583,7 +583,7 @@ stylesheet の読み込みは上の「この文書が owner である規則」�
 | `900ms linear` で 1 回転、繰り返し | 一行の知らせの読み込み中の輪 |
 | `160ms ease-out`、opacity | Add の二択の幕と札が出るとき |
 | `LOAD_SHIMMER_MS` 1400ms linear で一度横切る、繰り返し | 3D ファイルの Sticker の読み込み中のガイドの光の帯（置いた物と、エディタを開いたときの物） |
-| `LOAD_REVEAL_MS` 250ms ease-out（二次） | 置いた 3D ファイルが描けたとき：光の帯が消え、中身の不透明度が 0 から上がる。一つの描画で進むのは `LOAD_REVEAL_STEP_MS` 40ms まで（描き始めのシェーダーの準備で描画が止まっても、現れる動きを飛ばさない） |
+| `LOAD_REVEAL_MS` 250ms ease-out（二次） | 3D ファイルの Sticker の読み込み中の中身が描けたとき：光の帯が消え、中身の不透明度が 0 から上がる。一つの描画で進むのは `LOAD_REVEAL_STEP_MS` 40ms まで（描き始めのシェーダーの準備で描画が止まっても、現れる動きを飛ばさない） |
 | `120ms ease-out`、opacity | ツールチップが出るとき（消えるときは動きを付けず即座に消す） |
 | `1200ms ease-in-out`、輪の opacity 1 ↔ 0.3 の往復、繰り返し | Set orbit center の待ちの輪（待っている間だけ） |
 | `ORBIT_MARK_HOLD_SECONDS` そのまま、`ORBIT_MARK_FADE_SECONDS` で opacity を線形に 0 へ | ダブルクリックと Set orbit center で `T` を決めた後のオービットの中心の印（値は `docs/space-and-view.md`）。ほかの時の印は動きを付けずに出し入れする |
