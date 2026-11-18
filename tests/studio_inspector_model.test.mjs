@@ -521,18 +521,17 @@ test("a returned shot's card has Offset, Zoom and Opacity; Back to source counts
   assert.deepEqual(model(state, { selection: { ids: ["sticker_1"] } }).cards[0].rows.map((item) => item.id), ["rotation", "fov", "opacity"]);
 });
 
-// docs/studio-ui.md "Look at": the Camera card's Look at row, its heading's badge while on, and Yaw and Pitch set by it.
-test("the Camera card has the Look at row; while it looks at a target the heading has its badge and Yaw and Pitch are set by it", () => {
+// docs/studio-ui.md "Look at": the Camera card's Look at row (its heading has no badge), and Yaw and Pitch set by it.
+test("the Camera card has the Look at row; while it looks at a target its heading has no badge and Yaw and Pitch are set by it", () => {
   const off = model(load(), { selection: { ids: ["camera"] } }).cards[0];
   const lookRow = row(off, "look_at");
   // The reset column takes the target off: at its default without one.
   assert.deepEqual([lookRow.look.target, lookRow.atDefault, lookRow.resettable, lookRow.look.pickTip], [null, true, true, "Pick a spot to look at"]);
-  assert.equal(off.badge, null);
   const on = load({ camera: { look_at: { value: { sticker: "sticker_1", offset: [0, 0, 0] } } }, stickers: [world("sticker_1")] });
   const card = model(on, { selection: { ids: ["camera"] } }).cards[0];
   assert.equal(row(card, "look_at").look.target, "sticker_1.glb");
   assert.equal(row(card, "look_at").atDefault, false);
-  assert.deepEqual(card.badge, { label: "Look at", icon: ICON.look_at, tip: "Looking at sticker_1.glb" });
+  assert.equal("badge" in card, false, "the target's name in its row is enough (owner, 2026-11-18)");
   assert.deepEqual(row(card, "rotation").fields.map((field) => [field.disabled, field.tip ?? null]),
     [[true, "Yaw and Pitch · Set by Look at"], [true, "Yaw and Pitch · Set by Look at"], [false, null]]);
   // Picking shows on the row.

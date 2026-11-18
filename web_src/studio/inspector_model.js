@@ -491,14 +491,11 @@ export function stickerChangedRows(state, sticker, { playhead, upstream, animati
 function cameraCard(state, { playhead, readOnly, length = null, boxes = null, lookPicking = false }) {
   const { camera } = state;
   const locked = camera.locked === true;
-  const target = lookTargetName(state, playhead, length);
   return {
     kind: "camera",
     title: "Camera",
     icon: ICON.camera,
     note: "",
-    // The heading's badge while it looks at a target (docs/studio-ui.md "Look at" "オンの見せ方").
-    badge: target ? { label: "Look at", icon: ICON.look_at, tip: `Looking at ${target}` } : null,
     target: { kind: "camera", id: "camera" },
     rows: finishRows(cameraRows(state, playhead, { length, boxes, lookPicking }), camera, {
       frame: playhead,

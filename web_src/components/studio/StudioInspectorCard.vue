@@ -73,7 +73,7 @@ function lookPick() {
 </script>
 
 <template>
-  <StudioCard :title="card.title" :icon="card.icon" :note="card.note" :badge="card.badge" :data-card="card.kind">
+  <StudioCard :title="card.title" :icon="card.icon" :note="card.note" :data-card="card.kind">
     <template v-for="row in card.rows" :key="row.id">
       <div v-if="row.control === 'heading'" class="pano-studio-card-subhead pano-studio-cap" :data-row="row.name">{{ row.name }}</div>
       <StudioModeTiles
