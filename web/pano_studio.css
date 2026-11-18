@@ -292,6 +292,11 @@
   color: var(--studio-override);
 }
 
+/* The bar's Lock while its thing is locked (docs/studio-ui.md "下の中央のバー"). */
+.pano-studio-icon-btn.is-locked {
+  color: var(--studio-coral);
+}
+
 .pano-studio-icon-btn[aria-disabled="true"] {
   opacity: 0.35;
   background: transparent;
@@ -1167,7 +1172,9 @@
 /* The Timeline (components/studio/StudioTimeline*.vue; the bar's order and a row's head: docs/studio-ui.md
    "タイムラインのバー"; the rules: docs/timeline-ui.md). The playhead is coral, Keyframe selection ice. */
 .pano-studio-tl {
-  --studio-tl-head: 236px;
+  /* The row heads' width: the default (studio/layout.js TIMELINE_HEAD_DEFAULT_WIDTH); StudioTimeline.vue sets the one in use. */
+  --studio-tl-head: 260px;
+  position: relative;
   --studio-tl-row: 28px;
   --studio-tl-bar: 40px;
   --studio-tl-ruler: 26px;
@@ -1180,6 +1187,34 @@
   border-radius: var(--studio-r-box);
   font-size: var(--studio-text-xs);
   outline: none;
+}
+
+/* The border between the row heads and the tracks, dragged to size the heads (docs/studio-ui.md "タイムライン"): a 7px
+   band over the border below the bar, its line shown on hover and while dragged. */
+.pano-studio-tl-head-resize {
+  position: absolute;
+  z-index: 4;
+  top: var(--studio-tl-bar);
+  bottom: 0;
+  left: calc(var(--studio-tl-head) - 3px);
+  width: 7px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.pano-studio-tl-head-resize::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 1px;
+  background: transparent;
+}
+
+.pano-studio-tl-head-resize:hover::after,
+.pano-studio-tl-head-resize:active::after {
+  background: var(--studio-line-strong);
 }
 
 .pano-studio-tl.is-collapsed {
@@ -1544,6 +1579,11 @@
   color: var(--studio-line-strong, var(--studio-fg-2));
 }
 
+/* The lock button (docs/timeline-ui.md "ロック（鍵のボタン）"): the eye's color while unlocked, coral while locked. */
+.pano-studio-tl-lock.is-on {
+  color: var(--studio-coral);
+}
+
 .pano-studio-tl-loop.is-on {
   color: var(--studio-ice);
 }
@@ -1799,6 +1839,17 @@
   border-color: var(--studio-ice);
   background: var(--studio-ice);
   outline: 2px solid var(--studio-panel);
+}
+
+/* A locked row's Keyframes (docs/timeline-ui.md "ロック（鍵のボタン）"): hollow, a faint line; selected, the line ice. */
+.pano-studio-tl-key.is-locked::before {
+  border: 1.25px solid color-mix(in srgb, var(--studio-fg-2) 60%, transparent);
+  background: transparent;
+}
+
+.pano-studio-tl-key.is-locked.is-selected::before {
+  border-color: var(--studio-ice);
+  background: transparent;
 }
 
 .pano-studio-tl-playhead {

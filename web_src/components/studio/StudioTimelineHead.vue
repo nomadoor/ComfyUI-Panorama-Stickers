@@ -3,16 +3,20 @@ import { ICON } from "../../icons.js";
 import SvgIcon from "../shared/SvgIcon.vue";
 import StudioKeyDot from "./StudioKeyDot.vue";
 
-// The head of a Timeline row (docs/studio-ui.md "タイムラインのバー": eye, ▶, the Sky / World icon, name, the motion
-// loop's button, row dot), or of one of its Lane lines (`lane`: indented name only). A row without an eye, a ▶, a loop
-// button or a dot keeps their places, so names and dots line up down the column. An upstream row keeps the place of the
-// "overridden" dot after its name. Presentational: `row` (timeline_model.js) in; `eye`, `expand`, `select`, `frame`
-// (double-click on the name), `loop` (the motion loop's button) and `key` (the row dot) out.
+// The head of a Timeline row (docs/studio-ui.md "タイムラインのバー": eye, lock, ▶, the Sky / World icon, name, the
+// motion loop's button, row dot), or of one of its Lane lines (`lane`: indented name only). A row without an eye, a lock,
+// a ▶, a loop button or a dot keeps their places, so names and dots line up down the column. An upstream row keeps the
+// place of the "overridden" dot after its name. Presentational: `row` (timeline_model.js) in; `eye`, `lock`, `expand`,
+// `select`, `frame` (double-click on the name), `loop` (the motion loop's button) and `key` (the row dot) out.
 const props = defineProps({
   row: { type: Object, required: true },
   lane: { type: Object, default: null },
 });
-const emit = defineEmits(["eye", "expand", "select", "frame", "loop", "key"]);
+const emit = defineEmits(["eye", "lock", "expand", "select", "frame", "loop", "key"]);
+
+function onLock() {
+  if (props.row.lock && !props.row.lock.disabled) emit("lock");
+}
 
 function onLoop() {
   if (props.row.loop && !props.row.loop.disabled) emit("loop");
@@ -48,6 +52,21 @@ function onExpand() {
       @click="onEye"
     >
       <SvgIcon :icon="row.eye.icon" />
+    </button>
+    <span v-else class="pano-studio-tl-head-gap" />
+    <button
+      v-if="row.lock"
+      type="button"
+      class="pano-studio-tl-head-btn pano-studio-tl-lock"
+      :class="{ 'is-on': row.lock.on }"
+      :aria-label="row.lock.label"
+      :aria-pressed="row.lock.on ? 'true' : 'false'"
+      :data-tip="row.lock.tip"
+      :aria-disabled="row.lock.disabled ? 'true' : null"
+      data-part="lock"
+      @click="onLock"
+    >
+      <SvgIcon :icon="row.lock.icon" />
     </button>
     <span v-else class="pano-studio-tl-head-gap" />
     <button

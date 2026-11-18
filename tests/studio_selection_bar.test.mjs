@@ -103,6 +103,8 @@ test("the Camera's Lock turns camera.locked over: its icon and tip show the stat
   const lockedState = loadSceneState({ version: 2, camera: { locked: true } });
   const closed = lockOf(selectionBar({ state: lockedState, row: "camera" }));
   assert.deepEqual([closed.icon, closed.tip, closed.disabled], [ICON.lock_closed, "Unlock", false]);
+  // docs/studio-ui.md "下の中央のバー": the Lock of a locked thing is drawn in coral.
+  assert.deepEqual([open.locked, closed.locked], [false, true]);
   assert.equal(lockOf(selectionBar({ state, row: "camera", readOnly: true })).disabled, true);
 });
 

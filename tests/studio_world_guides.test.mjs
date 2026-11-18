@@ -62,6 +62,8 @@ test("a guide is thin normally, bright under the pointer, yellow when selected; 
   assert.equal(guideLook({ hovered: true, altHeld: true }), "normal", "nothing lights up while Alt is held");
   assert.equal(guideLook({ gridHidden: true, hovered: true }), null);
   assert.equal(guideLook({ gridHidden: true, selected: true }), "selected");
+  // docs/studio-ui.md "下の中央のバー": a locked object's selection frame is gray.
+  assert.equal(guideLook({ selected: true, locked: true }), "lockedSelected");
 });
 
 test("a segment passing behind the view is cut at the near plane; one wholly behind is not drawn", () => {

@@ -55,13 +55,15 @@ test("the bar and a row's head are in the spec's order", async ({ page }) => {
   await expect(dark(page).locator('[data-tl="constant-speed"]')).toHaveAttribute("data-tip", "Constant speed · Select 3+ Keyframes");
   const head = await dark(page).locator('[data-head="camera"] > *').evaluateAll((els) => els.map((el) => el.dataset.part || el.getAttribute("class")));
   expect(head[0]).toBe("eye");
-  expect(head[1]).toBe("expand");
-  expect(head[2]).toContain("pano-studio-tl-head-icon");
-  expect(head[3]).toBe("name");
+  // The lock button right of the eye (docs/timeline-ui.md "ロック（鍵のボタン）").
+  expect(head[1]).toBe("lock");
+  expect(head[2]).toBe("expand");
+  expect(head[3]).toContain("pano-studio-tl-head-icon");
+  expect(head[4]).toBe("name");
   // The motion loop's button between the name and the row dot (docs/studio-ui.md "タイムラインのバー").
-  expect(head[4]).toBe("loop");
-  expect(head[5]).toBe("dot");
-  // A row without an eye (the background) keeps its place, so the names line up.
+  expect(head[5]).toBe("loop");
+  expect(head[6]).toBe("dot");
+  // A row without an eye or a lock (the background) keeps their places, so the names line up.
   const nameX = await dark(page).locator('[data-head] [data-part="name"]').evaluateAll((els) => [...new Set(els.map((el) => Math.round(el.getBoundingClientRect().x)))]);
   expect(nameX.length).toBe(1);
   await expect(dark(page).locator(".pano-studio-tl-group-name")).toHaveText("From Studio #4");

@@ -20,12 +20,14 @@ import {
   simplifyEdit,
   simplifyPlan,
   startClipDrag,
+  toggleLocked,
   toggleLoop,
   toggleVisible,
 } from "../../studio/timeline_actions.js";
 import { groundOf } from "../../studio/defaults.js";
 import { buildStudioTimeline, findEntry, frameToX, keysInRange, xToFrame, xToFrameExact } from "../../studio/timeline_model.js";
-import { passedDragThreshold } from "../../studio/ui_drag.js";
+import { loadTimelineHeadWidth, saveTimelineHeadWidth, timelineHeadWidth } from "../../studio/layout.js";
+import { passedDragThreshold, watchDragCancel } from "../../studio/ui_drag.js";
 import StudioTimelineBar from "./StudioTimelineBar.vue";
 import StudioTimelineHead from "./StudioTimelineHead.vue";
 
@@ -73,6 +75,8 @@ const props = defineProps({
   fpsLocked: { type: Boolean, default: false },
   collapsed: { type: Boolean, default: false },
   lengthUnit: { type: String, default: "frames" },
+  // Where the row heads' width is kept per browser (layout.js), or null.
+  storage: { type: Object, default: null },
 });
 const emit = defineEmits(["seek", "play", "select", "edit", "frame-selected", "loop-change", "length-unit-change", "collapse-change", "done", "simplify-ghost"]);
 
@@ -246,6 +250,49 @@ onMounted(() => {
     observer.observe(ruler.value);
   }
 });
+
+// --- The row heads' width (docs/studio-ui.md "タイムライン"): dragged on the border between the heads and the tracks,
+// kept per browser. Escape, its pointercancel, the window's blur and a lost capture put back the width at the press.
+const headWidth = ref(loadTimelineHeadWidth(props.storage));
+let headDrag = null;
+function onHeadResizeDown(event) {
+  if (event.button !== 0 || headDrag) return;
+  event.preventDefault();
+  event.stopPropagation();
+  const element = event.currentTarget;
+  try {
+    element.setPointerCapture?.(event.pointerId);
+  } catch {
+    return;
+  }
+  headDrag = { pointerId: event.pointerId, element, x: event.clientX, width: headWidth.value };
+  headDrag.stopCancel = watchDragCancel({ element, pointerId: event.pointerId, cancel: cancelHeadResize });
+}
+function onHeadResizeMove(event) {
+  if (!headDrag || event.pointerId !== headDrag.pointerId) return;
+  headWidth.value = timelineHeadWidth(headDrag.width + event.clientX - headDrag.x);
+}
+function onHeadResizeUp(event) {
+  if (!headDrag || event.pointerId !== headDrag.pointerId) return;
+  endHeadResize();
+  saveTimelineHeadWidth(props.storage, headWidth.value);
+}
+function cancelHeadResize() {
+  if (!headDrag) return;
+  const { width } = headDrag;
+  endHeadResize();
+  headWidth.value = width;
+}
+function endHeadResize() {
+  const { pointerId, element, stopCancel } = headDrag;
+  headDrag = null;
+  stopCancel?.();
+  try {
+    element.releasePointerCapture?.(pointerId);
+  } catch {
+    // The capture was already gone.
+  }
+}
 
 const span = computed(() => model.value.span);
 const x = (frame) => frameToX(frame, span.value, width.value, TRACK_PAD);
@@ -552,6 +599,11 @@ function onEye(id) {
   if (result) emit("edit", { kind: "state", ...result.edit, selection: result.selection, phase: "commit", stopsPlayback: false });
 }
 
+function onLock(id) {
+  const edit = toggleLocked(ctx.value, id);
+  if (edit) emit("edit", { kind: "state", ...edit, phase: "commit", stopsPlayback: false });
+}
+
 function onLoop(id) {
   const edit = toggleLoop(ctx.value, id);
   if (edit) emit("edit", { kind: "state", ...edit, phase: "commit", stopsPlayback: false });
@@ -655,6 +707,7 @@ defineExpose({ handleDelete, copyKeys: copySelectedKeys, pasteKeys: pasteCopiedK
     ref="root"
     class="pano-studio-tl"
     :class="{ 'is-collapsed': collapsed }"
+    :style="{ '--studio-tl-head': `${headWidth}px` }"
     tabindex="-1"
     @pointerdown.capture="onPointerDownCapture"
     @keydown="onKeydown"
@@ -675,6 +728,17 @@ defineExpose({ handleDelete, copyKeys: copySelectedKeys, pasteKeys: pasteCopiedK
       @simplify="onSimplify"
       @constant-speed="onConstantSpeed"
       @simplify-count="applySimplify"
+    />
+    <div
+      v-show="!collapsed"
+      class="pano-studio-tl-head-resize"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Row head width"
+      data-part="head-resize"
+      @pointerdown="onHeadResizeDown"
+      @pointermove="onHeadResizeMove"
+      @pointerup="onHeadResizeUp"
     />
     <div v-show="!collapsed" ref="body" class="pano-studio-tl-body">
       <div ref="rulerLine" class="pano-studio-tl-line is-ruler">
@@ -722,6 +786,7 @@ defineExpose({ handleDelete, copyKeys: copySelectedKeys, pasteKeys: pasteCopiedK
               :row="item.row"
               :lane="item.type === 'lane' ? item.lane : null"
               @eye="onEye(item.row.id)"
+              @lock="onLock(item.row.id)"
               @expand="toggleOpen(item.row.id)"
               @select="onSelectRow(item.row.id)"
               @frame="emit('frame-selected', item.row.id)"
@@ -775,7 +840,7 @@ defineExpose({ handleDelete, copyKeys: copySelectedKeys, pasteKeys: pasteCopiedK
                 v-for="key in (item.type === 'lane' ? item.lane.keys : item.row.pins)"
                 :key="key.ownerFrame"
                 class="pano-studio-tl-key"
-                :class="{ 'is-half': !key.full, 'is-selected': key.selected }"
+                :class="{ 'is-half': !key.full, 'is-selected': key.selected, 'is-locked': item.row.locked }"
                 :style="{ left: `${x(key.frame)}px` }"
                 :data-frame="key.frame"
                 @pointerdown.stop="onKeyDown($event, model.lines[item.line], key)"

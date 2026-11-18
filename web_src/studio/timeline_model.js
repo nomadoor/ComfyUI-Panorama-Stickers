@@ -340,9 +340,11 @@ export function simplifyReadiness(ctx, selection, label = "Simplify") {
 }
 
 // The Timeline for StudioTimeline.vue. `openRows` holds the ids of the open rows. Rows:
-//   { id, label, icon, eye, expand, open, selected, dot, upstream, overridden, clip, clipEditable, keysEditable,
-//     offset, pins, lanes, nameTip }
-// `eye` null for a row without one (its place is kept); `expand` "yes", "disabled" (no Lanes to open) or "none";
+//   { id, label, icon, eye, lock, locked, expand, open, selected, dot, upstream, overridden, clip, clipEditable,
+//     keysEditable, offset, pins, lanes, nameTip }
+// `eye` null for a row without one (its place is kept); `lock` the lock button ({ on, icon, label, disabled, tip }; the
+// Camera and the Stickers, else null, its place kept; docs/timeline-ui.md "ロック（鍵のボタン）"), `locked` whether the
+// row's thing is locked (its Keyframes drawn hollow); `expand` "yes", "disabled" (no Lanes to open) or "none";
 // `dot` null for a row without Lanes, else { state, disabled, tip }; `clip` { start, end } in Timeline frames, `end`
 // null where the bar runs to the Timeline's end, or null for a row without a bar (hasOwnTime); `pins` and each Lane's `keys` { frame, ownerFrame, selected, full }.
 // `band` (a row's, and each Lane's) is the Timeline frames { start, end } the Easing panel sets for the Keyframes
@@ -390,8 +392,11 @@ export function buildStudioTimeline(ctx, { selection = null, playhead = 0, playi
       lane.band = easingBand(entry.owner, [lane.lane], picked(lane.lane), entry.offset, length);
       lane.loopMark = loopMark(entry.owner, [lane.lane], entry.offset, length);
     }
-    // The motion loop's button: the Camera and the Stickers (docs/timeline-ui.md "動きのループ").
+    // The motion loop's button and the lock button: the Camera and the Stickers (docs/timeline-ui.md "動きのループ",
+    // "ロック（鍵のボタン）").
     const loops = entry.kind === "camera" || entry.kind === "sticker";
+    const locked = entry.owner?.locked === true;
+    const lockBlocked = loops ? blockedTip(ctx, entry, { locked: false }) : "";
     const loopBlocked = loops ? blockedTip(ctx, entry) : "";
     // The Keyframes a Simplify being adjusted takes away from this line, faded.
     const going = simplify && simplify.row === entry.id ? simplify.going : [];
@@ -410,6 +415,14 @@ export function buildStudioTimeline(ctx, { selection = null, playhead = 0, playi
         disabled: !!eyeBlocked,
         tip: eyeBlocked || (visible ? "Hide" : "Show"),
       },
+      lock: loops ? {
+        on: locked,
+        icon: locked ? ICON.lock_closed : ICON.lock_open,
+        label: locked ? "Unlock" : "Lock",
+        disabled: !!lockBlocked,
+        tip: lockBlocked || (locked ? "Unlock" : "Lock"),
+      } : null,
+      locked,
       expand: keyable ? "yes" : entry.kind === "painting" ? "none" : "disabled",
       open,
       // A selected paint group has no row: the Paint row shows selected for it (docs/studio-ui.md "ペイントのまとまり").

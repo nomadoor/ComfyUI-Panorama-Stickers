@@ -116,14 +116,15 @@ export function selectionBar({ state, row, mode = "translate", readOnly = false,
   const kind = selectedKind(state, row, upstream);
   if (!kind) return null;
   if (kind === "camera" && tab === "camera") return null;
-  const button = (key, icon, label, extra = {}) => ({ key, icon, label, tip: extra.tip ?? label, active: !!extra.active, disabled: !!extra.disabled, overridden: !!extra.overridden });
+  // `locked`: the Lock while its thing is locked, drawn in coral (docs/studio-ui.md "下の中央のバー").
+  const button = (key, icon, label, extra = {}) => ({ key, icon, label, tip: extra.tip ?? label, active: !!extra.active, disabled: !!extra.disabled, overridden: !!extra.overridden, locked: !!extra.locked });
   // The Camera looking at a target has its Rotate where it is, off (docs/studio-ui.md "Look at").
   const looking = kind === "camera" && lookingAt(state, playhead, length);
   const shown = shownGizmoMode(kind, mode, looking);
   const gizmo = gizmoModes(kind).map((entry) => button(`gizmo:${entry.mode}`, entry.icon, entry.label, looking && entry.mode === "rotate"
     ? { tip: "Rotate · Set by Look at", disabled: true }
     : { tip: `${entry.label} (${entry.key})`, active: entry.mode === shown }));
-  const lockButton = (locked) => button("lock", locked ? ICON.lock_closed : ICON.lock_open, locked ? "Unlock" : "Lock", { disabled: readOnly });
+  const lockButton = (locked) => button("lock", locked ? ICON.lock_closed : ICON.lock_open, locked ? "Unlock" : "Lock", { disabled: readOnly, locked });
   if (kind === "camera") {
     const locked = state.camera.locked === true;
     const points = pointButtons(button, state.camera, row, keys, playhead, 0, readOnly ? "Read-only" : locked ? "Locked" : "", playing);
@@ -164,7 +165,7 @@ export function selectionBar({ state, row, mode = "translate", readOnly = false,
     button("replace", ICON.replace_image, "Replace", notFor ? offFor("Replace") : { disabled: true, tip: `Replace · ${LATER}` }),
   ];
   const keep = [
-    inherited ? button("lock", locked ? ICON.lock_closed : ICON.lock_open, locked ? "Unlock" : "Lock", { disabled: true, tip: INHERITED_TIP }) : lockButton(locked),
+    inherited ? button("lock", locked ? ICON.lock_closed : ICON.lock_open, locked ? "Unlock" : "Lock", { disabled: true, tip: INHERITED_TIP, locked }) : lockButton(locked),
     button("delete", ICON.delete, "Delete", port ? offFor("Delete") : inherited ? offFor("Delete") : { disabled: edits, tip: "Delete (Del)" }),
   ];
   const groups = kind === "sky" ? [first, copy, keep] : [first, pointButtons(button, sticker, row, keys, playhead, sticker.clip ? clipOrigin(sticker.clip) : 0,

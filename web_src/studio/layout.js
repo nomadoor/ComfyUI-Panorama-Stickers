@@ -1,6 +1,6 @@
 // The regions of the new editor that the user sizes (docs/studio-ui.md "画面の区画", "Output の小窓"): the height of
-// the timeline below the stage, and the size and fold of the Output window at the stage's top right. Each is kept per
-// browser. The sizes' values are provisional (docs/design.md "大きさ": the timeline's and the stage's least heights
+// the timeline below the stage, the width of its row heads, and the size and fold of the Output window at the stage's
+// top right. Each is kept per browser. The sizes' values are provisional (docs/design.md "大きさ": the timeline's and the stage's least heights
 // and the Output window's least and largest sizes are not decided yet); they live here and nowhere else.
 
 import { clamp } from "../pano_math.js";
@@ -11,6 +11,11 @@ export const TIMELINE_MIN_HEIGHT = 120;
 export const STAGE_MIN_HEIGHT = 240;
 // The timeline folded shows its bar only.
 export const TIMELINE_BAR_HEIGHT = 40;
+// The width of the timeline's row heads when nothing is remembered, and its least and largest widths (docs/studio-ui.md
+// "画面の区画" "タイムラインの行の頭の幅").
+export const TIMELINE_HEAD_DEFAULT_WIDTH = 260;
+export const TIMELINE_HEAD_MIN_WIDTH = 200;
+export const TIMELINE_HEAD_MAX_WIDTH = 480;
 
 // The Output window's width when nothing is remembered, and its least and largest widths; the picture fills the
 // window, its height following the output's ratio (width / height). The line of the output's shape is
@@ -24,6 +29,7 @@ export const OUTPUT_LINE_HEIGHT = 32;
 
 const KEYS = Object.freeze({
   timeline: "PanoramaSuite.Studio.timelineHeight",
+  timelineHead: "PanoramaSuite.Studio.timelineHeadWidth",
   output: "PanoramaSuite.Studio.outputWindow",
 });
 
@@ -33,6 +39,11 @@ const KEYS = Object.freeze({
 export function timelineHeight(wanted, total) {
   const most = Math.max(TIMELINE_MIN_HEIGHT, total - STAGE_MIN_HEIGHT);
   return Math.round(clamp(Number.isFinite(wanted) ? wanted : TIMELINE_DEFAULT_HEIGHT, TIMELINE_MIN_HEIGHT, most));
+}
+
+// The width of the timeline's row heads for a wish of `wanted` px: between its least and largest widths.
+export function timelineHeadWidth(wanted) {
+  return Math.round(clamp(Number.isFinite(wanted) ? wanted : TIMELINE_HEAD_DEFAULT_WIDTH, TIMELINE_HEAD_MIN_WIDTH, TIMELINE_HEAD_MAX_WIDTH));
 }
 
 // The open Output window's size for a wish of `wanted` px wide and an output of `ratio` (width / height): { width,
@@ -70,6 +81,14 @@ export function loadTimelineHeight(storage) {
 
 export function saveTimelineHeight(storage, height) {
   write(storage, KEYS.timeline, Math.round(height));
+}
+
+export function loadTimelineHeadWidth(storage) {
+  return timelineHeadWidth(read(storage, KEYS.timelineHead));
+}
+
+export function saveTimelineHeadWidth(storage, width) {
+  write(storage, KEYS.timelineHead, timelineHeadWidth(width));
 }
 
 // { width, collapsed } of the Output window.
