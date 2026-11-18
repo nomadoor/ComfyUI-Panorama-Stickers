@@ -288,6 +288,10 @@ Camera の値の位置は選択で動かない）。
   クリップボードの API が使えないときは入力欄の文字を選んでブラウザのコピーで写し、どちらでも写せないときはチェックの代わりに
   × と「Copy failed」を出す。選んだ Keyframe の Easing が混ざっているとき、パネルが無効のとき、写す値が無い（入力欄が空の）ときは押せない。ほかの Keyframe に当てるときは、その Keyframe を選んで入力欄に貼り付ける）。
 - 見出しの横に、対象の範囲を Timeline frame で出す（一つの区間は `f 30 → 62`、二つ以上は `f 0 → 95 · 3 segments`）。対象の決め方は `docs/timeline-ui.md` の「Easing」。対象が無いとき（Lane の最後の Keyframe だけを選んだとき）は、プリセットを無効にし、入力欄の席に「No segment after the last Keyframe」と出す。
+- ロックした物と、上書きを持てない上流の層の物の区間は、Easing を変えられないので対象に数えない（範囲、Mixed、プリセットの点灯にも入れない）。
+  ほかの物の区間と一緒に選んだときは、変えられる区間だけでパネルを出す（押して変わるものと、パネルに出るものをそろえる）。選んだ Keyframe が
+  そういう物のものだけのときは、パネルを出したまま、その区間の Easing を見せて無効にし、tooltip に理由を出す（ロックした物は「Locked」、
+  上流の物はインスペクタの行と同じ「Inherited only: edit it in its own Panorama Studio」）。読み取り専用のエディタでも同じに無効にする（tooltip は「Read-only」）。
 - Smooth は、何も設定していない区間の Easing（`docs/scene-state-v2.md` の「Keyframe」）。対象の区間がどれも何も設定していないとき、Smooth が選ばれた見た目になる。押すと、対象の区間の Easing を消す（既定に戻すボタンは置かない。Smooth がその役目を持つ）。アイコンは、真ん中の点を止まらずに通る曲線。tooltip は「Smooth · passes through Keyframes」。ほかのプリセットの tooltip は名前だけ。
 - グラフに描くもの：
   - 対象が一つの区間のときは、その区間の進み方の曲線と、二つの制御点。Smooth の区間でも、前後から決まった今の曲線と制御点を出し、制御点をドラッグすると、そこから手で曲げた cubic-bezier になる。入力欄には、Smooth は「Smooth」、Hold は「Hold」と出す（4 つの値は無い）。

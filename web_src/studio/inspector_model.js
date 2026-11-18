@@ -571,9 +571,20 @@ function rangeCurve(owner, name, indices, period, scene = null) {
 // Keyframes). `range` is the Timeline frames the edit sets, `curve` the cubic-bezier the graph draws with its control
 // points (a Smooth segment's current one), `progress` the curve of a range of Smooth segments, which only shows (the
 // first group's first Lane with a segment).
-function easingModel(state, upstream, groups, length, boxes = null) {
-  const kept = (groups ?? []).filter((keyframes) => keyframes?.frames?.length && keyframeOwner(state, upstream, keyframes.owner));
-  if (!kept.length) return null;
+// The groups of an owner whose Easing cannot change (locked, an upstream object of a layer that keeps no overrides) do
+// not count among others (docs/studio-ui.md "Easing のパネル"); selected alone, they show, `disabled` with `tip` the
+// reason, as does every selection in a read-only editor.
+function easingModel(state, upstream, groups, length, boxes = null, readOnly = false) {
+  const found = (groups ?? []).filter((keyframes) => keyframes?.frames?.length && keyframeOwner(state, upstream, keyframes.owner));
+  if (!found.length) return null;
+  const blockedOf = (keyframes) => {
+    const owner = keyframeOwner(state, upstream, keyframes.owner);
+    if (upstreamStickerInherited(owner)) return UPSTREAM_INHERITED_TIP;
+    return owner.locked === true ? "Locked" : "";
+  };
+  const editable = found.filter((keyframes) => !blockedOf(keyframes));
+  const kept = editable.length ? editable : found;
+  const tip = readOnly ? "Read-only" : editable.length ? "" : blockedOf(found[0]);
   const segments = kept.flatMap((keyframes) => {
     const owner = keyframeOwner(state, upstream, keyframes.owner);
     const ownLength = ownerLength(upstream, owner, length);
@@ -614,6 +625,8 @@ function easingModel(state, upstream, groups, length, boxes = null) {
   return {
     // The selection the panel's edits send back (inspector_actions.js "easing").
     keyframes: kept.map((keyframes) => ({ owner: keyframes.owner, lane: keyframes.lane ?? null, frames: [...keyframes.frames] })),
+    disabled: !!tip,
+    tip,
     segment: segments.length > 0,
     range: segments.length ? `f ${formatFrame(start)} → ${formatFrame(end)}${count > 1 ? ` · ${count} segments` : ""}` : "",
     easing,
@@ -664,5 +677,5 @@ export function buildInspectorModel({ state, selection = {}, tab = "3d", playhea
   else cards = scene();
   // The Camera tab: the Camera's card always on top, the selected object's under it (owner, 2026-10-31).
   if (tab === "camera" && cards[0].kind !== "camera") cards = [cameraCard(state, options), ...cards];
-  return { cards, easing: easingModel(state, upstream, selection.keyframes, length, boxes) };
+  return { cards, easing: easingModel(state, upstream, selection.keyframes, length, boxes, readOnly) };
 }

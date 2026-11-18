@@ -413,6 +413,27 @@ test("the Easing panel reads every selected group, as its edit reaches them all 
   assert.equal(panel([{ owner: "sticker_1", lane: "rotation", frames: [20] }, { owner: "sticker_2", lane: "position", frames: [10] }]).segment, false);
 });
 
+// docs/studio-ui.md "Easing のパネル": a locked owner's segments cannot change, so they do not count among others; selected
+// alone they show, off, with the reason, as everything does in a read-only editor.
+test("the Easing panel leaves a locked owner's segments out, and shows them off with the reason when they are all it has", () => {
+  const keyed = (easings) => easings.map((easing, index) => ({ frame: index * 10, value: [index, 0, 0], easing }));
+  const state = load({ stickers: [
+    world("sticker_1", { locked: true, position: { value: [0, 0, 0], keyframes: keyed(["hold", "hold"]) } }),
+    world("sticker_2", { position: { value: [0, 0, 0], keyframes: keyed([[0.42, 0, 0.58, 1], "hold"]) } }),
+  ] });
+  const panel = (keyframes, options = {}) => model(state, { selection: { ids: [], keyframes }, ...options }).easing;
+  const both = panel([{ owner: "sticker_1", lane: "position", frames: [0] }, { owner: "sticker_2", lane: "position", frames: [0] }]);
+  assert.equal(both.mixed, false, "the locked hold is not compared");
+  assert.deepEqual(both.easing, [0.42, 0, 0.58, 1]);
+  assert.deepEqual(both.keyframes, [{ owner: "sticker_2", lane: "position", frames: [0] }]);
+  assert.deepEqual([both.disabled, both.tip], [false, ""]);
+  const alone = panel([{ owner: "sticker_1", lane: "position", frames: [0] }]);
+  assert.equal(alone.easing, "hold", "its Easing shows");
+  assert.deepEqual([alone.disabled, alone.tip], [true, "Locked"]);
+  const readOnly = panel([{ owner: "sticker_2", lane: "position", frames: [0] }], { readOnly: true });
+  assert.deepEqual([readOnly.disabled, readOnly.tip], [true, "Read-only"]);
+});
+
 test("the Easing panel shows a Smooth segment's current curve, and a range of Smooth segments as their progress", () => {
   const state = load({ camera: { fov: { value: 90, keyframes: [{ frame: 0, value: 90 }, { frame: 12, value: 40 }] }, position: { value: [0, 0, 0], keyframes: [
     { frame: 0, value: [0, 0, 0] }, { frame: 10, value: [4, 0, 0] }, { frame: 30, value: [4, 0, 4] },

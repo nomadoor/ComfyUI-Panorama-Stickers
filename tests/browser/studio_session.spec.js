@@ -586,3 +586,27 @@ test("the row head's lock button locks in coral with hollow Keyframes, and the r
   expect(JSON.parse(await studio(page, "stored", "PanoramaSuite.Studio.timelineHeadWidth"))).toBe(320);
   expect(problems).toEqual([]);
 });
+
+// docs/studio-ui.md "Easing のパネル": a locked thing's Keyframes keep the panel, off with the reason.
+test("the Easing panel of a locked row's Keyframes shows, off, and says it is locked", async ({ page }, testInfo) => {
+  const problems = await open(page, testInfo);
+  const ruler = await page.locator('[data-tl="ruler"]').boundingBox();
+  const frameText = page.locator('[data-tl="time"] .pano-studio-tl-frame');
+  const seek = async (fraction) => {
+    await page.mouse.click(ruler.x + ruler.width * fraction, ruler.y + ruler.height / 2);
+    return Number((await frameText.textContent()).match(/(\d+)\s*\/\s*48/)[1]);
+  };
+  const dot = page.locator('.pano-studio-tl-head[data-head="sticker_1"] [data-part="dot"]');
+  const first = await seek(0.25);
+  await dot.click();
+  await seek(0.75);
+  await dot.click();
+  await page.locator('.pano-studio-tl-head[data-head="sticker_1"] [data-part="lock"]').click();
+  await page.locator(`[data-track="sticker_1"] .pano-studio-tl-key[data-frame="${first}"]`).click();
+  const panel = page.locator(".pano-studio-easing");
+  await expect(panel).toBeVisible();
+  await expect(panel).toHaveClass(/is-disabled/);
+  await expect(panel).toHaveAttribute("data-tip", "Locked");
+  await expect(page.locator('[aria-label="Easing preset"] [data-value="Hold"]')).toBeDisabled();
+  expect(problems).toEqual([]);
+});
