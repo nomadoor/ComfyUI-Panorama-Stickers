@@ -95,6 +95,8 @@
 - [ComfyUI_pytorch360convert](https://github.com/ProGamerGov/ComfyUI_pytorch360convert)
 - [html-360-viewer](https://github.com/ProGamerGov/html-360-viewer)（想在浏览器中快速查看 ERP 图像时也很方便：[演示](https://progamergov.github.io/html-360-viewer/)）
 
+此外，也受到 PlayCanvas 的 [SuperSplat](https://github.com/playcanvas/supersplat) 的启发。
+
 ## 许可证
 
 MIT
