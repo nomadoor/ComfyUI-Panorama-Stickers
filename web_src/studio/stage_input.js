@@ -122,7 +122,7 @@ export function createStageInput(shared, {
     const frame = view === shared.frameCamera;
     switch (action) {
       case "orbit":
-        view?.beginOrbit(orbitCenter({ selection: frame ? objectSelection() : selected(), frame }));
+        view?.beginOrbit(orbitCenter({ selection: frame ? objectSelection() : selected(), frame, playing: !!objectDeps?.playing?.() }));
         break;
       case "pan":
         view?.beginPan(hitAt(knob ? center() : point));
