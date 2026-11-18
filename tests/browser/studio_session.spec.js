@@ -497,6 +497,7 @@ test("the Easing panel reads every selected row's Keyframes: Mixed across rows, 
   await expect(text).toHaveAttribute("placeholder", "Smooth");
   await expect(page.locator(".pano-studio-easing")).toContainText(`f ${first} → ${second}`);
   expect(problems).toEqual([]);
+});
 
 // docs/studio-ui.md "Look at" "中身の箱": the box is the content's, shown or not, so hiding the target or opening with it
 // hidden leaves where the Camera looks as it was (the output measures it the same way).
