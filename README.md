@@ -95,6 +95,8 @@ This project was influenced by the work of [ProGamerGov](https://github.com/ProG
 - [ComfyUI_pytorch360convert](https://github.com/ProGamerGov/ComfyUI_pytorch360convert)
 - [html-360-viewer](https://github.com/ProGamerGov/html-360-viewer) (also handy for quickly viewing an ERP image in the browser: [demo](https://progamergov.github.io/html-360-viewer/))
 
+Also inspired by [SuperSplat](https://github.com/playcanvas/supersplat) from PlayCanvas.
+
 ## License
 
 MIT
