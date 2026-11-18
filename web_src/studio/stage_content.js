@@ -23,7 +23,7 @@ import { skyStickerVfov, sourceAsset } from "../pano_editor_state.js";
 import { createFile3dEditorFiles, file3dEditorFileOf } from "../pano_file_3d.js";
 import { evaluateCamera, evaluateSceneState, evaluateSticker } from "../pano_scene_eval.js";
 import { is3dFileSource } from "../pano_scene_state.js";
-import { lookAtBoxes } from "./look_at.js";
+import { lookAtBoxes, lookAtTargets } from "./look_at.js";
 import {
   boundingSphere,
   contentPoints,
@@ -173,6 +173,10 @@ export function stageContent(state, frame, { media, editorFile = () => null, sce
     if (itemBox) items.push({ box: itemBox, value });
   }
   // The content boxes of what the Camera looks at, once loaded (look_at.js lookAtBoxes): its turn faces the box's point.
+  // A box is the content's, shown or not (docs/scene-state-v2.md "Look at" "中身の箱", as the output measures it): a 3D
+  // target hidden or outside its Clip range is measured from its item, which loads without being drawn.
+  const targets = new Set(lookAtTargets(state.camera));
+  const measuredStickers = fileStickers.filter((entry) => !entry.request && targets.has(entry.id)).map((entry) => entry.item);
   const lookBoxes = lookAtBoxes(state, {
     image: (item) => {
       const picture = mediaOnce(item);
@@ -180,7 +184,8 @@ export function stageContent(state, frame, { media, editorFile = () => null, sce
     },
     content: (item) => {
       if (sticker?.id === item.id) return stickerBox;
-      const request = fileStickers.find((entry) => entry.request?.id === item.id)?.request;
+      const entry = fileStickers.find((candidate) => candidate.id === item.id);
+      const request = entry?.request ?? entry?.item;
       return request ? sceneContentBox(request, sceneBox(request.url)) : null;
     },
   });
@@ -203,6 +208,7 @@ export function stageContent(state, frame, { media, editorFile = () => null, sce
       sticker,
       fileStickers: fileStickers.map((entry) => entry.request).filter(Boolean),
       fileStickerKeys: fileStickers.map((entry) => entry.key),
+      measuredStickers,
       stickers,
       upstreamStickers,
       upstreamItems,
