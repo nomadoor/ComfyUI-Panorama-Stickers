@@ -84,6 +84,7 @@ Python はこの文書の規則を持たない（列は `—`）。「（新し�
 | 浮かせる部品の内側の余白 | 左の列・右の中央の列・右下・下の中央のバー 6px（下のバーの左は 14px）、左上のタブ 4px |
 | 左上のタブ | 3D・Camera を同じ幅 108px（Camera のアイコンと文字の左右に約 16px）・高さ 34px、文字 13px、アイコン 18px |
 | タイムラインの高さ | 既定 176px（覚えた高さがあればそれ）。最小 120px、ステージは最小 240px |
+| タイムラインの行の頭の幅 | 既定 260px（覚えた幅があればそれ）。最小 200px、最大 480px |
 
 | 区画 | 置くもの |
 |---|---|
@@ -352,7 +353,8 @@ Camera のバーは、Camera タブでは出さない（ADR 0055。下の「Came
 - Camera に Look at の相手があるとき、Rotate は同じ席に出したまま無効にする（tooltip は「Rotate · Set by Look at」。キーの `2` も効かない）。ギズモのモードが Rotate のままでも、Move として見せる（`selection_bar.js` `shownGizmoMode` の、持っていないモードと同じ扱い）。
 - バーの置き場所：ステージの下の中央。真ん中に置くと右下の View の群に `BAR_VIEW_GAP`（8px）より近づく幅のステージでは、近づかない所まで左へ寄せる。それでも収まらなければ、名前の欄の文字を消してアイコンだけにする。それでも収まらないステージでは、バーの中を横に送れるようにする（どの部品も隠さず、ほかの部品に重ねない）。狭いステージへの対応はここまでとする。
 - 表示・非表示の切り替えはバーに置かない（タイムラインの目のアイコン、`docs/timeline-ui.md` の「表示（目のアイコン）」）。
-- Lock は押すたびに切り替わるボタンで、状態を鍵のアイコンの形で示す（`docs/agents/ux-principles.md` の例外）。
+- Lock は押すたびに切り替わるボタンで、状態を鍵のアイコンの形と色で示す（`docs/agents/ux-principles.md` の例外）。ロックしている間は、鍵を
+  珊瑚で描く（タイムラインの行の頭の鍵と同じ。`docs/design.md` の「色」）。
 - Camera は消せないので Delete を置かない。Delete キーを押したときは一行の知らせ「The camera can't be deleted」を出す。
 - 空に貼った画像にはギズモを出さない。ステージの上で、本体のドラッグで向き、四隅のハンドルで画角（縦横比を保つ）、辺のハンドルで
   縦か横の画角だけ、回転のハンドルで Roll を変える（今の動きのまま、新しい UI でも変えない。今の動きは `web_src/editor/pointer_input.js` の
@@ -361,6 +363,7 @@ Camera のバーは、Camera タブでは出さない（ADR 0055。下の「Came
   ただし回転のハンドルの Shift の止め方は、古い UI の 45° ではなく、ギズモの Rotate と同じ `ROTATE_SNAP_DEG` の倍数（絶対の Roll）にする。
   選んだ空の画像の枠とハンドルは、World の物の選択の黄ではなく氷の色で描く（ドロップの Sky の印と同じ色。Sky と World の行き先を色で
   見分けられるようにする。値は `docs/design.md` の「新しい UI の見た目」）。
+  ロックした物を選んだときの枠は、空の画像も World の物も、氷や黄ではなく灰色で描く（ハンドルとギズモはロック中は出さない）。
   上流から受け取った物の選んだ枠（空の画像の枠、World の板と 3D のガイド）は破線で描き、自分の物は実線のまま。ハンドルとギズモは
   変えない（形は `docs/design.md` の「形と重なり」。「上流の物の編集」の「見せる」）。
 
@@ -673,6 +676,7 @@ Paint・Mask の道具を選んでいる間、下の中央のバーはペイン�
 - Easing の対象の強調：タイムラインで Keyframe を選んでいる間、Easing の対象の区間（`docs/timeline-ui.md` の「Easing」）の線を、白で太く描く。
 - Simplify を調整している間は、元の軌道を灰色の細い線で残す（`docs/timeline-ui.md` の「Simplify」）。
 - ロックした物、読み取り専用の物では、線と点を描くだけで、動かせない（点と線を押して再生ヘッドを動かすことはできる）。上流の物は、ギズモと同じく作業コピーに書く。
+- ロックした物の線と点は、落ち着いた黄ではなく灰色で描き、ハンドルは描かない（動かせない部品を出さない）。読み取り専用のエディタでは色を変えない（ロックの印ではないため）。
 - 当たりの幅（線 `PATH_HIT`、点とハンドル `PATH_POINT_HIT`）と `PATH_TICK_FRAMES` は `docs/space-and-view.md` の「量の一覧」に置く。押したときの順は上の「ペイントのまとまり」の表。
 
 ## ノードの入力から来た物
@@ -1035,8 +1039,10 @@ Camera タブでは同じ席で無効にする（tooltip は「Not available in 
 
 - 再生位置は、ルーラーの上の ▼ の印と、トラックを縦に貫く 2 px の線で示す（色は `docs/design.md`。▼ はルーラーにだけ出す）。
 - Simplify の tooltip は、使えるとき「Simplify Keyframes」、選んだ Keyframe が足りないとき「Simplify · Select 3+ Keyframes」、二つ以上の行にまたがって選んでいるとき「Simplify · Select Keyframes in one row」、開いた行で二つ以上の Lane にまたがって選んでいるとき「Simplify · Select Keyframes in one Lane」、Look at の Lane の Keyframe だけを選んでいるとき「Simplify · Look at Keyframes stay」、調整している間「Enter to keep · Esc to cancel」。スライダーの tooltip は「Keyframes to keep」。スライダーと数の見た目は `docs/design.md`。
-- 行の頭の並び（左から）：目のアイコン、▶（開閉）、アイコン（Sky / World の印、Camera、Paint、Background）、名前、動きのループのボタン（`docs/timeline-ui.md` の「動きのループ」）、行のポチ。目やループのボタンを持たない
-  行も同じ幅を空ける（`docs/timeline-ui.md` の「表示（目のアイコン）」）。
+- 行の頭の並び（左から）：目のアイコン、鍵のボタン、▶（開閉）、アイコン（Sky / World の印、Camera、Paint、Background）、名前、動きのループのボタン（`docs/timeline-ui.md` の「動きのループ」）、行のポチ。目・鍵・ループのボタンを持たない
+  行も同じ幅を空ける（`docs/timeline-ui.md` の「表示（目のアイコン）」と「ロック（鍵のボタン）」）。
+- 行の頭とトラックの境をドラッグして、行の頭の幅を変える。幅はブラウザごとに覚える（タイムラインの高さと同じ）。値は上の「大きさ」の表。名前が
+  収まらないときは、今までどおり末尾を「…」で切る。
 - 上流の層の見出しは「From ＜元のノードの名前＞」（`docs/timeline-ui.md` の「上流の層の行」）。
 
 ## キーとクリップボードを ComfyUI に渡さない
