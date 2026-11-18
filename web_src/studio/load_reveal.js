@@ -28,7 +28,8 @@ export function easeOut(t) {
 // now(): the clock (ms). reducedMotion(): the OS asks for less motion.
 export function createLoadReveal({ now = () => performance.now(), reducedMotion = () => false } = {}) {
   // By Sticker id: { placed (a placed 3D file, until it first draws), box (the route's, in its own frame, or null before
-  // it is known), shown (its guide is drawn now: the band can be seen), revealAt (ms of the last look, null before its
+  // it is known), active (shown at the playhead: editor_content.js), drawn (its guide was drawn by the last overlay:
+  // stage_objects.js; the band is seen only when both hold), revealAt (ms of the last look, null before its
   // item has drawn), elapsed (ms of the reveal gone, each look adding at most LOAD_REVEAL_STEP_MS) }.
   const entries = new Map();
 
@@ -38,7 +39,7 @@ export function createLoadReveal({ now = () => performance.now(), reducedMotion 
   return {
     // `id` loads from now: a 3D file placed (`placed`), or one shown whose item has not drawn (its `box` as known, or null).
     start(id, { placed = true, box = null } = {}) {
-      entries.set(id, { placed, box, shown: true, revealAt: null, elapsed: 0 });
+      entries.set(id, { placed, box, active: true, drawn: true, revealAt: null, elapsed: 0 });
     },
     // Whether `id` has a wait or a reveal going, and whether it is a placed 3D file's.
     has: (id) => entries.has(id),
@@ -48,11 +49,22 @@ export function createLoadReveal({ now = () => performance.now(), reducedMotion 
       const entry = entries.get(id);
       if (entry && (box || !entry.placed)) entry.box = box ?? null;
     },
-    // Whether its guide is drawn now (shown, inside its Clip range, not left out with the grid hidden): a band no one sees
-    // does not keep the stage drawing (docs/studio-ui.md "置く間").
-    shown(id, shown) {
+    // Whether it is shown at the playhead (not hidden, inside its Clip range). One that leaves mid-reveal ends its reveal
+    // (its item shows at once when it comes back), so no reveal keeps the stage drawing unseen.
+    active(id, active) {
       const entry = entries.get(id);
-      if (entry) entry.shown = !!shown;
+      if (!entry) return;
+      entry.active = !!active;
+      if (!active && entry.revealAt !== null) entries.delete(id);
+    },
+    // The overlay is drawn now: no guide is drawn until guideDrawn() says so (the overlay owns this: a guide left out
+    // with the grid hidden, or no overlay at all, as in the Camera tab's Panorama mode, shows no band).
+    overlayDrawn() {
+      for (const entry of entries.values()) entry.drawn = false;
+    },
+    guideDrawn(id) {
+      const entry = entries.get(id);
+      if (entry) entry.drawn = true;
     },
     // It failed or went away: nothing more shows for it.
     drop(id) {
@@ -92,7 +104,8 @@ export function createLoadReveal({ now = () => performance.now(), reducedMotion 
     // Where the band is in its crossing, 0..1.
     phase: () => (now() % LOAD_SHIMMER_MS) / LOAD_SHIMMER_MS,
     // Something moves (a band seen, or a reveal going): the stage draws each frame.
-    animating: () => !reducedMotion() && [...entries.values()].some((entry) => entry.revealAt !== null || (entry.shown && !!standIn(entry))),
+    // A band no one sees (no box, not shown, its guide not drawn) does not keep the stage drawing (docs/studio-ui.md "置く間").
+    animating: () => !reducedMotion() && [...entries.values()].some((entry) => entry.revealAt !== null || (entry.active && entry.drawn && !!standIn(entry))),
     // An item is fading in: what shows it (the Output window too) draws again.
     revealing: () => [...entries.values()].some((entry) => entry.revealAt !== null),
   };

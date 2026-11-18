@@ -76,7 +76,8 @@ export function topLine(ui) {
   if (ui.pickingLook) return { kind: "info", text: LINE_TEXT.pickLook };
   if (ui.view === "loading") return { kind: "loading", text: LINE_TEXT.viewLoading };
   if (ui.background === "loading") return { kind: "loading", text: LINE_TEXT.backgroundLoading };
-  if (ui.adding || ui.loading3d) return { kind: "loading", text: LINE_TEXT.addLoading };
+  // A 3D file Sticker waits only while the 3D view can draw (a failed view says so below instead).
+  if (ui.adding || (ui.loading3d && ui.view !== "failed")) return { kind: "loading", text: LINE_TEXT.addLoading };
   if (ui.depthNotice === DEPTH_VIDEO_LOADING) return { kind: "loading", text: DEPTH_VIDEO_LOADING };
   if (ui.stateUnreadable) return { kind: "warning", text: LINE_TEXT.stateUnreadable };
   if (ui.view === "failed") return { kind: "warning", text: LINE_TEXT.viewFailed };

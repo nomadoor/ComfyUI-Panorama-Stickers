@@ -98,19 +98,22 @@ export function worldGuideItems(state, content, sceneBox = () => null, pendingBo
     boxed.add(sticker.id);
     items.push(boxItem(sticker, box, request.value, false, request.url));
   }
-  // A 3D file Sticker still loading: the stand-in box at its value now (shown at the playhead only); an upstream one's
-  // once its request is there (its route answered and it is shown).
+  // A 3D file Sticker still loading: the stand-in box at its value now (shown at the playhead only).
   state.stickers.forEach((sticker, index) => {
     if (boxed.has(sticker.id) || sticker.placement !== "world") return;
     const box = pendingBox(sticker.id);
     const value = content.evaluated?.stickers?.[index];
     if (box && value?.active) items.push(boxItem(sticker, box, value, true));
   });
-  for (const request of upstreamRequests) {
-    const sticker = byId.get(request.id);
+  // An upstream layer's 3D file Sticker still loading, with its item asked for or before its editor file came
+  // (pano_upstream.js upstreamLayerView), where it shows.
+  for (const entry of upstream.length ? content.space?.upstreamItems ?? [] : []) {
+    if (!entry.source || entry.id == null) continue;
+    const sticker = byId.get(entry.id);
     if (!sticker || boxed.has(sticker.id)) continue;
     const box = pendingBox(sticker.id);
-    if (box && request.value) items.push(boxItem(sticker, box, request.value, true));
+    const value = entry.request?.value ?? (entry.active ? entry.value : null);
+    if (box && value) items.push(boxItem(sticker, box, value, true));
   }
   return items;
 }

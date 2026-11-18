@@ -37,10 +37,10 @@ export function createEditorContent(ctx) {
       const request = value.space.fileStickers.find((item) => item.id === sticker.id) ?? null;
       objects.push({ id: sticker.id, source: sticker.source, active: !!value.evaluated?.stickers?.[index]?.active, request });
     });
+    // An upstream layer's 3D file Stickers (pano_upstream.js upstreamLayerView: with or without their item yet).
     for (const entry of value.space.upstreamItems ?? []) {
-      if (!entry.source || !String(entry.slot).includes(":file:")) continue;
-      const id = entry.request?.id ?? String(entry.slot).slice(String(entry.slot).indexOf(":file:") + 6);
-      objects.push({ id, source: entry.source, active: !!entry.request, request: entry.request ?? null });
+      if (!entry.source || entry.id == null) continue;
+      objects.push({ id: entry.id, source: entry.source, active: !!entry.active, request: entry.request ?? null });
     }
     let waiting = false;
     for (const { id, source, active, request } of objects) {
@@ -57,7 +57,7 @@ export function createEditorContent(ctx) {
       } else {
         reveal.box(id, waitBox(source));
       }
-      reveal.shown(id, active);
+      reveal.active(id, active);
       // A placed one has its own line (add_files.js `adding`).
       if (active && !drawn && !reveal.placed(id)) waiting = true;
     }

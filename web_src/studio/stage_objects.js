@@ -753,9 +753,10 @@ export function createStageObjects({
     // A 3D file Sticker still loading: its guide's band of light while it loads and fades in (load_reveal.js). A guide not
     // drawn (the grid hidden and not selected) shows no band, which then does not keep the stage drawing.
     const phase = loading ? loading.phase() : 0;
+    loading?.overlayDrawn?.();
     const items = guides().map((item) => {
       const look = guideLook({ selected: item.id === row, hovered: item.id === hovered, locked: item.locked, altHeld, gridHidden });
-      if (loading && item.loading && !look) loading.shown?.(item.id, false);
+      if (loading && item.loading && look) loading.guideDrawn?.(item.id);
       const shimmer = loading && item.kind === "box" ? loading.shimmer(item.id) : 0;
       return {
         segments: item.segments,

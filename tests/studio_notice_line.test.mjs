@@ -33,6 +33,10 @@ test("the empty stage's hint is the info kind (a neutral dot), and nothing else 
 
 test("a placed 3D file loading shows the ring after the background's; an Add failure is a warning after the others", () => {
   assert.deepEqual(topLine(ui({ adding: true })), { kind: "loading", text: LINE_TEXT.addLoading });
+  // docs/studio-ui.md "一行の知らせの種類": a 3D file Sticker shown but not drawn yet has the same line, unless the 3D view
+  // could not be made (that warning shows instead).
+  assert.deepEqual(topLine(ui({ loading3d: true })), { kind: "loading", text: LINE_TEXT.addLoading });
+  assert.deepEqual(topLine(ui({ loading3d: true, view: "failed" })), { kind: "warning", text: LINE_TEXT.viewFailed });
   assert.deepEqual(topLine(ui({ adding: true, background: "loading" })), { kind: "loading", text: LINE_TEXT.backgroundLoading });
   assert.deepEqual(topLine(ui({ addWarning: "Could not read a.png", empty: true })), { kind: "warning", text: "Could not read a.png" });
   assert.deepEqual(topLine(ui({ addWarning: "x", background: "failed" })), { kind: "warning", text: LINE_TEXT.backgroundFailed });

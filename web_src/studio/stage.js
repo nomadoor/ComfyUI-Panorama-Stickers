@@ -449,6 +449,8 @@ export function createStage({
     if (!ctx) return;
     const view = viewport();
     const scene = objectsOn() ? objects.overlay({ altHeld: input.altHeld(), gridHidden: ui.gridHidden, lookHover: shared.lookPicking ? shared.lookHover : null }) : null;
+    // No overlay of the objects (the Camera tab's Panorama mode): no loading guide is drawn, so no band runs unseen.
+    if (!scene) objectDeps?.loading?.overlayDrawn?.();
     // No brush ring while Set orbit center waits (its press paints nothing; the cursor is a crosshair).
     const ring = paintOn() && !shared.picking && shared.pointer && (!shared.drag || shared.drag.action === "paint") ? paint.ring(local(shared.pointer, view), directionsOf(view)) : null;
     drawStageOverlay(ctx, {

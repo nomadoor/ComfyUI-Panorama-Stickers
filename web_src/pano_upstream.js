@@ -11,6 +11,7 @@ import { evaluateSceneState } from "./pano_scene_eval.js";
 import { applyUpstreamOverrides } from "./pano_scene_inherit.js";
 import {
   defaultClip,
+  is3dFileSource,
   loadSceneState,
   rebaseSceneState,
   overrideLanes,
@@ -426,10 +427,21 @@ export function upstreamLayerView(layer, key, frame, { media, paintLayers, sourc
     const request = stickerContentRequest(stickerFiles, sceneState, evaluated);
     items.push({ slot: `${key}:sticker`, urls: stickerContentUrls(stickerFiles, received), request, value: request?.value ?? null, opacity: request?.opacity ?? 1 });
   }
+  const asked = new Set();
   for (const entry of editorFile ? fileStickerRequests(sceneState, evaluated, editorFile) : []) {
     const { request } = entry;
     const sticker = sceneState.stickers.find((item) => item.id === entry.id);
-    items.push({ slot: `${key}:file:${entry.id}`, urls: [entry.key], request, value: request?.value ?? null, opacity: request?.opacity ?? 1, source: sticker.source });
+    asked.add(entry.id);
+    items.push({ slot: `${key}:file:${entry.id}`, id: entry.id, urls: [entry.key], request, value: request?.value ?? null, opacity: request?.opacity ?? 1, source: sticker.source, active: !!request });
+  }
+  // A 3D file Sticker whose editor file has not come yet: no item, but its id, Source, value and whether it shows, for
+  // its loading guide and line (docs/studio-ui.md "置く間").
+  if (editorFile) {
+    sceneState.stickers.forEach((sticker, index) => {
+      if (asked.has(sticker.id) || sticker.placement !== "world" || !is3dFileSource(sticker.source)) return;
+      const value = evaluated.stickers[index];
+      items.push({ slot: `${key}:file:${sticker.id}`, id: sticker.id, urls: [], request: null, value, opacity: value?.opacity ?? 1, source: sticker.source, active: !!value?.active });
+    });
   }
   return { evaluated, sky, stickers, items };
 }
