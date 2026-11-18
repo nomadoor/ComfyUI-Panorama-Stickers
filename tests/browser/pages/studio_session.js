@@ -45,6 +45,10 @@ async function boxUrl() {
 const AUTO = new URLSearchParams(location.search).has("auto");
 // ?look: the Camera looks at the 3D box (sticker_2); ?look=hidden: the box opens hidden.
 const LOOK = new URLSearchParams(location.search).get("look");
+// ?slow3d=<ms>: the 3D file route answers that late. ?nodebox: the node surface has answered for box.glb before
+// (openStudioEditor's nodeFile3dBox), so its loading guide shows before the editor's own answer.
+const SLOW_3D = Number(new URLSearchParams(location.search).get("slow3d")) || 0;
+const NODE_BOX = new URLSearchParams(location.search).has("nodebox");
 const studio = (window.__studio = { ready: false, error: null, writes: 0, routeAsks: 0 });
 const storage = new Map();
 const memoryStorage = { getItem: (key) => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, String(value)) };
@@ -88,12 +92,14 @@ try {
     apiURL: viewApiURL,
     fetchApi: async () => {
       studio.routeAsks += 1;
+      if (SLOW_3D) await new Promise((resolve) => setTimeout(resolve, SLOW_3D));
       return { status: 200, json: async () => ({ kind: "mesh", unlit: false, file: { url: box }, box: { min: [-0.5, -0.5, -0.5], max: [0.5, 0.5, 0.5] } }) };
     },
   };
   let editor = null;
   studio.open = async () => {
-    editor = await openStudioEditor(node, { app, api, storage: memoryStorage });
+    const nodeFile3dBox = NODE_BOX ? (source) => (source?.filename === "box.glb" ? { min: [-0.5, -0.5, -0.5], max: [0.5, 0.5, 0.5] } : null) : null;
+    editor = await openStudioEditor(node, { app, api, storage: memoryStorage, nodeFile3dBox });
   };
   studio.close = () => editor?.close();
   // The browser's storage the editor keeps its settings in (the loop switch, the Length unit).

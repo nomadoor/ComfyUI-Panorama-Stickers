@@ -88,6 +88,9 @@ export function createStageMedia({ assetSource, source, fetchApi = null, onChang
     },
     // The editor file of a 3D file Sticker (pano_file_3d.js file3dEditorFileOf), or null.
     editorFile: (sticker) => file3dEditorFileOf(files, sticker, source),
+    // The route's answer for a 3D file's Source ({ state "pending" | "ready" | "failed", box, ... }; asks the first time,
+    // as editorFile does), or null without the route: what a 3D file Sticker waits for (load_reveal.js).
+    file3dAnswer: (fileSource) => (files && is3dFileSource(fileSource) ? files.get(fileSource) : null),
     // [add-drop] The route's answer for a 3D file's Source once it came ({ state "ready" or "failed", box, error }),
     // asked once with the editor files above (studio/add_files.js places a new 3D file by its box).
     request: (source) => (files ? files.request(source) : Promise.resolve({ state: "failed", error: "The 3D file route is not available." })),

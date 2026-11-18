@@ -1,9 +1,11 @@
-// The wait and the reveal of a 3D file placed on the new UI's stage (docs/studio-ui.md "Add とドロップの見せ方" "置く間";
-// docs/space-and-view.md "World の物のガイド"; the values: docs/design.md "新しい UI の見た目" "大きさ", "動き"): until its
-// item has drawn, its guide shows a stand-in box (DROP_PREVIEW_BOX, then the route's box) with a band of light running
-// through it; once it has drawn, the band fades and the item fades in over LOAD_REVEAL_MS. With reduced motion, no band
-// and no fade. Time only: add_files.js says what was placed, editor.js multiplies the item's opacity and asks whether
-// it has drawn, world_guides.js takes the stand-in box, stage_overlay.js draws the band.
+// The wait and the reveal of a 3D file Sticker on the new UI's stage whose item has not drawn yet (docs/studio-ui.md
+// "Add とドロップの見せ方" "置く間": one placed, and one shown but not drawn yet, as when the editor opens; docs/space-and-view.md
+// "World の物のガイド"; the values: docs/design.md "新しい UI の見た目" "大きさ", "動き"): until its item has drawn, its guide
+// shows a stand-in box with a band of light running through it; once it has drawn, the band fades and the item fades in
+// over LOAD_REVEAL_MS. With reduced motion, no band and no fade. A placed one's box is DROP_PREVIEW_BOX until the route's;
+// another's is only the one it is given (none: no guide). Time only: add_files.js says what was placed, editor_content.js
+// starts the others, multiplies the items' opacity and asks whether they have drawn, world_guides.js takes the stand-in
+// box, stage_overlay.js draws the band.
 import { DROP_PREVIEW_BOX } from "./view_scale.js";
 
 // How long the band takes to cross the guide once (it repeats), and how long the reveal takes (ms).
@@ -25,21 +27,32 @@ export function easeOut(t) {
 
 // now(): the clock (ms). reducedMotion(): the OS asks for less motion.
 export function createLoadReveal({ now = () => performance.now(), reducedMotion = () => false } = {}) {
-  // By Sticker id: { box (the route's, in its own frame, or null before it answers), revealAt (ms of the last look,
-  // null before its item has drawn), elapsed (ms of the reveal gone, each look adding at most LOAD_REVEAL_STEP_MS) }.
+  // By Sticker id: { placed (a placed 3D file, until it first draws), box (the route's, in its own frame, or null before
+  // it is known), shown (its guide is drawn now: the band can be seen), revealAt (ms of the last look, null before its
+  // item has drawn), elapsed (ms of the reveal gone, each look adding at most LOAD_REVEAL_STEP_MS) }.
   const entries = new Map();
 
   const progress = (entry) => entry.elapsed / LOAD_REVEAL_MS;
+  const standIn = (entry) => (entry.placed ? entry.box ?? DROP_PREVIEW_BOX : entry.box);
 
   return {
-    // A 3D file was placed as `id`: it loads from now.
-    start(id) {
-      entries.set(id, { box: null, revealAt: null, elapsed: 0 });
+    // `id` loads from now: a 3D file placed (`placed`), or one shown whose item has not drawn (its `box` as known, or null).
+    start(id, { placed = true, box = null } = {}) {
+      entries.set(id, { placed, box, shown: true, revealAt: null, elapsed: 0 });
     },
-    // The route answered with its box (in its own frame).
+    // Whether `id` has a wait or a reveal going, and whether it is a placed 3D file's.
+    has: (id) => entries.has(id),
+    placed: (id) => !!entries.get(id)?.placed,
+    // The route answered with its box (in its own frame); for one not placed, null takes a box away.
     box(id, box) {
       const entry = entries.get(id);
-      if (entry && box) entry.box = box;
+      if (entry && (box || !entry.placed)) entry.box = box ?? null;
+    },
+    // Whether its guide is drawn now (shown, inside its Clip range, not left out with the grid hidden): a band no one sees
+    // does not keep the stage drawing (docs/studio-ui.md "置く間").
+    shown(id, shown) {
+      const entry = entries.get(id);
+      if (entry) entry.shown = !!shown;
     },
     // It failed or went away: nothing more shows for it.
     drop(id) {
@@ -61,7 +74,7 @@ export function createLoadReveal({ now = () => performance.now(), reducedMotion 
     // The stand-in box of its guide while its item has not drawn, else null.
     pendingBox(id) {
       const entry = entries.get(id);
-      return entry && entry.revealAt === null ? entry.box ?? DROP_PREVIEW_BOX : null;
+      return entry && entry.revealAt === null ? standIn(entry) : null;
     },
     // What its item's opacity is multiplied by: 0 until it has drawn, then up to 1 over the reveal.
     opacity(id) {
@@ -78,8 +91,8 @@ export function createLoadReveal({ now = () => performance.now(), reducedMotion 
     },
     // Where the band is in its crossing, 0..1.
     phase: () => (now() % LOAD_SHIMMER_MS) / LOAD_SHIMMER_MS,
-    // Something moves: the stage draws each frame.
-    animating: () => entries.size > 0 && !reducedMotion(),
+    // Something moves (a band seen, or a reveal going): the stage draws each frame.
+    animating: () => !reducedMotion() && [...entries.values()].some((entry) => entry.revealAt !== null || (entry.shown && !!standIn(entry))),
     // An item is fading in: what shows it (the Output window too) draws again.
     revealing: () => [...entries.values()].some((entry) => entry.revealAt !== null),
   };

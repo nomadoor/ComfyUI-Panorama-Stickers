@@ -77,7 +77,7 @@ const oneAxis = (handle) => handle.kind === "scale_x" || handle.kind === "scale_
 // gizmo's mode. tab(): "3d" or "camera". ground(): the ground
 // height. readOnly(): no edits. upstream(): the upstream working layers (studio/upstream.js working(); [] without).
 // loading: load_reveal.js
-// createLoadReveal()'s for the guides of 3D files just placed (their stand-in box and band), or null.
+// createLoadReveal()'s for the guides of 3D file Stickers whose items have not drawn (their stand-in box and band), or null.
 // rasterAlpha(item, u, v): the alpha (0..255) of a paint raster object's image at a point of its box (0..1 across), or
 // null while it cannot be read (studio/paint.js rasterAlpha); a raster object is then hit anywhere in its box.
 // The path line (docs/studio-ui.md "軌道の線"): keys() the Timeline's selected Keyframes ([{ row, lane, frame }]),
@@ -750,14 +750,17 @@ export function createStageObjects({
 
   function overlay({ altHeld = false, gridHidden = false, lookHover = null } = {}) {
     const row = selection();
-    // A 3D file just placed: its guide's band of light while it loads and fades in (load_reveal.js).
+    // A 3D file Sticker still loading: its guide's band of light while it loads and fades in (load_reveal.js). A guide not
+    // drawn (the grid hidden and not selected) shows no band, which then does not keep the stage drawing.
     const phase = loading ? loading.phase() : 0;
     const items = guides().map((item) => {
+      const look = guideLook({ selected: item.id === row, hovered: item.id === hovered, locked: item.locked, altHeld, gridHidden });
+      if (loading && item.loading && !look) loading.shown?.(item.id, false);
       const shimmer = loading && item.kind === "box" ? loading.shimmer(item.id) : 0;
       return {
         segments: item.segments,
         corners: item.corners,
-        look: guideLook({ selected: item.id === row, hovered: item.id === hovered, locked: item.locked, altHeld, gridHidden }),
+        look,
         // An upstream object's selected guide is dashed (docs/studio-ui.md "上流の物の編集" "見せる").
         dashed: !!item.upstream && item.id === row,
         ...(shimmer > 0 ? { shimmer, phase } : {}),

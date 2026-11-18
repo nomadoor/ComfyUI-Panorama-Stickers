@@ -10,10 +10,18 @@ import { inputLinked, linkedInputType } from "./pano_preview_video.js";
 import { openStudioEditor, preloadStudioEditor } from "./studio/editor.js";
 import { openPreviewWindow } from "./studio/preview_window.js";
 import { setWorkflowChangeNotifier } from "./pano_state_widget.js";
+import { comfy } from "./node_surface/media.js";
+
+// The box the node surfaces' route answer gave for a 3D file's Source, read without asking the route again
+// (docs/space-and-view.md "World の物のガイド"), or null.
+const nodeFile3dBox = (source) => {
+  const entry = comfy.file3dFiles?.peek(source) ?? null;
+  return entry?.state === "ready" ? entry.box ?? null : null;
+};
 
 const openEditor = createEditorChooser({
   openOld: oldEditorHooks.openEditor,
-  openStudio: (node) => openStudioEditor(node, { app, api }),
+  openStudio: (node) => openStudioEditor(node, { app, api, nodeFile3dBox }),
   openPreview: (node) => openPreviewWindow(node, { app, api }),
   previewTakes: (node) => previewUsesNewWindow({
     type: node?.comfyClass ?? node?.type,

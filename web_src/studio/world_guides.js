@@ -45,8 +45,8 @@ function loop(points) {
 // ("plane" | "box"), locked, upstream, loading, segments, corners, center } (a box also has `url`, its item's key or null while
 // it loads, and `value`, the Sticker's evaluated transform)] in World units. `center` is where the object's gizmo sits too (docs/studio-ui.md "ギズモ" "物の中心"). `sceneBox(url)`
 // is the box of a loaded item (null while it loads: that object has no guide yet). `pendingBox(id)` is the box in its
-// own frame of a 3D file just placed whose item has not drawn yet (load_reveal.js: DROP_PREVIEW_BOX, then the route's
-// box), or null: such an object has a guide of that box, `loading`. Hidden objects and those outside their Clip range
+// own frame of a 3D file Sticker whose item has not drawn yet (load_reveal.js: a placed one's DROP_PREVIEW_BOX, then the
+// route's box; another's box as known), or null: such an object has a guide of that box, `loading`. Hidden objects and those outside their Clip range
 // are not in `content`; the `scene` content and the Camera have no guide. The upstream World objects (their planes and
 // 3D items in `content`, by their working ids in the working layers `upstream`) have guides as the node's own, after
 // them; one of a layer whose overrides cannot be kept is `locked` (docs/studio-ui.md "上流の物の編集").
@@ -98,13 +98,20 @@ export function worldGuideItems(state, content, sceneBox = () => null, pendingBo
     boxed.add(sticker.id);
     items.push(boxItem(sticker, box, request.value, false, request.url));
   }
-  // A placed 3D file still loading: the stand-in box at its value now (shown at the playhead only).
+  // A 3D file Sticker still loading: the stand-in box at its value now (shown at the playhead only); an upstream one's
+  // once its request is there (its route answered and it is shown).
   state.stickers.forEach((sticker, index) => {
     if (boxed.has(sticker.id) || sticker.placement !== "world") return;
     const box = pendingBox(sticker.id);
     const value = content.evaluated?.stickers?.[index];
     if (box && value?.active) items.push(boxItem(sticker, box, value, true));
   });
+  for (const request of upstreamRequests) {
+    const sticker = byId.get(request.id);
+    if (!sticker || boxed.has(sticker.id)) continue;
+    const box = pendingBox(sticker.id);
+    if (box && request.value) items.push(boxItem(sticker, box, request.value, true));
+  }
   return items;
 }
 

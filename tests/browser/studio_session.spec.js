@@ -586,3 +586,28 @@ test("the row head's lock button locks in coral with hollow Keyframes, and the r
   expect(JSON.parse(await studio(page, "stored", "PanoramaSuite.Studio.timelineHeadWidth"))).toBe(320);
   expect(problems).toEqual([]);
 });
+
+// docs/studio-ui.md "置く間" and docs/space-and-view.md "World の物のガイド": a 3D file Sticker present when the editor opens
+// shows its loading guide (with the node surface's box, before the editor's own route answers) and the top line, then
+// its model; without a known box it shows the line only, no wrong-size guide.
+test("a 3D file Sticker present at opening shows its loading guide with the node surface's box, then its model", async ({ page }, testInfo) => {
+  const guide = page.locator("[data-stage-overlay][data-loading-guide]");
+  const line = page.locator(".pano-studio-notice");
+  const problems = watch(page);
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto("/tests/browser/pages/studio_session.html?slow3d=2000&nodebox");
+  await page.waitForFunction(() => window.__studio?.ready, null, { timeout: 30_000 });
+  await expect(guide).toHaveCount(1, { timeout: 1_500 });
+  await expect(line).toContainText("Loading 3D model…");
+  // The route answers and the model draws: the band and the line go.
+  await expect(guide).toHaveCount(0, { timeout: 10_000 });
+  await expect(page.getByText("Loading 3D model…")).toHaveCount(0);
+  expect(problems).toEqual([]);
+
+  // No box known before the route answers: the line, but no guide.
+  await page.goto("/tests/browser/pages/studio_session.html?slow3d=2000");
+  await page.waitForFunction(() => window.__studio?.ready, null, { timeout: 30_000 });
+  await expect(line).toContainText("Loading 3D model…", { timeout: 1_500 });
+  expect(await guide.count()).toBe(0);
+  await expect(page.getByText("Loading 3D model…")).toHaveCount(0, { timeout: 10_000 });
+});
