@@ -11,8 +11,8 @@
 //   { type: "easing", keyframes, easing, phase }   a preset (Smooth clears the Easing), the curve or the bezier text
 //                                                  of the Easing panel
 // (The Look at row's Pick, { type: "look-pick" }, is the editor's: it waits for a click on the stage.)
-// `target` is a card's target ({ kind: "sticker" | "camera" | "scene", id }), `keyframes` the selection's
-// ({ owner, lane, frames }).
+// `target` is a card's target ({ kind: "sticker" | "camera" | "scene", id }), `keyframes` the selection's groups
+// ([{ owner, lane, frames }], every one of them edited).
 //
 // applyInspectorEdit returns { changed, history, stopPlayback, upstreamRevert }: `history` asks for one Undo step
 // (a commit), `stopPlayback` for the dot's stop of playback, `upstreamRevert` ({ sticker, lanes }, else null) the reset
@@ -218,7 +218,13 @@ function applyReset(state, found, row, context) {
   return { done: true };
 }
 
-function applyEasing(state, keyframes, easing, upstream, length) {
+function applyEasing(state, groups, easing, upstream, length) {
+  let changed = false;
+  for (const keyframes of groups ?? []) changed = applyGroupEasing(state, keyframes, easing, upstream, length) || changed;
+  return changed;
+}
+
+function applyGroupEasing(state, keyframes, easing, upstream, length) {
   if (!keyframes?.frames?.length) return false;
   const owner = keyframes.owner === "camera" ? state.camera : keyframeOwner(state, upstream, keyframes.owner);
   if (!owner || owner.locked) return false;

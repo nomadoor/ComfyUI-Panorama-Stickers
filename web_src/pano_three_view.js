@@ -94,10 +94,11 @@ export function createDefaultLights(lights = DEFAULT_LIGHTS) {
 // What the 3D Sticker queue (createSceneItems requestMany) is asked for in one render of a space input: `drawn`,
 // the requests of the port Sticker's item and the 3D file Stickers' items shown at this frame, and `inputs`, those
 // with a keep-only input of every key whose item stays loaded (stickerUrls, fileStickerKeys), so a 3D Sticker hidden
-// or outside its Clip range keeps its item and shows it again without loading.
+// or outside its Clip range keeps its item and shows it again without loading. `measuredStickers` are items loaded
+// only to be measured (a hidden Look at target's content box), never drawn.
 export function stickerItemInputs(space) {
   const drawn = [...(space.sticker ? [space.sticker] : []), ...(space.fileStickers ?? [])];
-  return { drawn, inputs: [...drawn, { urls: [...(space.stickerUrls ?? []), ...(space.fileStickerKeys ?? [])] }] };
+  return { drawn, inputs: [...drawn, ...(space.measuredStickers ?? []), { urls: [...(space.stickerUrls ?? []), ...(space.fileStickerKeys ?? [])] }] };
 }
 
 const ORIGIN_COLOR = 0xffdd57;
@@ -906,7 +907,8 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
   // the `scene` frame), unlit (its meshes draw without light; false: lit by the default lights) }. sticker is the
   // same for the `sticker` input's 3D media with its opacity, and stickerUrls its item URLs. fileStickers are the
   // requests of the 3D file Stickers (pano_space.js fileStickerRequests: by the Sticker's key, loaded from
-  // `src`), and fileStickerKeys the keys of every one whose item stays loaded. stickers are world Sticker planes { id, media, revision, source, opacity,
+  // `src`), fileStickerKeys the keys of every one whose item stays loaded, and measuredStickers (optional) items loaded
+  // only to be measured, never drawn (stickerItemInputs). stickers are world Sticker planes { id, media, revision, source, opacity,
   // position, quaternion, width, height, crop }, and lines are { segments: [[a, b], ...], color }.
   // upstreamItems ([{ slot, urls, request, opacity }], pano_upstream.js upstreamLayerView) and upstreamStickers
   // (planes as `stickers`) are the upstream Scene's, drawn and picked as the own ones (ADR 0030). gizmo is

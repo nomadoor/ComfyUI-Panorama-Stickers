@@ -163,7 +163,7 @@ test("the Easing panel reads a Look at segment by the turns toward its targets",
   const state = load({ version: 2, camera: { position: { value: [0, 0, 5] }, look_at: { keyframes: [
     { frame: 0, value: { point: [-3, 0, 0] } }, { frame: 20, value: { point: [3, 0, 0] } }, { frame: 30, value: { point: [3, 2, 0] } },
   ] } } });
-  const easingOf = (frames) => buildInspectorModel({ state, selection: { ids: ["camera"], keyframes: { owner: "camera", lane: "look_at", frames } } }).easing;
+  const easingOf = (frames) => buildInspectorModel({ state, selection: { ids: ["camera"], keyframes: [{ owner: "camera", lane: "look_at", frames }] } }).easing;
   const one = easingOf([0, 20]);
   assert.ok(one.curve.every(Number.isFinite), JSON.stringify(one.curve));
   // The curve is the Camera's turn: halfway in time, the share of the angle turned is the curve's progress there.

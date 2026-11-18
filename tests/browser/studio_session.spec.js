@@ -463,6 +463,65 @@ test("the Length field shows seconds by its unit mark; drags and typing still gi
   expect(problems).toEqual([]);
 });
 
+test("the Easing panel reads every selected row's Keyframes: Mixed across rows, and a segment after another row's last Keyframe", async ({ page }, testInfo) => {
+  const problems = await open(page, testInfo);
+  const ruler = await page.locator('[data-tl="ruler"]').boundingBox();
+  const seek = async (fraction) => {
+    await page.mouse.click(ruler.x + ruler.width * fraction, ruler.y + ruler.height / 2);
+    return Number((await page.locator('[data-tl="time"] .pano-studio-tl-frame').textContent()).match(/(\d+)\s*\/\s*48/)[1]);
+  };
+  const dot = (row) => page.locator(`.pano-studio-tl-head[data-head="${row}"] [data-part="dot"]`);
+  const key = (row, frame) => page.locator(`[data-track="${row}"] .pano-studio-tl-key[data-frame="${frame}"]`);
+  const text = page.locator(".pano-studio-easing-text");
+  // Two Keyframes on the Sky image and on the 3D box, at the same frames.
+  const first = await seek(0.25);
+  await dot("sticker_1").click();
+  await dot("sticker_2").click();
+  const second = await seek(0.75);
+  await dot("sticker_1").click();
+  await dot("sticker_2").click();
+  // The Sky image's segment gets Ease in-out; the box's stays Smooth.
+  await key("sticker_1", first).click();
+  await page.locator('[aria-label="Easing preset"] [data-value="Ease in-out"]').click();
+  await expect(text).toHaveValue(/0\.42/);
+  // The box's first, then the Sky image's: Mixed, whichever was picked first (docs/timeline-ui.md "行とポチ").
+  await key("sticker_2", first).click();
+  await expect(text).toHaveAttribute("placeholder", "Smooth");
+  await key("sticker_1", first).click({ modifiers: ["Shift"] });
+  await expect(text).toHaveAttribute("placeholder", "Mixed");
+  await expect(text).toHaveValue("");
+  // The Sky image's last Keyframe first, then the box's segment: the panel shows the box's segment, not "no segment".
+  await key("sticker_1", second).click();
+  await expect(text).toHaveAttribute("placeholder", "No segment after the last Keyframe");
+  await key("sticker_2", first).click({ modifiers: ["Shift"] });
+  await expect(text).toHaveAttribute("placeholder", "Smooth");
+  await expect(page.locator(".pano-studio-easing")).toContainText(`f ${first} → ${second}`);
+  expect(problems).toEqual([]);
+});
+
+// docs/studio-ui.md "Look at" "中身の箱": the box is the content's, shown or not, so hiding the target or opening with it
+// hidden leaves where the Camera looks as it was (the output measures it the same way).
+test("hiding the 3D Look at target keeps the Camera facing its box's center, also when the editor opens with it hidden", async ({ page }, testInfo) => {
+  const pitch = () => page.locator('[data-region="inspector"] [data-row="Rotation"] [data-field="pitch_deg"]');
+  const pitchValue = async () => Number((await pitch().textContent()).match(/-?\d+(\.\d+)?/)[0]);
+  const problems = await open(page, testInfo, "?look");
+  await page.locator(".pano-studio-tl-head-name", { hasText: "Camera" }).first().click();
+  // The box at [2.5, -1, -4] from the Camera: its origin is about 12° down, its center (0.5 up) about 6° down.
+  await expect.poll(pitchValue, { timeout: 15_000 }).toBeGreaterThan(-9);
+  const shown = await pitchValue();
+  await page.locator('.pano-studio-tl-head[data-head="sticker_2"] [data-part="eye"]').click();
+  await expect.poll(async () => (await studio(page, "state")).stickers[1].visible).toBe(false);
+  await page.waitForTimeout(300);
+  expect(await pitchValue()).toBe(shown);
+  expect(problems).toEqual([]);
+
+  // Opened with the box hidden: it loads to be measured, and the Camera faces the same point.
+  const again = await open(page, testInfo, "?look=hidden");
+  await page.locator(".pano-studio-tl-head-name", { hasText: "Camera" }).first().click();
+  await expect.poll(pitchValue, { timeout: 15_000 }).toBe(shown);
+  expect(again).toEqual([]);
+});
+
 // docs/timeline-ui.md "ロック（鍵のボタン）" and docs/studio-ui.md "タイムライン" / "下の中央のバー": the lock button at the row
 // head turns the lock over (coral while locked, the bar's Lock too), a locked row's Keyframes are hollow, and the row
 // heads' width follows a drag on their border, kept per browser.
