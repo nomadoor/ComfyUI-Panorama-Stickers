@@ -58,8 +58,8 @@ export function createEditorContent(ctx) {
         reveal.box(id, waitBox(source));
       }
       reveal.active(id, active);
-      // A placed one has its own line (add_files.js `adding`).
-      if (active && !drawn && !reveal.placed(id)) waiting = true;
+      // Placed ones too, once settled (add_files.js `adding` holds the line while they upload).
+      if (active && !drawn) waiting = true;
     }
     if (ctx.ui.loading3d !== waiting) ctx.ui.loading3d = waiting;
   }

@@ -120,7 +120,6 @@ test("a Sticker that was not placed waits with its given box only, and a band no
   const reveal = createLoadReveal({ now });
   reveal.start("a", { placed: false, box: null });
   assert.equal(reveal.has("a"), true);
-  assert.equal(reveal.placed("a"), false);
   assert.equal(reveal.pendingBox("a"), null, "no box yet: no guide, not the 1×1×1 box");
   assert.equal(reveal.animating(), false);
   const box = { min: [-1, 0, -1], max: [1, 3, 1] };
@@ -154,7 +153,6 @@ test("a Sticker that was not placed waits with its given box only, and a band no
   reveal.start("b");
   reveal.box("b", null);
   assert.deepEqual(reveal.pendingBox("b"), DROP_PREVIEW_BOX);
-  assert.equal(reveal.placed("b"), true);
 });
 
 // docs/studio-ui.md "置く間": an upstream layer's 3D file Sticker waits as the node's own does, once its request is there.

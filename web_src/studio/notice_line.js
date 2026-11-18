@@ -59,8 +59,8 @@ export function stageEmpty({ background = "none", stickers = 0, paint = 0, linke
 // ui: the stage's and the editor's report (stage.js stageUi() with `background` and `empty`): `notice` the text of an
 // operation that did nothing (null without one), `skyOnly` the stage's Sky-only wheel notice (docs/space-and-view.md
 // "Sky だけのときのホイール"; null without one), `view` "loading" | "ready" | "failed", `background` "none" |
-// "loading" | "ready" | "failed", `empty`; and add_files.js's `adding` (a placed 3D file is loading), editor_content.js's
-// `loading3d` (another 3D file Sticker shown is loading, docs/studio-ui.md "置く間") and `addWarning`
+// "loading" | "ready" | "failed", `empty`; and add_files.js's `adding` (a placed 3D file uploads), editor_content.js's
+// `loading3d` (a 3D file Sticker shown is loading after that, docs/studio-ui.md "置く間") and `addWarning`
 // (why the last file could not be placed, or null); the editor's `stateUnreadable` (the node's state_json cannot be
 // read, docs/studio-ui.md "閉じ方"); `done` the short notice of an operation that was done (the left column's Camera
 // button, docs/studio-ui.md "左の列の Camera のボタン"), null without one; the stage's `pickingCenter` (Set orbit center waits, stage.js);
