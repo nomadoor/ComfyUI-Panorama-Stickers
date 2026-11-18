@@ -462,3 +462,39 @@ test("the Length field shows seconds by its unit mark; drags and typing still gi
   expect(await studio(page, "stored", "PanoramaSuite.Studio.TimelineLengthUnit")).toBe("frames");
   expect(problems).toEqual([]);
 });
+
+test("the Easing panel reads every selected row's Keyframes: Mixed across rows, and a segment after another row's last Keyframe", async ({ page }, testInfo) => {
+  const problems = await open(page, testInfo);
+  const ruler = await page.locator('[data-tl="ruler"]').boundingBox();
+  const seek = async (fraction) => {
+    await page.mouse.click(ruler.x + ruler.width * fraction, ruler.y + ruler.height / 2);
+    return Number((await page.locator('[data-tl="time"] .pano-studio-tl-frame').textContent()).match(/(\d+)\s*\/\s*48/)[1]);
+  };
+  const dot = (row) => page.locator(`.pano-studio-tl-head[data-head="${row}"] [data-part="dot"]`);
+  const key = (row, frame) => page.locator(`[data-track="${row}"] .pano-studio-tl-key[data-frame="${frame}"]`);
+  const text = page.locator(".pano-studio-easing-text");
+  // Two Keyframes on the Sky image and on the 3D box, at the same frames.
+  const first = await seek(0.25);
+  await dot("sticker_1").click();
+  await dot("sticker_2").click();
+  const second = await seek(0.75);
+  await dot("sticker_1").click();
+  await dot("sticker_2").click();
+  // The Sky image's segment gets Ease in-out; the box's stays Smooth.
+  await key("sticker_1", first).click();
+  await page.locator('[aria-label="Easing preset"] [data-value="Ease in-out"]').click();
+  await expect(text).toHaveValue(/0\.42/);
+  // The box's first, then the Sky image's: Mixed, whichever was picked first (docs/timeline-ui.md "行とポチ").
+  await key("sticker_2", first).click();
+  await expect(text).toHaveAttribute("placeholder", "Smooth");
+  await key("sticker_1", first).click({ modifiers: ["Shift"] });
+  await expect(text).toHaveAttribute("placeholder", "Mixed");
+  await expect(text).toHaveValue("");
+  // The Sky image's last Keyframe first, then the box's segment: the panel shows the box's segment, not "no segment".
+  await key("sticker_1", second).click();
+  await expect(text).toHaveAttribute("placeholder", "No segment after the last Keyframe");
+  await key("sticker_2", first).click({ modifiers: ["Shift"] });
+  await expect(text).toHaveAttribute("placeholder", "Smooth");
+  await expect(page.locator(".pano-studio-easing")).toContainText(`f ${first} → ${second}`);
+  expect(problems).toEqual([]);
+});
