@@ -41,9 +41,8 @@ export function createLoadReveal({ now = () => performance.now(), reducedMotion 
     start(id, { placed = true, box = null } = {}) {
       entries.set(id, { placed, box, active: true, drawn: true, revealAt: null, elapsed: 0 });
     },
-    // Whether `id` has a wait or a reveal going, and whether it is a placed 3D file's.
+    // Whether `id` has a wait or a reveal going.
     has: (id) => entries.has(id),
-    placed: (id) => !!entries.get(id)?.placed,
     // The route answered with its box (in its own frame); for one not placed, null takes a box away.
     box(id, box) {
       const entry = entries.get(id);

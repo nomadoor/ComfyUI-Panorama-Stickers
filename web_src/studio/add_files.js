@@ -37,7 +37,6 @@ export const ADD_TEXT = Object.freeze({
 });
 
 // How often the line checks whether a placed 3D file has drawn (ms).
-const DRAWN_POLL_MS = 150;
 
 // The file of `files` to place: the first image, else the first 3D file, else null (docs/studio-ui.md "Add とドロップの
 // 見せ方": as the old UI).
@@ -57,7 +56,8 @@ export function dragKind(items) {
 // session: session.js's. ui: the editor's reactive report, whose fields this writes: `choice` (null or { name }: the
 // Sky / World choice shows), `drop` (null or the drag's mark: dropMarker()'s with `sky`, the `pointer` { x, y } and the
 // `stage` { width, height }), `adding` (a placed
-// 3D file is loading) and `addWarning` (the last failure's text, or null).
+// 3D file is uploading and its route has not answered: after that, editor_content.js's `loading3d` carries the line until
+// its item draws) and `addWarning` (the last failure's text, or null).
 // view(): what the stage gives (stage.js `landing`: camera(), size(), pose(), bound(), pick(point)), null before it is
 // made. ground(): the ground height. content(), sceneBox(url): the content at the playhead (stage_content.js) and a loaded
 // item's box. playhead(): the Timeline frame.
@@ -89,7 +89,6 @@ export function createAddFiles({
   notice = () => {},
   late = () => {},
   reveal = null,
-  timers = { set: (fn, ms) => setTimeout(fn, ms), clear: (id) => clearTimeout(id) },
   pending = new Set(),
 }) {
   let closed = false;
@@ -97,9 +96,8 @@ export function createAddFiles({
   const local = new Map();
   // The image waiting for the Sky / World choice: { file, decoded }.
   let waiting = null;
-  // The placed 3D files whose item has not drawn yet, and the poll that watches them.
+  // The placed 3D files not settled yet (uploading, or waiting for the route's answer).
   const loading = new Set();
-  let poll = 0;
 
   function update() {
     if (closed) late();
@@ -263,29 +261,18 @@ export function createAddFiles({
     }
   }
 
-  // --- The line while a placed 3D file loads: until its item has drawn, it is gone, or it is not shown at the playhead.
+  // --- The line while a placed 3D file uploads (docs/studio-ui.md "一行の知らせの種類"): until it is settled (its Source
+  // has its file) or gone. Once settled, editor_content.js says it loads until its item draws, as for every 3D file Sticker.
 
-  function drawnOrGone(id) {
+  function settledOrGone(id) {
     const sticker = session.state.stickers.find((item) => item.id === id);
-    if (!sticker) return true;
-    // Its upload has not answered yet.
-    if (!sticker.source.filename) return false;
-    const request = content()?.space?.fileStickers?.find((item) => item.id === id);
-    return !request || !!sceneBox(request.url);
+    return !sticker || !!sticker.source.filename;
   }
 
   function syncLoading() {
-    for (const id of [...loading]) if (drawnOrGone(id)) loading.delete(id);
+    for (const id of [...loading]) if (settledOrGone(id)) loading.delete(id);
     const adding = loading.size > 0;
     if (ui.adding !== adding) ui.adding = adding;
-    if (adding && !poll && !closed) {
-      poll = timers.set(() => {
-        poll = 0;
-        const before = loading.size;
-        syncLoading();
-        if (loading.size !== before) update();
-      }, DRAWN_POLL_MS);
-    }
   }
 
   for (const placement of [...pending]) adopt(placement);
@@ -422,12 +409,8 @@ export function createAddFiles({
       }
       return sizes;
     },
-    // Whether the line should check again (a content change may have drawn a placed 3D file).
-    refresh: () => syncLoading(),
     close() {
       closed = true;
-      timers.clear(poll);
-      poll = 0;
       waiting = null;
     },
   };

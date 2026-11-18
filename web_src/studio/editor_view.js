@@ -168,7 +168,7 @@ export function createEditorUi(ctx) {
     choice: null,
     drop: null,
     adding: false,
-    // A 3D file Sticker shown but not drawn yet, not a placed one (editor_content.js).
+    // A 3D file Sticker shown but not drawn yet, placed ones once settled (editor_content.js).
     loading3d: false,
     addWarning: null,
     // The node's state_json cannot be read: the editor is read-only (notice_line.js).
