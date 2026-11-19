@@ -9,7 +9,7 @@ import { buildCameraCard } from "../../studio/inspector_model.js";
 import { TIMELINE_BAR_HEIGHT, barPosition, loadTimelineHeight, saveTimelineHeight, timelineHeight } from "../../studio/layout.js";
 import { topLine } from "../../studio/notice_line.js";
 import { selectionBar } from "../../studio/selection_bar.js";
-import { isMacPlatform, shortcutGroups } from "../../studio/shortcuts.js";
+import { isMacPlatform, shortcutList } from "../../studio/shortcuts.js";
 import { trackInputMode } from "../../studio/input_modality.js";
 import { watchDragCancel } from "../../studio/ui_drag.js";
 import { inspectorSelection } from "../../studio/session.js";
@@ -43,9 +43,9 @@ import StudioViewButtons from "./StudioViewButtons.vue";
 // The editor's state lives in studio/editor.js: `view` is its view model (the working state, the selection, the
 // playhead, playback, Undo), `ui` what the stage reports (stage.js stageUi(), with `background` and `empty`), and
 // `controller` what this shell calls: onStage({ canvas, root }) makes the stage once the elements are in the page and
-// returns its controls; onTimeline({ handleDelete, copyKeys, pasteKeys, settleSimplify }) hands over the Timeline's
-// Delete, its Keyframes' copy and paste, and the keeping of Simplify's result before Undo and Redo; the inspector's and
-// the Timeline's events go to its handlers.
+// returns its controls; onTimeline({ handleDelete, copyKeys, pasteKeys, settleSimplify, selectAllKeys }) hands over the
+// Timeline's Delete, its Keyframes' copy and paste, the keeping of Simplify's result before Undo and Redo, and Ctrl + A
+// (which selects only after a press on the Timeline); the inspector's and the Timeline's events go to its handlers.
 const props = defineProps({
   nodeTitle: { type: String, default: "" },
   ui: { type: Object, required: true },
@@ -70,6 +70,13 @@ const selected = computed(() => {
   return props.view.paint && !selection.ids.length ? { ...selection, paint: true } : selection;
 });
 
+// Whether the last press in the editor was on the Timeline: Ctrl + A selects its Keyframes only then (docs/timeline-ui.md
+// "全選択"); the stage's Ctrl + A is kept for selecting objects.
+let timelinePressed = false;
+function onAnyPress(event) {
+  timelinePressed = !!event.target?.closest?.('[data-region="timeline"]');
+}
+
 onMounted(() => {
   stopInputMode = trackInputMode(root.value);
   stage = props.controller.onStage({ canvas: canvas.value, overlay: overlay.value, root: root.value }) ?? null;
@@ -78,6 +85,7 @@ onMounted(() => {
     copyKeys: () => timeline.value?.copyKeys() ?? null,
     pasteKeys: (clipboard) => timeline.value?.pasteKeys(clipboard) ?? false,
     settleSimplify: () => timeline.value?.settleSimplify(),
+    selectAllKeys: () => (timelinePressed ? timeline.value?.selectAllKeys() ?? false : false),
   });
   // The editor takes the focus from the graph behind it, so the stage has the keys at once (pano_key_focus.js).
   root.value?.focus({ preventScroll: true });
@@ -150,7 +158,7 @@ const fovOffTip = computed(() => (panorama.value ? PANORAMA_MODE_TIP : CAMERA_FO
 // --- The list of shortcuts (docs/studio-ui.md "ショートカットの一覧"): what works on the screen now.
 const nav = ref(null);
 const isMac = isMacPlatform();
-const shortcuts = computed(() => shortcutGroups({ tab: props.view.tab, panorama: panorama.value, readOnly: props.view.readOnly, locked: camera.value.locked === true, mac: isMac }));
+const shortcuts = computed(() => shortcutList({ tab: props.view.tab, panorama: panorama.value, readOnly: props.view.readOnly, locked: camera.value.locked === true, mac: isMac }));
 const helpButton = () => nav.value?.helpButton() ?? null;
 const erpCanvas = ref(null);
 watch(erpCanvas, (element) => props.controller.erpCanvas?.(element ?? null));
@@ -316,6 +324,7 @@ function setCollapsed(value) {
       class="pano-studio pano-studio-editor"
       :class="{ 'is-knob-drag': !!ui.knobDrag }"
       role="dialog"
+      @pointerdown.capture="onAnyPress"
       tabindex="-1"
       aria-modal="true"
       :aria-label="nodeTitle"
@@ -420,6 +429,8 @@ function setCollapsed(value) {
             </template>
           </StudioCameraFrame>
 
+          <!-- Over the stage's picture while the shortcuts are open; the floating parts stay bright above it. -->
+          <div v-if="view.shortcuts" class="pano-studio-shortcuts-scrim" aria-hidden="true" data-shortcuts-scrim />
           <StudioTabs class="pano-studio-at-tabs" :value="view.tab" @select="(tab) => controller.setTab(tab)" />
           <StudioToolRail
             class="pano-studio-at-rail"
@@ -469,7 +480,7 @@ function setCollapsed(value) {
             />
           </div>
           <div v-if="view.shortcuts" class="pano-studio-at-shortcuts">
-            <StudioShortcuts :groups="shortcuts" :toggle="helpButton" @close="controller.shortcuts(false)" />
+            <StudioShortcuts :list="shortcuts" :toggle="helpButton" @close="controller.shortcuts(false)" />
           </div>
           <div ref="barRegion" class="pano-studio-at-bar" :class="{ 'is-compact': barPlace.compact, 'is-scrolled': barPlace.maxWidth !== null }" :style="barStyle" data-region="bar">
             <StudioPaintBar v-if="paintModel" :model="paintModel" @edit="(event) => controller.paint(event)" />

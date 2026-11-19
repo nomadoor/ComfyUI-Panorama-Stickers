@@ -76,6 +76,7 @@ If only the editor is extremely slow, open `chrome://gpu` (`edge://gpu` for Edge
 
 ## Changelog
 
+- **2.2.1**: The shortcut list (?) shows every operation on one page. Ctrl + A selects all Keyframes after a click on the Timeline. Fixes.
 - **2.2.0**: Shows motion paths, adjustable with Bézier curves. Added Loop, Look at, Simplify and Constant speed. Locked objects are easy to spot. Fixes.
 - **2.1.0**: Alt + wheel or a trackpad pinch changes the view's FOV. Panorama Studio always opens the new editor. The Timeline is easier to use. Fixes.
 - **2.0.3**: Objects received from an upstream Studio can be selected and edited in the downstream editor (saved as overrides); a shot returned through `sticker_state` always goes back to the Sky, wherever the Camera stood; paint can be rotated; double-click sets the orbit center in the Camera tab too; right-drag now pans and middle-drag looks around; the orbit center mark and a latitude-longitude grid on the Sky; fixes.

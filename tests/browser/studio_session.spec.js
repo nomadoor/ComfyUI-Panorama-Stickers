@@ -345,10 +345,10 @@ test("the list of shortcuts opens and closes with ?, Escape closes it before the
   await expect(help).toHaveAttribute("aria-expanded", "false");
   await expect(help).not.toHaveAttribute("aria-disabled", "true");
 
-  // The button opens it: the four groups, in order; the button is lit and expanded; the list has the focus.
+  // The button opens it: the five groups, in order; the button is lit and expanded; the list has the focus.
   await help.click();
   await expect(list).toBeVisible();
-  await expect(list.locator(".pano-studio-shortcuts-title")).toHaveText(["View", "Objects", "Timeline", "Editor"]);
+  await expect(list.locator(".pano-studio-shortcuts-title")).toHaveText(["View", "Objects", "Path line", "Timeline", "Editing"]);
   await expect(help).toHaveAttribute("aria-expanded", "true");
   await expect(help).toHaveClass(/is-lit/);
   await expect(list).toBeFocused();
@@ -387,6 +387,95 @@ test("the list of shortcuts opens and closes with ?, Escape closes it before the
   await page.mouse.click(box.x + box.width / 2, box.y + box.height - 12);
   await expect(list).toHaveCount(0);
   await expect(page.locator(".pano-studio-editor")).toHaveCount(1);
+  expect(problems).toEqual([]);
+});
+
+// docs/timeline-ui.md "全選択": Ctrl + A selects every Keyframe the Timeline shows, only after a press on the Timeline; after
+// a press on the stage it does nothing (kept for selecting objects), and the playhead stays.
+test("Ctrl + A selects every Keyframe after a press on the Timeline, and nothing after a press on the stage", async ({ page }, testInfo) => {
+  const problems = await open(page, testInfo);
+  const dot = (row) => page.locator(`.pano-studio-tl-head[data-head="${row}"] [data-part="dot"]`);
+  await dot("sticker_1").click();
+  await dot("sticker_2").click();
+  const keys = () => studio(page, "selection").then((selection) => selection.keys.map((key) => `${key.row}@${key.frame}`).sort());
+  const playhead = await page.evaluate(() => document.querySelector(".pano-studio-tl-frame")?.textContent);
+  // A press on the stage's empty space, then Ctrl + A: nothing selected.
+  const canvas = await page.locator("[data-stage-canvas]").boundingBox();
+  await page.mouse.click(canvas.x + 30, canvas.y + canvas.height - 30);
+  const before = await keys();
+  await page.keyboard.press("Control+a");
+  expect(await keys()).toEqual(before);
+  expect(before).toEqual([]);
+  // Nothing at all: the browser did not select the editor's text either.
+  expect(await page.evaluate(() => String(window.getSelection()))).toBe("");
+  // A press on an empty spot of a Timeline track (far from the Keyframes at 0), then Ctrl + A: both rows' Keyframes.
+  const track = await page.locator('[data-track="sticker_1"]').boundingBox();
+  await page.mouse.click(track.x + track.width - 40, track.y + track.height / 2);
+  await page.keyboard.press("Control+a");
+  expect(await keys()).toEqual(["sticker_1@0", "sticker_2@0"]);
+  expect(await page.evaluate(() => document.querySelector(".pano-studio-tl-frame")?.textContent)).toBe(playhead);
+  // The page's text was not selected by the browser.
+  expect(await page.evaluate(() => String(window.getSelection()))).toBe("");
+  // Folded, the Timeline shows no Keyframe: a press on its bar, then Ctrl + A, selects nothing.
+  await page.mouse.click(track.x + track.width - 40, track.y + track.height / 2);
+  expect(await keys()).toEqual([]);
+  await page.locator('[data-tl="collapse"]').click();
+  await page.keyboard.press("Control+a");
+  expect(await keys()).toEqual([]);
+  expect(problems).toEqual([]);
+});
+
+// docs/studio-ui.md "ショートカットの一覧", docs/design.md "ショートカットの一覧": one opaque sheet over the stage, clear of
+// the floating parts around it, never scrolled; on a stage too small for it the whole sheet is shrunk by one ratio.
+test("the list of shortcuts covers the stage between the floating parts without scrolling, shrunk only on a small stage", async ({ page }, testInfo) => {
+  const problems = await open(page, testInfo);
+  const list = page.locator("[data-shortcuts]");
+  const sheet = list.locator(".pano-studio-shortcuts-sheet");
+  const overlap = (a, b) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await page.locator('[data-action="shortcuts"]').click();
+  await expect(list).toBeVisible();
+  const box = await list.boundingBox();
+  // Clear of every floating part but the Output window (its open corner may go under the sheet: docs/studio-ui.md).
+  for (const part of [".pano-studio-at-tabs", ".pano-studio-at-rail", ".pano-studio-at-notice", ".pano-studio-at-nav", ".pano-studio-at-bar", ".pano-studio-at-buttons"]) {
+    const other = await page.locator(part).first().boundingBox();
+    expect(other, part).not.toBeNull();
+    if (other.width && other.height) expect(overlap(box, other), part).toBe(false);
+    else expect(other.y + other.height <= box.y || other.y >= box.y + box.height || other.x + other.width <= box.x || other.x >= box.x + box.width, part).toBe(true);
+  }
+  expect(await list.evaluate((element) => getComputedStyle(element).backgroundColor)).toMatch(/^rgb\(/);
+  expect(await list.evaluate((element) => element.scrollHeight <= element.clientHeight && getComputedStyle(element).overflowY !== "auto")).toBe(true);
+  await expect(sheet).not.toHaveAttribute("data-scale");
+  // The veil darkens the stage's picture only: it takes no press, and the floating parts stay above it.
+  const scrim = page.locator("[data-shortcuts-scrim]");
+  await expect(scrim).toHaveCount(1);
+  expect(await scrim.evaluate((element) => getComputedStyle(element).pointerEvents)).toBe("none");
+  expect(await scrim.evaluate((element) => {
+    const after = (selector) => !!(element.compareDocumentPosition(document.querySelector(selector)) & Node.DOCUMENT_POSITION_FOLLOWING);
+    return [".pano-studio-at-tabs", ".pano-studio-at-rail", ".pano-studio-at-notice", ".pano-studio-at-output", ".pano-studio-at-nav", ".pano-studio-at-bar", ".pano-studio-at-buttons", "[data-shortcuts]"].every(after)
+      && !!(element.compareDocumentPosition(document.querySelector("[data-stage-canvas]")) & Node.DOCUMENT_POSITION_PRECEDING);
+  })).toBe(true);
+  const inner = await sheet.boundingBox();
+  expect(inner.y + inner.height).toBeLessThanOrEqual(box.y + box.height + 0.5);
+  // Full HD under the browser's own bars: still as designed.
+  await page.setViewportSize({ width: 1920, height: 960 });
+  await page.waitForTimeout(100);
+  await expect(sheet).not.toHaveAttribute("data-scale");
+  // A wide but short window: the sheet shrinks by its height to fit inside the list, nothing cut off.
+  await page.setViewportSize({ width: 1920, height: 600 });
+  await expect(sheet).toHaveAttribute("data-scale", /^0\./);
+  const small = await list.boundingBox();
+  const shrunk = await sheet.boundingBox();
+  expect(shrunk.x + shrunk.width).toBeLessThanOrEqual(small.x + small.width + 0.5);
+  expect(shrunk.y + shrunk.height).toBeLessThanOrEqual(small.y + small.height + 0.5);
+  // Shrunk, it still spans the list's whole width (no empty band on the right).
+  expect(Math.abs(shrunk.x + shrunk.width - (small.x + small.width))).toBeLessThan(1);
+  // Back to full HD: as designed again.
+  await page.setViewportSize({ width: 1920, height: 960 });
+  await expect(sheet).not.toHaveAttribute("data-scale");
+  await page.locator('[data-action="shortcuts"]').click();
+  await expect(list).toHaveCount(0);
+  await expect(scrim).toHaveCount(0);
   expect(problems).toEqual([]);
 });
 

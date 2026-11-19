@@ -258,9 +258,9 @@ test("the window's shortcut list has no selection or editing rows", async ({ pag
   await page.locator("[data-action=shortcuts]").click();
   const list = page.locator("[data-shortcut-group]");
   await expect(list.first()).toBeVisible();
-  expect(await list.evaluateAll((groups) => groups.map((group) => group.dataset.shortcutGroup))).toEqual(["view", "playback", "editor"]);
-  const text = await page.locator(".pano-studio-shortcuts-rows").allInnerTexts();
-  for (const label of ["Select", "Add to selection", "Delete", "Undo", "Copy keyframes"]) expect(text.join("\n")).not.toContain(label);
+  expect(await list.evaluateAll((groups) => groups.map((group) => group.dataset.shortcutGroup))).toEqual(["view", "playback", "editing"]);
+  const text = await page.locator("[data-shortcuts]").allInnerTexts();
+  for (const label of ["Select", "Add to selection", "Delete", "Undo", "Copy / Cut / Paste", "Path line"]) expect(text.join("\n")).not.toContain(label);
   expect(text.join("\n")).toContain("Play / pause");
 });
 

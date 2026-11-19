@@ -82,7 +82,8 @@ const oneAxis = (handle) => handle.kind === "scale_x" || handle.kind === "scale_
 // null while it cannot be read (studio/paint.js rasterAlpha); a raster object is then hit anywhere in its box.
 // The path line (docs/studio-ui.md "軌道の線"): keys() the Timeline's selected Keyframes ([{ row, lane, frame }]),
 // selectKeys(row, keys) selects Keyframes of a row (the Timeline's selection), seek(frame) takes the playhead to a Timeline
-// frame, playing() whether it plays, hint(text) the top line's hint while the pointer is over the line (null: none),
+// frame, playing() whether it plays, hint(text) the top line's hint while the pointer is over an edge handle of a returned shot
+// (null: none),
 // length() the output length (the loop period), tool() the left column's tool (the line shows with Cursor). shot(): the
 // sticker_state that places the port Sticker, or null (its drags write its offset; its edge handles do not stretch it).
 export function createStageObjects({
@@ -379,15 +380,6 @@ export function createStageObjects({
     return null;
   }
 
-  // The hint the top line shows over a part of the path line (docs/studio-ui.md "一行の知らせの種類").
-  function pathHint(part, shown) {
-    if (!part) return null;
-    if (part.kind === "handle") return "Drag to bend";
-    if (part.kind === "line") return "Click to go to this frame";
-    const corner = shown.path.keys[part.index].type === "corner";
-    return `Click to go to this Keyframe · Double-click for ${corner ? "Auto" : "Corner"}`;
-  }
-
   // The working copy of the path's owner in a drag's draft.
   function pathOwnerIn(draft, row) {
     return row === "camera" ? draft.camera : stickerOf(draft, row);
@@ -610,7 +602,8 @@ export function createStageObjects({
     const changed = over !== hovered || axis !== gizmoAxis || !samePart(part, pathHovered);
     hovered = over;
     gizmoAxis = axis;
-    const text = stretchHint ? STRETCH_HINT : pathHint(part, shownPath);
+    // The path line shows no hint on the top line (docs/studio-ui.md "軌道の線"); only a returned shot's edge handles do.
+    const text = stretchHint ? STRETCH_HINT : null;
     if (text !== hintShown) hint(text);
     hintShown = text;
     pathHovered = part;
