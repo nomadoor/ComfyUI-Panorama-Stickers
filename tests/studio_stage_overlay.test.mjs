@@ -355,7 +355,7 @@ test("the parts are drawn in order: guides, Camera mark, sky, paint, gizmo, then
 test("a lit plane square lights its two axes; the other handles and their underlays draw at GIZMO_LOOK.dimAlpha; the center dot does not dim", () => {
   const square = (x, y) => [{ x, y }, { x: x + 5, y }, { x: x + 5, y: y + 5 }, { x, y: y + 5 }];
   const handles = {
-    mode: "move",
+    mode: "translate",
     center,
     axes: [
       { name: "x", shown: true, depth: 1, end: { x: 150, y: 100 } },
@@ -386,4 +386,31 @@ test("a lit plane square lights its two axes; the other handles and their underl
   const dot = fills(ctx).at(-1)[2];
   assert.equal(dot.fillStyle, "#ffffff");
   assert.equal(dot.globalAlpha, 1);
+});
+
+test("dimmed Rotate rings multiply GIZMO_LOOK.dimAlpha into their back half's faintness; dimmed Scale squares draw at dimAlpha", () => {
+  const ring = (name) => ({
+    name,
+    points: [{ x: 0, y: 0, front: false }, { x: 1, y: 0, front: false }, { x: 2, y: 0, front: true }, { x: 3, y: 0, front: true }],
+  });
+  const ctx = recordingContext();
+  drawStageOverlay(ctx, { camera, width: W, height: H, scene: { guides: [], gizmo: { handles: { mode: "rotate", center, rings: [ring("x"), ring("y")] }, active: "x" } } });
+  const colored = strokes(ctx).filter(([, path, style]) => path && style.strokeStyle !== GIZMO_LOOK.under);
+  assert.deepEqual(colored.map(([, , style]) => [style.strokeStyle, style.globalAlpha]), [
+    [gizmoColor("x", true), GIZMO_LOOK.ringBackAlpha],
+    [gizmoColor("y", false), GIZMO_LOOK.ringBackAlpha * GIZMO_LOOK.dimAlpha],
+    [gizmoColor("x", true), 1],
+    [gizmoColor("y", false), GIZMO_LOOK.dimAlpha],
+  ]);
+  const scale = recordingContext();
+  const handles = {
+    mode: "scale",
+    center,
+    axes: [{ name: "x", shown: true, depth: 1, end: { x: 150, y: 100 } }, { name: "y", shown: true, depth: 2, end: { x: 100, y: 50 } }],
+  };
+  drawStageOverlay(scale, { camera, width: W, height: H, scene: { guides: [], gizmo: { handles, active: "x" } } });
+  const squares = scale.log.filter((entry) => entry[0] === "roundRect");
+  assert.equal(squares.length, 4);
+  const alphas = fills(scale).filter(([, path]) => !path).map(([, , style]) => style.globalAlpha);
+  assert.deepEqual(alphas.slice(0, 2), [GIZMO_LOOK.dimAlpha, GIZMO_LOOK.dimAlpha], "the far, dimmed Y square and its underlay");
 });

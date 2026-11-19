@@ -345,7 +345,7 @@ function roundedSquare(ctx, center, size, radius) {
 // Move's plane squares under its bars.
 // The far handles first, each over a dark underlay; `active` (a handle name) is lit: its color toward white, thicker, with the
 // handles gizmoEmphasis lights with it, and the others drawn at GIZMO_LOOK.dimAlpha. `guides` ([{ name, points }], bent on a lens Camera's picture) are the axis guide lines
-// of a drag (a plane square's two), each in its axis's color under the handles.
+// of the hovered or dragged handle (a plane square's two), each in its axis's color under the handles.
 function drawGizmo(ctx, handles, active, guides = []) {
   const emphasis = gizmoEmphasis(active);
   const lit = (name) => emphasis(name) === "lit";

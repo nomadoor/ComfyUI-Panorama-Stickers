@@ -28,7 +28,8 @@ export function gizmoColor(name, active = false) {
 // Its sizes in CSS px (docs/design.md "新しい UI の見た目" ギズモ): how far a bar reaches from the center and the
 // rings' radius, the line, Move's balls, the white center dot, Scale's rounded squares, how faint a ring's far half
 // is, below which share of the reach a bar's screen length hides it (the axis runs nearly along the view), and how
-// near a point hits a ball, square or the center dot, or a bar or ring; and the axis guide line a drag shows.
+// near a point hits a ball, square or the center dot, or a bar or ring; and the axis guide line a hovered or dragged
+// handle shows.
 const GIZMO_HIDE_RATIO = 0.2;
 export const GIZMO_LOOK = Object.freeze({
   reach: 52,
@@ -417,7 +418,7 @@ export function gizmoDrag(gizmo, name, camera, point, width, height) {
   };
 }
 
-// The axis guide line `guide` (one of a gizmoDrag's `guides`) as a World segment reaching far past the stage's edges
+// The axis guide line `guide` (one of gizmoGuides', a hovered or dragged handle's) as a World segment reaching far past the stage's edges
 // both ways: the overlay cuts it at the near plane (world_guides.js screenSegment). `camera` is a stageCamera().
 export function gizmoGuideSegment(guide, camera) {
   const reach = Math.max(camera.far, 1);

@@ -212,6 +212,21 @@ test("the guide lines show as soon as the pointer is on a gizmo handle, before a
   assert.deepEqual(objects.overlay().gizmo.guides, [], "off the gizmo, none");
 });
 
+test("a handle of another mode left under a resting pointer is not lit: after a mode switch nothing is active until the pointer is on a handle", () => {
+  const { session, objects, gizmoMode } = setup();
+  session.selectObject("board");
+  const plane = handlesOf(objects).planes.find((entry) => entry.shown);
+  objects.hover({ x: plane.points.reduce((sum, p) => sum + p.x, 0) / 4, y: plane.points.reduce((sum, p) => sum + p.y, 0) / 4 });
+  assert.equal(objects.overlay().gizmo.active, plane.name);
+  gizmoMode.value = "rotate";
+  assert.equal(objects.overlay().gizmo.active, null, "Rotate has no plane square");
+  assert.deepEqual(objects.overlay().gizmo.guides, []);
+  gizmoMode.value = "translate";
+  objects.hover(handlesOf(objects).center);
+  gizmoMode.value = "scale";
+  assert.equal(objects.overlay().gizmo.active, null, "Scale's center dot is only a shape");
+});
+
 test("a gizmo drag given up puts the object back", () => {
   const { session, objects } = setup();
   session.selectObject("board");

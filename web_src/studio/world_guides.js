@@ -44,6 +44,7 @@ const mean = (points) => points.reduce((sum, p) => sum.map((value, axis) => valu
 // and the way from its center to the eye meet at a negative dot product; a face with no area (a flat box's side) counts
 // as turned toward it. `corners` are the box's 8 corners in boxCorners' order (corner index = 4 x + 2 y + z of its
 // min/max bits), turned and placed as the guide has them. The box holds its content, so an edge kept is never behind it.
+// From inside the box (no face turns toward the eye) all 12 are drawn: every edge then surrounds the eye.
 export function visibleBoxSegments(corners, eye) {
   const middle = mean(corners);
   // A face: the 4 corners whose bit `bit` (4 x, 2 y, 1 z) is `side`.
@@ -59,7 +60,9 @@ export function visibleBoxSegments(corners, eye) {
       facing.set(`${bit}:${side}`, dot(normal, sub(eye, at)) >= 0);
     }
   }
+  const inside = ![...facing.values()].some(Boolean);
   return BOX_EDGES.filter(([a, b]) => {
+    if (inside) return true;
     const along = a ^ b;
     return [4, 2, 1].filter((bit) => bit !== along).some((bit) => facing.get(`${bit}:${a & bit}`));
   }).map(([a, b]) => [corners[a], corners[b]]);

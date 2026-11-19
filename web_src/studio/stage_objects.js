@@ -117,6 +117,8 @@ export function createStageObjects({
   // The gizmo's handle under the pointer, and the one being dragged (gizmo_overlay.js gizmoHit's names).
   let gizmoAxis = null;
   let draggedAxis = null;
+  // Where the pointer was when gizmoAxis was found, to check it still is on that handle when the overlay is drawn.
+  let gizmoPoint = null;
   // The axis guide lines of the gizmo drag under way (gizmo_overlay.js gizmoDrag's `guides`), or none.
   let dragGuides = [];
   // The part of the path line under the pointer ({ kind: "handle" | "point" | "line", index, side, frame, x, y }), and
@@ -602,6 +604,7 @@ export function createStageObjects({
     const changed = over !== hovered || axis !== gizmoAxis || !samePart(part, pathHovered);
     hovered = over;
     gizmoAxis = axis;
+    gizmoPoint = axis !== null ? { ...point } : null;
     // The path line shows no hint on the top line (docs/studio-ui.md "軌道の線"); only a returned shot's edge handles do.
     const text = stretchHint ? STRETCH_HINT : null;
     if (text !== hintShown) hint(text);
@@ -767,8 +770,10 @@ export function createStageObjects({
     const shownGizmo = gizmo();
     const shownHandles = handles(shownGizmo);
     const { width, height } = size();
-    // The handle dragged, else the one under the pointer (none while Alt is held).
-    const active = draggedAxis ?? (altHeld ? null : gizmoAxis);
+    // The handle dragged, else the one under the pointer (none while Alt is held). The hovered one counts only while
+    // the shown gizmo still has it there: a mode switch or the object moving under a resting pointer leaves none.
+    const hoveredAxis = gizmoAxis && gizmoPoint && gizmoHit(shownHandles, gizmoPoint) === gizmoAxis ? gizmoAxis : null;
+    const active = draggedAxis ?? (altHeld ? null : hoveredAxis);
     // Its axis guide lines: those of the drag while one lasts (through where it was grabbed), else the hovered handle's.
     const shownGuides = draggedAxis ? dragGuides : gizmoGuides(shownGizmo, shownHandles, active);
     const guideLines = shownHandles ? shownGuides.flatMap((guide) => screenLines(camera(), gizmoGuideSegment(guide, camera()), width, height)
