@@ -17,11 +17,19 @@ import { openingView } from "./view_camera.js";
 // The keys and the controller.
 export function createEditorController(ctx) {
   // --- Keys while the editor is open: Undo / Redo, Delete, Space, 1 / 2 / 3, the table of shortcuts.js, the Keyframes'
-  // copy, cut and paste. The stage takes the movement keys and Escape.
+  // select all, copy, cut and paste. The stage takes the movement keys and Escape.
   function onKeyDown(event) {
     if (!ctx.rootElement || !stageOwnsKey(event, ctx.rootElement)) return;
     const action = editorKeyAction(event);
     if (!action || action === "escape") return;
+    if (action === "select-all-keys") {
+      // Only after a press on the Timeline (docs/timeline-ui.md "全選択"); either way the browser does not select the
+      // page's text.
+      event.preventDefault();
+      event.stopPropagation();
+      ctx.timeline?.selectAllKeys?.();
+      return;
+    }
     if (action === "copy-keys" || action === "cut-keys" || action === "paste-keys") {
       // Not taken, C and X keep the browser's copy of selected text; V never pastes (nothing outside a field takes it).
       if (!ctx.keyClipboardKey(action) && action !== "paste-keys") return;

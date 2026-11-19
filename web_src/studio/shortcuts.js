@@ -16,9 +16,9 @@ export function isMacPlatform() {
 const ctrlOrMeta = (event) => !!(event.ctrlKey || event.metaKey);
 const keyOf = (event) => String(event.key || "");
 
-// The letter of Ctrl / Cmd + C, X or V: the key's letter, or its place on the keyboard for a layout whose letters
+// The letter of Ctrl / Cmd + A, C, X or V: the key's letter, or its place on the keyboard for a layout whose letters
 // are not Latin; else null.
-const LETTER_CODES = Object.freeze({ KeyC: "c", KeyX: "x", KeyV: "v" });
+const LETTER_CODES = Object.freeze({ KeyA: "a", KeyC: "c", KeyX: "x", KeyV: "v" });
 function modLetter(event) {
   const key = keyOf(event).toLowerCase();
   if (Object.values(LETTER_CODES).includes(key)) return key;
@@ -60,6 +60,8 @@ export const EDITOR_KEYS = Object.freeze([
     keys: [[entry.key]],
     match: (event) => !ctrlOrMeta(event) && !event.altKey && event.key === entry.key,
   })),
+  // Every Keyframe the Timeline shows, when the Timeline was pressed last (docs/timeline-ui.md "全選択").
+  modLetterKey("select-all-keys", "a"),
   // The Keyframes' copy, cut and paste at the playhead (docs/timeline-ui.md "Keyframe のコピーと貼り付け").
   modLetterKey("copy-keys", "c"),
   modLetterKey("cut-keys", "x"),
@@ -220,6 +222,7 @@ export function shortcutList({ context = "editor", tab = "3d", panorama = false,
     moves: null,
     rows: preview ? (playable ? [keyRow("Play / pause", "play")] : []) : [
       keyRow("Play / pause", "play"),
+      keyRow("Select all", "select-all-keys"),
       gestureRow("Add to selection", [["Shift"]], "click / drag", "add-keyframes"),
       ...(edits ? [keyRow("Copy / Cut / Paste", "copy-keys", "cut-keys", "paste-keys")] : []),
     ],

@@ -390,6 +390,41 @@ test("the list of shortcuts opens and closes with ?, Escape closes it before the
   expect(problems).toEqual([]);
 });
 
+// docs/timeline-ui.md "全選択": Ctrl + A selects every Keyframe the Timeline shows, only after a press on the Timeline; after
+// a press on the stage it does nothing (kept for selecting objects), and the playhead stays.
+test("Ctrl + A selects every Keyframe after a press on the Timeline, and nothing after a press on the stage", async ({ page }, testInfo) => {
+  const problems = await open(page, testInfo);
+  const dot = (row) => page.locator(`.pano-studio-tl-head[data-head="${row}"] [data-part="dot"]`);
+  await dot("sticker_1").click();
+  await dot("sticker_2").click();
+  const keys = () => studio(page, "selection").then((selection) => selection.keys.map((key) => `${key.row}@${key.frame}`).sort());
+  const playhead = await page.evaluate(() => document.querySelector(".pano-studio-tl-frame")?.textContent);
+  // A press on the stage's empty space, then Ctrl + A: nothing selected.
+  const canvas = await page.locator("[data-stage-canvas]").boundingBox();
+  await page.mouse.click(canvas.x + 30, canvas.y + canvas.height - 30);
+  const before = await keys();
+  await page.keyboard.press("Control+a");
+  expect(await keys()).toEqual(before);
+  expect(before).toEqual([]);
+  // Nothing at all: the browser did not select the editor's text either.
+  expect(await page.evaluate(() => String(window.getSelection()))).toBe("");
+  // A press on an empty spot of a Timeline track (far from the Keyframes at 0), then Ctrl + A: both rows' Keyframes.
+  const track = await page.locator('[data-track="sticker_1"]').boundingBox();
+  await page.mouse.click(track.x + track.width - 40, track.y + track.height / 2);
+  await page.keyboard.press("Control+a");
+  expect(await keys()).toEqual(["sticker_1@0", "sticker_2@0"]);
+  expect(await page.evaluate(() => document.querySelector(".pano-studio-tl-frame")?.textContent)).toBe(playhead);
+  // The page's text was not selected by the browser.
+  expect(await page.evaluate(() => String(window.getSelection()))).toBe("");
+  // Folded, the Timeline shows no Keyframe: a press on its bar, then Ctrl + A, selects nothing.
+  await page.mouse.click(track.x + track.width - 40, track.y + track.height / 2);
+  expect(await keys()).toEqual([]);
+  await page.locator('[data-tl="collapse"]').click();
+  await page.keyboard.press("Control+a");
+  expect(await keys()).toEqual([]);
+  expect(problems).toEqual([]);
+});
+
 // docs/studio-ui.md "ショートカットの一覧", docs/design.md "ショートカットの一覧": one opaque sheet over the stage, clear of
 // the floating parts around it, never scrolled; on a stage too small for it the whole sheet is shrunk by one ratio.
 test("the list of shortcuts covers the stage between the floating parts without scrolling, shrunk only on a small stage", async ({ page }, testInfo) => {
