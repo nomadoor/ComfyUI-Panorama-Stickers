@@ -49,8 +49,8 @@ import { findSticker, ownerLength } from "./row_object.js";
 import { ROTATE_SNAP_DEG } from "./view_scale.js";
 import { shownGizmoMode, selectedKind } from "./selection_bar.js";
 import { cameraMarkerHit, cameraMarkerLength, cameraMarkerScreen, cameraMarkerShape, cameraMarkerShown } from "./camera_marker.js";
-import { gizmoDrag as startGizmoDrag, gizmoGuideSegment, gizmoHandles, gizmoHit } from "./gizmo_overlay.js";
-import { guideLook, pointInPolygon, screenLines, worldGuideItems } from "./world_guides.js";
+import { gizmoDrag as startGizmoDrag, gizmoGuideSegment, gizmoGuides, gizmoHandles, gizmoHit } from "./gizmo_overlay.js";
+import { guideLook, pointInPolygon, screenLines, visibleBoxSegments, worldGuideItems } from "./world_guides.js";
 import { coarseUnder } from "./hit_test.js";
 import { createPaintDrags, erpUnder, paintFrame, paintPaths, selectOnly, viewKey } from "./stage_paint_objects.js";
 import {
@@ -117,6 +117,8 @@ export function createStageObjects({
   // The gizmo's handle under the pointer, and the one being dragged (gizmo_overlay.js gizmoHit's names).
   let gizmoAxis = null;
   let draggedAxis = null;
+  // Where the pointer was when gizmoAxis was found, to check it still is on that handle when the overlay is drawn.
+  let gizmoPoint = null;
   // The axis guide lines of the gizmo drag under way (gizmo_overlay.js gizmoDrag's `guides`), or none.
   let dragGuides = [];
   // The part of the path line under the pointer ({ kind: "handle" | "point" | "line", index, side, frame, x, y }), and
@@ -567,6 +569,13 @@ export function createStageObjects({
     return shown ? gizmoHandles(shown, camera(), width, height) : null;
   }
 
+  // The hovered gizmo handle while the shown gizmo `shownHandles` still has it under the point where it was found, else
+  // null: a mode switch or the object moving under a resting pointer leaves none. The overlay draws this one, and a
+  // hover compares against it.
+  function hoveredHandle(shownHandles) {
+    return gizmoAxis && gizmoPoint && gizmoHit(shownHandles, gizmoPoint) === gizmoAxis ? gizmoAxis : null;
+  }
+
   // What the pointer at `point` is over: { cursor (null over nothing touchable), changed (the drawing changed) }.
   function hover(point, { altHeld = false } = {}) {
     let cursor = null;
@@ -599,9 +608,10 @@ export function createStageObjects({
       if (cursor === null && skyObjectUnder(point)) cursor = BODY_CURSOR;
     }
     const samePart = (a, b) => (a?.kind ?? null) === (b?.kind ?? null) && a?.index === b?.index && a?.side === b?.side && a?.frame === b?.frame;
-    const changed = over !== hovered || axis !== gizmoAxis || !samePart(part, pathHovered);
+    const changed = over !== hovered || axis !== hoveredHandle(handles()) || !samePart(part, pathHovered);
     hovered = over;
     gizmoAxis = axis;
+    gizmoPoint = axis !== null ? { ...point } : null;
     // The path line shows no hint on the top line (docs/studio-ui.md "軌道の線"); only a returned shot's edge handles do.
     const text = stretchHint ? STRETCH_HINT : null;
     if (text !== hintShown) hint(text);
@@ -752,7 +762,8 @@ export function createStageObjects({
       if (loading && item.loading && look) loading.guideDrawn?.(item.id);
       const shimmer = loading && item.kind === "box" ? loading.shimmer(item.id) : 0;
       return {
-        segments: item.segments,
+        // A box leaves out its edges behind it (world_guides.js visibleBoxSegments).
+        segments: item.kind === "box" ? visibleBoxSegments(item.corners, camera().position) : item.segments,
         corners: item.corners,
         look,
         // An upstream object's selected guide is dashed (docs/studio-ui.md "上流の物の編集" "見せる").
@@ -763,9 +774,14 @@ export function createStageObjects({
     const marker = cameraMarker();
     const sky = selectedSky();
     const paint = selectedPaint();
-    const shownHandles = handles();
+    const shownGizmo = gizmo();
+    const shownHandles = handles(shownGizmo);
     const { width, height } = size();
-    const guideLines = shownHandles ? dragGuides.flatMap((guide) => screenLines(camera(), gizmoGuideSegment(guide, camera()), width, height)
+    // The handle dragged, else the one under the pointer (none while Alt is held; hoveredHandle).
+    const active = draggedAxis ?? (altHeld ? null : hoveredHandle(shownHandles));
+    // Its axis guide lines: those of the drag while one lasts (through where it was grabbed), else the hovered handle's.
+    const shownGuides = draggedAxis ? dragGuides : gizmoGuides(shownGizmo, shownHandles, active);
+    const guideLines = shownHandles ? shownGuides.flatMap((guide) => screenLines(camera(), gizmoGuideSegment(guide, camera()), width, height)
       .map((points) => ({ name: guide.name, points }))) : [];
     return {
       guides: items,
@@ -775,12 +791,12 @@ export function createStageObjects({
       // The selected object's path line (docs/studio-ui.md "軌道の線").
       path: pathOverlay(altHeld),
       look: lookOverlay(lookHover),
-      // The handle dragged, else the one under the pointer (none while Alt is held), is lit.
-      // While a handle is dragged, its axis guide lines ([{ name, a, b }] in CSS px: an axis's one, a plane square's two)
-      // run across the stage.
+      // The handle dragged, else the one under the pointer (none while Alt is held), is lit and the others dim
+      // (gizmo_overlay.js gizmoEmphasis). While the pointer is on a handle or drags it, its axis guide lines
+      // ([{ name, points }] in CSS px: an axis's one, a plane square's two) run across the stage.
       gizmo: shownHandles ? {
         handles: shownHandles,
-        active: draggedAxis ?? (altHeld ? null : gizmoAxis),
+        active,
         guides: guideLines,
       } : null,
       // A returned shot's edge handles show disabled (docs/editor-interaction.md).
