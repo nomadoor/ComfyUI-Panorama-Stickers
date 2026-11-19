@@ -1136,7 +1136,8 @@ Camera タブでは同じ席で無効にする（tooltip は「Not available in 
 - 一覧はモーダルにしない。開いている間も、視点・物・タイムラインのキーとマウスはふだんどおり効く。
 - 開いている間、ステージの絵（3D の表示と、Camera タブの枠）の上に暗い幕を敷き、一覧に目が行くようにする。浮かせた部品（タブ・左の列・
   一行の知らせ・右上の Output の小窓・右の中央の列・下の中央のバー・右下の群。Preview のウィンドウでは ✕ も）は幕の上に明るいまま置く。どれも押せるので、
-  見た目もそのとおりにするためである（持ち主の決定、2026-11-19）。幕は押下を受けない（一覧の外を押したときの規則はそのまま）。
+  見た目もそのとおりにするためである（持ち主の決定、2026-11-19）。ただし右上の Output の小窓は、一覧の面と重なる所が面の下になる
+  （一覧を読む間は小窓を見る必要が無いため。面の外に出ている所を押せば、一覧が閉じてその操作も効く。持ち主の決定、2026-11-19）。幕は押下を受けない（一覧の外を押したときの規則はそのまま）。
 - キーボード：開くと一覧がフォーカスを受け（読み上げが一覧の名前「Shortcuts」を読む）、Escape で閉じたときにフォーカスが一覧の中に
   あれば「?」のボタンに戻す。
 - 置き場所：ステージの左の列と右の中央の列の間で、上端の 3D・Camera のタブと下の中央のバーにかからない範囲を覆う。後ろのステージは
@@ -1162,7 +1163,7 @@ Camera タブでは同じ席で無効にする（tooltip は「Not available in 
 
 | 群 | 行（出す条件） |
 |---|---|
-| View（`docs/space-and-view.md` の「マウスとキー」） | 表の行。Drag：Look around ／ Alt で Orbit。Right-drag：Pan ／ Alt で Move forward / back。Wheel：Move toward the pointer ／ Alt で Zoom (FOV)（3D タブ・Preview のウィンドウではいつも出す。Camera タブの Frame モードでは、読み取り専用でなく Camera をロックしていないときだけ、名前を Change Camera FOV にして出し、そうでないときは「—」。Ctrl＋ホイールは出さない）。Double-click：Look at that point ／ Alt の欄は「—」（そこを `T` にして向く。Camera タブの Frame モードでは Camera が向く。`docs/space-and-view.md` の「マウスとキー」）。表の下の添える一行、移動のキーの絵（W / S・A / D・Q / E と Shift）。Camera タブの Frame モードでは群の名前の横に「These move the Camera.」を添える。Camera タブの Panorama モードでは表もキーの絵も出さず、「Nothing moves the view in Panorama mode.」の一行だけを出す |
+| View（`docs/space-and-view.md` の「マウスとキー」） | 表の行。Drag：Look around ／ Alt で Orbit。Right-drag：Pan ／ Alt で Move forward / back。Wheel：Move toward the pointer ／ Alt で Zoom (FOV)（3D タブ・Preview のウィンドウではいつも出す。Camera タブの Frame モードでは、読み取り専用でなく Camera をロックしていないときだけ、名前を Change Camera FOV にして出し、そうでないときは「—」。Ctrl＋ホイールは出さない）。Double-click：Look at that point ／ Alt の欄も Look at that point（Alt を押していても同じ。`docs/space-and-view.md` の「マウスとキー」）（そこを `T` にして向く。Camera タブの Frame モードでは Camera が向く。`docs/space-and-view.md` の「マウスとキー」）。表の下の添える一行、移動のキーの絵（W / S・A / D・Q / E と Shift）。Camera タブの Frame モードでは群の名前の横に「These move the Camera.」を添える。Camera タブの Panorama モードでは表もキーの絵も出さず、「Nothing moves the view in Panorama mode.」の一行だけを出す |
 | Objects（この文書の「下の中央のバー」、`docs/space-and-view.md`） | Select：Click it（Panorama モードでは出さない）。Move / Rotate / Scale：1 / 2 / 3（3D タブで、読み取り専用でないとき）。Rotate in 15° steps：Shift + drag a ring（ギズモの Rotate と Sky の画像とペイントのまとまりの回転のハンドル。同じ条件。数は `ROTATE_SNAP_DEG`）。Delete：Delete / Backspace（Keyframe を選んでいればそれ、そうでなければ物。読み取り専用でないとき）。Camera タブでは群の下に「Move, Rotate and Scale are in the 3D tab.」を添える |
 | Path line（この文書の「軌道の線」） | 3D タブだけ。Go to that Keyframe：Click a point。Corner ⇄ Auto：Double-click a point。Bend：Drag a handle。Go to that frame：Click the line（Corner ⇄ Auto と Bend は読み取り専用でないとき）。Camera タブでは行を出さず、「The path line is drawn in the 3D tab.」の一行だけを出す |
 | Timeline（`docs/timeline-ui.md`） | Play / pause：Space。Add to selection：Shift + click / drag（Keyframe）。Copy / Cut / Paste：Ctrl + C / X / V（Keyframe）（読み取り専用でないとき。`docs/timeline-ui.md` の「Keyframe のコピーと貼り付け」） |
@@ -1171,8 +1172,8 @@ Camera タブでは同じ席で無効にする（tooltip は「Not available in 
 - Preview のウィンドウ（下の「Preview のウィンドウ」）の一覧も同じ表から作る（`shortcutList` の `context: "preview"`）。物を選ぶ・
   編集する部品が無いので、View の群（3D タブと同じ表とキーの絵）と、Step back / close（Escape で閉じる）だけの Editing の群を出し、
   Objects・Path line の群と、Timeline の群の Add to selection・Copy / Cut / Paste の行は出さない。Play / pause：Space は、再生の帯があるときだけ、
-  群の名前を Playback にして出す（タイムラインが無いため）。行の無い群は出さない。覆う範囲は、右の中央の列と、右上の ✕ と右下の
-  ボタンの群にかからないステージの範囲。列は 2 つで、1 列目が View、2 列目が Playback と Editing。
+  群の名前を Playback にして出す（タイムラインが無いため）。行の無い群は出さない。覆う範囲は、上端の中央の一行の知らせ、右の中央の列、
+  右上の ✕、右下のボタンの群にかからないステージの範囲。列は 2 つで、1 列目が View、2 列目が Playback と Editing。
 
 ## 消すもの（新しい UI に作らないもの）
 
