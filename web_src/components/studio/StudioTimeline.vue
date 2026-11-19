@@ -25,7 +25,7 @@ import {
   toggleVisible,
 } from "../../studio/timeline_actions.js";
 import { groundOf } from "../../studio/defaults.js";
-import { buildStudioTimeline, findEntry, frameToX, keysInRange, xToFrame, xToFrameExact } from "../../studio/timeline_model.js";
+import { TRACK_PAD, buildStudioTimeline, findEntry, frameToX, keysInRange, xToFrame, xToFrameExact } from "../../studio/timeline_model.js";
 import { loadTimelineHeadWidth, saveTimelineHeadWidth, timelineHeadWidth } from "../../studio/layout.js";
 import { passedDragThreshold, watchDragCancel } from "../../studio/ui_drag.js";
 import StudioTimelineBar from "./StudioTimelineBar.vue";
@@ -80,8 +80,6 @@ const props = defineProps({
 });
 const emit = defineEmits(["seek", "play", "select", "edit", "frame-selected", "loop-change", "length-unit-change", "collapse-change", "done", "simplify-ghost"]);
 
-// The empty space at both ends of a track (docs/timeline-ui.md "タイムラインの長さ": only a visual margin).
-const TRACK_PAD = 8;
 
 const openRows = shallowRef(new Set());
 const ctx = computed(() => ({
@@ -406,14 +404,17 @@ function onTrackDown(event) {
 
 // The box from its start to the pointer, in the lines' coordinates, held between the ruler's bottom (the ruler is sticky:
 // the box's top edge and corners stay in sight above the rows scrolled under it) and the track column's bottom (the
-// lines and the empty area below them, so a pointer past the body's end does not grow its scroll). The pointer may go
-// past both; the box as drawn is what it selects (docs/timeline-ui.md "Keyframe の選び方").
+// lines and the empty area below them, so a pointer past the body's end does not grow its scroll), and sideways inside
+// the track column (from the right edge of the row heads, past the loop mark and the row dot, to the column's right
+// end). The pointer may go past them all; the box as drawn is what it selects (docs/timeline-ui.md "Keyframe の選び方").
 function marqueeBox() {
   const rect = lines.value.getBoundingClientRect();
   const top = rulerLine.value ? rulerLine.value.getBoundingClientRect().bottom - rect.top : 0;
   const bottom = fill.value ? fill.value.getBoundingClientRect().bottom - rect.top : rect.height;
   const hold = (y) => Math.max(top, Math.min(bottom, y));
-  const bx = drag.bx - rect.left;
+  const ruled = ruler.value.getBoundingClientRect();
+  const holdX = (x) => Math.max(ruled.left - rect.left, Math.min(ruled.right - rect.left, x));
+  const bx = holdX(drag.bx - rect.left);
   const by = hold(drag.by - rect.top);
   const ay = hold(drag.ay);
   return { left: Math.min(drag.ax, bx), top: Math.min(ay, by), width: Math.abs(bx - drag.ax), height: Math.abs(by - ay) };
