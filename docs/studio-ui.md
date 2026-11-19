@@ -51,7 +51,7 @@ Python はこの文書の規則を持たない（列は `—`）。「（新し�
 | Preview のウィンドウ（IMAGE・VIDEO・PANO_SCENE の source と何もつないでいないとき、Space、背景の範囲と `bg_color`、Scene とノード上の VIDEO の再生の位置の引き継ぎとノード上の表示・再生を止めること。視点の規則は `docs/space-and-view.md`） | — | 開くのと閉じるのは `web_src/studio/preview_window.js` `openPreviewWindow`（Scene の背景と `bg_color`、IMAGE・VIDEO の背景の範囲は `pano_background_choice.js` `chooseBackground`（規則は `docs/timeline-ui.md` の「どの背景を出すか」の行）、ノード上の Scene のビューアを止めるのは `pano_node_bridge.js` `sceneViewerWindowOpened`・`sceneViewerWindowClosed` と `pano_scene_viewer_node.js` の `rest`、ノード上の VIDEO を止めて引き継ぐのは `pano_preview_previewnode.js` の runtime の `windowOpened`・`windowClosed`。Scene の層は `upstream.js` `createStudioUpstream` と `stage_content.js` `stageContent` で読み取り専用に描く（Preview に編集は無い）。VIDEO と Scene の背景の再生は `pano_media_session.js` `createBackgroundVideo`、ループのスイッチの記憶は `timeline_actions.js` `readLoopSetting`・`writeLoopSetting`）、画面と下端の再生の帯は `web_src/components/studio/StudioPreviewWindow.vue`、どちらで開くかは `web_src/editor_choice.js` `previewUsesNewWindow`（`source` に link が無いかを `sourceLinked` で受け、`web_src/main.js` の `previewTakes` が渡す）・`createEditorChooser` の `openPreview`、Scene のビューアの `Open viewer` は `web_src/main.js` がこのウィンドウに向ける。IMAGE・VIDEO のノード上の右上の `Open viewer` は `createEditorChooser` の `previewWindowTakes` を `web_src/pano_editor_extension.js` が `pano_preview_previewnode.js` の `opensWindow` に渡す | `tests/editor_choice.test.mjs`、`tests/pano_editor_extension.test.mjs`、`tests/browser/preview_window.spec.js`、`tests/browser/preview_entry.spec.js`（`web_src/main.js` を本物の frontend と同じ形の MatchType の `source` を持つノードで動かす） |
 | タイムラインのバーの並びと、行の頭の並び | — | `web_src/components/studio/StudioTimelineBar.vue`・`StudioTimelineHead.vue`（組み立ては `StudioTimeline.vue`、データは `web_src/studio/timeline_model.js`） | `tests/browser/studio_timeline.spec.js` |
 | キーとクリップボードの事象をエディタの外へ出さない | — | `web_src/studio/key_guard.js` `guardEditorKeys`（組み込みは `web_src/studio/editor_controller.js`） | `tests/studio_key_guard.test.mjs`、`tests/browser/studio_keys.spec.js` |
-| ショートカットの一覧（中身、エディタのキーの表、出し方と閉じ方） | — | キーの表と一覧の中身は `web_src/studio/shortcuts.js`（`EDITOR_KEYS`・`editorKeyAction`・`shortcutGroups`。Change Camera FOV の行を出すかに Camera のロックを渡すのは `StudioEditor.vue`）、画面は `web_src/components/studio/StudioShortcuts.vue`、「?」のボタンは `StudioNavWidget.vue`、開く・閉じるの状態（`view.shortcuts`）と「?」のキーは `web_src/studio/editor_view.js`・`editor_controller.js`、置き場所は `StudioEditor.vue` | `tests/studio_shortcuts.test.mjs`、`tests/browser/studio_session.spec.js` |
+| ショートカットの一覧（中身、エディタのキーの表、出し方と閉じ方） | — | キーの表と一覧の中身は `web_src/studio/shortcuts.js`（`EDITOR_KEYS`・`editorKeyAction`・`shortcutList`。Change Camera FOV の行を出すかに Camera のロックを渡すのは `StudioEditor.vue`）、画面は `web_src/components/studio/StudioShortcuts.vue`、「?」のボタンは `StudioNavWidget.vue`、開く・閉じるの状態（`view.shortcuts`）と「?」のキーは `web_src/studio/editor_view.js`・`editor_controller.js`、置き場所は `StudioEditor.vue` | `tests/studio_shortcuts.test.mjs`、`tests/browser/studio_session.spec.js` |
 | ツールチップ（出す部品、出るまでの時間と消え方、置く側と反転、ショートカットの印、ドラッグ中とキーボードのフォーカス） | — | 置き場所の計算・置く側の表・ショートカットの切り出し・時間の値は `web_src/studio/tooltip.js`（`placeTip`・`tipSide`・`tipGroup`（離れを測る群の地）・`splitTipKeys`・`TIP_SIDES`・`TIP_DELAY`・`TIP_SKIP`・`TIP_GAP`・`TIP_EDGE`）、マウスの操作の名前はショートカットの一覧と共有する `web_src/studio/input_names.js` `GESTURE_NAMES`、出し入れと描くのは `web_src/components/studio/StudioTooltip.vue`（`StudioEditor.vue` が一つ置く）。部品は説明を `data-tip` に書く | `tests/studio_tooltip.test.mjs`、`tests/browser/studio_tooltip.spec.js` |
 | 閉じ方 | — | `web_src/components/studio/StudioEditor.vue`、Escape を受けるのは `web_src/studio/stage_input.js`（ドキュメントの捕捉で受け、欄のドラッグの Escape は先に欄が取る）、枠の外のクリックは `web_src/studio/backdrop.js` `createBackdropClose`、閉じるのと保存は `web_src/studio/editor.js`・`editor_edits.js`（書く文字は `web_src/studio/session.js` `stateText`、下の部品 `pano_editor_state.js` `editorStateWrite`）、Escape の順の 3 段（Set orbit center の待ち）は `web_src/studio/stage_input.js`、4 段は `web_src/studio/add_files.js` `escape`、5 段と 6 段は `web_src/studio/editor_controller.js` `onEscape`（`view.shortcuts`、`view.paint`）、7・8 段は `session.js` `escape`、下の部品 `pano_node_bridge.js`。Escape の順の表の 2 段（地面を拾う待ち）は、その部品がまだ無い（未実装） | `tests/studio_backdrop.test.mjs`、`tests/browser/studio_editor.spec.js`、`tests/browser/studio_ui.spec.js`（欄のドラッグの Escape）、`tests/studio_session.test.mjs`、`tests/browser/studio_session.spec.js` |
 | Preview のウィンドウの画面 | — | `web_src/components/studio/StudioPreviewWindow.vue`（右下の群はエディタと同じ `StudioViewButtons.vue` で、Frame Selected を除き、グリッドの後に Fullscreen を置く。上端の中央の一行は Sky だけの知らせと Set orbit center の待ちだけを `topLine` に渡す） | `tests/browser/preview_window.spec.js`（右下の群と寄る操作も） |
@@ -1134,12 +1134,15 @@ Camera タブでは同じ席で無効にする（tooltip は「Not available in 
   その押下がいつもどおり働く（Add の二択と同じ）。エディタを閉じると一覧も消え、次に開いたときは閉じている（覚えない）。
   一覧の頭の右に「? or Esc to close」を添える。
 - 一覧はモーダルにしない。開いている間も、視点・物・タイムラインのキーとマウスはふだんどおり効く。
+- 開いている間、ステージの絵（3D の表示と、Camera タブの枠）の上に暗い幕を敷き、一覧に目が行くようにする。浮かせた部品（タブ・左の列・
+  一行の知らせ・右上の Output の小窓・右の中央の列・下の中央のバー・右下の群。Preview のウィンドウでは ✕ も）は幕の上に明るいまま置く。どれも押せるので、
+  見た目もそのとおりにするためである（持ち主の決定、2026-11-19）。幕は押下を受けない（一覧の外を押したときの規則はそのまま）。
 - キーボード：開くと一覧がフォーカスを受け（読み上げが一覧の名前「Shortcuts」を読む）、Escape で閉じたときにフォーカスが一覧の中に
   あれば「?」のボタンに戻す。
 - 置き場所：ステージの左の列と右の中央の列の間で、上端の 3D・Camera のタブと下の中央のバーにかからない範囲を覆う。後ろのステージは
   透けない。大きさと見た目は `docs/design.md` の「大きさ」の「ショートカットの一覧」。全部が入らないほど小さいステージでは、一覧全体を
   同じ比で縮めて入れる（スクロールも、行の省きもしない）。
-- 並べ方：頭に「Shortcuts」と今の画面の名前（「3D tab」「Camera tab · Frame」「Camera tab · Panorama」）。その下に 3 つの等しい幅の列。
+- 並べ方：頭に「Shortcuts」と今の画面の名前（「3D tab」「Camera tab · Frame」「Camera tab · Panorama」）。その下に 3 つの列（幅はそれぞれの中身の幅で、余りは列の間に配る）。
   1 列目は View、2 列目は Objects と Path line、3 列目は Timeline と Editing。群はどの画面でも同じ席に置き、行の無い群も名前と
   添える一行を出す（タブを切り替えても群の場所が動かないように）。
 - View の群は表にする。行はマウスの操作（Drag・Right-drag・Wheel・Double-click。左にマウスの小さな絵を付け、押すボタンかホイールを
@@ -1162,14 +1165,14 @@ Camera タブでは同じ席で無効にする（tooltip は「Not available in 
 | View（`docs/space-and-view.md` の「マウスとキー」） | 表の行。Drag：Look around ／ Alt で Orbit。Right-drag：Pan ／ Alt で Move forward / back。Wheel：Move toward the pointer ／ Alt で Zoom (FOV)（3D タブ・Preview のウィンドウではいつも出す。Camera タブの Frame モードでは、読み取り専用でなく Camera をロックしていないときだけ、名前を Change Camera FOV にして出し、そうでないときは「—」。Ctrl＋ホイールは出さない）。Double-click：Look at that point ／ Alt の欄は「—」（そこを `T` にして向く。Camera タブの Frame モードでは Camera が向く。`docs/space-and-view.md` の「マウスとキー」）。表の下の添える一行、移動のキーの絵（W / S・A / D・Q / E と Shift）。Camera タブの Frame モードでは群の名前の横に「These move the Camera.」を添える。Camera タブの Panorama モードでは表もキーの絵も出さず、「Nothing moves the view in Panorama mode.」の一行だけを出す |
 | Objects（この文書の「下の中央のバー」、`docs/space-and-view.md`） | Select：Click it（Panorama モードでは出さない）。Move / Rotate / Scale：1 / 2 / 3（3D タブで、読み取り専用でないとき）。Rotate in 15° steps：Shift + drag a ring（ギズモの Rotate と Sky の画像とペイントのまとまりの回転のハンドル。同じ条件。数は `ROTATE_SNAP_DEG`）。Delete：Delete / Backspace（Keyframe を選んでいればそれ、そうでなければ物。読み取り専用でないとき）。Camera タブでは群の下に「Move, Rotate and Scale are in the 3D tab.」を添える |
 | Path line（この文書の「軌道の線」） | 3D タブだけ。Go to that Keyframe：Click a point。Corner ⇄ Auto：Double-click a point。Bend：Drag a handle。Go to that frame：Click the line（Corner ⇄ Auto と Bend は読み取り専用でないとき）。Camera タブでは行を出さず、「The path line is drawn in the 3D tab.」の一行だけを出す |
-| Timeline（`docs/timeline-ui.md`） | Play / pause：Space。Add Keyframes to the selection：Shift + click / drag。Copy / Cut / Paste Keyframes：Ctrl + C / X / V（読み取り専用でないとき。`docs/timeline-ui.md` の「Keyframe のコピーと貼り付け」） |
+| Timeline（`docs/timeline-ui.md`） | Play / pause：Space。Add to selection：Shift + click / drag（Keyframe）。Copy / Cut / Paste：Ctrl + C / X / V（Keyframe）（読み取り専用でないとき。`docs/timeline-ui.md` の「Keyframe のコピーと貼り付け」） |
 | Editing | Undo：Ctrl + Z。Redo：Shift + Ctrl + Z（どちらも読み取り専用でないとき）。Fine steps (×0.1)：Shift + drag a value（欄と FOV・Lens の辺の目盛り。読み取り専用でないとき）。Roll in 15° steps：Shift + drag the Roll ruler（Camera タブで、読み取り専用でないとき）。Step back / close：Esc（下の「閉じ方」） |
 
-- Preview のウィンドウ（下の「Preview のウィンドウ」）の一覧も同じ表から作る（`shortcutGroups` の `context: "preview"`）。物を選ぶ・
+- Preview のウィンドウ（下の「Preview のウィンドウ」）の一覧も同じ表から作る（`shortcutList` の `context: "preview"`）。物を選ぶ・
   編集する部品が無いので、View の群（3D タブと同じ表とキーの絵）と、Step back / close（Escape で閉じる）だけの Editing の群を出し、
-  Objects・Path line の群と、Timeline の群の Add Keyframes・Keyframe の行は出さない。Play / pause：Space は、再生の帯があるときだけ、
-  群の名前を Playback にして出す（タイムラインが無いため）。行の無い群は出さない。覆う範囲は、右の中央の列と下端の再生の帯に
-  かからないステージの範囲。列は 2 つで、1 列目が View、2 列目が Playback と Editing。
+  Objects・Path line の群と、Timeline の群の Add to selection・Copy / Cut / Paste の行は出さない。Play / pause：Space は、再生の帯があるときだけ、
+  群の名前を Playback にして出す（タイムラインが無いため）。行の無い群は出さない。覆う範囲は、右の中央の列と、右上の ✕ と右下の
+  ボタンの群にかからないステージの範囲。列は 2 つで、1 列目が View、2 列目が Playback と Editing。
 
 ## 消すもの（新しい UI に作らないもの）
 
