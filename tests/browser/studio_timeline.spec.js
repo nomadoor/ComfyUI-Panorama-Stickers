@@ -1,6 +1,8 @@
 import { writeFileSync } from "node:fs";
 import { expect, test } from "@playwright/test";
 
+import { TRACK_PAD, frameToX } from "../../web_src/studio/timeline_model.js";
+
 // The new UI's Timeline (web_src/components/studio/StudioTimeline*.vue, web/pano_studio.css) on
 // tests/browser/pages/studio_timeline.html: docs/timeline-ui.md (rows and dots, Keyframe selection, the playhead moved
 // by the ruler only, Delete, Clip ranges, the eye, the upstream group) and docs/studio-ui.md "タイムラインのバー".
@@ -36,10 +38,10 @@ const events = (page) => page.evaluate(() => window.__events.splice(0));
 const dark = (page) => page.locator('[data-theme-col="dark"]');
 const scene = (page, name) => page.evaluate((key) => window.__scene[key](), name);
 
-// The client x of a Timeline frame on the dark Timeline's tracks (timeline_model.js frameToX, 8px pad, span 100).
+// The client x of a Timeline frame on the dark Timeline's tracks (timeline_model.js frameToX and TRACK_PAD, span 100).
 async function frameX(page, frame) {
   const box = await dark(page).locator('[data-tl="ruler"]').boundingBox();
-  return box.x + 8 + (frame / 99) * (box.width - 16);
+  return box.x + frameToX(frame, 100, box.width, TRACK_PAD);
 }
 
 async function trackY(page, id) {

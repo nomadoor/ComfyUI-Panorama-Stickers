@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
 
+import { TRACK_PAD } from "../../web_src/studio/timeline_model.js";
+
 // The new editor's background VIDEO (web_src/studio/editor.js through pano_media_session.js createBackgroundVideo) on
 // tests/browser/pages/studio_video.html: docs/timeline-ui.md "再生の状態" (新しい UI) and "タイムラインの表示" (the fps
 // a VIDEO sets). The VIDEO is recorded in the page; each frame's gray grows with its time, so the stage tells which
@@ -42,7 +44,7 @@ async function settledGray(page) {
 // Clicks the ruler at `fraction` of its width: a seek.
 async function seekTo(page, fraction) {
   const box = await page.locator('[data-tl="ruler"]').boundingBox();
-  await page.mouse.click(box.x + 8 + (box.width - 16) * fraction, box.y + box.height / 2);
+  await page.mouse.click(box.x + TRACK_PAD + (box.width - 2 * TRACK_PAD) * fraction, box.y + box.height / 2);
 }
 
 async function open(page) {

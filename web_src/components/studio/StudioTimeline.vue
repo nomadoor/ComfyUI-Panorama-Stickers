@@ -25,7 +25,7 @@ import {
   toggleVisible,
 } from "../../studio/timeline_actions.js";
 import { groundOf } from "../../studio/defaults.js";
-import { buildStudioTimeline, findEntry, frameToX, keysInRange, xToFrame, xToFrameExact } from "../../studio/timeline_model.js";
+import { TRACK_PAD, buildStudioTimeline, findEntry, frameToX, keysInRange, xToFrame, xToFrameExact } from "../../studio/timeline_model.js";
 import { loadTimelineHeadWidth, saveTimelineHeadWidth, timelineHeadWidth } from "../../studio/layout.js";
 import { passedDragThreshold, watchDragCancel } from "../../studio/ui_drag.js";
 import StudioTimelineBar from "./StudioTimelineBar.vue";
@@ -80,8 +80,6 @@ const props = defineProps({
 });
 const emit = defineEmits(["seek", "play", "select", "edit", "frame-selected", "loop-change", "length-unit-change", "collapse-change", "done", "simplify-ghost"]);
 
-// The empty space at both ends of a track (docs/timeline-ui.md "タイムラインの長さ": only a visual margin).
-const TRACK_PAD = 8;
 
 const openRows = shallowRef(new Set());
 const ctx = computed(() => ({
