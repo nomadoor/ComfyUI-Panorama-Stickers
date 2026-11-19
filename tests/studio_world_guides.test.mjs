@@ -6,7 +6,8 @@ import test from "node:test";
 
 import { loadSceneState } from "../web_src/pano_scene_state.js";
 import { DEFAULT_VIEW_HFOV, spaceCamera, worldStickerPlane } from "../web_src/pano_space.js";
-import { guideLook, hoverGuide, screenSegment, worldGuideItems } from "../web_src/studio/world_guides.js";
+import { guideLook, hoverGuide, screenSegment, visibleBoxSegments, worldGuideItems } from "../web_src/studio/world_guides.js";
+import { boxCorners } from "../web_src/pano_space.js";
 
 const W = 1000;
 const H = 500;
@@ -160,4 +161,27 @@ test("the upstream World objects have their guides too: their planes and their 3
   ]);
   assert.equal(items[2].url, "file3d:1:chair");
   assert.deepEqual(worldGuideItems(loadSceneState({ version: 2 }), content, () => box).map((item) => item.id), [], "without the layers given, none");
+});
+
+// docs/space-and-view.md "World の物のガイド" 形: a box's edge whose two faces both face away from the view is not drawn.
+test("visibleBoxSegments leaves out the edges whose two faces both turn away from the eye", () => {
+  const corners = boxCorners(box);
+  const touches = (segments, corner) => segments.some(([a, b]) => [a, b].some((p) => p.every((v, i) => v === corner[i])));
+  // Seen from a corner: the three edges meeting at the far corner go, nine stay.
+  const fromCorner = visibleBoxSegments(corners, [3, 2, 4]);
+  assert.equal(fromCorner.length, 9);
+  assert.equal(touches(fromCorner, [-0.5, -0.5, -0.5]), false, "nothing reaches the far corner");
+  // Face on, within the box's width and height: only the near face's square stays.
+  const faceOn = visibleBoxSegments(corners, [0, 0, 5]);
+  assert.equal(faceOn.length, 4);
+  assert.ok(faceOn.every(([a, b]) => a[2] === 0.5 && b[2] === 0.5));
+  // A flat box (no depth) keeps its outline: its thin sides count as facing the eye.
+  const flat = visibleBoxSegments(boxCorners({ min: [-0.5, -0.5, 0], max: [0.5, 0.5, 0] }), [1, 1, 3]);
+  assert.ok(flat.filter(([a, b]) => a.some((v, i) => v !== b[i])).length >= 4);
+  // From inside (no face turns toward the eye): all 12, so a selected object keeps its frame.
+  assert.equal(visibleBoxSegments(corners, [0, 0, 0]).length, 12);
+  assert.equal(visibleBoxSegments(corners, [0.2, -0.3, 0.1]).length, 12);
+  // Turned boxes too: the corners are the box's turned ones.
+  const turn = ([x, y, z]) => [x * Math.cos(0.7) + z * Math.sin(0.7), y, -x * Math.sin(0.7) + z * Math.cos(0.7)];
+  assert.equal(visibleBoxSegments(corners.map(turn), turn([3, 2, 4])).length, 9);
 });

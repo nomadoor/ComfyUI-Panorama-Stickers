@@ -351,3 +351,66 @@ test("the parts are drawn in order: guides, Camera mark, sky, paint, gizmo, then
   }
   assert.deepEqual(sequence, ["guide", "camera", "sky", "paint", "gizmo", "ring", "orbit"]);
 });
+
+test("a lit plane square lights its two axes; the other handles and their underlays draw at GIZMO_LOOK.dimAlpha; the center dot does not dim", () => {
+  const square = (x, y) => [{ x, y }, { x: x + 5, y }, { x: x + 5, y: y + 5 }, { x, y: y + 5 }];
+  const handles = {
+    mode: "translate",
+    center,
+    axes: [
+      { name: "x", shown: true, depth: 1, end: { x: 150, y: 100 } },
+      { name: "y", shown: true, depth: 3, end: { x: 100, y: 50 } },
+      { name: "z", shown: true, depth: 2, end: { x: 80, y: 120 } },
+    ],
+    planes: [
+      { name: "xz", normal: "y", shown: true, points: square(110, 105) },
+      { name: "xy", normal: "z", shown: true, points: square(110, 85) },
+    ],
+  };
+  const ctx = recordingContext();
+  drawStageOverlay(ctx, { camera, width: W, height: H, scene: { guides: [], gizmo: { handles, active: "xz" } } });
+  const bars = strokes(ctx).filter(([, path]) => path && path.ops?.length === 2);
+  assert.deepEqual(bars.map(([, , style]) => [style.strokeStyle, style.lineWidth, style.globalAlpha]), [
+    [GIZMO_LOOK.under, GIZMO_LOOK.lineWidth + GIZMO_LOOK.underExtra, GIZMO_LOOK.dimAlpha],
+    [gizmoColor("y", false), GIZMO_LOOK.lineWidth, GIZMO_LOOK.dimAlpha],
+    [GIZMO_LOOK.under, GIZMO_LOOK.activeLineWidth + GIZMO_LOOK.underExtra, 1],
+    [gizmoColor("z", true), GIZMO_LOOK.activeLineWidth, 1],
+    [GIZMO_LOOK.under, GIZMO_LOOK.activeLineWidth + GIZMO_LOOK.underExtra, 1],
+    [gizmoColor("x", true), GIZMO_LOOK.activeLineWidth, 1],
+  ]);
+  const planeFills = fills(ctx).filter(([, path]) => path);
+  assert.deepEqual(planeFills.map(([, , style]) => [style.fillStyle, style.globalAlpha]), [
+    [gizmoColor("y", true), GIZMO_LOOK.planeActiveAlpha],
+    [gizmoColor("z", false), GIZMO_LOOK.dimAlpha * GIZMO_LOOK.planeAlpha],
+  ]);
+  const dot = fills(ctx).at(-1)[2];
+  assert.equal(dot.fillStyle, "#ffffff");
+  assert.equal(dot.globalAlpha, 1);
+});
+
+test("dimmed Rotate rings multiply GIZMO_LOOK.dimAlpha into their back half's faintness; dimmed Scale squares draw at dimAlpha", () => {
+  const ring = (name) => ({
+    name,
+    points: [{ x: 0, y: 0, front: false }, { x: 1, y: 0, front: false }, { x: 2, y: 0, front: true }, { x: 3, y: 0, front: true }],
+  });
+  const ctx = recordingContext();
+  drawStageOverlay(ctx, { camera, width: W, height: H, scene: { guides: [], gizmo: { handles: { mode: "rotate", center, rings: [ring("x"), ring("y")] }, active: "x" } } });
+  const colored = strokes(ctx).filter(([, path, style]) => path && style.strokeStyle !== GIZMO_LOOK.under);
+  assert.deepEqual(colored.map(([, , style]) => [style.strokeStyle, style.globalAlpha]), [
+    [gizmoColor("x", true), GIZMO_LOOK.ringBackAlpha],
+    [gizmoColor("y", false), GIZMO_LOOK.ringBackAlpha * GIZMO_LOOK.dimAlpha],
+    [gizmoColor("x", true), 1],
+    [gizmoColor("y", false), GIZMO_LOOK.dimAlpha],
+  ]);
+  const scale = recordingContext();
+  const handles = {
+    mode: "scale",
+    center,
+    axes: [{ name: "x", shown: true, depth: 1, end: { x: 150, y: 100 } }, { name: "y", shown: true, depth: 2, end: { x: 100, y: 50 } }],
+  };
+  drawStageOverlay(scale, { camera, width: W, height: H, scene: { guides: [], gizmo: { handles, active: "x" } } });
+  const squares = scale.log.filter((entry) => entry[0] === "roundRect");
+  assert.equal(squares.length, 4);
+  const alphas = fills(scale).filter(([, path]) => !path).map(([, , style]) => style.globalAlpha);
+  assert.deepEqual(alphas.slice(0, 2), [GIZMO_LOOK.dimAlpha, GIZMO_LOOK.dimAlpha], "the far, dimmed Y square and its underlay");
+});

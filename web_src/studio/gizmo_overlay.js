@@ -28,7 +28,8 @@ export function gizmoColor(name, active = false) {
 // Its sizes in CSS px (docs/design.md "新しい UI の見た目" ギズモ): how far a bar reaches from the center and the
 // rings' radius, the line, Move's balls, the white center dot, Scale's rounded squares, how faint a ring's far half
 // is, below which share of the reach a bar's screen length hides it (the axis runs nearly along the view), and how
-// near a point hits a ball, square or the center dot, or a bar or ring; and the axis guide line a drag shows.
+// near a point hits a ball, square or the center dot, or a bar or ring; and the axis guide line a hovered or dragged
+// handle shows.
 const GIZMO_HIDE_RATIO = 0.2;
 export const GIZMO_LOOK = Object.freeze({
   reach: 52,
@@ -57,11 +58,14 @@ export const GIZMO_LOOK = Object.freeze({
   centerRim: 1.5,
   // Move's plane squares: from GIZMO_PLANE_FROM to GIZMO_PLANE_TO of the reach along both of their axes, filled in the
   // color of the axis across the plane at planeAlpha with a planeLine px edge; lit, white at planeActiveAlpha.
-  planeFrom: 0.28,
-  planeTo: 0.52,
+  planeFrom: 0.2,
+  planeTo: 0.6,
   planeAlpha: 0.4,
   planeActiveAlpha: 0.6,
   planeLine: 1,
+  // GIZMO_DIM_ALPHA: the opacity of the handles other than the lit ones while one is under the pointer or dragged
+  // (gizmoEmphasis), their underlay too.
+  dimAlpha: 0.3,
 });
 
 // Move's plane squares (docs/studio-ui.md "ギズモ" "Move の平面の取っ手"): each named by its two axes, colored by the axis
@@ -114,7 +118,8 @@ function unitsPerPixel(camera, at, depth, width, height) {
 // the bent picture point by point), or null when its center is not in front: { mode, center: { x, y }, length (World units of the reach), axes: [{ name, dir,
 // end: { x, y }, depth, shown }], rings: [{ name, dir, points: [{ x, y, world, front }] }], planes (Move only):
 // [{ name ("xy" | "yz" | "xz"), normal (the name of the axis across it), points (its 4 screen corners), shown }] }.
-// Move and Rotate use the World axes, Scale the object's own.
+// Move and Rotate use the World axes, Scale the object's own. A plane square sits, along each of its two axes, on the
+// side that faces the view (docs/studio-ui.md "ギズモ" "Move の平面の取っ手"); the bars stay on the plus side.
 export function gizmoHandles(gizmo, camera, width, height) {
   if (!gizmo) return null;
   const centerWorld = pivotOf(gizmo);
@@ -152,8 +157,9 @@ export function gizmoHandles(gizmo, camera, width, height) {
     return { name: AXIS_NAMES[index], dir, points };
   });
   const sight = unit(sub(centerWorld, eye));
+  const toward = (dir) => (dot(dir, sub(eye, centerWorld)) >= 0 ? dir : scale(dir, -1));
   const planes = gizmo.mode !== "translate" ? [] : GIZMO_PLANES.map((plane) => {
-    const [a, b] = plane.axes.map((index) => dirs[index]);
+    const [a, b] = plane.axes.map((index) => toward(dirs[index]));
     const across = dirs[AXIS_NAMES.indexOf(plane.normal)];
     const near = GIZMO_LOOK.planeFrom * length;
     const far = GIZMO_LOOK.planeTo * length;
@@ -256,10 +262,34 @@ function multiply(a, b) {
   return a.map((row) => [0, 1, 2].map((index) => row[0] * b[0][index] + row[1] * b[1][index] + row[2] * b[2][index]));
 }
 
+// Which handles show lit, dim or as they are while the handle `active` (gizmoHit's name, or null) is under the pointer
+// or dragged (docs/studio-ui.md "ギズモ"): a function of a handle's name ("x", "y", "z", "xy", "yz", "xz", "center"; a
+// ring is its axis's name) giving "lit", "dim" or "normal". The active handle is lit and the others dim; a plane
+// square lights its two axes too (which two it moves along), and the center dot dims all the others (it moves
+// along none). The center dot never dims. With none active, all are "normal".
+export function gizmoEmphasis(active) {
+  if (!active) return () => "normal";
+  const plane = GIZMO_PLANES.find((entry) => entry.name === active);
+  const lit = new Set([active, ...(plane ? plane.axes.map((index) => AXIS_NAMES[index]) : [])]);
+  return (name) => (lit.has(name) ? "lit" : name === "center" ? "normal" : "dim");
+}
+
+// The axis guide lines of the handle `name` of the gizmo `gizmo` with its `handles` (gizmoHandles), shown from when the
+// pointer is on it and while it is dragged (docs/studio-ui.md "ギズモ"): [{ name, origin, dir }] through the gizmo's
+// center: an axis's one, a Move plane square's two (along the World axes it moves on), none for Move's center dot or
+// no handle. gizmoDrag's `guides` are these at the grab.
+export function gizmoGuides(gizmo, handles, name) {
+  if (!gizmo || !handles || !name || name === "center") return [];
+  const pivot = pivotOf(gizmo);
+  const plane = GIZMO_PLANES.find((entry) => entry.name === name);
+  if (plane) return handles.mode === "translate" ? plane.axes.map((index) => ({ name: AXIS_NAMES[index], origin: [...pivot], dir: [...WORLD_AXES[index]] })) : [];
+  const axis = handles.axes.find((entry) => entry.name === name);
+  return axis ? [{ name, origin: [...pivot], dir: axis.dir }] : [];
+}
+
 // A drag of the handle `name` (gizmoHit) of the gizmo `gizmo` (as gizmoHandles takes it) grabbed at the CSS px point
 // `point` of a width x height stage seen from `camera`, or null when the handle cannot be dragged from here. Its
-// `guides` ([{ name, origin, dir }]: one for an axis handle, the plane's two axes for a Move plane square, none for
-// Move's center dot) are the axis guide lines to draw while it lasts (gizmoGuideSegment). Its move(camera, point,
+// `guides` (gizmoGuides at the grab) are the axis guide lines to draw while it lasts (gizmoGuideSegment). Its move(camera, point,
 // width, height) gives the transform the drag has taken the gizmo to ({ position, quaternion,
 // scale: [x, y, z] }, what pano_space.js gizmoDragLanes reads), or null to keep the last one. Every move is measured
 // from where the drag began. A Rotate move given { snap } (degrees, 0 for none) stops at multiples of it (docs/studio-ui.md
@@ -289,7 +319,7 @@ export function gizmoDrag(gizmo, name, camera, point, width, height) {
     if (!grabbed) return null;
     return {
       name,
-      guides: [],
+      guides: gizmoGuides(gizmo, handles, name),
       move(view, next, w, h) {
         const at = hitPlane(ray(view, next, w, h));
         return at ? result({ position: add(start.position, sub(at, grabbed)) }) : null;
@@ -306,8 +336,7 @@ export function gizmoDrag(gizmo, name, camera, point, width, height) {
     if (!grabbed) return null;
     return {
       name,
-      // Both of the plane's axis guide lines through the center where it was grabbed, along the World axes it moves on.
-      guides: plane.axes.map((index) => ({ name: AXIS_NAMES[index], origin: [...pivot], dir: [...WORLD_AXES[index]] })),
+      guides: gizmoGuides(gizmo, handles, name),
       move(view, next, w, h) {
         const at = hitPlane(ray(view, next, w, h), view.near);
         return at ? result({ position: add(start.position, sub(at, grabbed)) }) : null;
@@ -316,8 +345,7 @@ export function gizmoDrag(gizmo, name, camera, point, width, height) {
   }
   const axis = handles.axes.find((entry) => entry.name === name);
   if (!axis) return null;
-  // The axis guide line the drag shows: through the center where it was grabbed, along the axis.
-  const guides = [{ name, origin: [...pivot], dir: axis.dir }];
+  const guides = gizmoGuides(gizmo, handles, name);
   if (handles.mode === "translate") {
     const t0 = lineParameter(pivot, axis.dir, ray(camera, point, width, height), camera.near);
     if (t0 === null) return null;
@@ -390,7 +418,7 @@ export function gizmoDrag(gizmo, name, camera, point, width, height) {
   };
 }
 
-// The axis guide line `guide` (one of a gizmoDrag's `guides`) as a World segment reaching far past the stage's edges
+// The axis guide line `guide` (one of gizmoGuides', a hovered or dragged handle's) as a World segment reaching far past the stage's edges
 // both ways: the overlay cuts it at the near plane (world_guides.js screenSegment). `camera` is a stageCamera().
 export function gizmoGuideSegment(guide, camera) {
   const reach = Math.max(camera.far, 1);
