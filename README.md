@@ -76,6 +76,7 @@ If only the editor is extremely slow, open `chrome://gpu` (`edge://gpu` for Edge
 
 ## Changelog
 
+- **2.2.2**: The Move gizmo's plane handles are larger and always on the side facing you. Hovering a handle shows the axes it moves along. The selected 3D object's box no longer draws the edges behind it.
 - **2.2.1**: The shortcut list (?) shows every operation on one page. Ctrl + A selects all Keyframes after a click on the Timeline. Fixes.
 - **2.2.0**: Shows motion paths, adjustable with Bézier curves. Added Loop, Look at, Simplify and Constant speed. Locked objects are easy to spot. Fixes.
 - **2.1.0**: Alt + wheel or a trackpad pinch changes the view's FOV. Panorama Studio always opens the new editor. The Timeline is easier to use. Fixes.
