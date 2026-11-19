@@ -4,15 +4,29 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { MOVE_KEY_CODES } from "../web_src/pano_view_keys.js";
-import { EDITOR_KEYS, editorKeyAction, shortcutGroups } from "../web_src/studio/shortcuts.js";
+import { EDITOR_KEYS, editorKeyAction, shortcutList } from "../web_src/studio/shortcuts.js";
 import { FINE_FACTOR } from "../web_src/studio/ui_drag.js";
 import { navigationAction } from "../web_src/studio/view_input.js";
 import { ROTATE_SNAP_DEG } from "../web_src/studio/view_scale.js";
 
 const key = (fields) => ({ key: "", code: "", ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, repeat: false, ...fields });
-const refsOf = (groups) => groups.flatMap((group) => group.rows.flatMap((row) => row.refs));
-const rowOf = (groups, label) => groups.flatMap((group) => group.rows).find((row) => row.label === label);
-const full = shortcutGroups({ tab: "3d", panorama: false, readOnly: false, mac: false });
+// Every ref the list shows, wherever it shows it: the header's close keys, the View table's cells, the movement keys,
+// the rows.
+function refsOf(list) {
+  const refs = [...list.close.refs];
+  for (const group of list.groups) {
+    for (const row of group.table?.rows ?? []) for (const cell of row.cells) if (cell) refs.push(...cell.refs);
+    if (group.moves) refs.push(...group.moves.rows.flat().map((item) => item.ref), ...group.moves.fast.refs);
+    for (const row of group.rows) refs.push(...row.refs);
+  }
+  return refs;
+}
+const groupOf = (list, id) => list.groups.find((group) => group.id === id);
+const rowOf = (list, label) => list.groups.flatMap((group) => group.rows).find((row) => row.label === label);
+const labelsOf = (list) => list.groups.flatMap((group) => group.rows.map((row) => row.label));
+// The View table as { gesture: [as is, with Alt] } labels ("—" where nothing).
+const tableOf = (list) => Object.fromEntries((groupOf(list, "view").table?.rows ?? []).map((row) => [row.gesture, row.cells.map((cell) => cell?.label ?? "—")]));
+const full = shortcutList({ tab: "3d", panorama: false, readOnly: false, mac: false });
 
 test("every key of the handlers' tables is in the list, and the list names no key outside them", () => {
   const refs = refsOf(full);
@@ -27,10 +41,12 @@ test("every key of the handlers' tables is in the list, and the list names no ke
   assert.equal(new Set(refs).size, refs.length, "each key once");
 });
 
-test("every button and Alt the stage's navigation takes is in the list, each under the operation it starts", () => {
+test("every button and Alt the stage's navigation takes is in the View table, in the cell of the operation it starts", () => {
   const listed = new Map();
-  for (const group of full) for (const row of group.rows) for (const ref of row.refs) if (ref.startsWith("button:")) listed.set(ref, row.label);
-  const labels = { look: "Look around", orbit: "Orbit", pan: "Pan", joystick: "Move forward/back" };
+  for (const row of groupOf(full, "view").table.rows) {
+    for (const cell of row.cells) for (const ref of cell?.refs ?? []) if (ref.startsWith("button:")) listed.set(ref, cell.label);
+  }
+  const labels = { look: "Look around", orbit: "Orbit", pan: "Pan", joystick: "Move forward / back" };
   const taken = [];
   for (const button of [0, 1, 2, 3, 4]) {
     for (const altKey of [false, true]) {
@@ -44,51 +60,94 @@ test("every button and Alt the stage's navigation takes is in the list, each und
   assert.deepEqual([...listed.keys()].sort(), taken.sort());
 });
 
-test("the list shows each key as the table has it, Ctrl as ⌘ on macOS", () => {
+// The table puts operations that differ only by Alt side by side (docs/studio-ui.md "ショートカットの一覧").
+test("the View group is a table of the mouse's gestures by Alt, with the movement keys as they lie", () => {
+  const view = groupOf(full, "view");
+  assert.deepEqual(view.table.head, ["as is", "Alt"]);
+  assert.deepEqual(tableOf(full), {
+    Drag: ["Look around", "Orbit"],
+    "Right-drag": ["Pan", "Move forward / back"],
+    Wheel: ["Move toward the pointer", "Zoom (FOV)"],
+    "Double-click": ["Look at that point", "Look at that point"],
+  });
+  assert.deepEqual(view.table.rows.map((row) => row.mouse), ["left", "right", "wheel", "left"]);
+  assert.equal(view.table.note, "Middle-drag works like Drag. Pinch zooms like Alt + Wheel.");
+  assert.deepEqual(view.moves.rows.map((row) => row.map((item) => `${item.cap} ${item.name}`)), [
+    ["Q down", "W forward", "E up"],
+    ["A left", "S back", "D right"],
+  ]);
+  assert.deepEqual(view.moves.fast.keys, [["Shift"]]);
+  // Ctrl + wheel is the pinch and never shown.
+  assert.ok(!refsOf(full).some((ref) => /ctrl/i.test(ref)));
+});
+
+test("the list shows each key as the table has it, Ctrl as ⌘ on macOS, and what a gesture is done on", () => {
   assert.deepEqual(rowOf(full, "Undo").keys, [["Ctrl", "Z"]]);
   assert.deepEqual(rowOf(full, "Redo").keys, [["Shift", "Ctrl", "Z"]]);
-  const mac = shortcutGroups({ tab: "3d", panorama: false, readOnly: false, mac: true });
+  const mac = shortcutList({ tab: "3d", panorama: false, readOnly: false, mac: true });
   assert.deepEqual(rowOf(mac, "Undo").keys, [["⌘", "Z"]]);
   assert.deepEqual(rowOf(full, "Delete").keys, [["Delete"], ["Backspace"]]);
   assert.deepEqual(rowOf(full, "Move / Rotate / Scale").keys, [["1"], ["2"], ["3"]]);
-  // The left and middle buttons turn the view, the right moves it; Alt takes the other of the pair (ADR 0060).
-  assert.deepEqual(rowOf(full, "Look around").keys, [["Drag"], ["Middle-drag"]]);
-  assert.deepEqual(rowOf(full, "Orbit").keys, [["Alt", "Drag"], ["Alt", "Middle-drag"]]);
-  assert.deepEqual(rowOf(full, "Pan").keys, [["Right-drag"]]);
-  assert.deepEqual(rowOf(full, "Move forward/back").keys, [["Alt", "Right-drag"]]);
-  assert.deepEqual(rowOf(full, "Move").keys, [["W"], ["S"], ["A"], ["D"], ["Q"], ["E"]]);
-  assert.deepEqual(rowOf(full, "Show shortcuts").keys, [["?"]]);
   assert.deepEqual(rowOf(full, "Step back / close").keys, [["Esc"]]);
-  assert.deepEqual(rowOf(full, "Copy keyframes").keys, [["Ctrl", "C"]]);
-  assert.deepEqual(rowOf(full, "Cut keyframes").keys, [["Ctrl", "X"]]);
-  assert.deepEqual(rowOf(mac, "Paste at the playhead").keys, [["⌘", "V"]]);
+  assert.deepEqual(rowOf(full, "Copy / Cut / Paste").keys, [["Ctrl", "C"], ["Ctrl", "X"], ["Ctrl", "V"]]);
+  assert.deepEqual(rowOf(mac, "Copy / Cut / Paste").keys, [["⌘", "C"], ["⌘", "X"], ["⌘", "V"]]);
+  // The same Shift + drag means different things on different things: each row says on what.
+  assert.deepEqual([`Rotate in ${ROTATE_SNAP_DEG}° steps`, `Fine steps (×${FINE_FACTOR})`, "Add to selection"].map((label) => [rowOf(full, label).keys, rowOf(full, label).gesture]), [
+    [[["Shift"]], "drag a ring"],
+    [[["Shift"]], "drag a value"],
+    [[["Shift"]], "click / drag"],
+  ]);
+  assert.deepEqual(rowOf(full, "Select").gesture, "Click it");
+  // "?" and Escape close it, named once in the header rather than in a row.
+  assert.deepEqual(full.close.keys, [["?"], ["Esc"]]);
+  assert.equal(rowOf(full, "Show shortcuts"), undefined);
 });
 
-test("the groups come in their order, and the numbers in the rows are their owners'", () => {
-  assert.deepEqual(full.map((group) => group.title), ["View", "Objects", "Timeline", "Editor"]);
-  assert.ok(rowOf(full, `Rotate in ${ROTATE_SNAP_DEG}° steps`), "Shift on the gizmo's Rotate and the sky image's handle");
-  assert.ok(rowOf(full, `Fine steps (×${FINE_FACTOR})`), "Shift on a value's drag");
+test("the groups keep their seats: three columns in the editor, the path line's operations in the 3D tab", () => {
+  assert.equal(full.name, "3D tab");
+  assert.equal(full.columns, 3);
+  assert.deepEqual(full.groups.map((group) => [group.id, group.title, group.column]), [
+    ["view", "View", 0],
+    ["objects", "Objects", 1],
+    ["path", "Path line", 1],
+    ["timeline", "Timeline", 2],
+    ["editing", "Editing", 2],
+  ]);
+  assert.deepEqual(groupOf(full, "path").rows.map((row) => [row.label, row.gesture, row.icon]), [
+    ["Go to that Keyframe", "Click a point", "point"],
+    ["Corner ⇄ Auto", "Double-click a point", "point"],
+    ["Bend", "Drag a handle", "handle"],
+    ["Go to that frame", "Click the line", "line"],
+  ]);
+  for (const options of [{ tab: "camera" }, { tab: "camera", panorama: true }, { tab: "3d", readOnly: true }]) {
+    assert.deepEqual(shortcutList(options).groups.map((group) => [group.id, group.column]), full.groups.map((group) => [group.id, group.column]), JSON.stringify(options));
+  }
 });
 
 test("the list shows only what works on the screen: the tab, Panorama mode, a read-only editor", () => {
-  const labels = (groups) => groups.flatMap((group) => group.rows.map((row) => row.label));
-  const frame = shortcutGroups({ tab: "camera", panorama: false, readOnly: false, mac: false });
-  assert.equal(frame[0].note, "These move the Camera.");
-  assert.ok(!labels(frame).includes("Look at a point"), "no double-click in the Frame view");
-  assert.ok(!labels(frame).includes("Move / Rotate / Scale"), "no gizmo in the Camera tab");
-  assert.ok(labels(frame).includes("Select"));
-  assert.ok(labels(frame).includes(`Roll in ${ROTATE_SNAP_DEG}° steps`), "Shift on the Roll ruler");
-  assert.ok(!labels(full).includes(`Roll in ${ROTATE_SNAP_DEG}° steps`), "no Roll ruler in the 3D tab");
-  const erp = shortcutGroups({ tab: "camera", panorama: true, readOnly: false, mac: false });
-  assert.equal(erp[0].note, "Nothing moves the view in Panorama mode.");
-  assert.deepEqual(erp[0].rows, []);
-  assert.ok(!labels(erp).includes("Select"), "nothing selects in Panorama mode's frame");
-  const readOnly = shortcutGroups({ tab: "3d", panorama: false, readOnly: true, mac: false });
-  for (const label of ["Undo", "Redo", "Delete", "Move / Rotate / Scale", `Fine steps (×${FINE_FACTOR})`, "Copy keyframes", "Cut keyframes", "Paste at the playhead"]) {
-    assert.ok(!labels(readOnly).includes(label), `${label} is not shown read-only`);
+  const frame = shortcutList({ tab: "camera", panorama: false, readOnly: false, mac: false });
+  assert.equal(frame.name, "Camera tab · Frame");
+  assert.equal(groupOf(frame, "view").aside, "These move the Camera.");
+  // A double click turns the Camera in the Frame view (docs/space-and-view.md "マウスとキー").
+  assert.deepEqual(tableOf(frame)["Double-click"], ["Look at that point", "Look at that point"]);
+  assert.ok(!labelsOf(frame).includes("Move / Rotate / Scale"), "no gizmo in the Camera tab");
+  assert.equal(groupOf(frame, "objects").note, "Move, Rotate and Scale are in the 3D tab.");
+  assert.deepEqual(groupOf(frame, "path").rows, []);
+  assert.equal(groupOf(frame, "path").note, "The path line is drawn in the 3D tab.");
+  assert.ok(labelsOf(frame).includes("Select"));
+  assert.deepEqual(rowOf(frame, `Roll in ${ROTATE_SNAP_DEG}° steps`).gesture, "drag the Roll ruler");
+  assert.ok(!labelsOf(full).includes(`Roll in ${ROTATE_SNAP_DEG}° steps`), "no Roll ruler in the 3D tab");
+  const erp = shortcutList({ tab: "camera", panorama: true, readOnly: false, mac: false });
+  assert.equal(erp.name, "Camera tab · Panorama");
+  assert.equal(groupOf(erp, "view").table, null);
+  assert.equal(groupOf(erp, "view").moves, null);
+  assert.equal(groupOf(erp, "view").note, "Nothing moves the view in Panorama mode.");
+  assert.ok(!labelsOf(erp).includes("Select"), "nothing selects in Panorama mode's frame");
+  const readOnly = shortcutList({ tab: "3d", panorama: false, readOnly: true, mac: false });
+  for (const label of ["Undo", "Redo", "Delete", "Move / Rotate / Scale", `Fine steps (×${FINE_FACTOR})`, "Copy / Cut / Paste", "Corner ⇄ Auto", "Bend"]) {
+    assert.ok(!labelsOf(readOnly).includes(label), `${label} is not shown read-only`);
   }
-  assert.ok(labels(readOnly).includes("Show shortcuts") && labels(readOnly).includes("Play / pause"));
-  assert.equal(full[0].note, null);
+  assert.ok(labelsOf(readOnly).includes("Play / pause") && labelsOf(readOnly).includes("Go to that Keyframe"));
 });
 
 test("editorKeyAction: one action per key event, as the handlers had them", () => {
@@ -119,44 +178,41 @@ test("editorKeyAction: one action per key event, as the handlers had them", () =
   assert.equal(editorKeyAction(key({ key: "v", code: "KeyV" })), null);
 });
 
+
 test("the Preview window's list (context preview) has no selection or editing rows, only the view, play and the window's keys", () => {
-  const preview = shortcutGroups({ context: "preview", playable: true, mac: false });
-  const labels = preview.flatMap((group) => group.rows.map((row) => row.label));
+  const preview = shortcutList({ context: "preview", playable: true, mac: false });
+  assert.equal(preview.name, null);
+  assert.equal(preview.columns, 2);
   for (const label of ["Select", "Add to selection", "Move / Rotate / Scale", `Rotate in ${ROTATE_SNAP_DEG}° steps`, "Delete",
-    "Copy keyframes", "Cut keyframes", "Paste at the playhead", "Undo", "Redo", `Fine steps (×${FINE_FACTOR})`, `Roll in ${ROTATE_SNAP_DEG}° steps`]) {
-    assert.ok(!labels.includes(label), `${label} is not in the Preview's list`);
+    "Copy / Cut / Paste", "Undo", "Redo", `Fine steps (×${FINE_FACTOR})`, `Roll in ${ROTATE_SNAP_DEG}° steps`, "Go to that Keyframe"]) {
+    assert.ok(!labelsOf(preview).includes(label), `${label} is not in the Preview's list`);
   }
-  const refs = refsOf(preview);
-  for (const ref of refs.filter((item) => item.startsWith("key:"))) {
+  for (const ref of refsOf(preview).filter((item) => item.startsWith("key:"))) {
     assert.ok(["key:play", "key:shortcuts", "key:escape"].includes(ref), `${ref} is a key the Preview window takes`);
   }
-  assert.deepEqual(preview.map((group) => group.id), ["view", "playback", "editor"]);
-  assert.equal(preview.find((group) => group.id === "playback").title, "Playback");
-  // The view rows are the editor's 3D tab's, from the same tables.
-  assert.deepEqual(preview[0].rows, full[0].rows);
+  assert.deepEqual(preview.groups.map((group) => [group.id, group.column]), [["view", 0], ["playback", 1], ["editing", 1]]);
+  assert.equal(groupOf(preview, "playback").title, "Playback");
+  // The view is the editor's 3D tab's, from the same tables.
+  assert.deepEqual(groupOf(preview, "view").table, groupOf(full, "view").table);
   assert.deepEqual(rowOf(preview, "Play / pause").keys, [["Space"]]);
-  assert.deepEqual(preview.find((group) => group.id === "editor").rows.map((row) => row.label), ["Show shortcuts", "Step back / close"]);
+  assert.deepEqual(groupOf(preview, "editing").rows.map((row) => row.label), ["Step back / close"]);
   // Without the playback strip, Space does nothing there, so the row and its group are not shown.
-  const still = shortcutGroups({ context: "preview", playable: false });
-  assert.deepEqual(still.map((group) => group.id), ["view", "editor"]);
+  const still = shortcutList({ context: "preview", playable: false });
+  assert.deepEqual(still.groups.map((group) => group.id), ["view", "editing"]);
 });
 
 // docs/studio-ui.md "ショートカットの一覧" (ADR 0061): the wheel moves toward the pointer; Alt + wheel and a pinch zoom
 // (always in the 3D tab and the Preview window; named Change Camera FOV in the Camera tab's Frame mode, and only where the
-// Camera moves); Panorama mode has no rows; Ctrl + wheel is never shown.
-test("the View group: Move toward the pointer, and Zoom (change FOV) or Change Camera FOV where it works", () => {
-  const row = (groups, label) => groups[0].rows.find((item) => item.label === label);
-  const space = shortcutGroups({ tab: "3d" });
-  assert.deepEqual(row(space, "Move toward the pointer")?.keys, [["Wheel"]]);
-  assert.equal(row(space, "Zoom to the pointer"), undefined);
-  assert.deepEqual(row(space, "Zoom (change FOV)")?.keys, [["Alt", "Wheel"], ["Pinch"]]);
-  assert.ok(row(shortcutGroups({ tab: "3d", readOnly: true }), "Zoom (change FOV)"));
-  assert.ok(row(shortcutGroups({ context: "preview" }), "Zoom (change FOV)"));
-  const frame = shortcutGroups({ tab: "camera", panorama: false });
-  assert.equal(row(frame, "Zoom (change FOV)"), undefined);
-  assert.deepEqual(row(frame, "Change Camera FOV")?.keys, [["Alt", "Wheel"], ["Pinch"]]);
-  assert.equal(row(shortcutGroups({ tab: "camera", panorama: false, readOnly: true }), "Change Camera FOV"), undefined);
-  assert.equal(row(shortcutGroups({ tab: "camera", panorama: false, locked: true }), "Change Camera FOV"), undefined);
-  assert.deepEqual(shortcutGroups({ tab: "camera", panorama: true })[0].rows, []);
-  assert.ok(!space[0].rows.some((item) => item.keys.some((combo) => combo.includes("Ctrl") && combo.includes("Wheel"))));
+// Camera moves); Panorama mode has no table.
+test("the Wheel row: Move toward the pointer, and Zoom (FOV) or Change Camera FOV where it works", () => {
+  assert.deepEqual(tableOf(shortcutList({ tab: "3d", readOnly: true })).Wheel, ["Move toward the pointer", "Zoom (FOV)"]);
+  assert.deepEqual(tableOf(shortcutList({ context: "preview" })).Wheel, ["Move toward the pointer", "Zoom (FOV)"]);
+  const frame = shortcutList({ tab: "camera", panorama: false });
+  assert.deepEqual(tableOf(frame).Wheel, ["Move toward the pointer", "Change Camera FOV"]);
+  assert.equal(groupOf(frame, "view").table.note, "Middle-drag works like Drag. Pinch changes the FOV like Alt + Wheel.");
+  for (const options of [{ readOnly: true }, { locked: true }]) {
+    const off = shortcutList({ tab: "camera", panorama: false, ...options });
+    assert.deepEqual(tableOf(off).Wheel, ["Move toward the pointer", "—"]);
+    assert.equal(groupOf(off, "view").table.note, "Middle-drag works like Drag.", "no pinch where it does nothing");
+  }
 });

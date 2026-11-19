@@ -3,7 +3,7 @@ import { expect, test } from "@playwright/test";
 // The Camera's path line in the new editor's 3D tab, on tests/browser/pages/studio_path_line.html in a real browser
 // engine (docs/studio-ui.md "軌道の線"): it shows for the selected Camera; a press on a Keyframe point selects it and
 // takes the playhead there, its drag moves that Keyframe; a double click makes it a Corner and back; a press on the line
-// takes the playhead to that frame; the hints show in the top line; a handle drag makes the point Bezier.
+// takes the playhead to that frame; no hint shows in the top line over it; a handle drag makes the point Bezier.
 
 function watch(page) {
   const problems = [];
@@ -29,6 +29,7 @@ const keys = (page) => page.evaluate(() => window.__studio.keys());
 const playhead = (page) => page.evaluate(() => Number(document.querySelector(".pano-studio-tl-frame")?.textContent?.split("/")[0]));
 const selection = (page) => page.evaluate(() => window.__studio.session.selection);
 const at = (page, frame) => page.evaluate((f) => window.__studio.pathAt(f), frame);
+const topLine = (page) => page.evaluate(() => window.__studio.topLine());
 
 async function selectCamera(page) {
   await page.locator(".pano-studio-tl-head-name", { hasText: "Camera" }).first().click();
@@ -36,18 +37,21 @@ async function selectCamera(page) {
   const stage = await page.locator("[data-stage-canvas]").boundingBox();
   await page.mouse.move(stage.x + 5, stage.y + 5);
   await page.waitForTimeout(150);
+  // The top line away from the path line (the empty stage's guide here): the line's parts leave it as it is.
+  stage.quiet = await topLine(page);
   return stage;
 }
 
 test("the selected Camera's path line shows; a point selects its Keyframe and takes the playhead to it", async ({ page }) => {
   const problems = await load(page);
   expect(await page.evaluate(() => window.__studio.yellowCount())).toBe(0);
-  await selectCamera(page);
+  const stage = await selectCamera(page);
   expect(await page.evaluate(() => window.__studio.yellowCount())).toBeGreaterThan(200);
   const point = await at(page, 20);
   await page.mouse.move(point.x, point.y);
   await page.waitForTimeout(100);
-  expect(await page.locator(".pano-studio-notice").textContent()).toContain("Click to go to this Keyframe · Double-click for Corner");
+  // No hint on the top line over the line's parts (docs/studio-ui.md "軌道の線"): the cursor says it takes a press.
+  expect(await topLine(page)).toBe(stage.quiet);
   await page.mouse.down();
   await page.mouse.up();
   await page.waitForTimeout(150);
@@ -75,13 +79,11 @@ test("a point's drag moves its Keyframe, a double click makes it a Corner and ba
   await page.mouse.dblclick(next.x, next.y);
   await page.waitForTimeout(150);
   expect((await keys(page))[1].corner).toBe(true);
-  // The playhead on that Keyframe puts the gizmo's center over the point, which takes the press (and the hover): move
-  // the playhead off it along the line, then the point says what its double click does now.
+  // The playhead on that Keyframe puts the gizmo's center over the point, which takes the press: move the playhead off
+  // it along the line first.
   const away = await at(page, 32);
   await page.mouse.click(away.x, away.y);
-  await page.mouse.move(next.x + 1, next.y);
-  await page.waitForTimeout(100);
-  expect(await page.locator(".pano-studio-notice").textContent()).toContain("Double-click for Auto");
+  await page.waitForTimeout(150);
   await page.mouse.dblclick(next.x, next.y);
   await page.waitForTimeout(150);
   expect((await keys(page))[1].corner).toBeUndefined();
@@ -90,11 +92,11 @@ test("a point's drag moves its Keyframe, a double click makes it a Corner and ba
 
 test("the line takes the playhead to the frame there; a handle drag makes the point Bezier", async ({ page }) => {
   const problems = await load(page);
-  await selectCamera(page);
+  const stage = await selectCamera(page);
   const middle = await at(page, 30);
   await page.mouse.move(middle.x, middle.y);
   await page.waitForTimeout(100);
-  expect(await page.locator(".pano-studio-notice").textContent()).toContain("Click to go to this frame");
+  expect(await topLine(page)).toBe(stage.quiet);
   await page.mouse.down();
   await page.mouse.up();
   await page.waitForTimeout(150);
@@ -103,23 +105,12 @@ test("the line takes the playhead to the frame there; a handle drag makes the po
   const point = await at(page, 20);
   await page.mouse.click(point.x, point.y);
   await page.waitForTimeout(150);
-  const handle = await page.evaluate(() => {
-    const keysNow = window.__studio.keys();
-    const a = keysNow[1].value;
-    const b = keysNow[2].value;
-    // The automatic out handle points along the bisector, about a third of the way to the next Keyframe.
-    return window.__studio.at([a[0] + (b[0] - a[0]) * 0.3, a[1], a[2] + (b[2] - a[2]) * 0.3]);
-  });
-  // Find the handle's tip near there: the cursor turns to grab over it.
-  let tip = null;
-  for (let dx = -14; dx <= 14 && !tip; dx += 2) {
-    for (let dy = -14; dy <= 14 && !tip; dy += 2) {
-      await page.mouse.move(handle.x + dx, handle.y + dy);
-      const text = await page.locator(".pano-studio-notice").textContent();
-      if (text.includes("Drag to bend")) tip = { x: handle.x + dx, y: handle.y + dy };
-    }
-  }
+  // The tip of the middle Keyframe's automatic out handle, where the stage draws it.
+  const tip = await page.evaluate(() => window.__studio.handleTip(1, "out"));
   expect(tip).not.toBeNull();
+  await page.mouse.move(tip.x, tip.y);
+  await page.waitForTimeout(100);
+  expect(await topLine(page)).toBe(stage.quiet);
   await page.mouse.down();
   await page.mouse.move(tip.x, tip.y - 30, { steps: 6 });
   await page.mouse.up();
