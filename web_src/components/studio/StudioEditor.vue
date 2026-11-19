@@ -43,9 +43,9 @@ import StudioViewButtons from "./StudioViewButtons.vue";
 // The editor's state lives in studio/editor.js: `view` is its view model (the working state, the selection, the
 // playhead, playback, Undo), `ui` what the stage reports (stage.js stageUi(), with `background` and `empty`), and
 // `controller` what this shell calls: onStage({ canvas, root }) makes the stage once the elements are in the page and
-// returns its controls; onTimeline({ handleDelete, copyKeys, pasteKeys, settleSimplify }) hands over the Timeline's
-// Delete, its Keyframes' copy and paste, and the keeping of Simplify's result before Undo and Redo; the inspector's and
-// the Timeline's events go to its handlers.
+// returns its controls; onTimeline({ handleDelete, copyKeys, pasteKeys, settleSimplify, selectAllKeys }) hands over the
+// Timeline's Delete, its Keyframes' copy and paste, the keeping of Simplify's result before Undo and Redo, and Ctrl + A
+// (which selects only after a press on the Timeline); the inspector's and the Timeline's events go to its handlers.
 const props = defineProps({
   nodeTitle: { type: String, default: "" },
   ui: { type: Object, required: true },
@@ -70,6 +70,13 @@ const selected = computed(() => {
   return props.view.paint && !selection.ids.length ? { ...selection, paint: true } : selection;
 });
 
+// Whether the last press in the editor was on the Timeline: Ctrl + A selects its Keyframes only then (docs/timeline-ui.md
+// "全選択"); the stage's Ctrl + A is kept for selecting objects.
+let timelinePressed = false;
+function onAnyPress(event) {
+  timelinePressed = !!event.target?.closest?.('[data-region="timeline"]');
+}
+
 onMounted(() => {
   stopInputMode = trackInputMode(root.value);
   stage = props.controller.onStage({ canvas: canvas.value, overlay: overlay.value, root: root.value }) ?? null;
@@ -78,6 +85,7 @@ onMounted(() => {
     copyKeys: () => timeline.value?.copyKeys() ?? null,
     pasteKeys: (clipboard) => timeline.value?.pasteKeys(clipboard) ?? false,
     settleSimplify: () => timeline.value?.settleSimplify(),
+    selectAllKeys: () => (timelinePressed ? timeline.value?.selectAllKeys() ?? false : false),
   });
   // The editor takes the focus from the graph behind it, so the stage has the keys at once (pano_key_focus.js).
   root.value?.focus({ preventScroll: true });
@@ -316,6 +324,7 @@ function setCollapsed(value) {
       class="pano-studio pano-studio-editor"
       :class="{ 'is-knob-drag': !!ui.knobDrag }"
       role="dialog"
+      @pointerdown.capture="onAnyPress"
       tabindex="-1"
       aria-modal="true"
       :aria-label="nodeTitle"

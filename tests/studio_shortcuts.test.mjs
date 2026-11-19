@@ -91,6 +91,9 @@ test("the list shows each key as the table has it, Ctrl as ⌘ on macOS, and wha
   assert.deepEqual(rowOf(full, "Step back / close").keys, [["Esc"]]);
   assert.deepEqual(rowOf(full, "Copy / Cut / Paste").keys, [["Ctrl", "C"], ["Ctrl", "X"], ["Ctrl", "V"]]);
   assert.deepEqual(rowOf(mac, "Copy / Cut / Paste").keys, [["⌘", "C"], ["⌘", "X"], ["⌘", "V"]]);
+  assert.deepEqual(rowOf(full, "Select all").keys, [["Ctrl", "A"]]);
+  assert.deepEqual(rowOf(mac, "Select all").keys, [["⌘", "A"]]);
+  assert.ok(groupOf(full, "timeline").rows.includes(rowOf(full, "Select all")));
   // The same Shift + drag means different things on different things: each row says on what.
   assert.deepEqual([`Rotate in ${ROTATE_SNAP_DEG}° steps`, `Fine steps (×${FINE_FACTOR})`, "Add to selection"].map((label) => [rowOf(full, label).keys, rowOf(full, label).gesture]), [
     [[["Shift"]], "drag a ring"],
@@ -176,6 +179,15 @@ test("editorKeyAction: one action per key event, as the handlers had them", () =
   assert.equal(editorKeyAction(key({ key: "v", code: "KeyV", ctrlKey: true, shiftKey: true })), null);
   assert.equal(editorKeyAction(key({ key: "v", code: "KeyV", ctrlKey: true, altKey: true })), null);
   assert.equal(editorKeyAction(key({ key: "v", code: "KeyV" })), null);
+  // Select all (docs/timeline-ui.md "全選択"): Ctrl / Cmd + A, by the letter or its place; not with Shift or Alt, and A
+  // alone stays the stage's movement key.
+  assert.equal(editorKeyAction(key({ key: "a", code: "KeyA", ctrlKey: true })), "select-all-keys");
+  assert.equal(editorKeyAction(key({ key: "A", code: "KeyA", metaKey: true })), "select-all-keys");
+  assert.equal(editorKeyAction(key({ key: "ф", code: "KeyA", ctrlKey: true })), "select-all-keys");
+  assert.equal(editorKeyAction(key({ key: "a", code: "KeyQ", ctrlKey: true })), "select-all-keys", "an AZERTY A");
+  assert.equal(editorKeyAction(key({ key: "a", code: "KeyA", ctrlKey: true, shiftKey: true })), null);
+  assert.equal(editorKeyAction(key({ key: "a", code: "KeyA", ctrlKey: true, altKey: true })), null);
+  assert.equal(editorKeyAction(key({ key: "a", code: "KeyA" })), null);
 });
 
 
@@ -183,7 +195,7 @@ test("the Preview window's list (context preview) has no selection or editing ro
   const preview = shortcutList({ context: "preview", playable: true, mac: false });
   assert.equal(preview.name, null);
   assert.equal(preview.columns, 2);
-  for (const label of ["Select", "Add to selection", "Move / Rotate / Scale", `Rotate in ${ROTATE_SNAP_DEG}° steps`, "Delete",
+  for (const label of ["Select", "Select all", "Add to selection", "Move / Rotate / Scale", `Rotate in ${ROTATE_SNAP_DEG}° steps`, "Delete",
     "Copy / Cut / Paste", "Undo", "Redo", `Fine steps (×${FINE_FACTOR})`, `Roll in ${ROTATE_SNAP_DEG}° steps`, "Go to that Keyframe"]) {
     assert.ok(!labelsOf(preview).includes(label), `${label} is not in the Preview's list`);
   }

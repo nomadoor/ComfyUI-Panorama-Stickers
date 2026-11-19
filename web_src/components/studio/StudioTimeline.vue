@@ -699,7 +699,20 @@ function pasteCopiedKeys(clipboard) {
   return !!result;
 }
 
-defineExpose({ handleDelete, copyKeys: copySelectedKeys, pasteKeys: pasteCopiedKeys, settleSimplify });
+// Ctrl + A (docs/timeline-ui.md "全選択"): every Keyframe the Timeline shows, as a box around the whole Timeline would
+// take (closed rows' pins, open rows' Lane Keyframes; none past the output's end). Nothing while the Timeline is folded
+// (none shows) or a drag is under way (it keeps its own selection). Simplify's adjustment is kept first, as for any
+// other key. The playhead stays.
+function selectAllKeys() {
+  if (props.collapsed || drag) return false;
+  settleSimplify();
+  const lines = model.value.lines;
+  const all = lines.length ? keysInRange(lines, 0, lines.length - 1, 0, span.value - 1) : [];
+  emit("select", selectKeys(props.selection, all, { additive: false }));
+  return true;
+}
+
+defineExpose({ handleDelete, copyKeys: copySelectedKeys, pasteKeys: pasteCopiedKeys, settleSimplify, selectAllKeys });
 </script>
 
 <template>

@@ -1156,7 +1156,7 @@ Camera タブでは同じ席で無効にする（tooltip は「Not available in 
   同じことをする別の組み合わせは `/` で並べる（どの組み合わせにも同じ修飾キーが付くときは、修飾キーを一度だけ書く：Ctrl + C / X / V）。
   Ctrl の札は macOS では `⌘` と書く。
 - 割り当ての持ち主は括弧の中の文書と code で、一覧はそれを表示するだけである。エディタのキー（Undo・Redo・Delete・Space・1/2/3・
-  Keyframe のコピー・切り取り・貼り付け・「?」・Escape）は一つの表（`web_src/studio/shortcuts.js` `EDITOR_KEYS`）に置き、キーを受ける code（`editor.js`、Escape は
+  Keyframe の全選択・コピー・切り取り・貼り付け・「?」・Escape）は一つの表（`web_src/studio/shortcuts.js` `EDITOR_KEYS`）に置き、キーを受ける code（`editor.js`、Escape は
   `stage.js`）と一覧の両方がそれを読む。移動のキーは `pano_view_keys.js` の表、マウスのボタンは `view_input.js` `navigationAction`
   から一覧を作る。ポインタと修飾キーの組み合わせ（ダブルクリック、Shift の刻み、Shift＋クリック）と軌道の線の操作は一覧の行で持ち、
   数（`ROTATE_SNAP_DEG`、`FINE_FACTOR`）は持ち主の定数を読む。
@@ -1166,7 +1166,7 @@ Camera タブでは同じ席で無効にする（tooltip は「Not available in 
 | View（`docs/space-and-view.md` の「マウスとキー」） | 表の行。Drag：Look around ／ Alt で Orbit。Right-drag：Pan ／ Alt で Move forward / back。Wheel：Move toward the pointer ／ Alt で Zoom (FOV)（3D タブ・Preview のウィンドウではいつも出す。Camera タブの Frame モードでは、読み取り専用でなく Camera をロックしていないときだけ、名前を Change Camera FOV にして出し、そうでないときは「—」。Ctrl＋ホイールは出さない）。Double-click：Look at that point ／ Alt の欄も Look at that point（Alt を押していても同じ。`docs/space-and-view.md` の「マウスとキー」）（そこを `T` にして向く。Camera タブの Frame モードでは Camera が向く。`docs/space-and-view.md` の「マウスとキー」）。表の下の添える一行、移動のキーの絵（W / S・A / D・Q / E と Shift）。Camera タブの Frame モードでは群の名前の横に「These move the Camera.」を添える。Camera タブの Panorama モードでは表もキーの絵も出さず、「Nothing moves the view in Panorama mode.」の一行だけを出す |
 | Objects（この文書の「下の中央のバー」、`docs/space-and-view.md`） | Select：Click it（Panorama モードでは出さない）。Move / Rotate / Scale：1 / 2 / 3（3D タブで、読み取り専用でないとき）。Rotate in 15° steps：Shift + drag a ring（ギズモの Rotate と Sky の画像とペイントのまとまりの回転のハンドル。同じ条件。数は `ROTATE_SNAP_DEG`）。Delete：Delete / Backspace（Keyframe を選んでいればそれ、そうでなければ物。読み取り専用でないとき）。Camera タブでは群の下に「Move, Rotate and Scale are in the 3D tab.」を添える |
 | Path line（この文書の「軌道の線」） | 3D タブだけ。Go to that Keyframe：Click a point。Corner ⇄ Auto：Double-click a point。Bend：Drag a handle。Go to that frame：Click the line（Corner ⇄ Auto と Bend は読み取り専用でないとき）。Camera タブでは行を出さず、「The path line is drawn in the 3D tab.」の一行だけを出す |
-| Timeline（`docs/timeline-ui.md`） | Play / pause：Space。Add to selection：Shift + click / drag（Keyframe）。Copy / Cut / Paste：Ctrl + C / X / V（Keyframe）（読み取り専用でないとき。`docs/timeline-ui.md` の「Keyframe のコピーと貼り付け」） |
+| Timeline（`docs/timeline-ui.md`） | Play / pause：Space。Select all：Ctrl + A（Keyframe。タイムラインを最後に押したとき。`docs/timeline-ui.md` の「全選択」）。Add to selection：Shift + click / drag（Keyframe）。Copy / Cut / Paste：Ctrl + C / X / V（Keyframe）（読み取り専用でないとき。`docs/timeline-ui.md` の「Keyframe のコピーと貼り付け」） |
 | Editing | Undo：Ctrl + Z。Redo：Shift + Ctrl + Z（どちらも読み取り専用でないとき）。Fine steps (×0.1)：Shift + drag a value（欄と FOV・Lens の辺の目盛り。読み取り専用でないとき）。Roll in 15° steps：Shift + drag the Roll ruler（Camera タブで、読み取り専用でないとき）。Step back / close：Esc（下の「閉じ方」） |
 
 - Preview のウィンドウ（下の「Preview のウィンドウ」）の一覧も同じ表から作る（`shortcutList` の `context: "preview"`）。物を選ぶ・
