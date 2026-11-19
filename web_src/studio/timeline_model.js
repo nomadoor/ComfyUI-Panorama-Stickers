@@ -210,7 +210,8 @@ export function timecode(frame, fps) {
 }
 
 // The empty space at both ends of a track, CSS px (docs/timeline-ui.md "タイムラインの長さ", docs/design.md "タイムラインの
-// トラックの端の余白"): wide enough that a drag can start on nothing outside the end Keyframes' hit (18px wide).
+// トラックの端の余白"): wide enough that a drag can start on nothing outside the end Keyframes' hit (its width is in
+// docs/design.md "タイムラインの Keyframe のポチの当たり").
 export const TRACK_PAD = 24;
 
 // The x of a Timeline frame on a track `width` wide with `pad` on both ends: frame 0 at the left pad, the last frame
