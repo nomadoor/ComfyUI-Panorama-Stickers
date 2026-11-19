@@ -139,14 +139,16 @@ test("dragging the gizmo's X ball moves the World image along X only, as one Und
   const at = await places(page);
   await click(page, at.board);
   const before = (await stateOf(page)).stickers[1].position.value;
-  // The pointer stays on the board's middle, the gizmo's center dot: the other handles dim (docs/studio-ui.md "ギズモ").
+  // Off the gizmo, the overlay draws the X ball in coral (the gizmo is the overlay's, not three.js's). The overlay is
+  // drawn in the next frame, so it is read until the hover's drawing shows.
   const ballAt = { x: at.xBall.x - at.stage.x, y: at.xBall.y - at.stage.y };
-  const dimmed = await page.evaluate(({ x, y }) => window.__studio.overlayAt(x, y), ballAt);
-  // Off the gizmo, the overlay draws the X ball in coral (the gizmo is the overlay's, not three.js's).
+  const ballNow = () => page.evaluate(({ x, y }) => window.__studio.overlayAt(x, y), ballAt);
   await page.mouse.move(at.empty.x, at.empty.y);
-  const ball = await page.evaluate(({ x, y }) => window.__studio.overlayAt(x, y), ballAt);
-  expect(dimmed[3]).toBeLessThan(ball[3] * 0.7);
-  expect(ball[3]).toBeGreaterThan(200);
+  await expect.poll(async () => (await ballNow())[3]).toBeGreaterThan(200);
+  const ball = await ballNow();
+  // On the gizmo's center dot (the board's middle), the other handles dim (docs/studio-ui.md "ギズモ").
+  await page.mouse.move(at.board.x, at.board.y);
+  await expect.poll(async () => (await ballNow())[3]).toBeLessThan(ball[3] * 0.7);
   expect(Math.abs(ball[0] - 0xf3)).toBeLessThan(24);
   expect(Math.abs(ball[1] - 0x71)).toBeLessThan(24);
   // Pulled right and down: it goes along X only.

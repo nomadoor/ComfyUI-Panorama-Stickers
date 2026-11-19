@@ -569,6 +569,13 @@ export function createStageObjects({
     return shown ? gizmoHandles(shown, camera(), width, height) : null;
   }
 
+  // The hovered gizmo handle while the shown gizmo `shownHandles` still has it under the point where it was found, else
+  // null: a mode switch or the object moving under a resting pointer leaves none. The overlay draws this one, and a
+  // hover compares against it.
+  function hoveredHandle(shownHandles) {
+    return gizmoAxis && gizmoPoint && gizmoHit(shownHandles, gizmoPoint) === gizmoAxis ? gizmoAxis : null;
+  }
+
   // What the pointer at `point` is over: { cursor (null over nothing touchable), changed (the drawing changed) }.
   function hover(point, { altHeld = false } = {}) {
     let cursor = null;
@@ -601,7 +608,7 @@ export function createStageObjects({
       if (cursor === null && skyObjectUnder(point)) cursor = BODY_CURSOR;
     }
     const samePart = (a, b) => (a?.kind ?? null) === (b?.kind ?? null) && a?.index === b?.index && a?.side === b?.side && a?.frame === b?.frame;
-    const changed = over !== hovered || axis !== gizmoAxis || !samePart(part, pathHovered);
+    const changed = over !== hovered || axis !== hoveredHandle(handles()) || !samePart(part, pathHovered);
     hovered = over;
     gizmoAxis = axis;
     gizmoPoint = axis !== null ? { ...point } : null;
@@ -770,10 +777,8 @@ export function createStageObjects({
     const shownGizmo = gizmo();
     const shownHandles = handles(shownGizmo);
     const { width, height } = size();
-    // The handle dragged, else the one under the pointer (none while Alt is held). The hovered one counts only while
-    // the shown gizmo still has it there: a mode switch or the object moving under a resting pointer leaves none.
-    const hoveredAxis = gizmoAxis && gizmoPoint && gizmoHit(shownHandles, gizmoPoint) === gizmoAxis ? gizmoAxis : null;
-    const active = draggedAxis ?? (altHeld ? null : hoveredAxis);
+    // The handle dragged, else the one under the pointer (none while Alt is held; hoveredHandle).
+    const active = draggedAxis ?? (altHeld ? null : hoveredHandle(shownHandles));
     // Its axis guide lines: those of the drag while one lasts (through where it was grabbed), else the hovered handle's.
     const shownGuides = draggedAxis ? dragGuides : gizmoGuides(shownGizmo, shownHandles, active);
     const guideLines = shownHandles ? shownGuides.flatMap((guide) => screenLines(camera(), gizmoGuideSegment(guide, camera()), width, height)

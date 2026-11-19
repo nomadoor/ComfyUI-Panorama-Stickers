@@ -227,6 +227,24 @@ test("a handle of another mode left under a resting pointer is not lit: after a 
   assert.equal(objects.overlay().gizmo.active, null, "Scale's center dot is only a shape");
 });
 
+test("after the object moves away under a resting pointer, hovering its moved handle reports a change (so the stage draws it lit)", () => {
+  const { session, objects } = setup();
+  session.selectObject("board");
+  const ball = ballOf(objects, "x");
+  assert.equal(objects.hover(ball).changed, true);
+  assert.equal(objects.hover(ball).changed, false, "still on the same handle: no change");
+  session.gesture((draft) => {
+    draft.stickers[1].position.value = [3, 0.6, -5];
+    return true;
+  });
+  session.commitGesture();
+  assert.equal(objects.overlay().gizmo.active, null, "the ball left the resting pointer");
+  const moved = ballOf(objects, "x");
+  assert.ok(Math.hypot(moved.x - ball.x, moved.y - ball.y) > 20);
+  assert.equal(objects.hover(moved).changed, true, "the X ball under the pointer again is a change");
+  assert.equal(objects.overlay().gizmo.active, "x");
+});
+
 test("a gizmo drag given up puts the object back", () => {
   const { session, objects } = setup();
   session.selectObject("board");
