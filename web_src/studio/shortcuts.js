@@ -16,18 +16,18 @@ export function isMacPlatform() {
 const ctrlOrMeta = (event) => !!(event.ctrlKey || event.metaKey);
 const keyOf = (event) => String(event.key || "");
 
-// The letter of Ctrl / Cmd + C, X or V: the key's letter, or its place on the keyboard for a layout whose letters are
-// not Latin; else null.
-const CLIPBOARD_CODES = Object.freeze({ KeyC: "c", KeyX: "x", KeyV: "v" });
-function clipboardLetter(event) {
+// The letter of Ctrl / Cmd + C, X or V: the key's letter, or its place on the keyboard for a layout whose letters
+// are not Latin; else null.
+const LETTER_CODES = Object.freeze({ KeyC: "c", KeyX: "x", KeyV: "v" });
+function modLetter(event) {
   const key = keyOf(event).toLowerCase();
-  if (key === "c" || key === "x" || key === "v") return key;
-  return /^[a-z]$/.test(key) ? null : CLIPBOARD_CODES[event.code] ?? null;
+  if (Object.values(LETTER_CODES).includes(key)) return key;
+  return /^[a-z]$/.test(key) ? null : LETTER_CODES[event.code] ?? null;
 }
-const clipboardKey = (action, letter) => Object.freeze({
+const modLetterKey = (action, letter) => Object.freeze({
   action,
   keys: [["Mod", letter.toUpperCase()]],
-  match: (event) => ctrlOrMeta(event) && !event.altKey && !event.shiftKey && clipboardLetter(event) === letter,
+  match: (event) => ctrlOrMeta(event) && !event.altKey && !event.shiftKey && modLetter(event) === letter,
 });
 
 // { action, keys, match(event) }. keys: the key combinations that do it, each a list of key caps as the list shows
@@ -61,9 +61,9 @@ export const EDITOR_KEYS = Object.freeze([
     match: (event) => !ctrlOrMeta(event) && !event.altKey && event.key === entry.key,
   })),
   // The Keyframes' copy, cut and paste at the playhead (docs/timeline-ui.md "Keyframe のコピーと貼り付け").
-  clipboardKey("copy-keys", "c"),
-  clipboardKey("cut-keys", "x"),
-  clipboardKey("paste-keys", "v"),
+  modLetterKey("copy-keys", "c"),
+  modLetterKey("cut-keys", "x"),
+  modLetterKey("paste-keys", "v"),
   // "?" opens and closes the list (Shift types it on most layouts, so Shift is allowed).
   Object.freeze({
     action: "shortcuts",
