@@ -345,10 +345,10 @@ test("the list of shortcuts opens and closes with ?, Escape closes it before the
   await expect(help).toHaveAttribute("aria-expanded", "false");
   await expect(help).not.toHaveAttribute("aria-disabled", "true");
 
-  // The button opens it: the four groups, in order; the button is lit and expanded; the list has the focus.
+  // The button opens it: the five groups, in order; the button is lit and expanded; the list has the focus.
   await help.click();
   await expect(list).toBeVisible();
-  await expect(list.locator(".pano-studio-shortcuts-title")).toHaveText(["View", "Objects", "Timeline", "Editor"]);
+  await expect(list.locator(".pano-studio-shortcuts-title")).toHaveText(["View", "Objects", "Path line", "Timeline", "Editing"]);
   await expect(help).toHaveAttribute("aria-expanded", "true");
   await expect(help).toHaveClass(/is-lit/);
   await expect(list).toBeFocused();
@@ -387,6 +387,52 @@ test("the list of shortcuts opens and closes with ?, Escape closes it before the
   await page.mouse.click(box.x + box.width / 2, box.y + box.height - 12);
   await expect(list).toHaveCount(0);
   await expect(page.locator(".pano-studio-editor")).toHaveCount(1);
+  expect(problems).toEqual([]);
+});
+
+// docs/studio-ui.md "ショートカットの一覧", docs/design.md "ショートカットの一覧": one opaque sheet over the stage, clear of
+// the floating parts around it, never scrolled; on a stage too small for it the whole sheet is shrunk by one ratio.
+test("the list of shortcuts covers the stage between the floating parts without scrolling, shrunk only on a small stage", async ({ page }, testInfo) => {
+  const problems = await open(page, testInfo);
+  const list = page.locator("[data-shortcuts]");
+  const sheet = list.locator(".pano-studio-shortcuts-sheet");
+  const overlap = (a, b) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await page.locator('[data-action="shortcuts"]').click();
+  await expect(list).toBeVisible();
+  const box = await list.boundingBox();
+  for (const part of [".pano-studio-at-tabs", ".pano-studio-at-rail", ".pano-studio-at-nav", ".pano-studio-at-bar", ".pano-studio-at-buttons"]) {
+    const other = await page.locator(part).first().boundingBox();
+    if (other) expect(overlap(box, other), part).toBe(false);
+  }
+  expect(await list.evaluate((element) => getComputedStyle(element).backgroundColor)).toMatch(/^rgb\(/);
+  expect(await list.evaluate((element) => element.scrollHeight <= element.clientHeight && getComputedStyle(element).overflowY !== "auto")).toBe(true);
+  await expect(sheet).not.toHaveAttribute("data-scale");
+  // The veil darkens the stage's picture only: it takes no press, and the floating parts stay above it.
+  const scrim = page.locator("[data-shortcuts-scrim]");
+  await expect(scrim).toHaveCount(1);
+  expect(await scrim.evaluate((element) => getComputedStyle(element).pointerEvents)).toBe("none");
+  expect(await scrim.evaluate((element) => {
+    const after = (selector) => !!(element.compareDocumentPosition(document.querySelector(selector)) & Node.DOCUMENT_POSITION_FOLLOWING);
+    return [".pano-studio-at-tabs", ".pano-studio-at-rail", ".pano-studio-at-notice", ".pano-studio-at-output", ".pano-studio-at-nav", ".pano-studio-at-bar", ".pano-studio-at-buttons", "[data-shortcuts]"].every(after)
+      && !!(element.compareDocumentPosition(document.querySelector("[data-stage-canvas]")) & Node.DOCUMENT_POSITION_PRECEDING);
+  })).toBe(true);
+  const inner = await sheet.boundingBox();
+  expect(inner.y + inner.height).toBeLessThanOrEqual(box.y + box.height + 0.5);
+  // Full HD under the browser's own bars: still as designed.
+  await page.setViewportSize({ width: 1920, height: 960 });
+  await page.waitForTimeout(100);
+  await expect(sheet).not.toHaveAttribute("data-scale");
+  // A small window: the sheet shrinks to fit inside the list, nothing cut off.
+  await page.setViewportSize({ width: 1100, height: 640 });
+  await expect(sheet).toHaveAttribute("data-scale", /^0\./);
+  const small = await list.boundingBox();
+  const shrunk = await sheet.boundingBox();
+  expect(shrunk.x + shrunk.width).toBeLessThanOrEqual(small.x + small.width + 0.5);
+  expect(shrunk.y + shrunk.height).toBeLessThanOrEqual(small.y + small.height + 0.5);
+  await page.locator('[data-action="shortcuts"]').click();
+  await expect(list).toHaveCount(0);
+  await expect(scrim).toHaveCount(0);
   expect(problems).toEqual([]);
 });
 

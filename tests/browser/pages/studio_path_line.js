@@ -5,6 +5,7 @@ import { editorSession } from "/web_src/pano_node_bridge.js";
 import { evaluateLane } from "/web_src/pano_scene_eval.js";
 import { projectPoint } from "/web_src/pano_space.js";
 import { openStudioEditor } from "/web_src/studio/editor.js";
+import { pathHandles, pathOf } from "/web_src/studio/path_line.js";
 import { rememberView } from "/web_src/studio/view_camera.js";
 
 // ?dense=1: a Keyframe every 2 frames along a curve, as a video estimate writes them (for Simplify). ?loop=1: the Camera
@@ -71,6 +72,12 @@ try {
   };
   // Where the Camera is at a Timeline frame, on the page.
   studio.pathAt = (frame) => studio.at(evaluateLane(editor.session.state.camera, "position", frame, STATE.camera.loop ? STATE.timeline.length : null));
+  // Where the tip of a side's handle of the Camera's Keyframe `index` is on the page (path_line.js pathHandles), or null.
+  studio.handleTip = (index, side) => {
+    const camera = editor.session.state.camera;
+    const tip = pathHandles(pathOf(camera, camera.loop ? STATE.timeline.length : null), index).find((item) => item.side === side)?.tip;
+    return tip ? studio.at(tip) : null;
+  };
   studio.topLine = () => document.querySelector("[data-part='top-line'], .pano-studio-notice")?.textContent?.trim() ?? "";
   // The overlay pixels near the path line's yellow, in page CSS px.
   studio.yellowCount = () => {

@@ -9,7 +9,7 @@ import { buildCameraCard } from "../../studio/inspector_model.js";
 import { TIMELINE_BAR_HEIGHT, barPosition, loadTimelineHeight, saveTimelineHeight, timelineHeight } from "../../studio/layout.js";
 import { topLine } from "../../studio/notice_line.js";
 import { selectionBar } from "../../studio/selection_bar.js";
-import { isMacPlatform, shortcutGroups } from "../../studio/shortcuts.js";
+import { isMacPlatform, shortcutList } from "../../studio/shortcuts.js";
 import { trackInputMode } from "../../studio/input_modality.js";
 import { watchDragCancel } from "../../studio/ui_drag.js";
 import { inspectorSelection } from "../../studio/session.js";
@@ -150,7 +150,7 @@ const fovOffTip = computed(() => (panorama.value ? PANORAMA_MODE_TIP : CAMERA_FO
 // --- The list of shortcuts (docs/studio-ui.md "ショートカットの一覧"): what works on the screen now.
 const nav = ref(null);
 const isMac = isMacPlatform();
-const shortcuts = computed(() => shortcutGroups({ tab: props.view.tab, panorama: panorama.value, readOnly: props.view.readOnly, locked: camera.value.locked === true, mac: isMac }));
+const shortcuts = computed(() => shortcutList({ tab: props.view.tab, panorama: panorama.value, readOnly: props.view.readOnly, locked: camera.value.locked === true, mac: isMac }));
 const helpButton = () => nav.value?.helpButton() ?? null;
 const erpCanvas = ref(null);
 watch(erpCanvas, (element) => props.controller.erpCanvas?.(element ?? null));
@@ -420,6 +420,8 @@ function setCollapsed(value) {
             </template>
           </StudioCameraFrame>
 
+          <!-- Over the stage's picture while the shortcuts are open; the floating parts stay bright above it. -->
+          <div v-if="view.shortcuts" class="pano-studio-shortcuts-scrim" aria-hidden="true" data-shortcuts-scrim />
           <StudioTabs class="pano-studio-at-tabs" :value="view.tab" @select="(tab) => controller.setTab(tab)" />
           <StudioToolRail
             class="pano-studio-at-rail"
@@ -469,7 +471,7 @@ function setCollapsed(value) {
             />
           </div>
           <div v-if="view.shortcuts" class="pano-studio-at-shortcuts">
-            <StudioShortcuts :groups="shortcuts" :toggle="helpButton" @close="controller.shortcuts(false)" />
+            <StudioShortcuts :list="shortcuts" :toggle="helpButton" @close="controller.shortcuts(false)" />
           </div>
           <div ref="barRegion" class="pano-studio-at-bar" :class="{ 'is-compact': barPlace.compact, 'is-scrolled': barPlace.maxWidth !== null }" :style="barStyle" data-region="bar">
             <StudioPaintBar v-if="paintModel" :model="paintModel" @edit="(event) => controller.paint(event)" />

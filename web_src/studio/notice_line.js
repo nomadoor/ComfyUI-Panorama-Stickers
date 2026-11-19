@@ -85,8 +85,8 @@ export function topLine(ui) {
   if (ui.background === "failed") return { kind: "warning", text: LINE_TEXT.backgroundFailed };
   if (ui.addWarning) return { kind: "warning", text: String(ui.addWarning) };
   if (ui.upstreamPending) return { kind: "info", text: LINE_TEXT.upstreamPending };
-  // The path line's hints while the pointer is over it (docs/studio-ui.md "軌道の線"): after every notice, before the
-  // empty screen's guide.
+  // The hint over an edge handle of a returned shot while the pointer is on it (docs/studio-ui.md "一行の知らせの種類"):
+  // after every notice, before the empty screen's guide.
   if (ui.pathHint) return { kind: "info", text: String(ui.pathHint) };
   if (ui.empty) return { kind: "info", text: LINE_TEXT.empty };
   return { kind: "info", text: "" };

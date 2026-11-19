@@ -44,7 +44,7 @@ export function stageUi() {
     // Set orbit center waits for a click on the stage (docs/space-and-view.md "Set orbit center"): the button shows it,
     // the top line says what to do, the stage's cursor is a crosshair.
     pickingCenter: false,
-    // The path line's hint for the top line while the pointer is over it (stage_objects.js), or null.
+    // The hint for the top line while the pointer is over an edge handle of a returned shot (stage_objects.js), or null.
     pathHint: null,
     // Look at's Pick waits for a click on the stage (docs/studio-ui.md "Look at"): Pick shows it, the top line says what
     // to do, the cursor is a crosshair.

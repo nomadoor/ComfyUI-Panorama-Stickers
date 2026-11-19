@@ -11,7 +11,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { ICON } from "../../icons.js";
 import { createBackdropClose } from "../../studio/backdrop.js";
 import { trackInputMode } from "../../studio/input_modality.js";
-import { isMacPlatform, shortcutGroups } from "../../studio/shortcuts.js";
+import { isMacPlatform, shortcutList } from "../../studio/shortcuts.js";
 import { topLine } from "../../studio/notice_line.js";
 import StudioFloatGroup from "./StudioFloatGroup.vue";
 import StudioIconButton from "./StudioIconButton.vue";
@@ -56,7 +56,7 @@ function onBackdropUp(event) {
   if (backdrop.up(event)) props.controller.close();
 }
 const isMac = isMacPlatform();
-const shortcuts = computed(() => shortcutGroups({ context: "preview", playable: props.playback.video, mac: isMac }));
+const shortcuts = computed(() => shortcutList({ context: "preview", playable: props.playback.video, mac: isMac }));
 const helpButton = () => nav.value?.helpButton() ?? null;
 // The window has no top line but the Sky-only wheel notice and Set orbit center's waiting one, in the editor's order
 // (docs/studio-ui.md "Preview のウィンドウ").
@@ -85,6 +85,8 @@ const timeText = computed(() => `${clock(props.playback.frame / props.playback.f
       <div class="pano-studio-stage" data-region="stage">
         <canvas ref="canvas" class="pano-studio-stage-canvas" data-stage-canvas :style="{ cursor: ui.cursor || null }" />
         <canvas ref="overlay" class="pano-studio-stage-overlay" data-stage-overlay aria-hidden="true" />
+        <!-- Over the stage's picture while the shortcuts are open; the floating parts stay bright above it. -->
+        <div v-if="help" class="pano-studio-shortcuts-scrim" aria-hidden="true" data-shortcuts-scrim />
         <div v-if="waitLine.text" class="pano-studio-at-notice">
           <StudioNotice :text="waitLine.text" :kind="waitLine.kind" />
         </div>
@@ -106,8 +108,8 @@ const timeText = computed(() => `${clock(props.playback.frame / props.playback.f
             @help="help = !help"
           />
         </div>
-        <div v-if="help" class="pano-studio-at-shortcuts">
-          <StudioShortcuts :groups="shortcuts" :toggle="helpButton" @close="help = false" />
+        <div v-if="help" class="pano-studio-at-shortcuts is-preview">
+          <StudioShortcuts :list="shortcuts" :toggle="helpButton" @close="help = false" />
         </div>
         <StudioViewButtons
           class="pano-studio-at-buttons"
