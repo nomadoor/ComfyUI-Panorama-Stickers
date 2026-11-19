@@ -239,6 +239,36 @@ test("in a scrolled body the box stops at the ruler's bottom and leaves the rows
   expect((await scene(page, "selection")).keys).toEqual([]);
 });
 
+// docs/timeline-ui.md "タイムラインの長さ" and "Keyframe の選び方": the empty margin at the track's ends lets a box start left
+// of frame 0, and the box stops sideways at the track column's edges (the row heads' right edge, the column's end).
+test("a box can start in the margin left of frame 0, and stops at the track column's sides", async ({ page }) => {
+  await open(page);
+  const y = await trackY(page, "camera");
+  const ruler = await dark(page).locator('[data-tl="ruler"]').evaluate((el) => { const r = el.getBoundingClientRect(); return { left: r.left, right: r.right }; });
+  const sides = () => dark(page).locator(".pano-studio-tl-marquee").evaluate((el) => { const r = el.getBoundingClientRect(); return { left: r.left, right: r.right }; });
+  // From the margin left of frame 0 (outside its Keyframe's 18px hit) to frame 4: the Camera's key at 0.
+  await page.mouse.move((await frameX(page, 0)) - 15, y - 4);
+  await page.mouse.down();
+  await page.mouse.move(await frameX(page, 4), y + 4, { steps: 5 });
+  await page.mouse.up();
+  expect((await scene(page, "selection")).keys).toEqual([{ row: "camera", lane: null, frame: 0 }]);
+  await page.mouse.click(await frameX(page, 90), y);
+  // From frame 4 left past the row heads: the box stops at the track column's left edge.
+  const head = await dark(page).locator('[data-head="camera"]').boundingBox();
+  await page.mouse.move(await frameX(page, 4), y - 4);
+  await page.mouse.down();
+  await page.mouse.move(head.x + 20, y + 4, { steps: 6 });
+  expect(Math.abs((await sides()).left - ruler.left)).toBeLessThan(0.5);
+  await page.mouse.up();
+  expect((await scene(page, "selection")).keys).toEqual([{ row: "camera", lane: null, frame: 0 }]);
+  // From frame 95 right past the column's end: it stops at the right edge.
+  await page.mouse.move(await frameX(page, 95), y - 4);
+  await page.mouse.down();
+  await page.mouse.move(ruler.right + 60, y + 4, { steps: 6 });
+  expect(Math.abs((await sides()).right - ruler.right)).toBeLessThan(0.5);
+  await page.mouse.up();
+});
+
 test("dragging selected Keyframes moves them; Escape puts them back", async ({ page }) => {
   await open(page);
   const key = dark(page).locator('[data-track="camera"] .pano-studio-tl-key').nth(1);
