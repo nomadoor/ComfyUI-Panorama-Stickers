@@ -121,7 +121,8 @@ function viewTable({ zoom, pinch }) {
     { gesture: GESTURE_NAMES.drag, mouse: "left", cells: [dragCell(false), dragCell(true)] },
     { gesture: GESTURE_NAMES.rightDrag, mouse: "right", cells: [cell(navigationLabel(RIGHT, false), [`button:${RIGHT}`]), cell(navigationLabel(RIGHT, true), [`button:${RIGHT}+alt`])] },
     { gesture: GESTURE_NAMES.wheel, mouse: "wheel", cells: [cell("Move toward the pointer", ["pointer:wheel"]), cell(zoom, ["pointer:zoom"])] },
-    { gesture: GESTURE_NAMES.doubleClick, mouse: "left", cells: [cell("Look at that point", ["pointer:double-click"]), null] },
+    // Alt does not change a double click (docs/space-and-view.md "マウスとキー").
+    { gesture: GESTURE_NAMES.doubleClick, mouse: "left", cells: [cell("Look at that point", ["pointer:double-click"]), cell("Look at that point", ["pointer:double-click+alt"])] },
   ];
   const middleLikeLeft = [false, true].every((altKey) => navigationLabel(MIDDLE, altKey) === navigationLabel(LEFT, altKey));
   // A middle button that does something else gets a row of its own.

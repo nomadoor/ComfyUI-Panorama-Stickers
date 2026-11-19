@@ -29,15 +29,32 @@ const columnsOf = (list) => Array.from({ length: list.columns }, (_, column) => 
 
 const root = ref(null);
 const sheet = ref(null);
-// The ratio the sheet is shrunk by when the stage cannot hold it (1: as designed).
+// The ratio the sheet is shrunk by when the stage cannot hold it (1: as designed). Shrunk, the sheet is laid out
+// wider by that ratio, so it still spans the whole box (its height does not depend on its width: the columns keep
+// their own widths).
 const scale = ref(1);
 function fit() {
   const box = root.value;
   const inner = sheet.value;
   if (!box || !inner) return;
-  // offsetWidth / offsetHeight are the sheet's laid-out size, before its transform.
-  const next = Math.min(1, box.clientWidth / Math.max(1, inner.offsetWidth), box.clientHeight / Math.max(1, inner.offsetHeight));
+  // The sheet's least width (its own, not the width it is laid out at now, which grows with the shrink) and its height,
+  // before its transform.
+  const next = Math.min(1, box.clientWidth / Math.max(1, natural(inner)), box.clientHeight / Math.max(1, inner.offsetHeight));
   if (Math.abs(next - scale.value) > 0.001) scale.value = next;
+}
+// The sheet's width at max-content: its columns' widths and the least gaps between them (or the header's width), and
+// the padding.
+function natural(inner) {
+  const style = getComputedStyle(inner);
+  // A row of parts (the columns, the header's pieces) at their own widths, with the row's gap between them.
+  const row = (element) => {
+    if (!element) return 0;
+    const parts = [...element.children];
+    const gap = (parts.length - 1) * (parseFloat(getComputedStyle(element).columnGap) || 0);
+    return parts.reduce((sum, part) => sum + part.offsetWidth, 0) + gap;
+  };
+  const pad = (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0);
+  return Math.max(row(inner.querySelector(".pano-studio-shortcuts-columns")), row(inner.querySelector(".pano-studio-shortcuts-head"))) + pad;
 }
 let observer = null;
 
@@ -85,7 +102,7 @@ onBeforeUnmount(() => {
     <div
       ref="sheet"
       class="pano-studio-shortcuts-sheet"
-      :style="{ '--studio-shortcuts-columns': list.columns, transform: scale < 1 ? `scale(${scale})` : null }"
+      :style="{ '--studio-shortcuts-columns': list.columns, transform: scale < 1 ? `scale(${scale})` : null, width: scale < 1 ? `${100 / scale}%` : null }"
       :data-scale="scale < 1 ? scale.toFixed(3) : null"
     >
       <div class="pano-studio-shortcuts-head">

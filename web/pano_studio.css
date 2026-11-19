@@ -2987,8 +2987,9 @@
 }
 
 /* --- The list of shortcuts (docs/studio-ui.md "ショートカットの一覧", docs/design.md "大きさ" "ショートカットの一覧"): one
-   opaque sheet over the stage between the left rail and the right knobs, below the tabs and above the bottom bar (the
-   Preview window: clear of the ✕ and the bottom-right buttons). It never scrolls: StudioShortcuts.vue shrinks the whole
+   opaque sheet over the stage between the left rail and the right knobs, below the tabs and the top line and above the
+   bottom bar (the Preview window: also clear of the ✕ and the bottom-right buttons); an open Output window's corner may
+   go under it. It never scrolls: StudioShortcuts.vue shrinks the whole
    sheet by one ratio when the stage cannot hold it at its least width. */
 .pano-studio-at-shortcuts {
   /* Clear of a floating column (the left rail, the right knobs: a knob and its 6px padding each side) by the inset. */
@@ -3008,9 +3009,9 @@
   pointer-events: none;
 }
 
+/* The Preview window: no rail or tabs on the left and top; clear of the top line's notice. */
 .pano-studio-at-shortcuts.is-preview {
   left: var(--studio-float-inset);
-  top: var(--studio-float-inset);
 }
 
 .pano-studio-shortcuts {

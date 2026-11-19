@@ -68,7 +68,7 @@ test("the View group is a table of the mouse's gestures by Alt, with the movemen
     Drag: ["Look around", "Orbit"],
     "Right-drag": ["Pan", "Move forward / back"],
     Wheel: ["Move toward the pointer", "Zoom (FOV)"],
-    "Double-click": ["Look at that point", "—"],
+    "Double-click": ["Look at that point", "Look at that point"],
   });
   assert.deepEqual(view.table.rows.map((row) => row.mouse), ["left", "right", "wheel", "left"]);
   assert.equal(view.table.note, "Middle-drag works like Drag. Pinch zooms like Alt + Wheel.");
@@ -129,7 +129,7 @@ test("the list shows only what works on the screen: the tab, Panorama mode, a re
   assert.equal(frame.name, "Camera tab · Frame");
   assert.equal(groupOf(frame, "view").aside, "These move the Camera.");
   // A double click turns the Camera in the Frame view (docs/space-and-view.md "マウスとキー").
-  assert.deepEqual(tableOf(frame)["Double-click"], ["Look at that point", "—"]);
+  assert.deepEqual(tableOf(frame)["Double-click"], ["Look at that point", "Look at that point"]);
   assert.ok(!labelsOf(frame).includes("Move / Rotate / Scale"), "no gizmo in the Camera tab");
   assert.equal(groupOf(frame, "objects").note, "Move, Rotate and Scale are in the 3D tab.");
   assert.deepEqual(groupOf(frame, "path").rows, []);

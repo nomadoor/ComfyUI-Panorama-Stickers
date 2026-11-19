@@ -401,9 +401,12 @@ test("the list of shortcuts covers the stage between the floating parts without 
   await page.locator('[data-action="shortcuts"]').click();
   await expect(list).toBeVisible();
   const box = await list.boundingBox();
-  for (const part of [".pano-studio-at-tabs", ".pano-studio-at-rail", ".pano-studio-at-nav", ".pano-studio-at-bar", ".pano-studio-at-buttons"]) {
+  // Clear of every floating part but the Output window (its open corner may go under the sheet: docs/studio-ui.md).
+  for (const part of [".pano-studio-at-tabs", ".pano-studio-at-rail", ".pano-studio-at-notice", ".pano-studio-at-nav", ".pano-studio-at-bar", ".pano-studio-at-buttons"]) {
     const other = await page.locator(part).first().boundingBox();
-    if (other) expect(overlap(box, other), part).toBe(false);
+    expect(other, part).not.toBeNull();
+    if (other.width && other.height) expect(overlap(box, other), part).toBe(false);
+    else expect(other.y + other.height <= box.y || other.y >= box.y + box.height || other.x + other.width <= box.x || other.x >= box.x + box.width, part).toBe(true);
   }
   expect(await list.evaluate((element) => getComputedStyle(element).backgroundColor)).toMatch(/^rgb\(/);
   expect(await list.evaluate((element) => element.scrollHeight <= element.clientHeight && getComputedStyle(element).overflowY !== "auto")).toBe(true);
@@ -423,13 +426,18 @@ test("the list of shortcuts covers the stage between the floating parts without 
   await page.setViewportSize({ width: 1920, height: 960 });
   await page.waitForTimeout(100);
   await expect(sheet).not.toHaveAttribute("data-scale");
-  // A small window: the sheet shrinks to fit inside the list, nothing cut off.
-  await page.setViewportSize({ width: 1100, height: 640 });
+  // A wide but short window: the sheet shrinks by its height to fit inside the list, nothing cut off.
+  await page.setViewportSize({ width: 1920, height: 600 });
   await expect(sheet).toHaveAttribute("data-scale", /^0\./);
   const small = await list.boundingBox();
   const shrunk = await sheet.boundingBox();
   expect(shrunk.x + shrunk.width).toBeLessThanOrEqual(small.x + small.width + 0.5);
   expect(shrunk.y + shrunk.height).toBeLessThanOrEqual(small.y + small.height + 0.5);
+  // Shrunk, it still spans the list's whole width (no empty band on the right).
+  expect(Math.abs(shrunk.x + shrunk.width - (small.x + small.width))).toBeLessThan(1);
+  // Back to full HD: as designed again.
+  await page.setViewportSize({ width: 1920, height: 960 });
+  await expect(sheet).not.toHaveAttribute("data-scale");
   await page.locator('[data-action="shortcuts"]').click();
   await expect(list).toHaveCount(0);
   await expect(scrim).toHaveCount(0);
