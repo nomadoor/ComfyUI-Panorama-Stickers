@@ -4,7 +4,7 @@
 import { projectPoint } from "../pano_space.js";
 import { LOAD_LOOK } from "./load_reveal.js";
 import { MARKER_DOT_RADIUS, MARKER_LOOKS, MARKER_TOP_FILL, MARKER_UNDER } from "./camera_marker.js";
-import { GIZMO_COLORS, GIZMO_LOOK, gizmoColor } from "./gizmo_overlay.js";
+import { GIZMO_COLORS, GIZMO_LOOK, gizmoColor, gizmoEmphasis } from "./gizmo_overlay.js";
 import { GUIDE_LOOKS, GUIDE_UNDER_EXTRA, LOCKED_SELECTED_COLOR, SELECTED_GUIDE_COLOR, UPSTREAM_SELECTED_DASH, screenLines } from "./world_guides.js";
 import { BRUSH_RING } from "./paint.js";
 import { ORBIT_MARK_LOOK } from "./orbit_marker.js";
@@ -343,11 +343,14 @@ function roundedSquare(ctx, center, size, radius) {
 // The gizmo (gizmo_overlay.js gizmoHandles) as the draft specimen-11.html draws Move: round-capped bars with a ball
 // (Move) or a rounded square (Scale) at the end, or rings whose far half is faint (Rotate), and the white center dot;
 // Move's plane squares under its bars.
-// The far handles first, each over a dark underlay; `active` (a handle name) is lit: its color toward white, thicker. `guides` ([{ name, points }], bent on a lens Camera's picture) are the axis guide lines
+// The far handles first, each over a dark underlay; `active` (a handle name) is lit: its color toward white, thicker, with the
+// handles gizmoEmphasis lights with it, and the others drawn at GIZMO_LOOK.dimAlpha. `guides` ([{ name, points }], bent on a lens Camera's picture) are the axis guide lines
 // of a drag (a plane square's two), each in its axis's color under the handles.
 function drawGizmo(ctx, handles, active, guides = []) {
-  const lit = (name) => name === active;
+  const emphasis = gizmoEmphasis(active);
+  const lit = (name) => emphasis(name) === "lit";
   const L = GIZMO_LOOK;
+  const fade = (name) => (emphasis(name) === "dim" ? L.dimAlpha : 1);
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
   for (const guide of guides) {
@@ -374,18 +377,21 @@ function drawGizmo(ctx, handles, active, guides = []) {
   for (const plane of handles.planes ?? []) {
     if (!plane.shown) continue;
     const on = lit(plane.name);
+    const alpha = fade(plane.name);
     const color = gizmoColor(plane.normal, on);
     const path = polygonPath(plane.points);
+    ctx.globalAlpha = alpha;
     ctx.strokeStyle = L.under;
     ctx.lineWidth = L.planeLine + L.underExtra;
     ctx.stroke(path);
-    ctx.globalAlpha = on ? L.planeActiveAlpha : L.planeAlpha;
+    ctx.globalAlpha = alpha * (on ? L.planeActiveAlpha : L.planeAlpha);
     ctx.fillStyle = color;
     ctx.fill(path);
-    ctx.globalAlpha = 1;
+    ctx.globalAlpha = alpha;
     ctx.lineWidth = L.planeLine;
     ctx.strokeStyle = color;
     ctx.stroke(path);
+    ctx.globalAlpha = 1;
   }
   if (handles.mode === "rotate") {
     for (const front of [false, true]) {
@@ -398,7 +404,7 @@ function drawGizmo(ctx, handles, active, guides = []) {
           path.lineTo(next.x, next.y);
         });
         const on = lit(ring.name);
-        strokeOver(path, gizmoColor(ring.name, on), on ? L.activeLineWidth : L.lineWidth, front ? 1 : L.ringBackAlpha);
+        strokeOver(path, gizmoColor(ring.name, on), on ? L.activeLineWidth : L.lineWidth, (front ? 1 : L.ringBackAlpha) * fade(ring.name));
       }
     }
   } else {
@@ -409,7 +415,9 @@ function drawGizmo(ctx, handles, active, guides = []) {
       const bar = new Path2D();
       bar.moveTo(handles.center.x, handles.center.y);
       bar.lineTo(axis.end.x, axis.end.y);
-      strokeOver(bar, color, on ? L.activeLineWidth : L.lineWidth);
+      const alpha = fade(axis.name);
+      strokeOver(bar, color, on ? L.activeLineWidth : L.lineWidth, alpha);
+      ctx.globalAlpha = alpha;
       ctx.fillStyle = L.under;
       if (handles.mode === "scale") {
         const size = on ? L.activeSquareSize : L.squareSize;
@@ -426,6 +434,7 @@ function drawGizmo(ctx, handles, active, guides = []) {
         ctx.arc(axis.end.x, axis.end.y, radius, 0, Math.PI * 2);
         ctx.fill();
       }
+      ctx.globalAlpha = 1;
     }
   }
   // The white center dot with a dark rim (larger while Move's center is dragged).

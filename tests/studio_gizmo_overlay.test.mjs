@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { DEFAULT_VIEW_HFOV, gizmoDragLanes, projectPoint, sceneTransform, spaceCamera } from "../web_src/pano_space.js";
-import { GIZMO_LOOK, gizmoColor, gizmoDrag, gizmoGuideSegment, gizmoHandles, gizmoHit, planeHit } from "../web_src/studio/gizmo_overlay.js";
+import { GIZMO_LOOK, gizmoColor, gizmoDrag, gizmoEmphasis, gizmoGuideSegment, gizmoGuides, gizmoHandles, gizmoHit, planeHit } from "../web_src/studio/gizmo_overlay.js";
 import { quaternionToRotation } from "../web_src/pano_world.js";
 import { ROTATE_SNAP_DEG } from "../web_src/studio/view_scale.js";
 
@@ -261,4 +261,77 @@ test("each plane square's drag carries the guide lines of its two axes, in World
     const drag = gizmoDrag(shown, name, oblique, middle(plane.points), W, H);
     assert.deepEqual(drag.guides.map((guide) => [guide.name, guide.dir]), axes.map((axis) => [axis, dirs[axis]]), name);
   }
+});
+
+// From behind: the view stands at -X, +Y, -Z of the object (at (0, 0, -5)), looking at it.
+const behindAt = [-2, 1.5, -10];
+const behind = spaceCamera({
+  position: behindAt,
+  yaw_deg: -Math.atan2(2, -5) * 180 / Math.PI,
+  pitch_deg: -Math.atan2(1.5, Math.hypot(2, 5)) * 180 / Math.PI,
+  roll_deg: 0,
+  hFOV_deg: DEFAULT_VIEW_HFOV,
+  distance: 5,
+}, W, H, { center: [0, 0, 0], radius: 50 });
+
+test("Move's plane squares sit on the side of each of their axes that faces the view; the bars stay on the plus side", () => {
+  const center = [0, 0, -5];
+  const axes = { x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1] };
+  for (const view of [oblique, behind]) {
+    const handles = gizmoHandles(gizmo("translate", { ...value, yaw_deg: 0 }), view, W, H);
+    const eye = view.position;
+    const sign = (axis) => ((eye[0] - center[0]) * axes[axis][0] + (eye[1] - center[1]) * axes[axis][1] + (eye[2] - center[2]) * axes[axis][2] >= 0 ? 1 : -1);
+    const mid = (GIZMO_LOOK.planeFrom + GIZMO_LOOK.planeTo) / 2 * handles.length;
+    for (const plane of handles.planes) {
+      if (!plane.shown) continue;
+      const [a, b] = plane.name.split("");
+      const world = center.map((v, i) => v + axes[a][i] * sign(a) * mid + axes[b][i] * sign(b) * mid);
+      const expected = projectPoint(view, world, W, H);
+      const at = middle(plane.points);
+      assert.ok(Math.hypot(at.x - expected.x, at.y - expected.y) < 1, `${plane.name} sits toward the view`);
+    }
+    const x = axisOf(handles, "x");
+    const plusX = projectPoint(view, [handles.length, 0, -5], W, H);
+    assert.ok(Math.hypot(x.end.x - plusX.x, x.end.y - plusX.y) < 1e-6, "the X ball stays at +X");
+  }
+  // From behind, X and Z face away: the XZ square is on their minus side.
+  const xz = planeOf(gizmoHandles(gizmo("translate", { ...value, yaw_deg: 0 }), behind, W, H), "xz");
+  const handlesBehind = gizmoHandles(gizmo("translate", { ...value, yaw_deg: 0 }), behind, W, H);
+  const mid = (GIZMO_LOOK.planeFrom + GIZMO_LOOK.planeTo) / 2 * handlesBehind.length;
+  const minus = projectPoint(behind, [-mid, 0, -5 - mid], W, H);
+  const at = middle(xz.points);
+  assert.ok(Math.hypot(at.x - minus.x, at.y - minus.y) < 1);
+});
+
+test("Move's plane squares span planeFrom 0.2 to planeTo 0.6 of the reach (docs/design.md)", () => {
+  assert.equal(GIZMO_LOOK.planeFrom, 0.2);
+  assert.equal(GIZMO_LOOK.planeTo, 0.6);
+  assert.equal(GIZMO_LOOK.dimAlpha, 0.3);
+});
+
+test("gizmoEmphasis: the handle under the pointer is lit and the rest dim; a plane square lights its two axes; the center dot dims all else", () => {
+  const all = ["x", "y", "z", "xy", "yz", "xz", "center"];
+  const look = (active) => Object.fromEntries(all.map((name) => [name, gizmoEmphasis(active)(name)]));
+  assert.deepEqual(look(null), Object.fromEntries(all.map((name) => [name, "normal"])));
+  assert.deepEqual(look("x"), { x: "lit", y: "dim", z: "dim", xy: "dim", yz: "dim", xz: "dim", center: "normal" });
+  assert.deepEqual(look("xz"), { x: "lit", y: "dim", z: "lit", xy: "dim", yz: "dim", xz: "lit", center: "normal" });
+  assert.deepEqual(look("center"), { x: "dim", y: "dim", z: "dim", xy: "dim", yz: "dim", xz: "dim", center: "lit" });
+});
+
+test("gizmoGuides gives the guide lines of a handle before it is pressed, the same as its drag carries", () => {
+  for (const mode of ["translate", "rotate", "scale"]) {
+    const shown = gizmo(mode);
+    const handles = gizmoHandles(shown, oblique, W, H);
+    const points = {
+      translate: [["x", axisOf(handles, "x").end], ["y", axisOf(handles, "y").end], ["center", handles.center], ...handles.planes.filter((p) => p.shown).map((p) => [p.name, middle(p.points)])],
+      scale: [["x", axisOf(handles, "x").end], ["z", axisOf(handles, "z").end]],
+      rotate: handles.rings.map((ring) => [ring.name, ring.points.filter((p) => p && p.front)[8]]),
+    }[mode];
+    for (const [name, point] of points) {
+      const drag = gizmoDrag(shown, name, oblique, point, W, H);
+      assert.ok(drag, `${mode} ${name} can be dragged`);
+      assert.deepEqual(gizmoGuides(shown, handles, name), drag.guides, `${mode} ${name}`);
+    }
+  }
+  assert.deepEqual(gizmoGuides(gizmo("translate"), gizmoHandles(gizmo("translate"), oblique, W, H), null), []);
 });

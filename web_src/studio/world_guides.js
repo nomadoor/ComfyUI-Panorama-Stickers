@@ -36,6 +36,35 @@ const lerp = (a, b, t) => a.map((value, axis) => value + (b[axis] - value) * t);
 
 const BOX_EDGES = [[0, 1], [2, 3], [4, 5], [6, 7], [0, 2], [1, 3], [4, 6], [5, 7], [0, 4], [1, 5], [2, 6], [3, 7]];
 
+const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const mean = (points) => points.reduce((sum, p) => sum.map((value, axis) => value + p[axis] / points.length), [0, 0, 0]);
+
+// The edges of a box to draw seen from the World point `eye` (docs/space-and-view.md "World の物のガイド" 形): of its 12
+// edges, those with at least one of their two faces turned toward the eye. A face turns away when its outward normal
+// and the way from its center to the eye meet at a negative dot product; a face with no area (a flat box's side) counts
+// as turned toward it. `corners` are the box's 8 corners in boxCorners' order (corner index = 4 x + 2 y + z of its
+// min/max bits), turned and placed as the guide has them. The box holds its content, so an edge kept is never behind it.
+export function visibleBoxSegments(corners, eye) {
+  const middle = mean(corners);
+  // A face: the 4 corners whose bit `bit` (4 x, 2 y, 1 z) is `side`.
+  const facing = new Map();
+  for (const bit of [4, 2, 1]) {
+    for (const side of [0, bit]) {
+      const ids = corners.map((_, index) => index).filter((index) => (index & bit) === side);
+      const others = [4, 2, 1].filter((other) => other !== bit);
+      const at = mean(ids.map((index) => corners[index]));
+      const base = corners[ids[0]];
+      let normal = cross(sub(corners[ids[0] ^ others[0]], base), sub(corners[ids[0] ^ others[1]], base));
+      if (dot(normal, sub(at, middle)) < 0) normal = normal.map((value) => -value);
+      facing.set(`${bit}:${side}`, dot(normal, sub(eye, at)) >= 0);
+    }
+  }
+  return BOX_EDGES.filter(([a, b]) => {
+    const along = a ^ b;
+    return [4, 2, 1].filter((bit) => bit !== along).some((bit) => facing.get(`${bit}:${a & bit}`));
+  }).map(([a, b]) => [corners[a], corners[b]]);
+}
+
 function loop(points) {
   return points.map((point, index) => [point, points[(index + 1) % points.length]]);
 }

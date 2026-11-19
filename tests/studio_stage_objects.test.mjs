@@ -171,7 +171,8 @@ test("the selected World object's gizmo shows on the overlay and is pressed firs
   const [a, b] = [guide.points[0], guide.points[guide.points.length - 1]];
   assert.ok(Math.abs(a.y - b.y) < 1e-6 && Math.abs(a.y - H / 2) < 1e-6, "level through the grabbed center");
   drag.end();
-  assert.deepEqual(objects.overlay().gizmo.guides, [], "and goes when it is let go");
+  objects.hover({ x: 5, y: 5 });
+  assert.deepEqual(objects.overlay().gizmo.guides, [], "and goes when it is let go and the pointer leaves the gizmo");
   const position = evaluateLane(session.state.stickers[1], "position", 0);
   assert.ok(position[0] > 3.5, "it moved along X");
   assert.ok(Math.abs(position[1]) < 1e-9 && Math.abs(position[2] + 5) < 1e-9, "and only along X");
@@ -191,6 +192,24 @@ test("while a plane square of the gizmo is dragged, both of its axis guide lines
   assert.deepEqual(guides.map((line) => line.name), plane.name.split(""), "the plane's two axes");
   drag.end();
   assert.deepEqual(objects.overlay().gizmo.guides, []);
+});
+
+test("the guide lines show as soon as the pointer is on a gizmo handle, before a press; none on the center dot or while Alt is held", () => {
+  const { session, objects } = setup();
+  session.selectObject("board");
+  const ball = ballOf(objects, "x");
+  objects.hover(ball);
+  assert.deepEqual(objects.overlay().gizmo.guides.map((line) => line.name), ["x"], "the X ball's guide line");
+  const plane = handlesOf(objects).planes.find((entry) => entry.shown);
+  objects.hover({ x: plane.points.reduce((sum, p) => sum + p.x, 0) / 4, y: plane.points.reduce((sum, p) => sum + p.y, 0) / 4 });
+  assert.equal(objects.overlay().gizmo.active, plane.name);
+  assert.deepEqual(objects.overlay().gizmo.guides.map((line) => line.name), plane.name.split(""), "the plane's two axes");
+  assert.deepEqual(objects.overlay({ altHeld: true }).gizmo.guides, [], "none while Alt is held");
+  assert.equal(objects.overlay({ altHeld: true }).gizmo.active, null);
+  objects.hover(handlesOf(objects).center);
+  assert.deepEqual(objects.overlay().gizmo.guides, [], "the center dot has none");
+  objects.hover({ x: 5, y: 5 });
+  assert.deepEqual(objects.overlay().gizmo.guides, [], "off the gizmo, none");
 });
 
 test("a gizmo drag given up puts the object back", () => {

@@ -139,8 +139,13 @@ test("dragging the gizmo's X ball moves the World image along X only, as one Und
   const at = await places(page);
   await click(page, at.board);
   const before = (await stateOf(page)).stickers[1].position.value;
-  // The overlay draws the X ball in coral (the gizmo is the overlay's, not three.js's).
-  const ball = await page.evaluate(({ x, y }) => window.__studio.overlayAt(x, y), { x: at.xBall.x - at.stage.x, y: at.xBall.y - at.stage.y });
+  // The pointer stays on the board's middle, the gizmo's center dot: the other handles dim (docs/studio-ui.md "ギズモ").
+  const ballAt = { x: at.xBall.x - at.stage.x, y: at.xBall.y - at.stage.y };
+  const dimmed = await page.evaluate(({ x, y }) => window.__studio.overlayAt(x, y), ballAt);
+  // Off the gizmo, the overlay draws the X ball in coral (the gizmo is the overlay's, not three.js's).
+  await page.mouse.move(at.empty.x, at.empty.y);
+  const ball = await page.evaluate(({ x, y }) => window.__studio.overlayAt(x, y), ballAt);
+  expect(dimmed[3]).toBeLessThan(ball[3] * 0.7);
   expect(ball[3]).toBeGreaterThan(200);
   expect(Math.abs(ball[0] - 0xf3)).toBeLessThan(24);
   expect(Math.abs(ball[1] - 0x71)).toBeLessThan(24);
