@@ -1,15 +1,15 @@
 {
   "id": "7948a314-2081-4258-a30e-ea80e78fbafc",
   "revision": 0,
-  "last_node_id": 88,
-  "last_link_id": 188,
+  "last_node_id": 89,
+  "last_link_id": 193,
   "nodes": [
     {
       "id": 8,
       "type": "VAEDecode",
       "pos": [
-        1243.5983042645516,
-        188.1918182373047
+        1261.4755690711415,
+        189.35653307788294
       ],
       "size": [
         225,
@@ -51,7 +51,7 @@
       "id": 37,
       "type": "UNETLoader",
       "pos": [
-        189.3259254826259,
+        185.38603241230274,
         38.62441838953851
       ],
       "size": [
@@ -116,7 +116,7 @@
           "type": "CLIP",
           "slot_index": 0,
           "links": [
-            115
+            189
           ]
         }
       ],
@@ -149,8 +149,8 @@
       "id": 62,
       "type": "EmptyLatentImage",
       "pos": [
-        611.918176537727,
-        582.327293849093
+        612.6069057823709,
+        547.6562348302517
       ],
       "size": [
         225.08182346227295,
@@ -206,8 +206,8 @@
       "id": 3,
       "type": "KSampler",
       "pos": [
-        898.7548217773438,
-        188.1918182373047
+        890.4120982009349,
+        189.35653307788294
       ],
       "size": [
         315,
@@ -225,12 +225,12 @@
         {
           "name": "positive",
           "type": "CONDITIONING",
-          "link": 157
+          "link": 190
         },
         {
           "name": "negative",
           "type": "CONDITIONING",
-          "link": 158
+          "link": 191
         },
         {
           "name": "latent_image",
@@ -276,8 +276,8 @@
       "id": 56,
       "type": "SaveImage",
       "pos": [
-        1501.854326425339,
-        814.139767120889
+        1560.0316312312905,
+        795.0706846605265
       ],
       "size": [
         459.09921377862156,
@@ -341,8 +341,8 @@
       "id": 39,
       "type": "VAELoader",
       "pos": [
-        49.87187153979269,
-        386.79138870487407
+        49.87187153979265,
+        393.35653307788294
       ],
       "size": [
         301.3524169921875,
@@ -359,7 +359,7 @@
           "slot_index": 0,
           "links": [
             76,
-            159
+            192
           ]
         }
       ],
@@ -385,92 +385,11 @@
       "bgcolor": "#533"
     },
     {
-      "id": 64,
-      "type": "TextEncodeQwenImage21",
-      "pos": [
-        419.17042424641943,
-        209.35653307788294
-      ],
-      "size": [
-        418.5183049982245,
-        266
-      ],
-      "flags": {},
-      "order": 7,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "clip",
-          "type": "CLIP",
-          "link": 115
-        },
-        {
-          "name": "images.image_1",
-          "shape": 7,
-          "type": "IMAGE",
-          "link": 183
-        },
-        {
-          "name": "images.image_2",
-          "shape": 7,
-          "type": "IMAGE",
-          "link": null
-        },
-        {
-          "name": "images.image_3",
-          "shape": 7,
-          "type": "IMAGE",
-          "link": null
-        },
-        {
-          "name": "vae",
-          "shape": 7,
-          "type": "VAE",
-          "link": 159
-        }
-      ],
-      "outputs": [
-        {
-          "name": "positive",
-          "type": "CONDITIONING",
-          "links": [
-            157
-          ]
-        },
-        {
-          "name": "negative",
-          "type": "CONDITIONING",
-          "links": [
-            158
-          ]
-        },
-        {
-          "name": "latent",
-          "type": "LATENT",
-          "links": null
-        }
-      ],
-      "properties": {
-        "Node name for S&R": "TextEncodeQwenImage21",
-        "cnr_id": "comfy-core"
-      },
-      "widgets_values": [
-        "Fill the green areas to complete a seamless 360° equirectangular panorama. Continue the existing scene in exactly the same art style: low-poly 3D look with visible flat triangular facets, soft shading on each facet, hand-painted textures, matte surfaces, soft even lighting, slightly muted colors and the same late-afternoon light. Extend the flooded rice paddies with young rice plants, narrow grassy footpaths, a few scattered old houses with dark tiled roofs, low green hills on the horizon all the way around, and the same soft evening sky with a few clouds. The filled areas contain only landscape, with the two students kept as the only people in the panorama. Match colors, scale and perspective so the edges join seamlessly.",
-        "",
-        0
-      ],
-      "widgets_values_named": {
-        "prompt": "Fill the green areas to complete a seamless 360° equirectangular panorama. Continue the existing scene in exactly the same art style: low-poly 3D look with visible flat triangular facets, soft shading on each facet, hand-painted textures, matte surfaces, soft even lighting, slightly muted colors and the same late-afternoon light. Extend the flooded rice paddies with young rice plants, narrow grassy footpaths, a few scattered old houses with dark tiled roofs, low green hills on the horizon all the way around, and the same soft evening sky with a few clouds. The filled areas contain only landscape, with the two students kept as the only people in the panorama. Match colors, scale and perspective so the edges join seamlessly.",
-        "negative_prompt": "",
-        "resolution": 0
-      }
-    },
-    {
       "id": 76,
       "type": "GetImageSize",
       "pos": [
-        354.04485425001326,
-        605.8810723145949
+        338.5634318914583,
+        569.6562348302517
       ],
       "size": [
         225,
@@ -516,8 +435,8 @@
       "id": 83,
       "type": "PanoramaStudio",
       "pos": [
-        -108.1648878829269,
-        587.8586982942255
+        -141.7864083798422,
+        549.6562348302517
       ],
       "size": [
         431.3063663803879,
@@ -569,7 +488,7 @@
           "type": "IMAGE",
           "links": [
             177,
-            183
+            193
           ]
         },
         {
@@ -597,7 +516,7 @@
         "360",
         4,
         32,
-        "{\"version\":2,\"id\":\"LplkgY9Pw8VqFkxh\",\"timeline\":{\"fps\":24,\"length\":null},\"camera\":{\"aspect\":1.7777777777777777,\"projection\":\"erp\",\"position\":{\"value\":[0,0,0],\"keyframes\":[]},\"rotation\":{\"value\":{\"yaw_deg\":0,\"pitch_deg\":0,\"roll_deg\":0},\"keyframes\":[]},\"fov\":{\"value\":209.7,\"keyframes\":[]},\"curve\":{\"value\":0,\"keyframes\":[]}},\"scene\":{\"clip\":{\"start\":0,\"in\":0,\"duration\":null},\"position\":{\"value\":[0,0,0],\"keyframes\":[]},\"rotation\":{\"value\":{\"yaw_deg\":0,\"pitch_deg\":0,\"roll_deg\":0},\"keyframes\":[]},\"scale\":{\"value\":1,\"keyframes\":[]}},\"stickers\":[{\"id\":\"sticker_11\",\"placement\":\"sky\",\"source\":{\"kind\":\"file\",\"filename\":\"denen.png\",\"subfolder\":\"panorama_stickers\",\"storage\":\"input\"},\"clip\":{\"start\":0,\"in\":0,\"duration\":null},\"visible\":true,\"locked\":false,\"crop\":{\"x0\":0,\"y0\":0,\"x1\":1,\"y1\":1},\"direction\":{\"value\":{\"yaw_deg\":-9.02067379839616,\"pitch_deg\":-1.8274083948888786},\"keyframes\":[]},\"roll\":{\"value\":0,\"keyframes\":[]},\"size\":{\"value\":{\"hFOV_deg\":87.57782202746436,\"vFOV_deg\":59.1330066773554},\"keyframes\":[]},\"opacity\":{\"value\":1,\"keyframes\":[]},\"z_index\":1},{\"id\":\"sticker_12\",\"placement\":\"sky\",\"source\":{\"kind\":\"file\",\"filename\":\"denen2.png\",\"subfolder\":\"panorama_stickers\",\"storage\":\"input\"},\"clip\":{\"start\":0,\"in\":0,\"duration\":null},\"visible\":true,\"locked\":false,\"crop\":{\"x0\":0,\"y0\":0,\"x1\":1,\"y1\":1},\"direction\":{\"value\":{\"yaw_deg\":163.5951945819669,\"pitch_deg\":-20.958666399148424},\"keyframes\":[]},\"roll\":{\"value\":0,\"keyframes\":[]},\"size\":{\"value\":{\"hFOV_deg\":52.97982624741101,\"vFOV_deg\":70.02137313689738},\"keyframes\":[]},\"opacity\":{\"value\":1,\"keyframes\":[]},\"z_index\":2}],\"painting\":{\"version\":1,\"groups\":[],\"paint\":{\"strokes\":[]},\"mask\":{\"strokes\":[]},\"raster_objects\":[]},\"painting_layer\":null}",
+        "{\"version\":2,\"id\":\"LplkgY9Pw8VqFkxh\",\"timeline\":{\"fps\":24,\"length\":null},\"camera\":{\"aspect\":1.7777777777777777,\"projection\":\"erp\",\"position\":{\"value\":[0,0,0],\"keyframes\":[]},\"rotation\":{\"value\":{\"yaw_deg\":0,\"pitch_deg\":0,\"roll_deg\":0},\"keyframes\":[]},\"fov\":{\"value\":209.7,\"keyframes\":[]},\"curve\":{\"value\":0,\"keyframes\":[]}},\"scene\":{\"clip\":{\"start\":0,\"in\":0,\"duration\":null},\"position\":{\"value\":[0,0,0],\"keyframes\":[]},\"rotation\":{\"value\":{\"yaw_deg\":0,\"pitch_deg\":0,\"roll_deg\":0},\"keyframes\":[]},\"scale\":{\"value\":1,\"keyframes\":[]}},\"stickers\":[],\"next_sticker_id\":13,\"painting\":{\"version\":1,\"groups\":[],\"paint\":{\"strokes\":[]},\"mask\":{\"strokes\":[]},\"raster_objects\":[]},\"painting_layer\":null}",
         ""
       ],
       "widgets_values_named": {
@@ -605,7 +524,7 @@
         "background_range": "360",
         "megapixels": 4,
         "multiple": 32,
-        "state_json": "{\"version\":2,\"id\":\"LplkgY9Pw8VqFkxh\",\"timeline\":{\"fps\":24,\"length\":null},\"camera\":{\"aspect\":1.7777777777777777,\"projection\":\"erp\",\"position\":{\"value\":[0,0,0],\"keyframes\":[]},\"rotation\":{\"value\":{\"yaw_deg\":0,\"pitch_deg\":0,\"roll_deg\":0},\"keyframes\":[]},\"fov\":{\"value\":209.7,\"keyframes\":[]},\"curve\":{\"value\":0,\"keyframes\":[]}},\"scene\":{\"clip\":{\"start\":0,\"in\":0,\"duration\":null},\"position\":{\"value\":[0,0,0],\"keyframes\":[]},\"rotation\":{\"value\":{\"yaw_deg\":0,\"pitch_deg\":0,\"roll_deg\":0},\"keyframes\":[]},\"scale\":{\"value\":1,\"keyframes\":[]}},\"stickers\":[{\"id\":\"sticker_11\",\"placement\":\"sky\",\"source\":{\"kind\":\"file\",\"filename\":\"denen.png\",\"subfolder\":\"panorama_stickers\",\"storage\":\"input\"},\"clip\":{\"start\":0,\"in\":0,\"duration\":null},\"visible\":true,\"locked\":false,\"crop\":{\"x0\":0,\"y0\":0,\"x1\":1,\"y1\":1},\"direction\":{\"value\":{\"yaw_deg\":-9.02067379839616,\"pitch_deg\":-1.8274083948888786},\"keyframes\":[]},\"roll\":{\"value\":0,\"keyframes\":[]},\"size\":{\"value\":{\"hFOV_deg\":87.57782202746436,\"vFOV_deg\":59.1330066773554},\"keyframes\":[]},\"opacity\":{\"value\":1,\"keyframes\":[]},\"z_index\":1},{\"id\":\"sticker_12\",\"placement\":\"sky\",\"source\":{\"kind\":\"file\",\"filename\":\"denen2.png\",\"subfolder\":\"panorama_stickers\",\"storage\":\"input\"},\"clip\":{\"start\":0,\"in\":0,\"duration\":null},\"visible\":true,\"locked\":false,\"crop\":{\"x0\":0,\"y0\":0,\"x1\":1,\"y1\":1},\"direction\":{\"value\":{\"yaw_deg\":163.5951945819669,\"pitch_deg\":-20.958666399148424},\"keyframes\":[]},\"roll\":{\"value\":0,\"keyframes\":[]},\"size\":{\"value\":{\"hFOV_deg\":52.97982624741101,\"vFOV_deg\":70.02137313689738},\"keyframes\":[]},\"opacity\":{\"value\":1,\"keyframes\":[]},\"z_index\":2}],\"painting\":{\"version\":1,\"groups\":[],\"paint\":{\"strokes\":[]},\"mask\":{\"strokes\":[]},\"raster_objects\":[]},\"painting_layer\":null}",
+        "state_json": "{\"version\":2,\"id\":\"LplkgY9Pw8VqFkxh\",\"timeline\":{\"fps\":24,\"length\":null},\"camera\":{\"aspect\":1.7777777777777777,\"projection\":\"erp\",\"position\":{\"value\":[0,0,0],\"keyframes\":[]},\"rotation\":{\"value\":{\"yaw_deg\":0,\"pitch_deg\":0,\"roll_deg\":0},\"keyframes\":[]},\"fov\":{\"value\":209.7,\"keyframes\":[]},\"curve\":{\"value\":0,\"keyframes\":[]}},\"scene\":{\"clip\":{\"start\":0,\"in\":0,\"duration\":null},\"position\":{\"value\":[0,0,0],\"keyframes\":[]},\"rotation\":{\"value\":{\"yaw_deg\":0,\"pitch_deg\":0,\"roll_deg\":0},\"keyframes\":[]},\"scale\":{\"value\":1,\"keyframes\":[]}},\"stickers\":[],\"next_sticker_id\":13,\"painting\":{\"version\":1,\"groups\":[],\"paint\":{\"strokes\":[]},\"mask\":{\"strokes\":[]},\"raster_objects\":[]},\"painting_layer\":null}",
         "$$comfy_animation_preview": ""
       },
       "color": "#232",
@@ -615,8 +534,8 @@
       "id": 84,
       "type": "LoraLoaderModelOnly",
       "pos": [
-        532.3105248989408,
-        38.62441838953851
+        532.3105248989407,
+        38.624418389538505
       ],
       "size": [
         305.3782043457031,
@@ -667,8 +586,8 @@
       "id": 86,
       "type": "PanoramaPreviewNode",
       "pos": [
-        1500.4407485426561,
-        192.40207083464472
+        1560.0316312312905,
+        189.35653307788297
       ],
       "size": [
         836.0727536171516,
@@ -701,6 +620,80 @@
       "widgets_values_named": {
         "background_range": "360"
       }
+    },
+    {
+      "id": 89,
+      "type": "TextEncodeQwenImage21",
+      "pos": [
+        419.85915349106324,
+        209.35653307788294
+      ],
+      "size": [
+        417.82957575358057,
+        242
+      ],
+      "flags": {},
+      "order": 7,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "clip",
+          "type": "CLIP",
+          "link": 189
+        },
+        {
+          "name": "images.image_1",
+          "shape": 7,
+          "type": "IMAGE",
+          "link": 193
+        },
+        {
+          "name": "images.image_2",
+          "shape": 7,
+          "type": "IMAGE",
+          "link": null
+        },
+        {
+          "name": "vae",
+          "shape": 7,
+          "type": "VAE",
+          "link": 192
+        }
+      ],
+      "outputs": [
+        {
+          "name": "positive",
+          "type": "CONDITIONING",
+          "links": [
+            190
+          ]
+        },
+        {
+          "name": "negative",
+          "type": "CONDITIONING",
+          "links": [
+            191
+          ]
+        },
+        {
+          "name": "latent",
+          "type": "LATENT",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "TextEncodeQwenImage21"
+      },
+      "widgets_values": [
+        "Fill the green areas to complete a seamless 360° equirectangular panorama.",
+        "",
+        1024
+      ],
+      "widgets_values_named": {
+        "prompt": "Fill the green areas to complete a seamless 360° equirectangular panorama.",
+        "negative_prompt": "",
+        "resolution": 1024
+      }
     }
   ],
   "links": [
@@ -727,30 +720,6 @@
       56,
       0,
       "IMAGE"
-    ],
-    [
-      148,
-      62,
-      0,
-      3,
-      3,
-      "LATENT"
-    ],
-    [
-      157,
-      64,
-      0,
-      3,
-      1,
-      "CONDITIONING"
-    ],
-    [
-      158,
-      64,
-      1,
-      3,
-      2,
-      "CONDITIONING"
     ],
     [
       171,
@@ -801,27 +770,51 @@
       "IMAGE"
     ],
     [
-      115,
+      148,
+      62,
+      0,
+      3,
+      3,
+      "LATENT"
+    ],
+    [
+      190,
+      89,
+      0,
+      3,
+      1,
+      "CONDITIONING"
+    ],
+    [
+      191,
+      89,
+      1,
+      3,
+      2,
+      "CONDITIONING"
+    ],
+    [
+      189,
       38,
       0,
-      64,
+      89,
       0,
       "CLIP"
     ],
     [
-      183,
+      193,
       83,
       1,
-      64,
+      89,
       1,
       "IMAGE"
     ],
     [
-      159,
+      192,
       39,
       0,
-      64,
-      4,
+      89,
+      3,
       "VAE"
     ]
   ],
@@ -829,13 +822,13 @@
   "config": {},
   "extra": {
     "ds": {
-      "scale": 0.6934334949441611,
+      "scale": 1.015255979947752,
       "offset": [
-        806.7940419232718,
-        490.9979807636032
+        73.84684204523097,
+        45.181762594071074
       ]
     },
-    "frontendVersion": "1.57.6",
+    "frontendVersion": "1.59.10",
     "VHS_latentpreview": false,
     "VHS_latentpreviewrate": 0,
     "VHS_MetadataImage": true,
