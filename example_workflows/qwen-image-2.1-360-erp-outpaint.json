@@ -277,7 +277,7 @@
       "type": "SaveImage",
       "pos": [
         1560.0316312312905,
-        795.0706846605265
+        735.6562348302516
       ],
       "size": [
         459.09921377862156,
@@ -590,8 +590,8 @@
         189.35653307788297
       ],
       "size": [
-        836.0727536171516,
-        546.4986621551076
+        736.4367977617567,
+        464.2997017523687
       ],
       "flags": {},
       "order": 12,
@@ -687,12 +687,12 @@
       "widgets_values": [
         "Fill the green areas to complete a seamless 360° equirectangular panorama.",
         "",
-        1024
+        0
       ],
       "widgets_values_named": {
         "prompt": "Fill the green areas to complete a seamless 360° equirectangular panorama.",
         "negative_prompt": "",
-        "resolution": 1024
+        "resolution": 0
       }
     }
   ],
@@ -822,10 +822,10 @@
   "config": {},
   "extra": {
     "ds": {
-      "scale": 1.015255979947752,
+      "scale": 0.693433494944166,
       "offset": [
-        73.84684204523097,
-        45.181762594071074
+        487.7822958404347,
+        307.80386304455845
       ]
     },
     "frontendVersion": "1.59.10",
