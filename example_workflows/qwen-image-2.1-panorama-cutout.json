@@ -354,7 +354,7 @@
       ],
       "size": [
         418.5183049982245,
-        246
+        266
       ],
       "flags": {},
       "order": 7,
@@ -478,7 +478,7 @@
       "type": "LoadImage",
       "pos": [
         -784.6449658634255,
-        930.2871453045052
+        876.3526292006777
       ],
       "size": [
         661.1204826636696,
@@ -520,7 +520,7 @@
       "type": "PanoramaStudio",
       "pos": [
         1513.444934664414,
-        910.2871453045052
+        856.3526292006777
       ],
       "size": [
         360,
@@ -612,7 +612,9 @@
         "multiple": 8,
         "state_json": "{\"version\":2,\"id\":\"PeoiYIhMWU_OFwYG\",\"timeline\":{\"fps\":24,\"length\":null},\"camera\":null,\"scene\":{\"clip\":{\"start\":0,\"in\":0,\"duration\":null},\"position\":{\"value\":[0,0,0],\"keyframes\":[]},\"rotation\":{\"value\":{\"yaw_deg\":0,\"pitch_deg\":0,\"roll_deg\":0},\"keyframes\":[]},\"scale\":{\"value\":1,\"keyframes\":[]}},\"stickers\":[{\"id\":\"sticker_1\",\"placement\":\"sky\",\"source\":{\"kind\":\"port\"},\"clip\":{\"start\":0,\"in\":0,\"duration\":null},\"visible\":true,\"locked\":false,\"crop\":{\"x0\":0,\"y0\":0,\"x1\":1,\"y1\":1},\"direction\":{\"value\":{\"yaw_deg\":156.78037013731,\"pitch_deg\":-28.035274282663643},\"keyframes\":[]},\"roll\":{\"value\":0,\"keyframes\":[]},\"size\":{\"value\":{\"hFOV_deg\":30,\"vFOV_deg\":30},\"keyframes\":[]},\"opacity\":{\"value\":1,\"keyframes\":[]},\"z_index\":0}],\"painting\":{\"version\":1,\"groups\":[],\"paint\":{\"strokes\":[]},\"mask\":{\"strokes\":[]},\"raster_objects\":[]},\"painting_layer\":null}",
         "$$comfy_animation_preview": ""
-      }
+      },
+      "color": "#232",
+      "bgcolor": "#353"
     },
     {
       "id": 104,
@@ -658,7 +660,7 @@
       "type": "PanoramaStudio",
       "pos": [
         -84.70130178198538,
-        910.2871453045052
+        856.3526292006777
       ],
       "size": [
         360,
@@ -752,14 +754,16 @@
         "multiple": 32,
         "state_json": "{\"version\":2,\"id\":\"8aJC4DbC1OSzxASZ\",\"timeline\":{\"fps\":24,\"length\":null},\"camera\":{\"aspect\":1,\"position\":{\"value\":[0,0,0],\"keyframes\":[]},\"rotation\":{\"value\":{\"yaw_deg\":0,\"pitch_deg\":0,\"roll_deg\":0},\"keyframes\":[]},\"fov\":{\"value\":90,\"keyframes\":[]}},\"scene\":{\"clip\":{\"start\":0,\"in\":0,\"duration\":null},\"position\":{\"value\":[0,0,0],\"keyframes\":[]},\"rotation\":{\"value\":{\"yaw_deg\":0,\"pitch_deg\":0,\"roll_deg\":0},\"keyframes\":[]},\"scale\":{\"value\":1,\"keyframes\":[]}},\"stickers\":[],\"painting\":{\"version\":1,\"groups\":[],\"paint\":{\"strokes\":[]},\"mask\":{\"strokes\":[]},\"raster_objects\":[]},\"painting_layer\":null}",
         "$$comfy_animation_preview": ""
-      }
+      },
+      "color": "#232",
+      "bgcolor": "#353"
     },
     {
       "id": 106,
       "type": "SaveImage",
       "pos": [
         1922.143670885977,
-        930.2871453045052
+        876.3526292006777
       ],
       "size": [
         579.1914932806601,
@@ -944,10 +948,10 @@
   "config": {},
   "extra": {
     "ds": {
-      "scale": 0.6303940863128846,
+      "scale": 0.6303940863128847,
       "offset": [
-        749.4546669619887,
-        176.34035625715435
+        692.8682245251198,
+        -33.59575830576264
       ]
     },
     "frontendVersion": "1.59.10",
