@@ -1,14 +1,14 @@
 {
   "id": "56f32114-4ee8-42ad-86f7-eedebb9cf831",
   "revision": 0,
-  "last_node_id": 156,
-  "last_link_id": 286,
+  "last_node_id": 157,
+  "last_link_id": 288,
   "nodes": [
     {
       "id": 77,
       "type": "VAEDecodeAudio",
       "pos": [
-        1551.809850090218,
+        1549.5394399268803,
         607.6553782790388
       ],
       "size": [
@@ -49,7 +49,7 @@
       "id": 91,
       "type": "CreateVideo",
       "pos": [
-        1814.709319055705,
+        1837.6959185487779,
         500.63572275319547
       ],
       "size": [
@@ -105,7 +105,7 @@
       "id": 8,
       "type": "VAEDecode",
       "pos": [
-        1551.8098500902183,
+        1549.5394399268805,
         500.63572275319547
       ],
       "size": [
@@ -148,7 +148,7 @@
       "type": "VAELoader",
       "pos": [
         -216.55939833403332,
-        92.94462566819558
+        91.5963643882015
       ],
       "size": [
         305.3782043457031,
@@ -238,7 +238,7 @@
       "id": 37,
       "type": "UNETLoader",
       "pos": [
-        -407.17599800275065,
+        -431.142178031846,
         -74.15715712402181
       ],
       "size": [
@@ -287,7 +287,7 @@
       "type": "VAELoader",
       "pos": [
         -215.58503979632061,
-        236.04640846041298
+        234.69814718041889
       ],
       "size": [
         305.3782043457031,
@@ -617,7 +617,7 @@
       "id": 108,
       "type": "LoraLoaderModelOnly",
       "pos": [
-        -72.35755429760343,
+        -88.3350076503337,
         -74.15715712402181
       ],
       "size": [
@@ -740,12 +740,12 @@
       "id": 118,
       "type": "MarkdownNote",
       "pos": [
-        -966.1328793690612,
-        -74.15715712402181
+        -1033.2400615558406,
+        -329.1196002867552
       ],
       "size": [
-        493.0681701824316,
-        563.4942318234185
+        516.6462076180295,
+        801.1035843199447
       ],
       "flags": {},
       "order": 7,
@@ -757,7 +757,7 @@
         "## models\n- diffusion_models\n  - [minimax_h3_ref2va_pruned_int8_convrot.safetensors](https://huggingface.co/Comfy-Org/MiniMax-H3/blob/main/diffusion_models/minimax_h3_ref2va_pruned_int8_convrot.safetensors) (21 GB)\n- loras\n  - [MiniMax-H3_Ref2VA-LoRA-CrossView-Warp_v1_3500.safetensors](https://huggingface.co/Cseti/MiniMax-H3_Ref2VA-LoRA-CrossView-Warp_v1/blob/main/MiniMax-H3_Ref2VA-LoRA-CrossView-Warp_v1_3500.safetensors) (596 MB)\n  - [pika_h3_flex_ref2va_v1_bf16.safetensors](https://huggingface.co/Comfy-Org/MiniMax-H3/blob/main/loras/pika_h3_flex_ref2va_v1_bf16.safetensors) (1.96 GB)\n\n- text_encoders\n  - [qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors](https://huggingface.co/Comfy-Org/MiniMax-H3/blob/main/text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors) (15.7 GB)\n- vae\n  - [minimax_h3_audio_vae_fp32.safetensors](https://huggingface.co/Comfy-Org/MiniMax-H3/blob/main/vae/minimax_h3_audio_vae_fp32.safetensors) (605 MB)\n  - [minimax_h3_video_vae_int8_convrot.safetensors](https://huggingface.co/Comfy-Org/MiniMax-H3/blob/main/vae/minimax_h3_video_vae_int8_convrot.safetensors) (2.81 GB)\n- geometry_estimation\n  - [moge_3_vitg_fp16.safetensors](https://huggingface.co/Comfy-Org/MoGe/blob/main/geometry_estimation/moge_3_vitg_fp16.safetensors) (2.50 GB)\n\n```text\n📂ComfyUI/\n└── 📂models/\n    ├── 📂diffusion_models/\n    │   └── minimax_h3_ref2va_pruned_int8_convrot.safetensors\n    ├── 📂loras/\n    │   ├── MiniMax-H3_Ref2VA-LoRA-CrossView-Warp_v1_3500.safetensors\n    │   └── pika_h3_flex_ref2va_v1_bf16.safetensors\n    ├── 📂text_encoders/\n    │   └── qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors\n    ├── 📂vae/\n    │   ├── minimax_h3_audio_vae_fp32.safetensors\n    │   └── minimax_h3_video_vae_int8_convrot.safetensors\n    └── 📂geometry_estimation/\n        └── moge_3_vitg_fp16.safetensors\n```\n\n## custom nodes\n\n- [ComfyUI-Panorama-Stickers](https://github.com/nomadoor/ComfyUI-Panorama-Stickers)\n- [ComfyUI-VideoHelperSuite](https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite)\n\n## guide\n\n- [日本語](https://comfyui.nomadoor.net/ja/basic-workflows/pika-h3-flex/)\n- [English](https://comfyui.nomadoor.net/en/basic-workflows/pika-h3-flex/)\n- [中文](https://comfyui.nomadoor.net/zh/basic-workflows/pika-h3-flex/)"
       ],
       "widgets_values_named": {
-        "text": "## models\n- diffusion_models\n  - [minimax_h3_ref2va_pruned_int8_convrot.safetensors](https://huggingface.co/Comfy-Org/MiniMax-H3/blob/main/diffusion_models/minimax_h3_ref2va_pruned_int8_convrot.safetensors) (21 GB)\n- loras\n  - [MiniMax-H3_Ref2VA-LoRA-CrossView-Warp_v1_3500.safetensors](https://huggingface.co/Cseti/MiniMax-H3_Ref2VA-LoRA-CrossView-Warp_v1/blob/main/MiniMax-H3_Ref2VA-LoRA-CrossView-Warp_v1_3500.safetensors) (596 MB)\n  - [pika_h3_flex_ref2va_v1_bf16.safetensors](https://huggingface.co/Comfy-Org/MiniMax-H3/blob/main/loras/pika_h3_flex_ref2va_v1_bf16.safetensors) (1.96 GB)\n\n- text_encoders\n  - [qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors](https://huggingface.co/Comfy-Org/MiniMax-H3/blob/main/text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors) (15.7 GB)\n- vae\n  - [minimax_h3_audio_vae_fp32.safetensors](https://huggingface.co/Comfy-Org/MiniMax-H3/blob/main/vae/minimax_h3_audio_vae_fp32.safetensors) (605 MB)\n  - [minimax_h3_video_vae_int8_convrot.safetensors](https://huggingface.co/Comfy-Org/MiniMax-H3/blob/main/vae/minimax_h3_video_vae_int8_convrot.safetensors) (2.81 GB)\n\n```text\n📂ComfyUI/\n└── 📂models/\n    ├── 📂diffusion_models/\n    │   └── minimax_h3_ref2va_pruned_int8_convrot.safetensors\n    ├── 📂loras/\n    │   ├── MiniMax-H3_Ref2VA-LoRA-CrossView-Warp_v1_3500.safetensors\n    │   └── pika_h3_flex_ref2va_v1_bf16.safetensors\n    ├── 📂text_encoders/\n    │   └── qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors\n    └── 📂vae/\n        ├── minimax_h3_audio_vae_fp32.safetensors\n        └── minimax_h3_video_vae_int8_convrot.safetensors\n```\n\n## guide\n\n- [日本語](https://comfyui.nomadoor.net/ja/basic-workflows/pika-h3-flex/)\n- [English](https://comfyui.nomadoor.net/en/basic-workflows/pika-h3-flex/)\n- [中文](https://comfyui.nomadoor.net/zh/basic-workflows/pika-h3-flex/)"
+        "text": "## models\n- diffusion_models\n  - [minimax_h3_ref2va_pruned_int8_convrot.safetensors](https://huggingface.co/Comfy-Org/MiniMax-H3/blob/main/diffusion_models/minimax_h3_ref2va_pruned_int8_convrot.safetensors) (21 GB)\n- loras\n  - [MiniMax-H3_Ref2VA-LoRA-CrossView-Warp_v1_3500.safetensors](https://huggingface.co/Cseti/MiniMax-H3_Ref2VA-LoRA-CrossView-Warp_v1/blob/main/MiniMax-H3_Ref2VA-LoRA-CrossView-Warp_v1_3500.safetensors) (596 MB)\n  - [pika_h3_flex_ref2va_v1_bf16.safetensors](https://huggingface.co/Comfy-Org/MiniMax-H3/blob/main/loras/pika_h3_flex_ref2va_v1_bf16.safetensors) (1.96 GB)\n\n- text_encoders\n  - [qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors](https://huggingface.co/Comfy-Org/MiniMax-H3/blob/main/text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors) (15.7 GB)\n- vae\n  - [minimax_h3_audio_vae_fp32.safetensors](https://huggingface.co/Comfy-Org/MiniMax-H3/blob/main/vae/minimax_h3_audio_vae_fp32.safetensors) (605 MB)\n  - [minimax_h3_video_vae_int8_convrot.safetensors](https://huggingface.co/Comfy-Org/MiniMax-H3/blob/main/vae/minimax_h3_video_vae_int8_convrot.safetensors) (2.81 GB)\n- geometry_estimation\n  - [moge_3_vitg_fp16.safetensors](https://huggingface.co/Comfy-Org/MoGe/blob/main/geometry_estimation/moge_3_vitg_fp16.safetensors) (2.50 GB)\n\n```text\n📂ComfyUI/\n└── 📂models/\n    ├── 📂diffusion_models/\n    │   └── minimax_h3_ref2va_pruned_int8_convrot.safetensors\n    ├── 📂loras/\n    │   ├── MiniMax-H3_Ref2VA-LoRA-CrossView-Warp_v1_3500.safetensors\n    │   └── pika_h3_flex_ref2va_v1_bf16.safetensors\n    ├── 📂text_encoders/\n    │   └── qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors\n    ├── 📂vae/\n    │   ├── minimax_h3_audio_vae_fp32.safetensors\n    │   └── minimax_h3_video_vae_int8_convrot.safetensors\n    └── 📂geometry_estimation/\n        └── moge_3_vitg_fp16.safetensors\n```\n\n## custom nodes\n\n- [ComfyUI-Panorama-Stickers](https://github.com/nomadoor/ComfyUI-Panorama-Stickers)\n- [ComfyUI-VideoHelperSuite](https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite)\n\n## guide\n\n- [日本語](https://comfyui.nomadoor.net/ja/basic-workflows/pika-h3-flex/)\n- [English](https://comfyui.nomadoor.net/en/basic-workflows/pika-h3-flex/)\n- [中文](https://comfyui.nomadoor.net/zh/basic-workflows/pika-h3-flex/)"
       },
       "color": "#323",
       "bgcolor": "#535"
@@ -895,14 +895,14 @@
         "cnr_id": "comfy-core"
       },
       "widgets_values": [
-        "crossview. A man in a bright orange suit with a green open-collar shirt and brown leather shoes dances while walking down a long stone staircase in a narrow sunlit alley. Pastel yellow and pink buildings with green wooden shutters, small iron balconies with potted plants, laundry hanging on lines strung across the alley, a scooter parked on a landing, worn stone steps with metal handrails, warm afternoon light and soft shadows.",
+        "crossview",
         1344,
         768,
         124,
         "match"
       ],
       "widgets_values_named": {
-        "prompt": "crossview. A man in a bright orange suit with a green open-collar shirt and brown leather shoes dances while walking down a long stone staircase in a narrow sunlit alley. Pastel yellow and pink buildings with green wooden shutters, small iron balconies with potted plants, laundry hanging on lines strung across the alley, a scooter parked on a landing, worn stone steps with metal handrails, warm afternoon light and soft shadows.",
+        "prompt": "crossview",
         "width": 1344,
         "height": 768,
         "length": 124,
@@ -915,7 +915,7 @@
       "id": 139,
       "type": "LoraLoaderModelOnly",
       "pos": [
-        262.4608894075438,
+        254.47216273117863,
         -74.15715712402181
       ],
       "size": [
@@ -994,7 +994,7 @@
           "name": "moge_geometry",
           "type": "MOGE_GEOMETRY",
           "links": [
-            278
+            287
           ]
         }
       ],
@@ -1018,8 +1018,8 @@
         "apply_mask": true,
         "refine_steps": 2
       },
-      "color": "#232",
-      "bgcolor": "#353"
+      "color": "#223",
+      "bgcolor": "#335"
     },
     {
       "id": 143,
@@ -1039,7 +1039,7 @@
         {
           "name": "video",
           "type": "VIDEO",
-          "link": 279
+          "link": 288
         }
       ],
       "outputs": [
@@ -1118,14 +1118,14 @@
       "widgets_values_named": {
         "model_name": "moge_3_vitg_fp16.safetensors"
       },
-      "color": "#232",
-      "bgcolor": "#353"
+      "color": "#223",
+      "bgcolor": "#335"
     },
     {
       "id": 145,
       "type": "ComfyMathExpression",
       "pos": [
-        -2112.6124021487535,
+        -2105.911429741701,
         825.079014940738
       ],
       "size": [
@@ -1270,7 +1270,7 @@
       "id": 148,
       "type": "Reroute",
       "pos": [
-        -1427.1726573001645,
+        -1414.8556853680332,
         801.617273851944
       ],
       "size": [
@@ -1305,7 +1305,7 @@
       "id": 149,
       "type": "ResizeImageMaskNode",
       "pos": [
-        -1427.1726573001645,
+        -1414.8556853680332,
         666.4687538242192
       ],
       "size": [
@@ -1389,7 +1389,7 @@
       "id": 151,
       "type": "Reroute",
       "pos": [
-        13.818806011669807,
+        14.79316454938239,
         666.4687538242192
       ],
       "size": [
@@ -1424,7 +1424,7 @@
       "id": 152,
       "type": "VHS_LoadVideo",
       "pos": [
-        -1858.706130141558,
+        -1857.1853421764997,
         666.4687538242192
       ],
       "size": [
@@ -1486,7 +1486,7 @@
         "Node name for S&R": "VHS_LoadVideo"
       },
       "widgets_values": {
-        "video": "input.mp4",
+        "video": "pika-h3-flex-moge3-crossview_input.mp4",
         "force_rate": 0,
         "custom_width": 0,
         "custom_height": 0,
@@ -1499,7 +1499,7 @@
           "hidden": false,
           "paused": false,
           "params": {
-            "filename": "input.mp4",
+            "filename": "pika-h3-flex-moge3-crossview_input.mp4",
             "type": "input",
             "format": "video/mp4",
             "force_rate": 0,
@@ -1512,7 +1512,7 @@
         }
       },
       "widgets_values_named": {
-        "video": "input.mp4",
+        "video": "pika-h3-flex-moge3-crossview_input.mp4",
         "force_rate": 0,
         "custom_width": 0,
         "custom_height": 0,
@@ -1525,7 +1525,7 @@
           "hidden": false,
           "paused": false,
           "params": {
-            "filename": "input.mp4",
+            "filename": "pika-h3-flex-moge3-crossview_input.mp4",
             "type": "input",
             "format": "video/mp4",
             "force_rate": 0,
@@ -1614,7 +1614,7 @@
       "id": 155,
       "type": "SaveVideo",
       "pos": [
-        2126.016578626542,
+        2174.2601877760194,
         500.63572275319547
       ],
       "size": [
@@ -1656,7 +1656,7 @@
       }
     },
     {
-      "id": 156,
+      "id": 157,
       "type": "PanoramaStudio",
       "pos": [
         -790.9892999658894,
@@ -1686,7 +1686,7 @@
           "name": "world",
           "shape": 7,
           "type": "SPLAT,MESH,FILE_3D_GLB,FILE_3D_GLTF,FILE_3D_FBX,FILE_3D_OBJ,FILE_3D_STL,FILE_3D_USDZ,FILE_3D,FILE_3D_PLY,FILE_3D_SPLAT,FILE_3D_SPZ,FILE_3D_KSPLAT,FILE_3D_SPLAT_ANY,MOGE_GEOMETRY,DA3_GEOMETRY",
-          "link": 278
+          "link": 287
         },
         {
           "name": "sticker",
@@ -1721,7 +1721,7 @@
           "name": "video",
           "type": "VIDEO",
           "links": [
-            279
+            288
           ]
         },
         {
@@ -1738,16 +1738,16 @@
         "#ff00ff",
         "360",
         0.5,
-        8,
-        "{\"version\":2,\"id\":\"z5gsFBbMEOWg8JWV\",\"timeline\":{\"fps\":24,\"length\":null},\"camera\":{\"aspect\":1.7777777777777777,\"position\":{\"value\":[2.3970736365607586,-0.4500549698082388,-1.5805835544961933],\"keyframes\":[{\"frame\":0,\"value\":[2.3970736365607586,-0.4500549698082388,-1.5805835544961933],\"easing\":[0.55,0,0.58,1]},{\"frame\":73,\"value\":[-2.7497359840139493,-1.1810353329850332,-0.6360586326016059],\"easing\":[0.56,0,0.58,1]},{\"frame\":140,\"value\":[0.843264260180309,-0.7402063693753504,-0.8613477644050758],\"easing\":[0.42,0,0.58,1]}]},\"rotation\":{\"value\":{\"yaw_deg\":-60.009595954235124,\"pitch_deg\":6.733880727789238,\"roll_deg\":-3},\"keyframes\":[{\"frame\":0,\"value\":{\"yaw_deg\":-60.009595954235124,\"pitch_deg\":6.733880727789238,\"roll_deg\":-3},\"easing\":[0.55,0,0.58,1]},{\"frame\":73,\"value\":{\"yaw_deg\":37.67786268382645,\"pitch_deg\":13.568919893299672,\"roll_deg\":-3},\"easing\":[0.56,0,0.58,1]},{\"frame\":140,\"value\":{\"yaw_deg\":-20.559416082907774,\"pitch_deg\":12.623017306061564,\"roll_deg\":3.9},\"easing\":[0.42,0,0.58,1]}]},\"fov\":{\"value\":99.31635348454651,\"keyframes\":[{\"frame\":0,\"value\":99.31635348454651,\"easing\":[0.42,0,0.58,1]}]},\"curve\":{\"value\":0.72,\"keyframes\":[]}},\"scene\":{\"clip\":{\"start\":0,\"in\":0,\"duration\":null},\"position\":{\"value\":[0,0,0],\"keyframes\":[]},\"rotation\":{\"value\":{\"yaw_deg\":0,\"pitch_deg\":0,\"roll_deg\":0},\"keyframes\":[]},\"scale\":{\"value\":1,\"keyframes\":[]}},\"stickers\":[],\"painting\":{\"version\":1,\"groups\":[],\"paint\":{\"strokes\":[]},\"mask\":{\"strokes\":[]},\"raster_objects\":[]},\"painting_layer\":null}",
+        32,
+        "",
         ""
       ],
       "widgets_values_named": {
         "background_color": "#ff00ff",
         "background_range": "360",
         "megapixels": 0.5,
-        "multiple": 8,
-        "state_json": "{\"version\":2,\"id\":\"z5gsFBbMEOWg8JWV\",\"timeline\":{\"fps\":24,\"length\":null},\"camera\":{\"aspect\":1.7777777777777777,\"position\":{\"value\":[2.3970736365607586,-0.4500549698082388,-1.5805835544961933],\"keyframes\":[{\"frame\":0,\"value\":[2.3970736365607586,-0.4500549698082388,-1.5805835544961933],\"easing\":[0.55,0,0.58,1]},{\"frame\":73,\"value\":[-2.7497359840139493,-1.1810353329850332,-0.6360586326016059],\"easing\":[0.56,0,0.58,1]},{\"frame\":140,\"value\":[0.843264260180309,-0.7402063693753504,-0.8613477644050758],\"easing\":[0.42,0,0.58,1]}]},\"rotation\":{\"value\":{\"yaw_deg\":-60.009595954235124,\"pitch_deg\":6.733880727789238,\"roll_deg\":-3},\"keyframes\":[{\"frame\":0,\"value\":{\"yaw_deg\":-60.009595954235124,\"pitch_deg\":6.733880727789238,\"roll_deg\":-3},\"easing\":[0.55,0,0.58,1]},{\"frame\":73,\"value\":{\"yaw_deg\":37.67786268382645,\"pitch_deg\":13.568919893299672,\"roll_deg\":-3},\"easing\":[0.56,0,0.58,1]},{\"frame\":140,\"value\":{\"yaw_deg\":-20.559416082907774,\"pitch_deg\":12.623017306061564,\"roll_deg\":3.9},\"easing\":[0.42,0,0.58,1]}]},\"fov\":{\"value\":99.31635348454651,\"keyframes\":[{\"frame\":0,\"value\":99.31635348454651,\"easing\":[0.42,0,0.58,1]}]},\"curve\":{\"value\":0.72,\"keyframes\":[]}},\"scene\":{\"clip\":{\"start\":0,\"in\":0,\"duration\":null},\"position\":{\"value\":[0,0,0],\"keyframes\":[]},\"rotation\":{\"value\":{\"yaw_deg\":0,\"pitch_deg\":0,\"roll_deg\":0},\"keyframes\":[]},\"scale\":{\"value\":1,\"keyframes\":[]}},\"stickers\":[],\"painting\":{\"version\":1,\"groups\":[],\"paint\":{\"strokes\":[]},\"mask\":{\"strokes\":[]},\"raster_objects\":[]},\"painting_layer\":null}",
+        "multiple": 32,
+        "state_json": "",
         "$$comfy_animation_preview": ""
       },
       "color": "#232",
@@ -1916,14 +1916,6 @@
       "IMAGE"
     ],
     [
-      258,
-      145,
-      1,
-      152,
-      2,
-      "INT"
-    ],
-    [
       260,
       152,
       2,
@@ -1972,20 +1964,20 @@
       "IMAGE"
     ],
     [
-      278,
-      142,
+      285,
+      77,
       0,
-      156,
-      2,
-      "MOGE_GEOMETRY"
+      91,
+      1,
+      "AUDIO"
     ],
     [
-      279,
-      156,
-      3,
-      143,
+      286,
+      8,
       0,
-      "VIDEO"
+      91,
+      0,
+      "IMAGE"
     ],
     [
       252,
@@ -2002,6 +1994,14 @@
       149,
       0,
       "IMAGE"
+    ],
+    [
+      283,
+      91,
+      0,
+      155,
+      0,
+      "VIDEO"
     ],
     [
       211,
@@ -2068,41 +2068,41 @@
       "INT"
     ],
     [
-      283,
-      91,
+      258,
+      145,
+      1,
+      152,
+      2,
+      "INT"
+    ],
+    [
+      287,
+      142,
       0,
-      155,
+      157,
+      2,
+      "MOGE_GEOMETRY"
+    ],
+    [
+      288,
+      157,
+      3,
+      143,
       0,
       "VIDEO"
-    ],
-    [
-      285,
-      77,
-      0,
-      91,
-      1,
-      "AUDIO"
-    ],
-    [
-      286,
-      8,
-      0,
-      91,
-      0,
-      "IMAGE"
     ]
   ],
   "groups": [],
   "config": {},
   "extra": {
     "ds": {
-      "scale": 0.4787841047760964,
+      "scale": 0.7710865885829559,
       "offset": [
-        2143.0813057084424,
-        532.3204089129467
+        2542.2120404764037,
+        -262.702883513842
       ]
     },
-    "frontendVersion": "1.57.6",
+    "frontendVersion": "1.59.10",
     "VHS_latentpreview": false,
     "VHS_latentpreviewrate": 0,
     "VHS_MetadataImage": true,
