@@ -10,6 +10,16 @@
 
 [![Panorama Stickers](https://img.youtube.com/vi/QnMhNTncaYI/maxresdefault.jpg)](https://youtu.be/QnMhNTncaYI)
 
+## 使い方の動画
+
+Panorama Studio の使い方を、5 本の動画で紹介しています。
+
+- [01 基本の操作](https://youtu.be/7MdfPZKyyT8)
+- [02 好きな画像からパノラマを作る](https://youtu.be/hstaTdzv50k)
+- [03 撮った絵を直して元に戻す](https://youtu.be/Ki-24Y_0zG4)
+- [04 3D モデルを置いて撮る](https://youtu.be/-hIixhTV_gI)
+- [05 別の角度から撮り直す](https://youtu.be/ecOmCf-0htc)
+
 ## Panorama Studio
 
 このノードセットの中心です。
@@ -48,16 +58,6 @@
 ### 動画にする
 
 背景に動画をつなぐか、ステッカーや Camera を Keyframe で動かすと、`video` 出力に全フレームが入ります。
-
-## 使い方の動画
-
-Panorama Studio の使い方を、5 本の動画で紹介しています。
-
-- [01 基本の操作](https://youtu.be/7MdfPZKyyT8)
-- [02 好きな画像からパノラマを作る](https://youtu.be/hstaTdzv50k)
-- [03 撮った絵を直して元に戻す](https://youtu.be/Ki-24Y_0zG4)
-- [04 3D モデルを置いて撮る](https://youtu.be/-hIixhTV_gI)
-- [05 別の角度から撮り直す](https://youtu.be/ecOmCf-0htc)
 
 ## そのほかのノード
 
