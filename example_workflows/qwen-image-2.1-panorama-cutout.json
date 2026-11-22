@@ -1,8 +1,8 @@
 {
   "id": "9351b8cc-b8ac-4682-9658-76020101b7ca",
   "revision": 0,
-  "last_node_id": 106,
-  "last_link_id": 237,
+  "last_node_id": 107,
+  "last_link_id": 242,
   "nodes": [
     {
       "id": 8,
@@ -369,7 +369,7 @@
           "name": "images.image_1",
           "shape": 7,
           "type": "IMAGE",
-          "link": 237
+          "link": 241
         },
         {
           "name": "images.image_2",
@@ -444,7 +444,7 @@
         {
           "name": "image",
           "type": "IMAGE",
-          "link": 233
+          "link": 240
         }
       ],
       "outputs": [
@@ -493,7 +493,7 @@
           "name": "IMAGE",
           "type": "IMAGE",
           "links": [
-            231
+            242
           ]
         },
         {
@@ -534,7 +534,7 @@
           "name": "scene",
           "shape": 7,
           "type": "PANO_SCENE",
-          "link": 232
+          "link": 238
         },
         {
           "name": "background",
@@ -558,7 +558,7 @@
           "name": "sticker_state",
           "shape": 7,
           "type": "STRING",
-          "link": 235
+          "link": 239
         }
       ],
       "outputs": [
@@ -656,109 +656,6 @@
       }
     },
     {
-      "id": 105,
-      "type": "PanoramaStudio",
-      "pos": [
-        -84.70130178198538,
-        856.3526292006777
-      ],
-      "size": [
-        360,
-        474
-      ],
-      "flags": {},
-      "order": 5,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "scene",
-          "shape": 7,
-          "type": "PANO_SCENE",
-          "link": null
-        },
-        {
-          "name": "background",
-          "shape": 7,
-          "type": "IMAGE,VIDEO",
-          "link": 231
-        },
-        {
-          "name": "world",
-          "shape": 7,
-          "type": "SPLAT,MESH,FILE_3D_GLB,FILE_3D_GLTF,FILE_3D_FBX,FILE_3D_OBJ,FILE_3D_STL,FILE_3D_USDZ,FILE_3D,FILE_3D_PLY,FILE_3D_SPLAT,FILE_3D_SPZ,FILE_3D_KSPLAT,FILE_3D_SPLAT_ANY,MOGE_GEOMETRY,DA3_GEOMETRY",
-          "link": null
-        },
-        {
-          "name": "sticker",
-          "shape": 7,
-          "type": "IMAGE,VIDEO,MESH,SPLAT,FILE_3D_GLB,FILE_3D_GLTF,FILE_3D_FBX,FILE_3D_OBJ,FILE_3D_STL,FILE_3D_USDZ,FILE_3D,FILE_3D_PLY,FILE_3D_SPLAT,FILE_3D_SPZ,FILE_3D_KSPLAT,FILE_3D_SPLAT_ANY,MOGE_GEOMETRY,DA3_GEOMETRY",
-          "link": null
-        },
-        {
-          "name": "sticker_state",
-          "shape": 7,
-          "type": "STRING",
-          "link": null
-        }
-      ],
-      "outputs": [
-        {
-          "name": "scene",
-          "type": "PANO_SCENE",
-          "links": [
-            232
-          ]
-        },
-        {
-          "name": "first_frame",
-          "type": "IMAGE",
-          "links": [
-            233,
-            237
-          ]
-        },
-        {
-          "name": "first_frame_mask",
-          "type": "MASK",
-          "links": null
-        },
-        {
-          "name": "video",
-          "type": "VIDEO",
-          "links": null
-        },
-        {
-          "name": "sticker_state",
-          "type": "STRING",
-          "links": [
-            235
-          ]
-        }
-      ],
-      "properties": {
-        "Node name for S&R": "PanoramaStudio",
-        "cnr_id": "panorama-stickers"
-      },
-      "widgets_values": [
-        "#00ff00",
-        "360",
-        2,
-        32,
-        "{\"version\":2,\"id\":\"8aJC4DbC1OSzxASZ\",\"timeline\":{\"fps\":24,\"length\":null},\"camera\":{\"aspect\":1,\"position\":{\"value\":[0,0,0],\"keyframes\":[]},\"rotation\":{\"value\":{\"yaw_deg\":0,\"pitch_deg\":0,\"roll_deg\":0},\"keyframes\":[]},\"fov\":{\"value\":90,\"keyframes\":[]}},\"scene\":{\"clip\":{\"start\":0,\"in\":0,\"duration\":null},\"position\":{\"value\":[0,0,0],\"keyframes\":[]},\"rotation\":{\"value\":{\"yaw_deg\":0,\"pitch_deg\":0,\"roll_deg\":0},\"keyframes\":[]},\"scale\":{\"value\":1,\"keyframes\":[]}},\"stickers\":[],\"painting\":{\"version\":1,\"groups\":[],\"paint\":{\"strokes\":[]},\"mask\":{\"strokes\":[]},\"raster_objects\":[]},\"painting_layer\":null}",
-        ""
-      ],
-      "widgets_values_named": {
-        "background_color": "#00ff00",
-        "background_range": "360",
-        "megapixels": 2,
-        "multiple": 32,
-        "state_json": "{\"version\":2,\"id\":\"8aJC4DbC1OSzxASZ\",\"timeline\":{\"fps\":24,\"length\":null},\"camera\":{\"aspect\":1,\"position\":{\"value\":[0,0,0],\"keyframes\":[]},\"rotation\":{\"value\":{\"yaw_deg\":0,\"pitch_deg\":0,\"roll_deg\":0},\"keyframes\":[]},\"fov\":{\"value\":90,\"keyframes\":[]}},\"scene\":{\"clip\":{\"start\":0,\"in\":0,\"duration\":null},\"position\":{\"value\":[0,0,0],\"keyframes\":[]},\"rotation\":{\"value\":{\"yaw_deg\":0,\"pitch_deg\":0,\"roll_deg\":0},\"keyframes\":[]},\"scale\":{\"value\":1,\"keyframes\":[]}},\"stickers\":[],\"painting\":{\"version\":1,\"groups\":[],\"paint\":{\"strokes\":[]},\"mask\":{\"strokes\":[]},\"raster_objects\":[]},\"painting_layer\":null}",
-        "$$comfy_animation_preview": ""
-      },
-      "color": "#232",
-      "bgcolor": "#353"
-    },
-    {
       "id": 106,
       "type": "SaveImage",
       "pos": [
@@ -796,6 +693,108 @@
       "widgets_values_named": {
         "filename_prefix": "ComfyUI"
       }
+    },
+    {
+      "id": 107,
+      "type": "PanoramaStudio",
+      "pos": [
+        -74.46136279778905,
+        856.3526292006777
+      ],
+      "size": [
+        360,
+        462.0000000000001
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "scene",
+          "shape": 7,
+          "type": "PANO_SCENE",
+          "link": null
+        },
+        {
+          "name": "background",
+          "shape": 7,
+          "type": "IMAGE,VIDEO",
+          "link": 242
+        },
+        {
+          "name": "world",
+          "shape": 7,
+          "type": "SPLAT,MESH,FILE_3D_GLB,FILE_3D_GLTF,FILE_3D_FBX,FILE_3D_OBJ,FILE_3D_STL,FILE_3D_USDZ,FILE_3D,FILE_3D_PLY,FILE_3D_SPLAT,FILE_3D_SPZ,FILE_3D_KSPLAT,FILE_3D_SPLAT_ANY,MOGE_GEOMETRY,DA3_GEOMETRY",
+          "link": null
+        },
+        {
+          "name": "sticker",
+          "shape": 7,
+          "type": "IMAGE,VIDEO,MESH,SPLAT,FILE_3D_GLB,FILE_3D_GLTF,FILE_3D_FBX,FILE_3D_OBJ,FILE_3D_STL,FILE_3D_USDZ,FILE_3D,FILE_3D_PLY,FILE_3D_SPLAT,FILE_3D_SPZ,FILE_3D_KSPLAT,FILE_3D_SPLAT_ANY,MOGE_GEOMETRY,DA3_GEOMETRY",
+          "link": null
+        },
+        {
+          "name": "sticker_state",
+          "shape": 7,
+          "type": "STRING",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "scene",
+          "type": "PANO_SCENE",
+          "links": [
+            238
+          ]
+        },
+        {
+          "name": "first_frame",
+          "type": "IMAGE",
+          "links": [
+            240,
+            241
+          ]
+        },
+        {
+          "name": "first_frame_mask",
+          "type": "MASK",
+          "links": null
+        },
+        {
+          "name": "video",
+          "type": "VIDEO",
+          "links": null
+        },
+        {
+          "name": "sticker_state",
+          "type": "STRING",
+          "links": [
+            239
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "PanoramaStudio"
+      },
+      "widgets_values": [
+        "#00ff00",
+        "360",
+        2,
+        32,
+        "",
+        ""
+      ],
+      "widgets_values_named": {
+        "background_color": "#00ff00",
+        "background_range": "360",
+        "megapixels": 2,
+        "multiple": 32,
+        "state_json": "",
+        "$$comfy_animation_preview": ""
+      },
+      "color": "#232",
+      "bgcolor": "#353"
     }
   ],
   "links": [
@@ -880,38 +879,6 @@
       "IMAGE"
     ],
     [
-      231,
-      80,
-      0,
-      105,
-      1,
-      "IMAGE"
-    ],
-    [
-      232,
-      105,
-      0,
-      103,
-      0,
-      "PANO_SCENE"
-    ],
-    [
-      233,
-      105,
-      1,
-      76,
-      0,
-      "IMAGE"
-    ],
-    [
-      235,
-      105,
-      4,
-      103,
-      4,
-      "STRING"
-    ],
-    [
       236,
       103,
       1,
@@ -928,30 +895,62 @@
       "CLIP"
     ],
     [
-      237,
-      105,
-      1,
-      64,
-      1,
-      "IMAGE"
-    ],
-    [
       159,
       39,
       0,
       64,
       4,
       "VAE"
+    ],
+    [
+      238,
+      107,
+      0,
+      103,
+      0,
+      "PANO_SCENE"
+    ],
+    [
+      239,
+      107,
+      4,
+      103,
+      4,
+      "STRING"
+    ],
+    [
+      240,
+      107,
+      1,
+      76,
+      0,
+      "IMAGE"
+    ],
+    [
+      241,
+      107,
+      1,
+      64,
+      1,
+      "IMAGE"
+    ],
+    [
+      242,
+      80,
+      0,
+      107,
+      1,
+      "IMAGE"
     ]
   ],
   "groups": [],
   "config": {},
   "extra": {
     "ds": {
-      "scale": 0.6303940863128847,
+      "scale": 0.6303940863128853,
       "offset": [
-        692.8682245251198,
-        -33.59575830576264
+        684.3928976209593,
+        151.49348247955868
       ]
     },
     "frontendVersion": "1.59.10",
