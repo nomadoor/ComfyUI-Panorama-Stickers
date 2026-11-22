@@ -49,6 +49,16 @@ In the editor, you move stickers and the Camera with Keyframes on the timeline, 
 
 Connect a video to the background, or move stickers or the Camera with Keyframes, and the `video` output holds all the frames.
 
+## Guide videos
+
+A five-part series on using Panorama Studio.
+
+- [01 The Basics](https://youtu.be/nJ57kRKF7lE)
+- [02 Your Images to a Panorama](https://youtu.be/8yJbtS754ck)
+- [03 Fix a Shot and Put It Back](https://youtu.be/3IYn0XLEj2M)
+- [04 Place and Shoot 3D Models](https://youtu.be/yJZZBDSCrK4)
+- [05 Reshoot from a New Angle](https://youtu.be/IlnM0VP26Q8)
+
 ## Other nodes
 
 - **Panorama Preview**: look around panorama images and videos, or a Studio `scene`, in a separate window.
