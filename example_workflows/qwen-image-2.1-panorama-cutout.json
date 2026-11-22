@@ -1,15 +1,15 @@
 {
   "id": "9351b8cc-b8ac-4682-9658-76020101b7ca",
   "revision": 0,
-  "last_node_id": 106,
-  "last_link_id": 236,
+  "last_node_id": 107,
+  "last_link_id": 242,
   "nodes": [
     {
       "id": 8,
       "type": "VAEDecode",
       "pos": [
-        1243.5983042645516,
-        188.1918182373047
+        1243.1928661911572,
+        189.35653307788291
       ],
       "size": [
         225,
@@ -52,7 +52,7 @@
       "type": "UNETLoader",
       "pos": [
         532.3105248989408,
-        38.62441838953851
+        48.984768311499344
       ],
       "size": [
         305.3782043457031,
@@ -149,8 +149,8 @@
       "id": 62,
       "type": "EmptyLatentImage",
       "pos": [
-        611.918176537727,
-        582.327293849093
+        612.606905782371,
+        583.8810723145949
       ],
       "size": [
         225.08182346227295,
@@ -206,8 +206,8 @@
       "id": 3,
       "type": "KSampler",
       "pos": [
-        898.7548217773438,
-        188.1918182373047
+        882.9407977179005,
+        189.35653307788291
       ],
       "size": [
         315,
@@ -293,7 +293,7 @@
         "## models\n\n- diffusion_models\n  - [qwen_image_2.1_int8_convrot.safetensors](https://huggingface.co/Comfy-Org/Qwen-Image-2.1/blob/main/diffusion_models/qwen_image_2.1_int8_convrot.safetensors) (7.26 GB)\n- text_encoders\n  - [qwen3vl_8b_int8_convrot.safetensors](https://huggingface.co/Comfy-Org/Qwen-Image-2.1/blob/main/text_encoders/qwen3vl_8b_int8_convrot.safetensors) (9.35 GB)\n- vae\n  - [qwen_image_2.1_vae_bf16.safetensors](https://huggingface.co/Comfy-Org/Qwen-Image-2.1/blob/main/vae/qwen_image_2.1_vae_bf16.safetensors) (676 MB)\n\n```text\n📂ComfyUI/\n└── 📂models/\n    ├── 📂diffusion_models/\n    │   └── qwen_image_2.1_int8_convrot.safetensors\n    ├── 📂text_encoders/\n    │   └── qwen3vl_8b_int8_convrot.safetensors\n    └── 📂vae/\n        └── qwen_image_2.1_vae_bf16.safetensors\n```\n\n## custom nodes\n\n- [ComfyUI-Panorama-Stickers](https://github.com/nomadoor/ComfyUI-Panorama-Stickers)\n"
       ],
       "widgets_values_named": {
-        "text": "## models\n\n- diffusion_models\n  - [qwen_image_2.1_int8_convrot.safetensors](https://huggingface.co/Comfy-Org/Qwen-Image-2.1/blob/main/diffusion_models/qwen_image_2.1_int8_convrot.safetensors) (7.26 GB)\n- text_encoders\n  - [qwen3vl_8b_int8_convrot.safetensors](https://huggingface.co/Comfy-Org/Qwen-Image-2.1/blob/main/text_encoders/qwen3vl_8b_int8_convrot.safetensors) (9.35 GB)\n- vae\n  - [qwen_image_2.1_vae_bf16.safetensors](https://huggingface.co/Comfy-Org/Qwen-Image-2.1/blob/main/vae/qwen_image_2.1_vae_bf16.safetensors) (676 MB)\n- loras\n  - [QI2.1_AnyAngle.safetensors](https://huggingface.co/lilylilith/QI_2.1_AnyAngle/blob/main/QI2.1_AnyAngle.safetensors) (120 MB)\n- geometry_estimation\n  - [moge_3_vitg_fp16.safetensors](https://huggingface.co/Comfy-Org/MoGe/blob/main/geometry_estimation/moge_3_vitg_fp16.safetensors) (2.5 GB)\n\n```text\n📂ComfyUI/\n└── 📂models/\n    ├── 📂diffusion_models/\n    │   └── qwen_image_2.1_int8_convrot.safetensors\n    ├── 📂text_encoders/\n    │   └── qwen3vl_8b_int8_convrot.safetensors\n    ├── 📂vae/\n    │   └── qwen_image_2.1_vae_bf16.safetensors\n    ├── 📂loras/\n    │   └── QI2.1_AnyAngle.safetensors\n    └── 📂geometry_estimation/\n        └── moge_3_vitg_fp16.safetensors\n```\n\n## custom nodes\n\n- [ComfyUI-Panorama-Stickers](https://github.com/nomadoor/ComfyUI-Panorama-Stickers)\n"
+        "text": "## models\n\n- diffusion_models\n  - [qwen_image_2.1_int8_convrot.safetensors](https://huggingface.co/Comfy-Org/Qwen-Image-2.1/blob/main/diffusion_models/qwen_image_2.1_int8_convrot.safetensors) (7.26 GB)\n- text_encoders\n  - [qwen3vl_8b_int8_convrot.safetensors](https://huggingface.co/Comfy-Org/Qwen-Image-2.1/blob/main/text_encoders/qwen3vl_8b_int8_convrot.safetensors) (9.35 GB)\n- vae\n  - [qwen_image_2.1_vae_bf16.safetensors](https://huggingface.co/Comfy-Org/Qwen-Image-2.1/blob/main/vae/qwen_image_2.1_vae_bf16.safetensors) (676 MB)\n\n```text\n📂ComfyUI/\n└── 📂models/\n    ├── 📂diffusion_models/\n    │   └── qwen_image_2.1_int8_convrot.safetensors\n    ├── 📂text_encoders/\n    │   └── qwen3vl_8b_int8_convrot.safetensors\n    └── 📂vae/\n        └── qwen_image_2.1_vae_bf16.safetensors\n```\n\n## custom nodes\n\n- [ComfyUI-Panorama-Stickers](https://github.com/nomadoor/ComfyUI-Panorama-Stickers)\n"
       },
       "color": "#323",
       "bgcolor": "#535"
@@ -369,7 +369,7 @@
           "name": "images.image_1",
           "shape": 7,
           "type": "IMAGE",
-          "link": 234
+          "link": 241
         },
         {
           "name": "images.image_2",
@@ -416,12 +416,12 @@
         "cnr_id": "comfy-core"
       },
       "widgets_values": [
-        "The girl reaches out her right hand, and the boy grabs it with his right hand as he gets up from the muddy water. Their two hands are clasped firmly in a handshake grip, each hand showing five fingers wrapped around the other's hand. The boy is now half standing in a crouch, knees bent, his left arm hanging at his side, with mud dripping from his pants. The girl leans back slightly to pull him up, still laughing. Keep the faces, outfits, background, lighting, camera angle, and art style the same.",
+        "",
         "",
         0
       ],
       "widgets_values_named": {
-        "prompt": "The girl reaches out her right hand, and the boy grabs it with his right hand as he gets up from the muddy water. Their two hands are clasped firmly in a handshake grip, each hand showing five fingers wrapped around the other's hand. The boy is now half standing in a crouch, knees bent, his left arm hanging at his side, with mud dripping from his pants. The girl leans back slightly to pull him up, still laughing. Keep the faces, outfits, background, lighting, camera angle, and art style the same.",
+        "prompt": "",
         "negative_prompt": "",
         "resolution": 0
       }
@@ -444,7 +444,7 @@
         {
           "name": "image",
           "type": "IMAGE",
-          "link": 233
+          "link": 240
         }
       ],
       "outputs": [
@@ -477,8 +477,8 @@
       "id": 80,
       "type": "LoadImage",
       "pos": [
-        -778.9467734063469,
-        930.8730865969426
+        -784.6449658634255,
+        876.3526292006777
       ],
       "size": [
         661.1204826636696,
@@ -493,7 +493,7 @@
           "name": "IMAGE",
           "type": "IMAGE",
           "links": [
-            231
+            242
           ]
         },
         {
@@ -507,11 +507,11 @@
         "cnr_id": "comfy-core"
       },
       "widgets_values": [
-        "ComfyUI_00218_.png",
+        "qwen-image-2.1-panorama-cutout_input.webp",
         "image"
       ],
       "widgets_values_named": {
-        "image": "ComfyUI_00218_.png",
+        "image": "qwen-image-2.1-panorama-cutout_input.webp",
         "upload": "image"
       }
     },
@@ -519,8 +519,8 @@
       "id": 103,
       "type": "PanoramaStudio",
       "pos": [
-        1525.9378865353278,
-        910.2871453045052
+        1513.444934664414,
+        856.3526292006777
       ],
       "size": [
         360,
@@ -534,7 +534,7 @@
           "name": "scene",
           "shape": 7,
           "type": "PANO_SCENE",
-          "link": 232
+          "link": 238
         },
         {
           "name": "background",
@@ -558,7 +558,7 @@
           "name": "sticker_state",
           "shape": 7,
           "type": "STRING",
-          "link": 235
+          "link": 239
         }
       ],
       "outputs": [
@@ -612,14 +612,16 @@
         "multiple": 8,
         "state_json": "{\"version\":2,\"id\":\"PeoiYIhMWU_OFwYG\",\"timeline\":{\"fps\":24,\"length\":null},\"camera\":null,\"scene\":{\"clip\":{\"start\":0,\"in\":0,\"duration\":null},\"position\":{\"value\":[0,0,0],\"keyframes\":[]},\"rotation\":{\"value\":{\"yaw_deg\":0,\"pitch_deg\":0,\"roll_deg\":0},\"keyframes\":[]},\"scale\":{\"value\":1,\"keyframes\":[]}},\"stickers\":[{\"id\":\"sticker_1\",\"placement\":\"sky\",\"source\":{\"kind\":\"port\"},\"clip\":{\"start\":0,\"in\":0,\"duration\":null},\"visible\":true,\"locked\":false,\"crop\":{\"x0\":0,\"y0\":0,\"x1\":1,\"y1\":1},\"direction\":{\"value\":{\"yaw_deg\":156.78037013731,\"pitch_deg\":-28.035274282663643},\"keyframes\":[]},\"roll\":{\"value\":0,\"keyframes\":[]},\"size\":{\"value\":{\"hFOV_deg\":30,\"vFOV_deg\":30},\"keyframes\":[]},\"opacity\":{\"value\":1,\"keyframes\":[]},\"z_index\":0}],\"painting\":{\"version\":1,\"groups\":[],\"paint\":{\"strokes\":[]},\"mask\":{\"strokes\":[]},\"raster_objects\":[]},\"painting_layer\":null}",
         "$$comfy_animation_preview": ""
-      }
+      },
+      "color": "#232",
+      "bgcolor": "#353"
     },
     {
       "id": 104,
       "type": "SaveImage",
       "pos": [
-        1498.4417867517595,
-        188.1918182373047
+        1513.444934664414,
+        189.35653307788291
       ],
       "size": [
         502.4141232975637,
@@ -654,112 +656,11 @@
       }
     },
     {
-      "id": 105,
-      "type": "PanoramaStudio",
-      "pos": [
-        -82.31766647444006,
-        910.2871453045052
-      ],
-      "size": [
-        360,
-        474
-      ],
-      "flags": {},
-      "order": 5,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "scene",
-          "shape": 7,
-          "type": "PANO_SCENE",
-          "link": null
-        },
-        {
-          "name": "background",
-          "shape": 7,
-          "type": "IMAGE,VIDEO",
-          "link": 231
-        },
-        {
-          "name": "world",
-          "shape": 7,
-          "type": "SPLAT,MESH,FILE_3D_GLB,FILE_3D_GLTF,FILE_3D_FBX,FILE_3D_OBJ,FILE_3D_STL,FILE_3D_USDZ,FILE_3D,FILE_3D_PLY,FILE_3D_SPLAT,FILE_3D_SPZ,FILE_3D_KSPLAT,FILE_3D_SPLAT_ANY,MOGE_GEOMETRY,DA3_GEOMETRY",
-          "link": null
-        },
-        {
-          "name": "sticker",
-          "shape": 7,
-          "type": "IMAGE,VIDEO,MESH,SPLAT,FILE_3D_GLB,FILE_3D_GLTF,FILE_3D_FBX,FILE_3D_OBJ,FILE_3D_STL,FILE_3D_USDZ,FILE_3D,FILE_3D_PLY,FILE_3D_SPLAT,FILE_3D_SPZ,FILE_3D_KSPLAT,FILE_3D_SPLAT_ANY,MOGE_GEOMETRY,DA3_GEOMETRY",
-          "link": null
-        },
-        {
-          "name": "sticker_state",
-          "shape": 7,
-          "type": "STRING",
-          "link": null
-        }
-      ],
-      "outputs": [
-        {
-          "name": "scene",
-          "type": "PANO_SCENE",
-          "links": [
-            232
-          ]
-        },
-        {
-          "name": "first_frame",
-          "type": "IMAGE",
-          "links": [
-            233,
-            234
-          ]
-        },
-        {
-          "name": "first_frame_mask",
-          "type": "MASK",
-          "links": null
-        },
-        {
-          "name": "video",
-          "type": "VIDEO",
-          "links": null
-        },
-        {
-          "name": "sticker_state",
-          "type": "STRING",
-          "links": [
-            235
-          ]
-        }
-      ],
-      "properties": {
-        "Node name for S&R": "PanoramaStudio",
-        "cnr_id": "panorama-stickers"
-      },
-      "widgets_values": [
-        "#949494",
-        "360",
-        2,
-        8,
-        "{\"version\":2,\"id\":\"8aJC4DbC1OSzxASZ\",\"timeline\":{\"fps\":24,\"length\":null},\"camera\":{\"aspect\":1,\"position\":{\"value\":[0,0,0],\"keyframes\":[]},\"rotation\":{\"value\":{\"yaw_deg\":156.78037013731,\"pitch_deg\":-28.035274282663643,\"roll_deg\":0},\"keyframes\":[]},\"fov\":{\"value\":54.3,\"keyframes\":[]}},\"scene\":{\"clip\":{\"start\":0,\"in\":0,\"duration\":null},\"position\":{\"value\":[0,0,0],\"keyframes\":[]},\"rotation\":{\"value\":{\"yaw_deg\":0,\"pitch_deg\":0,\"roll_deg\":0},\"keyframes\":[]},\"scale\":{\"value\":1,\"keyframes\":[]}},\"stickers\":[],\"painting\":{\"version\":1,\"groups\":[],\"paint\":{\"strokes\":[]},\"mask\":{\"strokes\":[]},\"raster_objects\":[]},\"painting_layer\":null}",
-        ""
-      ],
-      "widgets_values_named": {
-        "background_color": "#949494",
-        "background_range": "360",
-        "megapixels": 2,
-        "multiple": 8,
-        "state_json": "{\"version\":2,\"id\":\"8aJC4DbC1OSzxASZ\",\"timeline\":{\"fps\":24,\"length\":null},\"camera\":{\"aspect\":1,\"position\":{\"value\":[0,0,0],\"keyframes\":[]},\"rotation\":{\"value\":{\"yaw_deg\":156.78037013731,\"pitch_deg\":-28.035274282663643,\"roll_deg\":0},\"keyframes\":[]},\"fov\":{\"value\":54.3,\"keyframes\":[]}},\"scene\":{\"clip\":{\"start\":0,\"in\":0,\"duration\":null},\"position\":{\"value\":[0,0,0],\"keyframes\":[]},\"rotation\":{\"value\":{\"yaw_deg\":0,\"pitch_deg\":0,\"roll_deg\":0},\"keyframes\":[]},\"scale\":{\"value\":1,\"keyframes\":[]}},\"stickers\":[],\"painting\":{\"version\":1,\"groups\":[],\"paint\":{\"strokes\":[]},\"mask\":{\"strokes\":[]},\"raster_objects\":[]},\"painting_layer\":null}",
-        "$$comfy_animation_preview": ""
-      }
-    },
-    {
       "id": 106,
       "type": "SaveImage",
       "pos": [
-        1933.0983114724916,
-        931.3657628327373
+        1922.143670885977,
+        876.3526292006777
       ],
       "size": [
         579.1914932806601,
@@ -792,6 +693,108 @@
       "widgets_values_named": {
         "filename_prefix": "ComfyUI"
       }
+    },
+    {
+      "id": 107,
+      "type": "PanoramaStudio",
+      "pos": [
+        -74.46136279778905,
+        856.3526292006777
+      ],
+      "size": [
+        360,
+        462.0000000000001
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "scene",
+          "shape": 7,
+          "type": "PANO_SCENE",
+          "link": null
+        },
+        {
+          "name": "background",
+          "shape": 7,
+          "type": "IMAGE,VIDEO",
+          "link": 242
+        },
+        {
+          "name": "world",
+          "shape": 7,
+          "type": "SPLAT,MESH,FILE_3D_GLB,FILE_3D_GLTF,FILE_3D_FBX,FILE_3D_OBJ,FILE_3D_STL,FILE_3D_USDZ,FILE_3D,FILE_3D_PLY,FILE_3D_SPLAT,FILE_3D_SPZ,FILE_3D_KSPLAT,FILE_3D_SPLAT_ANY,MOGE_GEOMETRY,DA3_GEOMETRY",
+          "link": null
+        },
+        {
+          "name": "sticker",
+          "shape": 7,
+          "type": "IMAGE,VIDEO,MESH,SPLAT,FILE_3D_GLB,FILE_3D_GLTF,FILE_3D_FBX,FILE_3D_OBJ,FILE_3D_STL,FILE_3D_USDZ,FILE_3D,FILE_3D_PLY,FILE_3D_SPLAT,FILE_3D_SPZ,FILE_3D_KSPLAT,FILE_3D_SPLAT_ANY,MOGE_GEOMETRY,DA3_GEOMETRY",
+          "link": null
+        },
+        {
+          "name": "sticker_state",
+          "shape": 7,
+          "type": "STRING",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "scene",
+          "type": "PANO_SCENE",
+          "links": [
+            238
+          ]
+        },
+        {
+          "name": "first_frame",
+          "type": "IMAGE",
+          "links": [
+            240,
+            241
+          ]
+        },
+        {
+          "name": "first_frame_mask",
+          "type": "MASK",
+          "links": null
+        },
+        {
+          "name": "video",
+          "type": "VIDEO",
+          "links": null
+        },
+        {
+          "name": "sticker_state",
+          "type": "STRING",
+          "links": [
+            239
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "PanoramaStudio"
+      },
+      "widgets_values": [
+        "#00ff00",
+        "360",
+        2,
+        32,
+        "",
+        ""
+      ],
+      "widgets_values_named": {
+        "background_color": "#00ff00",
+        "background_range": "360",
+        "megapixels": 2,
+        "multiple": 32,
+        "state_json": "",
+        "$$comfy_animation_preview": ""
+      },
+      "color": "#232",
+      "bgcolor": "#353"
     }
   ],
   "links": [
@@ -876,38 +879,6 @@
       "IMAGE"
     ],
     [
-      231,
-      80,
-      0,
-      105,
-      1,
-      "IMAGE"
-    ],
-    [
-      232,
-      105,
-      0,
-      103,
-      0,
-      "PANO_SCENE"
-    ],
-    [
-      233,
-      105,
-      1,
-      76,
-      0,
-      "IMAGE"
-    ],
-    [
-      235,
-      105,
-      4,
-      103,
-      4,
-      "STRING"
-    ],
-    [
       236,
       103,
       1,
@@ -924,33 +895,65 @@
       "CLIP"
     ],
     [
-      234,
-      105,
-      1,
-      64,
-      1,
-      "IMAGE"
-    ],
-    [
       159,
       39,
       0,
       64,
       4,
       "VAE"
+    ],
+    [
+      238,
+      107,
+      0,
+      103,
+      0,
+      "PANO_SCENE"
+    ],
+    [
+      239,
+      107,
+      4,
+      103,
+      4,
+      "STRING"
+    ],
+    [
+      240,
+      107,
+      1,
+      76,
+      0,
+      "IMAGE"
+    ],
+    [
+      241,
+      107,
+      1,
+      64,
+      1,
+      "IMAGE"
+    ],
+    [
+      242,
+      80,
+      0,
+      107,
+      1,
+      "IMAGE"
     ]
   ],
   "groups": [],
   "config": {},
   "extra": {
     "ds": {
-      "scale": 0.5209868481924642,
+      "scale": 0.6303940863128853,
       "offset": [
-        1141.4340567755426,
-        500.9001360492776
+        684.3928976209593,
+        151.49348247955868
       ]
     },
-    "frontendVersion": "1.57.6",
+    "frontendVersion": "1.59.10",
     "VHS_latentpreview": false,
     "VHS_latentpreviewrate": 0,
     "VHS_MetadataImage": true,

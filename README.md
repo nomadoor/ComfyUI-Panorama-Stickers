@@ -10,6 +10,16 @@ Fix the shot with an image generation model, then put it back where it was. You 
 
 [![Panorama Stickers](https://img.youtube.com/vi/QnMhNTncaYI/maxresdefault.jpg)](https://youtu.be/QnMhNTncaYI)
 
+## Guide videos
+
+A five-part series on using Panorama Studio.
+
+- [01 The Basics](https://youtu.be/nJ57kRKF7lE)
+- [02 Your Images to a Panorama](https://youtu.be/8yJbtS754ck)
+- [03 Fix a Shot and Put It Back](https://youtu.be/3IYn0XLEj2M)
+- [04 Place and Shoot 3D Models](https://youtu.be/yJZZBDSCrK4)
+- [05 Reshoot from a New Angle](https://youtu.be/IlnM0VP26Q8)
+
 ## Panorama Studio
 
 This is the core of the node set.

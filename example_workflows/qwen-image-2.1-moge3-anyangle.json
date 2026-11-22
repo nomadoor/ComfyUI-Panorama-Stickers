@@ -1,14 +1,14 @@
 {
   "id": "179e9c66-d274-4857-bcd9-34408448057b",
   "revision": 0,
-  "last_node_id": 98,
-  "last_link_id": 215,
+  "last_node_id": 102,
+  "last_link_id": 227,
   "nodes": [
     {
       "id": 8,
       "type": "VAEDecode",
       "pos": [
-        1243.5983042645516,
+        1254.7349194340854,
         188.1918182373047
       ],
       "size": [
@@ -51,7 +51,7 @@
       "type": "UNETLoader",
       "pos": [
         189.3259254826259,
-        38.62441838953851
+        36.45747720086093
       ],
       "size": [
         305.3782043457031,
@@ -148,8 +148,8 @@
       "id": 62,
       "type": "EmptyLatentImage",
       "pos": [
-        611.918176537727,
-        582.327293849093
+        612.606905782371,
+        759.3633677683392
       ],
       "size": [
         225.08182346227295,
@@ -205,7 +205,7 @@
       "id": 3,
       "type": "KSampler",
       "pos": [
-        898.7548217773438,
+        898.3089955872517,
         188.1918182373047
       ],
       "size": [
@@ -374,7 +374,7 @@
           "name": "images.image_2",
           "shape": 7,
           "type": "IMAGE",
-          "link": 214
+          "link": 227
         },
         {
           "name": "images.image_3",
@@ -429,8 +429,8 @@
       "id": 76,
       "type": "GetImageSize",
       "pos": [
-        360.89502403875986,
-        605.8810723145949
+        371.049310448905,
+        781.3633677683392
       ],
       "size": [
         210,
@@ -443,7 +443,7 @@
         {
           "name": "image",
           "type": "IMAGE",
-          "link": 213
+          "link": 226
         }
       ],
       "outputs": [
@@ -476,7 +476,7 @@
       "id": 80,
       "type": "LoadImage",
       "pos": [
-        -1224.6039283416299,
+        -1214.8526929925797,
         605.8810723145949
       ],
       "size": [
@@ -507,11 +507,11 @@
         "cnr_id": "comfy-core"
       },
       "widgets_values": [
-        "ComfyUI_00185_.png",
+        "qwen-image-2.1-moge3-anyangle_input.webp",
         "image"
       ],
       "widgets_values_named": {
-        "image": "ComfyUI_00185_.png",
+        "image": "qwen-image-2.1-moge3-anyangle_input.webp",
         "upload": "image"
       }
     },
@@ -519,7 +519,7 @@
       "id": 81,
       "type": "MoGeInference",
       "pos": [
-        -355.8815288278714,
+        -346.1302934788223,
         800.900549460405
       ],
       "size": [
@@ -546,7 +546,7 @@
           "name": "moge_geometry",
           "type": "MOGE_GEOMETRY",
           "links": [
-            212
+            225
           ]
         }
       ],
@@ -569,14 +569,14 @@
         "apply_mask": true,
         "refine_steps": 3
       },
-      "color": "#232",
-      "bgcolor": "#353"
+      "color": "#223",
+      "bgcolor": "#335"
     },
     {
       "id": 82,
       "type": "LoadMoGeModel",
       "pos": [
-        -661.0221112727725,
+        -651.2708759237233,
         800.900549460405
       ],
       "size": [
@@ -612,15 +612,15 @@
       "widgets_values_named": {
         "model_name": "moge_3_vitg_fp16.safetensors"
       },
-      "color": "#232",
-      "bgcolor": "#353"
+      "color": "#223",
+      "bgcolor": "#335"
     },
     {
       "id": 84,
       "type": "LoraLoaderModelOnly",
       "pos": [
         532.3105248989408,
-        38.62441838953851
+        36.45747720086093
       ],
       "size": [
         305.3782043457031,
@@ -671,7 +671,7 @@
       "id": 85,
       "type": "Reroute",
       "pos": [
-        234.25905361702962,
+        244.01028896607872,
         605.8810723145949
       ],
       "size": [
@@ -706,7 +706,7 @@
       "id": 96,
       "type": "SaveImage",
       "pos": [
-        1498.4417867517595,
+        1521.1608432809194,
         188.1918182373047
       ],
       "size": [
@@ -742,10 +742,10 @@
       }
     },
     {
-      "id": 97,
+      "id": 102,
       "type": "PanoramaStudio",
       "pos": [
-        -50.74094638297038,
+        -40.98971103392125,
         761.3633677683392
       ],
       "size": [
@@ -772,7 +772,7 @@
           "name": "world",
           "shape": 7,
           "type": "SPLAT,MESH,FILE_3D_GLB,FILE_3D_GLTF,FILE_3D_FBX,FILE_3D_OBJ,FILE_3D_STL,FILE_3D_USDZ,FILE_3D,FILE_3D_PLY,FILE_3D_SPLAT,FILE_3D_SPZ,FILE_3D_KSPLAT,FILE_3D_SPLAT_ANY,MOGE_GEOMETRY,DA3_GEOMETRY",
-          "link": 212
+          "link": 225
         },
         {
           "name": "sticker",
@@ -797,8 +797,8 @@
           "name": "first_frame",
           "type": "IMAGE",
           "links": [
-            213,
-            214
+            226,
+            227
           ]
         },
         {
@@ -825,18 +825,20 @@
         "#949494",
         "360",
         2,
-        8,
-        "{\"version\":2,\"id\":\"8aJC4DbC1OSzxASZ\",\"timeline\":{\"fps\":24,\"length\":null},\"camera\":{\"aspect\":1.7777777777777777,\"position\":{\"value\":[-1.3840266990310008,-1.603507348571414,-3.519156789296118],\"keyframes\":[]},\"rotation\":{\"value\":{\"yaw_deg\":25.513020669378193,\"pitch_deg\":26.79260449795178,\"roll_deg\":-6.5},\"keyframes\":[]},\"fov\":{\"value\":86.9,\"keyframes\":[]},\"curve\":{\"value\":0.23,\"keyframes\":[]}},\"scene\":{\"clip\":{\"start\":0,\"in\":0,\"duration\":null},\"position\":{\"value\":[0,0,0],\"keyframes\":[]},\"rotation\":{\"value\":{\"yaw_deg\":0,\"pitch_deg\":0,\"roll_deg\":0},\"keyframes\":[]},\"scale\":{\"value\":1,\"keyframes\":[]}},\"stickers\":[],\"painting\":{\"version\":1,\"groups\":[],\"paint\":{\"strokes\":[]},\"mask\":{\"strokes\":[]},\"raster_objects\":[]},\"painting_layer\":null}",
+        32,
+        "",
         ""
       ],
       "widgets_values_named": {
         "background_color": "#949494",
         "background_range": "360",
         "megapixels": 2,
-        "multiple": 8,
-        "state_json": "{\"version\":2,\"id\":\"8aJC4DbC1OSzxASZ\",\"timeline\":{\"fps\":24,\"length\":null},\"camera\":{\"aspect\":1.7777777777777777,\"position\":{\"value\":[-1.3840266990310008,-1.603507348571414,-3.519156789296118],\"keyframes\":[]},\"rotation\":{\"value\":{\"yaw_deg\":25.513020669378193,\"pitch_deg\":26.79260449795178,\"roll_deg\":-6.5},\"keyframes\":[]},\"fov\":{\"value\":86.9,\"keyframes\":[]},\"curve\":{\"value\":0.23,\"keyframes\":[]}},\"scene\":{\"clip\":{\"start\":0,\"in\":0,\"duration\":null},\"position\":{\"value\":[0,0,0],\"keyframes\":[]},\"rotation\":{\"value\":{\"yaw_deg\":0,\"pitch_deg\":0,\"roll_deg\":0},\"keyframes\":[]},\"scale\":{\"value\":1,\"keyframes\":[]}},\"stickers\":[],\"painting\":{\"version\":1,\"groups\":[],\"paint\":{\"strokes\":[]},\"mask\":{\"strokes\":[]},\"raster_objects\":[]},\"painting_layer\":null}",
+        "multiple": 32,
+        "state_json": "",
         "$$comfy_animation_preview": ""
-      }
+      },
+      "color": "#232",
+      "bgcolor": "#353"
     }
   ],
   "links": [
@@ -945,22 +947,6 @@
       "IMAGE"
     ],
     [
-      212,
-      81,
-      0,
-      97,
-      2,
-      "MOGE_GEOMETRY"
-    ],
-    [
-      213,
-      97,
-      1,
-      76,
-      0,
-      "IMAGE"
-    ],
-    [
       115,
       38,
       0,
@@ -977,33 +963,49 @@
       "IMAGE"
     ],
     [
-      214,
-      97,
-      1,
-      64,
-      2,
-      "IMAGE"
-    ],
-    [
       159,
       39,
       0,
       64,
       4,
       "VAE"
+    ],
+    [
+      225,
+      81,
+      0,
+      102,
+      2,
+      "MOGE_GEOMETRY"
+    ],
+    [
+      226,
+      102,
+      1,
+      76,
+      0,
+      "IMAGE"
+    ],
+    [
+      227,
+      102,
+      1,
+      64,
+      2,
+      "IMAGE"
     ]
   ],
   "groups": [],
   "config": {},
   "extra": {
     "ds": {
-      "scale": 0.6934334949441608,
+      "scale": 0.5209868481924623,
       "offset": [
-        1106.6065736040678,
-        263.4816747142094
+        1782.8907065298265,
+        463.8442826431517
       ]
     },
-    "frontendVersion": "1.57.6",
+    "frontendVersion": "1.59.10",
     "VHS_latentpreview": false,
     "VHS_latentpreviewrate": 0,
     "VHS_MetadataImage": true,
