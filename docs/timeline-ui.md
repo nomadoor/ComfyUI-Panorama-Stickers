@@ -108,7 +108,7 @@ Panorama Studio はいつも新しい UI で開き、古い UI に Panorama Stud
 
 - Easing は区間ごとに、インスペクタのパネルで選ぶ（`docs/studio-ui.md` の「Easing のパネル」）。タイムラインの上で直接は曲げない。Easing が決めるのは、区間の形（軌道・回転の経路）の上をどう進むかだけで、形は変えない（`docs/scene-state-v2.md` の「補間」、ADR 0064）。どの操作も Keyframe の `frame` を動かさない。
 - 既定値は Smooth（何も設定していない区間。`docs/scene-state-v2.md` の「Keyframe」）。Keyframe を打っただけの動きは、最初でゆっくり出て、途中の Keyframe を止まらずに通り、最後でゆっくり止まる。
-- パネルの選択肢は Smooth・Hold・Linear・Ease in-out・Ease in・Ease out。Smooth を選ぶと、その区間の Easing を消す（Smooth に戻す）。プリセットと手で曲げた曲線は、書かれたとおりに進む。Ease in-out の区間は Keyframe ごとに止まり、Linear の区間は区間の中を同じ速さで進む。
+- パネルの選択肢は Smooth・Hold・Linear・Ease in-out・Ease in・Ease out。Smooth を選ぶと、その区間の Easing を消す（Smooth に戻す）。プリセットと手で曲げた曲線は、書かれたとおりに進む。Smooth 以外の Easing は区間ごとにかかり、各区間をその曲線で進む（Linear なら区間の中を同じ速さで進む）。
 - cubic-bezier はグラフの二つの制御点をドラッグして変えられる。制御点の縦方向は 0〜1 に限る。
 - 対象の区間は、持ち主ごと、Lane ごとに数える。
   - その Lane の選んだ Keyframe が一つなら、その Keyframe から次の Keyframe までの区間。
