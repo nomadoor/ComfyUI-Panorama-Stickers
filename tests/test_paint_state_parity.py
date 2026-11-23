@@ -82,3 +82,44 @@ def test_painting_numbers_are_read_as_the_editor_reads_them(name):
     [item] = items
     actual = {key: item["geometry"]["points"][0] if key == "point" else item[key] for key in case["expected"]}
     assert actual == case["expected"]
+
+
+STROKES = json.loads((Path(__file__).parent / "fixtures" / "painting_strokes.json").read_text(encoding="utf-8"))
+
+
+@pytest.mark.parametrize("name", sorted(STROKES["strokes"]))
+def test_strokes_are_accepted_as_the_editor_accepts_them(name):
+    case = STROKES["strokes"][name]
+    layer = case["layer"]
+    stroke = {**STROKES["bases"][case["base"]], "layerKind": layer, **case.get("stroke", {})}
+    if "point" in case:
+        points = [dict(point) for point in stroke["geometry"]["points"]]
+        points[0].update(case["point"])
+        stroke["geometry"] = {**stroke["geometry"], "points": points}
+
+    strokes = normalize_painting_state({layer: {"strokes": [stroke]}})[layer]["strokes"]
+
+    if case["expected"] is None:
+        assert strokes == []
+        return
+    [out] = strokes
+    for key, value in case["expected"].items():
+        if key == "u0":
+            assert out["geometry"]["points"][0]["u"] == pytest.approx(value, abs=1e-12)
+        else:
+            assert out[key] == value
+
+
+@pytest.mark.parametrize("name", sorted(STROKES["items"]))
+def test_raster_objects_and_groups_are_accepted_as_the_editor_accepts_them(name):
+    case = STROKES["items"][name]
+    kind = case["kind"]
+    item = [1] if case["patch"] is None else {**STROKES[kind], **case["patch"]}
+    key = "raster_objects" if kind == "raster" else "groups"
+
+    out = normalize_painting_state({key: [item]})[key]
+
+    if kind == "raster":
+        assert [[obj["id"], obj["layerKind"]] for obj in out] == case["expected"]
+    else:
+        assert [[group["id"], group["actionGroupId"]] for group in out] == case["expected"]

@@ -328,7 +328,7 @@ def _source(raw):
         return None
     filename = raw.get("filename")
     if isinstance(filename, str) and filename.strip():
-        # Same rules as the v1 migration, so a migrated source reads back unchanged.
+        # The v1 migration reads its assets through these rules too.
         subfolder = raw.get("subfolder")
         storage = raw.get("storage")
         storage = storage.strip().lower() if isinstance(storage, str) else None
@@ -597,14 +597,10 @@ def _v1_source(sticker, assets):
     asset = assets.get(asset_id) if isinstance(asset_id, str) else None
     if not isinstance(asset, dict):
         return None
-    asset_type = str(asset.get("type") or "").strip().lower()
-    if asset_type == "comfy_image":
-        return {
-            "kind": "file",
-            "filename": str(asset.get("filename") or "").strip(),
-            "subfolder": str(asset.get("subfolder") or "").strip().strip("/\\"),
-            "storage": str(asset.get("storage") or "input").strip().lower(),
-        }
+    asset_type = asset.get("type")
+    if isinstance(asset_type, str) and asset_type.strip().lower() == "comfy_image":
+        # The `file` Source's own rules read the asset's values as they are (docs/scene-state-v2.md 「Source」).
+        return _source({"kind": "file", "filename": asset.get("filename"), "subfolder": asset.get("subfolder"), "storage": asset.get("storage")})
     return None
 
 

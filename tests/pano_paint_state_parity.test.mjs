@@ -68,3 +68,36 @@ for (const [name, item] of Object.entries(numbers.cases)) {
     assert.deepEqual(actual, item.expected);
   });
 }
+
+const strokes = JSON.parse(readFileSync(new URL("./fixtures/painting_strokes.json", import.meta.url), "utf8"));
+
+for (const [name, item] of Object.entries(strokes.strokes)) {
+  test(`painting strokes: ${name}`, () => {
+    const stroke = { ...strokes.bases[item.base], layerKind: item.layer, ...item.stroke };
+    if (item.point) {
+      const points = stroke.geometry.points.map((point) => ({ ...point }));
+      Object.assign(points[0], item.point);
+      stroke.geometry = { ...stroke.geometry, points };
+    }
+    const kept = normalizePaintingState({ [item.layer]: { strokes: [stroke] } })[item.layer].strokes;
+    if (item.expected === null) {
+      assert.deepEqual(kept, []);
+      return;
+    }
+    assert.equal(kept.length, 1);
+    for (const [key, value] of Object.entries(item.expected)) {
+      if (key === "u0") assert.ok(Math.abs(kept[0].geometry.points[0].u - value) <= 1e-12, `u ${kept[0].geometry.points[0].u}`);
+      else assert.deepEqual(kept[0][key], value, key);
+    }
+  });
+}
+
+for (const [name, item] of Object.entries(strokes.items)) {
+  test(`painting raster objects and groups: ${name}`, () => {
+    const raw = item.patch === null ? [1] : { ...strokes[item.kind], ...item.patch };
+    const key = item.kind === "raster" ? "raster_objects" : "groups";
+    const out = normalizePaintingState({ [key]: [raw] })[key];
+    const actual = item.kind === "raster" ? out.map((obj) => [obj.id, obj.layerKind]) : out.map((group) => [group.id, group.actionGroupId]);
+    assert.deepEqual(actual, item.expected);
+  });
+}

@@ -270,7 +270,7 @@ function source(raw) {
   if (raw.kind === "port") return { kind: "port" };
   if (raw.kind !== "file") return null;
   if (typeof raw.filename === "string" && raw.filename.trim()) {
-    // Same rules as the v1 migration, so a migrated source reads back unchanged.
+    // The v1 migration reads its assets through these rules too.
     const storage = typeof raw.storage === "string" ? raw.storage.trim().toLowerCase() : null;
     return {
       kind: "file",
@@ -549,14 +549,9 @@ function v1Source(item, assets) {
   if (item.source_kind === "external_image") return { kind: "port" };
   const asset = typeof item.asset_id === "string" && Object.hasOwn(assets, item.asset_id) ? assets[item.asset_id] : null;
   if (!isObject(asset)) return null;
-  const assetType = String(asset.type || "").trim().toLowerCase();
-  if (assetType === "comfy_image") {
-    return {
-      kind: "file",
-      filename: String(asset.filename || "").trim(),
-      subfolder: String(asset.subfolder || "").trim().replace(/^[/\\]+|[/\\]+$/g, ""),
-      storage: String(asset.storage || "input").trim().toLowerCase(),
-    };
+  if (typeof asset.type === "string" && asset.type.trim().toLowerCase() === "comfy_image") {
+    // The `file` Source's own rules read the asset's values as they are (docs/scene-state-v2.md 「Source」).
+    return source({ kind: "file", filename: asset.filename, subfolder: asset.subfolder, storage: asset.storage });
   }
   return null;
 }
