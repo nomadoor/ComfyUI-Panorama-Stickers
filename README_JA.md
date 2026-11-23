@@ -12,13 +12,14 @@
 
 ## 使い方の動画
 
-Panorama Studio の使い方を、5 本の動画で紹介しています。
+Panorama Studio の使い方を、動画で紹介しています。
 
 - [01 基本の操作](https://youtu.be/7MdfPZKyyT8)
 - [02 好きな画像からパノラマを作る](https://youtu.be/hstaTdzv50k)
 - [03 撮った絵を直して元に戻す](https://youtu.be/Ki-24Y_0zG4)
 - [04 3D モデルを置いて撮る](https://youtu.be/-hIixhTV_gI)
 - [05 別の角度から撮り直す](https://youtu.be/ecOmCf-0htc)
+- [Ex 動きを整える](https://youtu.be/aazpBsHZSQI)
 
 ## Panorama Studio
 
