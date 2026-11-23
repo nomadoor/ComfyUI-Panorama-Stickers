@@ -12,13 +12,14 @@
 
 ## 使用教程视频
 
-介绍 Panorama Studio 用法的系列视频，共 5 集（英语）。
+介绍 Panorama Studio 用法的系列视频（英语）。
 
 - [01 The Basics](https://youtu.be/nJ57kRKF7lE)
 - [02 Your Images to a Panorama](https://youtu.be/8yJbtS754ck)
 - [03 Fix a Shot and Put It Back](https://youtu.be/3IYn0XLEj2M)
 - [04 Place and Shoot 3D Models](https://youtu.be/yJZZBDSCrK4)
 - [05 Reshoot from a New Angle](https://youtu.be/IlnM0VP26Q8)
+- [Ex Fine-Tune the Motion](https://youtu.be/tLSK13Th_kQ)
 
 ## Panorama Studio
 
