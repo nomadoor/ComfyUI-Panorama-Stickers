@@ -64,6 +64,7 @@ Connect a video to the background, or move stickers or the Camera with Keyframes
 
 - **Panorama Preview**: look around panorama images and videos, or a Studio `scene`, in a separate window.
 - **Panorama Seam Prep**: moves the left-right seam of a panorama to the center, and makes a mask for fixing the seam.
+- **Panorama Circular RoPE** and **Panorama Circular VAE**: make Qwen Image 2.1 draw a panorama whose left and right edges join, with no seam. Put one on the model and the other on the VAE, and always use them together (the VAE for both the reference image's encode and the decode). Panorama Circular VAE requires ComfyUI 0.44.0 or later.
 - The earlier nodes (Panorama Stickers, Panorama Cutout, Panorama Preview (legacy)) still work as before.
 
 ## Installation

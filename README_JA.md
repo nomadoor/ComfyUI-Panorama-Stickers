@@ -64,6 +64,7 @@ Panorama Studio の使い方を、動画で紹介しています。
 
 - **Panorama Preview**：パノラマの画像・動画や、Studio の `scene` を別のウィンドウで見回します。
 - **Panorama Seam Prep**：パノラマの左右の継ぎ目を中央へ移し、継ぎ目を直すためのマスクを作ります。
+- **Panorama Circular RoPE** と **Panorama Circular VAE**：Qwen Image 2.1 で、左右の端がつながった継ぎ目のないパノラマを描かせます。モデルと VAE に 1 つずつ挟み、必ず 2 つ一緒に使います（VAE は参照画像の encode と decode の両方に使います）。Panorama Circular VAE には ComfyUI 0.44.0 以降が必要です。
 - 以前のノード（Panorama Stickers・Panorama Cutout・Panorama Preview (legacy)）も、そのまま使えます。
 
 ## インストール

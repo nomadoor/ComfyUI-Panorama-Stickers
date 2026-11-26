@@ -298,6 +298,22 @@ EXPECTED_SCHEMAS = {
         "hidden": [],
         "is_output_node": False,
     },
+    "PanoramaCircularRoPE": {
+        "display_name": "Panorama Circular RoPE",
+        "inputs": [("model", "MODEL", False)],
+        "input_metadata": {"model": {}},
+        "outputs": [("model", "model", "MODEL")],
+        "hidden": [],
+        "is_output_node": False,
+    },
+    "PanoramaCircularVAE": {
+        "display_name": "Panorama Circular VAE",
+        "inputs": [("vae", "VAE", False)],
+        "input_metadata": {"vae": {}},
+        "outputs": [("vae", "vae", "VAE")],
+        "hidden": [],
+        "is_output_node": False,
+    },
 }
 
 COMPATIBILITY_METADATA_FIELDS = (
@@ -325,6 +341,7 @@ def test_public_node_registration_remains_stable():
     # Studio replaces them without a NodeReplace (ADR 0029).
     assert set(REGISTERED_NODES) == {
         "PanoramaStickers", "PanoramaStudio", "PanoramaCutout", "PanoramaPreview", "PanoramaPreviewNode", "PanoramaSeamPrep",
+        "PanoramaCircularRoPE", "PanoramaCircularVAE",
     }
     assert set(REGISTERED_NODES) == set(EXPECTED_SCHEMAS)
     assert {
