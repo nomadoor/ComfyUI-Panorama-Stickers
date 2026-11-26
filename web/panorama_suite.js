@@ -29014,8 +29014,11 @@ function Z1(e) {
   return t.find((n) => Rn(n)) ?? t.find((n) => Rf(n)) ?? null;
 }
 function fH(e) {
-  const t = Array.from(e ?? []).find((n) => (n == null ? void 0 : n.kind) === "file");
-  return t ? String(t.type || "").toLowerCase().startsWith("image/") ? "image" : "3d" : null;
+  const t = Array.from(e ?? []).map((o) => ({
+    kind: o == null ? void 0 : o.kind,
+    type: String((o == null ? void 0 : o.type) || "").trim().toLowerCase()
+  })), n = t.filter((o) => o.kind === "file");
+  return n.length ? n.some((o) => o.type.startsWith("image/")) || t.some((o) => o.kind === "string" && o.type === "text/html") && n.some((o) => !o.type) ? "image" : "3d" : null;
 }
 function pH({
   session: e,
