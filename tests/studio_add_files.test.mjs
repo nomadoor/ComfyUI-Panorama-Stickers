@@ -51,14 +51,32 @@ function setup({ view = stage(), state = { stickers: [] }, readOnly = false, upl
   return { session, ui, add, notices };
 }
 
-test("the file placed is the first image, else the first 3D file; a drag shows an image's mark only for an image type", () => {
+test("the file placed is the first image, else the first 3D file", () => {
   assert.equal(fileToPlace([glbFile(), imageFile()]).name, "photo.png");
   assert.equal(fileToPlace([{ name: "a.txt", type: "text/plain" }, glbFile()]).name, "box.glb");
   assert.equal(fileToPlace([{ name: "a.txt", type: "text/plain" }]), null);
-  assert.equal(dragKind([{ kind: "file", type: "image/jpeg" }]), "image");
-  assert.equal(dragKind([{ kind: "file", type: "" }]), "3d");
-  assert.equal(dragKind([{ kind: "file", type: "model/gltf-binary" }]), "3d");
-  assert.equal(dragKind([{ kind: "string", type: "text/plain" }]), null);
+});
+
+test("a drag shows an image's mark for an image type, or for an empty type with text/html (a web page's image); else a 3D file's", () => {
+  const file = (type) => ({ kind: "file", type });
+  const text = (type) => ({ kind: "string", type });
+  // Logged in a Windows Chromium browser (Issue #193): a web page's image, an image and a .glb from Explorer.
+  assert.equal(dragKind([text("text/plain"), text("text/uri-list"), text("text/html"), file("")]), "image");
+  assert.equal(dragKind([file("image/jpeg")]), "image");
+  assert.equal(dragKind([file("")]), "3d");
+  // Only text/html marks a page's element: text/uri-list or text/plain alone may come with a file from a file manager.
+  assert.equal(dragKind([text("text/uri-list"), file("")]), "3d");
+  assert.equal(dragKind([text("text/plain"), file("")]), "3d");
+  assert.equal(dragKind([text("text/html"), file("model/gltf-binary")]), "3d");
+  assert.equal(dragKind([text("text/html"), file("application/octet-stream")]), "3d");
+  // A file item of type text/html (an .html file beside a .glb) is not a page's element.
+  assert.equal(dragKind([file("text/html"), file("")]), "3d");
+  assert.equal(dragKind([file("model/gltf-binary")]), "3d");
+  // Any image item makes the image's mark, as the drop places the image first.
+  assert.equal(dragKind([file(""), file("image/png")]), "image");
+  assert.equal(dragKind([file("text/plain"), file(" Image/PNG ")]), "image");
+  assert.equal(dragKind([text("text/plain")]), null);
+  assert.equal(dragKind([]), null);
 });
 
 test("Add with a GLB places it in the World where the screen center lands, selected; placing is one Undo step", async () => {

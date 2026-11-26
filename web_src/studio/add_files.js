@@ -45,12 +45,20 @@ export function fileToPlace(files) {
   return list.find((file) => isStickerImageFile(file)) ?? list.find((file) => isSticker3dFile(file)) ?? null;
 }
 
-// The kind of mark for a drag's items (DataTransferItemList or an array of { kind, type }): "image" when its first file
-// item's type is an image's, else "3d" (names cannot be read while dragging). null without a file item.
+// The kind of mark for a drag's items (DataTransferItemList or an array of { kind, type }), from the types alone since
+// names cannot be read while dragging (docs/studio-ui.md "Add とドロップの見せ方"): "image" when a file item's type is an
+// image's, or when a file item of no type comes with a text/html item (a web page's image, whose type shows only on the
+// drop); else "3d". null without a file item.
 export function dragKind(items) {
-  const item = Array.from(items ?? []).find((entry) => entry?.kind === "file");
-  if (!item) return null;
-  return String(item.type || "").toLowerCase().startsWith("image/") ? "image" : "3d";
+  const list = Array.from(items ?? []).map((entry) => ({
+    kind: entry?.kind,
+    type: String(entry?.type || "").trim().toLowerCase(),
+  }));
+  const files = list.filter((entry) => entry.kind === "file");
+  if (!files.length) return null;
+  if (files.some((entry) => entry.type.startsWith("image/"))) return "image";
+  const fromPage = list.some((entry) => entry.kind === "string" && entry.type === "text/html");
+  return fromPage && files.some((entry) => !entry.type) ? "image" : "3d";
 }
 
 // session: session.js's. ui: the editor's reactive report, whose fields this writes: `choice` (null or { name }: the
