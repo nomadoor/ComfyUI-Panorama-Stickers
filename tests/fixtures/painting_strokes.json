@@ -705,6 +705,18 @@
         ]
       ]
     },
+    "group_action_id_blank_uses_id": {
+      "kind": "group",
+      "patch": {
+        "actionGroupId": "   "
+      },
+      "expected": [
+        [
+          "g1",
+          "g1"
+        ]
+      ]
+    },
     "group_ids_numbers_dropped": {
       "kind": "group",
       "patch": {

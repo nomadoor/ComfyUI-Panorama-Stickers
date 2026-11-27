@@ -48,7 +48,7 @@ function normalizeGroups(raw) {
   const seen = new Set();
   for (const item of raw) {
     if (!isObject(item)) continue;
-    const actionGroupId = (text(item.actionGroupId) || text(item.id) || "").trim();
+    const actionGroupId = (text(item.actionGroupId) || "").trim() || (text(item.id) || "").trim();
     if (!actionGroupId || seen.has(actionGroupId)) continue;
     seen.add(actionGroupId);
     const z = zIndexOf(item);

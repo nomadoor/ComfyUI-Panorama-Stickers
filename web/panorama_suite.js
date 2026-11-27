@@ -74,7 +74,7 @@ function EO(e) {
   const t = [], n = /* @__PURE__ */ new Set();
   for (const r of e) {
     if (!gr(r)) continue;
-    const o = (Bn(r.actionGroupId) || Bn(r.id) || "").trim();
+    const o = (Bn(r.actionGroupId) || "").trim() || (Bn(r.id) || "").trim();
     if (!o || n.has(o)) continue;
     n.add(o);
     const i = Kk(r);

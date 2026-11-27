@@ -294,7 +294,7 @@ def _normalize_groups(raw_groups):
     for item in raw_groups:
         if not isinstance(item, dict):
             continue
-        action_group_id = (_text(item.get("actionGroupId")) or _text(item.get("id")) or "").strip()
+        action_group_id = (_text(item.get("actionGroupId")) or "").strip() or (_text(item.get("id")) or "").strip()
         if not action_group_id or action_group_id in seen:
             continue
         seen.add(action_group_id)
