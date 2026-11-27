@@ -1,5 +1,5 @@
 {
-  "_doc": "normalize_painting_state (Python) and normalizePaintingState (JS) accept strokes, raster objects and groups the same (docs/scene-state-v2.md 「ペイントのストロークの受け付け方」 and 共通の規則: a text field is a JSON string only, an object field a JSON object only). `strokes`: each case puts base stroke `base` (pen or lasso, below) into layer `layer` with `layerKind` set to it, applies `stroke` (keys set; null removes nothing, it sets null) and `point` (merged into the first point); `expected` null means the stroke is dropped, otherwise the listed keys of the kept stroke are compared (`u0` is the first point's u, compared within 1e-12). `items`: a raster object (`raster`) or group (`group`) with `patch` merged in (`patch` null puts a list in its place); `expected` lists the kept raster objects' [id, layerKind], or the kept groups' [id, actionGroupId]; a raster case with `transform` also compares the first kept raster object's transform.",
+  "_doc": "normalize_painting_state (Python) and normalizePaintingState (JS) accept strokes, raster objects and groups the same (docs/scene-state-v2.md 「ペイントのストロークの受け付け方」 and 共通の規則: a text field is a JSON string only, an object field a JSON object only). `strokes`: each case puts base stroke `base` (pen or lasso, below) into layer `layer` with `layerKind` set to it, applies `stroke` (keys set; null removes nothing, it sets null) and `point` (merged into the first point); `expected` null means the stroke is dropped, otherwise the listed keys of the kept stroke are compared (`u0` is the first point's u, `geometryKind` the kept geometry's kind, both compared exactly). `items`: a raster object (`raster`) or group (`group`) with `patch` merged in (`patch` null puts a list in its place); `expected` lists the kept raster objects' [id, layerKind], or the kept groups' [id, actionGroupId]; a raster case with `first` also compares those keys of the first kept raster object.",
   "bases": {
     "pen": {
       "id": "s1",
@@ -104,6 +104,14 @@
     "z_index": 0
   },
   "strokes": {
+    "actionGroupId_blank_dropped": {
+      "base": "pen",
+      "layer": "paint",
+      "stroke": {
+        "actionGroupId": "   "
+      },
+      "expected": null
+    },
     "actionGroupId_list_dropped": {
       "base": "pen",
       "layer": "paint",
@@ -207,7 +215,7 @@
         }
       },
       "expected": {
-        "toolKind": "pen"
+        "geometryKind": "freehand_open"
       }
     },
     "geometry_list_dropped": {
@@ -231,6 +239,14 @@
             ]
           }
         ]
+      },
+      "expected": null
+    },
+    "id_blank_dropped": {
+      "base": "pen",
+      "layer": "paint",
+      "stroke": {
+        "id": "   "
       },
       "expected": null
     },
@@ -750,6 +766,18 @@
         ]
       ]
     },
+    "group_id_empty_takes_action_id": {
+      "kind": "group",
+      "patch": {
+        "id": ""
+      },
+      "expected": [
+        [
+          "ag1",
+          "ag1"
+        ]
+      ]
+    },
     "group_id_object_takes_action_id": {
       "kind": "group",
       "patch": {
@@ -828,7 +856,10 @@
           "r1",
           "paint"
         ]
-      ]
+      ],
+      "first": {
+        "rasterDataUrl": "data:image/png;base64,AAAA"
+      }
     },
     "raster_id_number_dropped": {
       "kind": "raster",
@@ -852,6 +883,18 @@
     "raster_kept": {
       "kind": "raster",
       "patch": {},
+      "expected": [
+        [
+          "r1",
+          "paint"
+        ]
+      ]
+    },
+    "raster_layer_kind_empty_paint": {
+      "kind": "raster",
+      "patch": {
+        "layerKind": ""
+      },
       "expected": [
         [
           "r1",
@@ -906,11 +949,13 @@
           "paint"
         ]
       ],
-      "transform": {
-        "du": 0,
-        "dv": 0,
-        "rot_deg": 0,
-        "scale": 1
+      "first": {
+        "transform": {
+          "du": 0,
+          "dv": 0,
+          "rot_deg": 0,
+          "scale": 1
+        }
       }
     },
     "raster_type_list_dropped": {

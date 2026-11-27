@@ -86,7 +86,8 @@ for (const [name, item] of Object.entries(strokes.strokes)) {
     }
     assert.equal(kept.length, 1);
     for (const [key, value] of Object.entries(item.expected)) {
-      if (key === "u0") assert.ok(Math.abs(kept[0].geometry.points[0].u - value) <= 1e-12, `u ${kept[0].geometry.points[0].u}`);
+      if (key === "u0") assert.equal(kept[0].geometry.points[0].u, value);
+      else if (key === "geometryKind") assert.equal(kept[0].geometry.geometryKind, value);
       else assert.deepEqual(kept[0][key], value, key);
     }
   });
@@ -99,7 +100,7 @@ for (const [name, item] of Object.entries(strokes.items)) {
     const out = normalizePaintingState({ [key]: [raw] })[key];
     const actual = item.kind === "raster" ? out.map((obj) => [obj.id, obj.layerKind]) : out.map((group) => [group.id, group.actionGroupId]);
     assert.deepEqual(actual, item.expected);
-    if (item.transform) assert.deepEqual(out[0].transform, item.transform);
+    for (const [key, value] of Object.entries(item.first ?? {})) assert.deepEqual(out[0][key], value, key);
   });
 }
 

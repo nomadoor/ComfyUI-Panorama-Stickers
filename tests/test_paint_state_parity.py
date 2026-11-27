@@ -105,7 +105,9 @@ def test_strokes_are_accepted_as_the_editor_accepts_them(name):
     [out] = strokes
     for key, value in case["expected"].items():
         if key == "u0":
-            assert out["geometry"]["points"][0]["u"] == pytest.approx(value, abs=1e-12)
+            assert out["geometry"]["points"][0]["u"] == value
+        elif key == "geometryKind":
+            assert out["geometry"]["geometryKind"] == value
         else:
             assert out[key] == value
 
@@ -121,7 +123,7 @@ def test_raster_objects_and_groups_are_accepted_as_the_editor_accepts_them(name)
 
     if kind == "raster":
         assert [[obj["id"], obj["layerKind"]] for obj in out] == case["expected"]
-        if "transform" in case:
-            assert out[0]["transform"] == case["transform"]
+        for key, value in case.get("first", {}).items():
+            assert out[0][key] == value
     else:
         assert [[group["id"], group["actionGroupId"]] for group in out] == case["expected"]
