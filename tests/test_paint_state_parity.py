@@ -121,5 +121,7 @@ def test_raster_objects_and_groups_are_accepted_as_the_editor_accepts_them(name)
 
     if kind == "raster":
         assert [[obj["id"], obj["layerKind"]] for obj in out] == case["expected"]
+        if "transform" in case:
+            assert out[0]["transform"] == case["transform"]
     else:
         assert [[group["id"], group["actionGroupId"]] for group in out] == case["expected"]

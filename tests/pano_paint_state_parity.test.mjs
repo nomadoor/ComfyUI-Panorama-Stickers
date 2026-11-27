@@ -99,5 +99,6 @@ for (const [name, item] of Object.entries(strokes.items)) {
     const out = normalizePaintingState({ [key]: [raw] })[key];
     const actual = item.kind === "raster" ? out.map((obj) => [obj.id, obj.layerKind]) : out.map((group) => [group.id, group.actionGroupId]);
     assert.deepEqual(actual, item.expected);
+    if (item.transform) assert.deepEqual(out[0].transform, item.transform);
   });
 }
