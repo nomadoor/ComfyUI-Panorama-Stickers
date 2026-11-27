@@ -9,7 +9,7 @@ from comfyui_pano_suite.core.scene_state import DEFAULT_CAMERA, GROUND_DEFAULT, 
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "scene_state"
 
-STATE_CASES = ["v2_canonical", "v1_stickers", "v1_cutout", "v2_invalid_fields", "v2_no_camera", "v2_erp_camera", "v2_hidden", "v2_timeline_limits", "v2_upstream", "v2_background", "v2_big_numbers", "v1_cutout_shots"]
+STATE_CASES = ["v2_canonical", "v1_stickers", "v1_cutout", "v2_invalid_fields", "v2_no_camera", "v2_erp_camera", "v2_hidden", "v2_timeline_limits", "v2_upstream", "v2_background", "v2_big_numbers", "v1_cutout_shots", "v1_bad_assets"]
 STICKER_STATE_CASES = ["sticker_state_v1", "sticker_state_v2", "sticker_state_v3"]
 
 

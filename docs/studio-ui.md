@@ -608,8 +608,9 @@ Paint・Mask の道具を選んでいる間、下の中央のバーはペイン�
   state_json の `painting` がアップロードしたものと同じときだけ。アップロードの間に入れた実行は、それが終わるのを待つ（古い UI は待たない）。
   失敗したら `painting_layer` は `null` のままで、ノードは `painting` から描く。ラスタ（消しゴムが変えたもの）はノードが状態の画像から描き、
   エディタと同じ画素になる。
-  - アップロードする理由：ノードがストロークから描く絵（`core/painting.py` `render_painting_to_erp`）はエディタの絵と合わない。筆の跡を
-    緯度で横に伸ばさない、Marker の形（斜めの平たいペン先）を持たない、Pastel を描かない、縁の画素の濃さが違う。
+  - アップロードする理由：ノードがストロークから描く絵（`core/painting.py` `render_painting_to_erp`）はエディタの絵と合わない。Pastel の
+    粒、Marker の筆の質感（`chisel*`）、`scatter`、筆の向きに沿う角度（`stroke_dir`）を描かず、縁の画素の濃さも違う（`docs/scene-state-v2.md` の
+    「ペイントのストロークの筆の値」）。
 - 描き始めで再生を止める（`docs/timeline-ui.md`）。描いている途中の Escape・ウィンドウのフォーカスの喪失・Undo は、そのストロークを
   全部捨てる（古い UI と同じ）。隠したペイント（`painting_visible` が `false`）には描けない（押しても何も起きない、`docs/timeline-ui.md`）。
 

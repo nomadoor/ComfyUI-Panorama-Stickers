@@ -1,0 +1,351 @@
+{
+  "version": 2,
+  "id": null,
+  "timeline": {
+    "fps": 24.0,
+    "length": null
+  },
+  "camera": {
+    "aspect": 1.7777777777777777,
+    "projection": "erp",
+    "erp_range": 360,
+    "visible": true,
+    "locked": false,
+    "loop": false,
+    "position": {
+      "value": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "keyframes": []
+    },
+    "rotation": {
+      "value": {
+        "yaw_deg": 0.0,
+        "pitch_deg": 0.0,
+        "roll_deg": 0.0
+      },
+      "keyframes": []
+    },
+    "fov": {
+      "value": 90.0,
+      "keyframes": []
+    },
+    "curve": {
+      "value": 1.0,
+      "keyframes": []
+    },
+    "look_at": {
+      "value": null,
+      "keyframes": []
+    }
+  },
+  "scene": {
+    "clip": {
+      "start": 0,
+      "in": 0,
+      "duration": null
+    },
+    "visible": true,
+    "position": {
+      "value": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "keyframes": []
+    },
+    "rotation": {
+      "value": {
+        "yaw_deg": 0.0,
+        "pitch_deg": 0.0,
+        "roll_deg": 0.0
+      },
+      "keyframes": []
+    },
+    "scale": {
+      "value": 1.0,
+      "keyframes": []
+    }
+  },
+  "stickers": [
+    {
+      "id": "st_type_upper",
+      "placement": "sky",
+      "source": {
+        "kind": "file",
+        "filename": "c.png",
+        "subfolder": "sub/dir",
+        "storage": "output"
+      },
+      "clip": {
+        "start": 0,
+        "in": 0,
+        "duration": null
+      },
+      "visible": true,
+      "locked": false,
+      "loop": false,
+      "crop": {
+        "x0": 0.0,
+        "y0": 0.0,
+        "x1": 1.0,
+        "y1": 1.0
+      },
+      "direction": {
+        "value": {
+          "yaw_deg": 60.0,
+          "pitch_deg": 0.0
+        },
+        "keyframes": []
+      },
+      "roll": {
+        "value": 0.0,
+        "keyframes": []
+      },
+      "size": {
+        "value": {
+          "hFOV_deg": 30.0,
+          "vFOV_deg": 30.0
+        },
+        "keyframes": []
+      },
+      "opacity": {
+        "value": 1.0,
+        "keyframes": []
+      },
+      "curve": {
+        "value": 1.0,
+        "keyframes": []
+      },
+      "z_index": 6
+    },
+    {
+      "id": "st_sub_bool",
+      "placement": "sky",
+      "source": {
+        "kind": "file",
+        "filename": "b.png",
+        "subfolder": "",
+        "storage": "temp"
+      },
+      "clip": {
+        "start": 0,
+        "in": 0,
+        "duration": null
+      },
+      "visible": true,
+      "locked": false,
+      "loop": false,
+      "crop": {
+        "x0": 0.0,
+        "y0": 0.0,
+        "x1": 1.0,
+        "y1": 1.0
+      },
+      "direction": {
+        "value": {
+          "yaw_deg": 70.0,
+          "pitch_deg": 0.0
+        },
+        "keyframes": []
+      },
+      "roll": {
+        "value": 0.0,
+        "keyframes": []
+      },
+      "size": {
+        "value": {
+          "hFOV_deg": 30.0,
+          "vFOV_deg": 30.0
+        },
+        "keyframes": []
+      },
+      "opacity": {
+        "value": 1.0,
+        "keyframes": []
+      },
+      "curve": {
+        "value": 1.0,
+        "keyframes": []
+      },
+      "z_index": 7
+    },
+    {
+      "id": "st_storage_list",
+      "placement": "sky",
+      "source": {
+        "kind": "file",
+        "filename": "d.png",
+        "subfolder": "x",
+        "storage": "input"
+      },
+      "clip": {
+        "start": 0,
+        "in": 0,
+        "duration": null
+      },
+      "visible": true,
+      "locked": false,
+      "loop": false,
+      "crop": {
+        "x0": 0.0,
+        "y0": 0.0,
+        "x1": 1.0,
+        "y1": 1.0
+      },
+      "direction": {
+        "value": {
+          "yaw_deg": 80.0,
+          "pitch_deg": 0.0
+        },
+        "keyframes": []
+      },
+      "roll": {
+        "value": 0.0,
+        "keyframes": []
+      },
+      "size": {
+        "value": {
+          "hFOV_deg": 30.0,
+          "vFOV_deg": 30.0
+        },
+        "keyframes": []
+      },
+      "opacity": {
+        "value": 1.0,
+        "keyframes": []
+      },
+      "curve": {
+        "value": 1.0,
+        "keyframes": []
+      },
+      "z_index": 8
+    },
+    {
+      "id": "st_storage_object",
+      "placement": "sky",
+      "source": {
+        "kind": "file",
+        "filename": "e.png",
+        "subfolder": "",
+        "storage": "input"
+      },
+      "clip": {
+        "start": 0,
+        "in": 0,
+        "duration": null
+      },
+      "visible": true,
+      "locked": false,
+      "loop": false,
+      "crop": {
+        "x0": 0.0,
+        "y0": 0.0,
+        "x1": 1.0,
+        "y1": 1.0
+      },
+      "direction": {
+        "value": {
+          "yaw_deg": 90.0,
+          "pitch_deg": 0.0
+        },
+        "keyframes": []
+      },
+      "roll": {
+        "value": 0.0,
+        "keyframes": []
+      },
+      "size": {
+        "value": {
+          "hFOV_deg": 30.0,
+          "vFOV_deg": 30.0
+        },
+        "keyframes": []
+      },
+      "opacity": {
+        "value": 1.0,
+        "keyframes": []
+      },
+      "curve": {
+        "value": 1.0,
+        "keyframes": []
+      },
+      "z_index": 9
+    },
+    {
+      "id": "st_storage_unknown",
+      "placement": "sky",
+      "source": {
+        "kind": "file",
+        "filename": "f.png",
+        "subfolder": "",
+        "storage": "input"
+      },
+      "clip": {
+        "start": 0,
+        "in": 0,
+        "duration": null
+      },
+      "visible": true,
+      "locked": false,
+      "loop": false,
+      "crop": {
+        "x0": 0.0,
+        "y0": 0.0,
+        "x1": 1.0,
+        "y1": 1.0
+      },
+      "direction": {
+        "value": {
+          "yaw_deg": 100.0,
+          "pitch_deg": 0.0
+        },
+        "keyframes": []
+      },
+      "roll": {
+        "value": 0.0,
+        "keyframes": []
+      },
+      "size": {
+        "value": {
+          "hFOV_deg": 30.0,
+          "vFOV_deg": 30.0
+        },
+        "keyframes": []
+      },
+      "opacity": {
+        "value": 1.0,
+        "keyframes": []
+      },
+      "curve": {
+        "value": 1.0,
+        "keyframes": []
+      },
+      "z_index": 10
+    }
+  ],
+  "next_sticker_id": 1,
+  "painting": {
+    "version": 1,
+    "groups": [],
+    "paint": {
+      "strokes": []
+    },
+    "mask": {
+      "strokes": []
+    },
+    "raster_objects": []
+  },
+  "painting_layer": null,
+  "painting_visible": true,
+  "upstream": [],
+  "background": {
+    "clip": {
+      "start": 0,
+      "in": 0,
+      "duration": null
+    }
+  }
+}
