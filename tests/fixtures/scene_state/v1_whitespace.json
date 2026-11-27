@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "assets": {
+    "a_bom": {
+      "type": "\ufeffcomfy_image\u3000",
+      "filename": "\ufeffc.png",
+      "storage": "\ufefftemp"
+    },
+    "a_next_line": {
+      "type": "\u0085comfy_image",
+      "filename": "d.png"
+    },
+    "a_python_only_name": {
+      "type": "comfy_image",
+      "filename": "\u001fe.png"
+    }
+  },
+  "stickers": [
+    {
+      "id": "st_bom",
+      "asset_id": "a_bom",
+      "yaw_deg": 0,
+      "pitch_deg": 0,
+      "hFOV_deg": 30,
+      "vFOV_deg": 30,
+      "rot_deg": 0,
+      "z_index": 0,
+      "visible": true
+    },
+    {
+      "id": "st_next_line",
+      "asset_id": "a_next_line",
+      "yaw_deg": 0,
+      "pitch_deg": 0,
+      "hFOV_deg": 30,
+      "vFOV_deg": 30,
+      "rot_deg": 0,
+      "z_index": 0,
+      "visible": true
+    },
+    {
+      "id": "st_python_only_name",
+      "asset_id": "a_python_only_name",
+      "yaw_deg": 0,
+      "pitch_deg": 0,
+      "hFOV_deg": 30,
+      "vFOV_deg": 30,
+      "rot_deg": 0,
+      "z_index": 0,
+      "visible": true
+    }
+  ],
+  "shots": []
+}

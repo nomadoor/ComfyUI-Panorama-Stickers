@@ -1,0 +1,37 @@
+{
+  "version": 2,
+  "stickers": [
+    {
+      "id": "js_space",
+      "source": {
+        "kind": "file",
+        "filename": "\ufeffa.png\u3000",
+        "subfolder": "\ufeff/sub/\u00a0",
+        "storage": "\ufeffOUTPUT\u2028"
+      }
+    },
+    {
+      "id": "python_only_space",
+      "source": {
+        "kind": "file",
+        "filename": "\u0085b.png\u001c",
+        "subfolder": "\u0085x",
+        "storage": "\u0085temp"
+      }
+    },
+    {
+      "id": "next_line_name",
+      "source": {
+        "kind": "file",
+        "filename": "\u0085"
+      }
+    },
+    {
+      "id": "bom_name",
+      "source": {
+        "kind": "file",
+        "filename": "\ufeff"
+      }
+    }
+  ]
+}

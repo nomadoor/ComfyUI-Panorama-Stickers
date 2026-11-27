@@ -1,6 +1,8 @@
 import copy
 import math
 
+from .text import strip_ws
+
 
 EMPTY_PAINTING_STATE = {
     "version": 1,
@@ -65,7 +67,7 @@ def _js_round(value: float) -> int:
 def _normalize_target_space(raw):
     """The stroke's target space: only `ERP_GLOBAL` is kept; any other (the old `FRAME_LOCAL`) drops the stroke
     (ADR 0063)."""
-    if isinstance(raw, dict) and (_text(raw.get("kind")) or "").strip() == "ERP_GLOBAL":
+    if isinstance(raw, dict) and strip_ws(_text(raw.get("kind")) or "") == "ERP_GLOBAL":
         return {"kind": "ERP_GLOBAL"}
     return None
 
@@ -110,7 +112,7 @@ def _normalize_point_list(raw_points, target_space, min_points=1):
 def _normalize_geometry(raw, target_space, tool_kind):
     if not isinstance(raw, dict):
         return None
-    geometry_kind = (_text(raw.get("geometryKind")) or "").strip()
+    geometry_kind = strip_ws(_text(raw.get("geometryKind")) or "")
     if geometry_kind not in GEOMETRY_KINDS:
         return None
     if geometry_kind == "lasso_fill":
@@ -145,8 +147,8 @@ def _resolve_stroke_color(raw_color, layer_kind):
 
 def _normalize_stroke_scalars(raw):
     """Return (stroke_id, action_group_id, size, opacity, created_at) or None."""
-    stroke_id = (_text(raw.get("id")) or "").strip()
-    action_group_id = (_text(raw.get("actionGroupId")) or "").strip()
+    stroke_id = strip_ws(_text(raw.get("id")) or "")
+    action_group_id = strip_ws(_text(raw.get("actionGroupId")) or "")
     if not stroke_id or not action_group_id:
         return None
     size = _finite_float(raw.get("size"))
@@ -231,7 +233,7 @@ def _normalize_stroke(raw, layer_kind):
         return None
     if raw.get("layerKind") != layer_kind:
         return None
-    tool_kind = (_text(raw.get("toolKind")) or "").strip()
+    tool_kind = strip_ws(_text(raw.get("toolKind")) or "")
     valid_tools = PAINT_TOOL_KINDS if layer_kind == "paint" else MASK_TOOL_KINDS
     if tool_kind not in valid_tools:
         return None
@@ -249,14 +251,14 @@ def _normalize_stroke(raw, layer_kind):
         return None
     stroke_id, action_group_id, size, opacity, created_at = scalars
     radius_value = _finite_float(raw.get("radiusValue"))
-    radius_model = (_text(raw.get("radiusModel")) or "").strip() or None
+    radius_model = strip_ws(_text(raw.get("radiusModel")) or "") or None
     return {
         "id": stroke_id,
         "actionGroupId": action_group_id,
         "targetSpace": target_space,
         "layerKind": layer_kind,
         "toolKind": tool_kind,
-        "brushPresetId": (_text(raw.get("brushPresetId")) or "").strip() or None,
+        "brushPresetId": strip_ws(_text(raw.get("brushPresetId")) or "") or None,
         "color": color,
         "size": max(0.0, float(size)),
         "opacity": max(0.0, min(1.0, float(opacity))),
@@ -290,7 +292,7 @@ def _normalize_groups(raw_groups):
     for item in raw_groups:
         if not isinstance(item, dict):
             continue
-        action_group_id = (_text(item.get("actionGroupId")) or "").strip() or (_text(item.get("id")) or "").strip()
+        action_group_id = strip_ws(_text(item.get("actionGroupId")) or "") or strip_ws(_text(item.get("id")) or "")
         if not action_group_id or action_group_id in seen:
             continue
         seen.add(action_group_id)
@@ -338,13 +340,13 @@ def _normalize_raster_object(item, fallback_z):
         return None
     if item.get("type") != "raster_frozen":
         return None
-    obj_id = (_text(item.get("id")) or "").strip()
+    obj_id = strip_ws(_text(item.get("id")) or "")
     if not obj_id:
         return None
     layer_kind = _text(item.get("layerKind")) or "paint"
     if layer_kind not in {"paint", "mask"}:
         return None
-    raster_data_url = (_text(item.get("rasterDataUrl")) or "").strip()
+    raster_data_url = strip_ws(_text(item.get("rasterDataUrl")) or "")
     if not raster_data_url.startswith("data:"):
         return None
     bbox = _normalize_raster_bbox(item.get("bbox"))

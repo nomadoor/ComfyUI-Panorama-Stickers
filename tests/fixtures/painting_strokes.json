@@ -727,6 +727,46 @@
         "toolKind": "bogus"
       },
       "expected": null
+    },
+    "ids_with_js_whitespace_trimmed": {
+      "base": "pen",
+      "layer": "paint",
+      "stroke": {
+        "id": "\ufeffs1\u3000",
+        "actionGroupId": "\u00a0ag1\ufeff"
+      },
+      "expected": {
+        "id": "s1",
+        "actionGroupId": "ag1"
+      }
+    },
+    "ids_with_python_only_whitespace_kept": {
+      "base": "pen",
+      "layer": "paint",
+      "stroke": {
+        "id": "\u0085s1\u001c",
+        "actionGroupId": "\u001fag1\u0085"
+      },
+      "expected": {
+        "id": "\u0085s1\u001c",
+        "actionGroupId": "\u001fag1\u0085"
+      }
+    },
+    "id_bom_only_dropped": {
+      "base": "pen",
+      "layer": "paint",
+      "stroke": {
+        "id": "\ufeff"
+      },
+      "expected": null
+    },
+    "tool_kind_with_next_line_dropped": {
+      "base": "pen",
+      "layer": "paint",
+      "stroke": {
+        "toolKind": "\u0085pen"
+      },
+      "expected": null
     }
   },
   "items": {
@@ -973,6 +1013,54 @@
         "type": " raster_frozen "
       },
       "expected": []
+    },
+    "raster_id_with_bom_trimmed": {
+      "kind": "raster",
+      "patch": {
+        "id": "\ufeffr1"
+      },
+      "expected": [
+        [
+          "r1",
+          "paint"
+        ]
+      ]
+    },
+    "raster_id_with_next_line_kept": {
+      "kind": "raster",
+      "patch": {
+        "id": "\u0085r1"
+      },
+      "expected": [
+        [
+          "\u0085r1",
+          "paint"
+        ]
+      ]
+    },
+    "group_action_id_bom_only_uses_id": {
+      "kind": "group",
+      "patch": {
+        "actionGroupId": "\ufeff"
+      },
+      "expected": [
+        [
+          "g1",
+          "g1"
+        ]
+      ]
+    },
+    "group_action_id_next_line_kept": {
+      "kind": "group",
+      "patch": {
+        "actionGroupId": "\u0085"
+      },
+      "expected": [
+        [
+          "g1",
+          "\u0085"
+        ]
+      ]
     }
   }
 }

@@ -35,6 +35,7 @@ Panorama Studio の `state_json`（状態 v2）、Camera を持つ Panorama Stud
 | ペイントのストローク・ラスタ・group の受け付け方（道具と層、形、色、点の `u` の巻き方、文字列の項目） | `core/paint_state.py` `_normalize_stroke`・`_normalize_raster_object`・`_normalize_groups` | `web_src/pano_paint_types.js` `normalizeStroke`・`normalizeRasterObject`・`normalizeGroups` | フィクスチャ `tests/fixtures/painting_strokes.json` を読む `tests/test_paint_state_parity.py`・`tests/pano_paint_state_parity.test.mjs` |
 | ペイントの数値の読み方（ストローク・点・ラスタの数値と、不正なときの扱い） | `core/paint_state.py` `_finite_float` | `web_src/pano_paint_types.js` `finiteNumber` | フィクスチャ `tests/fixtures/painting_numbers.json` を読む `tests/test_paint_state_parity.py`・`tests/pano_paint_state_parity.test.mjs` |
 | Sky の重なり順 | `core/display_list.py` `build_display_entries` | ペイントの並びは `web_src/pano_paint_layers.js` `skyPaintLayers` | `tests/test_display_list_core.py`、`tests/test_paint_layers_parity.py` |
+| 「前後の空白」に数える文字 | `core/text.py` の `JS_WHITESPACE`・`strip_ws` | JS の `String.prototype.trim` | フィクスチャ `v1_whitespace`・`v2_whitespace` と空白だけの入力を比べる `test_scene_state_parity.py`、`painting_strokes.json` の空白の行を読む `test_paint_state_parity.py`・`pano_paint_state_parity.test.mjs` |
 | `file` の Source が 3D ファイルか | `scene_state.py` `is_3d_file_source`・`FILE_3D_EXTENSIONS` | `pano_scene_state.js` `is3dFileSource`・`FILE_3D_EXTENSIONS` | フィクスチャ `file_3d_formats` を専用に読む `test_scene_state_parity.py`・`pano_scene_state.test.mjs` |
 
 フィクスチャは `tests/fixtures/scene_state/`（状態と `sticker_state`）と `tests/fixtures/scene_inherit/`（上書き）にあり、
@@ -45,6 +46,7 @@ Python と JS の両方の test が同じファイルを読む。Python と JS �
 - 数値は JSON の数値だけを受け付ける。文字列・真偽値・`null`・非有限値は不正とする。float にできないほど大きな整数も、非有限値と同じく不正（既定値）とする。
 - 文字列のフィールドは JSON の文字列だけを受け付ける。数値・真偽値・`null`・配列・オブジェクトは不正とし、文字列に直さない。
 - オブジェクトのフィールドは JSON のオブジェクトだけを受け付ける。配列は不正とする。
+- この文書で「前後の空白を除く」「空白だけ」と言うときの空白は、JS の `String.prototype.trim` が除く文字とする。U+0009〜U+000D、U+0020、U+00A0、U+1680、U+2000〜U+200A、U+2028、U+2029、U+202F、U+205F、U+3000、U+FEFF。Python の `str.strip()` が除く U+001C〜U+001F と U+0085 は空白に数えず、そのまま残す。
 - 整数のフィールド（`frame`、Clip range、`length`、Sticker の `z_index`）は、数値を `floor(x + 0.5)` で整数に丸めて保存する。fps の再基準化で Timeline frame を整数に丸めるときも、同じ `floor(x + 0.5)` を使う。Keyframe の `frame` と Clip range の `start`・`in`・`duration` は、丸めたあと ±10,000,000（`TIMELINE_FRAME_MAX`）の内に寄せる。
 - JSON の `NaN`・`Infinity`・`-Infinity` のリテラルは受け付けない（JS の `JSON.parse` と同じく、JSON として読めないものとして扱う）。
 - 不正な値は、そのフィールドの既定値に戻す。範囲外の値は範囲の端に寄せる。状態全体を捨てることはしない。
