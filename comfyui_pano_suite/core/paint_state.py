@@ -318,8 +318,6 @@ def _normalize_raster_bbox(raw):
     v0 = clamp(v0)
     u1 = clamp(u1)
     v1 = clamp(v1)
-    if None in (u0, v0, u1, v1):
-        return None
     if u1 <= u0 or v1 <= v0:
         return None
     return {"u0": u0, "v0": v0, "u1": u1, "v1": v1}

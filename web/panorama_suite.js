@@ -94,20 +94,16 @@ function OO(e) {
   return Un(e) && (Bn(e.kind) || "").trim() === "ERP_GLOBAL" ? { kind: "ERP_GLOBAL" } : null;
 }
 function AO(e, t) {
-  if (!Un(e) || !t) return null;
-  const n = wt(e.t, 0), r = wt(e.widthScale, null), o = wt(e.pressureLike, null);
-  if (t.kind === "ERP_GLOBAL") {
-    const i = wt(e.u, null), s = wt(e.v, null);
-    if (i == null || s == null) return null;
-    const a = {
-      targetKind: "ERP_GLOBAL",
-      u: (i % 1 + 1) % 1,
-      v: Math.max(0, Math.min(1, s)),
-      t: n
-    };
-    return r != null && (a.widthScale = Math.max(0, r)), o != null && (a.pressureLike = Math.max(0, o)), a;
-  }
-  return null;
+  if (!Un(e)) return null;
+  const n = wt(e.u, null), r = wt(e.v, null);
+  if (n == null || r == null) return null;
+  const o = {
+    targetKind: t.kind,
+    u: (n % 1 + 1) % 1,
+    v: Math.max(0, Math.min(1, r)),
+    t: wt(e.t, 0)
+  }, i = wt(e.widthScale, null), s = wt(e.pressureLike, null);
+  return i != null && (o.widthScale = Math.max(0, i)), s != null && (o.pressureLike = Math.max(0, s)), o;
 }
 function Cu(e, t, n = 1) {
   if (!Array.isArray(e)) return null;
@@ -225,10 +221,10 @@ function FO(e) {
 function LO(e) {
   const t = Un(e) ? e : {};
   return {
-    du: wt(t.du, 0) ?? 0,
-    dv: wt(t.dv, 0) ?? 0,
-    rot_deg: wt(t.rot_deg, 0) ?? 0,
-    scale: Math.max(0.01, wt(t.scale, 1) ?? 1)
+    du: wt(t.du, 0),
+    dv: wt(t.dv, 0),
+    rot_deg: wt(t.rot_deg, 0),
+    scale: Math.max(0.01, wt(t.scale, 1))
   };
 }
 function DO(e, t) {

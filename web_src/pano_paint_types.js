@@ -73,26 +73,23 @@ function normalizeTargetSpace(raw) {
   return null;
 }
 
+// A point of a stroke in `targetSpace` (always ERP_GLOBAL, normalizeTargetSpace): u wrapped to 0..1, v held to 0..1.
 function normalizePoint(raw, targetSpace) {
-  if (!isObject(raw) || !targetSpace) return null;
-  const t = finiteNumber(raw.t, 0);
+  if (!isObject(raw)) return null;
+  const u = finiteNumber(raw.u, null);
+  const v = finiteNumber(raw.v, null);
+  if (u == null || v == null) return null;
+  const out = {
+    targetKind: targetSpace.kind,
+    u: ((u % 1) + 1) % 1,
+    v: Math.max(0, Math.min(1, v)),
+    t: finiteNumber(raw.t, 0),
+  };
   const widthScale = finiteNumber(raw.widthScale, null);
   const pressureLike = finiteNumber(raw.pressureLike, null);
-  if (targetSpace.kind === "ERP_GLOBAL") {
-    const u = finiteNumber(raw.u, null);
-    const v = finiteNumber(raw.v, null);
-    if (u == null || v == null) return null;
-    const out = {
-      targetKind: "ERP_GLOBAL",
-      u: ((u % 1) + 1) % 1,
-      v: Math.max(0, Math.min(1, v)),
-      t,
-    };
-    if (widthScale != null) out.widthScale = Math.max(0, widthScale);
-    if (pressureLike != null) out.pressureLike = Math.max(0, pressureLike);
-    return out;
-  }
-  return null;
+  if (widthScale != null) out.widthScale = Math.max(0, widthScale);
+  if (pressureLike != null) out.pressureLike = Math.max(0, pressureLike);
+  return out;
 }
 
 function normalizePointList(raw, targetSpace, minPoints = 1) {
@@ -239,10 +236,10 @@ function normalizeRasterBbox(bbox) {
 function normalizeRasterTransform(raw) {
   const tf = isObject(raw) ? raw : {};
   return {
-    du: finiteNumber(tf.du, 0) ?? 0,
-    dv: finiteNumber(tf.dv, 0) ?? 0,
-    rot_deg: finiteNumber(tf.rot_deg, 0) ?? 0,
-    scale: Math.max(0.01, finiteNumber(tf.scale, 1) ?? 1),
+    du: finiteNumber(tf.du, 0),
+    dv: finiteNumber(tf.dv, 0),
+    rot_deg: finiteNumber(tf.rot_deg, 0),
+    scale: Math.max(0.01, finiteNumber(tf.scale, 1)),
   };
 }
 
