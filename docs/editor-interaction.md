@@ -115,7 +115,7 @@ Panorama Studio の状態 v2 の `camera` を書くときに、新しい UI が�
   - 向きと位置を変える操作は、shot の向きと位置を変え、`setCameraShot` が変えた分だけを `rotation`・`position` に記録の規則で書く（新しい UI は `web_src/studio/camera_state.js` から呼ぶ）。yaw などの角度は、元の値から最短の向きの値で書くので、±180° をまたいでも Camera が逆回りしない。
   - 画角は `fov` の Lane に記録の規則で直接書く（`setCameraField`）。
   - 比率は `aspect`（Keyframe を持たない）に直接書く。ほかの操作は `aspect` を変えないので、ノードの出力の大きさ（幅 ÷ `aspect`）もエディタの枠と同じ比率のままになる。
-  - V FOV と焦点距離は求めた値で、欄を持たない。
+  - V FOV と焦点距離は求めた値で、欄を持たない。焦点距離は、H FOV の欄の表示の単位を mm にしたときに、その欄の値として見せる（`docs/studio-ui.md` の「H FOV の単位」。換算は `docs/render-contract.md` の「カメラのレンズ」）。mm で入れた値も `fov` の Lane に度で書くので、欄は一つのまま、状態に焦点距離の値は入らない。
 
 ### レンズの行
 
@@ -124,6 +124,7 @@ Lens curve（κ、0〜1。1 が直線の像、0 が魚眼）を書くときの�
   - Lens curve の編集は像の中心の大きさ `f` を保ち、H FOV がそれに従う（ADR 0042 の 2026-10-11 の改訂）。編集の始め（スライダーを動かし始めたとき、数値の入力ではその入力の始め）に、再生ヘッドで評価した κ₀ と hFOV₀ から `f = r_edge ÷ g_κ₀(hFOV₀ ÷ 2)`（`r_edge` は画像の横の半分の幅）を一度だけ求め、編集の終わり（スライダーを離す・入力を確定する）まで変えない。確定が来ずに終わった編集（ドラッグの途中でフォーカスを失ったなど）の始めの値は、次の Undo の段・Undo / Redo・選択の変更で捨てる（新しい UI は編集の `start` で渡す）。各段で、`r_edge` の画素の光線の角度 θ（`lensAngle`。式は `docs/render-contract.md` の「カメラのレンズ」）から H FOV = 2θ とし、κ による画角の上限（同じ節）に寄せる。寄せても `f` は求め直さないので、同じ編集の中で κ を戻すと元の H FOV に戻る。式は `pano_lens.js` の `lensRadius`・`lensAngle`（`r_edge` は約分されて消える）を使う（`lensFovKeepingCenter`）。
   - 書くのは `curve` と `fov` の二つの Lane で、同じフレームに、それぞれの Lane の記録の規則（Keyframe が無ければ静的な値、再生ヘッドが Keyframe の上ならその Keyframe、Keyframe の間なら再生ヘッドに Keyframe を足す）で書く。H FOV が変わらなくても `fov` も書く（Keyframe のある Lane では Keyframe になる）。一つの編集が Undo の 1 段になる。
   - H FOV の欄は `fov` だけを書く（ズーム。`curve` は変えない）。タイムラインの Lane の行での編集（Keyframe の移動・削除・Easing）は Lane ごとで、二つを組にしない。
+  - `f` を保つので、H FOV の欄を mm で見ているときは、Lens curve を動かしても mm の値は変わらない（`lensFovKeepingCenter` は H FOV を丸めない。κ による画角の上限に寄せたときだけ変わる）。
   - Keyframe の間では `curve` と `fov` をそれぞれの Lane で補間するので、その間の `f` は両端の `f` から少しずれることがある（中心の大きさがわずかに揺れる）。組にして補間はしない。
 
 ## 上流の Scene の作業コピーと上書き

@@ -274,6 +274,16 @@ Camera の値の位置は選択で動かない）。
 | Rotation | Y・P・R。リセットは向き 0 へ。Panorama モードの Yaw は ERP の正面の向き | 同じ |
 | Look at | 相手の名前の欄、Pick、Keyframe のポチ、相手を外すリセット（下の「Look at」） | 同じ |
 
+- H FOV の単位：H FOV の値の箱の右の単位の印（`°` か `mm`）を押すと、その場で度と焦点距離（mm）の表示を切り替える（タイムラインの Length の `f`／`s` と同じ形。`docs/agents/ux-principles.md` の例外）。
+  - 換算は横幅 36 mm のセンサーの仮定で、式と持ち主は `docs/render-contract.md` の「カメラのレンズ」。κ < 1 でも同じ式で mm を出す。
+  - mm の表示の桁：100 mm 未満は小数第 1 位（`50.0`、`5.7`）、100 mm 以上は整数（`135`、`2063`）。
+  - mm で入れた値は、度に直して丸めずに `fov` に書く（0.1° に丸めると、望遠で入れた数が変わって見えるため。400 mm が 396.4 mm になる）。下の「Camera タブ」の「値の桁」の「箱に見えない桁を持たせない」は、この入力だけ例外にする（FOV には Lens の 1.00 のような見えない桁で振る舞いが変わる値が無い）。範囲の外の mm は、H FOV の欄の範囲に寄せた画角の mm に戻して見せる。
+  - スライダー、値のドラッグ、矢印キーは、mm のときも度の一段で動き、今までどおり 0.1° に丸める（右へ画角が広がる＝mm が小さくなる）。Keyframe の補間も度のまま。
+  - 単位の設定は、H FOV の数字が出る三か所に効く：この値の箱、Camera タブの FOV の目盛りの頭の値、Camera タブの右下の画角の数字。目盛りの刻みの数値は度のまま。3D タブの右下の画角の数字（視点の画角）には効かない。
+  - 切り替えられるのは二か所：この値の箱の単位の印と、Camera タブの FOV の目盛りの頭の値の単位の印（下の「Camera タブ」の「頭」）。どちらも同じ一つの設定を切り替えるので、片方で切り替えるともう片方と右下の数字もすぐ同じ単位になる。右下の数字は Camera タブでは無効なので、従うだけ。
+  - tooltip：単位の印は「Show in mm (36 mm wide sensor)」／「Show in degrees」。mm のときの値の箱は「Focal length · 36 mm wide sensor」。
+  - どちらで見るかはエディタだけの設定で、状態に入らず、ブラウザごとに覚える（Length の単位と同じ）。行の名前は H FOV のまま。
+  - Panorama モードでは H FOV を使わないので、単位の印も行（目盛り）と一緒に無効にする。ロックした Camera と読み取り専用のエディタでは、値は変えられないが数の見せ方は変えてよいので、単位の印は押せる。
 - 「原点に戻す」の専用のボタンは置かない。Position と Rotation の行のリセットで戻す。
 - Look at の相手があるとき、Rotation の行の Y と P は灰色にして触れないようにし（値は相手を向いた向きを出す）、R は今までどおり使える。tooltip は「Yaw and Pitch · Set by Look at」。
 - 出力の大きさ（`megapixels`・`multiple`）はノードの上の設定で、Camera のカードには出さない（`docs/studio-node.md`）。
@@ -914,8 +924,8 @@ Camera タブでは同じ席で無効にする（tooltip は「Not available in 
   - 頭：目盛りの帯の両端の外に、二つに分けて置く。一方の端に名前と値、反対の端に Keyframe のポチ（どの Lane に打つかは
     `docs/timeline-ui.md` の「インスペクタの Keyframe のポチ」）とリセット。縦の目盛り（FOV・Lens）は、帯の上に名前、その下に値を
     縦に積み、帯の下にポチ、その下にリセットを縦に積む。Roll は、帯の左に名前と値を横に並べ、帯の右にポチとリセットを横に並べる。
-    頭は帯の位置と長さを動かさない。値の文字は、その目盛りで一番幅をとる値（FOV `360°`、Lens `0.00`、Roll `-180°`）が収まる決まった幅を
-    持ち、数字が変わっても頭の幅は変わらない。間の値は `docs/design.md` の「大きさ」。
+    頭は帯の位置と長さを動かさない。値の文字は、その目盛りで一番幅をとる値（FOV `360°` と、mm のときの `2063mm`、Lens `0.00`、Roll `-180°`）が収まる決まった幅を
+    持ち（FOV の幅は単位によらず同じで、切り替えても頭の幅は変わらない。上の「H FOV の単位」）、FOV の値の単位（`°`／`mm`）は押せる印で、押すとインスペクタの H FOV の単位の印と同じ設定を切り替える（tooltip も同じ。無効にする条件も上の「H FOV の単位」と同じ）、数字が変わっても頭の幅は変わらない。間の値は `docs/design.md` の「大きさ」。
   - リセット：Keyframe のポチの隣（縦の目盛りはポチの下、Roll はポチの右）に、インスペクタの行と同じアイコンで置く。FOV と Lens はインスペクタの H FOV・Lens の行のリセットと同じ
     働き（既定に戻す。上流から受け取った Camera では上流の値）。Roll は Roll だけを既定の 0° に戻す（インスペクタの Rotation の行のリセットは
     Yaw・Pitch も戻すため、それとは分ける）。どれも Undo の 1 段で、Keyframe のある Lane では記録の規則に従う。今が戻す先と同じとき、
@@ -950,7 +960,7 @@ Camera タブでは同じ席で無効にする（tooltip は「Not available in 
   ロックした Camera の辺の目盛り（ポチとリセットを含む）の tooltip も「Locked · Unlock in the 3D tab」にする（Camera タブには Camera の Lock が無いため。
   ADR 0055。文字は `web_src/studio/camera_ui.js` `CAMERA_TAB_LOCKED_TIP` が持つ）。インスペクタの Camera のカードの行は、3D タブと同じ「Locked」のまま。
 - 右下の画角の数字（ADR 0061）：Camera タブでは、視点の画角ではなく撮る Camera の H FOV を、左の FOV の目盛りの値の文字と同じ文字で出し
-  （`frame_layout.js` `cameraRulers` の FOV の `valueText`。目盛りの頭と同じ丸め。Camera が持つ H FOV の桁は変えない）、数字と画角のリセットを無効にする（Camera の H FOV を変えるのは左の FOV の目盛り、インスペクタ、Frame モードの Alt + ホイール）。
+  （`frame_layout.js` `cameraRulers` の FOV の `valueText`。目盛りの頭と同じ丸めと単位。Camera が持つ H FOV の桁は変えない）、数字と画角のリセットを無効にする（Camera の H FOV を変えるのは左の FOV の目盛り、インスペクタ、Frame モードの Alt + ホイール）。
   tooltip は、Frame モードでは「Camera FOV · Change it with the FOV ruler」、Panorama モードでは「Not available in Panorama mode」
   （Frame Selected と同じ）。視点の画角は Camera タブの間も変えず、3D タブに戻るとそのまま使う。Reset View は今までどおり無効で、
   tooltip は「Not available in the Camera view」。
