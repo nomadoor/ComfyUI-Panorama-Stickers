@@ -371,6 +371,7 @@ Sticker の `id` は、一度使った値を別の Sticker に使い直さない
 ラスタの `bbox`・`transform` も、共通の規則どおり有限の JSON の数値だけを受け付ける（文字列・真偽値・配列は不正）。
 
 - 不正な `size`・`opacity`・`u`・`v`・`bbox` の値は、そのストローク（ラスタ）を捨てる。
+- `createdAt` は 0 の方へ切り捨てて整数にする（7.9 は 7、-7.9 は -7、-0.5 は 0）。
 - 不正な `createdAt` は 0、`radiusValue` は `null` にし、`widthScale`・`pressureLike` は持たない。`transform` の `du`・`dv`・`rot_deg` は 0、`scale` は 1 にする。
 - 不正な点の `t` は 0 にする。`color` の成分は、不正な `r`・`g`・`b` を 0、`a` を 1 にする（`color` がオブジェクトでないときの扱いは上の「ペイントのストロークの受け付け方」）。
 
