@@ -142,6 +142,8 @@ def test_a_short_prompt_does_not_turn_an_image_token_into_text():
     lookalike = (ids[0] == torch.tensor([1.0, 1.0, 1.0])).all(dim=1)
     neighbor = (ids[0] == torch.tensor([1.0, 0.0, 1.0])).all(dim=1)
     assert bool(lookalike.any())
+    base = model.pe_embedder(ids)
+    assert not torch.equal(table[0, 0, neighbor][..., WIDTH_SLICE, :, :], base[0, 0, neighbor][..., WIDTH_SLICE, :, :])
     assert torch.equal(table[0, 0, lookalike][..., WIDTH_SLICE, :, :], table[0, 0, neighbor][..., WIDTH_SLICE, :, :])
 
 
