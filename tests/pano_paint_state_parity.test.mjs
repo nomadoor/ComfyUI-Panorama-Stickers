@@ -102,3 +102,9 @@ for (const [name, item] of Object.entries(strokes.items)) {
     if (item.transform) assert.deepEqual(out[0].transform, item.transform);
   });
 }
+
+test("a negative createdAt above -1 reads as 0, not -0, as Python's int() does", () => {
+  const stroke = { ...strokes.bases.pen, layerKind: "paint", createdAt: -0.5 };
+  const [kept] = normalizePaintingState({ paint: { strokes: [stroke] } }).paint.strokes;
+  assert.ok(Object.is(kept.createdAt, 0), String(Object.is(kept.createdAt, -0) ? "-0" : kept.createdAt));
+});

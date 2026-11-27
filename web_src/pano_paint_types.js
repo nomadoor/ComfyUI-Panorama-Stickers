@@ -205,7 +205,7 @@ function normalizeStroke(raw, layerKind) {
     size: Math.max(0, size),
     opacity: Math.max(0, Math.min(1, opacity)),
     ...normalizeBrush(raw),
-    createdAt: Math.trunc(finiteNumber(raw.createdAt, 0)),
+    createdAt: Math.trunc(finiteNumber(raw.createdAt, 0)) || 0,
     color,
     radiusModel,
     radiusValue: radiusValue == null ? null : Math.max(0, radiusValue),

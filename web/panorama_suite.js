@@ -199,7 +199,7 @@ function TO(e, t) {
     size: Math.max(0, i),
     opacity: Math.max(0, Math.min(1, s)),
     ...NO(e),
-    createdAt: Math.trunc(wt(e.createdAt, 0)),
+    createdAt: Math.trunc(wt(e.createdAt, 0)) || 0,
     color: c,
     radiusModel: d,
     radiusValue: u == null ? null : Math.max(0, u),
