@@ -143,7 +143,7 @@ function normalizeBrush(raw) {
   if (stampKind !== "round") out.stampKind = stampKind;
   const aspect = finiteNumber(raw.aspect);
   if (aspect !== null && clamp(aspect, 0.1, 10) !== 1) out.aspect = clamp(aspect, 0.1, 10);
-  const angle = raw.angle && typeof raw.angle === "object" && !Array.isArray(raw.angle) ? raw.angle : null;
+  const angle = isObject(raw.angle) ? raw.angle : null;
   if (angle?.kind === "stroke_dir") out.angle = { kind: "stroke_dir" };
   else if (finiteNumber(angle?.value) !== null && angle.value !== 0) out.angle = { kind: "fixed", value: angle.value };
   const keep = (key, fallback, lo, hi) => {
@@ -157,7 +157,7 @@ function normalizeBrush(raw) {
   }
   if (stampKind === "crayon") keep("crayonGrain", 0.65, 0, 1);
   const scatter = raw.scatter;
-  if (scatter && typeof scatter === "object" && !Array.isArray(scatter)) {
+  if (isObject(scatter)) {
     const count = finiteNumber(scatter.count);
     out.scatter = {
       radius: Math.max(0, finiteNumber(scatter.radius) ?? 1.5),

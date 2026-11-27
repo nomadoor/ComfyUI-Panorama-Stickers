@@ -120,9 +120,7 @@ def _normalize_geometry(raw, target_space, tool_kind):
         if points is None:
             return None
         return {"geometryKind": "lasso_fill", "points": points}
-    if geometry_kind not in {"freehand_open", "freehand_closed"}:
-        return None
-    if tool_kind in {"lasso_fill"}:
+    if tool_kind == "lasso_fill":
         return None
     points = _normalize_point_list(raw.get("points"), target_space, min_points=1)
     if points is None:
@@ -141,7 +139,7 @@ def _resolve_stroke_color(raw_color, layer_kind):
     """Return (color, is_valid): a paint stroke (the eraser too) needs a color object; a mask stroke's is None."""
     if layer_kind == "mask":
         return None, True
-    color = _normalize_color(raw_color, allow_color=True)
+    color = _normalize_color(raw_color)
     return color, color is not None
 
 
@@ -159,9 +157,7 @@ def _normalize_stroke_scalars(raw):
     return stroke_id, action_group_id, size, opacity, 0 if created_at is None else created_at
 
 
-def _normalize_color(raw, allow_color):
-    if not allow_color:
-        return None
+def _normalize_color(raw):
     if not isinstance(raw, dict):
         return None
 
