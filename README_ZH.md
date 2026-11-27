@@ -64,6 +64,7 @@
 
 - **Panorama Preview**：在单独的窗口中环视全景图像、视频，或 Studio 的 `scene`。
 - **Panorama Seam Prep**：把全景左右两端的接缝移到中央，并生成用于修复接缝的遮罩。
+- **Panorama Circular RoPE** 和 **Panorama Circular VAE**：让 Qwen Image 2.1 画出左右两端相连、没有接缝的全景。一个接在模型上，一个接在 VAE 上，必须一起使用（VAE 同时用于参考图像的编码和解码）。Panorama Circular VAE 需要 ComfyUI 0.44.0 或更高版本。
 - 以前的节点（Panorama Stickers、Panorama Cutout、Panorama Preview (legacy)）也可以照常使用。
 
 ## 安装
