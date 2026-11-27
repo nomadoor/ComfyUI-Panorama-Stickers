@@ -32,7 +32,7 @@ Panorama Studio の `state_json`（状態 v2）、Camera を持つ Panorama Stud
 | `port` の Sticker の vFOV | `core/render.py` の `StickerSource`（`derive_vfov`）、式は `core/math.py` `vfov_from_hfov` | `pano_editor_state.js` `skyStickerVfov` | `tests/test_sky_sticker_vfov_parity.py` |
 | ペイントの `version` と group の `z_index` の読み方 | `core/paint_state.py` `normalize_painting_state`・`_js_round` | `web_src/pano_paint_types.js` `normalizePaintingState` | フィクスチャ `tests/fixtures/painting_normalize.json` を読む `tests/test_paint_state_parity.py`・`tests/pano_paint_state_parity.test.mjs` |
 | ペイントのストロークの筆の値（`hardness`・`flow`・`spacing` の `null`、筆の形の項目の既定値と範囲） | `core/paint_state.py` `_normalize_brush` | `web_src/pano_paint_types.js` `normalizeBrush` | フィクスチャ `tests/fixtures/paint_stroke_brush.json` を読む `tests/test_paint_state_parity.py`・`tests/pano_paint_state_parity.test.mjs` |
-| ペイントのストローク・ラスタ・group の受け付け方（道具と層、形、色、点の `u` の巻き方、文字列の項目） | `core/paint_state.py` `_normalize_stroke` | `web_src/pano_paint_types.js` `normalizeStroke` | フィクスチャ `tests/fixtures/painting_strokes.json` を読む `tests/test_paint_state_parity.py`・`tests/pano_paint_state_parity.test.mjs` |
+| ペイントのストローク・ラスタ・group の受け付け方（道具と層、形、色、点の `u` の巻き方、文字列の項目） | `core/paint_state.py` `_normalize_stroke`・`_normalize_raster_object`・`_normalize_groups` | `web_src/pano_paint_types.js` `normalizeStroke`・`normalizeRasterObject`・`normalizeGroups` | フィクスチャ `tests/fixtures/painting_strokes.json` を読む `tests/test_paint_state_parity.py`・`tests/pano_paint_state_parity.test.mjs` |
 | ペイントの数値の読み方（ストローク・点・ラスタの数値と、不正なときの扱い） | `core/paint_state.py` `_finite_float` | `web_src/pano_paint_types.js` `finiteNumber` | フィクスチャ `tests/fixtures/painting_numbers.json` を読む `tests/test_paint_state_parity.py`・`tests/pano_paint_state_parity.test.mjs` |
 | Sky の重なり順 | `core/display_list.py` `build_display_entries` | ペイントの並びは `web_src/pano_paint_layers.js` `skyPaintLayers` | `tests/test_display_list_core.py`、`tests/test_paint_layers_parity.py` |
 | `file` の Source が 3D ファイルか | `scene_state.py` `is_3d_file_source`・`FILE_3D_EXTENSIONS` | `pano_scene_state.js` `is3dFileSource`・`FILE_3D_EXTENSIONS` | フィクスチャ `file_3d_formats` を専用に読む `test_scene_state_parity.py`・`pano_scene_state.test.mjs` |
@@ -363,7 +363,7 @@ Sticker の `id` は、一度使った値を別の Sticker に使い直さない
 - paint の層のストロークは `color` のオブジェクトを持たなければ捨てる（`eraser` も同じ）。mask の層は `color` を読まず、`null` にする。
 - 点の `u` は `((u mod 1) + 1) mod 1` で 0 以上 1 未満に巻く。`mod` は割られる数の符号を持つ剰余（JS の `%`）。1 の手前の値も寄せない。
 - ラスタは、`type` が `raster_frozen` でないとき、`id` が文字列でないか空のとき、`rasterDataUrl` が `data:` で始まる文字列でないときに捨てる。文字列でないか空の `layerKind` は `paint` にし、`paint`・`mask` 以外なら捨てる。
-- group の `actionGroupId` は、`actionGroupId`、次に `id` のうち最初の空でない文字列とし、どちらも無ければその group を捨てる。`id` が文字列でないか空なら `actionGroupId` と同じにする。
+- group の `actionGroupId` は、`actionGroupId`、次に `id` のうち、前後の空白を除いて空でない最初の文字列とし、どちらも無ければその group を捨てる。`id` が文字列でないか空なら `actionGroupId` と同じにする。
 
 ### ペイントの数値
 
