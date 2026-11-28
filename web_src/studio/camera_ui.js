@@ -1,5 +1,7 @@
 // The Camera in the new editor (docs/studio-ui.md "エディタの中の Camera"): the left column's Camera button, whether it
-// can be pressed and what its tooltip says, and how it brings the Camera to the view. Pure; studio/session.js makes the
+// can be pressed and what its tooltip says, and how it brings the Camera to the view; and how the H FOV's unit shows an
+// FOV in mm (docs/studio-ui.md "H FOV の単位": the Camera's, and the view's number in the 3D tab and the Preview window).
+// Pure; studio/session.js makes the
 // move one Undo step, studio/editor.js hands it the view, components/studio/StudioToolRail.vue draws the button.
 import { setLaneValue } from "../pano_timeline.js";
 import { cameraLooks, moveCameraPose } from "./camera_state.js";
@@ -21,36 +23,11 @@ export const PANORAMA_MODE_TIP = VIEW_NOTICES["fov-panorama"];
 // (docs/studio-ui.md "Camera タブ", ADR 0061).
 export const CAMERA_FOV_TIP = "Camera FOV · Change it with the FOV ruler";
 
-// The unit the H FOV shows in (docs/studio-ui.md "H FOV の単位"): "deg" or "mm", the focal length of a 36 mm wide sensor
-// (pano_lens.js fovToFocalMm). The inspector's box, the Camera tab's FOV ruler head and its FOV number share it; pressing
-// the unit mark of the box or of the ruler head switches it. Kept per browser, not in the state, as the Length unit.
-export const FOV_UNIT_SETTING_KEY = "PanoramaSuite.Studio.FovUnit";
-export const FOV_UNIT_TIPS = Object.freeze({ deg: "Show in mm (36 mm wide sensor)", mm: "Show in degrees" });
 // The H FOV box's tooltip while it shows mm.
 export const FOCAL_FIELD_TIP = "Focal length · 36 mm wide sensor";
 // The widest mm text (the H FOV field's 1°, the same at any κ; tests/studio_camera_ui.test.mjs binds it), which the
 // ruler head and the FOV number keep room for.
 export const FOCAL_WIDEST_TEXT = "2063";
-
-export function fovUnitOf(unit) {
-  return unit === "mm" ? "mm" : "deg";
-}
-
-export function readFovUnitSetting(storage) {
-  try {
-    return fovUnitOf(storage?.getItem(FOV_UNIT_SETTING_KEY));
-  } catch {
-    return "deg";
-  }
-}
-
-export function writeFovUnitSetting(storage, unit) {
-  try {
-    storage?.setItem(FOV_UNIT_SETTING_KEY, fovUnitOf(unit));
-  } catch {
-    // Blocked storage: the unit still switches for this session.
-  }
-}
 
 // A focal length as the H FOV shows it: one decimal under 100 mm, whole from 100 mm.
 export function formatFocalMm(focalMm) {
@@ -62,6 +39,20 @@ export function formatFocalMm(focalMm) {
 // unrounded, kept in the field's range), or null when the text holds no positive number (the value stays).
 export function focalFieldText(hFov, curve) {
   return formatFocalMm(fovToFocalMm(hFov, curve));
+}
+
+// The View group's FOV number for the view's `fov` (whole degrees) in `unit` (docs/studio-ui.md "右下の View の群"): its
+// text, its tooltip, and the widest text it keeps room for ("" for the degrees' own). The view has no lens curve (κ 1).
+export function viewFovText(fov, unit) {
+  return unit === "mm" ? `${formatFocalMm(fovToFocalMm(fov, 1))}mm` : `${fov}°`;
+}
+
+export function viewFovTip(unit) {
+  return unit === "mm" ? "Focal length · 36 mm wide sensor (Alt+Wheel)" : "Field of view (Alt+Wheel)";
+}
+
+export function viewFovWidest(unit) {
+  return unit === "mm" ? `${FOCAL_WIDEST_TEXT}mm` : "";
 }
 
 export function focalFieldValue(text, curve) {

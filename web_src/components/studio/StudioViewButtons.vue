@@ -1,6 +1,8 @@
 <script setup>
 import { ICON } from "../../icons.js";
+import { computed } from "vue";
 import { DEFAULT_VIEW_HFOV, START_VIEW_TIP } from "../../pano_space.js";
+import { viewFovText, viewFovTip, viewFovWidest } from "../../studio/camera_ui.js";
 import StudioFloatGroup from "./StudioFloatGroup.vue";
 import StudioFovNumber from "./StudioFovNumber.vue";
 import StudioIconButton from "./StudioIconButton.vue";
@@ -11,12 +13,13 @@ import StudioResetButton from "./StudioResetButton.vue";
 // in both tabs; the Preview window's has no Frame Selected and puts its Fullscreen in the slot after the grid button
 // (docs/studio-ui.md "Preview のウィンドウ"). The grid button shows its state by its icon, never by a fill
 // (docs/agents/ux-principles.md, the exception of 2026-10-30). Presentational.
-defineProps({
+const props = defineProps({
   // The view's FOV in whole degrees, and the text the number shows instead (the Camera tab's Camera H FOV).
   fov: { type: Number, default: DEFAULT_VIEW_HFOV },
   fovText: { type: String, default: "" },
-  // The widest text the number keeps room for (StudioFovNumber `widest`), or "" for the view's.
-  fovWidest: { type: String, default: "" },
+  // The H FOV's unit ("deg" | "mm", ComfyUI's setting, docs/studio-ui.md "H FOV の単位"): the number's text, its tooltip
+  // and its width (camera_ui.js viewFovText, viewFovTip, viewFovWidest), the same width in both tabs.
+  fovUnit: { type: String, default: "deg" },
   // The number and its reset stay in place but cannot be used (the Camera tab), `fovTip` says why.
   fovDisabled: { type: Boolean, default: false },
   fovTip: { type: String, default: "" },
@@ -36,17 +39,18 @@ defineProps({
   frameDisabledTip: { type: String, default: "" },
 });
 const emit = defineEmits(["fov", "fov-reset", "frame-selected", "reset-view", "grid"]);
+const numberText = computed(() => props.fovText || viewFovText(props.fov, props.fovUnit));
 </script>
 
 <template>
   <StudioFloatGroup layout="row" label="View">
     <StudioFovNumber
       :value="fov"
-      :text="fovText"
-      :widest="fovWidest"
+      :text="numberText"
+      :widest="viewFovWidest(fovUnit)"
       :disabled="fovDisabled"
       :lit="fovLit"
-      :tip="fovDisabled ? fovTip : 'Field of view (Alt+Wheel)'"
+      :tip="fovDisabled ? fovTip : viewFovTip(fovUnit)"
       @change="(value) => emit('fov', value)"
     />
     <StudioResetButton

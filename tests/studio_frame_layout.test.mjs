@@ -217,21 +217,14 @@ test("the FOV ruler's arrow key, one small tick, is fovStepValue", async () => {
   assert.equal(stepWithin(0.333, 1, { step: CAMERA_RULERS.lens.minor, min: 0, max: 2, precision: 2 }), 0.35);
 });
 
-// docs/studio-ui.md "H FOV の単位": the ruler head shows the inspector's unit; its unit mark switches the same setting.
-test("the FOV ruler head shows mm with the inspector's unit, its unit mark grayed only in Panorama mode", () => {
+// docs/studio-ui.md "H FOV の単位": the ruler head shows the inspector's unit.
+test("the FOV ruler head shows mm with the inspector's unit; the scale stays in degrees", () => {
   const deg = rulersOf(cameraState({ projection: "perspective", fov: { value: 2 * Math.atan(18 / 50) * 180 / Math.PI } }));
-  assert.deepEqual([deg.fov.valueNumber, deg.fov.unit, deg.fov.unitTip, deg.fov.unitDisabled], ["40", "°", "Show in mm (36 mm wide sensor)", false]);
+  assert.deepEqual([deg.fov.unit, deg.fov.valueText], ["°", "40°"]);
   const mm = rulersOf(cameraState({ projection: "perspective", fov: { value: 2 * Math.atan(18 / 50) * 180 / Math.PI } }), { fovUnit: "mm" });
-  assert.deepEqual([mm.fov.valueNumber, mm.fov.unit, mm.fov.valueText, mm.fov.unitTip], ["50.0", "mm", "50.0mm", "Show in degrees"]);
-  // The scale stays in degrees.
+  assert.deepEqual([mm.fov.unit, mm.fov.valueText], ["mm", "50.0mm"]);
   assert.equal(mm.fov.scale.unitPx, deg.fov.scale.unitPx);
   // A fisheye Camera's mm is its center scale: κ = 0 at 137.51° is 15 mm.
   const fisheye = rulersOf(cameraState({ projection: "perspective", fov: { value: 2.4 * 180 / Math.PI }, curve: { value: 0 } }), { fovUnit: "mm" });
-  assert.equal(fisheye.fov.valueNumber, "15.0");
-  const locked = rulersOf(cameraState({ projection: "perspective", locked: true }), { fovUnit: "mm" });
-  assert.ok(locked.fov.disabled && !locked.fov.unitDisabled);
-  const readOnly = rulersOf(cameraState({ projection: "perspective" }), { fovUnit: "mm", readOnly: true });
-  assert.ok(readOnly.fov.disabled && !readOnly.fov.unitDisabled);
-  const panorama = rulersOf(cameraState({ projection: "erp" }), { fovUnit: "mm" });
-  assert.ok(panorama.fov.unitDisabled);
+  assert.equal(fisheye.fov.valueText, "15.0mm");
 });

@@ -20,7 +20,7 @@ import StudioSlider from "./StudioSlider.vue";
 const props = defineProps({
   card: { type: Object, required: true },
 });
-const emit = defineEmits(["edit", "fov-unit"]);
+const emit = defineEmits(["edit"]);
 
 // The lens fields where a Lens drag began, so every edit of the drag keeps the center scale of its start.
 const lensStart = new Map();
@@ -62,7 +62,6 @@ function boxProps(row, field) {
     label: field.axis ? `${row.name} ${field.axis}` : row.name,
     "data-field": field.field,
     ...(field.tip ? { "data-tip": field.tip } : {}),
-    ...(field.unitToggle ? { unitTip: field.unitToggle.tip, unitDisabled: field.unitToggle.disabled, onUnit: () => emit("fov-unit") } : {}),
     ...(field.focalCurve === undefined ? {} : focalBox(field.focalCurve)),
   };
 }

@@ -7,7 +7,8 @@ import { ICON } from "../icons.js";
 import { CAMERA_ASPECT_MAX, CAMERA_ASPECT_MIN, WORLD_MIN_SCALE, skyStickerVfov, stickerVfovFromAspect } from "../pano_editor_state.js";
 import { NEW_STICKER_HFOV } from "../pano_space.js";
 import { CAMERA_HFOV_MIN, LENS_CURVE_DIGITS, LENS_CURVE_MAX, LENS_CURVE_MIN, lensFovLimit } from "../pano_lens.js";
-import { FOCAL_FIELD_TIP, FOV_UNIT_TIPS, fovUnitOf } from "./camera_ui.js";
+import { FOCAL_FIELD_TIP } from "./camera_ui.js";
+import { fovUnitOf } from "../pano_fov_unit.js";
 import { FRAME_EPSILON, clipFrame, clipOrigin, evaluateCamera, evaluateLane, evaluateSticker, laneView, ownerPeriod, segmentLength, segmentProgress, smoothEasing } from "../pano_scene_eval.js";
 import {
   ANIMATION_DEFAULT,
@@ -280,13 +281,12 @@ export const LOOK_AT_TIPS = Object.freeze({
 });
 
 // The H FOV box (docs/studio-ui.md "H FOV の単位"): the value, steps, digits and range in degrees whatever the unit; with
-// `fovUnit` "mm" it shows and takes the focal length at the Camera's κ (`focalCurve`, pano_lens.js fovToFocalMm). Its
-// unit mark switches the unit, grayed only in Panorama mode (a locked Camera's numbers may still be read in mm).
-function hfovField(value, fovUnit, erp) {
+// `fovUnit` "mm" (ComfyUI's setting) it shows and takes the focal length at the Camera's κ (`focalCurve`, pano_lens.js
+// fovToFocalMm).
+function hfovField(value, fovUnit) {
   const unit = fovUnitOf(fovUnit);
   const field = { field: "hFOV_deg", value: value.hFOV_deg, unit: unit === "mm" ? "mm" : "°", step: 0.25, precision: 1, min: CAMERA_HFOV_MIN, max: lensFovLimit(value.curve) };
   if (unit === "mm") Object.assign(field, { focalCurve: value.curve, tip: FOCAL_FIELD_TIP });
-  field.unitToggle = { tip: FOV_UNIT_TIPS[unit], disabled: erp };
   return field;
 }
 
@@ -329,7 +329,7 @@ function cameraRows(state, playhead, { length = null, boxes = null, lookPicking 
       control: "slider",
       lanes: ROW_LANES.camera.hfov,
       slider: { field: "hFOV_deg", min: CAMERA_HFOV_MIN, max: lensFovLimit(value.curve), step: 1 },
-      fields: [hfovField(value, fovUnit, erp)],
+      fields: [hfovField(value, fovUnit)],
       ...frameOnly,
     },
     {

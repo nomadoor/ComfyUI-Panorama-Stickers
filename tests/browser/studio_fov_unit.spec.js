@@ -1,9 +1,12 @@
 import { expect, test } from "@playwright/test";
 
 // The H FOV's unit (docs/studio-ui.md "H FOV の単位") in the new editor on tests/browser/pages/studio_camera_wired.html,
-// in a real browser engine: the unit marks of the inspector's H FOV box and of the Camera tab's FOV ruler head switch one
-// setting between ° and mm, the Camera tab's FOV number follows, the head and the number keep their widths, a typed mm
-// goes into the state as degrees unrounded, and the choice is kept per browser.
+// in a real browser engine: ComfyUI's setting chooses ° or mm for the inspector's H FOV box, the Camera tab's FOV ruler
+// head and its FOV number, and the view's FOV number in the 3D tab and the Preview window; an open editor or window
+// follows a change at once, the units are plain text, the head and the number keep their widths, and a typed mm goes
+// into the state as degrees unrounded.
+
+const SETTING = "PanoramaSuite.Editor.FovUnit";
 
 function watch(page) {
   const problems = [];
@@ -28,13 +31,14 @@ async function open(page, query = "aspect=16:9&mode=frame") {
 }
 
 const hfovBox = (page) => page.locator('[data-card="camera"] [data-field="hFOV_deg"]');
-const boxUnit = (page) => hfovBox(page).locator('[data-part="unit"]');
+const boxValue = (page) => hfovBox(page).locator(".pano-studio-field-value");
+const boxUnit = (page) => hfovBox(page).locator(".pano-studio-field-unit");
 const rulerValue = (page) => page.locator('[data-ruler="FOV"] [data-ruler-value]');
-const rulerUnit = (page) => rulerValue(page).locator('[data-part="unit"]');
 const fovNumber = (page) => page.locator('[data-action="fov"]');
 const width = (locator) => locator.evaluate((el) => el.getBoundingClientRect().width);
+const setUnit = (page, unit) => page.evaluate(([id, value]) => window.__studio.setSetting(id, value), [SETTING, unit]);
 
-test("the box's and the ruler head's unit marks switch one setting; the FOV number follows; widths stay", async ({ page }) => {
+test("the setting switches the box, the ruler head and the FOV number in an open editor; units are plain text; widths stay", async ({ page }) => {
   const problems = await open(page);
   const hfov = (await page.evaluate(() => window.__studio.camera())).hFOV_deg;
   const mm = await page.evaluate(async (deg) => {
@@ -43,16 +47,17 @@ test("the box's and the ruler head's unit marks switch one setting; the FOV numb
     return formatFocalMm(fovToFocalMm(deg, 1));
   }, hfov);
   await expect(boxUnit(page)).toHaveText("°");
+  // Nothing in the editor switches the unit: the units are text, not buttons.
+  expect(await boxUnit(page).evaluate((el) => el.tagName)).toBe("SPAN");
+  await expect(rulerValue(page).locator("button")).toHaveCount(0);
   const headWidth = await width(rulerValue(page));
-  const numberWidth = await width(fovNumber(page));
 
-  await rulerUnit(page).click();
+  await setUnit(page, "mm");
   await expect(boxUnit(page)).toHaveText("mm");
-  await expect(hfovBox(page).locator(".pano-studio-field-value")).toHaveText(mm);
+  await expect(boxValue(page)).toHaveText(mm);
   await expect(rulerValue(page)).toHaveText(`${mm}mm`);
   await expect(fovNumber(page)).toHaveText(`${mm}mm`);
   expect(await width(rulerValue(page))).toBe(headWidth);
-  expect(await page.evaluate(() => window.__studio.setting("PanoramaSuite.Studio.FovUnit"))).toBe("mm");
   // Nothing in the state changed: no Undo step.
   expect(await page.evaluate(() => window.__studio.session.canUndo)).toBe(false);
 
@@ -67,25 +72,61 @@ test("the box's and the ruler head's unit marks switch one setting; the FOV numb
   expect(await width(fovNumber(page))).toBe(wideNumber);
   const fits = await page.evaluate(() => {
     const head = document.querySelector('[data-ruler="FOV"] [data-ruler-value]');
-    const number = document.querySelector('[data-action="fov"] .pano-studio-fov-num');
-    return { head: [head.scrollWidth, head.clientWidth], number: number.getBoundingClientRect().width };
+    return [head.scrollWidth, head.clientWidth];
   });
-  expect(fits.head[0]).toBeLessThanOrEqual(fits.head[1]);
-  console.log(`head ${headWidth}px, number deg ${numberWidth}px, mm ${fits.number}px`);
+  expect(fits[0]).toBeLessThanOrEqual(fits[1]);
   await page.evaluate(() => window.__studio.session.undo?.());
 
-  // The 3D tab's number is the view's FOV, in degrees whatever the unit.
+  // The 3D tab's number is the view's FOV, in mm too (κ 1), in the same width as the Camera tab's; it still moves by
+  // whole degrees (the arrow key: one step, docs/space-and-view.md "寄る").
   await page.locator('[role="tablist"] button', { hasText: "3D" }).click();
-  await expect(fovNumber(page)).toHaveText(/^\d+°$/);
+  const viewMm = (fov) => page.evaluate(async (deg) => {
+    const { viewFovText } = await import("/web_src/studio/camera_ui.js");
+    return viewFovText(deg, "mm");
+  }, fov);
+  const viewFov = Number(await fovNumber(page).getAttribute("aria-valuenow"));
+  await expect(fovNumber(page)).toHaveText(await viewMm(viewFov));
+  await expect(fovNumber(page)).toHaveAttribute("aria-valuetext", await viewMm(viewFov));
+  await expect(fovNumber(page)).toHaveAttribute("data-tip", "Focal length · 36 mm wide sensor (Alt+Wheel)");
+  expect(await width(fovNumber(page))).toBe(wideNumber);
+  await fovNumber(page).focus();
+  await page.keyboard.press("Shift+ArrowLeft");
+  await expect(fovNumber(page)).toHaveAttribute("aria-valuenow", String(viewFov - 1));
+  await expect(fovNumber(page)).toHaveText(await viewMm(viewFov - 1));
   await page.locator('[role="tablist"] button', { hasText: "Camera" }).click();
 
-  await boxUnit(page).click();
+  await setUnit(page, "deg");
+  await expect(boxUnit(page)).toHaveText("°");
   await expect(rulerValue(page)).toHaveText(/°$/);
   await expect(fovNumber(page)).toHaveText(/°$/);
+  await page.locator('[role="tablist"] button', { hasText: "3D" }).click();
+  await expect(fovNumber(page)).toHaveText(/^\d+°$/);
+  await expect(fovNumber(page)).toHaveAttribute("data-tip", "Field of view (Alt+Wheel)");
   expect(problems).toEqual([]);
 });
 
-test("a typed mm goes into fov as degrees, unrounded; the unit kept from before opens in mm", async ({ page }) => {
+test("the Preview window's FOV number follows the setting: mm when set before opening, and a change while open", async ({ page }) => {
+  const problems = [];
+  page.on("pageerror", (error) => problems.push(`pageerror: ${error.message}`));
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await page.goto("/tests/browser/pages/preview_window.html?fovUnit=mm");
+  await page.waitForFunction(() => window.__preview?.ready, null, { timeout: 30_000 });
+  expect(await page.evaluate(() => window.__preview.open())).toBe(true);
+  const number = fovNumber(page);
+  const fov = Number(await number.getAttribute("aria-valuenow"));
+  const mm = await page.evaluate(async (deg) => (await import("/web_src/studio/camera_ui.js")).viewFovText(deg, "mm"), fov);
+  await expect(number).toHaveText(mm);
+  const wide = await width(number);
+  await page.evaluate((id) => window.__preview.setSetting(id, "deg"), SETTING);
+  await expect(number).toHaveText(`${fov}°`);
+  expect(await width(number)).toBeLessThan(wide);
+  await page.evaluate((id) => window.__preview.setSetting(id, "mm"), SETTING);
+  await expect(number).toHaveText(mm);
+  expect(await width(number)).toBe(wide);
+  expect(problems).toEqual([]);
+});
+
+test("a typed mm goes into fov as degrees, unrounded; the setting set before opens the editor in mm", async ({ page }) => {
   const problems = await open(page, "aspect=16:9&mode=frame&fovUnit=mm");
   await expect(boxUnit(page)).toHaveText("mm");
   const box = hfovBox(page);
@@ -102,28 +143,6 @@ test("a typed mm goes into fov as degrees, unrounded; the unit kept from before 
   const hfov = (await page.evaluate(() => window.__studio.camera())).hFOV_deg;
   const want = 2 * Math.atan(18 / 400) * 180 / Math.PI;
   expect(Math.abs(hfov - want)).toBeLessThan(1e-9);
-  await expect(box.locator(".pano-studio-field-value")).toHaveText("400");
-  expect(problems).toEqual([]);
-});
-
-test("Panorama mode grays the unit marks with their rows; a locked Camera's still switch", async ({ page }) => {
-  const problems = await open(page, "aspect=16:9&mode=panorama");
-  await expect(boxUnit(page)).toHaveAttribute("aria-disabled", "true");
-  await expect(rulerUnit(page)).toHaveAttribute("aria-disabled", "true");
-  // A grayed mark leaves the tooltip to its row's reason (nothing to press says nothing about pressing).
-  await expect(boxUnit(page)).not.toHaveAttribute("data-tip", /.+/);
-  await expect(rulerUnit(page)).not.toHaveAttribute("data-tip", /.+/);
-  const before = await boxUnit(page).textContent();
-  await rulerUnit(page).click({ force: true });
-  await expect(boxUnit(page)).toHaveText(before);
-
-  await open(page, "aspect=16:9&mode=frame&locked=1");
-  await expect(rulerUnit(page)).not.toHaveAttribute("aria-disabled", "true");
-  const unit = await rulerUnit(page).textContent();
-  await rulerUnit(page).click();
-  await expect(rulerUnit(page)).not.toHaveText(unit);
-  // The box sits in the locked row (aria-disabled), so the press is forced past Playwright's check of its ancestors.
-  await boxUnit(page).click({ force: true });
-  await expect(rulerUnit(page)).toHaveText(unit);
+  await expect(boxValue(page)).toHaveText("400");
   expect(problems).toEqual([]);
 });

@@ -1,7 +1,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { createBackdropClose } from "../../studio/backdrop.js";
-import { CAMERA_FOV_TIP, CAMERA_TAB_LOCKED_TIP, CAMERA_TAB_TIP, PANORAMA_MODE_TIP, FOCAL_WIDEST_TEXT, cameraButton } from "../../studio/camera_ui.js";
+import { CAMERA_FOV_TIP, CAMERA_TAB_LOCKED_TIP, CAMERA_TAB_TIP, PANORAMA_MODE_TIP, cameraButton } from "../../studio/camera_ui.js";
 import { liveErpRatio } from "../../studio/erp_preview.js";
 import { cameraRulers, rulerEdit } from "../../studio/frame_layout.js";
 import { ROTATE_SNAP_DEG } from "../../studio/view_scale.js";
@@ -361,10 +361,6 @@ function setCollapsed(value) {
                 :label-precision="rulers.fov.scale.precision"
                 :precision="rulers.fov.precision"
                 :value-text="rulers.fov.valueText"
-                :value-number="rulers.fov.valueNumber"
-                :unit="rulers.fov.unit"
-                :unit-tip="rulers.fov.unitTip"
-                :unit-disabled="rulers.fov.unitDisabled"
                 :key-state="rulers.fov.keyState"
                 :disabled="rulers.fov.disabled"
                 :tip="rulers.fov.tip"
@@ -377,7 +373,6 @@ function setCollapsed(value) {
                 @change="(value) => onRuler('fov', 'change', value)"
                 @cancel="onRuler('fov', 'cancel')"
                 @key="onRuler('fov', 'key')"
-                @unit="controller.toggleFovUnit()"
               />
               <StudioEdgeRuler
                 class="pano-studio-at-edge-right"
@@ -497,7 +492,7 @@ function setCollapsed(value) {
             :fov="ui.fov"
             :fov-lit="ui.fovNumberLit"
             :fov-text="cameraTab && rulers ? rulers.fov.valueText : ''"
-            :fov-widest="cameraTab && rulers?.fov.unit === 'mm' ? `${FOCAL_WIDEST_TEXT}mm` : ''"
+            :fov-unit="view.fovUnit"
             :fov-disabled="cameraTab"
             :fov-tip="fovOffTip"
             :grid-shown="!ui.gridHidden"
@@ -573,7 +568,6 @@ function setCollapsed(value) {
         :boxes="view.lookBoxes"
         :fov-unit="view.fovUnit"
         @edit="(edit) => controller.inspectorEdit(edit)"
-        @fov-unit="controller.toggleFovUnit()"
         @close="controller.close()"
       />
       <StudioTooltip :root="root" />

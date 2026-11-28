@@ -77,20 +77,31 @@ test("formatFocalMm: one decimal under 100 mm, whole from 100 mm", async () => {
   assert.equal(formatFocalMm(2062.6), "2063");
 });
 
-test("the H FOV unit is kept per browser, degrees when unset or unreadable", async () => {
-  const { FOV_UNIT_SETTING_KEY, readFovUnitSetting, writeFovUnitSetting } = await import("../web_src/studio/camera_ui.js");
-  const items = new Map();
-  const storage = { getItem: (key) => items.get(key) ?? null, setItem: (key, value) => items.set(key, value) };
-  assert.equal(readFovUnitSetting(storage), "deg");
-  writeFovUnitSetting(storage, "mm");
-  assert.equal(items.get(FOV_UNIT_SETTING_KEY), "mm");
-  assert.equal(readFovUnitSetting(storage), "mm");
-  writeFovUnitSetting(storage, "anything");
-  assert.equal(readFovUnitSetting(storage), "deg");
-  const blocked = { getItem() { throw new Error("blocked"); }, setItem() { throw new Error("blocked"); } };
-  assert.equal(readFovUnitSetting(blocked), "deg");
-  writeFovUnitSetting(blocked, "mm");
-  assert.equal(readFovUnitSetting(null), "deg");
+test("the H FOV unit is ComfyUI's setting: degrees when unset or unreadable; a change reaches each listener until dropped", async () => {
+  const { FOV_UNIT_SETTING, FOV_UNIT_SETTING_ID, readFovUnit, onFovUnitChange } = await import("../web_src/pano_fov_unit.js");
+  assert.equal(FOV_UNIT_SETTING.id, "PanoramaSuite.Editor.FovUnit");
+  assert.deepEqual(FOV_UNIT_SETTING.category, ["Panorama Suite", "Editor", "H FOV unit"]);
+  assert.deepEqual([FOV_UNIT_SETTING.type, FOV_UNIT_SETTING.defaultValue], ["combo", "deg"]);
+  assert.deepEqual(FOV_UNIT_SETTING.options, [
+    { value: "deg", text: "Degrees" },
+    { value: "mm", text: "Focal length (mm, 36 mm wide sensor)" },
+  ]);
+  const settings = new Map();
+  const app = { ui: { settings: { getSettingValue: (id) => settings.get(id) } } };
+  assert.equal(readFovUnit(app), "deg");
+  settings.set(FOV_UNIT_SETTING_ID, "mm");
+  assert.equal(readFovUnit(app), "mm");
+  settings.set(FOV_UNIT_SETTING_ID, "anything");
+  assert.equal(readFovUnit(app), "deg");
+  assert.equal(readFovUnit(null), "deg");
+  assert.equal(readFovUnit({ ui: { settings: { getSettingValue() { throw new Error("not ready"); } } } }), "deg");
+  const heard = [];
+  const drop = onFovUnitChange((unit) => heard.push(unit));
+  FOV_UNIT_SETTING.onChange("mm");
+  FOV_UNIT_SETTING.onChange("anything");
+  drop();
+  FOV_UNIT_SETTING.onChange("mm");
+  assert.deepEqual(heard, ["mm", "deg"]);
 });
 
 test("the H FOV box's mm text and a typed mm: unrounded degrees in the field's range, no positive number keeps the value", async () => {
@@ -105,4 +116,19 @@ test("the H FOV box's mm text and a typed mm: unrounded degrees in the field's r
   for (const text of ["0", "-5", "", "mm"]) assert.equal(focalFieldValue(text, 1), null, text);
   // The widest mm the head and the FOV number keep room for is the field's 1°, the same text at any κ.
   for (const kappa of [1, 0.5, 0]) assert.equal(FOCAL_WIDEST_TEXT, focalFieldText(CAMERA_HFOV_MIN, kappa), `κ ${kappa}`);
+});
+
+// docs/studio-ui.md "右下の View の群": the view's FOV number follows the H FOV's unit at κ 1, in the Camera tab's width.
+test("the view's FOV number in degrees or mm: text, tooltip and the width it keeps", async () => {
+  const { viewFovText, viewFovTip, viewFovWidest, FOCAL_WIDEST_TEXT } = await import("../web_src/studio/camera_ui.js");
+  assert.deepEqual([35, 100, 140].map((fov) => viewFovText(fov, "deg")), ["35°", "100°", "140°"]);
+  assert.deepEqual([35, 100, 140].map((fov) => viewFovText(fov, "mm")), ["57.1mm", "15.1mm", "6.6mm"]);
+  assert.equal(viewFovTip("deg"), "Field of view (Alt+Wheel)");
+  assert.equal(viewFovTip("mm"), "Focal length · 36 mm wide sensor (Alt+Wheel)");
+  assert.equal(viewFovWidest("deg"), "");
+  assert.equal(viewFovWidest("mm"), `${FOCAL_WIDEST_TEXT}mm`);
+  // Every whole degree of the view shows its own mm, so a one-degree step always changes the text.
+  const texts = new Set();
+  for (let fov = 35; fov <= 140; fov += 1) texts.add(viewFovText(fov, "mm"));
+  assert.equal(texts.size, 106);
 });

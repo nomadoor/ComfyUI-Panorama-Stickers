@@ -24,10 +24,6 @@ const props = defineProps({
   axis: { type: String, default: "" },
   // The unit after the value ("°", "%").
   unit: { type: String, default: "" },
-  // With a tooltip the unit is a mark to press (the H FOV's ° and mm, docs/studio-ui.md "H FOV の単位"): `unit` goes
-  // out, and the press neither drags nor opens the box. It works while the box is disabled unless `unitDisabled`.
-  unitTip: { type: String, default: "" },
-  unitDisabled: { type: Boolean, default: false },
   // The value one pixel of drag moves.
   step: { type: Number, default: 0.01 },
   // Decimals shown and sent.
@@ -43,7 +39,7 @@ const props = defineProps({
   // (the H FOV in mm), where reading the text back would move the value.
   holdUnchanged: { type: Boolean, default: false },
 });
-const emit = defineEmits(["input", "change", "cancel", "unit"]);
+const emit = defineEmits(["input", "change", "cancel"]);
 
 const root = ref(null);
 const input = ref(null);
@@ -284,20 +280,7 @@ defineExpose({ startEditing, startDrag });
     >
     <template v-else>
       <span class="pano-studio-field-value pano-studio-cap">{{ text }}</span>
-      <button
-        v-if="unit && unitTip"
-        type="button"
-        class="pano-studio-field-unit pano-studio-cap pano-studio-unit-mark"
-        data-part="unit"
-        :aria-label="unitTip"
-        :aria-disabled="unitDisabled ? 'true' : null"
-        :tabindex="unitDisabled ? -1 : 0"
-        :data-tip="unitDisabled ? null : unitTip"
-        @pointerdown.stop
-        @keydown.stop
-        @click.stop="unitDisabled || emit('unit')"
-      >{{ unit }}</button>
-      <span v-else-if="unit" class="pano-studio-field-unit pano-studio-cap">{{ unit }}</span>
+      <span v-if="unit" class="pano-studio-field-unit pano-studio-cap">{{ unit }}</span>
     </template>
   </div>
 </template>

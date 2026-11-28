@@ -7,7 +7,7 @@ import { viewFovKeyStep } from "../../studio/view_camera.js";
 
 // The FOV number of the View group at the stage's bottom right (docs/studio-ui.md "右下の View の群"; how it changes the
 // view: docs/space-and-view.md "寄る"; looks: docs/design.md "右下の画角の数字と画角のリセット"). It shows `text` (the
-// view's FOV as "100°", or what the Camera tab gives) in a fixed width. A left and right drag changes it, right larger,
+// view's FOV as "100°" or "15.1mm", or what the Camera tab gives) in a fixed width. A left and right drag changes it, right larger,
 // by the FOV ruler's drag (frame_layout.js rulerDragValue at VIEW_FOV_DRAG_PX_PER_DEG, the movement's sign turned),
 // Shift finer (the unrounded value adds up, the view rounds it on applying, so a fine drag still moves); a press that
 // does not move does nothing. With the keyboard's focus, the arrow keys step it as the FOV ruler's do, Shift by one
@@ -24,7 +24,7 @@ const props = defineProps({
   tip: { type: String, default: "" },
   // Alt is held where Alt + wheel changes this number: the hover's fill (stage.js ui.fovNumberLit).
   lit: { type: Boolean, default: false },
-  // The widest text it keeps room for: the view's widest FOV, or in the Camera tab with the H FOV in mm the widest mm.
+  // The widest text it keeps room for: the view's widest FOV, or with the H FOV's unit in mm the widest mm (both tabs).
   widest: { type: String, default: "" },
 });
 const emit = defineEmits(["change"]);

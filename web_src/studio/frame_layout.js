@@ -134,14 +134,14 @@ const ROLL_RULER_RANGE = Object.freeze({ min: -180, max: 180 });
 // The FOV ruler's tooltip while it works (docs/studio-ui.md "Camera タブ" 辺の目盛りの tooltip; ADR 0061).
 export const FOV_WHEEL_TIP = "FOV (Alt+Wheel)";
 
-// The FOV ruler head's value in the inspector's H FOV unit (docs/studio-ui.md "H FOV の単位"; the box's `unit`,
-// `focalCurve` and `unitToggle`, inspector_model.js): the number, its unit mark (which switches the unit, as the box's
-// does), and the two together (the Camera tab's FOV number shows the same text). The scale stays in degrees.
+// The FOV ruler head's value in the inspector's H FOV unit (docs/studio-ui.md "H FOV の単位"; the box's `unit` and
+// `focalCurve`, inspector_model.js): its unit and the text (the Camera tab's FOV number shows the same text). The scale
+// stays in degrees.
 function fovHead(box) {
   const mm = box.unit === "mm";
-  const valueNumber = mm ? formatFocalMm(fovToFocalMm(box.value, box.focalCurve)) : rulerLabel(box.value, 0);
   const unit = mm ? "mm" : "°";
-  return { valueNumber, unit, valueText: `${valueNumber}${unit}`, unitTip: box.unitToggle?.tip ?? "", unitDisabled: !!box.unitToggle?.disabled };
+  const number = mm ? formatFocalMm(fovToFocalMm(box.value, box.focalCurve)) : rulerLabel(box.value, 0);
+  return { unit, valueText: `${number}${unit}` };
 }
 
 export function cameraRulers(card) {

@@ -12,7 +12,6 @@ import { editorKeyAction } from "./shortcuts.js";
 import { createStage } from "./stage.js";
 import { outputView } from "./stage_view.js";
 import { writeLengthUnitSetting, writeLoopSetting } from "./timeline_actions.js";
-import { writeFovUnitSetting } from "./camera_ui.js";
 import { openingView } from "./view_camera.js";
 
 // The keys and the controller.
@@ -176,12 +175,6 @@ export function createEditorController(ctx) {
     lengthUnit: (unit) => {
       ctx.view.lengthUnit = unit === "seconds" ? "seconds" : "frames";
       writeLengthUnitSetting(ctx.storage, ctx.view.lengthUnit);
-    },
-    // The H FOV's unit mark (the inspector's box or the Camera tab's FOV ruler head): allowed read-only and with a locked
-    // Camera (it changes no state, docs/studio-ui.md "H FOV の単位").
-    toggleFovUnit: () => {
-      ctx.view.fovUnit = ctx.view.fovUnit === "mm" ? "deg" : "mm";
-      writeFovUnitSetting(ctx.storage, ctx.view.fovUnit);
     },
     frameSelected: (row) => ctx.stage?.frameSelected(ctx.selectionOf(row)),
     setTab: ctx.setTab,

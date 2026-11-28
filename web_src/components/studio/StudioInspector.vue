@@ -40,6 +40,8 @@ const props = defineProps({
   boxes: { type: Object, default: null },
   // Look at's Pick waits for a click on the stage (its row's Pick shows it).
   lookPicking: { type: Boolean, default: false },
+  // The unit the Camera's H FOV shows in ("deg" | "mm", ComfyUI's setting, docs/studio-ui.md "H FOV の単位").
+  fovUnit: { type: String, default: "deg" },
 });
 const emit = defineEmits(["edit", "close"]);
 
@@ -57,6 +59,7 @@ const model = computed(() => buildInspectorModel({
   length: props.length,
   boxes: props.boxes,
   lookPicking: props.lookPicking,
+  fovUnit: props.fovUnit,
 }));
 
 // --- The Easing panel's size: its graph is square and as wide as the panel, smaller when it would leave less than
