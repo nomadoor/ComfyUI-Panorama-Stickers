@@ -1,0 +1,1066 @@
+{
+  "_doc": "normalize_painting_state (Python) and normalizePaintingState (JS) accept strokes, raster objects and groups the same (docs/scene-state-v2.md 「ペイントのストロークの受け付け方」 and 共通の規則: a text field is a JSON string only, an object field a JSON object only). `strokes`: each case puts base stroke `base` (pen or lasso, below) into layer `layer` with `layerKind` set to it, applies `stroke` (keys set; null removes nothing, it sets null) and `point` (merged into the first point); `expected` null means the stroke is dropped, otherwise the listed keys of the kept stroke are compared (`u0` is the first point's u, `geometryKind` the kept geometry's kind, both compared exactly). `items`: a raster object (`raster`) or group (`group`) with `patch` merged in (`patch` null puts a list in its place); `expected` lists the kept raster objects' [id, layerKind], or the kept groups' [id, actionGroupId]; a raster case with `first` also compares those keys of the first kept raster object.",
+  "bases": {
+    "pen": {
+      "id": "s1",
+      "actionGroupId": "ag1",
+      "targetSpace": {
+        "kind": "ERP_GLOBAL"
+      },
+      "layerKind": "paint",
+      "toolKind": "pen",
+      "size": 12,
+      "opacity": 0.5,
+      "createdAt": 7,
+      "color": {
+        "r": 0.2,
+        "g": 0.4,
+        "b": 0.6,
+        "a": 1
+      },
+      "radiusModel": null,
+      "radiusValue": 0.1,
+      "brushPresetId": "pen_basic",
+      "geometry": {
+        "geometryKind": "freehand_open",
+        "points": [
+          {
+            "u": 0.25,
+            "v": 0.5,
+            "t": 0
+          },
+          {
+            "u": 0.3,
+            "v": 0.5,
+            "t": 1
+          }
+        ]
+      }
+    },
+    "lasso": {
+      "id": "s2",
+      "actionGroupId": "ag1",
+      "targetSpace": {
+        "kind": "ERP_GLOBAL"
+      },
+      "layerKind": "paint",
+      "toolKind": "lasso_fill",
+      "size": 12,
+      "opacity": 0.5,
+      "createdAt": 7,
+      "color": {
+        "r": 0.2,
+        "g": 0.4,
+        "b": 0.6,
+        "a": 1
+      },
+      "radiusModel": null,
+      "radiusValue": 0.1,
+      "brushPresetId": "pen_basic",
+      "geometry": {
+        "geometryKind": "lasso_fill",
+        "points": [
+          {
+            "u": 0.1,
+            "v": 0.4,
+            "t": 0
+          },
+          {
+            "u": 0.2,
+            "v": 0.4,
+            "t": 1
+          },
+          {
+            "u": 0.15,
+            "v": 0.5,
+            "t": 2
+          }
+        ]
+      }
+    }
+  },
+  "raster": {
+    "id": "r1",
+    "type": "raster_frozen",
+    "layerKind": "paint",
+    "z_index": 0,
+    "bbox": {
+      "u0": 0.1,
+      "v0": 0.2,
+      "u1": 0.4,
+      "v1": 0.6
+    },
+    "rasterDataUrl": "data:image/png;base64,AAAA",
+    "transform": {
+      "du": 0.1,
+      "dv": 0.2,
+      "rot_deg": 30,
+      "scale": 2
+    }
+  },
+  "group": {
+    "id": "g1",
+    "actionGroupId": "ag1",
+    "z_index": 0
+  },
+  "strokes": {
+    "actionGroupId_blank_dropped": {
+      "base": "pen",
+      "layer": "paint",
+      "stroke": {
+        "actionGroupId": "   "
+      },
+      "expected": null
+    },
+    "actionGroupId_list_dropped": {
+      "base": "pen",
+      "layer": "paint",
+      "stroke": {
+        "actionGroupId": [
+          1,
+          2
+        ]
+      },
+      "expected": null
+    },
+    "actionGroupId_object_dropped": {
+      "base": "pen",
+      "layer": "paint",
+      "stroke": {
+        "actionGroupId": {}
+      },
+      "expected": null
+    },
+    "brush_preset_number_null": {
+      "base": "pen",
+      "layer": "paint",
+      "stroke": {
+        "brushPresetId": 3
+      },
+      "expected": {
+        "brushPresetId": null
+      }
+    },
+    "brush_preset_object_null": {
+      "base": "pen",
+      "layer": "paint",
+      "stroke": {
+        "brushPresetId": {}
+      },
+      "expected": {
+        "brushPresetId": null
+      }
+    },
+    "brush_preset_with_spaces_trimmed": {
+      "base": "pen",
+      "layer": "paint",
+      "stroke": {
+        "brushPresetId": " pen_basic "
+      },
+      "expected": {
+        "brushPresetId": "pen_basic"
+      }
+    },
+    "eraser_without_color_dropped": {
+      "base": "pen",
+      "layer": "paint",
+      "stroke": {
+        "toolKind": "eraser",
+        "color": null
+      },
+      "expected": null
+    },
+    "geometry_kind_list_dropped": {
+      "base": "pen",
+      "layer": "paint",
+      "stroke": {
+        "geometry": {
+          "geometryKind": [
+            "freehand_open"
+          ],
+          "points": [
+            {
+              "u": 0.25,
+              "v": 0.5,
+              "t": 0
+            },
+            {
+              "u": 0.3,
+              "v": 0.5,
+              "t": 1
+            }
+          ]
+        }
+      },
+      "expected": null
+    },
+    "geometry_kind_with_spaces_kept": {
+      "base": "pen",
+      "layer": "paint",
+      "stroke": {
+        "geometry": {
+          "geometryKind": " freehand_open ",
+          "points": [
+            {
+              "u": 0.25,
+              "v": 0.5,
+              "t": 0
+            },
+            {
+              "u": 0.3,
+              "v": 0.5,
+              "t": 1
+            }
+          ]
+        }
+      },
+      "expected": {
+        "geometryKind": "freehand_open"
+      }
+    },
+    "geometry_list_dropped": {
+      "base": "pen",
+      "layer": "paint",
+      "stroke": {
+        "geometry": [
+          {
+            "geometryKind": "freehand_open",
+            "points": [
+              {
+                "u": 0.25,
+                "v": 0.5,
+                "t": 0
+              },
+              {
+                "u": 0.3,
+                "v": 0.5,
+                "t": 1
+              }
+            ]
+          }
+        ]
+      },
+      "expected": null
+    },
+    "id_blank_dropped": {
+      "base": "pen",
+      "layer": "paint",
+      "stroke": {
+        "id": "   "
+      },
+      "expected": null
+    },
+    "id_bool_dropped": {
+      "base": "pen",
+      "layer": "paint",
+      "stroke": {
+        "id": true
+      },
+      "expected": null
+    },
+    "id_float_dropped": {
+      "base": "pen",
+      "layer": "paint",
+      "stroke": {
+        "id": 1.5
+      },
+      "expected": null
+    },
+    "id_number_dropped": {
+      "base": "pen",
+      "layer": "paint",
+      "stroke": {
+        "id": 1
+      },
+      "expected": null
+    },
+    "id_object_dropped": {
+      "base": "pen",
+      "layer": "paint",
+      "stroke": {
+        "id": {}
+      },
+      "expected": null
+    },
+    "ids_with_spaces_trimmed": {
+      "base": "pen",
+      "layer": "paint",
+      "stroke": {
+        "id": " s1 ",
+        "actionGroupId": " ag1 "
+      },
+      "expected": {
+        "id": "s1",
+        "actionGroupId": "ag1"
+      }
+    },
+    "lasso_shape_with_pen_dropped": {
+      "base": "pen",
+      "layer": "paint",
+      "stroke": {
+        "geometry": {
+          "geometryKind": "lasso_fill",
+          "points": [
+            {
+              "u": 0.1,
+              "v": 0.4,
+              "t": 0
+            },
+            {
+              "u": 0.2,
+              "v": 0.4,
+              "t": 1
+            },
+            {
+              "u": 0.15,
+              "v": 0.5,
+              "t": 2
+            }
+          ]
+        }
+      },
+      "expected": null
+    },
+    "lasso_tool_with_freehand_dropped": {
+      "base": "lasso",
+      "layer": "paint",
+      "stroke": {
+        "geometry": {
+          "geometryKind": "freehand_open",
+          "points": [
+            {
+              "u": 0.25,
+              "v": 0.5,
+              "t": 0
+            },
+            {
+              "u": 0.3,
+              "v": 0.5,
+              "t": 1
+            }
+          ]
+        }
+      },
+      "expected": null
+    },
+    "lasso_two_points_dropped": {
+      "base": "lasso",
+      "layer": "paint",
+      "stroke": {
+        "geometry": {
+          "geometryKind": "lasso_fill",
+          "points": [
+            {
+              "u": 0.1,
+              "v": 0.4,
+              "t": 0
+            },
+            {
+              "u": 0.2,
+              "v": 0.4,
+              "t": 1
+            }
+          ]
+        }
+      },
+      "expected": null
+    },
+    "layerKind_list_dropped": {
+      "base": "pen",
+      "layer": "paint",
+      "stroke": {
+        "layerKind": [
+          "paint"
+        ]
+      },
+      "expected": null
+    },
+    "layerKind_with_spaces_dropped": {
+      "base": "pen",
+      "layer": "paint",
+      "stroke": {
+        "layerKind": " paint "
+      },
+      "expected": null
+    },
+    "mask_brush_dropped": {
+      "base": "pen",
+      "layer": "mask",
+      "stroke": {
+        "toolKind": "brush"
+      },
+      "expected": null
+    },
+    "mask_color_list_null": {
+      "base": "pen",
+      "layer": "mask",
+      "stroke": {
+        "color": [
+          1,
+          0,
+          0,
+          1
+        ]
+      },
+      "expected": {
+        "color": null
+      }
+    },
+    "mask_crayon_dropped": {
+      "base": "pen",
+      "layer": "mask",
+      "stroke": {
+        "toolKind": "crayon"
+      },
+      "expected": null
+    },
+    "mask_eraser_kept": {
+      "base": "pen",
+      "layer": "mask",
+      "stroke": {
+        "toolKind": "eraser"
+      },
+      "expected": {
+        "toolKind": "eraser"
+      }
+    },
+    "mask_lasso_kept": {
+      "base": "lasso",
+      "layer": "mask",
+      "expected": {
+        "toolKind": "lasso_fill",
+        "color": null
+      }
+    },
+    "mask_marker_dropped": {
+      "base": "pen",
+      "layer": "mask",
+      "stroke": {
+        "toolKind": "marker"
+      },
+      "expected": null
+    },
+    "mask_pen_color_null": {
+      "base": "pen",
+      "layer": "mask",
+      "expected": {
+        "toolKind": "pen",
+        "color": null
+      }
+    },
+    "paint_brush_kept": {
+      "base": "pen",
+      "layer": "paint",
+      "stroke": {
+        "toolKind": "brush"
+      },
+      "expected": {
+        "toolKind": "brush"
+      }
+    },
+    "paint_color_list_dropped": {
+      "base": "pen",
+      "layer": "paint",
+      "stroke": {
+        "color": [
+          1,
+          0,
+          0,
+          1
+        ]
+      },
+      "expected": null
+    },
+    "paint_color_text_dropped": {
+      "base": "pen",
+      "layer": "paint",
+      "stroke": {
+        "color": "red"
+      },
+      "expected": null
+    },
+    "paint_crayon_kept": {
+      "base": "pen",
+      "layer": "paint",
+      "stroke": {
+        "toolKind": "crayon",
+        "brushPresetId": "crayon",
+        "stampKind": "crayon",
+        "crayonGrain": 0.68
+      },
+      "expected": {
+        "toolKind": "crayon",
+        "stampKind": "crayon"
+      }
+    },
+    "paint_eraser_kept": {
+      "base": "pen",
+      "layer": "paint",
+      "stroke": {
+        "toolKind": "eraser"
+      },
+      "expected": {
+        "toolKind": "eraser"
+      }
+    },
+    "paint_lasso_kept": {
+      "base": "lasso",
+      "layer": "paint",
+      "expected": {
+        "toolKind": "lasso_fill"
+      }
+    },
+    "paint_marker_kept": {
+      "base": "pen",
+      "layer": "paint",
+      "stroke": {
+        "toolKind": "marker"
+      },
+      "expected": {
+        "toolKind": "marker"
+      }
+    },
+    "paint_pen_kept": {
+      "base": "pen",
+      "layer": "paint",
+      "expected": {
+        "toolKind": "pen"
+      }
+    },
+    "point_list_dropped": {
+      "base": "pen",
+      "layer": "paint",
+      "stroke": {
+        "geometry": {
+          "geometryKind": "freehand_open",
+          "points": [
+            [
+              0.25,
+              0.5
+            ],
+            [
+              0.3,
+              0.5
+            ]
+          ]
+        }
+      },
+      "expected": null
+    },
+    "points_object_dropped": {
+      "base": "pen",
+      "layer": "paint",
+      "stroke": {
+        "geometry": {
+          "geometryKind": "freehand_open",
+          "points": {
+            "0": {
+              "u": 0.25,
+              "v": 0.5,
+              "t": 0
+            }
+          }
+        }
+      },
+      "expected": null
+    },
+    "radius_model_list_null": {
+      "base": "pen",
+      "layer": "paint",
+      "stroke": {
+        "radiusModel": [
+          "px"
+        ]
+      },
+      "expected": {
+        "radiusModel": null
+      }
+    },
+    "radius_model_text_kept": {
+      "base": "pen",
+      "layer": "paint",
+      "stroke": {
+        "radiusModel": " erp_v "
+      },
+      "expected": {
+        "radiusModel": "erp_v"
+      }
+    },
+    "target_space_kind_list_dropped": {
+      "base": "pen",
+      "layer": "paint",
+      "stroke": {
+        "targetSpace": {
+          "kind": [
+            "ERP_GLOBAL"
+          ]
+        }
+      },
+      "expected": null
+    },
+    "target_space_kind_with_spaces_kept": {
+      "base": "pen",
+      "layer": "paint",
+      "stroke": {
+        "targetSpace": {
+          "kind": " ERP_GLOBAL "
+        }
+      },
+      "expected": {
+        "targetSpace": {
+          "kind": "ERP_GLOBAL"
+        }
+      }
+    },
+    "target_space_list_dropped": {
+      "base": "pen",
+      "layer": "paint",
+      "stroke": {
+        "targetSpace": [
+          "ERP_GLOBAL"
+        ]
+      },
+      "expected": null
+    },
+    "toolKind_list_dropped": {
+      "base": "pen",
+      "layer": "paint",
+      "stroke": {
+        "toolKind": [
+          "pen"
+        ]
+      },
+      "expected": null
+    },
+    "toolKind_number_dropped": {
+      "base": "pen",
+      "layer": "paint",
+      "stroke": {
+        "toolKind": 1
+      },
+      "expected": null
+    },
+    "tool_with_spaces_kept": {
+      "base": "pen",
+      "layer": "paint",
+      "stroke": {
+        "toolKind": "  pen "
+      },
+      "expected": {
+        "toolKind": "pen"
+      }
+    },
+    "u_above_one": {
+      "base": "pen",
+      "layer": "paint",
+      "point": {
+        "u": 1.75
+      },
+      "expected": {
+        "u0": 0.75
+      }
+    },
+    "u_just_below_one": {
+      "base": "pen",
+      "layer": "paint",
+      "point": {
+        "u": 0.9999999999
+      },
+      "expected": {
+        "u0": 0.9999999999
+      }
+    },
+    "u_just_below_three": {
+      "base": "pen",
+      "layer": "paint",
+      "point": {
+        "u": 2.9999999999
+      },
+      "expected": {
+        "u0": 0.9999999999
+      }
+    },
+    "u_negative": {
+      "base": "pen",
+      "layer": "paint",
+      "point": {
+        "u": -0.25
+      },
+      "expected": {
+        "u0": 0.75
+      }
+    },
+    "u_one": {
+      "base": "pen",
+      "layer": "paint",
+      "point": {
+        "u": 1
+      },
+      "expected": {
+        "u0": 0
+      }
+    },
+    "u_tinier_negative": {
+      "base": "pen",
+      "layer": "paint",
+      "point": {
+        "u": -1e-17
+      },
+      "expected": {
+        "u0": 0
+      }
+    },
+    "u_tiny_negative": {
+      "base": "pen",
+      "layer": "paint",
+      "point": {
+        "u": -1e-12
+      },
+      "expected": {
+        "u0": 0.999999999999
+      }
+    },
+    "unknown_tool_dropped": {
+      "base": "pen",
+      "layer": "paint",
+      "stroke": {
+        "toolKind": "bogus"
+      },
+      "expected": null
+    },
+    "ids_with_js_whitespace_trimmed": {
+      "base": "pen",
+      "layer": "paint",
+      "stroke": {
+        "id": "\ufeffs1\u3000",
+        "actionGroupId": "\u00a0ag1\ufeff"
+      },
+      "expected": {
+        "id": "s1",
+        "actionGroupId": "ag1"
+      }
+    },
+    "ids_with_python_only_whitespace_kept": {
+      "base": "pen",
+      "layer": "paint",
+      "stroke": {
+        "id": "\u0085s1\u001c",
+        "actionGroupId": "\u001fag1\u0085"
+      },
+      "expected": {
+        "id": "\u0085s1\u001c",
+        "actionGroupId": "\u001fag1\u0085"
+      }
+    },
+    "id_bom_only_dropped": {
+      "base": "pen",
+      "layer": "paint",
+      "stroke": {
+        "id": "\ufeff"
+      },
+      "expected": null
+    },
+    "tool_kind_with_next_line_dropped": {
+      "base": "pen",
+      "layer": "paint",
+      "stroke": {
+        "toolKind": "\u0085pen"
+      },
+      "expected": null
+    }
+  },
+  "items": {
+    "group_action_id_blank_uses_id": {
+      "kind": "group",
+      "patch": {
+        "actionGroupId": "   "
+      },
+      "expected": [
+        [
+          "g1",
+          "g1"
+        ]
+      ]
+    },
+    "group_action_id_number_uses_id": {
+      "kind": "group",
+      "patch": {
+        "actionGroupId": 5
+      },
+      "expected": [
+        [
+          "g1",
+          "g1"
+        ]
+      ]
+    },
+    "group_action_id_with_spaces_trimmed": {
+      "kind": "group",
+      "patch": {
+        "actionGroupId": " ag1 "
+      },
+      "expected": [
+        [
+          "g1",
+          "ag1"
+        ]
+      ]
+    },
+    "group_id_empty_takes_action_id": {
+      "kind": "group",
+      "patch": {
+        "id": ""
+      },
+      "expected": [
+        [
+          "ag1",
+          "ag1"
+        ]
+      ]
+    },
+    "group_id_object_takes_action_id": {
+      "kind": "group",
+      "patch": {
+        "id": {}
+      },
+      "expected": [
+        [
+          "ag1",
+          "ag1"
+        ]
+      ]
+    },
+    "group_id_with_spaces_kept": {
+      "kind": "group",
+      "patch": {
+        "id": " g1 "
+      },
+      "expected": [
+        [
+          " g1 ",
+          "ag1"
+        ]
+      ]
+    },
+    "group_ids_numbers_dropped": {
+      "kind": "group",
+      "patch": {
+        "id": 5,
+        "actionGroupId": 6
+      },
+      "expected": []
+    },
+    "group_kept": {
+      "kind": "group",
+      "patch": {},
+      "expected": [
+        [
+          "g1",
+          "ag1"
+        ]
+      ]
+    },
+    "group_list_dropped": {
+      "kind": "group",
+      "patch": null,
+      "expected": []
+    },
+    "raster_bbox_list_dropped": {
+      "kind": "raster",
+      "patch": {
+        "bbox": [
+          0.1,
+          0.2,
+          0.4,
+          0.6
+        ]
+      },
+      "expected": []
+    },
+    "raster_data_url_list_dropped": {
+      "kind": "raster",
+      "patch": {
+        "rasterDataUrl": [
+          "data:image/png;base64,AAAA"
+        ]
+      },
+      "expected": []
+    },
+    "raster_data_url_with_spaces_kept": {
+      "kind": "raster",
+      "patch": {
+        "rasterDataUrl": "  data:image/png;base64,AAAA "
+      },
+      "expected": [
+        [
+          "r1",
+          "paint"
+        ]
+      ],
+      "first": {
+        "rasterDataUrl": "data:image/png;base64,AAAA"
+      }
+    },
+    "raster_id_number_dropped": {
+      "kind": "raster",
+      "patch": {
+        "id": 1
+      },
+      "expected": []
+    },
+    "raster_id_with_spaces_trimmed": {
+      "kind": "raster",
+      "patch": {
+        "id": " r1 "
+      },
+      "expected": [
+        [
+          "r1",
+          "paint"
+        ]
+      ]
+    },
+    "raster_kept": {
+      "kind": "raster",
+      "patch": {},
+      "expected": [
+        [
+          "r1",
+          "paint"
+        ]
+      ]
+    },
+    "raster_layer_kind_empty_paint": {
+      "kind": "raster",
+      "patch": {
+        "layerKind": ""
+      },
+      "expected": [
+        [
+          "r1",
+          "paint"
+        ]
+      ]
+    },
+    "raster_layer_kind_list_paint": {
+      "kind": "raster",
+      "patch": {
+        "layerKind": [
+          "mask"
+        ]
+      },
+      "expected": [
+        [
+          "r1",
+          "paint"
+        ]
+      ]
+    },
+    "raster_layer_kind_missing_paint": {
+      "kind": "raster",
+      "patch": {
+        "layerKind": null
+      },
+      "expected": [
+        [
+          "r1",
+          "paint"
+        ]
+      ]
+    },
+    "raster_layer_kind_with_spaces_dropped": {
+      "kind": "raster",
+      "patch": {
+        "layerKind": " mask "
+      },
+      "expected": []
+    },
+    "raster_transform_list_default": {
+      "kind": "raster",
+      "patch": {
+        "transform": [
+          1,
+          2
+        ]
+      },
+      "expected": [
+        [
+          "r1",
+          "paint"
+        ]
+      ],
+      "first": {
+        "transform": {
+          "du": 0,
+          "dv": 0,
+          "rot_deg": 0,
+          "scale": 1
+        }
+      }
+    },
+    "raster_type_list_dropped": {
+      "kind": "raster",
+      "patch": {
+        "type": [
+          "raster_frozen"
+        ]
+      },
+      "expected": []
+    },
+    "raster_type_with_spaces_dropped": {
+      "kind": "raster",
+      "patch": {
+        "type": " raster_frozen "
+      },
+      "expected": []
+    },
+    "raster_id_with_bom_trimmed": {
+      "kind": "raster",
+      "patch": {
+        "id": "\ufeffr1"
+      },
+      "expected": [
+        [
+          "r1",
+          "paint"
+        ]
+      ]
+    },
+    "raster_id_with_next_line_kept": {
+      "kind": "raster",
+      "patch": {
+        "id": "\u0085r1"
+      },
+      "expected": [
+        [
+          "\u0085r1",
+          "paint"
+        ]
+      ]
+    },
+    "group_action_id_bom_only_uses_id": {
+      "kind": "group",
+      "patch": {
+        "actionGroupId": "\ufeff"
+      },
+      "expected": [
+        [
+          "g1",
+          "g1"
+        ]
+      ]
+    },
+    "group_action_id_next_line_kept": {
+      "kind": "group",
+      "patch": {
+        "actionGroupId": "\u0085"
+      },
+      "expected": [
+        [
+          "g1",
+          "\u0085"
+        ]
+      ]
+    }
+  }
+}

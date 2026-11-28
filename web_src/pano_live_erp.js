@@ -88,7 +88,7 @@ const sameTurn = (a, b) => !!a && !!b && a.length === b.length && a.every((row, 
 // the caller (through pano_diagnostics.js's factory in the editor); it takes the requested size. near/far: the cube's
 // camera planes (setView may change them).
 export function createLiveErp({ renderer, canvas, near = 0.01, far = 1000 }) {
-  if (!canvas) throw new Error("[PanoramaSuite] the live ERP needs a canvas to put the ERP on");
+  if (!canvas) throw new Error("[PanoramaStickers] the live ERP needs a canvas to put the ERP on");
   const out = canvas;
   const context = out.getContext("2d");
   const maxCubemapSize = renderer.capabilities?.maxCubemapSize ?? FACE_MAX;

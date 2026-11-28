@@ -18,6 +18,6 @@ export function writeStateWidget(widget, text) {
   try {
     notifyWorkflowChanged();
   } catch (error) {
-    console.warn("[PanoramaSuite] could not note the workflow change", error);
+    console.warn("[PanoramaStickers] could not note the workflow change", error);
   }
 }

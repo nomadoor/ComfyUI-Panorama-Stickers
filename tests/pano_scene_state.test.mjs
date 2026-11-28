@@ -20,7 +20,7 @@ function assertClose(actual, expected, path = "$") {
 
 test("state_json v1 and v2 fixtures load as the documented v2 state", () => {
   assertClose(loadSceneState(fixture("v2_canonical")), JSON.parse(fixture("v2_canonical")));
-  for (const name of ["v1_stickers", "v1_cutout", "v2_invalid_fields", "v2_no_camera", "v2_erp_camera", "v2_upstream", "v2_big_numbers", "v1_cutout_shots"]) {
+  for (const name of ["v1_stickers", "v1_cutout", "v2_invalid_fields", "v2_no_camera", "v2_erp_camera", "v2_upstream", "v2_big_numbers", "v1_cutout_shots", "v1_bad_assets"]) {
     assertClose(loadSceneState(fixture(name)), JSON.parse(fixture(`${name}.v2`)));
   }
 });

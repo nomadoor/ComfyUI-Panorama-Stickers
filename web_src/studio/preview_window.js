@@ -31,6 +31,7 @@ import { editorKeyAction } from "./shortcuts.js";
 import { createStage, stageUi } from "./stage.js";
 import { installStudioStylesheet } from "./stylesheet.js";
 import { readLoopSetting, writeLoopSetting } from "./timeline_actions.js";
+import { onFovUnitChange, readFovUnit } from "../pano_fov_unit.js";
 
 // The Preview node's input that carries what it shows.
 const SOURCE_INPUTS = ["source"];
@@ -64,6 +65,8 @@ export async function openPreviewWindow(node, { app = null, api = null, storage 
   let backgroundVideo = null;
   let mountHost = null;
   let vueApp = null;
+  // Stops following the H FOV unit setting (released on closing).
+  let dropFovUnit = null;
   let onKeyDown = null;
   // The node's view and playhead the window goes on from: a Scene viewer's record, or the IMAGE / VIDEO runtime.
   let sceneRecord = null;
@@ -105,6 +108,7 @@ export async function openPreviewWindow(node, { app = null, api = null, storage 
     stageMedia?.dispose();
     upstream?.dispose();
     depthColors?.dispose();
+    dropFovUnit?.();
     vueApp?.unmount();
     mountHost?.remove();
     openNodes.delete(node);
@@ -120,7 +124,11 @@ export async function openPreviewWindow(node, { app = null, api = null, storage 
   };
   try {
     // The grids (ground and sky) start shown, as in the editor (docs/space-and-view.md "Preview のウィンドウ", ADR 0058).
-    const ui = reactive({ ...stageUi(), gridHidden: false, fullscreen: false });
+    // The H FOV's unit (ComfyUI's setting, docs/studio-ui.md "H FOV の単位"): read at opening, followed while open.
+    const ui = reactive({ ...stageUi(), gridHidden: false, fullscreen: false, fovUnit: readFovUnit(app) });
+    dropFovUnit = onFovUnitChange((unit) => {
+      ui.fovUnit = unit;
+    });
     const isScene = linkedInputType(node, "source") === PANO_SCENE_TYPE;
     const isVideo = !isScene && videoLinked(node, SOURCE_INPUTS);
     const resultNumber = (key) => Number(media.uiList(node, key)[0]);

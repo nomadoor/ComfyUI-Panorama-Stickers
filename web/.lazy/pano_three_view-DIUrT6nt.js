@@ -27908,7 +27908,7 @@ function Ml(r, e, t) {
 }
 let yl = null;
 function fc() {
-  return yl || (yl = import("./spark.module-xm1n4NRp.js")), yl;
+  return yl || (yl = import("./spark.module-BDESAxTD.js")), yl;
 }
 function B_(r) {
   const e = [], t = /* @__PURE__ */ new Set();
@@ -28252,7 +28252,7 @@ function gc(r) {
 const s0 = (r, e) => !!r && !!e && r[0] === e[0] && r[1] === e[1] && r[2] === e[2], a0 = (r, e) => !!r && !!e && r.length === e.length && r.every((t, n) => t.every((i, s) => i === e[n][s]));
 function o0({ renderer: r, canvas: e, near: t = 0.01, far: n = 1e3 }) {
   var N;
-  if (!e) throw new Error("[PanoramaSuite] the live ERP needs a canvas to put the ERP on");
+  if (!e) throw new Error("[PanoramaStickers] the live ERP needs a canvas to put the ERP on");
   const i = e, s = i.getContext("2d"), a = ((N = r.capabilities) == null ? void 0 : N.maxCubemapSize) ?? ba;
   let o = null, l = null, c = null, u = null, h = null;
   const d = new Nt(90, 1, t, n), f = new Gt({

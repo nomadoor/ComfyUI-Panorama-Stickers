@@ -10,6 +10,8 @@
 // wheel zooms toward the point under the pointer in every preset (pano_space.js zoomView).
 //
 // A preset is named after the app it is like and names what it adds to that app's own controls.
+import { DISPLAY_NAME } from "./pano_names.js";
+
 export const VIEW_CONTROL_PRESETS = Object.freeze({
   // Core's Load3D (three.js OrbitControls) and Sketchfab: the left and the right button orbit, Shift pans.
   default: {
@@ -50,7 +52,7 @@ export const VIEW_CONTROLS_SETTING_ID = "PanoramaSuite.Editor.ViewControls";
 // given, so it is not frozen.
 export const VIEW_CONTROLS_SETTING = {
   id: VIEW_CONTROLS_SETTING_ID,
-  category: ["Panorama Suite", "Editor", "3D view controls"],
+  category: [DISPLAY_NAME, "Editor", "3D view controls"],
   name: "3D view controls",
   tooltip: "Mouse controls of the Stickers editor's 6DoF view. The wheel zooms toward the point under the pointer.",
   type: "combo",

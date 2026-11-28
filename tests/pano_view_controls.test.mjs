@@ -11,6 +11,7 @@ import {
 } from "../web_src/pano_view_controls.js";
 import { createPanoEditorExtension } from "../web_src/pano_editor_extension.js";
 import { DIAGNOSTICS_SETTING } from "../web_src/pano_diagnostics.js";
+import { FOV_UNIT_SETTING } from "../web_src/pano_fov_unit.js";
 
 const LEFT = 0;
 const MIDDLE = 1;
@@ -96,5 +97,5 @@ test("the preset is ComfyUI's setting, and an unknown value is the default", () 
   assert.equal(viewControlsPreset(undefined), VIEW_CONTROL_PRESETS.default);
   assert.equal(viewControlsPreset("toString"), VIEW_CONTROL_PRESETS.default);
   const extension = createPanoEditorExtension({ app: {}, openEditor() {}, attachStickers() {}, attachCutout() {}, attachPreview() {} });
-  assert.deepEqual(extension.settings, [VIEW_CONTROLS_SETTING, DIAGNOSTICS_SETTING]);
+  assert.deepEqual(extension.settings, [VIEW_CONTROLS_SETTING, FOV_UNIT_SETTING, DIAGNOSTICS_SETTING]);
 });

@@ -1,8 +1,8 @@
 {
   "id": "7948a314-2081-4258-a30e-ea80e78fbafc",
   "revision": 0,
-  "last_node_id": 89,
-  "last_link_id": 193,
+  "last_node_id": 91,
+  "last_link_id": 195,
   "nodes": [
     {
       "id": 8,
@@ -220,7 +220,7 @@
         {
           "name": "model",
           "type": "MODEL",
-          "link": 180
+          "link": 194
         },
         {
           "name": "positive",
@@ -329,7 +329,7 @@
       "outputs": [],
       "properties": {},
       "widgets_values": [
-        "## models\n\n- diffusion_models\n  - [qwen_image_2.1_int8_convrot.safetensors](https://huggingface.co/Comfy-Org/Qwen-Image-2.1/blob/main/diffusion_models/qwen_image_2.1_int8_convrot.safetensors) (7.26 GB)\n- text_encoders\n  - [qwen3vl_8b_int8_convrot.safetensors](https://huggingface.co/Comfy-Org/Qwen-Image-2.1/blob/main/text_encoders/qwen3vl_8b_int8_convrot.safetensors) (9.35 GB)\n- vae\n  - [qwen_image_2.1_vae_bf16.safetensors](https://huggingface.co/Comfy-Org/Qwen-Image-2.1/blob/main/vae/qwen_image_2.1_vae_bf16.safetensors) (676 MB)\n- loras\n  - [qwen_image_2_1_360_panorama_outpaint_lora_v0_1.safetensors](https://huggingface.co/nomadoor/qwen-image-2.1-360-panorama-outpaint-lora/blob/main/qwen_image_2_1_360_panorama_outpaint_lora_v0_1.safetensors) (159 MB)\n\n```text\n📂ComfyUI/\n└── 📂models/\n    ├── 📂diffusion_models/\n    │   └── qwen_image_2.1_int8_convrot.safetensors\n    ├── 📂text_encoders/\n    │   └── qwen3vl_8b_int8_convrot.safetensors\n    ├── 📂vae/\n    │   └── qwen_image_2.1_vae_bf16.safetensors\n    └── 📂loras/\n        └── qwen_image_2_1_360_panorama_outpaint_lora_v0_1.safetensors\n```\n\n## custom nodes\n\n- [ComfyUI-Panorama-Stickers](https://github.com/nomadoor/ComfyUI-Panorama-Stickers)"
+        "## models\n\n- diffusion_models\n  - [qwen_image_2.1_int8_convrot.safetensors](https://huggingface.co/Comfy-Org/Qwen-Image-2.1/blob/main/diffusion_models/qwen_image_2.1_int8_convrot.safetensors) (7.26 GB)\n- text_encoders\n  - [qwen3vl_8b_int8_convrot.safetensors](https://huggingface.co/Comfy-Org/Qwen-Image-2.1/blob/main/text_encoders/qwen3vl_8b_int8_convrot.safetensors) (9.35 GB)\n- vae\n  - [qwen_image_2.1_vae_bf16.safetensors](https://huggingface.co/Comfy-Org/Qwen-Image-2.1/blob/main/vae/qwen_image_2.1_vae_bf16.safetensors) (676 MB)\n- loras\n  - [qwen_image_2_1_360_panorama_outpaint_lora_v0_1.safetensors](https://huggingface.co/nomadoor/qwen-image-2.1-360-panorama-outpaint-lora/blob/main/qwen_image_2_1_360_panorama_outpaint_lora_v0_1.safetensors) (159 MB)\n\n```text\n📂ComfyUI/\n└── 📂models/\n    ├── 📂diffusion_models/\n    │   └── qwen_image_2.1_int8_convrot.safetensors\n    ├── 📂text_encoders/\n    │   └── qwen3vl_8b_int8_convrot.safetensors\n    ├── 📂vae/\n    │   └── qwen_image_2.1_vae_bf16.safetensors\n    └── 📂loras/\n        └── qwen_image_2_1_360_panorama_outpaint_lora_v0_1.safetensors\n```\n\n## custom nodes\n\n- [ComfyUI-Panorama-Stickers](https://github.com/nomadoor/ComfyUI-Panorama-Stickers)\n\n## seam\n\nPanorama Circular RoPE and Panorama Circular VAE make the left and right edges of the panorama join. Always use them together: the Circular VAE goes to both Text Encode Qwen Image 2.1 and VAE Decode."
       ],
       "widgets_values_named": {
         "text": "## models\n\n- diffusion_models\n  - [qwen_image_2.1_int8_convrot.safetensors](https://huggingface.co/Comfy-Org/Qwen-Image-2.1/blob/main/diffusion_models/qwen_image_2.1_int8_convrot.safetensors) (7.26 GB)\n- text_encoders\n  - [qwen3vl_8b_int8_convrot.safetensors](https://huggingface.co/Comfy-Org/Qwen-Image-2.1/blob/main/text_encoders/qwen3vl_8b_int8_convrot.safetensors) (9.35 GB)\n- vae\n  - [qwen_image_2.1_vae_bf16.safetensors](https://huggingface.co/Comfy-Org/Qwen-Image-2.1/blob/main/vae/qwen_image_2.1_vae_bf16.safetensors) (676 MB)\n- loras\n  - [qwen_image_2_1_360_panorama_outpaint_lora_v0_1.safetensors](https://huggingface.co/nomadoor/qwen-image-2.1-360-panorama-outpaint-lora/blob/main/qwen_image_2_1_360_panorama_outpaint_lora_v0_1.safetensors) (159 MB)\n\n```text\n📂ComfyUI/\n└── 📂models/\n    ├── 📂diffusion_models/\n    │   └── qwen_image_2.1_int8_convrot.safetensors\n    ├── 📂text_encoders/\n    │   └── qwen3vl_8b_int8_convrot.safetensors\n    ├── 📂vae/\n    │   └── qwen_image_2.1_vae_bf16.safetensors\n    └── 📂loras/\n        └── qwen_image_2_1_360_panorama_outpaint_lora_v0_1.safetensors\n```\n\n## custom nodes\n\n- [ComfyUI-Panorama-Stickers](https://github.com/nomadoor/ComfyUI-Panorama-Stickers)"
@@ -358,8 +358,7 @@
           "type": "VAE",
           "slot_index": 0,
           "links": [
-            76,
-            192
+            195
           ]
         }
       ],
@@ -694,6 +693,79 @@
         "negative_prompt": "",
         "resolution": 0
       }
+    },
+    {
+      "id": 90,
+      "type": "PanoramaCircularRoPE",
+      "pos": [
+        880.0,
+        60.0
+      ],
+      "size": [
+        290.0,
+        26.0
+      ],
+      "flags": {},
+      "order": 13,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 180
+        }
+      ],
+      "outputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "links": [
+            194
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "PanoramaCircularRoPE",
+        "cnr_id": "panorama-stickers"
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 91,
+      "type": "PanoramaCircularVAE",
+      "pos": [
+        60.0,
+        480.0
+      ],
+      "size": [
+        290.0,
+        26.0
+      ],
+      "flags": {},
+      "order": 14,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "vae",
+          "type": "VAE",
+          "link": 195
+        }
+      ],
+      "outputs": [
+        {
+          "name": "vae",
+          "type": "VAE",
+          "links": [
+            76,
+            192
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "PanoramaCircularVAE",
+        "cnr_id": "panorama-stickers"
+      },
+      "widgets_values": []
     }
   ],
   "links": [
@@ -707,7 +779,7 @@
     ],
     [
       76,
-      39,
+      91,
       0,
       8,
       1,
@@ -757,7 +829,7 @@
       180,
       84,
       0,
-      3,
+      90,
       0,
       "MODEL"
     ],
@@ -811,10 +883,26 @@
     ],
     [
       192,
-      39,
+      91,
       0,
       89,
       3,
+      "VAE"
+    ],
+    [
+      194,
+      90,
+      0,
+      3,
+      0,
+      "MODEL"
+    ],
+    [
+      195,
+      39,
+      0,
+      91,
+      0,
       "VAE"
     ]
   ],

@@ -2,6 +2,7 @@
 import { CAMERA_ASPECT_MAX, CAMERA_ASPECT_MIN } from "../../pano_editor_state.js";
 import { aspectLabel, parseAspect } from "../../studio/ui_aspect.js";
 import { roundValue } from "../../studio/ui_drag.js";
+import { focalFieldText, focalFieldValue } from "../../studio/camera_ui.js";
 import { ICON } from "../../icons.js";
 import SvgIcon from "../shared/SvgIcon.vue";
 import StudioAspectSlider from "./StudioAspectSlider.vue";
@@ -58,9 +59,21 @@ function boxProps(row, field) {
     min: field.min,
     max: field.max,
     disabled: field.disabled,
-    label: field.axis ? `${row.name} ${field.axis}` : row.name,
+    label: field.label ?? (field.axis ? `${row.label || row.name} ${field.axis}` : row.label || row.name),
     "data-field": field.field,
     ...(field.tip ? { "data-tip": field.tip } : {}),
+    ...(field.focalCurve === undefined ? {} : focalBox(field.focalCurve)),
+  };
+}
+
+// The H FOV box in mm (docs/studio-ui.md "H FOV の単位"): the value stays in degrees; it shows the focal length and takes
+// a typed one (camera_ui.js focalFieldText, focalFieldValue). The shown mm is rounder than the degrees, so committing it
+// unchanged changes nothing (`holdUnchanged`).
+function focalBox(curve) {
+  return {
+    format: (value) => focalFieldText(value, curve),
+    parse: (text) => focalFieldValue(text, curve),
+    holdUnchanged: true,
   };
 }
 
@@ -89,6 +102,7 @@ function lookPick() {
       <StudioInspectorRow
         v-else
         :name="row.name"
+        :label="row.label"
         :layout="row.layout"
         :key-state="row.keyState"
         :key-disabled="row.keyDisabled"
@@ -157,7 +171,7 @@ function lookPick() {
             :max="row.slider.max"
             :step="row.slider.step"
             :disabled="row.disabled"
-            :label="row.name"
+            :label="row.label || row.name"
             :data-slider="row.slider.field"
             v-bind="on(row, row.fields[0], { round: true })"
           />

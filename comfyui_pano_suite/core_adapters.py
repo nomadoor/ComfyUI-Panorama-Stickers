@@ -3,7 +3,9 @@
 They are the core's own readers, writers, and math for 3D media: they are not part of `comfy_api`, so an update of
 the core can rename or remove them. If any is missing, the 3D features (SPLAT, MESH, 3D files, MOGE_GEOMETRY, DA3_GEOMETRY) are
 disabled with a warning in the log (DA3_GEOMETRY included), and every other node still loads; using a 3D feature then raises
-`FEATURE_3D_UNAVAILABLE`. `pin_memory` is the core's public function, adapted to cores without `evict_active`.
+`FEATURE_3D_UNAVAILABLE`. Qwen Image 2.1's model and VAE classes are read here too, for Panorama Circular RoPE and
+Panorama Circular VAE; without them only those two nodes stop, with `CIRCULAR_UNAVAILABLE`. `pin_memory` is the core's
+public function, adapted to cores without `evict_active`.
 """
 import inspect
 import logging
@@ -50,6 +52,24 @@ except ImportError as error:
     load_gltf = parse_container = read_accessor = _Unavailable()
 else:
     FEATURE_3D_UNAVAILABLE = None
+
+# Panorama Circular RoPE and Panorama Circular VAE (erp_circular.py) need Qwen Image 2.1's model and VAE classes.
+# Without them only those two nodes stop, with CIRCULAR_UNAVAILABLE as the reason; VAE then stands as `object` so that
+# the module defining CircularVAE still loads.
+try:
+    from comfy.ldm.qwen_image21.model import QwenImage21Transformer2DModel
+    from comfy.ldm.wan.vae2_2 import WanVAE
+    from comfy.sd import VAE
+except ImportError as error:
+    CIRCULAR_UNAVAILABLE = (
+        f"Panorama Stickers: Panorama Circular RoPE and Panorama Circular VAE need a ComfyUI with Qwen Image 2.1 "
+        f"({error}). Update ComfyUI to use them."
+    )
+    logging.getLogger(__name__).warning(CIRCULAR_UNAVAILABLE)
+    QwenImage21Transformer2DModel = WanVAE = None
+    VAE = object
+else:
+    CIRCULAR_UNAVAILABLE = None
 
 # Cores before `evict_active` would release ComfyUI's RAM cache to pin; there the buffer is not pinned.
 _PIN_KEEPS_ACTIVE = "evict_active" in inspect.signature(comfy.model_management.pin_memory).parameters

@@ -32,8 +32,10 @@ Panorama Studio の `state_json`（状態 v2）、Camera を持つ Panorama Stud
 | `port` の Sticker の vFOV | `core/render.py` の `StickerSource`（`derive_vfov`）、式は `core/math.py` `vfov_from_hfov` | `pano_editor_state.js` `skyStickerVfov` | `tests/test_sky_sticker_vfov_parity.py` |
 | ペイントの `version` と group の `z_index` の読み方 | `core/paint_state.py` `normalize_painting_state`・`_js_round` | `web_src/pano_paint_types.js` `normalizePaintingState` | フィクスチャ `tests/fixtures/painting_normalize.json` を読む `tests/test_paint_state_parity.py`・`tests/pano_paint_state_parity.test.mjs` |
 | ペイントのストロークの筆の値（`hardness`・`flow`・`spacing` の `null`、筆の形の項目の既定値と範囲） | `core/paint_state.py` `_normalize_brush` | `web_src/pano_paint_types.js` `normalizeBrush` | フィクスチャ `tests/fixtures/paint_stroke_brush.json` を読む `tests/test_paint_state_parity.py`・`tests/pano_paint_state_parity.test.mjs` |
+| ペイントのストローク・ラスタ・group の受け付け方（道具と層、形、色、点の `u` の巻き方、文字列の項目） | `core/paint_state.py` `_normalize_stroke`・`_normalize_raster_object`・`_normalize_groups` | `web_src/pano_paint_types.js` `normalizeStroke`・`normalizeRasterObject`・`normalizeGroups` | フィクスチャ `tests/fixtures/painting_strokes.json` を読む `tests/test_paint_state_parity.py`・`tests/pano_paint_state_parity.test.mjs` |
 | ペイントの数値の読み方（ストローク・点・ラスタの数値と、不正なときの扱い） | `core/paint_state.py` `_finite_float` | `web_src/pano_paint_types.js` `finiteNumber` | フィクスチャ `tests/fixtures/painting_numbers.json` を読む `tests/test_paint_state_parity.py`・`tests/pano_paint_state_parity.test.mjs` |
 | Sky の重なり順 | `core/display_list.py` `build_display_entries` | ペイントの並びは `web_src/pano_paint_layers.js` `skyPaintLayers` | `tests/test_display_list_core.py`、`tests/test_paint_layers_parity.py` |
+| 「前後の空白」に数える文字 | `core/text.py` の `JS_WHITESPACE`・`strip_ws` | JS の `String.prototype.trim` | フィクスチャ `v1_whitespace`・`v2_whitespace` と空白だけの入力を比べる `test_scene_state_parity.py`、`painting_strokes.json` の空白の行を読む `test_paint_state_parity.py`・`pano_paint_state_parity.test.mjs` |
 | `file` の Source が 3D ファイルか | `scene_state.py` `is_3d_file_source`・`FILE_3D_EXTENSIONS` | `pano_scene_state.js` `is3dFileSource`・`FILE_3D_EXTENSIONS` | フィクスチャ `file_3d_formats` を専用に読む `test_scene_state_parity.py`・`pano_scene_state.test.mjs` |
 
 フィクスチャは `tests/fixtures/scene_state/`（状態と `sticker_state`）と `tests/fixtures/scene_inherit/`（上書き）にあり、
@@ -42,6 +44,9 @@ Python と JS の両方の test が同じファイルを読む。Python と JS �
 ## 共通の規則
 
 - 数値は JSON の数値だけを受け付ける。文字列・真偽値・`null`・非有限値は不正とする。float にできないほど大きな整数も、非有限値と同じく不正（既定値）とする。
+- 文字列のフィールドは JSON の文字列だけを受け付ける。数値・真偽値・`null`・配列・オブジェクトは不正とし、文字列に直さない。
+- オブジェクトのフィールドは JSON のオブジェクトだけを受け付ける。配列は不正とする。
+- この文書で「前後の空白を除く」「空白だけ」と言うときの空白は、JS の `String.prototype.trim` が除く文字とする。U+0009〜U+000D、U+0020、U+00A0、U+1680、U+2000〜U+200A、U+2028、U+2029、U+202F、U+205F、U+3000、U+FEFF。Python の `str.strip()` が除く U+001C〜U+001F と U+0085 は空白に数えず、そのまま残す。
 - 整数のフィールド（`frame`、Clip range、`length`、Sticker の `z_index`）は、数値を `floor(x + 0.5)` で整数に丸めて保存する。fps の再基準化で Timeline frame を整数に丸めるときも、同じ `floor(x + 0.5)` を使う。Keyframe の `frame` と Clip range の `start`・`in`・`duration` は、丸めたあと ±10,000,000（`TIMELINE_FRAME_MAX`）の内に寄せる。
 - JSON の `NaN`・`Infinity`・`-Infinity` のリテラルは受け付けない（JS の `JSON.parse` と同じく、JSON として読めないものとして扱う）。
 - 不正な値は、そのフィールドの既定値に戻す。範囲外の値は範囲の端に寄せる。状態全体を捨てることはしない。
@@ -336,7 +341,7 @@ Sticker の `id` は、一度使った値を別の Sticker に使い直さない
 | 形 | 意味 |
 |---|---|
 | `{"kind": "port"}` | ノードの `sticker` 入力ポートの素材。ポートは一本なので番号を持たない。状態の中に高々一つで、二つ目以降の `port` の Sticker は捨てる |
-| `{"kind": "file", "filename": "...", "subfolder": "...", "storage": "input"}` | ComfyUI のディレクトリにあるファイル。`storage` は `input`・`output`・`temp` のいずれか（既定値 `input`）、`subfolder` の既定値は `""`。投入した画像は `input/panorama_stickers`、3D ファイルは Load3D と同じ場所に保存する。`filename` の前後の空白、`subfolder` の前後の空白と `/`・`\` を除き、`storage` は前後の空白を除いて小文字にする（v1 の読み替えと同じ規則）。`filename` が空なら不正 |
+| `{"kind": "file", "filename": "...", "subfolder": "...", "storage": "input"}` | ComfyUI のディレクトリにあるファイル。`storage` は `input`・`output`・`temp` のいずれか（既定値 `input`）、`subfolder` の既定値は `""`。投入した画像は `input/panorama_stickers`、3D ファイルは Load3D と同じ場所に保存する。`filename` の前後の空白、`subfolder` の前後の空白と `/`・`\` を除き、`storage` は前後の空白を除いて小文字にする。v1 の読み替えも、この規則で読む。`filename` が文字列でないとき、または空のときは不正。文字列でない `subfolder` は `""`、`storage` は `input` にする |
 
 `filename`・`subfolder`・`storage` は信頼しない入力である。ファイルを読む側は、既存の `folder_paths` による範囲の確認を必ず通す。この契約のコードはファイルを読まない。
 
@@ -349,14 +354,28 @@ Sticker の `id` は、一度使った値を別の Sticker に使い直さない
 - 3D ファイルの Source を持つ Sticker は `world` の Sticker である（上の「`world` の 2D の素材」の段落）。状態の読み込みは `placement` を書き換えない。`sky` の Sticker が 3D ファイルの Source を持つ状態は、ノードが描かずに警告する（`docs/studio-node.md` の「3D ファイルの `file` の Source」）。
 - 読み方は、ノードが `docs/studio-node.md` の「3D ファイルの `file` の Source」、エディタが `docs/threejs-spark-integration.md` の「空間の表示」で決める。画像の `file` の Source は、ノードが `core/stickers.py` の `load_source_rgba` で読む。
 
+### ペイントのストロークの受け付け方
+
+ペイントのストローク（`painting.paint.strokes[]`・`painting.mask.strokes[]`）、ラスタ（`painting.raster_objects[]`）、group（`painting.groups[]`）の読み込み（`normalize_painting_state` / `normalizePaintingState`）は、次の規則で受け付ける。ストロークの `toolKind`・`geometryKind`・`targetSpace.kind`・`id`・`actionGroupId`・`brushPresetId`・`radiusModel`、ラスタの `id`・`rasterDataUrl`、group の `actionGroupId` は前後の空白を除いて読む。`layerKind`・`type`・group の `id` は書かれたとおりに比べ、保つ。
+
+- ストロークの `layerKind` は、置かれた層の名前（`paint`・`mask`）でなければ捨てる。`id`・`actionGroupId` が文字列でないか空のとき、`targetSpace.kind` が `ERP_GLOBAL` でないときも捨てる。
+- `toolKind` は層ごとの道具のどれかでなければ、そのストロークを捨てる。paint の層は `pen`・`marker`・`brush`・`crayon`（Pastel）・`eraser`・`lasso_fill`、mask の層は `pen`・`eraser`・`lasso_fill`。
+- `geometryKind` が `lasso_fill` の形は、`toolKind` が `lasso_fill` のときだけ受け付ける。paint の層でも mask の層でも受け付け、点は 3 つ以上要る。逆に `toolKind` が `lasso_fill` のストロークは、`lasso_fill` の形でなければ捨てる。
+- `brushPresetId`・`radiusModel` は、文字列でないか空なら `null` にする。
+- paint の層のストロークは `color` のオブジェクトを持たなければ捨てる（`eraser` も同じ）。mask の層は `color` を読まず、`null` にする。
+- 点の `u` は `((u mod 1) + 1) mod 1` で 0 以上 1 未満に巻く。`mod` は割られる数の符号を持つ剰余（JS の `%`）。1 の手前の値も寄せない。
+- ラスタは、`type` が `raster_frozen` でないとき、`id` が文字列でないか空のとき、`rasterDataUrl` が `data:` で始まる文字列でないときに捨てる。文字列でないか空の `layerKind` は `paint` にし、`paint`・`mask` 以外なら捨てる。
+- group の `actionGroupId` は、`actionGroupId`、次に `id` のうち、前後の空白を除いて空でない最初の文字列とし、どちらも無ければその group を捨てる。`id` が文字列でないか空なら `actionGroupId` と同じにする。
+
 ### ペイントの数値
 
 ストロークの `size`・`opacity`・`createdAt`・`radiusValue`、点の `u`・`v`・`t`・`widthScale`・`pressureLike`、`color` の成分、
 ラスタの `bbox`・`transform` も、共通の規則どおり有限の JSON の数値だけを受け付ける（文字列・真偽値・配列は不正）。
 
 - 不正な `size`・`opacity`・`u`・`v`・`bbox` の値は、そのストローク（ラスタ）を捨てる。
+- `createdAt` は 0 の方へ切り捨てて整数にする（7.9 は 7、-7.9 は -7、-0.5 は 0）。
 - 不正な `createdAt` は 0、`radiusValue` は `null` にし、`widthScale`・`pressureLike` は持たない。`transform` の `du`・`dv`・`rot_deg` は 0、`scale` は 1 にする。
-- 不正な点の `t` は 0 にする。`color` の成分は、不正な `r`・`g`・`b` を 0、`a` を 1 にする（`color` がオブジェクトでないときの扱いは変えない）。
+- 不正な点の `t` は 0 にする。`color` の成分は、不正な `r`・`g`・`b` を 0、`a` を 1 にする（`color` がオブジェクトでないときの扱いは上の「ペイントのストロークの受け付け方」）。
 
 ### ペイントのストロークの筆の値
 
@@ -700,7 +719,7 @@ Python は `ValueError`、JS は `Error` を投げる。
 | Sticker の `hFOV_deg`・`vFOV_deg` | `size.value` の同名のフィールド |
 | Sticker の `visible`・`locked`・`crop`・`id` | 同名のフィールド |
 | `source_kind: "external_image"` の Sticker（`sticker_image_1`） | `source: {"kind": "port"}` |
-| `assets[asset_id]` が `type: "comfy_image"` | `source: {"kind": "file", filename, subfolder, storage}` |
+| `assets[asset_id]` の `type` が文字列で、前後の空白を除いて小文字にすると `comfy_image` | `filename`・`subfolder`・`storage` をそのまま上の「Source」の `file` の規則で読む（不正なら Sticker を捨てる） |
 | `assets[asset_id]` が `type: "dataurl"`（埋め込み画像）・`type: "path"`、または資産が見つからない | Sticker を捨てる（ADR 0063） |
 | `shots` のうちオブジェクトであるものの最初（Cutout。オブジェクトでない shot は除く） | `camera`（Camera あり、`projection` は `perspective`）。`yaw_deg`・`pitch_deg`・`roll_deg` は `rotation.value`、`hFOV_deg`（1〜179 に寄せる）は `fov.value`、`aspect = tan(hFOV/2) ÷ tan(vFOV/2)`（`vFOV_deg` の既定値 60、1〜179 に寄せる）。旧 Cutout の出力と同じ画面比になる。Stickers の v1 の状態は通常 `shots` を持たない（持っていれば Camera に写る） |
 | `shots` がない、空、またはオブジェクトの shot が一つも無い | `camera: null`。読み込みが既定の Camera（Panorama モード、原点・回転 0。上の「既定の Camera」）にする。v1 の Stickers の状態はこれにあたる。v1 の Cutout でもこのときは同じ。v1 の Cutout はこのとき ERP をそのまま出力していた |

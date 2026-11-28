@@ -537,3 +537,24 @@ test("the Camera card has the Look at row; while it looks at a target its headin
   // Picking shows on the row.
   assert.equal(row(model(on, { selection: { ids: ["camera"] }, lookPicking: true }).cards[0], "look_at").look.picking, true);
 });
+
+// docs/studio-ui.md "H FOV の単位".
+test("the H FOV box shows mm with fovUnit 'mm': the value stays in degrees, the unit is plain text", () => {
+  const state = load({ camera: { projection: "perspective", fov: { value: 60 }, curve: { value: 0.5 } } });
+  const deg = row(model(state, { selection: { ids: ["camera"] } }).cards[0], "hfov").fields[0];
+  assert.deepEqual([deg.value, deg.unit, deg.focalCurve, deg.tip], [60, "°", undefined, undefined]);
+  const mm = row(model(state, { selection: { ids: ["camera"] }, fovUnit: "mm" }).cards[0], "hfov").fields[0];
+  assert.deepEqual([mm.value, mm.unit, mm.focalCurve, mm.tip], [60, "mm", 0.5, "Focal length · 36 mm wide sensor"]);
+  // Steps, digits and the range stay the degrees' (a drag moves by degree steps).
+  assert.deepEqual([mm.step, mm.precision, mm.min, mm.max], [deg.step, deg.precision, deg.min, deg.max]);
+  assert.ok(!("unitToggle" in mm) && !("unitToggle" in deg));
+});
+
+// docs/studio-ui.md "H FOV の単位": a focal length is not a field of view, so the row's shown name follows the unit.
+test("the H FOV row is named Focal in mm, its box read as Focal length; the row's id and name stay", () => {
+  const state = load({ camera: { projection: "perspective", fov: { value: 60 } } });
+  const deg = row(model(state, { selection: { ids: ["camera"] } }).cards[0], "hfov");
+  const mm = row(model(state, { selection: { ids: ["camera"] }, fovUnit: "mm" }).cards[0], "hfov");
+  assert.deepEqual([deg.name, deg.label, deg.fields[0].label], ["H FOV", "H FOV", undefined]);
+  assert.deepEqual([mm.name, mm.label, mm.fields[0].label], ["H FOV", "Focal", "Focal length"]);
+});

@@ -12,6 +12,7 @@ from fractions import Fraction
 
 from .math import CURVE_MAX, CURVE_MIN
 from .paint_state import normalize_painting_state
+from .text import strip_ws
 
 STATE_VERSION = 2
 STICKER_STATE_KIND = "pano_sticker_state"
@@ -327,15 +328,15 @@ def _source(raw):
     if kind != "file":
         return None
     filename = raw.get("filename")
-    if isinstance(filename, str) and filename.strip():
-        # Same rules as the v1 migration, so a migrated source reads back unchanged.
+    if isinstance(filename, str) and strip_ws(filename):
+        # The v1 migration reads its assets through these rules too.
         subfolder = raw.get("subfolder")
         storage = raw.get("storage")
-        storage = storage.strip().lower() if isinstance(storage, str) else None
+        storage = strip_ws(storage).lower() if isinstance(storage, str) else None
         return {
             "kind": "file",
-            "filename": filename.strip(),
-            "subfolder": subfolder.strip().strip("/\\") if isinstance(subfolder, str) else "",
+            "filename": strip_ws(filename),
+            "subfolder": strip_ws(subfolder).strip("/\\") if isinstance(subfolder, str) else "",
             "storage": storage if storage in FILE_STORAGES else "input",
         }
     return None
@@ -597,14 +598,10 @@ def _v1_source(sticker, assets):
     asset = assets.get(asset_id) if isinstance(asset_id, str) else None
     if not isinstance(asset, dict):
         return None
-    asset_type = str(asset.get("type") or "").strip().lower()
-    if asset_type == "comfy_image":
-        return {
-            "kind": "file",
-            "filename": str(asset.get("filename") or "").strip(),
-            "subfolder": str(asset.get("subfolder") or "").strip().strip("/\\"),
-            "storage": str(asset.get("storage") or "input").strip().lower(),
-        }
+    asset_type = asset.get("type")
+    if isinstance(asset_type, str) and strip_ws(asset_type).lower() == "comfy_image":
+        # The `file` Source's own rules read the asset's values as they are (docs/scene-state-v2.md 「Source」).
+        return _source({"kind": "file", "filename": asset.get("filename"), "subfolder": asset.get("subfolder"), "storage": asset.get("storage")})
     return None
 
 
@@ -652,7 +649,7 @@ def _migrate_v1(raw):
 
 def load_scene_state(raw) -> dict:
     """Read `state_json` (text or parsed dict) of version 1 or 2 as a normalized v2 state."""
-    if raw is None or (isinstance(raw, str) and not raw.strip()):
+    if raw is None or (isinstance(raw, str) and not strip_ws(raw)):
         return _normalize_v2({})
     if isinstance(raw, str):
         try:
@@ -816,7 +813,7 @@ def load_sticker_state(text) -> dict | None:
     Returns None when the text is not a sticker_state, which callers ignore as before. A v2 one reads its Keyframes by
     today's rules but a missing Easing as v2's default, ease-in-out; it has no length, loop, Look at or targets.
     """
-    if not isinstance(text, str) or not text.strip():
+    if not isinstance(text, str) or not strip_ws(text):
         return None
     try:
         raw = parse_json(text)

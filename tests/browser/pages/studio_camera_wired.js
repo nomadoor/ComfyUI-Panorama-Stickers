@@ -6,6 +6,7 @@
 import { editorSession } from "/web_src/pano_node_bridge.js";
 import { facingRotation } from "/web_src/pano_space.js";
 import { openStudioEditor } from "/web_src/studio/editor.js";
+import { FOV_UNIT_SETTING } from "/web_src/pano_fov_unit.js";
 import { rememberView } from "/web_src/studio/view_camera.js";
 import { panoPoint } from "./live_erp_scene.js";
 import { CAMERA, MARKERS, MARKER_DISTANCE, SKY_MARKER } from "./studio_camera_wired_scene.js";
@@ -92,6 +93,10 @@ const studio = (window.__studio = { ready: false, error: null });
 const storage = new Map();
 const memoryStorage = { getItem: (key) => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, String(value)) };
 // ?keptOutput= an Output window width kept by an earlier version (folded).
+// ComfyUI's settings (docs/studio-ui.md "H FOV の単位"): ?fovUnit=mm sets the H FOV unit before the editor opens, and
+// studio.setSetting changes one as ComfyUI's core does (the value, then the setting's onChange).
+const settings = new Map();
+if (params.has("fovUnit")) settings.set(FOV_UNIT_SETTING.id, params.get("fovUnit"));
 if (params.has("keptOutput")) storage.set("PanoramaSuite.Studio.outputWindow", JSON.stringify({ width: Number(params.get("keptOutput")), collapsed: true }));
 
 try {
@@ -114,7 +119,15 @@ try {
     getInputLink: (index) => (index === 0 ? { origin_id: 7, origin_slot: 0 } : null),
     getInputNode: (index) => (index === 0 ? origin : null),
   };
-  const app = { getNodeImageUrls: (target) => (target === origin ? [url] : []), nodeOutputs: {} };
+  const app = {
+    getNodeImageUrls: (target) => (target === origin ? [url] : []),
+    nodeOutputs: {},
+    ui: { settings: { getSettingValue: (id) => settings.get(id) } },
+  };
+  studio.setSetting = (id, value) => {
+    settings.set(id, value);
+    if (id === FOV_UNIT_SETTING.id) FOV_UNIT_SETTING.onChange(value);
+  };
   editorSession(node).view = rememberView({ position: [0, 0.4, 2.6], yaw_deg: 0, pitch_deg: -6, target: [0, -0.2, -1] }, "panorama");
   const editor = await openStudioEditor(node, { app, api: { apiURL: viewApiURL }, storage: memoryStorage });
   studio.session = editor.session;

@@ -1,8 +1,8 @@
 """The package's nodes as ComfyUI registers them (`PanoramaSuiteExtension`, `comfy_entrypoint`), and the legacy nodes
 `PanoramaStickers`, `PanoramaCutout`, and `PanoramaPreview`.
 
-The other nodes are in `studio_node.py`, `preview_node.py`, and `seam_prep.py`, each built from the modules beside
-them. The three legacy node classes are defined here, with their helpers in `legacy_nodes.py`, because
+The other nodes are in `studio_node.py`, `preview_node.py`, `seam_prep.py`, and `erp_circular.py`, each built from
+the modules beside them. The three legacy node classes are defined here, with their helpers in `legacy_nodes.py`, because
 `tests/test_nodes_preview.py` builds them from a fresh import of this module with a stand-in ComfyUI API."""
 import hashlib
 import logging
@@ -20,6 +20,7 @@ from .core.display_layers import sample_overlay_rgba_from_sampling_map as _sampl
 from .core.math import calculate_dimensions_from_megapixels, finite_float
 from .core.painting import alpha_composite_over_rgb, painting_state_has_renderables
 from .core.state import _normalize_hex_color, merge_state, normalize_coverage, parse_sticker_state
+from .erp_circular import PanoramaCircularRoPENode, PanoramaCircularVAENode
 from .legacy_nodes import (
     CUTOUT_MAX_OUTPUT_SIDE,
     _apply_overlay_coverage_to_mask,
@@ -44,6 +45,7 @@ from .node_runtime import NODE_RUNTIME, _NodeProgress, _audio_signature, _tensor
 from .preview_node import PanoramaPreviewSceneNode, _preview_ui
 from .seam_prep import PanoramaSeamPrepNode
 from .studio_node import PanoramaStudioNode
+from .names import CATEGORY
 
 
 def _common_video_preview_inputs(*, default_fps: float = 24.0) -> list:
@@ -72,7 +74,7 @@ class PanoramaStickersNode(io.ComfyNode):
         return io.Schema(
             node_id="PanoramaStickers",
             display_name="Panorama Stickers",
-            category="Panorama Suite",
+            category=CATEGORY,
             inputs=[
                 io.Combo.Input(
                     "output_preset",
@@ -341,7 +343,7 @@ class PanoramaCutoutNode(io.ComfyNode):
         return io.Schema(
             node_id="PanoramaCutout",
             display_name="Panorama Cutout",
-            category="Panorama Suite",
+            category=CATEGORY,
             inputs=[
                 io.Image.Input("erp_image"),
                 io.Combo.Input(
@@ -571,7 +573,7 @@ class PanoramaPreviewNode(io.ComfyNode):
         return io.Schema(
             node_id="PanoramaPreview",
             display_name="Panorama Preview (legacy)",
-            category="Panorama Suite",
+            category=CATEGORY,
             # Replaced by Panorama Preview (`PanoramaPreviewNode`): it stays registered, so saved workflows load it,
             # but the node search no longer offers it (docs/preview-node.md).
             is_deprecated=True,
@@ -608,6 +610,8 @@ class PanoramaSuiteExtension(ComfyExtension):
             PanoramaPreviewSceneNode,
             PanoramaStudioNode,
             PanoramaSeamPrepNode,
+            PanoramaCircularRoPENode,
+            PanoramaCircularVAENode,
         ]
 
 

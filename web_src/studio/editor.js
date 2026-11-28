@@ -28,6 +28,7 @@ import { installStudioStylesheet } from "./stylesheet.js";
 import { rememberView } from "./view_camera.js";
 import { BACKGROUND_INPUTS, createEditorInputs, createEditorSources, linked, nodeState, widgetOf } from "./editor_inputs.js";
 import { createEditorUi, createEditorView } from "./editor_view.js";
+import { onFovUnitChange } from "../pano_fov_unit.js";
 import { createEditorBackground, createEditorPlayback } from "./editor_playback.js";
 import { createEditorContent } from "./editor_content.js";
 import { createEditorTools } from "./editor_tools.js";
@@ -57,6 +58,7 @@ function release(ctx, { vueApp, mountHost, flushBeforeQueue, finished }) {
   clearTimeout(ctx.doneTimer);
   ctx.addFiles?.close();
   ctx.dropInput?.();
+  ctx.dropFovUnit?.();
   if (ctx.onKeyDown) window.removeEventListener("keydown", ctx.onKeyDown, true);
   ctx.releaseKeyGuard?.();
   ctx.backgroundVideo?.close();
@@ -148,6 +150,10 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     Object.assign(ctx, createEditorSources(ctx));
     // --- The view model the shell reads (editor_view.js).
     Object.assign(ctx, createEditorView(ctx));
+    // The H FOV's unit changed in ComfyUI's settings while the editor is open (docs/studio-ui.md "H FOV の単位").
+    ctx.dropFovUnit = onFovUnitChange((unit) => {
+      ctx.view.fovUnit = unit;
+    });
     // --- The background VIDEO and the playback of the Timeline that drives it (editor_playback.js).
     Object.assign(ctx, createEditorPlayback(ctx));
     // --- The content at the playhead and what is selected, for the stage (editor_content.js).

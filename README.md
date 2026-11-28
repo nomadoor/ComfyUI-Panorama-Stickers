@@ -12,13 +12,14 @@ Fix the shot with an image generation model, then put it back where it was. You 
 
 ## Guide videos
 
-A five-part series on using Panorama Studio.
+A series on using Panorama Studio.
 
 - [01 The Basics](https://youtu.be/nJ57kRKF7lE)
 - [02 Your Images to a Panorama](https://youtu.be/8yJbtS754ck)
 - [03 Fix a Shot and Put It Back](https://youtu.be/3IYn0XLEj2M)
 - [04 Place and Shoot 3D Models](https://youtu.be/yJZZBDSCrK4)
 - [05 Reshoot from a New Angle](https://youtu.be/IlnM0VP26Q8)
+- [Ex Fine-Tune the Motion](https://youtu.be/tLSK13Th_kQ)
 
 ## Panorama Studio
 
@@ -63,6 +64,7 @@ Connect a video to the background, or move stickers or the Camera with Keyframes
 
 - **Panorama Preview**: look around panorama images and videos, or a Studio `scene`, in a separate window.
 - **Panorama Seam Prep**: moves the left-right seam of a panorama to the center, and makes a mask for fixing the seam.
+- **Panorama Circular RoPE** and **Panorama Circular VAE**: make Qwen Image 2.1 draw a panorama whose left and right edges join, with no seam. Put one on the model and the other on the VAE, and always use them together (the VAE for both the reference image's encode and the decode). Panorama Circular VAE requires ComfyUI 0.44.0 or later.
 - The earlier nodes (Panorama Stickers, Panorama Cutout, Panorama Preview (legacy)) still work as before.
 
 ## Installation
@@ -86,6 +88,7 @@ If only the editor is extremely slow, open `chrome://gpu` (`edge://gpu` for Edge
 
 ## Changelog
 
+- **2.2.3**: Added Panorama Circular RoPE and Panorama Circular VAE, which make Qwen Image 2.1 draw a 360° panorama whose left and right edges join. Field of view can also be shown in mm, set in the ComfyUI settings under Panorama Stickers > Editor > H FOV unit. Fixes.
 - **2.2.2**: The Move gizmo's plane handles are larger and always on the side facing you. Hovering a handle shows the axes it moves along. The selected 3D object's box no longer draws the edges behind it.
 - **2.2.1**: The shortcut list (?) shows every operation on one page. Ctrl + A selects all Keyframes after a click on the Timeline. Fixes.
 - **2.2.0**: Shows motion paths, adjustable with Bézier curves. Added Loop, Look at, Simplify and Constant speed. Locked objects are easy to spot. Fixes.
@@ -108,6 +111,11 @@ This project was influenced by the work of [ProGamerGov](https://github.com/ProG
 - [html-360-viewer](https://github.com/ProGamerGov/html-360-viewer) (also handy for quickly viewing an ERP image in the browser: [demo](https://progamergov.github.io/html-360-viewer/))
 
 Also inspired by [SuperSplat](https://github.com/playcanvas/supersplat) from PlayCanvas.
+
+Panorama Circular RoPE and Panorama Circular VAE build on the ideas of these papers:
+
+- [SHERPA](https://arxiv.org/abs/2606.12213) by Kang et al., which makes only the high-frequency horizontal RoPE bands turn a whole number of times around the panorama
+- [360Anything](https://360anything.github.io/) by Wu et al. ([arXiv:2601.16192](https://arxiv.org/abs/2601.16192)), which traces the ERP seam to the zero padding of the VAE encoder
 
 ## License
 

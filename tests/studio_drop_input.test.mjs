@@ -169,3 +169,17 @@ test("without a root only the stage listens", () => {
   dispose();
   assert.equal(stage.count(), 0);
 });
+
+test("an image dragged straight from a web page (no type while dragging, with text/html) shows an image's mark", () => {
+  const { stage, calls } = setup();
+  const event = dragEvent({ x: 110, y: 70 });
+  event.dataTransfer.items = [
+    { kind: "string", type: "text/plain" },
+    { kind: "string", type: "text/uri-list" },
+    { kind: "string", type: "text/html" },
+    { kind: "file", type: "" },
+  ];
+  stage.fire("dragover", event);
+  assert.equal(event.prevented, true);
+  assert.deepEqual(calls, [["over", { x: 100, y: 50 }, "image"]]);
+});

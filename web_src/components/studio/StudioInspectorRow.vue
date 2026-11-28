@@ -1,4 +1,5 @@
 <script setup>
+import { computed } from "vue";
 import StudioKeyDot from "./StudioKeyDot.vue";
 import StudioResetButton from "./StudioResetButton.vue";
 
@@ -10,7 +11,9 @@ import StudioResetButton from "./StudioResetButton.vue";
 // A row that does not apply stays in place, grayed and untouchable (`disabled`). Presentational: the dot's state and
 // whether the row is at its default come in; `key-toggle` and `reset` go out.
 const props = defineProps({
+  // The row's id (`data-row`), and its shown name when there is no `label` (the H FOV row is "Focal" in mm).
   name: { type: String, required: true },
+  label: { type: String, default: "" },
   layout: { type: String, default: "multi" },
   // The Keyframe dot's state ("none" | "has" | "now"), or null for a row without a Lane (no dot).
   keyState: { type: String, default: null },
@@ -26,6 +29,7 @@ const props = defineProps({
   sub: { type: Boolean, default: false },
 });
 const emit = defineEmits(["key-toggle", "reset"]);
+const shown = computed(() => props.label || props.name);
 </script>
 
 <template>
@@ -33,13 +37,13 @@ const emit = defineEmits(["key-toggle", "reset"]);
     class="pano-studio-row"
     :class="{ 'is-disabled': disabled, 'is-sub': sub }"
     role="group"
-    :aria-label="name"
+    :aria-label="shown"
     :aria-disabled="disabled ? 'true' : null"
     :data-tip="tip || null"
     :data-row="name"
   >
     <span class="pano-studio-row-name">
-      <span class="pano-studio-cap">{{ name }}</span>
+      <span class="pano-studio-cap">{{ shown }}</span>
       <span v-if="marked" class="pano-studio-row-mark" aria-hidden="true" />
     </span>
     <div v-if="layout === 'multi'" class="pano-studio-row-values">
@@ -64,7 +68,7 @@ const emit = defineEmits(["key-toggle", "reset"]);
       <StudioResetButton
         v-if="resettable"
         :at-default="disabled || atDefault"
-        :label="`Reset ${name}`"
+        :label="`Reset ${shown}`"
         @reset="emit('reset')"
       />
     </div>

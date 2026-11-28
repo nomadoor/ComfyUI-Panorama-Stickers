@@ -37,6 +37,8 @@ WIDGET_INPUTS = {
     ],
     "PanoramaPreview": ["coverage", "fps"],
     "PanoramaPreviewNode": ["background_range"],
+    "PanoramaCircularRoPE": [],
+    "PanoramaCircularVAE": [],
     # Saved order: the widgets, with the advanced ones (multiple, state_json) after; the force_input
     # sticker_state widget slot (an empty string) follows and is not checked.
     "PanoramaStudio": [

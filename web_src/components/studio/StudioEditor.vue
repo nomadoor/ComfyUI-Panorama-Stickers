@@ -127,7 +127,7 @@ const camera = computed(() => props.view.state.camera);
 const panorama = computed(() => camera.value.projection === "erp");
 const frameAspect = computed(() => (panorama.value ? liveErpRatio(camera.value.erp_range) : camera.value.aspect));
 const rulers = computed(() => (cameraTab.value
-  ? cameraRulers(buildCameraCard({ state: props.view.state, playhead: props.view.playhead, readOnly: props.view.readOnly, length: props.view.outputLength, boxes: props.view.lookBoxes }))
+  ? cameraRulers(buildCameraCard({ state: props.view.state, playhead: props.view.playhead, readOnly: props.view.readOnly, length: props.view.outputLength, boxes: props.view.lookBoxes, fovUnit: props.view.fovUnit }))
   : null));
 // The Lens row's lensStart where a Lens drag began (a κ edit keeps the image's center scale from there).
 let lensStart = null;
@@ -221,13 +221,17 @@ const barStyle = computed(() => {
   if (left === null) return null;
   return { left: `${left}px`, transform: "none", ...(maxWidth === null ? {} : { maxWidth: `${maxWidth}px` }) };
 });
-// Placed again when what the bar holds changes (not at each playhead step, which only lights its buttons).
+// Placed again when what the bar holds changes (not at each playhead step, which only lights its buttons), and when the
+// stage or the View group changes width (the ResizeObserver below).
 const barShape = computed(() => (paintModel.value ? `paint|${paintModel.value.tool ?? ""}` : bar.value ? `${bar.value.kind}|${bar.value.name}|${bar.value.groups.map((group) => group.length).join(",")}` : ""));
 watch(barShape, () => placeBar(), { flush: "post" });
 onMounted(() => {
   if (typeof ResizeObserver !== "function") return;
   barObserver = new ResizeObserver(() => placeBar());
   if (stageRegion.value) barObserver.observe(stageRegion.value);
+  // The View group too: its width changes without the stage's (the FOV number in mm is wider), and the bar keeps clear of it.
+  const viewGroup = viewButtons.value?.$el;
+  if (viewGroup instanceof Element) barObserver.observe(viewGroup);
   placeBar();
 });
 onBeforeUnmount(() => barObserver?.disconnect());
@@ -352,6 +356,7 @@ function setCollapsed(value) {
                 orientation="vertical"
                 side="left"
                 :name="rulers.fov.name"
+                :label="rulers.fov.label"
                 :value="rulers.fov.value"
                 :min="rulers.fov.min"
                 :max="rulers.fov.max"
@@ -492,6 +497,7 @@ function setCollapsed(value) {
             :fov="ui.fov"
             :fov-lit="ui.fovNumberLit"
             :fov-text="cameraTab && rulers ? rulers.fov.valueText : ''"
+            :fov-unit="view.fovUnit"
             :fov-disabled="cameraTab"
             :fov-tip="fovOffTip"
             :grid-shown="!ui.gridHidden"
@@ -565,6 +571,7 @@ function setCollapsed(value) {
         :port-size="view.portSize"
         :handoff="view.portHandoff"
         :boxes="view.lookBoxes"
+        :fov-unit="view.fovUnit"
         @edit="(edit) => controller.inspectorEdit(edit)"
         @close="controller.close()"
       />
