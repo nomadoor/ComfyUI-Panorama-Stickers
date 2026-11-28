@@ -88,6 +88,7 @@ If only the editor is extremely slow, open `chrome://gpu` (`edge://gpu` for Edge
 
 ## Changelog
 
+- **2.2.3**: Added Panorama Circular RoPE and Panorama Circular VAE, which make Qwen Image 2.1 draw a 360° panorama whose left and right edges join. Field of view can also be shown in mm, set in the ComfyUI settings under Panorama Stickers > Editor > H FOV unit. Fixes.
 - **2.2.2**: The Move gizmo's plane handles are larger and always on the side facing you. Hovering a handle shows the axes it moves along. The selected 3D object's box no longer draws the edges behind it.
 - **2.2.1**: The shortcut list (?) shows every operation on one page. Ctrl + A selects all Keyframes after a click on the Timeline. Fixes.
 - **2.2.0**: Shows motion paths, adjustable with Bézier curves. Added Loop, Look at, Simplify and Constant speed. Locked objects are easy to spot. Fixes.
@@ -110,6 +111,11 @@ This project was influenced by the work of [ProGamerGov](https://github.com/ProG
 - [html-360-viewer](https://github.com/ProGamerGov/html-360-viewer) (also handy for quickly viewing an ERP image in the browser: [demo](https://progamergov.github.io/html-360-viewer/))
 
 Also inspired by [SuperSplat](https://github.com/playcanvas/supersplat) from PlayCanvas.
+
+Panorama Circular RoPE and Panorama Circular VAE build on the ideas of these papers:
+
+- [SHERPA](https://arxiv.org/abs/2606.12213) by Kang et al., which makes only the high-frequency horizontal RoPE bands turn a whole number of times around the panorama
+- [360Anything](https://360anything.github.io/) by Wu et al. ([arXiv:2601.16192](https://arxiv.org/abs/2601.16192)), which traces the ERP seam to the zero padding of the VAE encoder
 
 ## License
 

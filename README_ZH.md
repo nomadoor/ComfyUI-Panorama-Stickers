@@ -88,6 +88,7 @@
 
 ## 更新日志
 
+- **2.2.3**：新增 Panorama Circular RoPE 和 Panorama Circular VAE，让 Qwen Image 2.1 生成左右边缘无缝衔接的 360° 全景。视场角也可以用 mm 显示（在 ComfyUI 设置的 Panorama Stickers > Editor > H FOV unit 中选择）。修复若干问题。
 - **2.2.2**：移动操纵器的平面手柄变大，并始终显示在朝向视点的一侧。将指针悬停在手柄上即可看出移动的轴。选中的 3D 对象的框不再绘制背面的边。
 - **2.2.1**：快捷键列表（?）可在一页中查看全部操作。点击时间轴后按 Ctrl + A 可选中全部关键帧。修复若干问题。
 - **2.2.0**：可显示运动轨迹，并用贝塞尔曲线调整。新增 Loop、Look at、Simplify、Constant speed。锁定的物体一眼可辨。修复若干问题。
@@ -110,6 +111,11 @@
 - [html-360-viewer](https://github.com/ProGamerGov/html-360-viewer)（想在浏览器中快速查看 ERP 图像时也很方便：[演示](https://progamergov.github.io/html-360-viewer/)）
 
 此外，也受到 PlayCanvas 的 [SuperSplat](https://github.com/playcanvas/supersplat) 的启发。
+
+Panorama Circular RoPE 和 Panorama Circular VAE 基于以下论文的思路：
+
+- Kang 等人的 [SHERPA](https://arxiv.org/abs/2606.12213)，只让水平 RoPE 中的高频频带在全景一周内恰好转整数圈。
+- Wu 等人的 [360Anything](https://360anything.github.io/)（[arXiv:2601.16192](https://arxiv.org/abs/2601.16192)），指出 ERP 接缝源于 VAE 编码器的零填充。
 
 ## 许可证
 

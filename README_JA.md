@@ -88,6 +88,7 @@ Panorama Studio の使い方を、動画で紹介しています。
 
 ## 更新履歴
 
+- **2.2.3**：Qwen Image 2.1 で、左右の端がつながった 360° パノラマを描く Panorama Circular RoPE と Panorama Circular VAE を追加しました。画角を mm でも表示できるようになりました（ComfyUI の設定の Panorama Stickers > Editor > H FOV unit）。そのほか不具合の修正。
 - **2.2.2**：Move のギズモの平面の取っ手が大きくなり、いつも手前側に出るようになりました。取っ手にポインタを乗せると、動く軸が分かります。選んだ 3D の物の箱は、裏に回った辺を描かなくなりました。
 - **2.2.1**：ショートカットの一覧（?）で、すべての操作を一画面で見られるようになりました。タイムラインをクリックした後に Ctrl + A で Keyframe を全部選べます。そのほか不具合の修正。
 - **2.2.0**：動きの軌道を表示し、ベジエ曲線で調整できるようになりました。ループ、Look at、Simplify、Constant speed を追加しました。ロックした物がひと目で分かるようになりました。そのほか不具合の修正。
@@ -110,6 +111,11 @@ Panorama Studio の使い方を、動画で紹介しています。
 - [html-360-viewer](https://github.com/ProGamerGov/html-360-viewer)（ERP 画像をブラウザですぐ見たいときにも便利です：[デモ](https://progamergov.github.io/html-360-viewer/)）
 
 PlayCanvas の [SuperSplat](https://github.com/playcanvas/supersplat) からも刺激を受けました。
+
+Panorama Circular RoPE と Panorama Circular VAE は、次の論文の考え方にもとづいています。
+
+- Kang ほかの [SHERPA](https://arxiv.org/abs/2606.12213)。横の RoPE のうち高い周波数の帯だけを、パノラマ一周でちょうど整数回まわるようにしています。
+- Wu ほかの [360Anything](https://360anything.github.io/)（[arXiv:2601.16192](https://arxiv.org/abs/2601.16192)）。ERP のつなぎ目の原因を、VAE の encoder の zero padding だと突き止めています。
 
 ## ライセンス
 
