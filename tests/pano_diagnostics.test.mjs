@@ -544,13 +544,13 @@ test("a corrupt stored session is ignored", () => {
 
 test("the setting is off by default and the export command is in the Extensions menu", () => {
   assert.equal(DIAGNOSTICS_SETTING.id, "PanoramaSuite.Debug.Diagnostics");
-  assert.deepEqual(DIAGNOSTICS_SETTING.category, ["Panorama Suite", "Debug", "Diagnostics"]);
+  assert.deepEqual(DIAGNOSTICS_SETTING.category, ["Panorama Stickers", "Debug", "Diagnostics"]);
   assert.equal(DIAGNOSTICS_SETTING.type, "boolean");
   assert.equal(DIAGNOSTICS_SETTING.defaultValue, false);
   const extension = createPanoEditorExtension({ app: {}, openEditor() {}, attachStickers() {}, attachCutout() {}, attachPreview() {} });
   assert.ok(extension.settings.includes(DIAGNOSTICS_SETTING));
   assert.deepEqual(extension.commands, [DIAGNOSTICS_EXPORT_COMMAND]);
-  assert.deepEqual(extension.menuCommands, [{ path: ["Extensions", "Panorama Suite"], commands: [DIAGNOSTICS_EXPORT_COMMAND.id] }]);
+  assert.deepEqual(extension.menuCommands, [{ path: ["Extensions", "Panorama Stickers"], commands: [DIAGNOSTICS_EXPORT_COMMAND.id] }]);
 });
 
 test("the suite makes its canvases and VIDEO elements through the diagnostics factories", () => {

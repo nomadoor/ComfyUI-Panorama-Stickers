@@ -45,6 +45,7 @@ from .node_runtime import NODE_RUNTIME, _NodeProgress, _audio_signature, _tensor
 from .preview_node import PanoramaPreviewSceneNode, _preview_ui
 from .seam_prep import PanoramaSeamPrepNode
 from .studio_node import PanoramaStudioNode
+from .names import CATEGORY
 
 
 def _common_video_preview_inputs(*, default_fps: float = 24.0) -> list:
@@ -73,7 +74,7 @@ class PanoramaStickersNode(io.ComfyNode):
         return io.Schema(
             node_id="PanoramaStickers",
             display_name="Panorama Stickers",
-            category="Panorama Suite",
+            category=CATEGORY,
             inputs=[
                 io.Combo.Input(
                     "output_preset",
@@ -342,7 +343,7 @@ class PanoramaCutoutNode(io.ComfyNode):
         return io.Schema(
             node_id="PanoramaCutout",
             display_name="Panorama Cutout",
-            category="Panorama Suite",
+            category=CATEGORY,
             inputs=[
                 io.Image.Input("erp_image"),
                 io.Combo.Input(
@@ -572,7 +573,7 @@ class PanoramaPreviewNode(io.ComfyNode):
         return io.Schema(
             node_id="PanoramaPreview",
             display_name="Panorama Preview (legacy)",
-            category="Panorama Suite",
+            category=CATEGORY,
             # Replaced by Panorama Preview (`PanoramaPreviewNode`): it stays registered, so saved workflows load it,
             # but the node search no longer offers it (docs/preview-node.md).
             is_deprecated=True,

@@ -211,7 +211,7 @@ export function disposeNodeRuntime(node) {
     try {
       clearGroup(node, name);
     } catch (error) {
-      console.error(`[PanoramaSuite] disposing ${name} of a node failed`, error);
+      console.error(`[PanoramaStickers] disposing ${name} of a node failed`, error);
     }
   }
   if (node && typeof node === "object") records.delete(node);

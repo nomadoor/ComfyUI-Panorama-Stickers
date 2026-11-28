@@ -373,7 +373,7 @@ def test_v3_schema_preserves_public_ports(node_id):
     expected = EXPECTED_SCHEMAS[node_id]
 
     assert schema.display_name == expected["display_name"]
-    assert schema.category == "Panorama Suite"
+    assert schema.category == "Panorama Stickers"
     assert schema.is_output_node is expected["is_output_node"]
     # A deprecated node stays registered, so saved workflows still load it, but the node search hides it.
     assert schema.is_deprecated is expected.get("is_deprecated", False)
@@ -429,3 +429,13 @@ def test_internal_state_widget_is_advanced_in_v3_schema(node_id):
 
     assert state_input.advanced is True
     assert state_input.multiline is True
+
+
+def test_every_node_category_reads_the_one_name():
+    from comfyui_pano_suite import names
+
+    sources = sorted((REPO_ROOT / "comfyui_pano_suite").rglob("*.py"))
+    assert names.CATEGORY == "Panorama Stickers"
+    for path in sources:
+        text = path.read_text(encoding="utf-8")
+        assert 'category="' not in text, f"{path.name} writes a node category itself; use names.CATEGORY"

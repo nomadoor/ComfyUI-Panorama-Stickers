@@ -80,7 +80,11 @@ test("formatFocalMm: one decimal under 100 mm, whole from 100 mm", async () => {
 test("the H FOV unit is ComfyUI's setting: degrees when unset or unreadable; a change reaches each listener until dropped", async () => {
   const { FOV_UNIT_SETTING, FOV_UNIT_SETTING_ID, readFovUnit, onFovUnitChange } = await import("../web_src/pano_fov_unit.js");
   assert.equal(FOV_UNIT_SETTING.id, "PanoramaSuite.Editor.FovUnit");
-  assert.deepEqual(FOV_UNIT_SETTING.category, ["Panorama Suite", "Editor", "H FOV unit"]);
+  assert.deepEqual(FOV_UNIT_SETTING.category, ["Panorama Stickers", "Editor", "H FOV unit"]);
+  assert.equal(
+    FOV_UNIT_SETTING.tooltip,
+    "How Panorama Studio and the Preview window show field of view. Focal length assumes a 36 mm wide sensor; the state always keeps degrees.",
+  );
   assert.deepEqual([FOV_UNIT_SETTING.type, FOV_UNIT_SETTING.defaultValue], ["combo", "deg"]);
   assert.deepEqual(FOV_UNIT_SETTING.options, [
     { value: "deg", text: "Degrees" },

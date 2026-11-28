@@ -141,7 +141,7 @@ ComfyUI の中で使う人の目に触れるこの拡張の名前は、どこで
 - 診断の書き出しのファイル名 `panorama-stickers-diagnostics-<日時>.json`
 - コンソールに出す印 `[PanoramaStickers]`
 
-名前は Python と JS にそれぞれ一か所だけ置き、上の場所はそこを読む。Python は `comfyui_pano_suite/names.py` の `CATEGORY`、JS は `web_src/pano_names.js`。
+名前は Python と JS にそれぞれ一か所だけ置き、上の場所はそこを読む。Python は `comfyui_pano_suite/names.py` の `CATEGORY`、JS は `web_src/pano_names.js`。ただしコンソールの印だけは、それぞれのメッセージにそのまま書く。three.js と一緒に後から読み込む部分は、先に読み込む部分のファイルを読めないため（`tools/check_panorama_bundle.mjs`）。綴りが `[PanoramaStickers]` にそろっていることはテスト（`tests/pano_names.test.mjs`）が確かめる。
 
 次のものは変えず、元の名前（`PanoramaSuite`・`pano_suite`・`panorama_suite`）のままにする。変えると、使う人が選んだ設定の値やブラウザに覚えさせた値が消え、保存した graph が読めなくなるため。
 

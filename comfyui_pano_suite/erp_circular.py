@@ -12,6 +12,7 @@ from comfy_api.latest import io
 
 from . import core_adapters
 from .core_adapters import VAE
+from .names import CATEGORY
 
 
 def snap_to_whole_turns(omega, period):
@@ -153,7 +154,7 @@ class PanoramaCircularRoPENode(io.ComfyNode):
         return io.Schema(
             node_id="PanoramaCircularRoPE",
             display_name="Panorama Circular RoPE",
-            category="Panorama Suite",
+            category=CATEGORY,
             description=(
                 "Make Qwen Image 2.1 draw a 360° ERP whose left and right edges join: the horizontal position encoding "
                 "(RoPE) becomes periodic over the image width. Use it together with Panorama Circular VAE for both the "
@@ -192,7 +193,7 @@ class PanoramaCircularVAENode(io.ComfyNode):
         return io.Schema(
             node_id="PanoramaCircularVAE",
             display_name="Panorama Circular VAE",
-            category="Panorama Suite",
+            category=CATEGORY,
             description=(
                 "A Qwen Image 2.1 VAE whose encode and decode join the left and right edges of a 360° ERP. Use it with "
                 "Panorama Circular RoPE, for both the reference encode and the decode. Tiled encode and decode are "

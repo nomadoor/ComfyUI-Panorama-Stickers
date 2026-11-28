@@ -4,6 +4,8 @@ import torch
 import torch.nn.functional as F
 from comfy_api.latest import io
 
+from .names import CATEGORY
+
 
 class PanoramaSeamPrepNode(io.ComfyNode):
     """
@@ -27,7 +29,7 @@ class PanoramaSeamPrepNode(io.ComfyNode):
         return io.Schema(
             node_id="PanoramaSeamPrep",
             display_name="Panorama Seam Prep",
-            category="Panorama Suite",
+            category=CATEGORY,
             description=(
                 "Prepare an ERP image for seam-focused inpainting. "
                 "Expected IMAGE input shape is [B,H,W,C]. "

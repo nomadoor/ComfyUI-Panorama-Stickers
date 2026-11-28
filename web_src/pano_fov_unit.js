@@ -4,6 +4,8 @@
 // ComfyUI's core, as 3D view controls in pano_view_controls.js), not in the editor: a choice made once, not switched
 // while working. The editor reads it when it opens (studio/editor_view.js) and follows a change while open
 // (studio/editor.js, onFovUnitChange).
+import { DISPLAY_NAME } from "./pano_names.js";
+
 export const FOV_UNIT_SETTING_ID = "PanoramaSuite.Editor.FovUnit";
 
 const listeners = new Set();
@@ -14,9 +16,9 @@ export function fovUnitOf(unit) {
 
 export const FOV_UNIT_SETTING = {
   id: FOV_UNIT_SETTING_ID,
-  category: ["Panorama Suite", "Editor", "H FOV unit"],
+  category: [DISPLAY_NAME, "Editor", "H FOV unit"],
   name: "H FOV unit",
-  tooltip: "How Panorama Studio shows the Camera's H FOV. Focal length assumes a 36 mm wide sensor; the state always keeps degrees.",
+  tooltip: "How Panorama Studio and the Preview window show field of view. Focal length assumes a 36 mm wide sensor; the state always keeps degrees.",
   type: "combo",
   options: [
     { value: "deg", text: "Degrees" },

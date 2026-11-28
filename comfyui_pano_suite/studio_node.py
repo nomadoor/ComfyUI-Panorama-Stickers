@@ -13,6 +13,7 @@ from .pano_scene import PanoScene
 from .port_sticker import _port_pose_ui
 from .scene_build import _build_scene, _scene_output
 from .scene_render import _render_outputs
+from .names import CATEGORY
 
 
 MoGeGeometry = io.Custom("MOGE_GEOMETRY")
@@ -126,7 +127,7 @@ class PanoramaStudioNode(io.ComfyNode):
         return io.Schema(
             node_id="PanoramaStudio",
             display_name="Panorama Studio",
-            category="Panorama Suite",
+            category=CATEGORY,
             # By role (ADR 0048): the Scene it carries on, then from the far background to the things placed.
             inputs=[
                 PanoScene.Input("scene", optional=True),

@@ -11,6 +11,7 @@ from .pano_scene import PanoScene, PanoSceneValue
 from .scene_build import _timeline_ui, _upstream_ui
 from .scene_timeline import _decide_timeline
 from .sticker_media import open_video
+from .names import CATEGORY
 
 
 def _preview_ui(images: torch.Tensor, fps: float, audio, unique_id) -> dict:
@@ -62,7 +63,7 @@ class PanoramaPreviewSceneNode(io.ComfyNode):
         return io.Schema(
             node_id="PanoramaPreviewNode",
             display_name="Panorama Preview",
-            category="Panorama Suite",
+            category=CATEGORY,
             inputs=[
                 io.MatchType.Input("source", template=template),
                 io.Combo.Input("background_range", options=["360", "180"], default="360"),
