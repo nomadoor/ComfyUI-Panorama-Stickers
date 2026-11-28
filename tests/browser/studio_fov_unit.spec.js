@@ -171,3 +171,24 @@ test("switching to mm while open places the bottom bar again, clear of the wider
   }).toBeGreaterThanOrEqual(-0.5);
   expect(problems).toEqual([]);
 });
+
+test("in mm the H FOV row and the FOV ruler head say Focal and fit; the ruler's tooltip is the focal length's", async ({ page }) => {
+  const problems = await open(page);
+  const rowName = page.locator('[data-card="camera"] [data-row="H FOV"] .pano-studio-row-name');
+  const rulerName = page.locator('[data-ruler="FOV"] .pano-studio-edge-ruler-name');
+  await expect(rowName).toHaveText("H FOV");
+  await expect(rulerName).toHaveText("FOV");
+  await expect(page.locator('[data-ruler="FOV"]')).toHaveAttribute("data-tip", "FOV (Alt+Wheel)");
+  await setUnit(page, "mm");
+  await expect(rowName).toHaveText("Focal");
+  await expect(rulerName).toHaveText("Focal");
+  await expect(page.locator('[data-ruler="FOV"]')).toHaveAttribute("data-tip", "Focal length · 36 mm wide sensor (Alt+Wheel)");
+  await expect(hfovBox(page)).toHaveAttribute("aria-label", "Focal length");
+  await expect(page.locator('[data-card="camera"] [data-row="H FOV"] [aria-label="Reset Focal"]')).toHaveCount(1);
+  // Whole, not cut: each name's text fits its box.
+  for (const name of [rowName, rulerName]) {
+    const [text, box] = await name.evaluate((el) => [el.scrollWidth, el.clientWidth]);
+    expect(text).toBeLessThanOrEqual(box);
+  }
+  expect(problems).toEqual([]);
+});

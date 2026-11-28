@@ -7,7 +7,7 @@ import { ICON } from "../icons.js";
 import { CAMERA_ASPECT_MAX, CAMERA_ASPECT_MIN, WORLD_MIN_SCALE, skyStickerVfov, stickerVfovFromAspect } from "../pano_editor_state.js";
 import { NEW_STICKER_HFOV } from "../pano_space.js";
 import { CAMERA_HFOV_MIN, LENS_CURVE_DIGITS, LENS_CURVE_MAX, LENS_CURVE_MIN, lensFovLimit } from "../pano_lens.js";
-import { FOCAL_FIELD_TIP } from "./camera_ui.js";
+import { FOCAL_FIELD_TIP, fovNames } from "./camera_ui.js";
 import { fovUnitOf } from "../pano_fov_unit.js";
 import { FRAME_EPSILON, clipFrame, clipOrigin, evaluateCamera, evaluateLane, evaluateSticker, laneView, ownerPeriod, segmentLength, segmentProgress, smoothEasing } from "../pano_scene_eval.js";
 import {
@@ -286,7 +286,7 @@ export const LOOK_AT_TIPS = Object.freeze({
 function hfovField(value, fovUnit) {
   const unit = fovUnitOf(fovUnit);
   const field = { field: "hFOV_deg", value: value.hFOV_deg, unit: unit === "mm" ? "mm" : "°", step: 0.25, precision: 1, min: CAMERA_HFOV_MIN, max: lensFovLimit(value.curve) };
-  if (unit === "mm") Object.assign(field, { focalCurve: value.curve, tip: FOCAL_FIELD_TIP });
+  if (unit === "mm") Object.assign(field, { focalCurve: value.curve, tip: FOCAL_FIELD_TIP, label: fovNames(unit).field });
   return field;
 }
 
@@ -325,6 +325,7 @@ function cameraRows(state, playhead, { length = null, boxes = null, lookPicking 
     {
       id: "hfov",
       name: "H FOV",
+      label: fovNames(fovUnitOf(fovUnit)).row,
       layout: "single",
       control: "slider",
       lanes: ROW_LANES.camera.hfov,

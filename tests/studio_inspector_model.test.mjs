@@ -549,3 +549,12 @@ test("the H FOV box shows mm with fovUnit 'mm': the value stays in degrees, the 
   assert.deepEqual([mm.step, mm.precision, mm.min, mm.max], [deg.step, deg.precision, deg.min, deg.max]);
   assert.ok(!("unitToggle" in mm) && !("unitToggle" in deg));
 });
+
+// docs/studio-ui.md "H FOV の単位": a focal length is not a field of view, so the row's shown name follows the unit.
+test("the H FOV row is named Focal in mm, its box read as Focal length; the row's id and name stay", () => {
+  const state = load({ camera: { projection: "perspective", fov: { value: 60 } } });
+  const deg = row(model(state, { selection: { ids: ["camera"] } }).cards[0], "hfov");
+  const mm = row(model(state, { selection: { ids: ["camera"] }, fovUnit: "mm" }).cards[0], "hfov");
+  assert.deepEqual([deg.name, deg.label, deg.fields[0].label], ["H FOV", "H FOV", undefined]);
+  assert.deepEqual([mm.name, mm.label, mm.fields[0].label], ["H FOV", "Focal", "Focal length"]);
+});
