@@ -2,6 +2,7 @@
 // is linked to an ERP made in the page, for tests/browser/preview_window.spec.js. ComfyUI is not used. ComfyUI's key
 // listeners are stood in for by listeners on window and document (window.__comfy).
 import { openPreviewWindow } from "/web_src/studio/preview_window.js";
+import { FOV_UNIT_SETTING } from "/web_src/pano_fov_unit.js";
 import { peekSceneViewer, previewNode, sceneViewer } from "/web_src/pano_node_bridge.js";
 import { makeVideo } from "./media.js";
 import { pauseNodeVideoForWindow, resumeNodeVideoFromWindow } from "/web_src/pano_preview_node_surface.js";
@@ -154,7 +155,20 @@ try {
   preview.record = () => JSON.parse(JSON.stringify({ ...(peekSceneViewer(node)?.record ?? {}), windowOpen: !!peekSceneViewer(node)?.windowOpen }));
   preview.runtimeView = () => ({ ...(previewNode(node).runtime?.view ?? {}) });
   preview.pose = () => win.stage().pose();
-  const app = { getNodeImageUrls: (target) => (target === origin && url && !PROCESSED ? [url] : []), nodeOutputs };
+  // ComfyUI's settings (docs/studio-ui.md "H FOV の単位"): ?fovUnit=mm before opening, preview.setSetting as the core
+  // changes one (the value, then the setting's onChange).
+  const settings = new Map();
+  const fovUnit = new URLSearchParams(location.search).get("fovUnit");
+  if (fovUnit) settings.set(FOV_UNIT_SETTING.id, fovUnit);
+  preview.setSetting = (id, value) => {
+    settings.set(id, value);
+    if (id === FOV_UNIT_SETTING.id) FOV_UNIT_SETTING.onChange(value);
+  };
+  const app = {
+    getNodeImageUrls: (target) => (target === origin && url && !PROCESSED ? [url] : []),
+    nodeOutputs,
+    ui: { settings: { getSettingValue: (id) => settings.get(id) } },
+  };
   let win = null;
   preview.open = async () => {
     win = await openPreviewWindow(node, { app, api: { apiURL: viewApiURL }, storage: { getItem: () => null, setItem: () => {} } });

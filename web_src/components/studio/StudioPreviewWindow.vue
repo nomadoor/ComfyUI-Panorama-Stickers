@@ -114,6 +114,7 @@ const timeText = computed(() => `${clock(props.playback.frame / props.playback.f
         <StudioViewButtons
           class="pano-studio-at-buttons"
           :fov="ui.fov"
+          :fov-unit="ui.fovUnit"
           :fov-lit="ui.fovNumberLit"
           :frame-selected="false"
           :grid-shown="!ui.gridHidden"

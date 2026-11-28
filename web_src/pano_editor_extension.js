@@ -6,9 +6,11 @@ import { runExternalStickerSync } from "./pano_external_sticker_sync.js";
 import { chainWidgetCallback } from "./pano_widget_callback.js";
 import { VIEW_CONTROLS_SETTING } from "./pano_view_controls.js";
 import { DIAGNOSTICS_EXPORT_COMMAND, DIAGNOSTICS_SETTING } from "./pano_diagnostics.js";
+import { FOV_UNIT_SETTING } from "./pano_fov_unit.js";
 import { disposeNodeRuntime, editorSession, nodeSurface, peekSceneViewer, previewNode, stateSync } from "./pano_node_bridge.js";
 import { waitForPendingStickerUploads } from "./pano_sticker_operations.js";
 import { writeStateWidget } from "./pano_state_widget.js";
+import { DISPLAY_NAME } from "./pano_names.js";
 
 const STATE_WIDGET = "state_json";
 
@@ -368,10 +370,10 @@ export function createPanoEditorExtension({
   return {
     name: "ComfyUI.PanoramaSuite.Editor",
     // ComfyUI shows these in its settings dialog and saves them.
-    settings: [VIEW_CONTROLS_SETTING, DIAGNOSTICS_SETTING],
-    // Extensions › Panorama Suite › Export Panorama Suite diagnostics (pano_diagnostics.js).
+    settings: [VIEW_CONTROLS_SETTING, FOV_UNIT_SETTING, DIAGNOSTICS_SETTING],
+    // Extensions › Panorama Stickers › Export Panorama Stickers diagnostics (pano_diagnostics.js).
     commands: [DIAGNOSTICS_EXPORT_COMMAND],
-    menuCommands: [{ path: ["Extensions", "Panorama Suite"], commands: [DIAGNOSTICS_EXPORT_COMMAND.id] }],
+    menuCommands: [{ path: ["Extensions", DISPLAY_NAME], commands: [DIAGNOSTICS_EXPORT_COMMAND.id] }],
     beforeRegisterNodeDef(nodeType, nodeData) {
       const name = String(nodeData?.name || "");
       if (name === "PanoramaStickers") {

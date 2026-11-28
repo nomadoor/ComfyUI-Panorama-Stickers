@@ -35,6 +35,9 @@ const props = defineProps({
   // Text for a value, and a value for typed text (null when it holds none); default: numbers with `precision`.
   format: { type: Function, default: null },
   parse: { type: Function, default: null },
+  // Committing the text the box opened with, unchanged, changes nothing: for a box whose text is rounder than its value
+  // (the H FOV in mm), where reading the text back would move the value.
+  holdUnchanged: { type: Boolean, default: false },
 });
 const emit = defineEmits(["input", "change", "cancel"]);
 
@@ -42,6 +45,8 @@ const root = ref(null);
 const input = ref(null);
 const editing = ref(false);
 const draft = ref("");
+// The text the box opened with (`holdUnchanged`).
+let openedText = "";
 const dragging = ref(false);
 // The value shown while a drag runs, so the box answers before the owner sends the new value back.
 const live = ref(null);
@@ -192,6 +197,7 @@ function endDrag() {
 async function startEditing() {
   if (props.disabled) return;
   draft.value = text.value;
+  openedText = text.value;
   editing.value = true;
   await nextTick();
   input.value?.focus();
@@ -201,6 +207,7 @@ async function startEditing() {
 function commitEditing() {
   if (!editing.value) return;
   editing.value = false;
+  if (props.holdUnchanged && draft.value === openedText) return;
   const typed = props.parse ? props.parse(draft.value) : parseNumber(draft.value);
   if (typed == null || !Number.isFinite(typed)) {
     emit("cancel");

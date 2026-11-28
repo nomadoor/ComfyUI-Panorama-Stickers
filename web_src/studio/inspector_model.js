@@ -6,7 +6,9 @@
 import { ICON } from "../icons.js";
 import { CAMERA_ASPECT_MAX, CAMERA_ASPECT_MIN, WORLD_MIN_SCALE, skyStickerVfov, stickerVfovFromAspect } from "../pano_editor_state.js";
 import { NEW_STICKER_HFOV } from "../pano_space.js";
-import { LENS_CURVE_DIGITS, LENS_CURVE_MAX, LENS_CURVE_MIN, lensFovLimit } from "../pano_lens.js";
+import { CAMERA_HFOV_MIN, LENS_CURVE_DIGITS, LENS_CURVE_MAX, LENS_CURVE_MIN, lensFovLimit } from "../pano_lens.js";
+import { FOCAL_FIELD_TIP } from "./camera_ui.js";
+import { fovUnitOf } from "../pano_fov_unit.js";
 import { FRAME_EPSILON, clipFrame, clipOrigin, evaluateCamera, evaluateLane, evaluateSticker, laneView, ownerPeriod, segmentLength, segmentProgress, smoothEasing } from "../pano_scene_eval.js";
 import {
   ANIMATION_DEFAULT,
@@ -278,7 +280,17 @@ export const LOOK_AT_TIPS = Object.freeze({
   rotation: "Yaw and Pitch · Set by Look at",
 });
 
-function cameraRows(state, playhead, { length = null, boxes = null, lookPicking = false } = {}) {
+// The H FOV box (docs/studio-ui.md "H FOV の単位"): the value, steps, digits and range in degrees whatever the unit; with
+// `fovUnit` "mm" (ComfyUI's setting) it shows and takes the focal length at the Camera's κ (`focalCurve`, pano_lens.js
+// fovToFocalMm).
+function hfovField(value, fovUnit) {
+  const unit = fovUnitOf(fovUnit);
+  const field = { field: "hFOV_deg", value: value.hFOV_deg, unit: unit === "mm" ? "mm" : "°", step: 0.25, precision: 1, min: CAMERA_HFOV_MIN, max: lensFovLimit(value.curve) };
+  if (unit === "mm") Object.assign(field, { focalCurve: value.curve, tip: FOCAL_FIELD_TIP });
+  return field;
+}
+
+function cameraRows(state, playhead, { length = null, boxes = null, lookPicking = false, fovUnit = "deg" } = {}) {
   const { camera } = state;
   const value = evaluateCamera(camera, playhead, length, { stickers: state.stickers, boxes });
   const target = lookTargetName(state, playhead, length);
@@ -316,8 +328,8 @@ function cameraRows(state, playhead, { length = null, boxes = null, lookPicking 
       layout: "single",
       control: "slider",
       lanes: ROW_LANES.camera.hfov,
-      slider: { field: "hFOV_deg", min: 1, max: lensFovLimit(value.curve), step: 1 },
-      fields: [{ field: "hFOV_deg", value: value.hFOV_deg, unit: "°", step: 0.25, precision: 1, min: 1, max: lensFovLimit(value.curve) }],
+      slider: { field: "hFOV_deg", min: CAMERA_HFOV_MIN, max: lensFovLimit(value.curve), step: 1 },
+      fields: [hfovField(value, fovUnit)],
       ...frameOnly,
     },
     {
@@ -488,7 +500,7 @@ export function stickerChangedRows(state, sticker, { playhead, upstream, animati
   return card.rows.filter((row) => row.resettable && !row.atDefault).map((row) => row.id);
 }
 
-function cameraCard(state, { playhead, readOnly, length = null, boxes = null, lookPicking = false }) {
+function cameraCard(state, { playhead, readOnly, length = null, boxes = null, lookPicking = false, fovUnit = "deg" }) {
   const { camera } = state;
   const locked = camera.locked === true;
   return {
@@ -497,7 +509,7 @@ function cameraCard(state, { playhead, readOnly, length = null, boxes = null, lo
     icon: ICON.camera,
     note: "",
     target: { kind: "camera", id: "camera" },
-    rows: finishRows(cameraRows(state, playhead, { length, boxes, lookPicking }), camera, {
+    rows: finishRows(cameraRows(state, playhead, { length, boxes, lookPicking, fovUnit }), camera, {
       frame: playhead,
       disabled: readOnly || locked,
       disabledTip: readOnly ? "Read-only" : "Locked",
@@ -647,8 +659,8 @@ function formatFrame(frame) {
 // The Camera's card (docs/studio-ui.md "Camera のカード") for the working `state` at the Timeline frame `playhead`: the
 // inspector's when the Camera is selected or nothing is, and the Camera tab's edge rulers' (frame_layout.js
 // cameraRulers).
-export function buildCameraCard({ state, playhead = 0, readOnly = false, length = null, boxes = null, lookPicking = false }) {
-  return cameraCard(state, { playhead, readOnly, length, boxes, lookPicking });
+export function buildCameraCard({ state, playhead = 0, readOnly = false, length = null, boxes = null, lookPicking = false, fovUnit = "deg" }) {
+  return cameraCard(state, { playhead, readOnly, length, boxes, lookPicking, fovUnit });
 }
 
 // The inspector for the working `state` (state v2), the editor's `selection` ({ ids: [...], paint?: true,
@@ -661,8 +673,8 @@ export function buildCameraCard({ state, playhead = 0, readOnly = false, length 
 // ([{ name }]), `portSize` the size of the port Sticker's media ({ width, height }), `imageSizes` the sizes of the
 // Stickers' images by Sticker id ({ width, height } px, once loaded).
 // Returns { cards: [{ kind, title, icon, note, target, rows }], easing }.
-export function buildInspectorModel({ state, selection = {}, tab = "3d", playhead = 0, readOnly = false, upstream = [], animations = {}, portSize = null, imageSizes = {}, handoff = null, length = null, boxes = null, lookPicking = false }) {
-  const options = { playhead, readOnly, upstream, animations, portSize, imageSizes, tab, handoff, length, boxes, lookPicking };
+export function buildInspectorModel({ state, selection = {}, tab = "3d", playhead = 0, readOnly = false, upstream = [], animations = {}, portSize = null, imageSizes = {}, handoff = null, length = null, boxes = null, lookPicking = false, fovUnit = "deg" }) {
+  const options = { playhead, readOnly, upstream, animations, portSize, imageSizes, tab, handoff, length, boxes, lookPicking, fovUnit };
   const ids = selection.ids ?? [];
   const scene = () => [cameraCard(state, options), sceneCard(state, options)];
   let cards;

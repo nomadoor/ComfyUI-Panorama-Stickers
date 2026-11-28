@@ -75,7 +75,7 @@ setWorkflowChangeNotifier(() => {
   if (takeRetry) return;
   if (takeWorkflowChange()) return;
   const tracker = app.extensionManager?.workflow?.activeWorkflow?.changeTracker;
-  console.warn("[PanoramaSuite] ComfyUI did not take the state_json change; trying again.", {
+  console.warn("[PanoramaStickers] ComfyUI did not take the state_json change; trying again.", {
     changeCount: tracker?.changeCount,
     restoring: !!tracker?._restoringState,
   });
@@ -90,7 +90,7 @@ setWorkflowChangeNotifier(() => {
     clearInterval(takeRetry);
     takeRetry = null;
     const current = app.extensionManager?.workflow?.activeWorkflow?.changeTracker;
-    console.warn("[PanoramaSuite] ComfyUI still did not take the state_json change; saving the workflow draft directly.");
+    console.warn("[PanoramaStickers] ComfyUI still did not take the state_json change; saving the workflow draft directly.");
     api.dispatchCustomEvent?.("graphChanged", current?.activeState);
   }, TAKE_RETRY_MS);
 });

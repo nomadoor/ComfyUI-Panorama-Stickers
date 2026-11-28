@@ -1,16 +1,19 @@
-// Development diagnostics (setting "Panorama Suite › Debug › Diagnostics", off by default). The tab can
+// Development diagnostics (setting "Panorama Stickers › Debug › Diagnostics", off by default). The tab can
 // crash on the owner's GPU while the editor or a node is in use; with the setting on, this samples once a
 // second what the suite holds in memory (canvases, WebGL contexts, the three.js views, `scene` items,
 // VIDEO elements, the JS heap) and what it is doing (frames, long tasks, the editor's interaction), and
 // keeps the last records in localStorage. The next page load prints the previous session's last records
-// to the console, and the command "Export Panorama Suite diagnostics" saves them as JSON. See
+// to the console, and the command "Export Panorama Stickers diagnostics" saves them as JSON. See
 // docs/diagnostics.md.
 //
 // The suite makes its canvases and VIDEO elements here (createPanoCanvas, createPanoVideo) so they can be
 // counted. While the setting is off nothing is tracked or sampled: the factories only create.
+import { DISPLAY_NAME } from "./pano_names.js";
 
 const DIAGNOSTICS_SETTING_ID = "PanoramaSuite.Debug.Diagnostics";
 const DIAGNOSTICS_EXPORT_COMMAND_ID = "PanoramaSuite.Debug.ExportDiagnostics";
+const DIAGNOSTICS_EXPORT_LABEL = `Export ${DISPLAY_NAME} diagnostics`;
+const DIAGNOSTICS_FILE_STEM = `${DISPLAY_NAME.toLowerCase().replace(/ /g, "-")}-diagnostics`;
 export const DIAGNOSTICS_STORAGE_KEY = "pano_suite.diagnostics.v1";
 export const DIAGNOSTICS_PREVIOUS_KEY = "pano_suite.diagnostics.previous.v1";
 // The records kept (one a second) and the most characters one session writes to localStorage.
@@ -447,7 +450,7 @@ export function createDiagnostics(overrides = {}) {
       env.console.warn(
         "[PanoramaStickers] Diagnostics: the previous session did NOT close normally (the tab crashed or was killed). "
         + `Started ${new Date(previous?.startedAt || 0).toISOString()}, last saved ${new Date(previous?.savedAt || records.at(-1)?.t || 0).toISOString()}; `
-        + `${records.length} records kept. Its last records (export the full JSON with "Export Panorama Suite diagnostics"):`,
+        + `${records.length} records kept. Its last records (export the full JSON with "${DIAGNOSTICS_EXPORT_LABEL}"):`,
         JSON.stringify(last),
       );
     }
@@ -512,7 +515,7 @@ export function createDiagnostics(overrides = {}) {
     const url = URL.createObjectURL(blob);
     const link = documentRef.createElement("a");
     link.href = url;
-    link.download = `panorama-suite-diagnostics-${new Date(env.clock()).toISOString().replace(/[:.]/g, "-")}.json`;
+    link.download = `${DIAGNOSTICS_FILE_STEM}-${new Date(env.clock()).toISOString().replace(/[:.]/g, "-")}.json`;
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 0);
   }
@@ -634,7 +637,7 @@ export function countedContext(canvas, on) {
 // registers the setting.
 export const DIAGNOSTICS_SETTING = {
   id: DIAGNOSTICS_SETTING_ID,
-  category: ["Panorama Suite", "Debug", "Diagnostics"],
+  category: [DISPLAY_NAME, "Debug", "Diagnostics"],
   name: "Diagnostics",
   tooltip: "For tracking down crashes: records memory, canvases, WebGL contexts and frame times once a second "
     + "to localStorage. Reload the page after turning it on. See docs/diagnostics.md.",
@@ -643,9 +646,9 @@ export const DIAGNOSTICS_SETTING = {
   onChange: (value) => diagnostics.setEnabled(value === true),
 };
 
-// The command (Extensions › Panorama Suite menu and the command palette) that saves the records as JSON.
+// The command (Extensions › Panorama Stickers menu and the command palette) that saves the records as JSON.
 export const DIAGNOSTICS_EXPORT_COMMAND = {
   id: DIAGNOSTICS_EXPORT_COMMAND_ID,
-  label: "Export Panorama Suite diagnostics",
+  label: DIAGNOSTICS_EXPORT_LABEL,
   function: () => diagnostics.download(),
 };
