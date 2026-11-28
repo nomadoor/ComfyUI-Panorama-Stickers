@@ -61,8 +61,11 @@ export function fovToFocalMm(hFov, kappa) {
 }
 
 // The hFOV (degrees) of a focal length in mm at κ, kept in the H FOV field's range (CAMERA_HFOV_MIN to lensFovLimit).
+// A focal length so short that the image radius overflows to Infinity is the widest (lensAngle of Infinity is NaN at κ < 1).
 export function focalMmToFov(focalMm, kappa) {
-  const hFov = 2 * lensAngle(SENSOR_WIDTH_MM / 2 / focalMm, kappa) / DEG2RAD;
+  const radius = SENSOR_WIDTH_MM / 2 / focalMm;
+  if (!Number.isFinite(radius)) return lensFovLimit(kappa);
+  const hFov = 2 * lensAngle(radius, kappa) / DEG2RAD;
   return Math.min(lensFovLimit(kappa), Math.max(CAMERA_HFOV_MIN, hFov));
 }
 

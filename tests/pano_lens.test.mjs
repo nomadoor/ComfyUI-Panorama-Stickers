@@ -259,6 +259,8 @@ test("focalMmToFov keeps the H FOV field's range: 1° to lensFovLimit(κ)", asyn
   assert.equal(focalMmToFov(0.01, 1), lensFovLimit(1));
   assert.equal(focalMmToFov(1, 0), 360);
   assert.equal(focalMmToFov(0.01, 0.5), lensFovLimit(0.5));
+  // A focal length so short that 18 ÷ f overflows to Infinity still gives the widest H FOV, not NaN.
+  for (const kappa of [1, 0.9, 0.5, 0]) assert.equal(focalMmToFov(1e-308, kappa), lensFovLimit(kappa), `κ ${kappa}`);
 });
 
 test("a Lens edit keeps the mm: lensFovKeepingCenter keeps the center scale the mm is", async () => {

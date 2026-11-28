@@ -146,3 +146,28 @@ test("a typed mm goes into fov as degrees, unrounded; the setting set before ope
   await expect(boxValue(page)).toHaveText("400");
   expect(problems).toEqual([]);
 });
+
+test("switching to mm while open places the bottom bar again, clear of the wider View group", async ({ page }) => {
+  const problems = await open(page);
+  // Paint's bar in the 3D tab, beside the View group whose FOV number widens in mm.
+  await page.locator('[role="tablist"] button', { hasText: "3D" }).click();
+  await page.getByRole("button", { name: "Paint", exact: true }).click();
+  await expect(page.locator(".pano-studio-at-bar > *")).toHaveCount(1);
+  const boxes = () => page.evaluate(() => {
+    const rect = (selector) => document.querySelector(selector).getBoundingClientRect();
+    return { bar: rect(".pano-studio-at-bar > *"), view: rect(".pano-studio-at-buttons") };
+  });
+  // A stage just wide enough that the bar, placed for the degrees' View group, sits right beside it.
+  for (let width = 1600; width >= 900; width -= 10) {
+    await page.setViewportSize({ width, height: 1080 });
+    await page.waitForTimeout(50);
+    const at = await boxes();
+    if (at.view.left - at.bar.right < 20) break;
+  }
+  await setUnit(page, "mm");
+  await expect.poll(async () => {
+    const at = await boxes();
+    return at.view.left - 8 - at.bar.right;
+  }).toBeGreaterThanOrEqual(-0.5);
+  expect(problems).toEqual([]);
+});

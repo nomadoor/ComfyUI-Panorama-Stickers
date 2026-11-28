@@ -221,13 +221,17 @@ const barStyle = computed(() => {
   if (left === null) return null;
   return { left: `${left}px`, transform: "none", ...(maxWidth === null ? {} : { maxWidth: `${maxWidth}px` }) };
 });
-// Placed again when what the bar holds changes (not at each playhead step, which only lights its buttons).
+// Placed again when what the bar holds changes (not at each playhead step, which only lights its buttons), and when the
+// stage or the View group changes width (the ResizeObserver below).
 const barShape = computed(() => (paintModel.value ? `paint|${paintModel.value.tool ?? ""}` : bar.value ? `${bar.value.kind}|${bar.value.name}|${bar.value.groups.map((group) => group.length).join(",")}` : ""));
 watch(barShape, () => placeBar(), { flush: "post" });
 onMounted(() => {
   if (typeof ResizeObserver !== "function") return;
   barObserver = new ResizeObserver(() => placeBar());
   if (stageRegion.value) barObserver.observe(stageRegion.value);
+  // The View group too: its width changes without the stage's (the FOV number in mm is wider), and the bar keeps clear of it.
+  const viewGroup = viewButtons.value?.$el;
+  if (viewGroup instanceof Element) barObserver.observe(viewGroup);
   placeBar();
 });
 onBeforeUnmount(() => barObserver?.disconnect());
