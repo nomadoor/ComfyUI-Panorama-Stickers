@@ -48,6 +48,24 @@ export function lensFovLimit(kappa) {
   return kappa > 0 ? Math.min(360, 179 / kappa) : 360;
 }
 
+// The smallest hFOV (degrees) the inspector's H FOV field takes (its slider and box).
+export const CAMERA_HFOV_MIN = 1;
+
+// The focal length in mm (docs/render-contract.md "カメラのレンズ", ADR 0042): the image's width is taken as a sensor
+// SENSOR_WIDTH_MM wide whatever the aspect, so f_mm = (width ÷ 2) ÷ lens_radius(hFOV ÷ 2, κ). At κ < 1 this is the center
+// scale (the paraxial focal length), as a real fisheye's mm is. The editor shows and takes it; no state holds it.
+export const SENSOR_WIDTH_MM = 36;
+
+export function fovToFocalMm(hFov, kappa) {
+  return SENSOR_WIDTH_MM / 2 / lensRadius(hFov * 0.5 * DEG2RAD, kappa);
+}
+
+// The hFOV (degrees) of a focal length in mm at κ, kept in the H FOV field's range (CAMERA_HFOV_MIN to lensFovLimit).
+export function focalMmToFov(focalMm, kappa) {
+  const hFov = 2 * lensAngle(SENSOR_WIDTH_MM / 2 / focalMm, kappa) / DEG2RAD;
+  return Math.min(lensFovLimit(kappa), Math.max(CAMERA_HFOV_MIN, hFov));
+}
+
 // The hFOV (degrees) at κ of an image whose center scale f is that of hFOV₀ at κ₀ (docs/editor-interaction.md
 // "レンズの行"): f = r_edge ÷ lens_radius(hFOV₀ ÷ 2, κ₀) and hFOV = 2·lens_angle(r_edge ÷ f, κ), so r_edge cancels; under
 // lensFovLimit(κ).

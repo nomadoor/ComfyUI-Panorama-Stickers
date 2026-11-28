@@ -14,6 +14,7 @@ import { endsWhereItStartsText, linkedInputNames, stageEmpty as emptyStage } fro
 import { stageUi } from "./stage.js";
 import { outputView } from "./stage_view.js";
 import { endsWhereItStarts, readLengthUnitSetting, readLoopSetting } from "./timeline_actions.js";
+import { readFovUnitSetting } from "./camera_ui.js";
 import { objectLabel, spanOf } from "./timeline_model.js";
 import { BOUND_NOTICE_SECONDS } from "./view_scale.js";
 import { BACKGROUND_INPUTS, linked, widgetOf, VIDEO_FPS_INPUTS } from "./editor_inputs.js";
@@ -30,6 +31,8 @@ export function createEditorView(ctx) {
     loop: readLoopSetting(ctx.storage),
     // The unit the Timeline's Length field shows, "frames" or "seconds": kept per browser, not in the state.
     lengthUnit: readLengthUnitSetting(ctx.storage),
+    // The unit the Camera's H FOV shows in, "deg" or "mm" (docs/studio-ui.md "H FOV の単位"): kept per browser, not in the state.
+    fovUnit: readFovUnitSetting(ctx.storage),
     canUndo: false,
     canRedo: false,
     readOnly: ctx.readOnly,

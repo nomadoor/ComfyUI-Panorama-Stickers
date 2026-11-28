@@ -24,6 +24,8 @@ const props = defineProps({
   tip: { type: String, default: "" },
   // Alt is held where Alt + wheel changes this number: the hover's fill (stage.js ui.fovNumberLit).
   lit: { type: Boolean, default: false },
+  // The widest text it keeps room for: the view's widest FOV, or in the Camera tab with the H FOV in mm the widest mm.
+  widest: { type: String, default: "" },
 });
 const emit = defineEmits(["change"]);
 
@@ -113,5 +115,5 @@ onBeforeUnmount(() => {
     @pointermove="onPointerMove"
     @pointerup="onPointerUp"
     @keydown="onKeydown"
-  ><span class="pano-studio-fov-num" :data-widest="`${VIEW_HFOV_MAX_DEG}°`"><span data-fov-text>{{ text || `${value}°` }}</span></span></span>
+  ><span class="pano-studio-fov-num" :data-widest="widest || `${VIEW_HFOV_MAX_DEG}°`"><span data-fov-text>{{ text || `${value}°` }}</span></span></span>
 </template>

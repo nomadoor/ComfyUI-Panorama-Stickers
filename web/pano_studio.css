@@ -2571,6 +2571,35 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* The H FOV's unit mark (docs/studio-ui.md "H FOV の単位"): the unit as text that switches ° and mm when pressed, in
+   the inspector's box and in the FOV ruler head. No fill; it brightens on hover, as the Length unit does. It takes the
+   pointer in a grayed row or ruler too (a locked Camera may still be read in mm), unless it is disabled itself. */
+.pano-studio-unit-mark {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.pano-studio-field .pano-studio-unit-mark {
+  color: var(--studio-fg-2);
+}
+
+.pano-studio-unit-mark:not([aria-disabled="true"]):hover {
+  color: var(--studio-fg);
+}
+
+.pano-studio-edge-ruler .pano-studio-unit-mark:not([aria-disabled="true"]):hover {
+  color: #fff;
+}
+
+.pano-studio-unit-mark[aria-disabled="true"] {
+  cursor: default;
+}
+
 .pano-studio-edge-ruler.is-vertical .pano-studio-edge-ruler-value {
   text-align: center;
 }

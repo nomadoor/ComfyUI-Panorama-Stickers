@@ -65,3 +65,44 @@ test("the Camera button turns the Camera when its Look at target is gone or sky"
   assert.equal(cameraToView(sky, 0, pose, null, [{ id: "s", placement: "sky" }]), true);
   assert.equal(sky.rotation.value.yaw_deg, 30);
 });
+
+// The H FOV unit (docs/studio-ui.md "H FOV の単位").
+test("formatFocalMm: one decimal under 100 mm, whole from 100 mm", async () => {
+  const { formatFocalMm } = await import("../web_src/studio/camera_ui.js");
+  assert.equal(formatFocalMm(50), "50.0");
+  assert.equal(formatFocalMm(5.73), "5.7");
+  assert.equal(formatFocalMm(99.94), "99.9");
+  assert.equal(formatFocalMm(99.96), "100");
+  assert.equal(formatFocalMm(135.4), "135");
+  assert.equal(formatFocalMm(2062.6), "2063");
+});
+
+test("the H FOV unit is kept per browser, degrees when unset or unreadable", async () => {
+  const { FOV_UNIT_SETTING_KEY, readFovUnitSetting, writeFovUnitSetting } = await import("../web_src/studio/camera_ui.js");
+  const items = new Map();
+  const storage = { getItem: (key) => items.get(key) ?? null, setItem: (key, value) => items.set(key, value) };
+  assert.equal(readFovUnitSetting(storage), "deg");
+  writeFovUnitSetting(storage, "mm");
+  assert.equal(items.get(FOV_UNIT_SETTING_KEY), "mm");
+  assert.equal(readFovUnitSetting(storage), "mm");
+  writeFovUnitSetting(storage, "anything");
+  assert.equal(readFovUnitSetting(storage), "deg");
+  const blocked = { getItem() { throw new Error("blocked"); }, setItem() { throw new Error("blocked"); } };
+  assert.equal(readFovUnitSetting(blocked), "deg");
+  writeFovUnitSetting(blocked, "mm");
+  assert.equal(readFovUnitSetting(null), "deg");
+});
+
+test("the H FOV box's mm text and a typed mm: unrounded degrees in the field's range, no positive number keeps the value", async () => {
+  const { focalFieldText, focalFieldValue, FOCAL_WIDEST_TEXT } = await import("../web_src/studio/camera_ui.js");
+  const { CAMERA_HFOV_MIN, lensFovLimit } = await import("../web_src/pano_lens.js");
+  assert.equal(focalFieldText(2 * Math.atan(18 / 50) * 180 / Math.PI, 1), "50.0");
+  assert.equal(focalFieldValue("400", 1), 2 * Math.atan(18 / 400) * 180 / Math.PI);
+  assert.equal(focalFieldValue("85mm", 1), 2 * Math.atan(18 / 85) * 180 / Math.PI);
+  assert.equal(focalFieldValue("15", 0), 2.4 * 180 / Math.PI);
+  assert.equal(focalFieldValue("99999", 1), CAMERA_HFOV_MIN);
+  assert.equal(focalFieldValue("0.01", 0.5), lensFovLimit(0.5));
+  for (const text of ["0", "-5", "", "mm"]) assert.equal(focalFieldValue(text, 1), null, text);
+  // The widest mm the head and the FOV number keep room for is the field's 1°, the same text at any κ.
+  for (const kappa of [1, 0.5, 0]) assert.equal(FOCAL_WIDEST_TEXT, focalFieldText(CAMERA_HFOV_MIN, kappa), `κ ${kappa}`);
+});

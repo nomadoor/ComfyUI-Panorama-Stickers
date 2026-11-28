@@ -92,6 +92,8 @@ const studio = (window.__studio = { ready: false, error: null });
 const storage = new Map();
 const memoryStorage = { getItem: (key) => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, String(value)) };
 // ?keptOutput= an Output window width kept by an earlier version (folded).
+// ?fovUnit=mm: the H FOV unit kept from before (docs/studio-ui.md "H FOV の単位").
+if (params.has("fovUnit")) storage.set("PanoramaSuite.Studio.FovUnit", params.get("fovUnit"));
 if (params.has("keptOutput")) storage.set("PanoramaSuite.Studio.outputWindow", JSON.stringify({ width: Number(params.get("keptOutput")), collapsed: true }));
 
 try {
@@ -122,6 +124,7 @@ try {
   studio.node = node;
   // What the editor keeps per browser (studio/layout.js), parsed.
   studio.kept = (key) => JSON.parse(storage.get(key) ?? "null");
+  studio.setting = (key) => storage.get(key) ?? null;
   studio.close = () => editor.close();
   studio.rendererOf = () => {
     const canvas = document.querySelector("[data-stage-canvas]");

@@ -537,3 +537,16 @@ test("the Camera card has the Look at row; while it looks at a target its headin
   // Picking shows on the row.
   assert.equal(row(model(on, { selection: { ids: ["camera"] }, lookPicking: true }).cards[0], "look_at").look.picking, true);
 });
+
+// docs/studio-ui.md "H FOV の単位".
+test("the H FOV box shows mm with fovUnit 'mm': the value stays in degrees, its unit mark switches the unit", () => {
+  const state = load({ camera: { projection: "perspective", fov: { value: 60 }, curve: { value: 0.5 } } });
+  const deg = row(model(state, { selection: { ids: ["camera"] } }).cards[0], "hfov").fields[0];
+  assert.deepEqual([deg.value, deg.unit, deg.focalCurve, deg.tip, deg.unitToggle], [60, "°", undefined, undefined, { tip: "Show in mm (36 mm wide sensor)", disabled: false }]);
+  const mm = row(model(state, { selection: { ids: ["camera"] }, fovUnit: "mm" }).cards[0], "hfov").fields[0];
+  assert.deepEqual([mm.value, mm.unit, mm.focalCurve, mm.tip, mm.unitToggle], [60, "mm", 0.5, "Focal length · 36 mm wide sensor", { tip: "Show in degrees", disabled: false }]);
+  // Steps, digits and the range stay the degrees' (a drag moves by degree steps).
+  assert.deepEqual([mm.step, mm.precision, mm.min, mm.max], [deg.step, deg.precision, deg.min, deg.max]);
+  const panorama = row(model(load({ camera: { projection: "erp" } }), { selection: { ids: ["camera"] }, fovUnit: "mm" }).cards[0], "hfov").fields[0];
+  assert.equal(panorama.unitToggle.disabled, true);
+});

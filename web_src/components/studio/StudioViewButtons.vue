@@ -15,6 +15,8 @@ defineProps({
   // The view's FOV in whole degrees, and the text the number shows instead (the Camera tab's Camera H FOV).
   fov: { type: Number, default: DEFAULT_VIEW_HFOV },
   fovText: { type: String, default: "" },
+  // The widest text the number keeps room for (StudioFovNumber `widest`), or "" for the view's.
+  fovWidest: { type: String, default: "" },
   // The number and its reset stay in place but cannot be used (the Camera tab), `fovTip` says why.
   fovDisabled: { type: Boolean, default: false },
   fovTip: { type: String, default: "" },
@@ -41,6 +43,7 @@ const emit = defineEmits(["fov", "fov-reset", "frame-selected", "reset-view", "g
     <StudioFovNumber
       :value="fov"
       :text="fovText"
+      :widest="fovWidest"
       :disabled="fovDisabled"
       :lit="fovLit"
       :tip="fovDisabled ? fovTip : 'Field of view (Alt+Wheel)'"

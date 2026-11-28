@@ -24,6 +24,10 @@ const props = defineProps({
   axis: { type: String, default: "" },
   // The unit after the value ("°", "%").
   unit: { type: String, default: "" },
+  // With a tooltip the unit is a mark to press (the H FOV's ° and mm, docs/studio-ui.md "H FOV の単位"): `unit` goes
+  // out, and the press neither drags nor opens the box. It works while the box is disabled unless `unitDisabled`.
+  unitTip: { type: String, default: "" },
+  unitDisabled: { type: Boolean, default: false },
   // The value one pixel of drag moves.
   step: { type: Number, default: 0.01 },
   // Decimals shown and sent.
@@ -35,13 +39,18 @@ const props = defineProps({
   // Text for a value, and a value for typed text (null when it holds none); default: numbers with `precision`.
   format: { type: Function, default: null },
   parse: { type: Function, default: null },
+  // Committing the text the box opened with, unchanged, changes nothing: for a box whose text is rounder than its value
+  // (the H FOV in mm), where reading the text back would move the value.
+  holdUnchanged: { type: Boolean, default: false },
 });
-const emit = defineEmits(["input", "change", "cancel"]);
+const emit = defineEmits(["input", "change", "cancel", "unit"]);
 
 const root = ref(null);
 const input = ref(null);
 const editing = ref(false);
 const draft = ref("");
+// The text the box opened with (`holdUnchanged`).
+let openedText = "";
 const dragging = ref(false);
 // The value shown while a drag runs, so the box answers before the owner sends the new value back.
 const live = ref(null);
@@ -192,6 +201,7 @@ function endDrag() {
 async function startEditing() {
   if (props.disabled) return;
   draft.value = text.value;
+  openedText = text.value;
   editing.value = true;
   await nextTick();
   input.value?.focus();
@@ -201,6 +211,7 @@ async function startEditing() {
 function commitEditing() {
   if (!editing.value) return;
   editing.value = false;
+  if (props.holdUnchanged && draft.value === openedText) return;
   const typed = props.parse ? props.parse(draft.value) : parseNumber(draft.value);
   if (typed == null || !Number.isFinite(typed)) {
     emit("cancel");
@@ -273,7 +284,20 @@ defineExpose({ startEditing, startDrag });
     >
     <template v-else>
       <span class="pano-studio-field-value pano-studio-cap">{{ text }}</span>
-      <span v-if="unit" class="pano-studio-field-unit pano-studio-cap">{{ unit }}</span>
+      <button
+        v-if="unit && unitTip"
+        type="button"
+        class="pano-studio-field-unit pano-studio-cap pano-studio-unit-mark"
+        data-part="unit"
+        :aria-label="unitTip"
+        :aria-disabled="unitDisabled ? 'true' : null"
+        :tabindex="unitDisabled ? -1 : 0"
+        :data-tip="unitDisabled ? null : unitTip"
+        @pointerdown.stop
+        @keydown.stop
+        @click.stop="unitDisabled || emit('unit')"
+      >{{ unit }}</button>
+      <span v-else-if="unit" class="pano-studio-field-unit pano-studio-cap">{{ unit }}</span>
     </template>
   </div>
 </template>

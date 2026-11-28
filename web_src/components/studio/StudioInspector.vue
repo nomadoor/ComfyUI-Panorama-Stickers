@@ -40,8 +40,10 @@ const props = defineProps({
   boxes: { type: Object, default: null },
   // Look at's Pick waits for a click on the stage (its row's Pick shows it).
   lookPicking: { type: Boolean, default: false },
+  // The unit the Camera's H FOV shows in ("deg" | "mm", docs/studio-ui.md "H FOV の単位").
+  fovUnit: { type: String, default: "deg" },
 });
-const emit = defineEmits(["edit", "close"]);
+const emit = defineEmits(["edit", "close", "fov-unit"]);
 
 const model = computed(() => buildInspectorModel({
   state: props.state,
@@ -57,6 +59,7 @@ const model = computed(() => buildInspectorModel({
   length: props.length,
   boxes: props.boxes,
   lookPicking: props.lookPicking,
+  fovUnit: props.fovUnit,
 }));
 
 // --- The Easing panel's size: its graph is square and as wide as the panel, smaller when it would leave less than
@@ -116,7 +119,7 @@ watch(() => !!model.value.easing, async (shown) => {
       <StudioIconButton :icon="ICON.close" label="Close" data-action="close" @press="emit('close')" />
     </header>
     <div class="pano-studio-inspector-body" :style="{ paddingBottom: `${bodyPad}px` }">
-      <StudioInspectorCard v-for="card in model.cards" :key="`${card.kind}:${card.target?.id ?? ''}`" :card="card" @edit="emit('edit', $event)" />
+      <StudioInspectorCard v-for="card in model.cards" :key="`${card.kind}:${card.target?.id ?? ''}`" :card="card" @edit="emit('edit', $event)" @fov-unit="emit('fov-unit', $event)" />
     </div>
     <div ref="easingWrap" class="pano-studio-inspector-foot">
       <Transition name="pano-studio-easing-fade">

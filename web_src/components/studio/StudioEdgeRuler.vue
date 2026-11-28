@@ -34,6 +34,12 @@ const props = defineProps({
   precision: { type: Number, default: 2 },
   name: { type: String, default: "" },
   valueText: { type: String, default: "" },
+  // The FOV ruler's value as its number and its unit mark (docs/studio-ui.md "H FOV の単位"): with `unitTip` the mark
+  // is pressed to switch the H FOV's unit (`unit` goes out), also while the ruler is disabled unless `unitDisabled`.
+  valueNumber: { type: String, default: "" },
+  unit: { type: String, default: "" },
+  unitTip: { type: String, default: "" },
+  unitDisabled: { type: Boolean, default: false },
   // The value text's width in digits (frame_layout.js CAMERA_RULERS valueChars), enough for the widest value.
   valueChars: { type: Number, default: 4 },
   // The reset is grayed (not hidden) while the value is where it returns to.
@@ -48,7 +54,7 @@ const props = defineProps({
   // "Camera タブ").
   lit: { type: Boolean, default: false },
 });
-const emit = defineEmits(["input", "change", "cancel", "key", "reset"]);
+const emit = defineEmits(["input", "change", "cancel", "key", "reset", "unit"]);
 
 const vertical = computed(() => props.orientation !== "horizontal");
 const track = ref(null);
@@ -201,7 +207,19 @@ onBeforeUnmount(() => {
     </div>
     <div class="pano-studio-edge-ruler-head" data-ruler-head>
       <span class="pano-studio-edge-ruler-name pano-studio-cap">{{ name }}</span>
-      <b class="pano-studio-edge-ruler-value pano-studio-cap" :style="{ width: `${valueChars}ch` }" data-ruler-value>{{ valueText }}</b>
+      <b class="pano-studio-edge-ruler-value pano-studio-cap" :style="{ width: `${valueChars}ch` }" data-ruler-value>
+        <template v-if="unit && unitTip">{{ valueNumber }}<button
+          type="button"
+          class="pano-studio-unit-mark"
+          data-part="unit"
+          :aria-label="unitTip"
+          :aria-disabled="unitDisabled ? 'true' : null"
+          :tabindex="unitDisabled ? -1 : 0"
+          :data-tip="unitDisabled ? null : unitTip"
+          @click="unitDisabled || emit('unit')"
+        >{{ unit }}</button></template>
+        <template v-else>{{ valueText }}</template>
+      </b>
     </div>
     <div class="pano-studio-edge-ruler-acts" data-ruler-acts>
       <!-- Grayed with the ruler, the dot and the reset say why as the ruler does (a locked Camera: where to unlock it). -->

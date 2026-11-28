@@ -3,7 +3,8 @@
 // components/studio/StudioCameraFrame.vue and StudioEdgeRuler.vue use them.
 import { CAMERA_ROLL_DEFAULT } from "./inspector_actions.js";
 import { FINE_FACTOR } from "./ui_drag.js";
-import { CAMERA_TAB_LOCKED_TIP } from "./camera_ui.js";
+import { CAMERA_TAB_LOCKED_TIP, formatFocalMm } from "./camera_ui.js";
+import { fovToFocalMm } from "../pano_lens.js";
 import { VIEW_FOV_DRAG_PX_PER_DEG, VIEW_FOV_STEP_DEG } from "../pano_camera_math.js";
 
 // The stage's margins around the area the frame is fitted into, in CSS px. The top keeps 30px clear under the tabs
@@ -17,10 +18,10 @@ export const CAMERA_FRAME_MARGIN = Object.freeze({ left: 150, right: 150, top: 8
 // The edge rulers' scales: px per unit, the units between two small ticks, between two numbered ticks, and the
 // decimals of the numbers (provisional, chosen against frame-4.html: a small tick every 8px, a number every 80px);
 // `length` the tick strip's fixed length in px, and `valueChars` the width of the value text in digits, enough for
-// the widest value (FOV "360°", Lens "0.00", Roll "-180°"), so the head never changes width (docs/design.md "大きさ").
+// the widest value (FOV "2063mm" in mm, "360°" in degrees, Lens "0.00", Roll "-180°"), so the head never changes width (docs/design.md "大きさ").
 // FOV's small tick and scale are the FOV step and drag scale the view's zoom shares (pano_camera_math.js).
 export const CAMERA_RULERS = Object.freeze({
-  fov: Object.freeze({ unitPx: VIEW_FOV_DRAG_PX_PER_DEG, minor: VIEW_FOV_STEP_DEG, major: 20, precision: 0, length: 200, valueChars: 4 }),
+  fov: Object.freeze({ unitPx: VIEW_FOV_DRAG_PX_PER_DEG, minor: VIEW_FOV_STEP_DEG, major: 20, precision: 0, length: 200, valueChars: 6 }),
   lens: Object.freeze({ unitPx: 400, minor: 0.02, major: 0.2, precision: 2, length: 200, valueChars: 4 }),
   roll: Object.freeze({ unitPx: 8, minor: 1, major: 10, precision: 0, length: 320, valueChars: 5 }),
 });
@@ -133,6 +134,16 @@ const ROLL_RULER_RANGE = Object.freeze({ min: -180, max: 180 });
 // The FOV ruler's tooltip while it works (docs/studio-ui.md "Camera タブ" 辺の目盛りの tooltip; ADR 0061).
 export const FOV_WHEEL_TIP = "FOV (Alt+Wheel)";
 
+// The FOV ruler head's value in the inspector's H FOV unit (docs/studio-ui.md "H FOV の単位"; the box's `unit`,
+// `focalCurve` and `unitToggle`, inspector_model.js): the number, its unit mark (which switches the unit, as the box's
+// does), and the two together (the Camera tab's FOV number shows the same text). The scale stays in degrees.
+function fovHead(box) {
+  const mm = box.unit === "mm";
+  const valueNumber = mm ? formatFocalMm(fovToFocalMm(box.value, box.focalCurve)) : rulerLabel(box.value, 0);
+  const unit = mm ? "mm" : "°";
+  return { valueNumber, unit, valueText: `${valueNumber}${unit}`, unitTip: box.unitToggle?.tip ?? "", unitDisabled: !!box.unitToggle?.disabled };
+}
+
 export function cameraRulers(card) {
   if (card?.kind !== "camera") return null;
   const row = (id) => card.rows.find((item) => item.id === id);
@@ -163,7 +174,7 @@ export function cameraRulers(card) {
   roll.atDefault = roll.disabled || Math.abs(roll.value - CAMERA_ROLL_DEFAULT) < 1e-9;
   return {
     target: card.target,
-    fov: ruler("FOV", hfov, "hFOV_deg", { scale: CAMERA_RULERS.fov, valueText: `${rulerLabel(hfov.fields[0].value, 0)}°`, ...(hfov.disabled ? {} : { tip: FOV_WHEEL_TIP }) }),
+    fov: ruler("FOV", hfov, "hFOV_deg", { scale: CAMERA_RULERS.fov, ...fovHead(hfov.fields[0]), ...(hfov.disabled ? {} : { tip: FOV_WHEEL_TIP }) }),
     lens: ruler("Lens", lens, "curve", { scale: CAMERA_RULERS.lens, valueText: rulerLabel(lens.fields[0].value, 2), lensStart: lens.lensStart }),
     roll: { ...roll, valueText: `${rulerLabel(roll.value, 0)}°` },
   };

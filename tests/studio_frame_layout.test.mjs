@@ -25,7 +25,7 @@ import { CAMERA_TAB_LOCKED_TIP } from "../web_src/studio/camera_ui.js";
 test("the margins and the rulers' lengths and value widths are the design's", () => {
   assert.deepEqual({ ...CAMERA_FRAME_MARGIN }, { left: 150, right: 150, top: 88, bottom: 115 });
   assert.deepEqual([CAMERA_RULERS.fov.length, CAMERA_RULERS.lens.length, CAMERA_RULERS.roll.length], [200, 200, 320]);
-  assert.deepEqual([CAMERA_RULERS.fov.valueChars, CAMERA_RULERS.lens.valueChars, CAMERA_RULERS.roll.valueChars], [4, 4, 5]);
+  assert.deepEqual([CAMERA_RULERS.fov.valueChars, CAMERA_RULERS.lens.valueChars, CAMERA_RULERS.roll.valueChars], [6, 4, 5]);
   // The heads: name and value above (30 + 8), the dot and the reset below (42 + 4); the strip leaves the larger at both ends.
   assert.deepEqual(JSON.parse(JSON.stringify(RULER_HEADS)), { label: { height: 30, gap: 8 }, acts: { height: 44, gap: 12 } });
   assert.equal(RULER_HEAD_ROOM, 56);
@@ -215,4 +215,23 @@ test("the FOV ruler's arrow key, one small tick, is fovStepValue", async () => {
   }
   // Lens: its own small tick and digits.
   assert.equal(stepWithin(0.333, 1, { step: CAMERA_RULERS.lens.minor, min: 0, max: 2, precision: 2 }), 0.35);
+});
+
+// docs/studio-ui.md "H FOV の単位": the ruler head shows the inspector's unit; its unit mark switches the same setting.
+test("the FOV ruler head shows mm with the inspector's unit, its unit mark grayed only in Panorama mode", () => {
+  const deg = rulersOf(cameraState({ projection: "perspective", fov: { value: 2 * Math.atan(18 / 50) * 180 / Math.PI } }));
+  assert.deepEqual([deg.fov.valueNumber, deg.fov.unit, deg.fov.unitTip, deg.fov.unitDisabled], ["40", "°", "Show in mm (36 mm wide sensor)", false]);
+  const mm = rulersOf(cameraState({ projection: "perspective", fov: { value: 2 * Math.atan(18 / 50) * 180 / Math.PI } }), { fovUnit: "mm" });
+  assert.deepEqual([mm.fov.valueNumber, mm.fov.unit, mm.fov.valueText, mm.fov.unitTip], ["50.0", "mm", "50.0mm", "Show in degrees"]);
+  // The scale stays in degrees.
+  assert.equal(mm.fov.scale.unitPx, deg.fov.scale.unitPx);
+  // A fisheye Camera's mm is its center scale: κ = 0 at 137.51° is 15 mm.
+  const fisheye = rulersOf(cameraState({ projection: "perspective", fov: { value: 2.4 * 180 / Math.PI }, curve: { value: 0 } }), { fovUnit: "mm" });
+  assert.equal(fisheye.fov.valueNumber, "15.0");
+  const locked = rulersOf(cameraState({ projection: "perspective", locked: true }), { fovUnit: "mm" });
+  assert.ok(locked.fov.disabled && !locked.fov.unitDisabled);
+  const readOnly = rulersOf(cameraState({ projection: "perspective" }), { fovUnit: "mm", readOnly: true });
+  assert.ok(readOnly.fov.disabled && !readOnly.fov.unitDisabled);
+  const panorama = rulersOf(cameraState({ projection: "erp" }), { fovUnit: "mm" });
+  assert.ok(panorama.fov.unitDisabled);
 });

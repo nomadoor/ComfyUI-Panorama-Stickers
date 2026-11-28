@@ -233,3 +233,38 @@ test("lensFilm of a point in a rect is the old Frame view's film of the canvas p
     assert.deepEqual(lensFilm(lens, p.x - rect.x, p.y - rect.y), old);
   }
 });
+
+// The focal length in mm of a 36 mm wide sensor (docs/render-contract.md "カメラのレンズ").
+test("fovToFocalMm is 18 ÷ g_κ(hFOV ÷ 2), and focalMmToFov is its inverse", async () => {
+  const { SENSOR_WIDTH_MM, fovToFocalMm, focalMmToFov } = await import("../web_src/pano_lens.js");
+  assert.equal(SENSOR_WIDTH_MM, 36);
+  // A pinhole: 2·atan(18 ÷ 50) is 39.598°.
+  assert.ok(Math.abs(fovToFocalMm(2 * Math.atan(18 / 50) * 180 / Math.PI, 1) - 50) < 1e-9);
+  assert.ok(Math.abs(fovToFocalMm(90, 1) - 18) < 1e-9);
+  // The equidistant fisheye: θ = 18 ÷ f, so 15 mm is 2·1.2 rad = 137.51°.
+  assert.ok(Math.abs(focalMmToFov(15, 0) - 2.4 * 180 / Math.PI) < 1e-9);
+  // The stereographic: r = 2f·tan(θ/2).
+  assert.ok(Math.abs(fovToFocalMm(120, 0.5) - 18 / (2 * Math.tan(Math.PI / 6))) < 1e-9);
+  for (const kappa of [1, 0.75, 0.5, 0.2, 0]) {
+    for (const hfov of [5, 39.6, 90, 150]) {
+      assert.ok(Math.abs(focalMmToFov(fovToFocalMm(hfov, kappa), kappa) - hfov) < 1e-9, `κ ${kappa} hFOV ${hfov}`);
+    }
+  }
+});
+
+test("focalMmToFov keeps the H FOV field's range: 1° to lensFovLimit(κ)", async () => {
+  const { focalMmToFov, lensFovLimit, CAMERA_HFOV_MIN } = await import("../web_src/pano_lens.js");
+  assert.equal(CAMERA_HFOV_MIN, 1);
+  assert.equal(focalMmToFov(100000, 1), 1);
+  assert.equal(focalMmToFov(0.01, 1), lensFovLimit(1));
+  assert.equal(focalMmToFov(1, 0), 360);
+  assert.equal(focalMmToFov(0.01, 0.5), lensFovLimit(0.5));
+});
+
+test("a Lens edit keeps the mm: lensFovKeepingCenter keeps the center scale the mm is", async () => {
+  const { fovToFocalMm, lensFovKeepingCenter } = await import("../web_src/pano_lens.js");
+  const before = fovToFocalMm(60, 1);
+  for (const kappa of [0.9, 0.5, 0.2, 0]) {
+    assert.ok(Math.abs(fovToFocalMm(lensFovKeepingCenter(60, 1, kappa), kappa) - before) < 1e-9, `κ ${kappa}`);
+  }
+});
