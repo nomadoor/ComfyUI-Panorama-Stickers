@@ -32,7 +32,9 @@ const props = defineProps({
   labelPrecision: { type: Number, default: CAMERA_RULERS.roll.precision },
   // The decimals of the values sent (an arrow key moves the value by a small tick).
   precision: { type: Number, default: 2 },
+  // The ruler's id (`data-ruler`), and its shown name when there is no `label` (the FOV ruler is "Focal" in mm).
   name: { type: String, default: "" },
+  label: { type: String, default: "" },
   valueText: { type: String, default: "" },
   // The value text's width in digits (frame_layout.js CAMERA_RULERS valueChars), enough for the widest value.
   valueChars: { type: Number, default: 4 },
@@ -50,6 +52,7 @@ const props = defineProps({
 });
 const emit = defineEmits(["input", "change", "cancel", "key", "reset"]);
 
+const title = computed(() => props.label || props.name);
 const vertical = computed(() => props.orientation !== "horizontal");
 const track = ref(null);
 const length = ref(0);
@@ -180,7 +183,7 @@ onBeforeUnmount(() => {
       class="pano-studio-edge-ruler-track"
       role="slider"
       :tabindex="disabled ? -1 : 0"
-      :aria-label="name || null"
+      :aria-label="title || null"
       :aria-orientation="vertical ? 'vertical' : 'horizontal'"
       :aria-valuenow="shown"
       :aria-valuetext="valueText || null"
@@ -200,13 +203,13 @@ onBeforeUnmount(() => {
       <i class="pano-studio-edge-ruler-mark" data-ruler-mark />
     </div>
     <div class="pano-studio-edge-ruler-head" data-ruler-head>
-      <span class="pano-studio-edge-ruler-name pano-studio-cap">{{ name }}</span>
+      <span class="pano-studio-edge-ruler-name pano-studio-cap">{{ title }}</span>
       <b class="pano-studio-edge-ruler-value pano-studio-cap" :style="{ width: `${valueChars}ch` }" data-ruler-value>{{ valueText }}</b>
     </div>
     <div class="pano-studio-edge-ruler-acts" data-ruler-acts>
       <!-- Grayed with the ruler, the dot and the reset say why as the ruler does (a locked Camera: where to unlock it). -->
-      <StudioKeyDot v-if="keyState" :state="keyState" :disabled="disabled" :label="`${name} Keyframe`" :tip="disabled ? tip : ''" @toggle="emit('key')" />
-      <StudioResetButton :at-default="disabled || atDefault" :label="`Reset ${name}`" :tip="disabled ? tip : ''" @reset="emit('reset')" />
+      <StudioKeyDot v-if="keyState" :state="keyState" :disabled="disabled" :label="`${title} Keyframe`" :tip="disabled ? tip : ''" @toggle="emit('key')" />
+      <StudioResetButton :at-default="disabled || atDefault" :label="`Reset ${title}`" :tip="disabled ? tip : ''" @reset="emit('reset')" />
     </div>
   </div>
 </template>

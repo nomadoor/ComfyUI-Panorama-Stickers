@@ -51,6 +51,15 @@ export function viewFovTip(unit) {
   return unit === "mm" ? "Focal length · 36 mm wide sensor (Alt+Wheel)" : "Field of view (Alt+Wheel)";
 }
 
+// The names the Camera's H FOV goes by in `unit` (docs/studio-ui.md "H FOV の単位": a focal length is not a field of
+// view, so in mm nothing calls it FOV): the inspector row's shown name, the FOV ruler head's, the ruler's tooltip while
+// it works, and the value box's spoken name (undefined: the row's). The row's and the ruler's ids stay H FOV and FOV.
+export function fovNames(unit) {
+  return unit === "mm"
+    ? { row: "Focal", ruler: "Focal", rulerTip: viewFovTip("mm"), field: "Focal length" }
+    : { row: "H FOV", ruler: "FOV", rulerTip: "FOV (Alt+Wheel)", field: undefined };
+}
+
 export function viewFovWidest(unit) {
   return unit === "mm" ? `${FOCAL_WIDEST_TEXT}mm` : "";
 }

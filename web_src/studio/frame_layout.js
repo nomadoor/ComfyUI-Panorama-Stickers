@@ -3,7 +3,7 @@
 // components/studio/StudioCameraFrame.vue and StudioEdgeRuler.vue use them.
 import { CAMERA_ROLL_DEFAULT } from "./inspector_actions.js";
 import { FINE_FACTOR } from "./ui_drag.js";
-import { CAMERA_TAB_LOCKED_TIP, formatFocalMm } from "./camera_ui.js";
+import { CAMERA_TAB_LOCKED_TIP, formatFocalMm, fovNames } from "./camera_ui.js";
 import { fovToFocalMm } from "../pano_lens.js";
 import { VIEW_FOV_DRAG_PX_PER_DEG, VIEW_FOV_STEP_DEG } from "../pano_camera_math.js";
 
@@ -132,7 +132,7 @@ export function rulerSnapStep(value, dir, snap, { min = -Infinity, max = Infinit
 // Camera card.
 const ROLL_RULER_RANGE = Object.freeze({ min: -180, max: 180 });
 // The FOV ruler's tooltip while it works (docs/studio-ui.md "Camera タブ" 辺の目盛りの tooltip; ADR 0061).
-export const FOV_WHEEL_TIP = "FOV (Alt+Wheel)";
+export const FOV_WHEEL_TIP = fovNames("deg").rulerTip;
 
 // The FOV ruler head's value in the inspector's H FOV unit (docs/studio-ui.md "H FOV の単位"; the box's `unit` and
 // `focalCurve`, inspector_model.js): its unit and the text (the Camera tab's FOV number shows the same text). The scale
@@ -141,7 +141,13 @@ function fovHead(box) {
   const mm = box.unit === "mm";
   const unit = mm ? "mm" : "°";
   const number = mm ? formatFocalMm(fovToFocalMm(box.value, box.focalCurve)) : rulerLabel(box.value, 0);
-  return { unit, valueText: `${number}${unit}` };
+  const names = fovNames(mm ? "mm" : "deg");
+  return { unit, valueText: `${number}${unit}`, label: names.ruler, wheelTip: names.rulerTip };
+}
+
+// The FOV ruler's tooltip while it works is its unit's (fovNames); a grayed one keeps the reason.
+function fovRuler({ wheelTip, ...fov }, disabled) {
+  return disabled ? fov : { ...fov, tip: wheelTip };
 }
 
 export function cameraRulers(card) {
@@ -151,6 +157,8 @@ export function cameraRulers(card) {
     const box = source.fields.find((item) => item.field === field);
     return {
       name,
+      // The text the head shows and its controls are called by (the FOV ruler's follows the H FOV unit); `name` is its id.
+      label: name,
       row: source.id,
       field,
       value: box.value,
@@ -174,7 +182,7 @@ export function cameraRulers(card) {
   roll.atDefault = roll.disabled || Math.abs(roll.value - CAMERA_ROLL_DEFAULT) < 1e-9;
   return {
     target: card.target,
-    fov: ruler("FOV", hfov, "hFOV_deg", { scale: CAMERA_RULERS.fov, ...fovHead(hfov.fields[0]), ...(hfov.disabled ? {} : { tip: FOV_WHEEL_TIP }) }),
+    fov: fovRuler(ruler("FOV", hfov, "hFOV_deg", { scale: CAMERA_RULERS.fov, ...fovHead(hfov.fields[0]) }), hfov.disabled),
     lens: ruler("Lens", lens, "curve", { scale: CAMERA_RULERS.lens, valueText: rulerLabel(lens.fields[0].value, 2), lensStart: lens.lensStart }),
     roll: { ...roll, valueText: `${rulerLabel(roll.value, 0)}°` },
   };

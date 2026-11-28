@@ -228,3 +228,11 @@ test("the FOV ruler head shows mm with the inspector's unit; the scale stays in 
   const fisheye = rulersOf(cameraState({ projection: "perspective", fov: { value: 2.4 * 180 / Math.PI }, curve: { value: 0 } }), { fovUnit: "mm" });
   assert.equal(fisheye.fov.valueText, "15.0mm");
 });
+
+// docs/studio-ui.md "H FOV の単位" and the edge rulers' tooltip: in mm the head says Focal and the tooltip the focal length.
+test("the FOV ruler is labeled Focal in mm, with the focal length's tooltip; its name stays FOV", () => {
+  const deg = rulersOf(cameraState({ projection: "perspective" }));
+  const mm = rulersOf(cameraState({ projection: "perspective" }), { fovUnit: "mm" });
+  assert.deepEqual([deg.fov.name, deg.fov.label, deg.fov.tip], ["FOV", "FOV", "FOV (Alt+Wheel)"]);
+  assert.deepEqual([mm.fov.name, mm.fov.label, mm.fov.tip], ["FOV", "Focal", "Focal length · 36 mm wide sensor (Alt+Wheel)"]);
+});

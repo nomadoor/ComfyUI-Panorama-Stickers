@@ -59,7 +59,7 @@ function boxProps(row, field) {
     min: field.min,
     max: field.max,
     disabled: field.disabled,
-    label: field.axis ? `${row.name} ${field.axis}` : row.name,
+    label: field.label ?? (field.axis ? `${row.label || row.name} ${field.axis}` : row.label || row.name),
     "data-field": field.field,
     ...(field.tip ? { "data-tip": field.tip } : {}),
     ...(field.focalCurve === undefined ? {} : focalBox(field.focalCurve)),
@@ -102,6 +102,7 @@ function lookPick() {
       <StudioInspectorRow
         v-else
         :name="row.name"
+        :label="row.label"
         :layout="row.layout"
         :key-state="row.keyState"
         :key-disabled="row.keyDisabled"
@@ -170,7 +171,7 @@ function lookPick() {
             :max="row.slider.max"
             :step="row.slider.step"
             :disabled="row.disabled"
-            :label="row.name"
+            :label="row.label || row.name"
             :data-slider="row.slider.field"
             v-bind="on(row, row.fields[0], { round: true })"
           />

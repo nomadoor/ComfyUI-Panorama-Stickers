@@ -356,6 +356,7 @@ function setCollapsed(value) {
                 orientation="vertical"
                 side="left"
                 :name="rulers.fov.name"
+                :label="rulers.fov.label"
                 :value="rulers.fov.value"
                 :min="rulers.fov.min"
                 :max="rulers.fov.max"
