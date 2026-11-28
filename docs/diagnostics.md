@@ -7,7 +7,7 @@
 
 ## オーナーに渡す手順
 
-1. ComfyUI の設定（歯車）を開き、**Panorama Suite › Debug › Diagnostics** をオンにする。
+1. ComfyUI の設定（歯車）を開き、**Panorama Stickers › Debug › Diagnostics** をオンにする。
 2. **ページを開き直す**（F5）。オンにする前に作られたキャンバスや WebGL コンテキストは数えられないため。
 3. いつもどおりに使う。タブが落ちるまで続けてよい。
 4. タブが落ちたら、ComfyUI を開き直す。
@@ -18,8 +18,8 @@
    ```
 
    この行の続きの JSON（前回の最後の 5 件の記録）をコピーして送る。
-6. もっと詳しく送るときは、上のメニューの **Extensions › Panorama Suite › Export Panorama Suite diagnostics** を選ぶ
-   （コマンドパレットからも同じ名前で呼べる）。`panorama-suite-diagnostics-<日時>.json` が保存されるので、それを送る。
+6. もっと詳しく送るときは、上のメニューの **Extensions › Panorama Stickers › Export Panorama Stickers diagnostics** を選ぶ
+   （コマンドパレットからも同じ名前で呼べる）。`panorama-stickers-diagnostics-<日時>.json` が保存されるので、それを送る。
    書き出した JSON の `previous` が落ちたセッションの記録、`current` が今のセッションの記録です。
 7. 調べ終わったら、設定をオフに戻す。
 

@@ -277,7 +277,7 @@ Camera の値の位置は選択で動かない）。
 | Rotation | Y・P・R。リセットは向き 0 へ。Panorama モードの Yaw は ERP の正面の向き | 同じ |
 | Look at | 相手の名前の欄、Pick、Keyframe のポチ、相手を外すリセット（下の「Look at」） | 同じ |
 
-- H FOV の単位：H FOV を度で見せるか焦点距離（mm）で見せるかは、ComfyUI の設定の「Panorama Suite › Editor › H FOV unit」で選ぶ（id `PanoramaSuite.Editor.FovUnit`、選べる値は「Degrees」と「Focal length (mm, 36 mm wide sensor)」、既定は Degrees。tooltip は「How Panorama Studio and the Preview window show field of view. Focal length assumes a 36 mm wide sensor; the state always keeps degrees.」）。度で考える人は度のまま、mm で考える人は mm のままで、作業の途中で行き来するものではないので、エディタの中には切り替える所を置かない（持ち主、2026-11-28）。拡張の `settings` で登録し、保存は ComfyUI のコアが行う（3D view controls と同じ）。開いているエディタと Preview のウィンドウで設定を変えても、すぐその単位になる。
+- H FOV の単位：H FOV を度で見せるか焦点距離（mm）で見せるかは、ComfyUI の設定の「Panorama Stickers › Editor › H FOV unit」で選ぶ（id `PanoramaSuite.Editor.FovUnit`、選べる値は「Degrees」と「Focal length (mm, 36 mm wide sensor)」、既定は Degrees。tooltip は「How Panorama Studio and the Preview window show field of view. Focal length assumes a 36 mm wide sensor; the state always keeps degrees.」）。度で考える人は度のまま、mm で考える人は mm のままで、作業の途中で行き来するものではないので、エディタの中には切り替える所を置かない（持ち主、2026-11-28）。拡張の `settings` で登録し、保存は ComfyUI のコアが行う（3D view controls と同じ）。開いているエディタと Preview のウィンドウで設定を変えても、すぐその単位になる。
   - 換算は横幅 36 mm のセンサーの仮定で、式と持ち主は `docs/render-contract.md` の「カメラのレンズ」。κ < 1 でも同じ式で mm を出す。
   - mm の表示の桁：100 mm 未満は小数第 1 位（`50.0`、`5.7`）、100 mm 以上は整数（`135`、`2063`）。
   - mm で入れた値は、度に直して丸めずに `fov` に書く（0.1° に丸めると、望遠で入れた数が変わって見えるため。400 mm が 396.4 mm になる）。下の「Camera タブ」の「値の桁」の「箱に見えない桁を持たせない」は、この入力だけ例外にする（FOV には Lens の 1.00 のような見えない桁で振る舞いが変わる値が無い）。範囲の外の mm は、H FOV の欄の範囲に寄せた画角の mm に戻して見せる。

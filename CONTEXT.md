@@ -131,3 +131,20 @@ Panorama Studio が出力する Scene の値。Camera を含まない。状態�
 | 360° / 180° | `camera.erp_range`、`background_range` | 範囲 |
 | From ＜ノードの名前＞ | 上流の層（upstream） | 上流の Studio から受け継いだ物のまとまり。画面に Upstream と出さない |
 
+### ComfyUI の中の名前
+
+ComfyUI の中で使う人の目に触れるこの拡張の名前は、どこでも **Panorama Stickers**（リポジトリと ComfyUI Manager の名前）にする（持ち主、2026-11-28）。対象は次のとおり。
+
+- ノードを追加するメニューの分類名（全ノードの `category`）
+- ComfyUI の設定の画面の見出し（「Panorama Stickers › Editor › 3D view controls」「Panorama Stickers › Editor › H FOV unit」「Panorama Stickers › Debug › Diagnostics」）
+- 上のメニューの「Extensions › Panorama Stickers」と、その中のコマンド名「Export Panorama Stickers diagnostics」
+- 診断の書き出しのファイル名 `panorama-stickers-diagnostics-<日時>.json`
+- コンソールに出す印 `[PanoramaStickers]`
+
+名前は Python と JS にそれぞれ一か所だけ置き、上の場所はそこを読む。Python は `comfyui_pano_suite/names.py` の `CATEGORY`、JS は `web_src/pano_names.js`。
+
+次のものは変えず、元の名前（`PanoramaSuite`・`pano_suite`・`panorama_suite`）のままにする。変えると、使う人が選んだ設定の値やブラウザに覚えさせた値が消え、保存した graph が読めなくなるため。
+
+- 設定とコマンドの id（`PanoramaSuite.…`）、ブラウザに覚えさせた値の鍵
+- ノードの id、Python のパッケージ名 `comfyui_pano_suite`、ビルドしたファイル名 `web/panorama_suite.js`
+

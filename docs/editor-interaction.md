@@ -34,7 +34,7 @@ Panorama Studio のエディタと新しい Preview のウィンドウは、い�
 - 右下のボタン群（`PanoFloatingRight.vue`）：Reset View・Hide Grid、プレビューでは Fullscreen を、右端に固定した行に並べる。ボタンの位置を動かさない規則：どれかのボタンが出たり消えたりしたせいで、他のボタンの位置が変わってはいけない。Reset View は Frame 表示と読み取り専用のときに消さずに無効（disabled）にする。表示の条件は `pano_editor_ui_state.js` の `floatingRightState` にまとめ、`node --test` で確かめている。
 - 見回し：何もないところの左ドラッグと中ボタンのドラッグで見回し、ホイールで画角を変える。右ドラッグは使わず、右クリックのメニューも抑止しない。
 - Preview のノード上の Scene のビューアは 6DoF で動く。違いは `docs/preview-node.md` が持つ（ノード上ではキーを受けない、物の操作が無いので左ドラッグはいつも表の何もないところの扱い）。
-- 6DoF の操作（`web_src/pano_view_controls.js`）：ボタンと修飾キーから動きを決める表をプリセットごとにデータで持ち、`viewDragAction`（ボタンの割り当て）と `emptyLeft`（何もないところの左ドラッグ）が決める。プリセットは ComfyUI の設定の「Panorama Suite › Editor › 3D view controls」（id `PanoramaSuite.Editor.ViewControls`、拡張の `settings` で登録し、保存は ComfyUI のコアが行う）で選ぶ。動きは三つ：オービット（ポインタの下の点のまわりを回る。three.js の OrbitControls・コアの Load3D と同じ向きと速さ）、パン（ポインタの下の点がポインタに付いて動く）、見回し（その場で向きを変える。Unity-like の右ドラッグだけ。慣性あり）。
+- 6DoF の操作（`web_src/pano_view_controls.js`）：ボタンと修飾キーから動きを決める表をプリセットごとにデータで持ち、`viewDragAction`（ボタンの割り当て）と `emptyLeft`（何もないところの左ドラッグ）が決める。プリセットは ComfyUI の設定の「Panorama Stickers › Editor › 3D view controls」（id `PanoramaSuite.Editor.ViewControls`、拡張の `settings` で登録し、保存は ComfyUI のコアが行う）で選ぶ。動きは三つ：オービット（ポインタの下の点のまわりを回る。three.js の OrbitControls・コアの Load3D と同じ向きと速さ）、パン（ポインタの下の点がポインタに付いて動く）、見回し（その場で向きを変える。Unity-like の右ドラッグだけ。慣性あり）。
 
   | 操作 | Default（既定） | Blender-like | Unity-like |
   |---|---|---|---|
